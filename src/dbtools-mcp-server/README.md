@@ -30,8 +30,14 @@ dbtools-mcp-server.py is a FastMCP-based server that provides various tools for 
   - Find matching reports using vector similarity search
   - Create and populate vector columns for RAG integration
 
+- **HeatWave ML and AI Tools**
+  - Use HeatWave in-built LLMs for text generation
+  - HeatWave similarity search and RAG on existing vector stores
+  - HeatWave AutoML syntax reference helper
+  - Create HeatWave vector store from objects in Object Store
+
 - **Additional Features**
-  - MySQL HeatWave chat integration
+  - OCI Object Store list buckets and objects
 
 ## Prerequisites
 
@@ -131,15 +137,19 @@ python dbtools-mcp-server.py
 8. `execute_sql_tool(dbtools_connection_display_name, sql_script)`: Executes SQL on a database connection
 9. `get_table_info(dbtools_connection_display_name, table_name)`: Retrieves table information
 10. `list_tables(dbtools_connection_display_name)`: Lists all tables in a database connection
-11. `ask_heatwave_chat_tool(dbtools_connection_display_name, question)`: Interacts with MySQL HeatWave chat
-12. `bootstrap_reports(dbtools_connection_display_name)`: Ensures report_definitions table exists
-13. `create_report(dbtools_connection_display_name, name, sql_query, description=None, bind_parameters=None)`: Creates a new report definition
-14. `execute_report(dbtools_connection_display_name, report_name, bind_values=None)`: Executes a report with optional bind values
-15. `get_report(dbtools_connection_display_name, report_name)`: Retrieves a report definition by name
-16. `delete_report(dbtools_connection_display_name, report_name)`: Deletes a report definition by name
-17. `list_reports(dbtools_connection_display_name)`: Lists all reports for a connection
-18. `find_matching_reports(dbtools_connection_display_name, search_text, limit=5)`: Finds similar reports using vector similarity search
-19. `ragify_column(dbtools_connection_display_name, table_name, column_names, vector_column_name)`: Creates and populates a vector column for RAG integration
+11. `bootstrap_reports(dbtools_connection_display_name)`: Ensures report_definitions table exists
+12. `create_report(dbtools_connection_display_name, name, sql_query, description=None, bind_parameters=None)`: Creates a new report definition
+13. `execute_report(dbtools_connection_display_name, report_name, bind_values=None)`: Executes a report with optional bind values
+14. `get_report(dbtools_connection_display_name, report_name)`: Retrieves a report definition by name
+15. `delete_report(dbtools_connection_display_name, report_name)`: Deletes a report definition by name
+16. `list_reports(dbtools_connection_display_name)`: Lists all reports for a connection
+17. `find_matching_reports(dbtools_connection_display_name, search_text, limit=5)`: Finds similar reports using vector similarity search
+18. `ragify_column(dbtools_connection_display_name, table_name, column_names, vector_column_name)`: Creates and populates a vector column for RAG integration
+19. `call_nl2ml(dbtools_connection_display_name: string, question: string)`: Ask natural language questions to machine learning help tool to get answers about heatwave ML (AutoML)
+20. `ask_ml_rag(dbtools_connection_display_name: string, question: string)`: Ask ml_rag - retrieval augmented generation tool a question. This is the preferred tool for answering questions using vector stores.
+21. `call_load_vector_store(dbtools_connection_display_name: string, namespace: string, bucket_name: string, document_prefix: string, schema_name: string, table_name: string)`: Load documents from object storage into a vector store for similarity search and RAG. Path can be file name, prefix, or full path.
+22. `call_list_buckets(dbtools_connection_display_name: string, compartment_id: string)`: List all accessible object store buckets
+23. `call_list_objects(dbtools_connection_display_name: string, namespace: string, bucket_name: string)`: List objects/files stored in a given object store bucket
 
 ## Security
 
@@ -178,12 +188,12 @@ Here are example prompts you can use to interact with the MCP server, note that 
 "What tables exist in the marketing database?"
 ```
 
-### 4. Using HeatWave Chat
+### 4. Using HeatWave Tools
 
 ```
-"Ask HeatWave: Which products have the highest profit margin?"
-"Ask HeatWave: Summarize our sales performance by region"
-"Ask HeatWave: What's the trend in customer acquisitions?"
+"Ask ml_rag: What is the most prestigious Grand Prix?"
+"How can I train a model to predict food delivery times?"
+"Create a vector store from files in my bucket"
 ```
 
 ### 5. Compartment Management
@@ -192,6 +202,12 @@ Here are example prompts you can use to interact with the MCP server, note that 
 "Show me all compartments"
 "List databases in the development compartment"
 "Get details of the production compartment"
+```
+
+### 6. OCI Object Store Tools
+```
+"What buckets do I have?"
+"List objects in my bucket"
 ```
 
 Note: Replace placeholder names (like "HR database", "production compartment") with your actual database tools connection and compartment names when using these prompts.

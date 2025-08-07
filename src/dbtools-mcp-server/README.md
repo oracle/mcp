@@ -36,16 +36,18 @@ dbtools-mcp-server.py is a FastMCP-based server that provides various tools for 
 ## Prerequisites
 
 - Python 3.x
-- OCI SDK
+- fastmcp (installed automatically via requirements.txt)
+- OCI SDK (installed via requirements.txt)
 - Valid OCI configuration file with credentials
 
 ## Installation
 
-1. Clone this repository
-2. Install required dependencies:
+1. Clone this repository.
+2. Install required dependencies using pip:
    ```
-   pip install oci requests
+   pip install -r requirements.txt
    ```
+   This will install `oci`, `requests`, `fastmcp`, and all other dependencies.
 3. Set up your OCI config file at ~/.oci/config
 
 ## OCI Configuration
@@ -58,6 +60,7 @@ see the [OCI SDK documentation](https://docs.oracle.com/en-us/iaas/Content/API/C
 
 - oci
 - requests
+- fastmcp
 
 ## Supported Database Types
 

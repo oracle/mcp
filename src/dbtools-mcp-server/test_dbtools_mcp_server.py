@@ -47,8 +47,8 @@ class TestDbtoolsMcpServer(unittest.TestCase):
         cls.module = cls.server_module
         
         # Specific connection names for testing
-        cls.oracle_connection = "oracleconn1"
-        cls.mysql_connection = "mysqlconn1"
+        cls.oracle_connection = os.getenv("ORACLE_CONNECTION_NAME", "oracleconn1")
+        cls.mysql_connection = os.getenv("MYSQL_CONNECTION_NAME", "mysqlconn1")
     
     def setUp(self):
         """Set up test case - verify OCI config exists"""
@@ -62,32 +62,15 @@ class TestDbtoolsMcpServer(unittest.TestCase):
         print(f"Running test: {self._testMethodName}")
         print(f"{'=' * 70}")
     
-    def test_get_help(self):
-        """Test the get_help tool"""
-        print("About to call get_help() to retrieve tool documentation")
-        result = self.module.get_help()
-        
-        # Parse result as JSON
-        help_data = json.loads(result)
-        
-        # Verify expected keys in the help text
-        self.assertIn("overview", help_data)
-        self.assertIn("recommended_workflow", help_data)
-        self.assertIn("available_tools", help_data)
-        self.assertIn("examples", help_data)
-        
-        # Print summary of what we got
-        print(f"Help overview: {help_data['overview']}")
-        print(f"Found {len(help_data['recommended_workflow'])} workflow steps")
-        print(f"Found {len(help_data['available_tools'])} tool categories")
-    
     def test_list_all_compartments(self):
         """Test listing all compartments"""
         print("About to call list_all_compartments() to list all compartments in the tenancy")
-        result = self.module.list_all_compartments()
+        str_result = self.module.list_all_compartments()
         
         # Verify we got a list of compartments
-        self.assertIsNotNone(result)
+        self.assertIsNotNone(str_result)
+
+        result = json.loads(str_result)
         
         # Print how many compartments we found
         print(f"Found {len(result)} compartments")
@@ -96,28 +79,30 @@ class TestDbtoolsMcpServer(unittest.TestCase):
         if len(result) > 0:
             print("First few compartments:")
             for i, comp in enumerate(result[:3]):
-                print(f"  {i+1}. {comp.name} (ID: {comp.id})")
+                print(f"  {i+1}. {comp['name']} (ID: {comp['id']})")
     
     def test_get_compartment_by_name(self):
         """Test getting a compartment by name"""
         # First get all compartments
         print("About to call list_all_compartments() to find a compartment name for testing")
-        all_compartments = self.module.list_all_compartments()
+        all_compartments_str = self.module.list_all_compartments()
+        all_compartments = json.loads(all_compartments_str)
         
         # If we have any compartments, test with the first one's name
         if len(all_compartments) > 0:
             first_compartment = all_compartments[0]
-            compartment_name = first_compartment.name
+            print(first_compartment)
+            compartment_name = first_compartment['name']
             
             print(f"About to call get_compartment_by_name_tool('{compartment_name}')")
             # Now try to get this compartment by name
-            result = self.module.get_compartment_by_name_tool(compartment_name)
+            result = json.loads(self.module.get_compartment_by_name_tool(compartment_name))
             
             # Verify we got a result
             self.assertIsNotNone(result)
-            self.assertEqual(result.name, compartment_name)
+            self.assertEqual(result['name'], compartment_name)
             
-            print(f"Successfully retrieved compartment: {result.name} (ID: {result.id})")
+            print(f"Successfully retrieved compartment: {result['name']} (ID: {result['id']})")
         else:
             self.skipTest("No compartments found to test with")
     

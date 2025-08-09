@@ -44,8 +44,7 @@ def list_all_compartments() -> str:
     """List all compartments in a tenancy with clear formatting"""
     compartments = identity_client.list_compartments(tenancy_id).data
     compartments.append(identity_client.get_compartment(compartment_id=tenancy_id).data)
-
-    return compartments
+    return str(compartments)
 
 def get_compartment_by_name(compartment_name: str):
     """Internal function to get compartment by name with caching"""
@@ -69,7 +68,7 @@ def get_compartment_by_name_tool(name: str) -> str:
     """Return a compartment matching the provided name"""
     compartment = get_compartment_by_name(name)
     if compartment:
-        return compartment
+        return str(compartment)
     else:
         return json.dumps({"error": f"Compartment '{name}' not found."})
 
@@ -81,7 +80,7 @@ def list_autonomous_databases(compartment_name: str) -> str:
         return json.dumps({"error": f"Compartment '{compartment_name}' not found. Use list_compartment_names() to see available compartments."})
     
     databases = database_client.list_autonomous_databases(compartment_id=compartment.id).data
-    return databases
+    return str(databases)
 
 @mcp.tool()
 def list_all_databases() -> str:
@@ -92,7 +91,7 @@ def list_all_databases() -> str:
         matching_context_type="NONE"
     )
     results = search_client.search_resources(search_details=search_details, tenant_id=config['tenancy']).data
-    return results
+    return str(results)
 
 @mcp.tool()
 def list_dbtools_connection_tool(compartment_name: str) -> str:
@@ -102,7 +101,7 @@ def list_dbtools_connection_tool(compartment_name: str) -> str:
         return json.dumps({"error": f"Compartment '{compartment_name}' not found. Use list_compartment_names() to see available compartments."})
     
     connections = dbtools_client.list_database_tools_connections(compartment_id=compartment.id).data
-    return connections
+    return str(connections)
 
 @mcp.tool()
 def list_all_connections() -> str:
@@ -115,7 +114,7 @@ def list_all_connections() -> str:
     search_results = search_client.search_resources(search_details=search_details, tenant_id=config['tenancy']).data
     
     if not hasattr(search_results, 'items'):
-        return []
+        return json.dumps([])
 
     # Get full details for each connection
     detailed_results = []
@@ -127,10 +126,10 @@ def list_all_connections() -> str:
             # If we can't get details for a connection, include error info
             detailed_results.append({
                 "error": f"Error getting details for connection {item.display_name}: {str(e)}",
-                "search_result": item
+                "search_result": item.identifier
             })
     
-    return detailed_results
+    return str(detailed_results)
 
 @mcp.tool()
 def get_dbtools_connection_by_name_tool(display_name: str) -> str:
@@ -153,7 +152,7 @@ def get_dbtools_connection_by_name_tool(display_name: str) -> str:
     
     # Get the full connection details
     connection = dbtools_client.get_database_tools_connection(connection_id).data
-    return connection
+    return str(connection)
 
 def get_minimal_connection_by_name(dbtools_connection_display_name: str):
     """

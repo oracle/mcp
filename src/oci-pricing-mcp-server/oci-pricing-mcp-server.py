@@ -9,10 +9,13 @@ OCI Pricing MCP (MVP)
 - Note: cetools is a public subset; empty `items` is normal behavior
 """
 
+from __future__ import annotations
+
+import asyncio
 import difflib
 import re
 import unicodedata
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TypedDict
 
 import httpx
 from fastmcp import FastMCP
@@ -44,6 +47,27 @@ SEED: Dict[str, str] = {
     "dns zone": "dns zone management",
 }
 
+# -------------------- types (thick only where useful) --------------------
+
+
+class SimplifiedItem(TypedDict, total=False):
+    partNumber: Optional[str]
+    displayName: Optional[str]
+    metricName: Optional[str]
+    serviceCategory: Optional[str]
+    currencyCode: Optional[str]
+    model: Optional[str]
+    value: Optional[float]
+
+
+class SearchResult(TypedDict):
+    query: str
+    currency: str
+    returned: int
+    items: List[SimplifiedItem]
+    note: str
+
+
 # -------------------- text normalization helpers --------------------
 
 
@@ -66,7 +90,7 @@ def acronym(s: str) -> str:
 # -------------------- API shaping --------------------
 
 
-def simplify(x: dict) -> dict:
+def simplify(x: Dict[str, Any]) -> SimplifiedItem:
     """Return only the first currency block / first price model (MVP simplification)."""
     p = (x.get("prices") or [{}])[0]
     pv = (p.get("prices") or [{}])[0]
@@ -81,48 +105,53 @@ def simplify(x: dict) -> dict:
     }
 
 
+# ---- fetch with light retry & exponential backoff ----
+# Retry only on transient cases: 5xx or network errors.
+
+_RETRIES = 2  # total tries = 1 (initial) + _RETRIES
+_BACKOFF_BASE = 0.5  # seconds (exponential: 0.5, 1.0, 2.0, ...)
+
+
 async def fetch(
     client: httpx.AsyncClient, url: str, params: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
-    """GET JSON; non-200 raises; on JSON parse failure return {} safely."""
-    r = await client.get(url, params=params, headers={"Accept": "application/json"})
-    r.raise_for_status()
-    try:
-        return r.json() or {}
-    except Exception:
-        return {}
+    """GET JSON; non-200 raises; on JSON parse failure return {} safely. Retries transient errors."""
+    attempt = 0
+    while True:
+        try:
+            r = await client.get(url, params=params, headers={"Accept": "application/json"})
+            # retry on 5xx
+            if 500 <= r.status_code < 600 and attempt < _RETRIES:
+                raise httpx.HTTPStatusError("server error", request=r.request, response=r)
+            r.raise_for_status()
+            try:
+                return r.json() or {}
+            except Exception:
+                return {}
+        except (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError, httpx.HTTPStatusError) as e:
+            if attempt >= _RETRIES:
+                raise
+            await asyncio.sleep(_BACKOFF_BASE * (2**attempt))
+            attempt += 1
 
 
-async def iter_all(
-    client: httpx.AsyncClient, currency: str = "USD", max_pages: int = 6
-):
+async def iter_all(client: httpx.AsyncClient, currency: str = "USD", max_pages: int = 6):
     """Follow APEX `links.rel == "next"` up to `max_pages` to avoid over-fetching/latency."""
     url, params = API, {"currencyCode": currency}
     for _ in range(max_pages):
         data = await fetch(client, url, params)
         for it in data.get("items") or []:
             yield it
-        nxt = next(
-            (
-                lk.get("href")
-                for lk in data.get("links", [])
-                if lk.get("rel") == "next" and lk.get("href")
-            ),
-            None,
-        )
+        nxt = next((lk.get("href") for lk in data.get("links", []) if lk.get("rel") == "next" and lk.get("href")), None)
         if not nxt:
             break
-        url, params = (
-            nxt if nxt.startswith("http") else f"https://apexapps.oracle.com{nxt}"
-        ), None
+        url, params = (nxt if nxt.startswith("http") else f"https://apexapps.oracle.com{nxt}"), None
 
 
 # -------------------- fuzzy search --------------------
 
 
-def search_items(
-    items: List[Dict[str, Any]], query: str, limit: int = 12
-) -> List[Dict[str, Any]]:
+def search_items(items: List[Dict[str, Any]], query: str, limit: int = 12) -> List[SimplifiedItem]:
     """
     Fuzzy name search:
     - Short queries (3–4 chars): word-boundary matches only (reduce false hits; e.g., 'ADB').
@@ -138,12 +167,9 @@ def search_items(
     # 1–2 character variants are too noisy.
     variants = {v for v in variants if len(v) >= 3}
 
-    res: List[Dict[str, Any]] = []
+    res: List[SimplifiedItem] = []
     for it in items:
-        text = " ".join(
-            str(it.get(k, ""))
-            for k in ("displayName", "serviceCategory", "metricName", "partNumber")
-        )
+        text = " ".join(str(it.get(k, "")) for k in ("displayName", "serviceCategory", "metricName", "partNumber"))
         tn = norm(text)
         tns = nospace(tn)
 
@@ -175,7 +201,7 @@ def _clamp(val: int, lo: int, hi: int, default: int) -> int:
     return max(lo, min(hi, v))
 
 
-def _norm_currency(cur: Optional[str], default="USD") -> str:
+def _norm_currency(cur: Optional[str], default: str = "USD") -> str:
     return (cur or default).strip().upper()
 
 
@@ -183,9 +209,7 @@ def _norm_currency(cur: Optional[str], default="USD") -> str:
 
 
 @mcp.tool()
-async def pricing_get_sku(
-    part_number: str, currency: str = "USD", max_pages: int = 6
-) -> Dict[str, Any]:
+async def pricing_get_sku(part_number: str, currency: str = "USD", max_pages: int = 6) -> Dict[str, Any]:
     """
     Fetch a SKU's price. If the SKU misses, fall back to fuzzy name search.
 
@@ -238,7 +262,7 @@ async def pricing_get_sku(
 @mcp.tool()
 async def pricing_search_name(
     query: str, currency: str = "USD", limit: int = 12, max_pages: int = 6
-) -> Dict[str, Any]:
+) -> Dict[str, Any] | SearchResult:
     """
     Fuzzy product-name search (aliases/variants/space-insensitive, bounded paging).
 

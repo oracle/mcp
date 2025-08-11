@@ -10,3 +10,14 @@ oci-pricing-mcp = "oci_pricing_mcp.server:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["oci_pricing_mcp*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E","F","I","UP","B"]
+ignore = []
+fix = true

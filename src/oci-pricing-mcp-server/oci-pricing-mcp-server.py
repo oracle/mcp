@@ -157,25 +157,41 @@ def search_items(items: List[Dict[str, Any]], query: str, limit: int = 12) -> Li
     Fuzzy name search:
     - Short queries (3–4 chars): word-boundary matches only (reduce false hits; e.g., 'ADB').
     - Long queries (>=5): space-insensitive substring OR similarity (≥0.90).
-    - Expand both directions using the minimal SEED aliases.
+    - Expand aliases only when query == alias or query == full name or query contains full name.
+    - If query intends 'Autonomous Database', require both 'autonomous' and 'database'.
     """
     qn = norm(query)
+
+    # ---- intent: Autonomous Database? ----
+    q_is_adb_intent = qn in {"adb", "autonomous db", "autonomousdb"}
+
+    # base variants
     variants = {qn, nospace(qn), acronym(qn)}
+
+    # alias expansion (strict): do NOT expand when the only reason is "short alias in query"
     for short, full in SEED.items():
         sn, fn = norm(short), norm(full)
-        if qn in {sn, fn} or sn in qn or fn in qn:
+        if qn == sn or qn == fn or fn in qn:
             variants.update({sn, nospace(sn), fn, nospace(fn)})
-    # 1–2 character variants are too noisy.
+
+    # drop too-short
     variants = {v for v in variants if len(v) >= 3}
 
     res: List[SimplifiedItem] = []
     for it in items:
-        text = " ".join(str(it.get(k, "")) for k in ("displayName", "serviceCategory", "metricName", "partNumber"))
+        # text fields we search against
+        fields = [str(it.get(k, "")) for k in ("displayName", "serviceCategory", "metricName", "partNumber")]
+        text = " ".join(fields)
         tn = norm(text)
         tns = nospace(tn)
 
+        # ----- ADB 意図なら、"autonomous" と "database" を必須にする -----
+        if q_is_adb_intent:
+            if not (re.search(r"\bautonomous\b", tn) and re.search(r"\bdatabase\b", tn)):
+                continue  # ここで早期除外
+
         short = [v for v in variants if 3 <= len(v) <= 4]
-        long = [v for v in variants if len(v) >= 5]
+        long  = [v for v in variants if len(v) >= 5]
 
         hit = (
             any(re.search(rf"\b{re.escape(v)}\b", tn) for v in short)

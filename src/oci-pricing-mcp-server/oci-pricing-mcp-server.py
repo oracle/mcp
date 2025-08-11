@@ -9,9 +9,13 @@ OCI Pricing MCP (MVP)
 - Note: cetools is a public subset; empty `items` is normal behavior
 """
 
+import difflib
+import re
+import unicodedata
+from typing import Any, Dict, List, Optional
+
+import httpx
 from fastmcp import FastMCP
-import httpx, re, unicodedata, difflib
-from typing import List, Dict, Any, Optional
 
 API = "https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/"
 mcp = FastMCP("oci-pricing-mcp")
@@ -20,13 +24,13 @@ mcp = FastMCP("oci-pricing-mcp")
 SEED: Dict[str, str] = {
     "adb": "autonomous database",
     "oss": "object storage",
-    "lb":  "load balancer",
+    "lb": "load balancer",
     "oke": "kubernetes engine",
     "oac": "analytics cloud",
     "genai": "generative ai",
     "oci": "oracle cloud infrastructure",
-    "db":  "database",
-    "vm":  "virtual machine",
+    "db": "database",
+    "vm": "virtual machine",
     "vmware": "vmware cloud",
     "bms": "bare metal server",
     "bmc": "bare metal cloud",
@@ -37,25 +41,30 @@ SEED: Dict[str, str] = {
     "network": "virtual cloud network",
     "loadbalancer": "load balancer",
     "dns": "domain name system",
-    "dns zone": "dns zone management"
+    "dns zone": "dns zone management",
 }
 
 # -------------------- text normalization helpers --------------------
+
 
 def norm(s: str) -> str:
     """Normalize text for matching: NFKC, casefold, punctuation→space, collapse whitespace."""
     s = unicodedata.normalize("NFKC", s).casefold()
     return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", s)).strip()
 
+
 def nospace(s: str) -> str:
     """Remove spaces for space-insensitive comparisons."""
     return re.sub(r"\s+", "", s)
+
 
 def acronym(s: str) -> str:
     """Build an acronym: 'autonomous database' → 'ad' (used as a weak hint only)."""
     return "".join(w[0] for w in norm(s).split() if w)
 
+
 # -------------------- API shaping --------------------
+
 
 def simplify(x: dict) -> dict:
     """Return only the first currency block / first price model (MVP simplification)."""
@@ -71,7 +80,10 @@ def simplify(x: dict) -> dict:
         "value": pv.get("value"),
     }
 
-async def fetch(client: httpx.AsyncClient, url: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+
+async def fetch(
+    client: httpx.AsyncClient, url: str, params: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """GET JSON; non-200 raises; on JSON parse failure return {} safely."""
     r = await client.get(url, params=params, headers={"Accept": "application/json"})
     r.raise_for_status()
@@ -80,21 +92,37 @@ async def fetch(client: httpx.AsyncClient, url: str, params: Optional[Dict[str, 
     except Exception:
         return {}
 
-async def iter_all(client: httpx.AsyncClient, currency: str = "USD", max_pages: int = 6):
+
+async def iter_all(
+    client: httpx.AsyncClient, currency: str = "USD", max_pages: int = 6
+):
     """Follow APEX `links.rel == "next"` up to `max_pages` to avoid over-fetching/latency."""
     url, params = API, {"currencyCode": currency}
     for _ in range(max_pages):
         data = await fetch(client, url, params)
         for it in data.get("items") or []:
             yield it
-        nxt = next((lk.get("href") for lk in data.get("links", []) if lk.get("rel") == "next" and lk.get("href")), None)
+        nxt = next(
+            (
+                lk.get("href")
+                for lk in data.get("links", [])
+                if lk.get("rel") == "next" and lk.get("href")
+            ),
+            None,
+        )
         if not nxt:
             break
-        url, params = (nxt if nxt.startswith("http") else f"https://apexapps.oracle.com{nxt}"), None
+        url, params = (
+            nxt if nxt.startswith("http") else f"https://apexapps.oracle.com{nxt}"
+        ), None
+
 
 # -------------------- fuzzy search --------------------
 
-def search_items(items: List[Dict[str, Any]], query: str, limit: int = 12) -> List[Dict[str, Any]]:
+
+def search_items(
+    items: List[Dict[str, Any]], query: str, limit: int = 12
+) -> List[Dict[str, Any]]:
     """
     Fuzzy name search:
     - Short queries (3–4 chars): word-boundary matches only (reduce false hits; e.g., 'ADB').
@@ -112,17 +140,20 @@ def search_items(items: List[Dict[str, Any]], query: str, limit: int = 12) -> Li
 
     res: List[Dict[str, Any]] = []
     for it in items:
-        text = " ".join(str(it.get(k, "")) for k in ("displayName", "serviceCategory", "metricName", "partNumber"))
+        text = " ".join(
+            str(it.get(k, ""))
+            for k in ("displayName", "serviceCategory", "metricName", "partNumber")
+        )
         tn = norm(text)
         tns = nospace(tn)
 
         short = [v for v in variants if 3 <= len(v) <= 4]
-        long  = [v for v in variants if len(v) >= 5]
+        long = [v for v in variants if len(v) >= 5]
 
         hit = (
-            any(re.search(rf"\b{re.escape(v)}\b", tn) for v in short) or
-            any(v in tns for v in long) or
-            any(difflib.SequenceMatcher(a=v, b=tns).ratio() >= 0.90 for v in long)
+            any(re.search(rf"\b{re.escape(v)}\b", tn) for v in short)
+            or any(v in tns for v in long)
+            or any(difflib.SequenceMatcher(a=v, b=tns).ratio() >= 0.90 for v in long)
         )
         if hit:
             sm = simplify(it)
@@ -132,7 +163,9 @@ def search_items(items: List[Dict[str, Any]], query: str, limit: int = 12) -> Li
                     break
     return res
 
+
 # -------------------- tiny utils --------------------
+
 
 def _clamp(val: int, lo: int, hi: int, default: int) -> int:
     try:
@@ -141,13 +174,18 @@ def _clamp(val: int, lo: int, hi: int, default: int) -> int:
         return default
     return max(lo, min(hi, v))
 
+
 def _norm_currency(cur: Optional[str], default="USD") -> str:
     return (cur or default).strip().upper()
 
+
 # -------------------- MCP tools --------------------
 
+
 @mcp.tool()
-async def pricing_get_sku(part_number: str, currency: str = "USD", max_pages: int = 6) -> Dict[str, Any]:
+async def pricing_get_sku(
+    part_number: str, currency: str = "USD", max_pages: int = 6
+) -> Dict[str, Any]:
     """
     Fetch a SKU's price. If the SKU misses, fall back to fuzzy name search.
 
@@ -196,8 +234,11 @@ async def pricing_get_sku(part_number: str, currency: str = "USD", max_pages: in
     except httpx.HTTPError as e:
         return {"note": "http-error", "error": str(e), "input": pn, "currency": cur}
 
+
 @mcp.tool()
-async def pricing_search_name(query: str, currency: str = "USD", limit: int = 12, max_pages: int = 6) -> Dict[str, Any]:
+async def pricing_search_name(
+    query: str, currency: str = "USD", limit: int = 12, max_pages: int = 6
+) -> Dict[str, Any]:
     """
     Fuzzy product-name search (aliases/variants/space-insensitive, bounded paging).
 
@@ -223,7 +264,7 @@ async def pricing_search_name(query: str, currency: str = "USD", limit: int = 12
     try:
         async with httpx.AsyncClient(timeout=25) as client:
             items = [it async for it in iter_all(client, cur, pages)]
-            hits  = search_items(items, q, lim)
+            hits = search_items(items, q, lim)
             return {
                 "query": q,
                 "currency": cur,
@@ -234,14 +275,17 @@ async def pricing_search_name(query: str, currency: str = "USD", limit: int = 12
     except httpx.HTTPError as e:
         return {"note": "http-error", "error": str(e), "items": []}
 
+
 @mcp.tool()
 def ping() -> str:
     """Health check (for CI/Inspector)."""
     return "ok"
 
+
 def main() -> None:
     """MCP server entrypoint."""
     mcp.run()
+
 
 if __name__ == "__main__":
     main()

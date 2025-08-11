@@ -15,7 +15,8 @@ import asyncio
 import difflib
 import re
 import unicodedata
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional
+from typing_extensions import TypedDict
 
 import httpx
 from fastmcp import FastMCP
@@ -262,7 +263,7 @@ async def pricing_get_sku(part_number: str, currency: str = "USD", max_pages: in
 @mcp.tool()
 async def pricing_search_name(
     query: str, currency: str = "USD", limit: int = 12, max_pages: int = 6
-) -> Dict[str, Any] | SearchResult:
+) -> Dict[str, Any]:
     """
     Fuzzy product-name search (aliases/variants/space-insensitive, bounded paging).
 

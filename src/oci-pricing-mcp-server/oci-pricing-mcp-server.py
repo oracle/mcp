@@ -2,7 +2,7 @@
 Copyright (c) 2025, Oracle and/or its affiliates.
 Licensed under the Universal Permissive License v1.0 as shown at http://oss.oracle.com/licenses/upl.
 
-OCI Pricing MCP (MVP)
+OCI Pricing MCP Server
 - Fetch SKU pricing from Oracle's public Price List API (cetools)
 - Falls back to fuzzy name search when direct SKU lookup misses
 - Returns structured JSON for clients to render/phrase

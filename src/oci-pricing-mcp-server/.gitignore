@@ -5,6 +5,7 @@ __pycache__/
 
 # Python build artifacts
 *.egg-info/
+*.ruff_cache/
 
 # Lock/venv files (optional)
 uv.lock

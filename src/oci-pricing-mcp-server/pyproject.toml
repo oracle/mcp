@@ -1,23 +1,32 @@
 [project]
 name = "oci-pricing-mcp-server"
 version = "0.1.0"
-requires-python = ">=3.10"
-dependencies = ["fastmcp>=2.0.0", "httpx>=0.27.0"]
+requires-python = ">=3.11"
+dependencies = [
+  "fastmcp>=2.0.0",
+  "httpx>=0.27.0",
+  "typing_extensions>=4.8.0",
+]
 
 [project.scripts]
-oci-pricing-mcp = "oci_pricing_mcp.server:main"
+oci-pricing-mcp = "oci_pricing_mcp.entry:main"
+
+[tool.setuptools.package-dir]
+"" = "src"
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["src"]
 include = ["oci_pricing_mcp*"]
 
 [tool.black]
 line-length = 100
-target-version = ["py313"]
+target-version = ["py311"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
-select = ["E","F","I","UP","B"]
-ignore = ["E501"]
+target-version = "py311"
 fix = true
+
+[tool.ruff.lint]
+select = ["E","F","I","UP","B"]
+ignore = ["E501"] 

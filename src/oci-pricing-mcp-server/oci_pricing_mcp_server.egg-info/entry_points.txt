@@ -1,2 +1,0 @@
-[console_scripts]
-oci-pricing-mcp = oci_pricing_mcp.server:main

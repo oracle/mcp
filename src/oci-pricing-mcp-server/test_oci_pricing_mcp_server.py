@@ -17,17 +17,22 @@ from typing import Any
 
 class TestOciPricingMcpServer(unittest.TestCase):
     """
-    Functional tests for oci-pricing-mcp-server.py
+    Functional tests for oci-pricing-mcp-server.py.
 
-    方針:
-      - 参考テストと同じ構成/ログ/動的 import。
-      - @mcp.tool ラッパはテスト側で吸収（run(arguments) と元関数直呼びの両対応）。
-      - ToolResult → content(List[TextContent]) → text(JSON) を確実にアンラップ。
-      - cetools は公開サブセットのため空返りや通貨差は skip として扱う。
+    Strategy:
+      - Mirror the reference test style: dynamic import, verbose logging, and
+        functional calls into the module under test.
+      - Hide @mcp.tool wrappers' differences: support both FunctionTool.run(arguments)
+        and direct function invocation transparently.
+      - Robustly unwrap FastMCP ToolResult: content(List[TextContent]) → text (JSON)
+        → native dict/list types.
+      - Be resilient to the public price list "subset" nature of cetools:
+        transient emptiness and currency differences are handled via skips.
     """
 
     @classmethod
     def setUpClass(cls):
+        # Silence the known DeprecationWarning noise from dependencies, if any.
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         server_filename = os.getenv("PRICING_SERVER_FILENAME", "oci-pricing-mcp-server.py")
@@ -40,7 +45,7 @@ class TestOciPricingMcpServer(unittest.TestCase):
         spec.loader.exec_module(cls.server_module)
         cls.module = cls.server_module
 
-        # Probes（環境変数で上書き可）
+        # Probe values (override via environment variables when needed)
         cls.probe_sku_ok = os.getenv("PROBE_SKU_OK", "B93113")
         cls.probe_sku_missing = os.getenv("PROBE_SKU_MISSING", "B88298")
         cls.ccy_jpy = os.getenv("PROBE_CCY", "JPY")
@@ -50,6 +55,7 @@ class TestOciPricingMcpServer(unittest.TestCase):
 
     @staticmethod
     def _is_method_of(obj, maybe_method) -> bool:
+        """Return True if maybe_method is a bound method of obj."""
         try:
             return isinstance(maybe_method, MethodType) and maybe_method.__self__ is obj
         except Exception:
@@ -57,7 +63,10 @@ class TestOciPricingMcpServer(unittest.TestCase):
 
     @staticmethod
     def _maybe_json_load(x: Any) -> Any:
-        """bytes/str を JSON なら dict/list に、そうでなければ文字列として返す。"""
+        """
+        If x is bytes/str containing JSON, decode/parse it; otherwise return x unchanged.
+        Produces dict/list on success, or the original string on parse errors.
+        """
         if isinstance(x, (bytes, bytearray)):
             try:
                 x = x.decode("utf-8")
@@ -75,21 +84,25 @@ class TestOciPricingMcpServer(unittest.TestCase):
     @classmethod
     def _unwrap_tool_result(cls, res: Any, _depth: int = 0) -> Any:
         """
-        FastMCP の ToolResult を “中身” に剥がす。
-        代表例:
-          - ToolResult.content -> List[TextContent] -> first.text -> JSON load
-          - ToolResult.content -> str/json ならそのまま/loads
-          - .data/.result/.output/.value なども走査
-          - to_dict()['content'] もケア
+        Unwrap a FastMCP ToolResult-like object to its underlying value.
+
+        Heuristics:
+          - If primitive (dict/list/str/number/bool/None): maybe JSON-load strings.
+          - If list of TextContent-like items: take the first .text and JSON-load it.
+          - If it looks like a ToolResult: prefer .content; then try .data/.result/.output/.value;
+            finally try .to_dict()['content'] if available.
+          - If it is a TextContent-like object: use .text and maybe JSON-load.
+          - Fallback: return as-is.
+
+        Depth is limited to avoid infinite recursion.
         """
         if _depth > 5:
-            return res  # ガード
+            return res  # guard against pathological cases
 
-        # 既にプリミティブ
+        # Already a primitive: try to JSON-load strings/lists of text-y items.
         if isinstance(res, (dict, list, str, int, float, bool)) or res is None:
-            # List の場合 TextContent っぽい要素を剥がす
             if isinstance(res, list):
-                # TextContent らしき（.text を持つ）だけで構成されている？
+                # If this is a list of objects with "text", extract the first.
                 all_textlike = True
                 texts = []
                 others = []
@@ -102,15 +115,16 @@ class TestOciPricingMcpServer(unittest.TestCase):
                         all_textlike = False
                         others.append(el)
                 if all_textlike and texts:
-                    # 1個ならそれを JSON 解析
                     if len(texts) == 1:
-                        return cls._unwrap_tool_result(cls._maybe_json_load(texts[0]), _depth + 1)
-                    # 複数ある場合は先頭を優先（多くは 1 要素）
-                    return cls._unwrap_tool_result(cls._maybe_json_load(texts[0]), _depth + 1)
-            # それ以外はそのまま/JSON 解析
+                        return cls._unwrap_tool_result(
+                            cls._maybe_json_load(texts[0]), _depth + 1
+                        )
+                    return cls._unwrap_tool_result(
+                        cls._maybe_json_load(texts[0]), _depth + 1
+                    )
             return cls._maybe_json_load(res)
 
-        # ToolResult らしい？
+        # ToolResult-like?
         looks_tool_result = (
             "ToolResult" in res.__class__.__name__
             or hasattr(res, "content")
@@ -118,20 +132,20 @@ class TestOciPricingMcpServer(unittest.TestCase):
         )
 
         if looks_tool_result:
-            # 1) content を優先
+            # 1) Prefer .content
             if hasattr(res, "content"):
                 try:
                     return cls._unwrap_tool_result(res.content, _depth + 1)
                 except Exception:
                     pass
-            # 2) data/result/output/value も試す
+            # 2) Try common payload attrs
             for attr in ("data", "result", "output", "value"):
                 if hasattr(res, attr):
                     try:
                         return cls._unwrap_tool_result(getattr(res, attr), _depth + 1)
                     except Exception:
                         continue
-            # 3) to_dict 経由
+            # 3) Try to_dict()['content']
             if hasattr(res, "to_dict") and callable(res.to_dict):
                 try:
                     d = res.to_dict()
@@ -141,44 +155,46 @@ class TestOciPricingMcpServer(unittest.TestCase):
                 except Exception:
                     pass
 
-        # TextContent 単体なら text 抜き出し
+        # Single TextContent-like object
         if hasattr(res, "text"):
             try:
                 return cls._maybe_json_load(res.text)
             except Exception:
                 pass
 
-        # 最後の手段：そのまま
+        # Fallback: return as-is
         return res
 
     def _resolve_callable(self, obj) -> tuple[str, Callable]:
         """
-        どう呼ぶかを判定して (mode, fn) を返す。
-        mode:
-          - "plain"   : fn(*args, **kwargs)         （元の関数 or ラッパが素直に受ける）
-          - "toolrun" : fn(arguments_dict)          （FunctionTool.run(arguments)）
-        優先順位:
-          1) FunctionTool.run（確実にツール実行）
-          2) 元関数らしき参照（func/_func/__wrapped__/call/invoke）
-          3) __call__ は誤検出しやすいので最後の最後まで採用しない
+        Decide how to invoke a tool-like object and return (mode, fn).
+
+        Modes:
+          - "plain"   : call as fn(*args, **kwargs)  (direct function or friendly wrapper)
+          - "toolrun" : call as fn(arguments_dict)   (FunctionTool.run(arguments))
+
+        Priority:
+          1) Prefer FunctionTool.run (reliable tool execution signature).
+          2) Then try function-like references: func/_func/__wrapped__/call/invoke.
+          3) Finally __call__ (often unfriendly for tools), then generic callable.
         """
-        # 1) FunctionTool.run を最優先で検出
+        # 1) FunctionTool.run has priority
         run_cand = getattr(obj, "run", None)
         if callable(run_cand) and self._is_method_of(obj, run_cand):
             return "toolrun", run_cand
 
-        # 2) 元関数寄りの属性を優先（kwargs を素直に渡せる可能性を最大化）
+        # 2) Likely underlying function
         for attr in ("func", "_func", "__wrapped__", "call", "invoke"):
             cand = getattr(obj, attr, None)
             if callable(cand):
                 return "plain", cand
 
-        # 3) __call__ は最後に回す（FunctionTool の __call__ は引数形が異なることが多い）
+        # 3) Reluctantly accept __call__
         call_cand = getattr(obj, "__call__", None)
         if callable(call_cand):
             return "plain", call_cand
 
-        # 4) フォールバック
+        # 4) Final fallback
         if callable(obj):
             return "plain", obj
 
@@ -186,9 +202,10 @@ class TestOciPricingMcpServer(unittest.TestCase):
 
     def _call(self, name: str, *args, **kwargs):
         """
-        module.<name> を実行して unwrap 済みの値を返す。
-          - mode "plain"   : fn(*args, **kwargs)
-          - mode "toolrun" : fn(arguments_dict)
+        Invoke module.<name> and return an unwrapped value.
+
+        - If mode == "plain": fn(*args, **kwargs) (await if coroutine).
+        - If mode == "toolrun": fn(arguments_dict) (await if coroutine).
         """
         obj = getattr(self.module, name, None)
         if obj is None:
@@ -196,7 +213,6 @@ class TestOciPricingMcpServer(unittest.TestCase):
 
         mode, fn = self._resolve_callable(obj)
 
-        # plain 経路
         if mode == "plain":
             if asyncio.iscoroutinefunction(fn):
                 res = asyncio.run(fn(*args, **kwargs))
@@ -206,7 +222,7 @@ class TestOciPricingMcpServer(unittest.TestCase):
                     res = asyncio.run(res)
             return self._unwrap_tool_result(res)
 
-        # toolrun 経路（必ず kwargs を辞書にして渡す）
+        # toolrun path: require kwargs → arguments dict
         if args and not kwargs:
             raise AssertionError(
                 f"{name} is a FunctionTool; call it with keyword args so we can pass an 'arguments' dict."
@@ -228,8 +244,8 @@ class TestOciPricingMcpServer(unittest.TestCase):
         """Health check tool returns 'ok'."""
         if not hasattr(self.module, "ping"):
             self.skipTest("ping not found in module")
-        result = self._call("ping")  # ToolResult でも unwrap される
-        # 念のための緩和（dict/その他の可能性）
+        result = self._call("ping")  # Unwrapping also handles ToolResult
+        # Relax if a dict-like value is returned
         if not isinstance(result, str):
             try:
                 _d = dict(result)
@@ -242,7 +258,7 @@ class TestOciPricingMcpServer(unittest.TestCase):
     # ---------------------- pricing_get_sku ----------------------
 
     def test_get_sku_known_price_jpy(self):
-        """Known SKU in JPY should return a priced item; otherwise skip (subset揺らぎ対応)."""
+        """Known SKU in JPY should return a priced item; otherwise skip (public-subset variance)."""
         if not hasattr(self.module, "pricing_get_sku"):
             self.skipTest("pricing_get_sku not found in module")
 
@@ -261,7 +277,7 @@ class TestOciPricingMcpServer(unittest.TestCase):
             self.skipTest(f"Unexpected response type: {type(out)}")
             return
 
-        # kind があれば sku を想定（無ければ従来どおりスルー）
+        # If 'kind' is present, it should be one of the known markers.
         if "kind" in out:
             self.assertIn(out["kind"], ("sku", "search", "error"))
 
@@ -298,7 +314,7 @@ class TestOciPricingMcpServer(unittest.TestCase):
             return
 
         self.assertIsInstance(out, dict)
-        # kind があれば search/error を想定
+        # If 'kind' exists, it should reflect search/error/sku
         if "kind" in out:
             self.assertIn(out["kind"], ("search", "error", "sku"))
 
@@ -316,7 +332,7 @@ class TestOciPricingMcpServer(unittest.TestCase):
     # ---------------------- pricing_search_name ----------------------
 
     def test_search_name_require_priced_compute_jpy(self):
-        """require_priced=True: every item must have model/value and correct currencyCode."""
+        """With require_priced=True, every item must have model/value and the requested currencyCode."""
         if not hasattr(self.module, "pricing_search_name"):
             self.skipTest("pricing_search_name not found in module")
 
@@ -359,7 +375,7 @@ class TestOciPricingMcpServer(unittest.TestCase):
         print(f"Got {len(items)} priced items; first={items[0].get('displayName')}")
 
     def test_search_name_currency_always_populated(self):
-        """Without require_priced, currencyCode should still be populated via simplify(...)."""
+        """Without require_priced, currencyCode must still be set via simplify(...)."""
         if not hasattr(self.module, "pricing_search_name"):
             self.skipTest("pricing_search_name not found in module")
 
@@ -396,7 +412,7 @@ class TestOciPricingMcpServer(unittest.TestCase):
         print(f"currencyCode populated for {len(items)} items")
 
     def test_search_name_limit_clamped_to_20(self):
-        """Large limit should be capped to <= 20."""
+        """A very large limit must be clamped to <= 20 in the result."""
         if not hasattr(self.module, "pricing_search_name"):
             self.skipTest("pricing_search_name not found in module")
 
@@ -436,7 +452,7 @@ class TestOciPricingMcpServer(unittest.TestCase):
             currency="USD",
         )
         self.assertIsInstance(out, dict)
-        # kind は error を期待
+        # Expect kind == error, if present
         if "kind" in out:
             self.assertEqual(out["kind"], "error")
         self.assertEqual(out.get("note"), "empty-query")

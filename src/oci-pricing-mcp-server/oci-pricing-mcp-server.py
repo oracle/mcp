@@ -16,8 +16,7 @@ import difflib
 import os
 import re
 import unicodedata
-from typing import Any
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import httpx
 from fastmcp import FastMCP
@@ -28,19 +27,19 @@ mcp = FastMCP("oci-pricing-mcp")
 # -------------------- environment-driven defaults --------------------
 # These allow MCP client config to override defaults via "env".
 # Example (Claude Desktop):
-#   "env": { "OCI_PRICING_DEFAULT_CCY": "JPY", "OCI_PRICING_HTTP_TIMEOUT": "30" }
-#
-# NOTE: For convenience, we also accept PROBE_CCY (originally test-only) as a fallback.
-DEFAULT_CCY = (
-    os.getenv("OCI_PRICING_DEFAULT_CCY")
-    or os.getenv("PROBE_CCY")
-    or "USD"
-).strip().upper()
-
+#   "env": {
+#       "OCI_PRICING_DEFAULT_CCY": "JPY",
+#       "OCI_PRICING_HTTP_TIMEOUT": "30",
+#       "OCI_PRICING_MAX_PAGES": "6",
+#       "OCI_PRICING_ALT_CCY": "USD"
+#   }
+DEFAULT_CCY = os.getenv("OCI_PRICING_DEFAULT_CCY", "USD").strip().upper()
 DEFAULT_MAX_PAGES = int(os.getenv("OCI_PRICING_MAX_PAGES", "6"))
 DEFAULT_TIMEOUT = float(os.getenv("OCI_PRICING_HTTP_TIMEOUT", "25"))
-_RETRIES = int(os.getenv("OCI_PRICING_RETRIES", "2"))  # total tries = 1 + _RETRIES
+_RETRIES = int(os.getenv("OCI_PRICING_RETRIES", "2"))  # total tries = 1 (initial) + _RETRIES
 _BACKOFF_BASE = float(os.getenv("OCI_PRICING_BACKOFF", "0.5"))  # seconds
+# Optional alternate currency for reference when requested currency is zero/missing
+ALT_CCY = (os.getenv("OCI_PRICING_ALT_CCY", "").strip().upper() or None)
 
 # Minimal alias seed; we avoid maintaining a huge dictionary.
 SEED: dict[str, str] = {
@@ -78,6 +77,10 @@ class SimplifiedItem(TypedDict, total=False):
     model: str | None
     value: float | None
     note: str | None
+    # Optional reference price in alternate currency
+    altCurrencyCode: str | None
+    altModel: str | None
+    altValue: float | None
 
 
 class SearchResult(TypedDict):
@@ -159,6 +162,7 @@ def simplify(x: dict[str, Any], prefer_currency: str | None = None) -> dict[str,
     Shape an API item for clients:
       - Choose price/model based on prefer_currency when possible.
       - Ensure currencyCode is always set (fallback to prefer_currency).
+      - Add notes for missing or zero unit prices.
     """
     model, value, ccy = _pick_price(x, prefer_currency)
     if ccy is None and prefer_currency:
@@ -173,8 +177,17 @@ def simplify(x: dict[str, Any], prefer_currency: str | None = None) -> dict[str,
         "model": model,
         "value": value,
     }
+
+    # annotate missing or zero price
     if model is None or value is None:
         out["note"] = "no-unit-price-in-public-subset-or-currency"
+    else:
+        try:
+            if float(value) == 0.0:
+                out["note"] = "zero-price-or-free-tier-only"
+        except Exception:
+            out.setdefault("note", "no-unit-price-in-public-subset-or-currency")
+
     return out
 
 
@@ -313,6 +326,47 @@ def _norm_currency(cur: str | None, default: str = DEFAULT_CCY) -> str:
     return (cur or default).strip().upper()
 
 
+# -------------------- alt-currency enrichment --------------------
+
+
+async def _enrich_with_alt_currency_if_zero(
+    client: httpx.AsyncClient,
+    item: dict[str, Any],
+    part_number: str,
+    requested_currency: str,
+) -> dict[str, Any]:
+    """
+    If the requested-currency price is zero or missing, optionally fetch
+    an alternate-currency price (ALT_CCY) and attach it as alt* fields.
+    Does not change the main currency/value; only adds reference info.
+    """
+    try:
+        v = item.get("value", None)
+        is_zero_or_missing = (v is None)
+        if not is_zero_or_missing:
+            try:
+                is_zero_or_missing = (float(v) == 0.0)
+            except Exception:
+                is_zero_or_missing = True
+
+        if is_zero_or_missing and ALT_CCY and ALT_CCY != requested_currency:
+            detail_alt = await fetch(
+                client, API, {"partNumber": part_number, "currencyCode": ALT_CCY}
+            )
+            det_alt_items = detail_alt.get("items") or []
+            if det_alt_items:
+                alt = simplify(det_alt_items[0], ALT_CCY)
+                if alt.get("value") is not None:
+                    item["altCurrencyCode"] = alt.get("currencyCode")
+                    item["altModel"] = alt.get("model")
+                    item["altValue"] = alt.get("value")
+                    item.setdefault("note", "zero-in-requested-currency-see-alt")
+        return item
+    except Exception:
+        # If alternate fetch fails, keep original item untouched
+        return item
+
+
 # -------------------- PURE IMPLEMENTATIONS (test here primarily) --------------------
 
 
@@ -323,13 +377,8 @@ async def pricing_get_sku_impl(
     Fetch a SKU's price. If the SKU misses, fall back to fuzzy name search.
 
     Environment overrides (when args are omitted):
-      - currency: OCI_PRICING_DEFAULT_CCY or PROBE_CCY (default: 'USD')
+      - currency: OCI_PRICING_DEFAULT_CCY (default: 'USD')
       - max_pages: OCI_PRICING_MAX_PAGES (default: 6)
-
-    Inputs:
-      - part_number (str): e.g., "B88298"
-      - currency (str|None): ISO code, e.g., "USD"/"JPY"; if None, uses env default
-      - max_pages (int|None): pagination upper bound (1–10); if None, uses env default
 
     Returns (dict):
       - On SKU hit:
@@ -340,8 +389,6 @@ async def pricing_get_sku_impl(
           {"kind":"search","note":"not-found","query","currency","returned":0,"items":[]}
       - On HTTP failure:
           {"kind":"error","note":"http-error","error","input","currency"}
-
-    Note: cetools is a public subset; empty items can be expected periodically.
     """
     pn = (part_number or "").strip()
     cur = _norm_currency(currency, default=DEFAULT_CCY)
@@ -365,11 +412,14 @@ async def pricing_get_sku_impl(
                 if not out.get("currencyCode"):
                     out["currencyCode"] = cur
                 out["kind"] = "sku"
+                # Add alternate-currency reference when zero/missing
+                out = await _enrich_with_alt_currency_if_zero(client, out, pn, cur)
                 return out
 
             # 2) Fuzzy name search (bounded pages)
             all_items = [it async for it in iter_all(client, cur, pages)]
             hits = search_items(all_items, pn, limit=12, prefer_currency=cur)
+            # (Optional) we could enrich each hit too, but keep this lightweight for fallback path
             return {
                 "kind": "search",
                 "note": "matched-by-name" if hits else "not-found",
@@ -400,24 +450,8 @@ async def pricing_search_name_impl(
     Fuzzy product-name search (aliases/variants/space-insensitive, bounded paging).
 
     Environment overrides (when args are omitted):
-      - currency: OCI_PRICING_DEFAULT_CCY or PROBE_CCY (default: 'USD')
+      - currency: OCI_PRICING_DEFAULT_CCY (default: 'USD')
       - max_pages: OCI_PRICING_MAX_PAGES (default: 6)
-
-    Inputs:
-      - query (str): e.g., "Autonomous DB", "Object Storage"
-      - currency (str|None): ISO code, e.g., "USD"/"JPY"; if None, uses env default
-      - limit (int): number of results to return (1–20)
-      - max_pages (int|None): pagination upper bound (1–10); if None, uses env default
-      - require_priced (bool): if True, keep only items with model/value present
-
-    Returns (dict):
-      - {"kind":"search","query","currency","returned","items":[...], "note":"fuzzy search over the public price list subset"}
-      - On empty query: {"kind":"error","note":"empty-query","items":[]}
-      - On HTTP failure: {"kind":"error","note":"http-error","error","items":[]}
-
-    Behavior:
-      - search→simplify(..., prefer_currency) ensures items[*].currencyCode is always populated
-      - enrich via per-SKU fetch to fill pricing when possible; then filter if require_priced=True
     """
     q = (query or "").strip()
     if not q:
@@ -449,9 +483,19 @@ async def pricing_search_name_impl(
                         got = simplify(det_items[0], cur)
                         if not got.get("currencyCode"):
                             got["currencyCode"] = cur
+
+                    # Add alternate-currency reference when zero/missing
+                    got = await _enrich_with_alt_currency_if_zero(client, got, pn, cur)
+
                 if require_priced:
-                    if got.get("model") is not None and got.get("value") is not None:
-                        enriched.append(got)
+                    # Keep only items with positive value in the requested currency
+                    try:
+                        if got.get("model") is not None and got.get("value") is not None:
+                            if float(got["value"]) > 0.0:
+                                enriched.append(got)
+                    except Exception:
+                        # Non-numeric value -> drop when require_priced
+                        pass
                 else:
                     enriched.append(got)
 

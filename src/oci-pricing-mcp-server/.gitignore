@@ -1,17 +1,68 @@
-# Python cache
+# OS / VCS
+.DS_Store
+Thumbs.db
+.git/
+.git-*
+*.orig
+
+# Python bytecode
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Python build artifacts
-*.egg-info/
-*.ruff_cache/
-
-# Lock/venv files (optional)
-uv.lock
+# Virtual env
 .venv/
+venv/
 env/
+ENV/
+.conda/
+.mamba/
 
-# OS-specific
-.DS_Store
-Thumbs.db
+# Packaging / build
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+wheels/
+*.egg
+MANIFEST
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+.nox/
+.tox/
+
+# Type checking / linters
+.mypy_cache/
+.ruff_cache/
+.pyre/
+
+# Logs / temp
+*.log
+logs/
+*.pid
+*.tmp
+*.swp
+
+# Notebooks
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Secrets / local env
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+# Docker (repo 内で不要なローカル生成物)
+docker-compose.override.yml

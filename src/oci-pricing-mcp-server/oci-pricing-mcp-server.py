@@ -13,16 +13,27 @@ from __future__ import annotations
 
 import asyncio
 import difflib
+import os
 import re
 import unicodedata
 from typing import Any
+from typing import TypedDict
 
 import httpx
 from fastmcp import FastMCP
-from typing import TypedDict
 
 API = "https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/"
 mcp = FastMCP("oci-pricing-mcp")
+
+# -------------------- environment-driven defaults --------------------
+# These allow MCP client config to override defaults via "env".
+# Example (Claude Desktop):
+#   "env": { "OCI_PRICING_DEFAULT_CCY": "JPY", "OCI_PRICING_HTTP_TIMEOUT": "30" }
+DEFAULT_CCY = os.getenv("OCI_PRICING_DEFAULT_CCY", "USD").strip().upper()
+DEFAULT_MAX_PAGES = int(os.getenv("OCI_PRICING_MAX_PAGES", "6"))
+DEFAULT_TIMEOUT = float(os.getenv("OCI_PRICING_HTTP_TIMEOUT", "25"))
+_RETRIES = int(os.getenv("OCI_PRICING_RETRIES", "2"))  # total tries = 1 + _RETRIES
+_BACKOFF_BASE = float(os.getenv("OCI_PRICING_BACKOFF", "0.5"))  # seconds
 
 # Minimal alias seed; we avoid maintaining a huge dictionary.
 SEED: dict[str, str] = {
@@ -163,9 +174,6 @@ def simplify(x: dict[str, Any], prefer_currency: str | None = None) -> dict[str,
 # ---- fetch with light retry & exponential backoff ----
 # Retry only on transient cases: 5xx or network errors.
 
-_RETRIES = 2  # total tries = 1 (initial) + _RETRIES
-_BACKOFF_BASE = 0.5  # seconds (exponential: 0.5, 1.0, 2.0, ...)
-
 
 async def fetch(
     client: httpx.AsyncClient, url: str, params: dict[str, Any] | None = None
@@ -195,7 +203,9 @@ async def fetch(
             attempt += 1
 
 
-async def iter_all(client: httpx.AsyncClient, currency: str = "USD", max_pages: int = 6):
+async def iter_all(
+    client: httpx.AsyncClient, currency: str = DEFAULT_CCY, max_pages: int = DEFAULT_MAX_PAGES
+):
     """Follow APEX `links.rel == "next"` up to `max_pages` to avoid over-fetching/latency."""
     url, params = API, {"currencyCode": currency}
     for _ in range(max_pages):
@@ -292,7 +302,7 @@ def _clamp(val: int, lo: int, hi: int, default: int) -> int:
     return max(lo, min(hi, v))
 
 
-def _norm_currency(cur: str | None, default: str = "USD") -> str:
+def _norm_currency(cur: str | None, default: str = DEFAULT_CCY) -> str:
     return (cur or default).strip().upper()
 
 
@@ -300,17 +310,21 @@ def _norm_currency(cur: str | None, default: str = "USD") -> str:
 
 
 async def pricing_get_sku_impl(
-    part_number: str, currency: str = "USD", max_pages: int = 6
+    part_number: str, currency: str | None = None, max_pages: int | None = None
 ) -> dict[str, Any]:
     """
     Fetch a SKU's price. If the SKU misses, fall back to fuzzy name search.
 
+    Environment overrides (when args are omitted):
+      - currency: OCI_PRICING_DEFAULT_CCY (default: 'USD')
+      - max_pages: OCI_PRICING_MAX_PAGES (default: 6)
+
     Inputs:
       - part_number (str): e.g., "B88298"
-      - currency (str): ISO currency code, e.g., "USD"/"JPY" (case-insensitive)
-      - max_pages (int): pagination upper bound (1–10)
+      - currency (str|None): ISO code, e.g., "USD"/"JPY"; if None, uses env default
+      - max_pages (int|None): pagination upper bound (1–10); if None, uses env default
 
-    Returns (JSON/dict):
+    Returns (dict):
       - On SKU hit:
           {"kind":"sku", partNumber, displayName, metricName, serviceCategory, currencyCode, model, value}
       - On name fallback:
@@ -323,14 +337,19 @@ async def pricing_get_sku_impl(
     Note: cetools is a public subset; empty items can be expected periodically.
     """
     pn = (part_number or "").strip()
-    cur = _norm_currency(currency)
-    pages = _clamp(max_pages, lo=1, hi=10, default=6)
+    cur = _norm_currency(currency, default=DEFAULT_CCY)
+    pages = _clamp(
+        max_pages if max_pages is not None else DEFAULT_MAX_PAGES,
+        lo=1,
+        hi=10,
+        default=DEFAULT_MAX_PAGES,
+    )
 
     if not pn:
         return {"kind": "error", "note": "empty-part-number", "items": []}
 
     try:
-        async with httpx.AsyncClient(timeout=25) as client:
+        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
             # 1) Direct SKU
             data = await fetch(client, API, {"partNumber": pn, "currencyCode": cur})
             items = data.get("items") or []
@@ -365,19 +384,23 @@ async def pricing_get_sku_impl(
 
 async def pricing_search_name_impl(
     query: str,
-    currency: str = "USD",
+    currency: str | None = None,
     limit: int = 12,
-    max_pages: int = 6,
+    max_pages: int | None = None,
     require_priced: bool = False,
 ) -> dict[str, Any]:
     """
     Fuzzy product-name search (aliases/variants/space-insensitive, bounded paging).
 
+    Environment overrides (when args are omitted):
+      - currency: OCI_PRICING_DEFAULT_CCY (default: 'USD')
+      - max_pages: OCI_PRICING_MAX_PAGES (default: 6)
+
     Inputs:
       - query (str): e.g., "Autonomous DB", "Object Storage"
-      - currency (str): ISO currency code, e.g., "USD"/"JPY" (case-insensitive)
+      - currency (str|None): ISO code, e.g., "USD"/"JPY"; if None, uses env default
       - limit (int): number of results to return (1–20)
-      - max_pages (int): pagination upper bound (1–10)
+      - max_pages (int|None): pagination upper bound (1–10); if None, uses env default
       - require_priced (bool): if True, keep only items with model/value present
 
     Returns (dict):
@@ -393,12 +416,17 @@ async def pricing_search_name_impl(
     if not q:
         return {"kind": "error", "note": "empty-query", "items": []}
 
-    cur = _norm_currency(currency)
+    cur = _norm_currency(currency, default=DEFAULT_CCY)
     lim = _clamp(limit, lo=1, hi=20, default=12)
-    pages = _clamp(max_pages, lo=1, hi=10, default=6)
+    pages = _clamp(
+        max_pages if max_pages is not None else DEFAULT_MAX_PAGES,
+        lo=1,
+        hi=10,
+        default=DEFAULT_MAX_PAGES,
+    )
 
     try:
-        async with httpx.AsyncClient(timeout=25) as client:
+        async with httpx.AsyncClient(timeout=DEFAULT_TIMEOUT) as client:
             items = [it async for it in iter_all(client, cur, pages)]
             hits = search_items(items, q, lim, prefer_currency=cur)
 
@@ -437,11 +465,12 @@ async def pricing_search_name_impl(
 
 @mcp.tool()
 async def pricing_get_sku(
-    part_number: str, currency: str = "USD", max_pages: int = 6
+    part_number: str, currency: str | None = None, max_pages: int | None = None
 ) -> dict[str, Any]:
     """
     Thin wrapper that delegates to pricing_get_sku_impl.
     Returns a dict; FastMCP will serialize for the client.
+    If currency/max_pages are omitted, environment defaults apply.
     """
     return await pricing_get_sku_impl(
         part_number=part_number, currency=currency, max_pages=max_pages
@@ -451,14 +480,15 @@ async def pricing_get_sku(
 @mcp.tool()
 async def pricing_search_name(
     query: str,
-    currency: str = "USD",
+    currency: str | None = None,
     limit: int = 12,
-    max_pages: int = 6,
+    max_pages: int | None = None,
     require_priced: bool = False,
 ) -> dict[str, Any]:
     """
     Thin wrapper that delegates to pricing_search_name_impl.
     Returns a dict; FastMCP will serialize for the client.
+    If currency/max_pages are omitted, environment defaults apply.
     """
     return await pricing_search_name_impl(
         query=query,

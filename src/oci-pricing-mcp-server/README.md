@@ -3,9 +3,14 @@
 A Python-based MCP (Model Context Protocol) server that fetches **Oracle Cloud Infrastructure (OCI)** service pricing from Oracle’s public **Price List API (cetools)**.
 This project is a **proof of concept** for MCP integrations. While not production-hardened, it is **stateless, credential-free, and suitable for day-to-day internal use** in MCP clients.
 
+### ⚠️ Important pricing disclaimer
+
+* **Informational only** — responses are **not quotes or invoices**. Pricing can change and may vary by **region**, **commitment/discounts**, and **tenancy-specific terms**. Taxes and surcharges are not included.
+* The Oracle **Price List API** is a **public subset**. Some items may return **`0.00`** (e.g., free-tier-only or missing localization). The server attempts to flag such cases with `note: "zero-price-or-free-tier-only"` when detected, but **always verify** in the OCI Console or official materials before making decisions.
+* This server **does not** know your account’s negotiated pricing and **does not** perform currency conversion; it requests the currency you specify (or the configured default) and surfaces what the API returns.
+
 **Oracle Price List API reference:**
 [https://docs.oracle.com/en-us/iaas/Content/GSG/Tasks/signingup\_topic-Estimating\_Costs.htm#accessing\_list\_pricing](https://docs.oracle.com/en-us/iaas/Content/GSG/Tasks/signingup_topic-Estimating_Costs.htm#accessing_list_pricing)
-
 
 ## Overview
 
@@ -15,6 +20,7 @@ This project is a **proof of concept** for MCP integrations. While not productio
 * **Fuzzy-search** pricing by **product name or alias**
 * Return **consistent JSON** suitable for MCP clients
 
+If you omit the currency when asking (e.g., “List Object Storage prices”), the server uses a **default currency**, configurable via environment variables (see **Environment Variables**).
 
 ## Features
 
@@ -35,7 +41,8 @@ This project is a **proof of concept** for MCP integrations. While not productio
   * “**Compute** pricing in **USD**, **priced items only**.”
 
 * **Structured Responses**
-  Always includes `currencyCode` (falls back to the requested/default currency) and a `kind` field: `"sku"`, `"search"`, or `"error"`.
+  Responses include `currencyCode` (falls back to the requested/default currency) and a `kind` field: `"sku"`, `"search"`, or `"error"`.
+  Items that appear **free-tier-only / zero-priced** may include `note: "zero-price-or-free-tier-only"`.
 
   **Example prompts**
 
@@ -57,13 +64,11 @@ This project is a **proof of concept** for MCP integrations. While not productio
 * **Network robustness**: light retry with exponential backoff and request timeout.
 * **Currency handling**: normalizes ISO codes and ensures `currencyCode` is present (falls back to the requested or default currency).
 
-
 ## Prerequisites
 
 * Python **3.11+**
 * Internet access (calls Oracle public API)
 * Dependencies via `pyproject.toml` / `uv.lock` or `pip`
-
 
 ## Installation
 
@@ -92,8 +97,6 @@ python oci-pricing-mcp-server.py
 uv run python oci-pricing-mcp-server.py
 ```
 
-If you omit the currency in your prompt (e.g., “List Object Storage prices”), the server uses its **default currency**, which you can set via environment variables (see below).
-
 ## MCP Server Configuration
 
 Exact steps depend on your MCP client. Typical stdio setup (example: **Claude Desktop on Windows**):
@@ -114,20 +117,18 @@ Exact steps depend on your MCP client. Typical stdio setup (example: **Claude De
 Step-by-step guide (Claude Desktop: add local MCP servers):
 [https://support.anthropic.com/en/articles/9793354-connect-local-mcp-servers-to-claude-desktop](https://support.anthropic.com/en/articles/9793354-connect-local-mcp-servers-to-claude-desktop)
 
-You can also pass environment variables (see **Environment Variables**).
-
 ## Environment Variables
 
-These variables control **runtime defaults and behavior** (not required, but useful):
+These variables control **runtime defaults and behavior** (they are **optional**):
 
 * `OCI_PRICING_DEFAULT_CCY` – default currency code (e.g., `JPY`; default: `USD`)
 * `OCI_PRICING_MAX_PAGES` – page-follow upper bound for listing (default: `6`, clamped to `1–10`)
 * `OCI_PRICING_HTTP_TIMEOUT` – HTTP timeout in seconds (default: `25`)
 * `OCI_PRICING_RETRIES` – transient retry count (default: `2`; total tries = `1 + retries`)
 * `OCI_PRICING_BACKOFF` – exponential backoff base in seconds (default: `0.5`)
-* `PROBE_CCY` – **convenience fallback** for default currency (originally for tests; recognized by the server as a fallback to `OCI_PRICING_DEFAULT_CCY`)
+* `PROBE_CCY` – **convenience fallback** for default currency (originally for tests; the server checks this as a fallback to `OCI_PRICING_DEFAULT_CCY`)
 
-Test-only helpers (used by functional tests; not needed for normal use):
+Test-only helpers (used by functional tests; **not needed** for normal use):
 
 * `PROBE_SKU_OK` – known-good SKU (default: `B93113`)
 * `PROBE_SKU_MISSING` – likely missing SKU (default: `B88298`)
@@ -169,6 +170,7 @@ Test-only helpers (used by functional tests; not needed for normal use):
    * Aliases (e.g., `adb→autonomous database`, `oss→object storage`, `oke→kubernetes engine`)
    * `limit` **clamped to ≤20**; `max_pages` **clamped to 1–10**
    * `require_priced=True` → keep only items with `model` + `value`
+   * Items with `value == 0` may include `note: "zero-price-or-free-tier-only"` if detected.
 
 3. **`ping()`**
    Health check; returns `"ok"`.

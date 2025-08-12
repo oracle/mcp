@@ -3,15 +3,16 @@ Copyright (c) 2025, Oracle and/or its affiliates.
 Licensed under the Universal Permissive License v1.0 as shown at http://oss.oracle.com/licenses/upl.
 """
 
-import unittest
-import json
-import sys
-import os
-import importlib.util
-import warnings
 import asyncio
+import importlib.util
+import json
+import os
+import sys
+import unittest
+import warnings
+from collections.abc import Callable
 from types import MethodType
-from typing import Any, Dict, Tuple, Callable
+from typing import Any
 
 
 class TestOciPricingMcpServer(unittest.TestCase):
@@ -94,7 +95,7 @@ class TestOciPricingMcpServer(unittest.TestCase):
                 others = []
                 for el in res:
                     if hasattr(el, "text"):
-                        texts.append(getattr(el, "text"))
+                        texts.append(el.text)
                     elif isinstance(el, dict) and "text" in el:
                         texts.append(el["text"])
                     else:
@@ -120,7 +121,7 @@ class TestOciPricingMcpServer(unittest.TestCase):
             # 1) content を優先
             if hasattr(res, "content"):
                 try:
-                    return cls._unwrap_tool_result(getattr(res, "content"), _depth + 1)
+                    return cls._unwrap_tool_result(res.content, _depth + 1)
                 except Exception:
                     pass
             # 2) data/result/output/value も試す
@@ -131,7 +132,7 @@ class TestOciPricingMcpServer(unittest.TestCase):
                     except Exception:
                         continue
             # 3) to_dict 経由
-            if hasattr(res, "to_dict") and callable(getattr(res, "to_dict")):
+            if hasattr(res, "to_dict") and callable(res.to_dict):
                 try:
                     d = res.to_dict()
                     if isinstance(d, dict) and "content" in d:
@@ -143,32 +144,41 @@ class TestOciPricingMcpServer(unittest.TestCase):
         # TextContent 単体なら text 抜き出し
         if hasattr(res, "text"):
             try:
-                return cls._maybe_json_load(getattr(res, "text"))
+                return cls._maybe_json_load(res.text)
             except Exception:
                 pass
 
         # 最後の手段：そのまま
         return res
 
-    def _resolve_callable(self, obj) -> Tuple[str, Callable]:
+    def _resolve_callable(self, obj) -> tuple[str, Callable]:
         """
         どう呼ぶかを判定して (mode, fn) を返す。
         mode:
-          - "plain"   : fn(*args, **kwargs)
-          - "toolrun" : fn(arguments_dict)  # FunctionTool.run(arguments)
+          - "plain"   : fn(*args, **kwargs)         （元の関数 or ラッパが素直に受ける）
+          - "toolrun" : fn(arguments_dict)          （FunctionTool.run(arguments)）
+        優先順位:
+          1) FunctionTool.run（確実にツール実行）
+          2) 元関数らしき参照（func/_func/__wrapped__/call/invoke）
+          3) __call__ は誤検出しやすいので最後の最後まで採用しない
         """
-        # 1) 元関数寄りの属性を優先（kwargs を素直に渡せる可能性を最大化）
-        for attr in ("func", "_func", "__wrapped__", "__call__", "call", "invoke"):
-            cand = getattr(obj, attr, None)
-            if callable(cand):
-                return "plain", cand
-
-        # 2) FunctionTool.run を検出
+        # 1) FunctionTool.run を最優先で検出
         run_cand = getattr(obj, "run", None)
         if callable(run_cand) and self._is_method_of(obj, run_cand):
             return "toolrun", run_cand
 
-        # 3) フォールバック
+        # 2) 元関数寄りの属性を優先（kwargs を素直に渡せる可能性を最大化）
+        for attr in ("func", "_func", "__wrapped__", "call", "invoke"):
+            cand = getattr(obj, attr, None)
+            if callable(cand):
+                return "plain", cand
+
+        # 3) __call__ は最後に回す（FunctionTool の __call__ は引数形が異なることが多い）
+        call_cand = getattr(obj, "__call__", None)
+        if callable(call_cand):
+            return "plain", call_cand
+
+        # 4) フォールバック
         if callable(obj):
             return "plain", obj
 
@@ -238,7 +248,7 @@ class TestOciPricingMcpServer(unittest.TestCase):
 
         print(f"About to call pricing_get_sku('{self.probe_sku_ok}', '{self.ccy_jpy}')")
         try:
-            out: Dict[str, Any] = self._call(
+            out: dict[str, Any] = self._call(
                 "pricing_get_sku",
                 part_number=self.probe_sku_ok,
                 currency=self.ccy_jpy,
@@ -251,6 +261,10 @@ class TestOciPricingMcpServer(unittest.TestCase):
             self.skipTest(f"Unexpected response type: {type(out)}")
             return
 
+        # kind があれば sku を想定（無ければ従来どおりスルー）
+        if "kind" in out:
+            self.assertIn(out["kind"], ("sku", "search", "error"))
+
         if "note" in out and out.get("note") in {"not-found"}:
             self.skipTest(f"SKU appears missing in public subset: {out}")
             return
@@ -262,8 +276,10 @@ class TestOciPricingMcpServer(unittest.TestCase):
         self.assertIsNotNone(out.get("value"))
         self.assertGreater(float(out.get("value", 0)), 0.0)
 
-        print(f"OK: {out.get('partNumber')} {out.get('displayName')} -> "
-              f"{out.get('model')} {out.get('value')} {out.get('currencyCode')}")
+        print(
+            f"OK: {out.get('partNumber')} {out.get('displayName')} -> "
+            f"{out.get('model')} {out.get('value')} {out.get('currencyCode')}"
+        )
 
     def test_get_sku_missing_handles_not_found_or_name_fallback(self):
         """Missing SKU should return not-found or matched-by-name gracefully."""
@@ -282,6 +298,10 @@ class TestOciPricingMcpServer(unittest.TestCase):
             return
 
         self.assertIsInstance(out, dict)
+        # kind があれば search/error を想定
+        if "kind" in out:
+            self.assertIn(out["kind"], ("search", "error", "sku"))
+
         note = out.get("note")
         if note is None and out.get("partNumber"):
             print("Direct SKU unexpectedly found (acceptable):", out)
@@ -300,8 +320,10 @@ class TestOciPricingMcpServer(unittest.TestCase):
         if not hasattr(self.module, "pricing_search_name"):
             self.skipTest("pricing_search_name not found in module")
 
-        print(f"About to call pricing_search_name(query='{self.query_compute}', "
-              f"currency='{self.ccy_jpy}', require_priced=True)")
+        print(
+            f"About to call pricing_search_name(query='{self.query_compute}', "
+            f"currency='{self.ccy_jpy}', require_priced=True)"
+        )
         try:
             out = self._call(
                 "pricing_search_name",
@@ -316,6 +338,8 @@ class TestOciPricingMcpServer(unittest.TestCase):
             return
 
         self.assertIsInstance(out, dict)
+        if "kind" in out:
+            self.assertEqual(out["kind"], "search")
         self.assertEqual(out.get("query"), self.query_compute)
         self.assertEqual(out.get("currency"), self.ccy_jpy)
         self.assertIn("items", out)
@@ -340,7 +364,9 @@ class TestOciPricingMcpServer(unittest.TestCase):
             self.skipTest("pricing_search_name not found in module")
 
         query = "Object Storage"
-        print(f"About to call pricing_search_name(query='{query}', currency='{self.ccy_jpy}', require_priced=False)")
+        print(
+            f"About to call pricing_search_name(query='{query}', currency='{self.ccy_jpy}', require_priced=False)"
+        )
         try:
             out = self._call(
                 "pricing_search_name",
@@ -355,6 +381,9 @@ class TestOciPricingMcpServer(unittest.TestCase):
             return
 
         self.assertIsInstance(out, dict)
+        if "kind" in out:
+            self.assertEqual(out["kind"], "search")
+
         items = out.get("items") or []
         if len(items) == 0:
             self.skipTest("No items returned (likely transient)")
@@ -372,7 +401,9 @@ class TestOciPricingMcpServer(unittest.TestCase):
             self.skipTest("pricing_search_name not found in module")
 
         big_limit = 100
-        print(f"About to call pricing_search_name(query='Compute', currency='USD', limit={big_limit})")
+        print(
+            f"About to call pricing_search_name(query='Compute', currency='USD', limit={big_limit})"
+        )
         try:
             out = self._call(
                 "pricing_search_name",
@@ -387,6 +418,8 @@ class TestOciPricingMcpServer(unittest.TestCase):
             return
 
         self.assertIsInstance(out, dict)
+        if "kind" in out:
+            self.assertEqual(out["kind"], "search")
         returned = int(out.get("returned", 0))
         self.assertLessEqual(returned, 20, f"returned should be <= 20 but was {returned}")
         print(f"Returned={returned} (<=20)")
@@ -403,6 +436,9 @@ class TestOciPricingMcpServer(unittest.TestCase):
             currency="USD",
         )
         self.assertIsInstance(out, dict)
+        # kind は error を期待
+        if "kind" in out:
+            self.assertEqual(out["kind"], "error")
         self.assertEqual(out.get("note"), "empty-query")
         self.assertEqual(out.get("items"), [])
         print("Empty query handled correctly")
@@ -415,7 +451,9 @@ class TestOciPricingMcpServer(unittest.TestCase):
 
 if __name__ == "__main__":
     print("Starting oci-pricing-mcp-server functional tests")
-    print("Env overrides: PRICING_SERVER_FILENAME, PROBE_SKU_OK, PROBE_SKU_MISSING, PROBE_CCY, PROBE_QUERY")
+    print(
+        "Env overrides: PRICING_SERVER_FILENAME, PROBE_SKU_OK, PROBE_SKU_MISSING, PROBE_CCY, PROBE_QUERY"
+    )
 
     if len(sys.argv) > 1:
         test_name = sys.argv[1]

@@ -1,14 +1,34 @@
+# VCS / OS
 .git
+.gitignore
+.DS_Store
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 *.pyd
 *.egg-info/
-dist/
-build/
+.eggs/
 .venv/
-.env
+venv/
+env/
+pip-wheel-metadata/
+
+# Tool caches
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
-.DS_Store
+.cache/
+
+# Build artifacts
+build/
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# Secrets & local env
+.env
+.env.*

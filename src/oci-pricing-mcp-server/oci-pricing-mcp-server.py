@@ -15,7 +15,7 @@ import asyncio
 import difflib
 import re
 import unicodedata
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from typing_extensions import TypedDict
 
 import httpx
@@ -48,7 +48,7 @@ SEED: Dict[str, str] = {
     "dns zone": "dns zone management",
 }
 
-# -------------------- types (thick only where useful) --------------------
+# -------------------- types (only detailed where useful) --------------------
 
 
 class SimplifiedItem(TypedDict, total=False):
@@ -73,7 +73,7 @@ class SearchResult(TypedDict):
 
 
 def norm(s: str) -> str:
-    """Normalize text for matching: NFKC, casefold, punctuation→space, collapse whitespace."""
+    """Normalize text for matching: NFKC, casefold, convert punctuation to spaces, collapse whitespace."""
     s = unicodedata.normalize("NFKC", s).casefold()
     return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", s)).strip()
 
@@ -84,26 +84,77 @@ def nospace(s: str) -> str:
 
 
 def acronym(s: str) -> str:
-    """Build an acronym: 'autonomous database' → 'ad' (used as a weak hint only)."""
+    """Build an acronym: 'autonomous database' → 'ad' (used only as a weak hint)."""
     return "".join(w[0] for w in norm(s).split() if w)
 
 
 # -------------------- API shaping --------------------
 
+def _iter_price_blocks(x: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Price blocks in cetools have two formats:
+      1) prices: [{currencyCode, prices:[{model,value}]}]
+      2) currencyCodeLocalizations: [{currencyCode, prices:[{model,value}]}]
+    Both have the same internal structure, so combine them and return.
+    """
+    blocks = []
+    if isinstance(x.get("prices"), list):
+        blocks += x["prices"]
+    if isinstance(x.get("currencyCodeLocalizations"), list):
+        blocks += x["currencyCodeLocalizations"]
+    return blocks
 
-def simplify(x: Dict[str, Any]) -> SimplifiedItem:
-    """Return only the first currency block / first price model (MVP simplification)."""
-    p = (x.get("prices") or [{}])[0]
-    pv = (p.get("prices") or [{}])[0]
-    return {
+
+def _pick_price(x: Dict[str, Any], prefer_currency: str | None = None) -> Tuple[Optional[str], Optional[float], Optional[str]]:
+    """
+    Supports both price block formats (prices / currencyCodeLocalizations),
+    prioritizing prefer_currency when returning (model, value, currencyCode).
+    """
+    blocks = _iter_price_blocks(x)
+
+    # Search for the preferred currency
+    if prefer_currency:
+        for b in blocks:
+            if (b or {}).get("currencyCode") == prefer_currency:
+                for pv in (b.get("prices") or []):
+                    model, value = pv.get("model"), pv.get("value")
+                    if model is not None and value is not None:
+                        return model, value, b.get("currencyCode")
+
+    # If not found for the preferred currency, return the first available
+    for b in blocks:
+        for pv in (b.get("prices") or []):
+            model, value = pv.get("model"), pv.get("value")
+            if model is not None and value is not None:
+                return model, value, b.get("currencyCode")
+
+    return None, None, None
+
+
+def simplify(x: Dict[str, Any], prefer_currency: str | None = None) -> Dict[str, Any]:
+    """
+    Simplify the API item for client use.
+    - Select price with prefer_currency prioritized
+    - If the API does not return a currency code, fall back to prefer_currency
+      to ensure currencyCode is always populated
+    """
+    model, value, ccy = _pick_price(x, prefer_currency)
+    # Force currency fallback (fill in prefer_currency if ccy is None)
+    if ccy is None and prefer_currency:
+        ccy = prefer_currency
+
+    out: Dict[str, Any] = {
         "partNumber": x.get("partNumber"),
         "displayName": x.get("displayName"),
         "metricName": x.get("metricName"),
         "serviceCategory": x.get("serviceCategory"),
-        "currencyCode": p.get("currencyCode"),
-        "model": pv.get("model"),
-        "value": pv.get("value"),
+        "currencyCode": ccy,
+        "model": model,
+        "value": value,
     }
+    if model is None or value is None:
+        out["note"] = "no-unit-price-in-public-subset-or-currency"
+    return out
 
 
 # ---- fetch with light retry & exponential backoff ----
@@ -116,12 +167,12 @@ _BACKOFF_BASE = 0.5  # seconds (exponential: 0.5, 1.0, 2.0, ...)
 async def fetch(
     client: httpx.AsyncClient, url: str, params: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
-    """GET JSON; non-200 raises; on JSON parse failure return {} safely. Retries transient errors."""
+    """GET JSON; raise for non-200; on JSON parse failure return {} safely. Retry transient errors."""
     attempt = 0
     while True:
         try:
             r = await client.get(url, params=params, headers={"Accept": "application/json"})
-            # retry on 5xx
+            # Retry on 5xx
             if 500 <= r.status_code < 600 and attempt < _RETRIES:
                 raise httpx.HTTPStatusError("server error", request=r.request, response=r)
             r.raise_for_status()
@@ -137,7 +188,7 @@ async def fetch(
 
 
 async def iter_all(client: httpx.AsyncClient, currency: str = "USD", max_pages: int = 6):
-    """Follow APEX `links.rel == "next"` up to `max_pages` to avoid over-fetching/latency."""
+    """Follow APEX `links.rel == "next"` up to max_pages to avoid over-fetching/latency."""
     url, params = API, {"currencyCode": currency}
     for _ in range(max_pages):
         data = await fetch(client, url, params)
@@ -151,44 +202,49 @@ async def iter_all(client: httpx.AsyncClient, currency: str = "USD", max_pages: 
 
 # -------------------- fuzzy search --------------------
 
-
-def search_items(items: List[Dict[str, Any]], query: str, limit: int = 12) -> List[SimplifiedItem]:
+def search_items(
+    items: List[Dict[str, Any]],
+    query: str,
+    limit: int = 12,
+    prefer_currency: Optional[str] = None,
+) -> List[SimplifiedItem]:
     """
     Fuzzy name search:
-    - Short queries (3–4 chars): word-boundary matches only (reduce false hits; e.g., 'ADB').
+    - Short queries (3–4 chars): match on word boundaries only (reduces false hits; e.g., 'ADB').
     - Long queries (>=5): space-insensitive substring OR similarity (≥0.90).
-    - Expand aliases only when query == alias or query == full name or query contains full name.
-    - If query intends 'Autonomous Database', require both 'autonomous' and 'database'.
+    - Expand aliases only when query == alias or query == full name or query contains the full name.
+    - If the query indicates 'Autonomous Database', require both 'autonomous' and 'database'.
+    - Pass results through simplify(..., prefer_currency) so items[*].currencyCode is always set.
     """
     qn = norm(query)
 
-    # ---- intent: Autonomous Database? ----
+    # Detect intent: Autonomous Database?
     q_is_adb_intent = qn in {"adb", "autonomous db", "autonomousdb"}
 
-    # base variants
+    # Base variants
     variants = {qn, nospace(qn), acronym(qn)}
 
-    # alias expansion (strict): do NOT expand when the only reason is "short alias in query"
+    # Alias expansion (strict)
     for short, full in SEED.items():
         sn, fn = norm(short), norm(full)
         if qn == sn or qn == fn or fn in qn:
             variants.update({sn, nospace(sn), fn, nospace(fn)})
 
-    # drop too-short
+    # Drop too-short variants
     variants = {v for v in variants if len(v) >= 3}
 
     res: List[SimplifiedItem] = []
     for it in items:
-        # text fields we search against
+        # Fields to search against
         fields = [str(it.get(k, "")) for k in ("displayName", "serviceCategory", "metricName", "partNumber")]
         text = " ".join(fields)
         tn = norm(text)
         tns = nospace(tn)
 
-        # ----- ADB 意図なら、"autonomous" と "database" を必須にする -----
+        # If intent is ADB, require both terms
         if q_is_adb_intent:
             if not (re.search(r"\bautonomous\b", tn) and re.search(r"\bdatabase\b", tn)):
-                continue  # ここで早期除外
+                continue
 
         short = [v for v in variants if 3 <= len(v) <= 4]
         long  = [v for v in variants if len(v) >= 5]
@@ -199,7 +255,7 @@ def search_items(items: List[Dict[str, Any]], query: str, limit: int = 12) -> Li
             or any(difflib.SequenceMatcher(a=v, b=tns).ratio() >= 0.90 for v in long)
         )
         if hit:
-            sm = simplify(it)
+            sm = simplify(it, prefer_currency)
             if sm not in res:
                 res.append(sm)
                 if len(res) >= limit:
@@ -209,8 +265,8 @@ def search_items(items: List[Dict[str, Any]], query: str, limit: int = 12) -> Li
 
 # -------------------- tiny utils --------------------
 
-
 def _clamp(val: int, lo: int, hi: int, default: int) -> int:
+    """Clamp val to [lo, hi], using default if conversion fails."""
     try:
         v = int(val)
     except Exception:
@@ -219,16 +275,16 @@ def _clamp(val: int, lo: int, hi: int, default: int) -> int:
 
 
 def _norm_currency(cur: Optional[str], default: str = "USD") -> str:
+    """Normalize currency code (uppercased, default if None/empty)."""
     return (cur or default).strip().upper()
 
 
 # -------------------- MCP tools --------------------
 
-
 @mcp.tool()
 async def pricing_get_sku(part_number: str, currency: str = "USD", max_pages: int = 6) -> Dict[str, Any]:
     """
-    Fetch a SKU's price. If the SKU misses, fall back to fuzzy name search.
+    Fetch a SKU's price. If the SKU lookup misses, fall back to fuzzy name search.
 
     Inputs:
       - part_number (str): e.g., "B88298"
@@ -241,6 +297,9 @@ async def pricing_get_sku(part_number: str, currency: str = "USD", max_pages: in
       - On not found:     {"note":"not-found","query","currency","returned":0,"items":[]}
       - On HTTP failure:  {"note":"http-error","error","input","currency"}
       - Info: cetools is a public subset; empty items can be expected.
+
+    Regarding currencyCode:
+      - No matter the return path, items[*].currencyCode (or top-level out.currencyCode) is always populated.
     """
     pn = (part_number or "").strip()
     cur = _norm_currency(currency)
@@ -255,15 +314,14 @@ async def pricing_get_sku(part_number: str, currency: str = "USD", max_pages: in
             data = await fetch(client, API, {"partNumber": pn, "currencyCode": cur})
             items = data.get("items") or []
             if items:
-                out = simplify(items[0])
-                # Normalize currencyCode in output if API omitted it
+                out = simplify(items[0], cur)
                 if not out.get("currencyCode"):
                     out["currencyCode"] = cur
                 return out
 
             # 2) Fuzzy name search (bounded pages)
             all_items = [it async for it in iter_all(client, cur, pages)]
-            hits = search_items(all_items, pn)
+            hits = search_items(all_items, pn, limit=12, prefer_currency=cur)
             return {
                 "note": "matched-by-name" if hits else "not-found",
                 "query": pn,
@@ -278,7 +336,11 @@ async def pricing_get_sku(part_number: str, currency: str = "USD", max_pages: in
 
 @mcp.tool()
 async def pricing_search_name(
-    query: str, currency: str = "USD", limit: int = 12, max_pages: int = 6
+    query: str,
+    currency: str = "USD",
+    limit: int = 12,
+    max_pages: int = 6,
+    require_priced: bool = False,
 ) -> Dict[str, Any]:
     """
     Fuzzy product-name search (aliases/variants/space-insensitive, bounded paging).
@@ -288,11 +350,16 @@ async def pricing_search_name(
       - currency (str): ISO currency code, e.g., "USD"/"JPY" (case-insensitive)
       - limit (int): number of results to return (1–20)
       - max_pages (int): pagination upper bound (1–10)
+      - require_priced (bool): If True, only return items with a unit price (model/value)
 
     Returns (JSON):
-      - {"query","currency","returned", "items":[...], "note":"fuzzy search over the public price list subset"}
+      - {"query","currency","returned","items":[...], "note":"fuzzy search over the public price list subset"}
       - On empty query: {"note":"empty-query","items":[]}
       - On HTTP failure: {"note":"http-error","error","items":[]}
+
+    Behavior:
+      - search → simplify(..., prefer_currency) ensures items[*].currencyCode is always set
+      - During enrich, SKU details are fetched again and passed through simplify(..., prefer_currency) to ensure currency is filled.
     """
     q = (query or "").strip()
     if not q:
@@ -305,13 +372,32 @@ async def pricing_search_name(
     try:
         async with httpx.AsyncClient(timeout=25) as client:
             items = [it async for it in iter_all(client, cur, pages)]
-            hits = search_items(items, q, lim)
+            hits = search_items(items, q, lim, prefer_currency=cur)
+
+            # ---- Price enrichment via SKU endpoint ----
+            enriched: List[Dict[str, Any]] = []
+            for sm in hits:
+                pn = sm.get("partNumber")
+                got = sm
+                if pn:
+                    detail = await fetch(client, API, {"partNumber": pn, "currencyCode": cur})
+                    det_items = detail.get("items") or []
+                    if det_items:
+                        got = simplify(det_items[0], cur)
+                        if not got.get("currencyCode"):
+                            got["currencyCode"] = cur
+                if require_priced:
+                    if got.get("model") is not None and got.get("value") is not None:
+                        enriched.append(got)
+                else:
+                    enriched.append(got)
+
             return {
                 "query": q,
                 "currency": cur,
-                "returned": len(hits),
-                "items": hits,
-                "note": "fuzzy search over the public price list subset",
+                "returned": len(enriched),
+                "items": enriched,
+                "note": "fuzzy search; per-item price enriched via SKU endpoint",
             }
     except httpx.HTTPError as e:
         return {"note": "http-error", "error": str(e), "items": []}

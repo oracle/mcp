@@ -29,7 +29,14 @@ mcp = FastMCP("oci-pricing-mcp")
 # These allow MCP client config to override defaults via "env".
 # Example (Claude Desktop):
 #   "env": { "OCI_PRICING_DEFAULT_CCY": "JPY", "OCI_PRICING_HTTP_TIMEOUT": "30" }
-DEFAULT_CCY = os.getenv("OCI_PRICING_DEFAULT_CCY", "USD").strip().upper()
+#
+# NOTE: For convenience, we also accept PROBE_CCY (originally test-only) as a fallback.
+DEFAULT_CCY = (
+    os.getenv("OCI_PRICING_DEFAULT_CCY")
+    or os.getenv("PROBE_CCY")
+    or "USD"
+).strip().upper()
+
 DEFAULT_MAX_PAGES = int(os.getenv("OCI_PRICING_MAX_PAGES", "6"))
 DEFAULT_TIMEOUT = float(os.getenv("OCI_PRICING_HTTP_TIMEOUT", "25"))
 _RETRIES = int(os.getenv("OCI_PRICING_RETRIES", "2"))  # total tries = 1 + _RETRIES
@@ -316,7 +323,7 @@ async def pricing_get_sku_impl(
     Fetch a SKU's price. If the SKU misses, fall back to fuzzy name search.
 
     Environment overrides (when args are omitted):
-      - currency: OCI_PRICING_DEFAULT_CCY (default: 'USD')
+      - currency: OCI_PRICING_DEFAULT_CCY or PROBE_CCY (default: 'USD')
       - max_pages: OCI_PRICING_MAX_PAGES (default: 6)
 
     Inputs:
@@ -393,7 +400,7 @@ async def pricing_search_name_impl(
     Fuzzy product-name search (aliases/variants/space-insensitive, bounded paging).
 
     Environment overrides (when args are omitted):
-      - currency: OCI_PRICING_DEFAULT_CCY (default: 'USD')
+      - currency: OCI_PRICING_DEFAULT_CCY or PROBE_CCY (default: 'USD')
       - max_pages: OCI_PRICING_MAX_PAGES (default: 6)
 
     Inputs:

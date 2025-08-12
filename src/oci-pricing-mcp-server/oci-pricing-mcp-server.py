@@ -19,7 +19,7 @@ from typing import Any
 
 import httpx
 from fastmcp import FastMCP
-from typing_extensions import TypedDict
+from typing import TypedDict
 
 API = "https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/"
 mcp = FastMCP("oci-pricing-mcp")

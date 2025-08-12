@@ -6,7 +6,6 @@ This project is a **proof of concept** for MCP integrations. While not productio
 **Oracle Price List API reference:**
 [https://docs.oracle.com/en-us/iaas/Content/GSG/Tasks/signingup\_topic-Estimating\_Costs.htm#accessing\_list\_pricing](https://docs.oracle.com/en-us/iaas/Content/GSG/Tasks/signingup_topic-Estimating_Costs.htm#accessing_list_pricing)
 
----
 
 ## Overview
 
@@ -16,7 +15,6 @@ This project is a **proof of concept** for MCP integrations. While not productio
 * **Fuzzy-search** pricing by **product name or alias**
 * Return **consistent JSON** suitable for MCP clients
 
----
 
 ## Features
 
@@ -59,7 +57,6 @@ This project is a **proof of concept** for MCP integrations. While not productio
 * **Network robustness**: light retry with exponential backoff and request timeout.
 * **Currency handling**: normalizes ISO codes and ensures `currencyCode` is present (falls back to the requested or default currency).
 
----
 
 ## Prerequisites
 
@@ -67,7 +64,6 @@ This project is a **proof of concept** for MCP integrations. While not productio
 * Internet access (calls Oracle public API)
 * Dependencies via `pyproject.toml` / `uv.lock` or `pip`
 
----
 
 ## Installation
 
@@ -84,8 +80,6 @@ pip install fastmcp httpx
 uv sync --frozen     # uses pyproject.toml / uv.lock
 ```
 
----
-
 ## Usage
 
 Run with stdio transport:
@@ -99,8 +93,6 @@ uv run python oci-pricing-mcp-server.py
 ```
 
 If you omit the currency in your prompt (e.g., “List Object Storage prices”), the server uses its **default currency**, which you can set via environment variables (see below).
-
----
 
 ## MCP Server Configuration
 
@@ -123,8 +115,6 @@ Step-by-step guide (Claude Desktop: add local MCP servers):
 [https://support.anthropic.com/en/articles/9793354-connect-local-mcp-servers-to-claude-desktop](https://support.anthropic.com/en/articles/9793354-connect-local-mcp-servers-to-claude-desktop)
 
 You can also pass environment variables (see **Environment Variables**).
-
----
 
 ## Environment Variables
 
@@ -160,8 +150,6 @@ Test-only helpers (used by functional tests; not needed for normal use):
 }
 ```
 
----
-
 ## API Tools
 
 1. **`pricing_get_sku(part_number, currency=None, max_pages=None)`**
@@ -185,8 +173,6 @@ Test-only helpers (used by functional tests; not needed for normal use):
 3. **`ping()`**
    Health check; returns `"ok"`.
 
----
-
 ## Natural Language Examples
 
 > Many MCP clients map user text to tool calls. Examples:
@@ -205,8 +191,6 @@ Test-only helpers (used by functional tests; not needed for normal use):
 
 * “**Compute** pricing in **JPY**, **priced items only**.”
 * “**ADB**-related SKUs in **USD**.”
-
----
 
 ## Testing
 

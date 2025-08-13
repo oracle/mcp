@@ -519,9 +519,24 @@ async def pricing_get_sku(
     part_number: str, currency: str | None = None, max_pages: int | None = None
 ) -> dict[str, Any]:
     """
-    Thin wrapper that delegates to pricing_get_sku_impl.
-    Returns a dict; FastMCP will serialize for the client.
-    If currency/max_pages are omitted, environment defaults apply.
+    Look up list price for a specific OCI SKU (partNumber).
+
+    When to use:
+      - Use this tool when you already know the exact SKU (e.g., "B88298").
+
+    Parameters:
+      - part_number (str, required): Oracle SKU. Case-insensitive; spaces are ignored. Example: "B88298".
+      - currency (str, optional): ISO 4217 currency code (e.g., "USD", "JPY"). Defaults to OCI_PRICING_DEFAULT_CCY ("USD" if unset).
+      - max_pages (int, optional): Bounds pagination used only when falling back to name search. Integer 1–10. Defaults to OCI_PRICING_MAX_PAGES (6).
+
+    Returns:
+      - On success with SKU: {"kind":"sku", partNumber, displayName, metricName, serviceCategory, currencyCode, model, value, note?, altCurrencyCode?, altModel?, altValue?}
+      - On fallback to name search (SKU not found): {"kind":"search", "note":"matched-by-name"|"not-found", "query", "currency", "returned", "items":[...]}
+      - On HTTP or input error: {"kind":"error", "note":"http-error"|"...", "error"?, "input"?, "currency"?}
+
+    Notes:
+      - If the requested currency has no unit price or returns 0.0, the response may include alt* fields with a reference price in ALT_CCY (if configured).
+      - The upstream source (cetools) is a public subset; empty items can be expected.
     """
     return await pricing_get_sku_impl(
         part_number=part_number, currency=currency, max_pages=max_pages
@@ -537,9 +552,24 @@ async def pricing_search_name(
     require_priced: bool = False,
 ) -> dict[str, Any]:
     """
-    Thin wrapper that delegates to pricing_search_name_impl.
-    Returns a dict; FastMCP will serialize for the client.
-    If currency/max_pages are omitted, environment defaults apply.
+    Search the OCI price list by product/name keywords when the exact SKU is unknown.
+
+    When to use:
+      - Use this to discover SKUs and prices by keywords/aliases (e.g., "Autonomous Database", "ADB", "Object Storage").
+
+    Parameters:
+      - query (str, required): Product keywords or abbreviations. Short queries (3–4 chars) match by word boundary; longer queries support space-insensitive and fuzzy matches.
+      - currency (str, optional): ISO 4217 currency code (e.g., "USD", "JPY"). Defaults to OCI_PRICING_DEFAULT_CCY ("USD" if unset).
+      - limit (int, optional): Max results to return. Integer 1–20. Default 12.
+      - max_pages (int, optional): Pagination bound for the upstream listing. Integer 1–10. Defaults to OCI_PRICING_MAX_PAGES (6).
+      - require_priced (bool, optional): If true, only return items with a positive unit price in the requested currency.
+
+    Returns:
+      - {"kind":"search", "query", "currency", "returned", "items":[...], "note":"fuzzy search; per-item price enriched via SKU endpoint"}
+      - On error: {"kind":"error", ...}
+
+    Notes:
+      - Each item is simplified to include a single (model, value, currencyCode). If that value is missing or 0.0, alt* fields may include a reference price in ALT_CCY (if configured).
     """
     return await pricing_search_name_impl(
         query=query,
@@ -552,12 +582,12 @@ async def pricing_search_name(
 
 @mcp.tool()
 def ping() -> str:
-    """Health check (for CI/Inspector)."""
+    """Health check. Returns 'ok' if the server is responsive."""
     return "ok"
 
 
 def main() -> None:
-    """MCP server entrypoint."""
+    """Start the MCP server"""
     mcp.run()
 
 

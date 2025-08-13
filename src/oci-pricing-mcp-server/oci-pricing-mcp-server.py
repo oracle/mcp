@@ -16,10 +16,24 @@ import difflib
 import os
 import re
 import unicodedata
+from functools import lru_cache
 from typing import Any, TypedDict
 
 import httpx
 from fastmcp import FastMCP
+
+# Optional deps for ISO 4217 validation
+try:
+    from babel.numbers import get_currency_name  # type: ignore
+    _HAS_BABEL = True
+except Exception:
+    _HAS_BABEL = False
+
+try:
+    import pycountry  # type: ignore
+    _HAS_PYCOUNTRY = True
+except Exception:
+    _HAS_PYCOUNTRY = False
 
 API = "https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/"
 mcp = FastMCP("oci-pricing-mcp")
@@ -323,7 +337,63 @@ def _clamp(val: int, lo: int, hi: int, default: int) -> int:
 
 
 def _norm_currency(cur: str | None, default: str = DEFAULT_CCY) -> str:
+    # legacy helper (unused by strict path); kept for completeness
     return (cur or default).strip().upper()
+
+
+# --- currency validation (ISO 4217 AAA) ---
+_CCY_RE = re.compile(r"^[A-Z]{3}$")
+
+
+@lru_cache(maxsize=1024)
+def _is_valid_iso4217(code: str) -> bool:
+    """
+    True if code is an uppercase AAA and exists per Babel or pycountry.
+    Fallback: if neither dependency is available, accept AAA-form codes.
+    """
+    if not _CCY_RE.match(code):
+        return False
+
+    # Prefer Babel (aligns better with current tender currencies)
+    if _HAS_BABEL:
+        try:
+            # Unknown codes often raise UnknownCurrencyError
+            get_currency_name(code)
+            return True
+        except Exception:
+            # Fall through to pycountry check
+            pass
+
+    if _HAS_PYCOUNTRY:
+        try:
+            return (pycountry.currencies.get(alpha_3=code) is not None)  # type: ignore
+        except Exception:
+            pass
+
+    # Offline / no deps: allow AAA-form as best-effort fallback
+    return True
+
+
+def _norm_currency_strict(cur: str | None, default: str = DEFAULT_CCY) -> tuple[str, str | None]:
+    """
+    Validate currency as ISO 4217 (three letters), auto-uppercasing inputs.
+
+    Behavior:
+      - If the caller omits the parameter (None), fall back to default (upper) and validate.
+      - If the caller provides a value (including mixed/lower case), it is **uppercased** then validated.
+        -> 'jpy' -> 'JPY', 'Usd' -> 'USD'
+      - Invalid forms (not 3 letters) or unknown codes return ('<UPPER>', 'invalid-currency-format').
+
+    Returns (currency_uppercased, error_note). error_note is None if valid.
+    """
+    if cur is None:
+        c = (default or "").strip().upper()
+        return (c, None) if _is_valid_iso4217(c) else (c, "invalid-default-currency")
+
+    s = cur.strip().upper()
+    if not _is_valid_iso4217(s):
+        return s, "invalid-currency-format"
+    return s, None
 
 
 # -------------------- alt-currency enrichment --------------------
@@ -391,7 +461,10 @@ async def pricing_get_sku_impl(
           {"kind":"error","note":"http-error","error","input","currency"}
     """
     pn = (part_number or "").strip()
-    cur = _norm_currency(currency, default=DEFAULT_CCY)
+    # ISO 4217 validation with auto-uppercasing
+    cur, cur_err = _norm_currency_strict(currency, default=DEFAULT_CCY)
+    if cur_err:
+        return {"kind": "error", "note": cur_err, "input": currency}
     pages = _clamp(
         max_pages if max_pages is not None else DEFAULT_MAX_PAGES,
         lo=1,
@@ -457,7 +530,11 @@ async def pricing_search_name_impl(
     if not q:
         return {"kind": "error", "note": "empty-query", "items": []}
 
-    cur = _norm_currency(currency, default=DEFAULT_CCY)
+    # ISO 4217 validation with auto-uppercasing
+    cur, cur_err = _norm_currency_strict(currency, default=DEFAULT_CCY)
+    if cur_err:
+        return {"kind": "error", "note": cur_err, "input": currency}
+
     lim = _clamp(limit, lo=1, hi=20, default=12)
     pages = _clamp(
         max_pages if max_pages is not None else DEFAULT_MAX_PAGES,
@@ -525,8 +602,11 @@ async def pricing_get_sku(
       - Use this tool when you already know the exact SKU (e.g., "B88298").
 
     Parameters:
-      - part_number (str, required): Oracle SKU. Case-insensitive; spaces are ignored. Example: "B88298".
-      - currency (str, optional): ISO 4217 currency code (e.g., "USD", "JPY"). Defaults to OCI_PRICING_DEFAULT_CCY ("USD" if unset).
+      - part_number (str, required): Oracle SKU. Case-insensitive; avoid internal spaces. Example: "B88298".
+      - currency (str, optional): ISO 4217 code (three letters). **Case-insensitive**; inputs are
+        auto-uppercased (e.g., "jpy" → "JPY") and validated against Babel/pycountry.
+        If omitted (None), defaults to OCI_PRICING_DEFAULT_CCY ("USD" if unset).
+        Invalid formats/codes (e.g., "USDT", "", "12$") return {"kind":"error","note":"invalid-currency-format"}.
       - max_pages (int, optional): Bounds pagination used only when falling back to name search. Integer 1–10. Defaults to OCI_PRICING_MAX_PAGES (6).
 
     Returns:
@@ -537,6 +617,7 @@ async def pricing_get_sku(
     Notes:
       - If the requested currency has no unit price or returns 0.0, the response may include alt* fields with a reference price in ALT_CCY (if configured).
       - The upstream source (cetools) is a public subset; empty items can be expected.
+      - Examples — OK: "USD", "JPY", "usd", "jpy" / NG: "USDT", "12$", ""
     """
     return await pricing_get_sku_impl(
         part_number=part_number, currency=currency, max_pages=max_pages
@@ -558,8 +639,11 @@ async def pricing_search_name(
       - Use this to discover SKUs and prices by keywords/aliases (e.g., "Autonomous Database", "ADB", "Object Storage").
 
     Parameters:
-      - query (str, required): Product keywords or abbreviations. Short queries (3–4 chars) match by word boundary; longer queries support space-insensitive and fuzzy matches.
-      - currency (str, optional): ISO 4217 currency code (e.g., "USD", "JPY"). Defaults to OCI_PRICING_DEFAULT_CCY ("USD" if unset).
+      - query (str, required): Product keywords or abbreviations. Short queries (3–4 chars) match by word boundary; longer
+        queries support space-insensitive and fuzzy matches. For "ADB"-like intent, both "autonomous" and "database" must match.
+      - currency (str, optional): ISO 4217 code (three letters). **Case-insensitive**; inputs are
+        auto-uppercased (e.g., "usd" → "USD") and validated. If omitted (None), defaults to OCI_PRICING_DEFAULT_CCY.
+        Invalid formats/codes (e.g., "USDT", "", "12$") return {"kind":"error","note":"invalid-currency-format"}.
       - limit (int, optional): Max results to return. Integer 1–20. Default 12.
       - max_pages (int, optional): Pagination bound for the upstream listing. Integer 1–10. Defaults to OCI_PRICING_MAX_PAGES (6).
       - require_priced (bool, optional): If true, only return items with a positive unit price in the requested currency.
@@ -570,6 +654,7 @@ async def pricing_search_name(
 
     Notes:
       - Each item is simplified to include a single (model, value, currencyCode). If that value is missing or 0.0, alt* fields may include a reference price in ALT_CCY (if configured).
+      - Examples — OK: "USD", "JPY", "usd", "jpy" / NG: "USDT", "12$", ""
     """
     return await pricing_search_name_impl(
         query=query,

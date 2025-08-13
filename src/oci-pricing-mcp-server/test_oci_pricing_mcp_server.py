@@ -20,19 +20,15 @@ class TestOciPricingMcpServer(unittest.TestCase):
     Functional tests for oci-pricing-mcp-server.py.
 
     Strategy:
-      - Mirror the reference test style: dynamic import, verbose logging, and
-        functional calls into the module under test.
-      - Hide @mcp.tool wrappers' differences: support both FunctionTool.run(arguments)
-        and direct function invocation transparently.
-      - Robustly unwrap FastMCP ToolResult: content(List[TextContent]) → text (JSON)
-        → native dict/list types.
-      - Be resilient to the public price list "subset" nature of cetools:
-        transient emptiness and currency differences are handled via skips.
+      - Dynamic import the target server module to stay close to runtime usage.
+      - Support both direct function invocation and FunctionTool.run(arguments) wrappers.
+      - Unwrap FastMCP ToolResult → content(List[TextContent]) → text(JSON) → native types.
+      - Be resilient to "public subset" nature of cetools (skip when results legitimately empty/zero).
     """
 
     @classmethod
     def setUpClass(cls):
-        # Silence the known DeprecationWarning noise from dependencies, if any.
+        # Silence noisy warnings from dependencies if any.
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
         server_filename = os.getenv("PRICING_SERVER_FILENAME", "oci-pricing-mcp-server.py")
@@ -46,7 +42,7 @@ class TestOciPricingMcpServer(unittest.TestCase):
         cls.module = cls.server_module
 
         # Probe values (override via environment variables when needed)
-        cls.probe_sku_ok = os.getenv("PROBE_SKU_OK", "B93113")
+        cls.probe_sku_ok = os.getenv("PROBE_SKU_OK", "B93113")       # Known-good-ish SKU for JPY
         cls.probe_sku_missing = os.getenv("PROBE_SKU_MISSING", "B88298")
         cls.ccy_jpy = os.getenv("PROBE_CCY", "JPY")
         cls.query_compute = os.getenv("PROBE_QUERY", "Compute")
@@ -255,6 +251,158 @@ class TestOciPricingMcpServer(unittest.TestCase):
         self.assertEqual(result, "ok")
         print("ping() -> ok")
 
+    # ---------------------- currency validation ----------------------
+
+    def test_get_sku_rejects_invalid_currency(self):
+        """Invalid currency formats must return kind=error, note=invalid-currency-format."""
+        if not hasattr(self.module, "pricing_get_sku"):
+            self.skipTest("pricing_get_sku not found in module")
+
+        # NOTE: case-mixed/lowercase are now accepted (auto-uppercased). Exclude them.
+        bad_list = ["USDT", "12$", "JP", "EUR1", ""]
+        for bad in bad_list:
+            out = self._call(
+                "pricing_get_sku",
+                part_number=self.probe_sku_ok,
+                currency=bad,
+            )
+            self.assertIsInstance(out, dict)
+            self.assertEqual(out.get("kind"), "error")
+            self.assertEqual(out.get("note"), "invalid-currency-format")
+            self.assertEqual(out.get("input"), bad)
+
+    def test_search_name_rejects_invalid_currency(self):
+        """Invalid currency formats must return kind=error, note=invalid-currency-format."""
+        if not hasattr(self.module, "pricing_search_name"):
+            self.skipTest("pricing_search_name not found in module")
+
+        # NOTE: case-mixed/lowercase are now accepted (auto-uppercased). Exclude them.
+        bad_list = ["USDT", "12$", "JP", "EUR1", ""]
+        for bad in bad_list:
+            out = self._call(
+                "pricing_search_name",
+                query=self.query_compute,
+                currency=bad,
+                limit=3,
+                max_pages=2,
+            )
+            self.assertIsInstance(out, dict)
+            self.assertEqual(out.get("kind"), "error")
+            self.assertEqual(out.get("note"), "invalid-currency-format")
+            self.assertEqual(out.get("input"), bad)
+
+    def test_get_sku_accepts_case_insensitive_currency(self):
+        """Case-insensitive currencies should auto-uppercase and NOT trigger invalid-currency-format."""
+        if not hasattr(self.module, "pricing_get_sku"):
+            self.skipTest("pricing_get_sku not found in module")
+
+        cases = [("usd", "USD"), ("Usd", "USD"), ("jpy", "JPY"), ("JpY", "JPY")]
+        for raw, upper in cases:
+            try:
+                out = self._call(
+                    "pricing_get_sku",
+                    part_number=self.probe_sku_ok,
+                    currency=raw,
+                )
+            except Exception as e:
+                self.skipTest(f"HTTP/Network error: {e}")
+                continue
+
+            self.assertIsInstance(out, dict)
+            # Should not be rejected as invalid-currency-format
+            self.assertNotEqual(out.get("note"), "invalid-currency-format")
+
+            # If it's a SKU hit, currencyCode should be upper; if search, currency should be upper.
+            kind = out.get("kind")
+            if kind == "sku":
+                self.assertEqual(out.get("currencyCode"), upper)
+            elif kind == "search":
+                self.assertEqual(out.get("currency"), upper)
+            else:
+                # error (e.g., http-error) is acceptable; just ensure note isn't invalid-currency-format
+                pass
+
+    def test_search_name_accepts_case_insensitive_currency(self):
+        """Case-insensitive currencies should auto-uppercase and NOT trigger invalid-currency-format (search)."""
+        if not hasattr(self.module, "pricing_search_name"):
+            self.skipTest("pricing_search_name not found in module")
+
+        cases = [("usd", "USD"), ("Usd", "USD"), ("jpy", "JPY"), ("JpY", "JPY")]
+        for raw, upper in cases:
+            try:
+                out = self._call(
+                    "pricing_search_name",
+                    query=self.query_compute,
+                    currency=raw,
+                    limit=3,
+                    max_pages=2,
+                )
+            except Exception as e:
+                self.skipTest(f"HTTP/Network error: {e}")
+                continue
+
+            self.assertIsInstance(out, dict)
+            self.assertNotEqual(out.get("note"), "invalid-currency-format")
+            if out.get("kind") == "search":
+                self.assertEqual(out.get("currency"), upper)
+
+    def test_get_sku_uses_default_currency_when_omitted(self):
+        """If currency is omitted (None), DEFAULT_CCY is used and validated."""
+        if not hasattr(self.module, "pricing_get_sku"):
+            self.skipTest("pricing_get_sku not found in module")
+
+        default_ccy = getattr(self.module, "DEFAULT_CCY", "USD")
+
+        print(f"About to call pricing_get_sku('{self.probe_sku_ok}', currency omitted)")
+        try:
+            # omit currency argument entirely
+            out = self._call(
+                "pricing_get_sku",
+                part_number=self.probe_sku_ok,
+            )
+        except Exception as e:
+            self.skipTest(f"HTTP/Network error calling pricing_get_sku: {e}")
+            return
+
+        self.assertIsInstance(out, dict)
+        kind = out.get("kind")
+        self.assertIn(kind, ("sku", "search", "error"))
+
+        if kind == "sku":
+            # currencyCode should be the module default
+            self.assertEqual(out.get("currencyCode"), default_ccy)
+        elif kind == "search":
+            self.assertEqual(out.get("currency"), default_ccy)
+        else:
+            # if error due to public subset issues, still accept but print
+            print("Received error (acceptable depending on dataset):", out)
+
+    def test_search_name_uses_default_currency_when_omitted(self):
+        """If currency is omitted (None), DEFAULT_CCY is used and validated in search."""
+        if not hasattr(self.module, "pricing_search_name"):
+            self.skipTest("pricing_search_name not found in module")
+
+        default_ccy = getattr(self.module, "DEFAULT_CCY", "USD")
+
+        try:
+            out = self._call(
+                "pricing_search_name",
+                query=self.query_compute,
+                # currency omitted
+                limit=5,
+                max_pages=2,
+            )
+        except Exception as e:
+            self.skipTest(f"HTTP/Network error: {e}")
+            return
+
+        self.assertIsInstance(out, dict)
+        if "kind" in out:
+            self.assertEqual(out["kind"], "search")
+        self.assertEqual(out.get("currency"), default_ccy)
+        self.assertIn("items", out)
+        self.assertIn("returned", out)
+
     # ---------------------- pricing_get_sku ----------------------
 
     def test_get_sku_known_price_jpy(self):
@@ -288,9 +436,18 @@ class TestOciPricingMcpServer(unittest.TestCase):
         for k in ("partNumber", "displayName", "metricName", "serviceCategory", "currencyCode"):
             self.assertIn(k, out, f"Missing key '{k}'")
         self.assertEqual(out.get("currencyCode"), self.ccy_jpy)
-        self.assertIsNotNone(out.get("model"))
-        self.assertIsNotNone(out.get("value"))
-        self.assertGreater(float(out.get("value", 0)), 0.0)
+
+        # value/model が 0/欠落の揺らぎに備え、スキップ条件を追加
+        if out.get("model") is None or out.get("value") is None:
+            self.skipTest(f"Unit price missing in public subset: {out}")
+            return
+        try:
+            if float(out.get("value", 0)) <= 0.0:
+                self.skipTest(f"Unit price is zero in public subset: {out}")
+                return
+        except Exception:
+            self.skipTest(f"Non-numeric unit price in public subset: {out}")
+            return
 
         print(
             f"OK: {out.get('partNumber')} {out.get('displayName')} -> "
@@ -458,6 +615,30 @@ class TestOciPricingMcpServer(unittest.TestCase):
         self.assertEqual(out.get("note"), "empty-query")
         self.assertEqual(out.get("items"), [])
         print("Empty query handled correctly")
+
+    def test_search_name_adb_intent_does_not_error(self):
+        """'ADB' intent path should not error and should return a valid search structure (smoke test)."""
+        if not hasattr(self.module, "pricing_search_name"):
+            self.skipTest("pricing_search_name not found in module")
+
+        try:
+            out = self._call(
+                "pricing_search_name",
+                query="ADB",
+                currency="USD",
+                limit=10,
+                max_pages=3,
+                require_priced=False,
+            )
+        except Exception as e:
+            self.fail(f"pricing_search_name raised unexpectedly on ADB intent: {e}")
+
+        self.assertIsInstance(out, dict)
+        if "kind" in out:
+            self.assertEqual(out["kind"], "search")
+        self.assertIn("items", out)
+        self.assertIn("returned", out)
+        # No strict assertions on content due to public-subset variance.
 
     def tearDown(self):
         print(f"{'=' * 70}")

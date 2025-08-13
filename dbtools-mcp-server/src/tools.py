@@ -3,41 +3,11 @@ Copyright (c) 2025, Oracle and/or its affiliates.
 Licensed under the Universal Permissive License v1.0 as shown at http://oss.oracle.com/licenses/upl.
 """
 
-import os.path
-
 import requests
 import json
-import oci
-from oci.signer import Signer
 from oci.resource_search.models import StructuredSearchDetails
-
-
-from mcp.server.fastmcp import FastMCP
-
-MODEL_NAME = os.getenv("MODEL_NAME", "MINILM_L12_V2")
-MODEL_EMBEDDING_DIMENSION = int(os.getenv("MODEL_EMBEDDING_DIMENSION", "384"))
-mcp = FastMCP("oci")
-
-
-profile_name = os.getenv("PROFILE_NAME", "DEFAULT")
-
-config = oci.config.from_file(profile_name=profile_name)
-identity_client = oci.identity.IdentityClient(config)
-
-search_client = oci.resource_search.ResourceSearchClient(config)
-database_client = oci.database.DatabaseClient(config)
-dbtools_client = oci.database_tools.DatabaseToolsClient(config)
-vault_client = oci.vault.VaultsClient(config)
-secrets_client = oci.secrets.SecretsClient(config)
-ords_endpoint = dbtools_client.base_client._endpoint.replace("https://", "https://sql.")
-auth_signer = Signer(
-    tenancy=config['tenancy'],
-    user=config['user'],
-    fingerprint=config['fingerprint'],
-    private_key_file_location=config['key_file'],
-    pass_phrase=config['pass_phrase']
-)
-tenancy_id = os.getenv("TENANCY_ID_OVERRIDE", config['tenancy'])
+from src.common.connections import *
+from src.common.server import mcp
 
 @mcp.tool()
 def list_all_compartments() -> str:
@@ -1137,6 +1107,7 @@ def ragify_column(dbtools_connection_display_name: str, table_name: str, column_
         print(f"Unexpected error parsing UPDATE response: {e}")
         return json.dumps({"status": "error", "step": "UPDATE", "details": f"Unexpected error: {str(e)}"})
 
-if __name__ == "__main__":
-    # Initialize and run the server
-    mcp.run(transport='stdio')
+# if __name__ == "__main__":
+#     # Initialize and run the server
+#     print('Starting MCP Server - db tools')
+#     mcp.run(transport='stdio')

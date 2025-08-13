@@ -114,9 +114,19 @@ The server supports the following environment variables:
 ## Usage
 
 The server runs using stdio transport and can be started by running:
-
+Added ne3w capability to run the server remotely using httpstreamable protocol
 ```
-python dbtools-mcp-server.py
+#### from mcp root cloned folder
+cd dbtools-mcp-server 
+python3.13 -m venv .venv_dbtools
+source .venv_dbtools/bin/activate
+python3.13 -m pip install -r requirements.txt
+
+python3.13 -m src.main
+
+#### you will see the message below : 
+![img.png](config/img.png)
+
 ```
 
 ## API Tools

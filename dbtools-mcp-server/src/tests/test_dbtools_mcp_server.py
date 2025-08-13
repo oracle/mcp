@@ -10,6 +10,7 @@ import os
 import importlib.util
 import warnings
 from pathlib import Path
+from src.tools import *
 
 class TestDbtoolsMcpServer(unittest.TestCase):
     """
@@ -32,7 +33,7 @@ class TestDbtoolsMcpServer(unittest.TestCase):
                                message="datetime.datetime.utcnow.*")
         
         # Path to the server file
-        server_path = os.path.join(os.path.dirname(__file__), "dbtools-mcp-server.py")
+        server_path = os.path.join(os.path.dirname(__file__), "../tools.py")
         
         # Check if file exists
         if not os.path.exists(server_path):

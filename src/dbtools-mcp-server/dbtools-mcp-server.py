@@ -465,41 +465,6 @@ def list_tables(dbtools_connection_display_name: str) -> str:
         })
 
 @mcp.tool()
-def ask_heatwave_chat_tool(dbtools_connection_display_name: str, question: str) -> str:
-    """
-    Ask heatwave chat a question, the provided id is that of a dbtools connection of type mysql
-    """
-    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
-    
-    if connection_info is None:
-        return json.dumps({
-            "error": f"No connection found with name '{dbtools_connection_display_name}'",
-            "suggestion": "Use list_all_connections() to see available connections"
-        })
-    
-    try:
-        # Verify this is a MySQL connection
-        if connection_info.get('type') != 'MYSQL':
-            return json.dumps({
-                "error": "This connection is not a MySQL database. Heatwave chat is only available for MySQL databases.",
-                "suggestion": "Please provide a MySQL database connection."
-            })
-            
-        # Execute the heatwave chat query
-        ask_heatwave = f"call sys.heatwave_chat('{question}')"
-        response = execute_sql_tool_by_connection_id(connection_info['id'], ask_heatwave)
-        
-        # Parse the response
-        if isinstance(response, str):
-            response_data = json.loads(response)
-            if 'items' in response_data and len(response_data['items']) > 0:
-                return response_data['items'][0].get('response')[6].strip()
-            
-        return json.dumps({"error": "Unexpected response format from Heatwave chat"})
-    except Exception as e:
-        return json.dumps({"error": f"Error with Heatwave chat: {str(e)}"})
-
-@mcp.tool()
 def bootstrap_reports(dbtools_connection_display_name: str) -> str:
     """
     Ensures the 'report_definitions' table exists in the current user's schema.
@@ -1135,6 +1100,209 @@ def ragify_column(dbtools_connection_display_name: str, table_name: str, column_
     except Exception as e:
         print(f"Unexpected error parsing UPDATE response: {e}")
         return json.dumps({"status": "error", "step": "UPDATE", "details": f"Unexpected error: {str(e)}"})
+
+@mcp.tool()
+def heatwave_ml_generate(dbtools_connection_display_name: str, question: str) -> str:
+    """
+    Ask in-heatwave LLM a question, and it can be used for general LLM questions that do not require similarity search.
+    The provided dbtools_connection_display_name is that of a dbtools connection of type MySQL
+    """
+    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
+    
+    if connection_info is None:
+        return json.dumps({
+            "error": f"No connection found with name '{dbtools_connection_display_name}'",
+            "suggestion": "Use list_all_connections() to see available connections"
+        })
+    
+    try:
+        # Verify this is a MySQL connection
+        if connection_info.get('type') != 'MYSQL':
+            return json.dumps({
+                "error": "This connection is not a MySQL database. Heatwave ml_generate is only available for MySQL databases.",
+                "suggestion": "Please provide a MySQL database connection."
+            })
+            
+        # Execute the heatwave chat query
+        ml_generate_call = f"select sys.ML_GENERATE('{question}', NULL)"
+        response = execute_sql_tool_by_connection_id(connection_info['id'], ml_generate_call)
+        
+        # Parse the response
+        if isinstance(response, str):
+            response_data = json.loads(response)
+            if 'items' in response_data and len(response_data['items']) > 0:
+                json_column_name = response_data['items'][0]['resultSet']['metadata'][0]['jsonColumnName']
+            return response_data['items'][0]['resultSet']['items'][0][json_column_name]["text"]
+            
+        return json.dumps({"error": "Unexpected response format from ML_GENERATE"})
+    except Exception as e:
+        return json.dumps({"error": f"Error with ML_GENERATE: {str(e)}"})
+
+@mcp.tool()
+def heatwave_ask_help(dbtools_connection_display_name: str, question: str) -> str:
+    """
+    Ask natural language questions to machine learning help tool to get answers about heatwave ML (AutoML).
+    The tool returns answers based on HeatWave AutoML documentation and can return executable MySQL queries that
+    can be executed using sql execution tool.
+    This tool should be prioritized for HeatWave AutoML syntax when trying to call ML stored procedures.
+    The provided dbtools_connection_display_name is that of a dbtools connection of type MySQL
+    """
+    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
+    
+    if connection_info is None:
+        return json.dumps({
+            "error": f"No connection found with name '{dbtools_connection_display_name}'",
+            "suggestion": "Use list_all_connections() to see available connections"
+        })
+    
+    try:
+        # Verify this is a MySQL connection
+        if connection_info.get('type') != 'MYSQL':
+            return json.dumps({
+                "error": "This connection is not a MySQL database. Heatwave ask help tool is only available for MySQL databases.",
+                "suggestion": "Please provide a MySQL database connection."
+            })
+            
+        # Execute the heatwave chat query
+        nl2ml_call = f"call sys.NL2ML('{question}', @nl2ml_response); select @nl2ml_response"
+        response = execute_sql_tool_by_connection_id(connection_info['id'], nl2ml_call)
+        
+        # return response
+    
+        # Parse the response
+        if isinstance(response, str):
+            response_data = json.loads(response)
+            if 'items' in response_data and len(response_data['items']) > 0:
+                json_column_name = response_data['items'][1]['resultSet']['metadata'][0]['jsonColumnName']
+            return json.loads(response_data['items'][1]['resultSet']['items'][0][json_column_name])["text"]
+            
+        return json.dumps({"error": "Unexpected response format from Heatwave ask help"})
+    except Exception as e:
+        return json.dumps({"error": f"Error with Heatwave ask help: {str(e)}"})
+
+
+
+@mcp.tool()
+def heatwave_load_vector_store(dbtools_connection_display_name: str, namespace: str, bucket_name: str, document_prefix: str, schema_name: str, table_name: str) -> str:
+    """
+    Load documents from object storage into a vector store that can be used for similarity search and retrieval augmented generation (RAG). The path can be a file name, a prefix, or a full path.
+    
+    For example, assuming these files exist:
+    heatwave-en-ml-9.2.0.pdf
+    sample_files/document1.pdf
+    sample_files/document2.pdf
+    sample_files/documents_345.docx
+
+    The following are valid definitions for document_prefix:
+    'heatwave-en-ml'
+    'heatwave-en-ml-9.2.0.pdf'
+    'sample_files/'
+    'sample_files/document2.pdf'
+    'sample_files/doc'
+
+    The provided dbtools_connection_display_name is that of a dbtools connection of type MySQL
+    """
+    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
+    
+    if connection_info is None:
+        return json.dumps({
+            "error": f"No connection found with name '{dbtools_connection_display_name}'",
+            "suggestion": "Use list_all_connections() to see available connections"
+        })
+    
+    try:
+        # Verify this is a MySQL connection
+        if connection_info.get('type') != 'MYSQL':
+            return json.dumps({
+                "error": "This connection is not a MySQL database. Heatwave load vector store is only available for MySQL databases.",
+                "suggestion": "Please provide a MySQL database connection."
+            })
+            
+        vsload = f"SET @vsl_options=JSON_OBJECT('schema_name', '{schema_name}', 'table_name', '{table_name}'); CALL sys.VECTOR_STORE_LOAD('oci://{bucket_name}@{namespace}/{document_prefix}', @vsl_options);"
+        response = execute_sql_tool_by_connection_id(connection_info['id'], vsload)
+        
+        return response
+    
+    except Exception as e:
+        return json.dumps({"error": f"Error with VECTOR_STORE_LOAD: {str(e)}"})
+
+@mcp.tool()
+def object_storage_list_buckets(compartment_name: str) -> str:
+    """
+    List all accessible object store buckets. 
+    """
+    compartment = get_compartment_by_name(compartment_name)
+    if not compartment:
+        return json.dumps({"error": f"Compartment '{compartment_name}' not found. Use list_compartment_names() to see available compartments."})
+
+    namespace = object_storage_client.get_namespace().data
+
+    try:
+        # List buckets in the specified compartment
+        list_buckets_response = object_storage_client.list_buckets(namespace_name = namespace,
+                                                                   compartment_id = compartment.id
+                                                                   )
+    except Exception as e:
+        return json.dumps({"error": f"Error with listing available buckets in a compartment: {str(e)}"})
+
+    return list_buckets_response.data
+
+
+@mcp.tool()
+def object_storage_list_objects(namespace: str, bucket_name: str) -> str:
+    """
+    List objects / files which are stored in a given object store bucket
+    """
+    try:
+        # List objects in a specified bucket
+        list_object_response = object_storage_client.list_objects(namespace_name = namespace,
+                                                                  bucket_name = bucket_name
+                                                                  )
+    except Exception as e:
+        return json.dumps({"error": f"Error with listing objects in a specified bucket: {str(e)}"})
+
+    return list_object_response.data.objects
+
+@mcp.tool()
+def heatwave_ask_ml_rag(dbtools_connection_display_name: str, question: str) -> str:
+    """
+    Ask ml_rag - retrieveal augmented generation tool a question
+    ** This is the preferred tool for answering questions using vector stores and similarity search **
+    This tool will use existing vector stores to do similarity search to find relevant segments. 
+    The segments can then be used as context to answer user's question - the tool does not use LLM to generate a response.
+    Instead, MCP Host LLM should use the retreived context to generate the response.
+    The provided dbtools_connection_display_name is that of a dbtools connection of type MySQL
+    """
+    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
+    
+    if connection_info is None:
+        return json.dumps({
+            "error": f"No connection found with name '{dbtools_connection_display_name}'",
+            "suggestion": "Use list_all_connections() to see available connections"
+        })
+    
+    try:
+        # Verify this is a MySQL connection
+        if connection_info.get('type') != 'MYSQL':
+            return json.dumps({
+                "error": "This connection is not a MySQL database. Heatwave ML_RAG is only available for MySQL databases.",
+                "suggestion": "Please provide a MySQL database connection."
+            })
+            
+        # Execute the heatwave chat query
+        ask_ml_rag = f"set @options = NULL; call sys.ml_rag('{question}', @response, JSON_OBJECT('skip_generate', true)); SELECT @response;"
+        response = execute_sql_tool_by_connection_id(connection_info['id'], ask_ml_rag)
+        
+        # Parse the response
+        if isinstance(response, str):
+            response_data = json.loads(response)
+            if 'items' in response_data and len(response_data['items']) > 0:
+                json_column_name = response_data['items'][2]['resultSet']['metadata'][0]['jsonColumnName']
+            return json.loads(response_data['items'][2]['resultSet']['items'][0][json_column_name])
+            
+        return json.dumps({"error": "Unexpected response format from Heatwave ML_RAG"})
+    except Exception as e:
+        return json.dumps({"error": f"Error with ML_RAG: {str(e)}"})
 
 if __name__ == "__main__":
     # Initialize and run the server

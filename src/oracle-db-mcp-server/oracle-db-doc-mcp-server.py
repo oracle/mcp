@@ -1,22 +1,22 @@
 #
-#  Since: August 2025
-#  Author: Gerald Venzl
-#  Name: main.py
-#  Description: The Oracle Database Documentation MCP Server
+# Since: August 2025
+# Author: Gerald Venzl
+# Name: main.py
+# Description: The Oracle Database Documentation MCP Server
 #
-#  Copyright 2025 Oracle Corporation and/or its affiliates.
+# Copyright 2025 Oracle Corporation and/or its affiliates.
 #
-#  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-#       http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import argparse
 import hashlib
@@ -70,6 +70,8 @@ mcp = FastMCP(
     - If the search tool returns results that are not relevant, try to refine the query.
     """,
     dependencies=[
+        "html2text>=2025.4.15",
+        "mcp>=1.12.3",
         "whoosh>=2.7.4",
         "pydantic>=2.10.6",
     ]
@@ -101,40 +103,49 @@ def search(
 
     """
     logger.info(f"query={search_query!r}")
-    return search_index(INDEX, search_query, max_results)
+    return search_index(search_query, max_results)
 
 
 # Function to search the index
-def search_index(index, query_str, limit=10) -> list[str]:
+def search_index(query_str, limit=10) -> list[str]:
     """
     Search the index for the query string and return matching sections with context.
-    Returns a list of (id, content, score) tuples.
+    Returns a list of content.
     """
     results = []
-    with index.searcher() as searcher:
-        query = QueryParser("content", index.schema).parse(query_str)
+    with INDEX.searcher() as searcher:
+        query = QueryParser("content", INDEX.schema).parse(query_str)
         hits = searcher.search(query, limit=limit)
         for hit in hits:
-            #results.append((hit['id'], hit['content'], hit.score))
             results.append(hit['content'])
     return results
 
 
-def maintain_index(location: Path) -> None:
-    """Create or update the index for the oracle-doc.
+def maintain_index(path: str) -> None:
+    """Creates or updates the index and opens it for the oracle-doc.
     This function checks if the index needs to be created or updated based on the
     contents of the provided location, which can be a directory or a zip file.
 
     Args:
-        location (Path): The path to the documentation directory or zip file.
+        path (str): The path to the documentation directory or zip file.
 
     Returns:
         None
     """
-    logger.debug("Creating or updating index for oracle-doc.")
+    global INDEX
+    logger.info("Maintaining index...")
     # Logic to create or update the index goes here
 
-    global INDEX
+    # If no path was provided but index exists, open the index.
+    if path is None and INDEX_DIR.exists():
+        INDEX = open_dir(INDEX_DIR)
+        return
+
+    location = Path(path)
+    if not location.exists():
+        logger.error(f"Provided path does not exist: {location}")
+        return
+
     # Get the old index checksum, if it exists
     index_checksum = "N/A"
     # If the checksum file exists, read the checksum
@@ -148,8 +159,8 @@ def maintain_index(location: Path) -> None:
         return
 
     # Calculate the checksum of the input directory or zip file
-    logger.debug(f"Calculating checksum for location: {location}")
     input_checksum = shasum_directory(location)
+    logger.debug(f"Checksum is {input_checksum} for location '{location}'")
 
     # See whether checksum matches the old index checksum
     if input_checksum == index_checksum:
@@ -181,6 +192,7 @@ def maintain_index(location: Path) -> None:
             location = zip_output
 
         logger.debug("Indexing all html files in the directory...")
+        # Also opens the index
         update_index(location)
 
         # Write the new checksum to the checksum file
@@ -201,11 +213,12 @@ def update_index(location: Path) -> None:
     Args:
         location (Path): The path to the documentation directory.
     Returns:
-        None"""
+        None
+    """
 
     global INDEX
 
-    logger.info("Creating/updating index...")
+    logger.debug("Updating index...")
 
     if not INDEX_DIR.exists():
         logger.debug(f"Creating index directory: {INDEX_DIR}")
@@ -214,12 +227,15 @@ def update_index(location: Path) -> None:
     INDEX = create_in(INDEX_DIR, INDEX_SCHEMA)
     writer = INDEX.writer()
 
+    files_indexes = 0
     for ext in ("*.html", "*.htm"):
         for file in location.rglob(ext):
             logger.debug(f"Indexing file: {file}")
             content = convert_to_markdown(file)
             writer.add_document(content=content)
+            files_indexes += 1
 
+    logger.info(f"Indexed {files_indexes} html files from '{location}'.")
     logger.debug("Committing changes to the index.")
     writer.commit()
     logger.info("Indexing complete.")
@@ -277,27 +293,19 @@ def main():
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Oracle Documentation MCP Server.")
-    parser.add_argument("--input", type=str, help="Path to the documentation input directory.")
+    parser.add_argument("--doc", type=str, help="Path to the documentation input directory.")
     parser.add_argument("--port", type=int, default=8000, help="Port to serve the MCP server on.")
     parser.add_argument("-mcp", "--mcp", action="store_true", help="Run the MCP server.")
-    parser.add_argument("--log-level", type=str, default="INFO", help="Set the log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).")
+    parser.add_argument("--log-level", type=str, default="ERROR", help="Set the log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).")
     args = parser.parse_args()
-
 
     # Set log level
     logger.setLevel(getattr(logging, args.log_level.upper(), logging.INFO))
 
-    if args.input:
-        input_path = Path(args.input)
+    maintain_index(args.doc)
 
-        if not input_path.exists():
-            logger.error(f"Input location {args.input} does not exist.")
-            return
-
-        maintain_index(input_path)
-
-    if not Path(INDEX_DIR).exists():
-        logger.error(f"Index directory {INDEX_DIR} does not exist. Please run the server with a valid input directory.")
+    if INDEX is None:
+        logger.error(f"Index does not exist. Please run the server with a valid doc directory to index.")
         return
 
     if args.mcp:

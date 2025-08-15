@@ -9,7 +9,6 @@ env/
 env.bak/
 venv.bak/
 
-index
 .vscode
 uv.lock
 

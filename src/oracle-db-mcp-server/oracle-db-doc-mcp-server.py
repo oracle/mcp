@@ -41,6 +41,7 @@ INDEX_SCHEMA = Schema(content=TEXT(stored=True))
 ZIP_TEMP_OUTPUT = "zip_temp"
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(filename='oracle-db-doc.log', filemode='w', level=logging.ERROR)
 
 mcp = FastMCP(
     "oracle-doc",
@@ -292,15 +293,15 @@ def main():
     logger.addHandler(ch)
 
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Oracle Documentation MCP Server.")
-    parser.add_argument("--doc", type=str, help="Path to the documentation input directory.")
-    parser.add_argument("--port", type=int, default=8000, help="Port to serve the MCP server on.")
-    parser.add_argument("-mcp", "--mcp", action="store_true", help="Run the MCP server.")
-    parser.add_argument("--log-level", type=str, default="ERROR", help="Set the log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).")
+    parser = argparse.ArgumentParser(description="Oracle Database Documentation MCP Server.")
+    parser.add_argument("-doc", type=str, help="Path to the documentation input zip file or extracted directory.")
+    parser.add_argument("-port", type=int, default=8000, help="Port to serve the MCP server on.")
+    parser.add_argument("-mcp", action="store_true", help="Run the MCP server.")
+    parser.add_argument("-log-level", type=str, default="ERROR", help="Set the log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).")
     args = parser.parse_args()
 
     # Set log level
-    logger.setLevel(getattr(logging, args.log_level.upper(), logging.INFO))
+    logger.setLevel(getattr(logging, args.log_level.upper(), logging.ERROR))
 
     maintain_index(args.doc)
 

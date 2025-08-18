@@ -22,7 +22,7 @@ import argparse
 import hashlib
 import html2text
 import logging
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.fastmcp import FastMCP
 import os
 from pathlib import Path
 from pydantic import Field
@@ -81,7 +81,6 @@ mcp = FastMCP(
 
 @mcp.tool()
 def search(
-    ctx: Context,
     search_query: str = Field(description="The serach phrase to search for."),
     max_results: int = Field(description="The maximum number of results to return.", default=20, gt=0),
     ) -> list[str]:
@@ -295,7 +294,6 @@ def main():
     # Parse command line arguments
     parser = argparse.ArgumentParser(description="Oracle Database Documentation MCP Server.")
     parser.add_argument("-doc", type=str, help="Path to the documentation input zip file or extracted directory.")
-    parser.add_argument("-port", type=int, default=8000, help="Port to serve the MCP server on.")
     parser.add_argument("-mcp", action="store_true", help="Run the MCP server.")
     parser.add_argument("-log-level", type=str, default="ERROR", help="Set the log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).")
     args = parser.parse_args()

@@ -23,25 +23,26 @@ import hashlib
 import html2text
 import logging
 from mcp.server.fastmcp import FastMCP
-import os
 from pathlib import Path
-from pydantic import Field
 import shutil
-from whoosh.index import create_in, open_dir
-from whoosh.qparser import QueryParser
-from whoosh.fields import Schema, TEXT
+from pocketsearch import Schema, Text, PocketSearch, PocketWriter
 import zipfile
 from mcp.server.fastmcp import FastMCP
 
-
 INDEX = None
-INDEX_DIR = Path("index")
-INDEX_CHECKSUM_FILE = Path(INDEX_DIR / "index.checksum")
-INDEX_SCHEMA = Schema(content=TEXT(stored=True))
+INDEX_NAME = Path("index.db")
+INDEX_CHECKSUM_FILE = Path("index.checksum")
 ZIP_TEMP_OUTPUT = "zip_temp"
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(filename='oracle-db-doc.log', filemode='w', level=logging.ERROR)
+
+
+# Class for index structure
+class IndexSchema(Schema):
+    entry_name = Text(is_id_field=True)
+    entry = Text(index=True)
+
 
 mcp = FastMCP(
     "oracle-doc",
@@ -50,9 +51,9 @@ mcp = FastMCP(
 
     This server is used to search the Oracle Database documentation for information.
     It can be used to find information about SQL syntax, PL/SQL, database concepts, best practices, examples and many more.
-    It is also used to search the offical Oracle Database documentation for additional information on a particular feature, its use cases, restrictions or interoperability with other features.
+    It is also used to search the official Oracle Database documentation for additional information on a particular feature, its use cases, restrictions or interoperability with other features.
     The tool should be used to augment any existing knowledge or to find information that is not available in the current context.
-    The server is desinged to search the Oracle Database documentation for search phrases and will return a list of results.
+    The server is designed to search the Oracle Database documentation for search phrases and will return a list of results.
 
     You can use the following tools to search the documentation:
     - search: Search the documentation for a query string or search phrase.
@@ -73,17 +74,16 @@ mcp = FastMCP(
     dependencies=[
         "html2text>=2025.4.15",
         "mcp>=1.12.3",
-        "whoosh>=2.7.4",
-        "pydantic>=2.10.6",
+        "pocketsearch>=0.40.0",
     ]
 )
 
 
 @mcp.tool()
 def search(
-    search_query: str = Field(description="The serach phrase to search for."),
-    max_results: int = Field(description="The maximum number of results to return.", default=20, gt=0),
-    ) -> list[str]:
+        search_query: str,
+        max_results: int = 10,
+) -> list[str]:
     """Search for information about how to use Oracle Database for a query string and return a list of results.
 
     Args:
@@ -93,31 +93,39 @@ def search(
     Usage:
         search(search_query="create table syntax")
         search(search_query="alter a parameter", max_results=13)
-        search(search_query="database user concept", max_results=20
+        search(search_query="database user concept", max_results=20)
         search(search_query="data use case domains best practices", max_results=15)
         search(search_query="external table definition", max_results=100)
 
         Returns:
             A list of results.
-            Each result a string in markdown format with the most relevant serach topic.
+            Each result a string in Markdown format with the most relevant search topic.
 
     """
     logger.info(f"query={search_query!r}")
     return search_index(search_query, max_results)
 
 
+def open_index() -> None:
+    global INDEX
+    logger.debug("Opening index file.")
+    INDEX = PocketSearch(db_name=INDEX_NAME, schema=IndexSchema)
+
+
 # Function to search the index
-def search_index(query_str, limit=10) -> list[str]:
+def search_index(query_str: str, limit: int = 10) -> list[str]:
     """
     Search the index for the query string and return matching sections with context.
     Returns a list of content.
     """
     results = []
-    with INDEX.searcher() as searcher:
-        query = QueryParser("content", INDEX.schema).parse(query_str)
-        hits = searcher.search(query, limit=limit)
-        for hit in hits:
-            results.append(hit['content'])
+    hits = INDEX.search(entry=query_str)
+    finds = 0
+    for hit in hits:
+        results.append(hit.entry)
+        finds += 1
+        if finds >= limit:
+            break
     return results
 
 
@@ -137,8 +145,8 @@ def maintain_index(path: str) -> None:
     # Logic to create or update the index goes here
 
     # If no path was provided but index exists, open the index.
-    if path is None and INDEX_DIR.exists():
-        INDEX = open_dir(INDEX_DIR)
+    if path is None and INDEX_NAME.exists():
+        open_index()
         return
 
     location = Path(path)
@@ -159,13 +167,14 @@ def maintain_index(path: str) -> None:
         return
 
     # Calculate the checksum of the input directory or zip file
+    logger.debug(f"Calculating checksum for location: {location}")
     input_checksum = shasum_directory(location)
     logger.debug(f"Checksum is {input_checksum} for location '{location}'")
 
     # See whether checksum matches the old index checksum
     if input_checksum == index_checksum:
-        logger.info("Index is up to date. No changes needed.")
-        INDEX = open_dir(INDEX_DIR)
+        logger.info("Index is up to date, no changes needed.")
+        open_index()
         return
 
     else:
@@ -192,14 +201,14 @@ def maintain_index(path: str) -> None:
             location = zip_output
 
         logger.debug("Indexing all html files in the directory...")
-        # Also opens the index
+
         update_index(location)
+        open_index()
 
         # Write the new checksum to the checksum file
         with INDEX_CHECKSUM_FILE.open("w") as f:
             logger.debug(f"Writing new checksum {input_checksum} to {INDEX_CHECKSUM_FILE}")
             f.write(input_checksum)
-
 
         # Delete temporary zip output directory if it exists
         if Path(ZIP_TEMP_OUTPUT).exists():
@@ -220,25 +229,18 @@ def update_index(location: Path) -> None:
 
     logger.debug("Updating index...")
 
-    if not INDEX_DIR.exists():
-        logger.debug(f"Creating index directory: {INDEX_DIR}")
-        os.makedirs(INDEX_DIR)
+    with PocketWriter(db_name=INDEX_NAME, schema=IndexSchema) as writer:
 
-    INDEX = create_in(INDEX_DIR, INDEX_SCHEMA)
-    writer = INDEX.writer()
+        files_indexes = 0
+        for ext in ("*.html", "*.htm"):
+            for file in location.rglob(ext):
+                logger.debug(f"Indexing file: {file}")
+                markdown_content = convert_to_markdown(file)
+                writer.insert_or_update(entry_name=str(file.relative_to(location)), entry=markdown_content)
+                files_indexes += 1
 
-    files_indexes = 0
-    for ext in ("*.html", "*.htm"):
-        for file in location.rglob(ext):
-            logger.debug(f"Indexing file: {file}")
-            content = convert_to_markdown(file)
-            writer.add_document(content=content)
-            files_indexes += 1
-
-    logger.info(f"Indexed {files_indexes} html files from '{location}'.")
-    logger.debug("Committing changes to the index.")
-    writer.commit()
-    logger.info("Indexing complete.")
+        logger.info(f"Indexed {files_indexes} html files from '{location}'.")
+        logger.info("Indexing complete.")
 
 
 def shasum_directory(directory: Path) -> str:
@@ -272,7 +274,7 @@ def convert_to_markdown(file: Path) -> str:
     # Configure the converter
     converter.ignore_links = False  # Keep links in the output
     converter.body_width = 0  # Disable line wrapping (optional)
-    converter.bypass_tables = False # Converts tables to Markdown
+    converter.bypass_tables = False  # Converts tables to Markdown
 
     with file.open("r", encoding="utf-8") as f:
         html = f.read()
@@ -295,7 +297,8 @@ def main():
     parser = argparse.ArgumentParser(description="Oracle Database Documentation MCP Server.")
     parser.add_argument("-doc", type=str, help="Path to the documentation input zip file or extracted directory.")
     parser.add_argument("-mcp", action="store_true", help="Run the MCP server.")
-    parser.add_argument("-log-level", type=str, default="ERROR", help="Set the log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).")
+    parser.add_argument("-log-level", type=str, default="ERROR",
+                        help="Set the log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).")
     args = parser.parse_args()
 
     # Set log level

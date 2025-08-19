@@ -20,7 +20,7 @@
 
 import argparse
 import hashlib
-import html2text
+import markdownify as md
 import logging
 from mcp.server.fastmcp import FastMCP
 from pathlib import Path
@@ -72,7 +72,7 @@ mcp = FastMCP(
     - If the search tool returns results that are not relevant, try to refine the query.
     """,
     dependencies=[
-        "html2text>=2025.4.15",
+        "markdownify>=1.2.0",
         "mcp>=1.12.3",
         "pocketsearch>=0.40.0",
     ]
@@ -240,7 +240,13 @@ def update_index(location: Path) -> None:
                 files_indexes += 1
 
         logger.info(f"Indexed {files_indexes} html files from '{location}'.")
-        logger.info("Indexing complete.")
+
+    # Optimize index for query performance
+    index = PocketSearch(db_name=INDEX_NAME, schema=IndexSchema, writeable=True)
+    logger.debug("Optimizing index...")
+    index.optimize()
+
+    logger.info("Indexing complete.")
 
 
 def shasum_directory(directory: Path) -> str:
@@ -268,19 +274,11 @@ def convert_to_markdown(file: Path) -> str:
     # Placeholder for conversion logic
     logger.debug(f"Converting {file} to Markdown format.")
 
-    # Initialize html2text converter
-    converter = html2text.HTML2Text()
-
-    # Configure the converter
-    converter.ignore_links = False  # Keep links in the output
-    converter.body_width = 0  # Disable line wrapping (optional)
-    converter.bypass_tables = False  # Converts tables to Markdown
-
     with file.open("r", encoding="utf-8") as f:
         html = f.read()
 
         # Convert HTML to Markdown
-        return converter.handle(html)
+        return md.markdownify(html)
 
 
 def main():

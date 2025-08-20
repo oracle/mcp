@@ -30,6 +30,8 @@ python3 -m pip install -r requirements.txt
 
 The MCP server has two modes, one to create or maintain the documentation index and one to run the MCP server. Both modes can be combined.
 
+The server will create a new folder under `$HOME/.oracle/oracle-db-mcp-server` to store the index and the server log file.
+
 ```console
 usage: oracle-db-doc-mcp-server.py [-h] [-doc DOC] [-mcp] [-log-level LOG_LEVEL]
 

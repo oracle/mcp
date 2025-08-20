@@ -23,19 +23,18 @@ import hashlib
 import markdownify as md
 import logging
 from fastmcp import FastMCP
-from pathlib import Path
+from pathlib import PurePath, Path
 import shutil
 from pocketsearch import Schema, Text, PocketSearch, PocketWriter
 import zipfile
 
 INDEX = None
-INDEX_NAME = Path("index.db")
-INDEX_CHECKSUM_FILE = Path("index.checksum")
-ZIP_TEMP_OUTPUT = "zip_temp"
+HOME_DIR = Path.home().joinpath(PurePath(".oracle/oracle-db-mcp-server"))
+INDEX_NAME = HOME_DIR.joinpath(PurePath("index.db"))
+INDEX_CHECKSUM_FILE = HOME_DIR.joinpath(PurePath("index.checksum"))
+ZIP_TEMP_OUTPUT = HOME_DIR.joinpath("zip_temp")
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(filename='oracle-db-doc.log', filemode='w', level=logging.ERROR)
-
 
 # Class for index structure
 class IndexSchema(Schema):
@@ -298,7 +297,11 @@ def main():
                         help="Set the log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).")
     args = parser.parse_args()
 
+    if not HOME_DIR.exists():
+        HOME_DIR.mkdir(parents=True)
+
     # Set log level
+    logging.basicConfig(filename=HOME_DIR.joinpath(Path('oracle-db-doc.log')), filemode='w', level=logging.ERROR)
     logger.setLevel(getattr(logging, args.log_level.upper(), logging.ERROR))
 
     maintain_index(args.doc)

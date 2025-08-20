@@ -1,3 +1,3 @@
 markdownify >= 1.2.0
-mcp >= 1.12.3
+fastmcp >= 2.11.3
 pocketsearch >= 0.40.0

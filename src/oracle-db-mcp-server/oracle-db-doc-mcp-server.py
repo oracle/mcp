@@ -22,12 +22,11 @@ import argparse
 import hashlib
 import markdownify as md
 import logging
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 from pathlib import Path
 import shutil
 from pocketsearch import Schema, Text, PocketSearch, PocketWriter
 import zipfile
-from mcp.server.fastmcp import FastMCP
 
 INDEX = None
 INDEX_NAME = Path("index.db")
@@ -73,7 +72,7 @@ mcp = FastMCP(
     """,
     dependencies=[
         "markdownify>=1.2.0",
-        "mcp>=1.12.3",
+        "fastmcp>=2.11.3",
         "pocketsearch>=0.40.0",
     ]
 )

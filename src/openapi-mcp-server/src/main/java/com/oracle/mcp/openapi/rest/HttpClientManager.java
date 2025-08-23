@@ -7,10 +7,10 @@ import java.net.ProxySelector;
 import java.net.http.HttpClient;
 import java.time.Duration;
 
-public class HttpClientFactory {
+public class HttpClientManager {
 
 
-    public HttpClientFactory() {
+    public HttpClientManager() {
 
     }
 
@@ -23,15 +23,10 @@ public class HttpClientFactory {
 
 
         if (config.getHttpVersion() != null) {
-            switch (config.getHttpVersion().toUpperCase()) {
-                case "HTTP_1_1":
-                    builder.version(HttpClient.Version.HTTP_1_1);
-                    break;
-                case "HTTP_2":
-                    builder.version(HttpClient.Version.HTTP_2);
-                    break;
-                default:
-                    throw new IllegalArgumentException("Unsupported HTTP version: " + config.getHttpVersion());
+            if (config.getHttpVersion().equalsIgnoreCase("HTTP_2")) {
+                builder.version(HttpClient.Version.HTTP_2);
+            } else {
+                builder.version(HttpClient.Version.HTTP_1_1);
             }
         }
 

@@ -3,7 +3,6 @@ package com.oracle.mcp.openapi.fetcher;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oracle.mcp.openapi.enums.OpenApiSchemaAuthType;
-import com.oracle.mcp.openapi.exception.OpenApiException;
 import com.oracle.mcp.openapi.model.McpServerConfig;
 import com.oracle.mcp.openapi.enums.OpenApiSchemaSourceType;
 import com.oracle.mcp.openapi.enums.OpenApiSchemaType;
@@ -12,6 +11,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -52,47 +54,31 @@ public class OpenApiSchemaFetcher {
         return Files.readString(path, StandardCharsets.UTF_8);
     }
 
-    private String downloadContent(McpServerConfig mcpServerConfig) throws OpenApiException {
-        try {
-            String url = mcpServerConfig.getSpecUrl();
 
-            // You can also build headers here via applyAuth if you prefer
-            Map<String, String> headers = applyAuth(mcpServerConfig);
+    private String downloadContent(McpServerConfig mcpServerConfig) throws Exception {
+        URL url = new URL(mcpServerConfig.getSpecUrl());
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setConnectTimeout(10_000);
+        conn.setReadTimeout(10_000);
+        conn.setRequestMethod("GET");
 
-            return restApiExecutionService.get(url, headers);
+        applyAuth(conn, mcpServerConfig);
 
-        } catch (IOException | InterruptedException e) {
-            String errorMessage = "Failed to download OpenAPI schema.";
-            LOGGER.error(errorMessage, e);
-            throw new OpenApiException(errorMessage, e);
+        try (InputStream in = conn.getInputStream()) {
+            byte[] bytes = in.readAllBytes();
+            return new String(bytes, StandardCharsets.UTF_8);
         }
     }
 
-
-    private Map<String, String> applyAuth(McpServerConfig mcpServerConfig) {
-        Map<String, String> headers = new HashMap<>();
+    private void applyAuth(HttpURLConnection conn, McpServerConfig mcpServerConfig) {
         OpenApiSchemaAuthType authType = mcpServerConfig.getAuthType();
-        if (authType == null || authType == OpenApiSchemaAuthType.NONE) {
-            return headers;
+        if (authType == OpenApiSchemaAuthType.BASIC) {
+            String encoded = Base64.getEncoder().encodeToString(
+                    (mcpServerConfig.getAuthUsername() + ":" + mcpServerConfig.getAuthPassword())
+                            .getBytes(StandardCharsets.UTF_8)
+            );
+            conn.setRequestProperty("Authorization", "Basic " + encoded);
         }
-
-        switch (authType) {
-            case BASIC -> {
-                String encoded = Base64.getEncoder().encodeToString(
-                        (mcpServerConfig.getAuthUsername() + ":" + mcpServerConfig.getAuthPassword())
-                                .getBytes(StandardCharsets.UTF_8)
-                );
-                headers.put("Authorization", "Basic " + encoded);
-            }
-
-            case BEARER -> {
-                headers.put("Authorization", "Bearer " + mcpServerConfig.getAuthToken());
-            }
-            default -> {
-                // NONE or unrecognized
-            }
-        }
-        return headers;
     }
 
 

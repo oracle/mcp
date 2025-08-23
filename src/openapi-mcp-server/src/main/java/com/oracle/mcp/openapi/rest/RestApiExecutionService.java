@@ -15,7 +15,8 @@ import java.util.stream.Stream;
 
 public class RestApiExecutionService {
 
-    private final HttpClient httpClient;
+    private HttpClient httpClient;
+    private final McpServerCacheService mcpServerCacheService;
 
     // HTTP Method constants
     public static final String GET = "GET";
@@ -26,8 +27,16 @@ public class RestApiExecutionService {
 
 
     public RestApiExecutionService(McpServerCacheService mcpServerCacheService) {
+       this.mcpServerCacheService = mcpServerCacheService;
+    }
+
+    private HttpClient getHttpClient() {
+        if(this.httpClient!=null){
+            return this.httpClient;
+        }
         McpServerConfig mcpServerConfig = mcpServerCacheService.getServerConfig();
-        this.httpClient = new HttpClientFactory().getClient(mcpServerConfig);
+        return new HttpClientManager().getClient(mcpServerConfig);
+
     }
 
     /**
@@ -46,6 +55,7 @@ public class RestApiExecutionService {
 
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(URI.create(targetUrl))
+                .version(HttpClient.Version.HTTP_1_1) // force 1.1
                 .timeout(Duration.ofSeconds(30));
 
         // Add headers
@@ -64,7 +74,7 @@ public class RestApiExecutionService {
         }
 
         HttpRequest request = requestBuilder.build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        HttpResponse<String> response = getHttpClient().send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
         return response.body();
     }

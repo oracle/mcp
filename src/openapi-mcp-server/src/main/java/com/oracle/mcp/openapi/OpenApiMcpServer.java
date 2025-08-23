@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oracle.mcp.openapi.cache.McpServerCacheService;
 import com.oracle.mcp.openapi.enums.OpenApiSchemaAuthType;
 import com.oracle.mcp.openapi.fetcher.OpenApiSchemaFetcher;
-import com.oracle.mcp.openapi.fetcher.RestApiExecutionService;
+import com.oracle.mcp.openapi.rest.RestApiExecutionService;
 import com.oracle.mcp.openapi.model.McpServerConfig;
 import com.oracle.mcp.openapi.tool.OpenApiToMcpToolConverter;
 import io.modelcontextprotocol.server.McpServer;
@@ -140,7 +140,7 @@ public class OpenApiMcpServer implements CommandLineRunner {
                                 LOGGER.info("Server exchange {}", new ObjectMapper().writeValueAsString(toolToExecute));
                                 LOGGER.info("Server callRequest {}", new ObjectMapper().writeValueAsString(callRequest));
 
-                            } catch (JsonProcessingException e) {
+                            } catch (JsonProcessingException | InterruptedException e) {
                                 throw new RuntimeException(e);
                             } catch (IOException e) {
                                 throw new RuntimeException(e);

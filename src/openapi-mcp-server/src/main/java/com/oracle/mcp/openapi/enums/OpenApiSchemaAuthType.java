@@ -3,13 +3,17 @@ package com.oracle.mcp.openapi.enums;
 import com.oracle.mcp.openapi.model.McpServerConfig;
 
 public enum OpenApiSchemaAuthType {
-    BASIC,UNKNOWN;
+    BASIC, BEARER, API_KEY, CUSTOM, NONE;
 
-    public static OpenApiSchemaAuthType getType(McpServerConfig request){
+    public static OpenApiSchemaAuthType getType(McpServerConfig request) {
         String authType = request.getRawAuthType();
-        if(authType.equals(BASIC.name())){
-            return BASIC;
+        if (authType == null || authType.isEmpty()) {
+            return NONE;
         }
-        return UNKNOWN;
+        try {
+            return OpenApiSchemaAuthType.valueOf(authType.toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            return NONE;
+        }
     }
 }

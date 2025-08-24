@@ -1,5 +1,5 @@
 <configuration>
-    <property name="LOG_PATH" value="${LOG_PATH:-.}"/>
+    <property name="LOG_PATH" value="${LOG_PATH:-${java.io.tmpdir}}"/>
 
     <!-- System.err appender for all logging -->
     <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
@@ -10,7 +10,7 @@
     </appender>
 
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>${LOG_PATH}/app.log</file>
+        <file>${LOG_PATH:-${java.io.tmpdir}}/app.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
             <fileNamePattern>${LOG_PATH}/app-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
             <maxFileSize>10MB</maxFileSize>

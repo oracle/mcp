@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.oracle.mcp.openapi.cache.McpServerCacheService;
 import com.oracle.mcp.openapi.fetcher.OpenApiSchemaFetcher;
-import com.oracle.mcp.openapi.rest.HttpClientManager;
 import com.oracle.mcp.openapi.rest.RestApiExecutionService;
 import com.oracle.mcp.openapi.tool.OpenApiToMcpToolConverter;
 

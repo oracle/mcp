@@ -19,8 +19,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Base64;
-import java.util.HashMap;
-import java.util.Map;
 
 public class OpenApiSchemaFetcher {
 

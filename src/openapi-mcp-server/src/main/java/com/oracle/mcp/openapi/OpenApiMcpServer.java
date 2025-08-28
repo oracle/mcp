@@ -5,11 +5,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oracle.mcp.openapi.cache.McpServerCacheService;
 import com.oracle.mcp.openapi.enums.OpenApiSchemaAuthType;
+import com.oracle.mcp.openapi.exception.McpServerToolInitializeException;
 import com.oracle.mcp.openapi.fetcher.OpenApiSchemaFetcher;
 import com.oracle.mcp.openapi.rest.RestApiExecutionService;
 import com.oracle.mcp.openapi.model.McpServerConfig;
 import com.oracle.mcp.openapi.tool.OpenApiToMcpToolConverter;
 import io.modelcontextprotocol.server.McpServer;
+import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpServerTransportProvider;
@@ -58,19 +60,16 @@ public class OpenApiMcpServer implements CommandLineRunner {
     }
 
     @Override
-    public void run(String... args) {
-        if (args.length == 0) {
-            System.err.println("Usage: java -jar app.jar <swagger-url>");
-            return;
-        }
-
+    public void run(String... args) throws Exception {
+        initialize(args);
     }
 
-    @Bean
-    public CommandLineRunner commandRunner() {
-        return args -> {
-            // No latch, register immediately
-            McpServerConfig argument = McpServerConfig.fromArgs(args);
+
+    private void initialize(String[] args) throws Exception {
+        // No latch, register immediately
+        McpServerConfig argument = null;
+        try {
+            argument = McpServerConfig.fromArgs(args);
             mcpServerCacheService.putServerConfig(argument);
             // Fetch and convert OpenAPI to tools
             JsonNode openApiJson = openApiSchemaFetcher.fetch(argument);
@@ -96,69 +95,72 @@ public class OpenApiMcpServer implements CommandLineRunner {
             for (McpSchema.Tool tool : mcpTools) {
                 SyncToolSpecification syncTool = SyncToolSpecification.builder()
                         .tool(tool)
-                        .callHandler((exchange, callRequest) -> {
-                            String response="";
-                            try {
-                                McpSchema.Tool toolToExecute =  mcpServerCacheService.getTool(callRequest.name());
-                                String httpMethod = toolToExecute.meta().get("httpMethod").toString();
-                                String path = toolToExecute.meta().get("path").toString();
-
-                                McpServerConfig config = mcpServerCacheService.getServerConfig();
-                                String url = config.getApiBaseUrl() + path;
-                                Map<String, Object> arguments =callRequest.arguments();
-                                Map<String, Map<String, Object>>  pathParams = (Map<String, Map<String, Object>>) Optional.ofNullable(toolToExecute.meta().get("pathParams"))
-                                        .orElse(Collections.emptyMap());
-                                Map<String, Map<String, Object>> queryParams = (Map<String, Map<String, Object>>) Optional.ofNullable(toolToExecute.meta().get("queryParams"))
-                                        .orElse(Collections.emptyMap());
-                                String formattedUrl = url;
-                                Iterator<Map.Entry<String, Object>> iterator = arguments.entrySet().iterator();
-                                LOGGER.debug("Path params {}", pathParams);
-                                while (iterator.hasNext()) {
-                                    Map.Entry<String, Object> entry = iterator.next();
-                                    if (pathParams.containsKey(entry.getKey())) {
-                                        LOGGER.info("Entry {}", new ObjectMapper().writeValueAsString(entry));
-
-                                        String placeholder = "{" + entry.getKey() + "}";
-                                        String value = entry.getValue() != null ? entry.getValue().toString() : "";
-                                        formattedUrl = formattedUrl.replace(placeholder, value);
-                                        iterator.remove();
-                                    }
-                                }
-                                LOGGER.info("Formated URL {}", formattedUrl);
-
-                                OpenApiSchemaAuthType authType = config.getAuthType();
-                                Map<String,String> headers = new java.util.HashMap<>();
-                                if (authType == OpenApiSchemaAuthType.BASIC) {
-                                    String encoded = Base64.getEncoder().encodeToString(
-                                            (config.getAuthUsername() + ":" + config.getAuthPassword())
-                                                    .getBytes(StandardCharsets.UTF_8)
-                                    );
-                                    headers.put("Authorization", "Basic " + encoded);
-                                }
-                                String body = new ObjectMapper().writeValueAsString(arguments);
-                                response = restApiExecutionService.executeRequest(formattedUrl,httpMethod,body,headers);
-                                LOGGER.info("Server exchange {}", new ObjectMapper().writeValueAsString(toolToExecute));
-                                LOGGER.info("Server callRequest {}", new ObjectMapper().writeValueAsString(callRequest));
-
-                            } catch (JsonProcessingException | InterruptedException e) {
-                                throw new RuntimeException(e);
-                            } catch (IOException e) {
-                                throw new RuntimeException(e);
-                            }
-                            return McpSchema.CallToolResult.builder()
-                                    .structuredContent(response)
-                                    .build();
-                        })
+                        .callHandler(this::executeTool)
                         .build();
                 mcpSyncServer.addTool(syncTool);
             }
             DefaultListableBeanFactory beanFactory = (DefaultListableBeanFactory) context.getBeanFactory();
 
-            BeanDefinitionBuilder beanDefinitionBuilder = BeanDefinitionBuilder
-                    .genericBeanDefinition(McpSyncServer.class);
+            beanFactory.registerSingleton("mcpSyncServer", mcpSyncServer);
+        } catch (McpServerToolInitializeException exception) {
+            LOGGER.error(exception.getMessage());
+            System.err.println(exception.getMessage());
+            System.exit(1);
+        }
 
-            beanFactory.registerBeanDefinition("mcpSyncServer", beanDefinitionBuilder.getBeanDefinition());
+    }
 
-        };
+    private McpSchema.CallToolResult executeTool(McpSyncServerExchange exchange, McpSchema.CallToolRequest callRequest){
+        String response="";
+        try {
+            McpSchema.Tool toolToExecute =  mcpServerCacheService.getTool(callRequest.name());
+            String httpMethod = toolToExecute.meta().get("httpMethod").toString();
+            String path = toolToExecute.meta().get("path").toString();
+
+            McpServerConfig config = mcpServerCacheService.getServerConfig();
+            String url = config.getApiBaseUrl() + path;
+            Map<String, Object> arguments =callRequest.arguments();
+            Map<String, Map<String, Object>>  pathParams = (Map<String, Map<String, Object>>) Optional.ofNullable(toolToExecute.meta().get("pathParams"))
+                    .orElse(Collections.emptyMap());
+            Map<String, Map<String, Object>> queryParams = (Map<String, Map<String, Object>>) Optional.ofNullable(toolToExecute.meta().get("queryParams"))
+                    .orElse(Collections.emptyMap());
+            String formattedUrl = url;
+            Iterator<Map.Entry<String, Object>> iterator = arguments.entrySet().iterator();
+            LOGGER.debug("Path params {}", pathParams);
+            while (iterator.hasNext()) {
+                Map.Entry<String, Object> entry = iterator.next();
+                if (pathParams.containsKey(entry.getKey())) {
+                    LOGGER.info("Entry {}", new ObjectMapper().writeValueAsString(entry));
+
+                    String placeholder = "{" + entry.getKey() + "}";
+                    String value = entry.getValue() != null ? entry.getValue().toString() : "";
+                    formattedUrl = formattedUrl.replace(placeholder, value);
+                    iterator.remove();
+                }
+            }
+            LOGGER.info("Formated URL {}", formattedUrl);
+
+            OpenApiSchemaAuthType authType = config.getAuthType();
+            Map<String,String> headers = new java.util.HashMap<>();
+            if (authType == OpenApiSchemaAuthType.BASIC) {
+                String encoded = Base64.getEncoder().encodeToString(
+                        (config.getAuthUsername() + ":" + config.getAuthPassword())
+                                .getBytes(StandardCharsets.UTF_8)
+                );
+                headers.put("Authorization", "Basic " + encoded);
+            }
+            String body = new ObjectMapper().writeValueAsString(arguments);
+            response = restApiExecutionService.executeRequest(formattedUrl,httpMethod,body,headers);
+            LOGGER.info("Server exchange {}", new ObjectMapper().writeValueAsString(toolToExecute));
+            LOGGER.info("Server callRequest {}", new ObjectMapper().writeValueAsString(callRequest));
+
+        } catch (JsonProcessingException | InterruptedException e) {
+            throw new RuntimeException(e);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        return McpSchema.CallToolResult.builder()
+                .structuredContent(response)
+                .build();
     }
 }

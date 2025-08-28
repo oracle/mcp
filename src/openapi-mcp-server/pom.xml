@@ -12,7 +12,7 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <spring.boot.version>3.3.0</spring.boot.version>
+        <spring.boot.version>3.5.5</spring.boot.version>
     </properties>
 
     <dependencies>
@@ -58,8 +58,31 @@
             <scope>compile</scope>
         </dependency>
 
-    </dependencies>
+        <!-- https://mvnrepository.com/artifact/com.squareup.okhttp3/okhttp -->
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp</artifactId>
+            <scope>test</scope>
+            <version>5.1.0</version>
+        </dependency>
 
+        <!-- https://mvnrepository.com/artifact/io.modelcontextprotocol.sdk/mcp-test -->
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp-test</artifactId>
+            <version>0.11.3</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/org.springframework.boot/spring-boot-starter-test -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <version>${spring.boot.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+
+    </dependencies>
 
     <build>
         <plugins>

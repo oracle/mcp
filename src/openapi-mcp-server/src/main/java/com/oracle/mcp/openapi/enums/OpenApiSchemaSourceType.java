@@ -7,7 +7,7 @@ public enum OpenApiSchemaSourceType {
 
     public static OpenApiSchemaSourceType getType(McpServerConfig request) {
         // Backward compatibility: prefer specUrl if set
-        String specUrl = request.getSpecUrl();
+        String specUrl = request.getApiSpec();
         if (specUrl != null && !specUrl.trim().isEmpty()) {
             return URL;
         }

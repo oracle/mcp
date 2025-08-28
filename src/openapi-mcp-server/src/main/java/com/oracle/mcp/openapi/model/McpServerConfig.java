@@ -1,6 +1,8 @@
 package com.oracle.mcp.openapi.model;
 
+import com.oracle.mcp.openapi.constants.ErrorMessage;
 import com.oracle.mcp.openapi.enums.OpenApiSchemaAuthType;
+import com.oracle.mcp.openapi.exception.McpServerToolInitializeException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -18,7 +20,6 @@ public final class McpServerConfig {
     private final String apiName;
     private final String apiBaseUrl;
     private final String apiSpec;
-    private final String specUrl;
 
     // Authentication details
     private final String authType; // raw string
@@ -37,7 +38,7 @@ public final class McpServerConfig {
     private final String proxyHost;
     private final Integer proxyPort;
 
-    private McpServerConfig(String apiName, String apiBaseUrl, String specUrl,
+    private McpServerConfig(String apiName, String apiBaseUrl,
                             String authType, char[] authToken, String authUsername,
                             char[] authPassword, char[] authApiKey, String authApiKeyName,
                             String authApiKeyIn, String apiSpec,
@@ -46,7 +47,6 @@ public final class McpServerConfig {
                             String proxyHost, Integer proxyPort) {
         this.apiName = apiName;
         this.apiBaseUrl = apiBaseUrl;
-        this.specUrl = specUrl;
         this.authType = authType;
         this.authToken = authToken != null ? authToken.clone() : null;
         this.authUsername = authUsername;
@@ -66,12 +66,14 @@ public final class McpServerConfig {
     // ----------------- GETTERS -----------------
     public String getApiName() { return apiName; }
     public String getApiBaseUrl() { return apiBaseUrl; }
-    public String getSpecUrl() { return specUrl; }
     public String getRawAuthType() { return authType; }
     public OpenApiSchemaAuthType getAuthType() { return OpenApiSchemaAuthType.getType(this); }
     public String getAuthUsername() { return authUsername; }
     public String getAuthToken() { return authToken != null ? new String(authToken) : null; }
-    public String getAuthPassword() { return authPassword != null ? new String(authPassword) : null; }
+
+    public char[] getAuthPassword() {
+        return authPassword;
+    }
     public char[] getAuthApiKey() { return authApiKey != null ? authApiKey.clone() : null; }
     public String getAuthApiKeyName() { return authApiKeyName; }
     public String getAuthApiKeyIn() { return authApiKeyIn; }
@@ -106,7 +108,7 @@ public final class McpServerConfig {
     public Integer getProxyPort() { return proxyPort; }
 
     // ----------------- FACTORY METHOD -----------------
-    public static McpServerConfig fromArgs(String[] args) {
+    public static McpServerConfig fromArgs(String[] args) throws McpServerToolInitializeException {
         Map<String, String> argMap = toMap(args);
 
         // ----------------- API info -----------------
@@ -114,14 +116,9 @@ public final class McpServerConfig {
         String apiBaseUrl = getStringValue(argMap.get("--api-base-url"), "API_BASE_URL");
         String apiSpec = getStringValue(argMap.get("--api-spec"), "API_SPEC");
 
-        String specUrl = getStringValue(argMap.get("--spec-url"), "API_SPEC_URL");
-        if (specUrl == null && apiSpec == null) {
-            throw new IllegalArgumentException("Either --spec-url or --api-spec is required.");
+        if (apiSpec == null) {
+            throw new McpServerToolInitializeException(ErrorMessage.MISSING_API_SPEC);
         }
-        if (specUrl != null && apiSpec != null) {
-            throw new IllegalArgumentException("Provide either --spec-url or --api-spec, but not both.");
-        }
-
         // ----------------- Authentication -----------------
         String authType = getStringValue(argMap.get("--auth-type"), "AUTH_TYPE");
         char[] authToken = getCharValue(argMap.get("--auth-token"), "AUTH_TOKEN");
@@ -147,7 +144,7 @@ public final class McpServerConfig {
         String proxyHost = getStringValue(argMap.get("--proxy-host"), "API_HTTP_PROXY_HOST");
         Integer proxyPort = getIntOrNull(argMap.get("--proxy-port"), "API_HTTP_PROXY_PORT");
 
-        return new McpServerConfig(apiName, apiBaseUrl, specUrl,
+        return new McpServerConfig(apiName, apiBaseUrl,
                 authType, authToken, authUsername, authPassword, authApiKey,
                 authApiKeyName, authApiKeyIn, apiSpec,
                 connectTimeout, responseTimeout,

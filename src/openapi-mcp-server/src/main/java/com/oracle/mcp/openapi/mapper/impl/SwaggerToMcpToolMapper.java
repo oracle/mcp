@@ -196,6 +196,15 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
 
     private Map<String, Object> extractPropertySchema(Property property) {
         Map<String, Object> schema = new LinkedHashMap<>();
+
+        if (property instanceof RefProperty) {
+            // Replace $ref with empty object
+            schema.put("type", "object");
+            schema.put("properties", new LinkedHashMap<>());
+            schema.put("additionalProperties", true);
+            return schema;
+        }
+
         if (property.getType() != null) schema.put("type", property.getType());
         if (property.getDescription() != null) schema.put("description", property.getDescription());
 
@@ -208,6 +217,7 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
                 }
             }
             schema.put("properties", nestedProps);
+            schema.put("additionalProperties", true);
         }
 
         if (property instanceof ArrayProperty) {
@@ -216,12 +226,9 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
             schema.put("items", extractPropertySchema(arrProp.getItems()));
         }
 
-        if (property instanceof RefProperty) {
-            schema.put("$ref", ((RefProperty) property).get$ref());
-        }
-
         return schema;
     }
+
 
     public Map<String, Object> extractOutputSchema(Operation operation) {
         if (operation.getResponses() == null || operation.getResponses().isEmpty()) {

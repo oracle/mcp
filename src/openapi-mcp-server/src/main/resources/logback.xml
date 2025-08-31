@@ -1,14 +1,15 @@
 <configuration>
     <property name="LOG_PATH" value="${LOG_PATH:-${java.io.tmpdir}}"/>
 
-    <!-- System.err appender for all logging -->
-    <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
-        <target>System.err</target>
+    <!-- Console appender for JSON-RPC (io.modelcontextprotocol) -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.out</target>
         <encoder>
             <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
 
+    <!-- Rolling file appender for all other logs -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>${LOG_PATH:-${java.io.tmpdir}}/app.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
@@ -22,14 +23,13 @@
         </encoder>
     </appender>
 
-    <!-- Don't touch io.modelcontextprotocol: let it write raw JSON-RPC to stdout -->
-    <logger name="io.modelcontextprotocol" level="OFF" additivity="false">
-        <appender-ref ref="FILE"/>
+    <!-- io.modelcontextprotocol logs go only to console -->
+    <logger name="io.modelcontextprotocol" level="INFO" additivity="false">
+        <appender-ref ref="STDOUT"/>
     </logger>
 
-    <!-- Everything else -->
+    <!-- All other logs go only to rolling file -->
     <root level="INFO">
-        <appender-ref ref="STDERR"/>
         <appender-ref ref="FILE"/>
     </root>
 </configuration>

@@ -20,26 +20,32 @@
 
 import argparse
 import hashlib
-import markdownify as md
-import logging
 from fastmcp import FastMCP
+import logging
+import markdownify as md
 from pathlib import PurePath, Path
+from pocketsearch import PocketSearch, PocketWriter
+import re
 import shutil
-from pocketsearch import Schema, Text, PocketSearch, PocketWriter
 import zipfile
 
-INDEX = None
+# Working home directory
 HOME_DIR = Path.home().joinpath(PurePath(".oracle/oracle-db-mcp-server"))
-INDEX_NAME = HOME_DIR.joinpath(PurePath("index.db"))
-INDEX_CHECKSUM_FILE = HOME_DIR.joinpath(PurePath("index.checksum"))
+
+# Index
+INDEX = None
+INDEX_FILE = HOME_DIR.joinpath(PurePath("index.db"))
+INDEX_VERSION="1.0.0"
+INDEX_VERSION_FILE = HOME_DIR.joinpath(PurePath("index.version"))
+CONTENT_CHECKSUM_FILE = HOME_DIR.joinpath(PurePath("content.checksum"))
+
+# Resources folder
+RESOURCES_DIR = HOME_DIR.joinpath(PurePath("resources"))
+
+# Temp directory for zip file extraction
 ZIP_TEMP_OUTPUT = HOME_DIR.joinpath("zip_temp")
 
 logger = logging.getLogger(__name__)
-
-# Class for index structure
-class IndexSchema(Schema):
-    entry_name = Text(is_id_field=True)
-    entry = Text(index=True)
 
 
 mcp = FastMCP(
@@ -86,7 +92,7 @@ def search(
 
     Args:
         search_query: The search phrase to search for.
-        max_results: The maximum number of results to return, defaults to 20.
+        max_results: The maximum number of results to return, defaults to 10.
 
     Usage:
         search(search_query="create table syntax")
@@ -94,7 +100,6 @@ def search(
         search(search_query="database user concept", max_results=20)
         search(search_query="data use case domains best practices", max_results=15)
         search(search_query="external table definition", max_results=100)
-
         Returns:
             A list of results.
             Each result a string in Markdown format with the most relevant search topic.
@@ -104,12 +109,6 @@ def search(
     return search_index(search_query, max_results)
 
 
-def open_index() -> None:
-    global INDEX
-    logger.debug("Opening index file.")
-    INDEX = PocketSearch(db_name=INDEX_NAME, schema=IndexSchema)
-
-
 # Function to search the index
 def search_index(query_str: str, limit: int = 10) -> list[str]:
     """
@@ -117,18 +116,18 @@ def search_index(query_str: str, limit: int = 10) -> list[str]:
     Returns a list of content.
     """
     results = []
-    hits = INDEX.search(entry=query_str)
+    hits = INDEX.search(text=query_str)
     finds = 0
     for hit in hits:
-        results.append(hit.entry)
+        results.append(hit.text)
         finds += 1
         if finds >= limit:
             break
     return results
 
 
-def maintain_index(path: str) -> None:
-    """Creates or updates the index and opens it for the oracle-doc.
+def maintain_content(path: str) -> None:
+    """Maintains the content for the MCP server.
     This function checks if the index needs to be created or updated based on the
     contents of the provided location, which can be a directory or a zip file.
 
@@ -142,22 +141,16 @@ def maintain_index(path: str) -> None:
     logger.info("Maintaining index...")
     # Logic to create or update the index goes here
 
-    # If no path was provided but index exists, open the index.
-    if path is None and INDEX_NAME.exists():
-        open_index()
-        return
-
     location = Path(path)
     if not location.exists():
         logger.error(f"Provided path does not exist: {location}")
         return
 
     # Get the old index checksum, if it exists
-    index_checksum = "N/A"
-    # If the checksum file exists, read the checksum
-    if INDEX_CHECKSUM_FILE.exists():
-        with INDEX_CHECKSUM_FILE.open("r") as f:
-            index_checksum = f.read().strip()
+    content_checksum = get_file_content(CONTENT_CHECKSUM_FILE)
+
+    # Get the old index version, if it exists
+    index_version = get_file_content(INDEX_VERSION_FILE)
 
     # Only directories and zip files are currently supported
     if location.is_file() and not location.suffix == '.zip':
@@ -169,16 +162,22 @@ def maintain_index(path: str) -> None:
     input_checksum = shasum_directory(location)
     logger.debug(f"Checksum is {input_checksum} for location '{location}'")
 
-    # See whether checksum matches the old index checksum
-    if input_checksum == index_checksum:
+    # See whether checksum matches the old index checksum and the index has not changed
+    if input_checksum == content_checksum and index_version == INDEX_VERSION:
         logger.info("Index is up to date, no changes needed.")
-        open_index()
         return
-
+    # Data has changed, re-index
     else:
-        logger.info("Checksum has changed, updating index.")
-        logger.debug(f"Old index checksum: {index_checksum}, New input checksum: {input_checksum}")
+        if input_checksum != content_checksum:
+            logger.info("Checksum has changed.")
+            logger.debug(f"Old index checksum: {content_checksum}, New input checksum: {input_checksum}")
 
+        if index_version != INDEX_VERSION:
+            logger.info("Index version has changed.")
+            logger.debug(f"Old index version: {index_version}, New index version: {INDEX_VERSION}")
+
+        INDEX_FILE.unlink(missing_ok=True)
+        logger.info("Recreating index...")
         # Extract the zip file to a temporary directory
         if location.is_file() and location.suffix == '.zip':
 
@@ -200,13 +199,16 @@ def maintain_index(path: str) -> None:
 
         logger.debug("Indexing all html files in the directory...")
 
-        update_index(location)
-        open_index()
+        update_content(location)
 
         # Write the new checksum to the checksum file
-        with INDEX_CHECKSUM_FILE.open("w") as f:
-            logger.debug(f"Writing new checksum {input_checksum} to {INDEX_CHECKSUM_FILE}")
-            f.write(input_checksum)
+        logger.debug(f"Writing new checksum {input_checksum} to {CONTENT_CHECKSUM_FILE}")
+        write_file_content(CONTENT_CHECKSUM_FILE, input_checksum)
+
+        if index_version != INDEX_VERSION:
+            # Write index version to version file
+            logger.debug(f"Writing index version {INDEX_VERSION} to {INDEX_VERSION_FILE}")
+            write_file_content(INDEX_VERSION_FILE, INDEX_VERSION)
 
         # Delete temporary zip output directory if it exists
         if Path(ZIP_TEMP_OUTPUT).exists():
@@ -214,37 +216,56 @@ def maintain_index(path: str) -> None:
             shutil.rmtree(zip_output)
 
 
-def update_index(location: Path) -> None:
-    """Update the index with all HTML files in the directory.
+def update_content(location: Path) -> None:
+    """Updates the stored content with the source provided.
 
     Args:
         location (Path): The path to the documentation directory.
     Returns:
         None
     """
+    logger.debug("Updating content")
 
-    global INDEX
+    files_processed = 0
+    for file in location.rglob("*"):
+        process_file(file)
+        files_processed += 1
+    logger.info(f"Processed {files_processed} files from '{location}'.")
 
-    logger.debug("Updating index...")
-
-    with PocketWriter(db_name=INDEX_NAME, schema=IndexSchema) as writer:
-
-        files_indexes = 0
-        for ext in ("*.html", "*.htm"):
-            for file in location.rglob(ext):
-                logger.debug(f"Indexing file: {file}")
-                markdown_content = convert_to_markdown(file)
-                writer.insert_or_update(entry_name=str(file.relative_to(location)), entry=markdown_content)
-                files_indexes += 1
-
-        logger.info(f"Indexed {files_indexes} html files from '{location}'.")
-
-    # Optimize index for query performance
-    index = PocketSearch(db_name=INDEX_NAME, schema=IndexSchema, writeable=True)
     logger.debug("Optimizing index...")
-    index.optimize()
+    optimize_index()
+    logger.debug("Index optimized")
 
-    logger.info("Indexing complete.")
+
+def process_file(file: Path) -> None:
+    """Process the file."""
+    # Only index html file
+    if file.suffix == ".html" or file.suffix == ".htm":
+        name = file.stem.lower()
+        # Ignore ReadMes, table of contents, indexes
+        if name not in ("readme", "toc", "index"):
+            content_chunks = convert_to_markdown_chunks(file)
+            update_index(content_chunks)
+
+
+def optimize_index() -> None:
+    """Optimizes index."""
+    ps = PocketSearch(db_name=INDEX_FILE, writeable=True)
+    ps.optimize()
+
+
+def update_index(content: list[str]) -> None:
+    """Update the index with content.
+
+    Args:
+        content list[str]: The list of HTML content to index.
+    Returns:
+        None
+    """
+    global INDEX
+    with PocketWriter(db_name=INDEX_FILE) as writer:
+        for segment in content:
+            writer.insert(text=segment)
 
 
 def shasum_directory(directory: Path) -> str:
@@ -260,7 +281,7 @@ def shasum_directory(directory: Path) -> str:
     return sha256.hexdigest()
 
 
-def convert_to_markdown(file: Path) -> str:
+def convert_to_markdown_chunks(file: Path) -> list[str]:
     """Convert an HTML file to Markdown format.
 
     Args:
@@ -269,14 +290,80 @@ def convert_to_markdown(file: Path) -> str:
     Returns:
         str: The converted Markdown content.
     """
-    # Placeholder for conversion logic
     logger.debug(f"Converting {file} to Markdown format.")
 
     with file.open("r", encoding="utf-8") as f:
         html = f.read()
 
         # Convert HTML to Markdown
-        return md.markdownify(html)
+        markdown = remove_markdown_urls(md.markdownify(html))
+        pattern = r'(^#{1,6}\s+[^\n]*\n?)(.*?)(?=(?:^#{1,6}\s+|\Z))'
+
+        # Find all matches with re.MULTILINE and re.DOTALL flags
+        matches = re.finditer(pattern, markdown, re.MULTILINE | re.DOTALL)
+
+        # Create sections list
+        sections = []
+        for match in matches:
+            # Get heading without the leading "### "
+            heading = re.sub("^#{1,6}\\s+", "", match.group(1).strip())
+            # Get content without URLs within them
+            content = match.group(2).strip()
+            sections.append(heading + "\n\n" + content)
+
+        if len(sections) == 0:
+            return [markdown]
+        else:
+            return sections
+
+
+def remove_markdown_urls(text):
+    # Regex pattern to match Markdown links [text](url)
+    pattern = r'\[([^\]]*)\]\([^\)]*\)'
+    # Replace the entire link with just the link text (group 1)
+    return re.sub(pattern, r'\1', text)
+
+
+def build_folder_structure() -> None:
+    """Builds the home directory structure."""
+    if not RESOURCES_DIR.exists():
+        RESOURCES_DIR.mkdir(parents=True)
+
+
+def get_file_content(path: str) -> str:
+    """Reads the content of a file and returns it or 'N/A' if the file does not exist.
+
+        Args:
+            file (Path): The path to the file.
+    """
+    if Path(path).exists():
+        with Path(path).open("r") as f:
+            return f.read().strip()
+    else:
+        return "N/A"
+
+
+def write_file_content(path: str, content: str) -> None:
+    """Writes the content to a file."""
+    with Path(path).open("w") as f:
+        f.write(content)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Oracle Database Documentation MCP Server.")
+    parser.add_argument("-doc", type=str,
+                        help="Path to the documentation input zip file or extracted directory.")
+    parser.add_argument("-mcp", action="store_true", help="Run the MCP server.")
+    parser.add_argument("-log-level", type=str, default="ERROR",
+                        help="Set the log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).")
+    parser.add_argument("-mode", choices=["stdio", "http"], default="stdio")
+    parser.add_argument("-host", type=str, default="0.0.0.0",
+                        help="The IP address that the MCP server is reachable at.")
+    parser.add_argument("-port", type=int, default="8000",
+                        help="The port that the MCP server is reachable at.")
+    args = parser.parse_args()
+
+    return args
 
 
 def main():
@@ -290,29 +377,31 @@ def main():
     logger.addHandler(ch)
 
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Oracle Database Documentation MCP Server.")
-    parser.add_argument("-doc", type=str, help="Path to the documentation input zip file or extracted directory.")
-    parser.add_argument("-mcp", action="store_true", help="Run the MCP server.")
-    parser.add_argument("-log-level", type=str, default="ERROR",
-                        help="Set the log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).")
-    args = parser.parse_args()
+    args = parse_args()
 
-    if not HOME_DIR.exists():
-        HOME_DIR.mkdir(parents=True)
+    build_folder_structure()
 
     # Set log level
     logging.basicConfig(filename=HOME_DIR.joinpath(Path('oracle-db-doc.log')), filemode='w', level=logging.ERROR)
     logger.setLevel(getattr(logging, args.log_level.upper(), logging.ERROR))
 
-    maintain_index(args.doc)
+    if args.doc:
+        maintain_content(args.doc)
 
-    if INDEX is None:
-        logger.error(f"Index does not exist. Please run the server with a valid doc directory to index.")
+    if not INDEX_FILE.exists():
+        logger.error(f"Index does not exist. Please create the index first pointing to a valid doc directory to index.")
         return
+
+    global INDEX
+    logger.debug("Opening index file.")
+    INDEX = PocketSearch(db_name=INDEX_FILE)
 
     if args.mcp:
         logger.info("Serving MCP server for Oracle documentation.")
-        mcp.run()
+        if args.mode == "stdio":
+            mcp.run(transport="stdio")
+        elif args.mode == "http":
+            mcp.run(transport="http", host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

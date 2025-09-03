@@ -1,38 +1,50 @@
+/*
+ * --------------------------------------------------------------------------
+ * Copyright (c) 2025, Oracle and/or its affiliates.
+ * Licensed under the Universal Permissive License v1.0 as shown at http://oss.oracle.com/licenses/upl.
+ * --------------------------------------------------------------------------
+ */
 package com.oracle.mcp.openapi;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oracle.mcp.openapi.cache.McpServerCacheService;
-import com.oracle.mcp.openapi.enums.OpenApiSchemaAuthType;
 import com.oracle.mcp.openapi.exception.McpServerToolInitializeException;
 import com.oracle.mcp.openapi.fetcher.OpenApiSchemaFetcher;
-import com.oracle.mcp.openapi.rest.RestApiExecutionService;
 import com.oracle.mcp.openapi.model.McpServerConfig;
-import com.oracle.mcp.openapi.tool.OpenApiToMcpToolConverter;
+import com.oracle.mcp.openapi.tool.OpenApiMcpToolExecutor;
+import com.oracle.mcp.openapi.tool.OpenApiMcpToolInitializer;
 import io.modelcontextprotocol.server.McpServer;
-import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpServerTransportProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.support.BeanDefinitionBuilder;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.server.McpSyncServer;
-
 import org.springframework.context.ConfigurableApplicationContext;
-import org.springframework.context.annotation.Bean;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 
+/**
+ * Entry point for the OpenAPI MCP server.
+ * <p>
+ * This Spring Boot application:
+ * <ul>
+ *   <li>Parses command-line arguments into a {@link McpServerConfig}</li>
+ *   <li>Fetches an OpenAPI/Swagger specification</li>
+ *   <li>Converts the specification into {@link McpSchema.Tool} objects</li>
+ *   <li>Registers the tools in an {@link McpSyncServer}</li>
+ *   <li>Exposes the server via standard I/O transport</li>
+ * </ul>
+ *
+ * @author Joby Wilson Mathews (joby.mathews@oracle.com)
+ */
 @SpringBootApplication
 public class OpenApiMcpServer implements CommandLineRunner {
 
@@ -40,7 +52,10 @@ public class OpenApiMcpServer implements CommandLineRunner {
     OpenApiSchemaFetcher openApiSchemaFetcher;
 
     @Autowired
-    OpenApiToMcpToolConverter openApiToMcpToolConverter;
+    OpenApiMcpToolExecutor openApiMcpToolExecutor;
+
+    @Autowired
+    OpenApiMcpToolInitializer openApiMcpToolInitializer;
 
     @Autowired
     ConfigurableApplicationContext context;
@@ -48,34 +63,58 @@ public class OpenApiMcpServer implements CommandLineRunner {
     @Autowired
     McpServerCacheService mcpServerCacheService;
 
-    @Autowired
-    RestApiExecutionService restApiExecutionService;
-
     private static final Logger LOGGER = LoggerFactory.getLogger(OpenApiMcpServer.class);
 
-
-
+    /**
+     * Starts the Spring Boot application.
+     *
+     * @param args command-line arguments for configuring the server
+     */
     public static void main(String[] args) {
         SpringApplication.run(OpenApiMcpServer.class, args);
     }
 
+    /**
+     * Callback method executed after the Spring Boot application starts.
+     * <p>
+     * Delegates to {@link #initialize(String[])} to set up the MCP server.
+     *
+     * @param args application command-line arguments
+     * @throws Exception if initialization fails
+     */
     @Override
     public void run(String... args) throws Exception {
         initialize(args);
     }
 
-
+    /**
+     * Initializes the MCP server.
+     * <p>
+     * The initialization process:
+     * <ol>
+     *   <li>Parses arguments into {@link McpServerConfig}</li>
+     *   <li>Caches the server configuration</li>
+     *   <li>Fetches and parses the OpenAPI/Swagger schema</li>
+     *   <li>Converts the schema into MCP tools via {@link OpenApiMcpToolInitializer}</li>
+     *   <li>Builds and configures an {@link McpSyncServer}</li>
+     *   <li>Registers each tool with a {@link SyncToolSpecification}</li>
+     *   <li>Registers the MCP server bean in the Spring context</li>
+     * </ol>
+     *
+     * @param args command-line arguments
+     * @throws Exception if initialization fails
+     */
     private void initialize(String[] args) throws Exception {
-        // No latch, register immediately
-        McpServerConfig argument = null;
+        McpServerConfig argument;
         try {
             argument = McpServerConfig.fromArgs(args);
             mcpServerCacheService.putServerConfig(argument);
+
             // Fetch and convert OpenAPI to tools
             JsonNode openApiJson = openApiSchemaFetcher.fetch(argument);
-            List<McpSchema.Tool> mcpTools = openApiToMcpToolConverter.convertJsonToMcpTools(openApiJson);
+            List<McpSchema.Tool> mcpTools = openApiMcpToolInitializer.extractTools(openApiJson);
 
-            // Build MCP server
+            // Build MCP server capabilities
             McpSchema.ServerCapabilities serverCapabilities = McpSchema.ServerCapabilities.builder()
                     .tools(false)
                     .resources(false, false)
@@ -84,6 +123,7 @@ public class OpenApiMcpServer implements CommandLineRunner {
                     .completions()
                     .build();
 
+            // Use stdin/stdout for communication
             McpServerTransportProvider stdInOutTransport =
                     new StdioServerTransportProvider(new ObjectMapper(), System.in, System.out);
 
@@ -91,76 +131,24 @@ public class OpenApiMcpServer implements CommandLineRunner {
                     .serverInfo("openapi-mcp-server", "1.0.0")
                     .capabilities(serverCapabilities)
                     .build();
-            // Register tools
+
+            // Register each tool in the server
             for (McpSchema.Tool tool : mcpTools) {
                 SyncToolSpecification syncTool = SyncToolSpecification.builder()
                         .tool(tool)
-                        .callHandler(this::executeTool)
+                        .callHandler(openApiMcpToolExecutor::execute)
                         .build();
                 mcpSyncServer.addTool(syncTool);
             }
-            DefaultListableBeanFactory beanFactory = (DefaultListableBeanFactory) context.getBeanFactory();
 
+            // Expose MCP server as a Spring bean
+            DefaultListableBeanFactory beanFactory = (DefaultListableBeanFactory) context.getBeanFactory();
             beanFactory.registerSingleton("mcpSyncServer", mcpSyncServer);
+
         } catch (McpServerToolInitializeException exception) {
             LOGGER.error(exception.getMessage());
             System.err.println(exception.getMessage());
             System.exit(1);
         }
-
-    }
-
-    private McpSchema.CallToolResult executeTool(McpSyncServerExchange exchange, McpSchema.CallToolRequest callRequest){
-        String response="";
-        try {
-            McpSchema.Tool toolToExecute =  mcpServerCacheService.getTool(callRequest.name());
-            String httpMethod = toolToExecute.meta().get("httpMethod").toString();
-            String path = toolToExecute.meta().get("path").toString();
-
-            McpServerConfig config = mcpServerCacheService.getServerConfig();
-            String url = config.getApiBaseUrl() + path;
-            Map<String, Object> arguments =callRequest.arguments();
-            Map<String, Map<String, Object>>  pathParams = (Map<String, Map<String, Object>>) Optional.ofNullable(toolToExecute.meta().get("pathParams"))
-                    .orElse(Collections.emptyMap());
-            Map<String, Map<String, Object>> queryParams = (Map<String, Map<String, Object>>) Optional.ofNullable(toolToExecute.meta().get("queryParams"))
-                    .orElse(Collections.emptyMap());
-            String formattedUrl = url;
-            Iterator<Map.Entry<String, Object>> iterator = arguments.entrySet().iterator();
-            LOGGER.debug("Path params {}", pathParams);
-            while (iterator.hasNext()) {
-                Map.Entry<String, Object> entry = iterator.next();
-                if (pathParams.containsKey(entry.getKey())) {
-                    LOGGER.info("Entry {}", new ObjectMapper().writeValueAsString(entry));
-
-                    String placeholder = "{" + entry.getKey() + "}";
-                    String value = entry.getValue() != null ? entry.getValue().toString() : "";
-                    formattedUrl = formattedUrl.replace(placeholder, value);
-                    iterator.remove();
-                }
-            }
-            LOGGER.info("Formated URL {}", formattedUrl);
-
-            OpenApiSchemaAuthType authType = config.getAuthType();
-            Map<String,String> headers = new java.util.HashMap<>();
-            if (authType == OpenApiSchemaAuthType.BASIC) {
-                String encoded = Base64.getEncoder().encodeToString(
-                        (config.getAuthUsername() + ":" + config.getAuthPassword())
-                                .getBytes(StandardCharsets.UTF_8)
-                );
-                headers.put("Authorization", "Basic " + encoded);
-            }
-            String body = new ObjectMapper().writeValueAsString(arguments);
-            response = restApiExecutionService.executeRequest(formattedUrl,httpMethod,body,headers);
-            LOGGER.info("Server exchange {}", new ObjectMapper().writeValueAsString(toolToExecute));
-            LOGGER.info("Server callRequest {}", new ObjectMapper().writeValueAsString(callRequest));
-
-        } catch (JsonProcessingException | InterruptedException e) {
-            throw new RuntimeException(e);
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-        return McpSchema.CallToolResult.builder()
-                .structuredContent(response)
-                .build();
     }
 }

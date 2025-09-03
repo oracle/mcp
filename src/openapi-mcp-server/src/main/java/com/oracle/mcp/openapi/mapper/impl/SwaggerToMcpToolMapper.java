@@ -1,3 +1,9 @@
+/*
+ * --------------------------------------------------------------------------
+ * Copyright (c) 2025, Oracle and/or its affiliates.
+ * Licensed under the Universal Permissive License v1.0 as shown at http://oss.oracle.com/licenses/upl.
+ * --------------------------------------------------------------------------
+ */
 package com.oracle.mcp.openapi.mapper.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -19,33 +25,65 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
+/**
+ * Implementation of {@link McpToolMapper} that converts Swagger 2.0 specifications
+ * into MCP-compliant tool definitions.
+ * <p>
+ * This mapper reads a Swagger JSON/YAML specification, extracts paths, operations,
+ * parameters, and models, and builds a list of {@link McpSchema.Tool} objects.
+ * <p>
+ * The generated tools are also cached via {@link McpServerCacheService} for reuse.
+ *
+ * @author Joby Wilson Mathews (joby.mathews@oracle.com)
+ */
 public class SwaggerToMcpToolMapper implements McpToolMapper {
 
     private final Set<String> usedNames = new HashSet<>();
     private final McpServerCacheService mcpServerCacheService;
     private static final Logger LOGGER = LoggerFactory.getLogger(SwaggerToMcpToolMapper.class);
+    private Swagger swaggerSpec; // Stores the full spec to resolve $ref definitions
 
+    /**
+     * Creates a new {@code SwaggerToMcpToolMapper}.
+     *
+     * @param mcpServerCacheService cache service used to store generated MCP tools.
+     */
     public SwaggerToMcpToolMapper(McpServerCacheService mcpServerCacheService) {
         this.mcpServerCacheService = mcpServerCacheService;
     }
 
+    /**
+     * Converts a Swagger 2.0 specification (as a Jackson {@link JsonNode})
+     * into a list of MCP tools.
+     *
+     * @param swaggerJson the Swagger specification in JSON tree form.
+     * @return a list of {@link McpSchema.Tool} objects.
+     * @throws IllegalArgumentException if the specification does not contain a {@code paths} object.
+     */
     @Override
     public List<McpSchema.Tool> convert(JsonNode swaggerJson) {
         LOGGER.debug("Parsing Swagger 2 JsonNode to Swagger object...");
-        Swagger swagger = parseSwagger(swaggerJson);
+        this.swaggerSpec = parseSwagger(swaggerJson);
 
-        if (swagger.getPaths() == null || swagger.getPaths().isEmpty()) {
+        if (swaggerSpec.getPaths() == null || swaggerSpec.getPaths().isEmpty()) {
             throw new IllegalArgumentException("'paths' object not found in the specification.");
         }
 
-        List<McpSchema.Tool> mcpTools = processPaths(swagger);
+        List<McpSchema.Tool> mcpTools = processPaths(swaggerSpec);
         LOGGER.debug("Conversion complete. Total tools created: {}", mcpTools.size());
         updateToolsToCache(mcpTools);
         return mcpTools;
     }
 
+    /**
+     * Processes all paths in the Swagger specification and builds corresponding MCP tools.
+     *
+     * @param swagger the parsed Swagger object.
+     * @return list of {@link McpSchema.Tool}.
+     */
     private List<McpSchema.Tool> processPaths(Swagger swagger) {
         List<McpSchema.Tool> mcpTools = new ArrayList<>();
+        if (swagger.getPaths() == null) return mcpTools;
 
         for (Map.Entry<String, Path> pathEntry : swagger.getPaths().entrySet()) {
             String path = pathEntry.getKey();
@@ -57,22 +95,33 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
         return mcpTools;
     }
 
+    /**
+     * Extracts operations (GET, POST, etc.) for a given Swagger path and converts them to MCP tools.
+     *
+     * @param path     the API path (e.g., {@code /users}).
+     * @param pathItem the Swagger path item containing operations.
+     * @param mcpTools the list to which new tools will be added.
+     */
     private void processOperationsForPath(String path, Path pathItem, List<McpSchema.Tool> mcpTools) {
         Map<HttpMethod, Operation> operations = pathItem.getOperationMap();
         if (operations == null) return;
 
         for (Map.Entry<HttpMethod, Operation> methodEntry : operations.entrySet()) {
-            HttpMethod method = methodEntry.getKey();
-            Operation operation = methodEntry.getValue();
-            if (operation == null) continue;
-
-            McpSchema.Tool tool = buildToolFromOperation(path, method, operation);
+            McpSchema.Tool tool = buildToolFromOperation(path, methodEntry.getKey(), methodEntry.getValue());
             if (tool != null) {
                 mcpTools.add(tool);
             }
         }
     }
 
+    /**
+     * Builds an MCP tool definition from a Swagger operation.
+     *
+     * @param path      the API path.
+     * @param method    the HTTP method.
+     * @param operation the Swagger operation metadata.
+     * @return a constructed {@link McpSchema.Tool}, or {@code null} if the operation is invalid.
+     */
     private McpSchema.Tool buildToolFromOperation(String path, HttpMethod method, Operation operation) {
         String rawOperationId = (operation.getOperationId() != null && !operation.getOperationId().isEmpty())
                 ? operation.getOperationId()
@@ -81,10 +130,8 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
         String toolName = makeUniqueName(rawOperationId);
         LOGGER.debug("--- Parsing Operation: {} {} (ID: {}) ---", method.name(), path, toolName);
 
-        String toolTitle = (operation.getSummary() != null && !operation.getSummary().isEmpty())
-                ? operation.getSummary()
-                : toolName;
-        String toolDescription = getDescription(toolName, method.name(), path, operation);
+        String toolTitle = operation.getSummary() != null ? operation.getSummary() : toolName;
+        String toolDescription = operation.getDescription() != null ? operation.getDescription() : toolTitle;
 
         Map<String, Object> properties = new LinkedHashMap<>();
         List<String> requiredParams = new ArrayList<>();
@@ -92,7 +139,6 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
         Map<String, Map<String, Object>> pathParams = new HashMap<>();
         Map<String, Map<String, Object>> queryParams = new HashMap<>();
         extractPathAndQueryParams(operation, pathParams, queryParams, properties, requiredParams);
-
         extractRequestBody(operation, properties, requiredParams);
 
         McpSchema.JsonSchema inputSchema = new McpSchema.JsonSchema(
@@ -101,9 +147,8 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
                 requiredParams.isEmpty() ? null : requiredParams,
                 false, null, null
         );
-        Map<String, Object> outputSchema = extractOutputSchema(operation);
-        outputSchema.put("additionalProperties", true);
 
+        Map<String, Object> outputSchema = extractOutputSchema(operation);
         Map<String, Object> meta = buildMeta(method, path, operation, pathParams, queryParams);
 
         return McpSchema.Tool.builder()
@@ -116,56 +161,30 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
                 .build();
     }
 
-    private Map<String, Object> buildMeta(HttpMethod method, String path,
-                                          Operation operation, Map<String, Map<String, Object>> pathParams,
-                                          Map<String, Map<String, Object>> queryParams) {
-        Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("httpMethod", method.name());
-        meta.put("path", path);
-        if (operation.getTags() != null) {
-            meta.put("tags", operation.getTags());
-        }
-        if (operation.getSecurity() != null) {
-            meta.put("security", operation.getSecurity());
-        }
-        if (!pathParams.isEmpty()) {
-            meta.put("pathParams", pathParams);
-        }
-        if (!queryParams.isEmpty()) {
-            meta.put("queryParams", queryParams);
-        }
-        return meta;
-    }
-
+    /**
+     * Extracts path and query parameters from a Swagger operation and adds them to the input schema.
+     */
     private void extractPathAndQueryParams(Operation operation,
                                            Map<String, Map<String, Object>> pathParams,
                                            Map<String, Map<String, Object>> queryParams,
                                            Map<String, Object> properties,
                                            List<String> requiredParams) {
-        if (operation.getParameters() != null) {
-            for (Parameter param : operation.getParameters()) {
-                if (param.getName() == null) continue;
+        if (operation.getParameters() == null) return;
 
-                Map<String, Object> paramMeta = new LinkedHashMap<>();
-                paramMeta.put("name", param.getName());
-                paramMeta.put("required", param.getRequired());
-                if (param.getDescription() != null) {
-                    paramMeta.put("description", param.getDescription());
-                }
+        for (Parameter param : operation.getParameters()) {
+            if (param instanceof PathParameter || param instanceof QueryParameter) {
+                Map<String, Object> paramSchema = new LinkedHashMap<>();
+                paramSchema.put("description", param.getDescription());
 
                 if (param instanceof PathParameter) {
-                    pathParams.put(param.getName(), paramMeta);
-                } else if (param instanceof QueryParameter) {
-                    queryParams.put(param.getName(), paramMeta);
+                    paramSchema.put("type", ((PathParameter) param).getType());
+                    pathParams.put(param.getName(), Map.of("name", param.getName(), "required", param.getRequired()));
+                } else {
+                    paramSchema.put("type", ((QueryParameter) param).getType());
+                    queryParams.put(param.getName(), Map.of("name", param.getName(), "required", param.getRequired()));
                 }
 
-                Map<String, Object> paramSchema = new LinkedHashMap<>();
-                if (param.getDescription() != null) {
-                    paramSchema.put("description", param.getDescription());
-                }
-                paramSchema.put("type", "string"); // fallback for Swagger 2 simple params
                 properties.put(param.getName(), paramSchema);
-
                 if (param.getRequired()) {
                     requiredParams.add(param.getName());
                 }
@@ -173,100 +192,144 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
         }
     }
 
+    /**
+     * Extracts request body schema (if present) from a Swagger operation.
+     */
     private void extractRequestBody(Operation operation, Map<String, Object> properties, List<String> requiredParams) {
-        if (operation.getParameters() != null) {
-            for (Parameter param : operation.getParameters()) {
-                if (param instanceof BodyParameter) {
-                    Model schema = ((BodyParameter) param).getSchema();
-                    if (schema instanceof ModelImpl) {
-                        ModelImpl impl = (ModelImpl) schema;
-                        if (impl.getProperties() != null) {
-                            for (Map.Entry<String, Property> entry : impl.getProperties().entrySet()) {
-                                properties.put(entry.getKey(), extractPropertySchema(entry.getValue()));
-                            }
-                        }
-                        if (impl.getRequired() != null) {
-                            requiredParams.addAll(impl.getRequired());
+        if (operation.getParameters() == null) return;
+
+        operation.getParameters().stream()
+                .filter(p -> p instanceof BodyParameter)
+                .findFirst()
+                .ifPresent(p -> {
+                    BodyParameter bodyParam = (BodyParameter) p;
+                    Model schema = bodyParam.getSchema();
+                    Map<String, Object> bodyProps = extractModelSchema(schema);
+
+                    if (!bodyProps.isEmpty()) {
+                        properties.put(bodyParam.getName(), bodyProps);
+                        if (bodyParam.getRequired()) {
+                            requiredParams.add(bodyParam.getName());
                         }
                     }
-                }
-            }
-        }
+                });
     }
 
-    private Map<String, Object> extractPropertySchema(Property property) {
+    /**
+     * Recursively extracts schema details from a Swagger model definition.
+     */
+    private Map<String, Object> extractModelSchema(Model model) {
+        if (model instanceof RefModel) {
+            String ref = ((RefModel) model).getSimpleRef();
+            model = swaggerSpec.getDefinitions().get(ref);
+        }
+
         Map<String, Object> schema = new LinkedHashMap<>();
-
-        if (property instanceof RefProperty) {
-            // Replace $ref with empty object
+        if (model instanceof ModelImpl && ((ModelImpl) model).getProperties() != null) {
+            Map<String, Object> props = new LinkedHashMap<>();
+            ((ModelImpl) model).getProperties().forEach((key, prop) -> {
+                props.put(key, extractPropertySchema(prop));
+            });
             schema.put("type", "object");
-            schema.put("properties", new LinkedHashMap<>());
-            schema.put("additionalProperties", true);
-            return schema;
-        }
-
-        if (property.getType() != null) schema.put("type", property.getType());
-        if (property.getDescription() != null) schema.put("description", property.getDescription());
-
-        if (property instanceof ObjectProperty) {
-            Map<String, Object> nestedProps = new LinkedHashMap<>();
-            ObjectProperty objProp = (ObjectProperty) property;
-            if (objProp.getProperties() != null) {
-                for (Map.Entry<String, Property> entry : objProp.getProperties().entrySet()) {
-                    nestedProps.put(entry.getKey(), extractPropertySchema(entry.getValue()));
-                }
+            schema.put("properties", props);
+            if (((ModelImpl) model).getRequired() != null) {
+                schema.put("required", ((ModelImpl) model).getRequired());
             }
-            schema.put("properties", nestedProps);
-            schema.put("additionalProperties", true);
-        }
-
-        if (property instanceof ArrayProperty) {
-            ArrayProperty arrProp = (ArrayProperty) property;
+        } else if (model instanceof ArrayModel) {
             schema.put("type", "array");
-            schema.put("items", extractPropertySchema(arrProp.getItems()));
+            schema.put("items", extractPropertySchema(((ArrayModel) model).getItems()));
         }
-
         return schema;
     }
 
-
-    public Map<String, Object> extractOutputSchema(Operation operation) {
-        if (operation.getResponses() == null || operation.getResponses().isEmpty()) {
-            return new HashMap<>();
+    /**
+     * Extracts schema information from a Swagger property.
+     */
+    private Map<String, Object> extractPropertySchema(Property property) {
+        if (property instanceof RefProperty) {
+            String simpleRef = ((RefProperty) property).getSimpleRef();
+            Model definition = swaggerSpec.getDefinitions().get(simpleRef);
+            if (definition != null) {
+                return extractModelSchema(definition);
+            } else {
+                return Map.of("type", "object", "description", "Unresolved reference: " + simpleRef);
+            }
         }
 
-        Response response = operation.getResponses().get("200");
-        if (response == null) {
-            response = operation.getResponses().get("default");
-        }
-        if (response == null || response.getSchema() == null) {
-            return new HashMap<>();
-        }
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", property.getType());
+        schema.put("description", property.getDescription());
 
-        return extractPropertySchema(response.getSchema());
+        if (property instanceof ObjectProperty) {
+            Map<String, Object> props = new LinkedHashMap<>();
+            ((ObjectProperty) property).getProperties().forEach((key, prop) -> {
+                props.put(key, extractPropertySchema(prop));
+            });
+            schema.put("properties", props);
+        } else if (property instanceof ArrayProperty) {
+            schema.put("items", extractPropertySchema(((ArrayProperty) property).getItems()));
+        }
+        return schema;
     }
 
+    /**
+     * Extracts the output schema for an operation (based on its 200/default response).
+     */
+    private Map<String, Object> extractOutputSchema(Operation operation) {
+        Map<String, Object> toolOutputSchema = new LinkedHashMap<>();
+        toolOutputSchema.put("type", "object");
+
+        if (operation.getResponses() == null || operation.getResponses().isEmpty()) {
+            return toolOutputSchema;
+        }
+
+        Response response = operation.getResponses().getOrDefault("200", operation.getResponses().get("default"));
+        if (response == null || response.getSchema() == null) {
+            return toolOutputSchema;
+        }
+
+        Map<String, Object> apiResponseSchema = extractPropertySchema(response.getSchema());
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("response", apiResponseSchema);
+        toolOutputSchema.put("properties", properties);
+
+        return toolOutputSchema;
+    }
+
+    /**
+     * Builds metadata for an MCP tool, including HTTP method, path, tags, security, and parameter maps.
+     */
+    private Map<String, Object> buildMeta(HttpMethod method, String path, Operation operation,
+                                          Map<String, Map<String, Object>> pathParams, Map<String, Map<String, Object>> queryParams) {
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("httpMethod", method.name());
+        meta.put("path", path);
+        if (operation.getTags() != null) meta.put("tags", operation.getTags());
+        if (operation.getSecurity() != null) meta.put("security", operation.getSecurity());
+        if (!pathParams.isEmpty()) meta.put("pathParams", pathParams);
+        if (!queryParams.isEmpty()) meta.put("queryParams", queryParams);
+        return meta;
+    }
+
+    /**
+     * Stores the generated tools into the cache service.
+     */
     private void updateToolsToCache(List<McpSchema.Tool> tools) {
         for (McpSchema.Tool tool : tools) {
             mcpServerCacheService.putTool(tool.name(), tool);
         }
     }
 
-    public String getDescription(String toolName, String httpMethod, String path, Operation operation) {
-        StringBuilder doc = new StringBuilder();
-        if (operation.getSummary() != null && !operation.getSummary().isEmpty()) {
-            doc.append(operation.getSummary()).append("\n");
-        } else if (operation.getDescription() != null && !operation.getDescription().isEmpty()) {
-            doc.append(operation.getDescription()).append("\n");
-        }
-        return doc.toString();
-    }
-
+    /**
+     * Parses the Swagger JSON into a {@link Swagger} object.
+     */
     private Swagger parseSwagger(JsonNode jsonNode) {
-        String jsonString = jsonNode.toString();
-        return new SwaggerParser().parse(jsonString);
+        return new SwaggerParser().parse(jsonNode.toString());
     }
 
+    /**
+     * Ensures a unique tool name by appending a numeric suffix if necessary.
+     */
     private String makeUniqueName(String base) {
         String name = base;
         int counter = 1;
@@ -277,12 +340,16 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
         return name;
     }
 
+    /**
+     * Converts an input string into camelCase format.
+     */
     private static String toCamelCase(String input) {
+        if (input == null || input.isEmpty()) return "";
         String[] parts = input.split("[^a-zA-Z0-9]+");
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < parts.length; i++) {
-            if (parts[i].isEmpty()) continue;
             String word = parts[i].toLowerCase();
+            if (word.isEmpty()) continue;
             if (i == 0) {
                 sb.append(word);
             } else {

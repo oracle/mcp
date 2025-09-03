@@ -6,30 +6,47 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.oracle.mcp.openapi</groupId>
     <artifactId>openapi-mcp-server</artifactId>
+    <name>Open API MCP Server</name>
+    <description>
+        The OpenAPI MCP Server is a Java-based implementation of an MCP (Model Context Protocol) server that works with OpenAPI specifications. It fetches OpenAPI schemas, converts them into MCP tools, and registers these tools with the MCP server.
+    </description>
     <version>1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
+
+    <developers>
+        <developer>
+            <name>Joby Mathews</name>
+            <email>joby.mathews@oracle.com</email>
+            <organization>Oracle</organization>
+            <organizationUrl>https://www.oracle.com</organizationUrl>
+            <url>https://github.com/jobyywilson</url>
+            <roles>
+                <role>Developer</role>
+            </roles>
+        </developer>
+    </developers>
 
     <properties>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <spring.boot.version>3.5.5</spring.boot.version>
+        <spring.boot.version>3.2.5</spring.boot.version>
         <surefire.version>3.2.5</surefire.version>
+        <jar.finalName>${project.artifactId}-${project.version}</jar.finalName>
     </properties>
 
     <dependencies>
-        <!-- Spring Boot Core -->
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
             <version>${spring.boot.version}</version>
         </dependency>
 
-        <!-- Jackson YAML -->
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>
             <artifactId>jackson-dataformat-yaml</artifactId>
-            <version>2.19.2</version>
+            <version>2.17.0</version>
         </dependency>
 
         <!-- MCP SDK -->
@@ -39,26 +56,24 @@
             <version>0.11.1</version>
         </dependency>
 
-        <!-- Swagger Parser -->
         <dependency>
             <groupId>io.swagger.parser.v3</groupId>
             <artifactId>swagger-parser</artifactId>
-            <version>2.1.31</version>
+            <version>2.1.22</version>
         </dependency>
 
-        <!-- Logging -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
-            <version>2.0.7</version>
+            <version>2.0.13</version>
         </dependency>
+
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
             <version>1.5.18</version>
         </dependency>
 
-        <!-- MCP Test Utilities -->
         <dependency>
             <groupId>io.modelcontextprotocol.sdk</groupId>
             <artifactId>mcp-test</artifactId>
@@ -66,14 +81,12 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Spring Boot Test (JUnit 5 included) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <version>${spring.boot.version}</version>
             <scope>test</scope>
             <exclusions>
-                <!-- Remove JUnit 4 -->
                 <exclusion>
                     <groupId>org.junit.vintage</groupId>
                     <artifactId>junit-vintage-engine</artifactId>
@@ -81,11 +94,10 @@
             </exclusions>
         </dependency>
 
-        <!-- WireMock for HTTP mocking -->
         <dependency>
             <groupId>org.wiremock</groupId>
             <artifactId>wiremock</artifactId>
-            <version>3.13.1</version>
+            <version>3.5.2</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -97,6 +109,7 @@
     </dependencies>
 
     <build>
+        <finalName>${jar.finalName}</finalName>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
@@ -110,18 +123,17 @@
                     </execution>
                 </executions>
             </plugin>
-
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.3.0</version>
-                <configuration>
-                    <forkCount>0</forkCount> <!-- disables forking -->
-                    <reuseForks>false</reuseForks>
-                </configuration>
-            </plugin>
         </plugins>
     </build>
 
+    <profiles>
+        <profile>
+            <id>release</id>
+            <properties>
+                <jar.finalName>${project.artifactId}-1.0</jar.finalName>
+            </properties>
+        </profile>
+    </profiles>
 
 </project>
+

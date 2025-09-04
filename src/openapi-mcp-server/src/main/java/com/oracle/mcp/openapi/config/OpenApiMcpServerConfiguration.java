@@ -10,6 +10,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.oracle.mcp.openapi.cache.McpServerCacheService;
 import com.oracle.mcp.openapi.fetcher.OpenApiSchemaFetcher;
+import com.oracle.mcp.openapi.rest.RestApiAuthHandler;
 import com.oracle.mcp.openapi.rest.RestApiExecutionService;
 import com.oracle.mcp.openapi.tool.OpenApiMcpToolExecutor;
 import com.oracle.mcp.openapi.tool.OpenApiMcpToolInitializer;
@@ -95,8 +96,14 @@ public class OpenApiMcpServerConfiguration {
      */
     @Bean
     public OpenApiSchemaFetcher openApiDefinitionFetcher(@Qualifier("jsonMapper") ObjectMapper jsonMapper,
-                                                         @Qualifier("yamlMapper") ObjectMapper yamlMapper) {
-        return new OpenApiSchemaFetcher(jsonMapper, yamlMapper);
+                                                         @Qualifier("yamlMapper") ObjectMapper yamlMapper,
+                                                         RestApiAuthHandler restApiAuthHandler) {
+        return new OpenApiSchemaFetcher(jsonMapper, yamlMapper, restApiAuthHandler);
+    }
+
+    @Bean
+    public RestApiAuthHandler restApiAuthHandler(){
+        return new RestApiAuthHandler();
     }
 
     /**
@@ -109,7 +116,7 @@ public class OpenApiMcpServerConfiguration {
      * @return A new {@code OpenApiMcpToolExecutor} instance.
      */
     @Bean
-    public OpenApiMcpToolExecutor openApiMcpToolExecutor(McpServerCacheService mcpServerCacheService, RestApiExecutionService restApiExecutionService, @Qualifier("jsonMapper") ObjectMapper jsonMapper) {
-        return new OpenApiMcpToolExecutor(mcpServerCacheService, restApiExecutionService, jsonMapper);
+    public OpenApiMcpToolExecutor openApiMcpToolExecutor(McpServerCacheService mcpServerCacheService, RestApiExecutionService restApiExecutionService, @Qualifier("jsonMapper") ObjectMapper jsonMapper,RestApiAuthHandler restApiAuthHandler) {
+        return new OpenApiMcpToolExecutor(mcpServerCacheService, restApiExecutionService, jsonMapper,restApiAuthHandler);
     }
 }

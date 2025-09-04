@@ -1,10 +1,12 @@
 package com.oracle.mcp.openapi;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.oracle.mcp.openapi.cache.McpServerCacheService;
 import com.oracle.mcp.openapi.model.McpServerConfig;
+import com.oracle.mcp.openapi.rest.RestApiAuthHandler;
 import com.oracle.mcp.openapi.rest.RestApiExecutionService;
 import com.oracle.mcp.openapi.tool.OpenApiMcpToolExecutor;
 import io.modelcontextprotocol.server.McpAsyncServer;
@@ -33,45 +35,49 @@ import static org.junit.jupiter.api.Assertions.*;
 )
 class OpenApiMcpServerTest {
 
-    @Autowired
-    private McpSyncServer mcpSyncServer;
-
-    @Autowired
-    private RestApiExecutionService restApiExecutionService;
-
-    @Autowired
-    private McpServerCacheService mcpServerCacheService;
-
-    @Autowired
-    private ApplicationContext context;
+    @Autowired private McpSyncServer mcpSyncServer;
+    @Autowired private RestApiExecutionService restApiExecutionService;
+    @Autowired private McpServerCacheService mcpServerCacheService;
+    @Autowired private RestApiAuthHandler restApiAuthHandler;
+    @Autowired private ApplicationContext context;
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
     private static String expectedTools;
-    private static String getAllCompaniesToolResponse;
-    private static String getOneCompanyToolResponse;
-    private static String getUpdateCompanyToolResponse;
+    private static String companiesResponse;
+    private static String companyResponse;
 
     @BeforeAll
     static void setup() throws Exception {
-        // Start WireMock once
-        WireMockServer wireMockServer = new WireMockServer(WireMockConfiguration.options()
-                .port(8080)
-                .usingFilesUnderDirectory("src/test/resources"));
+        // Start WireMock once for all tests
+        WireMockServer wireMockServer = new WireMockServer(
+                WireMockConfiguration.options()
+                        .port(8080)
+                        .usingFilesUnderDirectory("src/test/resources")
+        );
         wireMockServer.start();
 
-        // Load test resources once
+        // Load test resources
         expectedTools = readFile("src/test/resources/tools/listTool.json");
-        getAllCompaniesToolResponse = readFile("src/test/resources/__files/companies-response.json");
-        getOneCompanyToolResponse = readFile("src/test/resources/__files/company-1-response.json");
-        getUpdateCompanyToolResponse = getOneCompanyToolResponse;
-        System.out.println("WireMock server started on port 8080");
+        companiesResponse = readFile("src/test/resources/__files/companies-response.json");
+        companyResponse = readFile("src/test/resources/__files/company-1-response.json");
     }
 
     private static String readFile(String path) throws Exception {
-        String content = Files.readString(Paths.get(path));
-        assertNotNull(content, "File not found: " + path);
-        return content;
+        return Files.readString(Paths.get(path));
+    }
+
+    private OpenApiMcpToolExecutor newExecutor(McpServerCacheService cache) {
+        return new OpenApiMcpToolExecutor(cache, restApiExecutionService, objectMapper, restApiAuthHandler);
+    }
+
+    private String executeTool(McpServerCacheService cache, String toolName, String input) throws Exception {
+        OpenApiMcpToolExecutor executor = newExecutor(cache);
+        McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(toolName, input);
+        McpSchema.CallToolResult result = executor.execute(request);
+        Object resultObj = result.structuredContent().get("response");
+        JsonNode jsonNode = objectMapper.readTree((String)resultObj);
+        return objectMapper.writeValueAsString(jsonNode);
     }
 
     @Test
@@ -98,16 +104,12 @@ class OpenApiMcpServerTest {
                 "getCompanies"
         );
 
-        OpenApiMcpToolExecutor executor = new OpenApiMcpToolExecutor(cacheService, restApiExecutionService, objectMapper);
-        McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("getCompanies", "{}");
-        McpSchema.CallToolResult result = executor.execute(request);
-
-        String response = objectMapper.writeValueAsString(result.structuredContent().get("response"));
-        assertEquals(getAllCompaniesToolResponse, response);
+        String response = executeTool(cacheService, "getCompanies", "{}");
+        assertEquals(companiesResponse, response);
     }
 
     @Test
-    void testExecuteGetAllTools_BearerAuth() throws Exception {
+    void testExecuteGetOneCompany_BearerAuth() throws Exception {
         McpServerCacheService cacheService = mockConfig(
                 McpServerConfig.builder()
                         .apiBaseUrl("http://localhost:8080")
@@ -117,12 +119,8 @@ class OpenApiMcpServerTest {
                 "getCompanyById"
         );
 
-        OpenApiMcpToolExecutor executor = new OpenApiMcpToolExecutor(cacheService, restApiExecutionService, objectMapper);
-        McpSchema.CallToolRequest request = new McpSchema.CallToolRequest("getCompanyById", "{\"companyId\":1}");
-        McpSchema.CallToolResult result = executor.execute(request);
-
-        String response = objectMapper.writeValueAsString(result.structuredContent().get("response"));
-        assertEquals(getOneCompanyToolResponse, response);
+        String response = executeTool(cacheService, "getCompanyById", "{\"companyId\":1}");
+        assertEquals(companyResponse, response);
     }
 
     @Test
@@ -133,20 +131,14 @@ class OpenApiMcpServerTest {
                         .authType("API_KEY")
                         .authApiKeyIn("HEADER")
                         .authApiKeyName("X-API-KEY")
-                        .authApiKey("test-api-key".toCharArray()) // <- new field in your config
+                        .authApiKey("test-api-key".toCharArray())
                         .build(),
                 "createCompany"
         );
 
-        OpenApiMcpToolExecutor executor = new OpenApiMcpToolExecutor(cacheService, restApiExecutionService, objectMapper);
-        McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
-                "createCompany",
-                "{ \"name\": \"Test Company\", \"address\": \"123 Main St\" }"
-        );
-        McpSchema.CallToolResult result = executor.execute(request);
-
-        String response = objectMapper.writeValueAsString(result.structuredContent().get("response"));
-        assertEquals(getOneCompanyToolResponse, response); // should match __files/company-1-response.json
+        String response = executeTool(cacheService, "createCompany",
+                "{ \"name\": \"Test Company\", \"address\": \"123 Main St\" }");
+        assertEquals(companyResponse, response);
     }
 
     @Test
@@ -155,26 +147,15 @@ class OpenApiMcpServerTest {
                 McpServerConfig.builder()
                         .apiBaseUrl("http://localhost:8080")
                         .authType("CUSTOM")
-                        .authCustomHeaders(Map.of("CUSTOM-HEADER","test-custom-key"))
+                        .authCustomHeaders(Map.of("CUSTOM-HEADER", "test-custom-key"))
                         .build(),
                 "updateCompany"
         );
 
-        OpenApiMcpToolExecutor executor = new OpenApiMcpToolExecutor(cacheService, restApiExecutionService, objectMapper);
-
-        McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
-                "updateCompany",
-                "{ \"companyId\": 1, \"name\": \"Acme Corp - Updated\", \"industry\": \"Technology\" }"
-        );
-
-        McpSchema.CallToolResult result = executor.execute(request);
-
-        String response = objectMapper.writeValueAsString(result.structuredContent().get("response"));
-        assertEquals(getUpdateCompanyToolResponse, response);
+        String response = executeTool(cacheService, "updateCompany",
+                "{ \"companyId\": 1, \"name\": \"Acme Corp - Updated\", \"industry\": \"Technology\" }");
+        assertEquals(companyResponse, response);
     }
-
-
-
 
     private McpServerCacheService mockConfig(McpServerConfig config, String toolName) {
         McpServerCacheService mockCache = Mockito.mock(McpServerCacheService.class);

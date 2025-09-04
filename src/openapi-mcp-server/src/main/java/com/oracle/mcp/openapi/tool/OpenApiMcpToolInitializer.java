@@ -8,6 +8,9 @@ package com.oracle.mcp.openapi.tool;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.oracle.mcp.openapi.cache.McpServerCacheService;
+import com.oracle.mcp.openapi.constants.CommonConstant;
+import com.oracle.mcp.openapi.constants.ErrorMessage;
+import com.oracle.mcp.openapi.exception.McpServerToolInitializeException;
 import com.oracle.mcp.openapi.exception.UnsupportedApiDefinitionException;
 import com.oracle.mcp.openapi.mapper.impl.OpenApiToMcpToolMapper;
 import com.oracle.mcp.openapi.mapper.impl.SwaggerToMcpToolMapper;
@@ -15,7 +18,8 @@ import io.modelcontextprotocol.spec.McpSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.List;
+
 
 /**
  * Initializes and extracts {@link McpSchema.Tool} objects from OpenAPI or Swagger specifications.
@@ -54,10 +58,9 @@ public class OpenApiMcpToolInitializer {
      * @throws IllegalArgumentException           if {@code openApiJson} is {@code null}
      * @throws UnsupportedApiDefinitionException if the API definition is not recognized
      */
-    public List<McpSchema.Tool> extractTools(JsonNode openApiJson) {
+    public List<McpSchema.Tool> extractTools(JsonNode openApiJson) throws McpServerToolInitializeException {
         LOGGER.debug("Parsing OpenAPI JsonNode to OpenAPI object...");
         List<McpSchema.Tool> mcpTools = parseApi(openApiJson);
-
         LOGGER.debug("Conversion complete. Total tools created: {}", mcpTools.size());
         updateToolsToCache(mcpTools);
         return mcpTools;
@@ -90,17 +93,17 @@ public class OpenApiMcpToolInitializer {
      * @throws IllegalArgumentException           if {@code jsonNode} is {@code null}
      * @throws UnsupportedApiDefinitionException if the specification type is unsupported
      */
-    private List<McpSchema.Tool> parseApi(JsonNode jsonNode) {
+    private List<McpSchema.Tool> parseApi(JsonNode jsonNode) throws McpServerToolInitializeException {
         if (jsonNode == null) {
             throw new IllegalArgumentException("jsonNode cannot be null");
         }
         // Detect version
-        if (jsonNode.has("openapi")) {
+        if (jsonNode.has(CommonConstant.OPEN_API)) {
             return new OpenApiToMcpToolMapper(mcpServerCacheService).convert(jsonNode);
-        } else if (jsonNode.has("swagger")) {
+        } else if (jsonNode.has(CommonConstant.SWAGGER)) {
             return new SwaggerToMcpToolMapper(mcpServerCacheService).convert(jsonNode);
         } else {
-            throw new UnsupportedApiDefinitionException("Unsupported API definition: missing 'openapi' or 'swagger' field");
+            throw new McpServerToolInitializeException(ErrorMessage.INVALID_SPEC_DEFINITION);
         }
     }
 }

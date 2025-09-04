@@ -7,6 +7,7 @@
 package com.oracle.mcp.openapi.mapper;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.oracle.mcp.openapi.exception.McpServerToolInitializeException;
 import io.modelcontextprotocol.spec.McpSchema;
 
 import java.util.List;
@@ -31,5 +32,5 @@ public interface McpToolMapper {
      * @return a list of {@link McpSchema.Tool} objects derived from the given API specification;
      *         never {@code null}, but may be empty if no tools are found.
      */
-    List<McpSchema.Tool> convert(JsonNode apiSpec);
+    List<McpSchema.Tool> convert(JsonNode apiSpec) throws McpServerToolInitializeException;
 }

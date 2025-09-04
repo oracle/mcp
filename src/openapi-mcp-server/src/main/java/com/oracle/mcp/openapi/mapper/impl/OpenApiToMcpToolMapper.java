@@ -8,7 +8,11 @@ package com.oracle.mcp.openapi.mapper.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.oracle.mcp.openapi.cache.McpServerCacheService;
+import com.oracle.mcp.openapi.constants.CommonConstant;
+import com.oracle.mcp.openapi.constants.ErrorMessage;
+import com.oracle.mcp.openapi.exception.McpServerToolInitializeException;
 import com.oracle.mcp.openapi.mapper.McpToolMapper;
+import com.oracle.mcp.openapi.util.McpServerUtil;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
@@ -16,13 +20,19 @@ import io.swagger.v3.oas.models.PathItem;
 import io.swagger.v3.oas.models.media.MediaType;
 import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.parameters.Parameter;
-import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.parser.OpenAPIV3Parser;
 import io.swagger.v3.parser.core.models.ParseOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Set;
+import java.util.Map;
+
 
 /**
  * Implementation of {@link McpToolMapper} that converts an OpenAPI specification
@@ -37,7 +47,6 @@ import java.util.*;
  */
 public class OpenApiToMcpToolMapper implements McpToolMapper {
 
-    private final Set<String> usedNames = new HashSet<>();
     private final McpServerCacheService mcpServerCacheService;
     private static final Logger LOGGER = LoggerFactory.getLogger(OpenApiToMcpToolMapper.class);
 
@@ -46,12 +55,13 @@ public class OpenApiToMcpToolMapper implements McpToolMapper {
     }
 
     @Override
-    public List<McpSchema.Tool> convert(JsonNode openApiJson) {
-        LOGGER.debug("Parsing OpenAPI JsonNode to OpenAPI object...");
+    public List<McpSchema.Tool> convert(JsonNode openApiJson) throws McpServerToolInitializeException {
+        LOGGER.debug("Parsing OpenAPI schema to OpenAPI object.");
         OpenAPI openAPI = parseOpenApi(openApiJson);
-
+        LOGGER.debug("Successfully parsed OpenAPI schema");
         if (openAPI.getPaths() == null || openAPI.getPaths().isEmpty()) {
-            throw new IllegalArgumentException("'paths' object not found in the specification.");
+            LOGGER.error("There is not paths defined in schema ");
+            throw new McpServerToolInitializeException(ErrorMessage.MISSING_PATH_IN_SPEC);
         }
 
         List<McpSchema.Tool> mcpTools = processPaths(openAPI);
@@ -62,36 +72,41 @@ public class OpenApiToMcpToolMapper implements McpToolMapper {
 
     private List<McpSchema.Tool> processPaths(OpenAPI openAPI) {
         List<McpSchema.Tool> mcpTools = new ArrayList<>();
-
+        Set<String> toolNames = new HashSet<>();
         for (Map.Entry<String, PathItem> pathEntry : openAPI.getPaths().entrySet()) {
             String path = pathEntry.getKey();
+            LOGGER.debug("Parsing Path: {}", path);
             PathItem pathItem = pathEntry.getValue();
-            if (pathItem == null) continue;
+            if (pathItem == null){
+                continue;
+            }
 
-            processOperationsForPath(path, pathItem, mcpTools);
+            processOperationsForPath(path, pathItem, mcpTools,toolNames);
         }
         return mcpTools;
     }
 
-    private void processOperationsForPath(String path, PathItem pathItem, List<McpSchema.Tool> mcpTools) {
+    private void processOperationsForPath(String path, PathItem pathItem, List<McpSchema.Tool> mcpTools,Set<String> toolNames) {
         for (Map.Entry<PathItem.HttpMethod, Operation> methodEntry : pathItem.readOperationsMap().entrySet()) {
             PathItem.HttpMethod method = methodEntry.getKey();
             Operation operation = methodEntry.getValue();
-            if (operation == null) continue;
+            if (operation == null){
+                continue;
+            }
 
-            McpSchema.Tool tool = buildToolFromOperation(path, method, operation);
+            McpSchema.Tool tool = buildToolFromOperation(path, method, operation,toolNames);
             if (tool != null) {
                 mcpTools.add(tool);
             }
         }
     }
 
-    private McpSchema.Tool buildToolFromOperation(String path, PathItem.HttpMethod method, Operation operation) {
+    private McpSchema.Tool buildToolFromOperation(String path, PathItem.HttpMethod method, Operation operation, Set<String> toolNames) {
         String rawOperationId = (operation.getOperationId() != null && !operation.getOperationId().isEmpty())
                 ? operation.getOperationId()
-                : toCamelCase(method.name() + " " + path);
+                : McpServerUtil.toCamelCase(method.name() + " " + path);
 
-        String toolName = makeUniqueName(rawOperationId);
+        String toolName = makeUniqueName(toolNames,rawOperationId);
         LOGGER.debug("--- Parsing Operation: {} {} (ID: {}) ---", method.name().toUpperCase(), path, toolName);
 
         String toolTitle = (operation.getSummary() != null && !operation.getSummary().isEmpty())
@@ -109,13 +124,12 @@ public class OpenApiToMcpToolMapper implements McpToolMapper {
         extractRequestBody(operation, properties, requiredParams);
 
         McpSchema.JsonSchema inputSchema = new McpSchema.JsonSchema(
-                "object",
+                CommonConstant.OBJECT,
                 properties.isEmpty() ? null : properties,
                 requiredParams.isEmpty() ? null : requiredParams,
                 false, null, null
         );
-        Map<String, Object> outputSchema = extractOutputSchema(operation);
-        outputSchema.put("additionalProperties", true);
+        Map<String, Object> outputSchema = getOutputSchema();
 
         Map<String, Object> meta = buildMeta(method, path, operation, pathParams, queryParams);
 
@@ -129,24 +143,30 @@ public class OpenApiToMcpToolMapper implements McpToolMapper {
                 .build();
     }
 
+    private Map<String, Object> getOutputSchema() {
+        Map<String, Object> outputSchema = new HashMap<>();
+        outputSchema.put(CommonConstant.ADDITIONAL_PROPERTIES, true);
+        return outputSchema;
+    }
+
 
     private Map<String, Object> buildMeta(PathItem.HttpMethod method, String path,
                                           Operation operation, Map<String, Map<String, Object>> pathParams,
                                           Map<String, Map<String, Object>> queryParams) {
         Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("httpMethod", method.name());
-        meta.put("path", path);
+        meta.put(CommonConstant.HTTP_METHOD, method.name());
+        meta.put(CommonConstant.PATH, path);
         if (operation.getTags() != null) {
-            meta.put("tags", operation.getTags());
+            meta.put(CommonConstant.TAGS, operation.getTags());
         }
         if (operation.getSecurity() != null) {
-            meta.put("security", operation.getSecurity());
+            meta.put(CommonConstant.SECURITY, operation.getSecurity());
         }
         if (!pathParams.isEmpty()) {
-            meta.put("pathParams", pathParams);
+            meta.put(CommonConstant.PATH_PARAMS, pathParams);
         }
         if (!queryParams.isEmpty()) {
-            meta.put("queryParams", queryParams);
+            meta.put(CommonConstant.QUERY_PARAMS, queryParams);
         }
         return meta;
     }
@@ -158,19 +178,21 @@ public class OpenApiToMcpToolMapper implements McpToolMapper {
                                            List<String> requiredParams) {
         if (operation.getParameters() != null) {
             for (Parameter param : operation.getParameters()) {
-                if (param.getName() == null || param.getSchema() == null) continue;
+                if (param.getName() == null || param.getSchema() == null){
+                    continue;
+                }
 
                 Map<String, Object> paramMeta = parameterMetaMap(param);
-                if ("path".equalsIgnoreCase(param.getIn())) {
+                if (CommonConstant.PATH.equalsIgnoreCase(param.getIn())) {
                     pathParams.put(param.getName(), paramMeta);
-                } else if ("query".equalsIgnoreCase(param.getIn())) {
+                } else if (CommonConstant.QUERY.equalsIgnoreCase(param.getIn())) {
                     queryParams.put(param.getName(), paramMeta);
                 }
 
-                if ("path".equalsIgnoreCase(param.getIn()) || "query".equalsIgnoreCase(param.getIn())) {
+                if (CommonConstant.PATH.equalsIgnoreCase(param.getIn()) || CommonConstant.QUERY.equalsIgnoreCase(param.getIn())) {
                     Map<String, Object> paramSchema = extractInputSchema(param.getSchema());
                     if (param.getDescription() != null && !param.getDescription().isEmpty()) {
-                        paramSchema.put("description", param.getDescription());
+                        paramSchema.put(CommonConstant.DESCRIPTION, param.getDescription());
                     }
                     properties.put(param.getName(), paramSchema);
                     if (Boolean.TRUE.equals(param.getRequired())) {
@@ -206,13 +228,13 @@ public class OpenApiToMcpToolMapper implements McpToolMapper {
 
     private void extractRequestBody(Operation operation, Map<String, Object> properties, List<String> requiredParams) {
         if (operation.getRequestBody() != null && operation.getRequestBody().getContent() != null) {
-            MediaType media = operation.getRequestBody().getContent().get("application/json");
+            MediaType media = operation.getRequestBody().getContent().get(CommonConstant.APPLICATION_JSON);
             if (media != null && media.getSchema() != null) {
                 Schema<?> bodySchema = media.getSchema();
-                if ("object".equals(bodySchema.getType()) && bodySchema.getProperties() != null) {
-                    bodySchema.getProperties().forEach((name, schema) -> {
-                        properties.put(name, extractInputSchema((Schema<?>) schema));
-                    });
+                if (CommonConstant.OBJECT.equals(bodySchema.getType()) && bodySchema.getProperties() != null) {
+                    bodySchema.getProperties().forEach((name, schema) ->
+                        properties.put(name, extractInputSchema((Schema<?>) schema))
+                    );
                     if (bodySchema.getRequired() != null) {
                         requiredParams.addAll(bodySchema.getRequired());
                     }
@@ -228,128 +250,58 @@ public class OpenApiToMcpToolMapper implements McpToolMapper {
 
         Map<String, Object> jsonSchema = new LinkedHashMap<>();
 
-        if (openApiSchema.getType() != null) jsonSchema.put("type", openApiSchema.getType());
-        if (openApiSchema.getDescription() != null) jsonSchema.put("description", openApiSchema.getDescription());
-        if (openApiSchema.getFormat() != null) jsonSchema.put("format", openApiSchema.getFormat());
-        if (openApiSchema.getEnum() != null) jsonSchema.put("enum", openApiSchema.getEnum());
+        if (openApiSchema.getType() != null){
+            jsonSchema.put(CommonConstant.TYPE, openApiSchema.getType());
+        }
+        if (openApiSchema.getDescription() != null){
+            jsonSchema.put(CommonConstant.DESCRIPTION, openApiSchema.getDescription());
+        }
+        if (openApiSchema.getFormat() != null){
+            jsonSchema.put(CommonConstant.FORMAT, openApiSchema.getFormat());
+        }
+        if (openApiSchema.getEnum() != null){
+            jsonSchema.put(CommonConstant.ENUM, openApiSchema.getEnum());
+        }
 
-        if ("object".equals(openApiSchema.getType())) {
+        if (CommonConstant.OBJECT.equals(openApiSchema.getType())) {
             if (openApiSchema.getProperties() != null) {
                 Map<String, Object> nestedProperties = new LinkedHashMap<>();
                 openApiSchema.getProperties().forEach((key, value) -> nestedProperties.put(key, extractInputSchema((Schema<?>) value)));
-                jsonSchema.put("properties", nestedProperties);
+                jsonSchema.put(CommonConstant.PROPERTIES, nestedProperties);
             }
             if (openApiSchema.getRequired() != null) {
-                jsonSchema.put("required", openApiSchema.getRequired());
+                jsonSchema.put(CommonConstant.REQUIRED, openApiSchema.getRequired());
             }
         }
 
-        if ("array".equals(openApiSchema.getType())) {
+        if (CommonConstant.ARRAY.equals(openApiSchema.getType())) {
             if (openApiSchema.getItems() != null) {
-                jsonSchema.put("items", extractInputSchema(openApiSchema.getItems()));
+                jsonSchema.put(CommonConstant.ITEMS, extractInputSchema(openApiSchema.getItems()));
             }
         }
-        return jsonSchema;
-    }
-
-    private Map<String, Object> extractOutputSchema(Operation operation) {
-        // This is the parent object that the tool schema requires.
-        // It will ALWAYS have "type": "object".
-        Map<String, Object> toolOutputSchema = new LinkedHashMap<>();
-        toolOutputSchema.put("type", "object");
-
-        // Find the actual response schema from the OpenAPI spec
-        if (operation.getResponses() == null || operation.getResponses().isEmpty()) {
-            return toolOutputSchema; // Return empty object schema if no responses
-        }
-        ApiResponse response = operation.getResponses().getOrDefault("200", operation.getResponses().get("default"));
-        if (response == null || response.getContent() == null || !response.getContent().containsKey("application/json")) {
-            return toolOutputSchema; // Return empty object schema
-        }
-        Schema<?> apiResponseSchema = response.getContent().get("application/json").getSchema();
-        if (apiResponseSchema == null) {
-            return toolOutputSchema; // Return empty object schema
-        }
-
-        // Recursively convert the OpenAPI response schema into a JSON schema map
-        Map<String, Object> convertedApiResponseSchema = extractSchemaRecursive(apiResponseSchema);
-
-        // Create the 'properties' map for our parent object
-        Map<String, Object> properties = new LinkedHashMap<>();
-
-        // Put the actual API response schema inside the properties map.
-        // We'll use the key "response" to hold it.
-        properties.put("response", convertedApiResponseSchema);
-
-        toolOutputSchema.put("properties", properties);
-
-        return toolOutputSchema;
-    }
-
-    private Map<String, Object> extractSchemaRecursive(Schema<?> schema) {
-        if (schema == null) {
-            return Collections.emptyMap();
-        }
-
-        Map<String, Object> jsonSchema = new LinkedHashMap<>();
-
-        if (schema.getType() != null) jsonSchema.put("type", schema.getType());
-        if (schema.getDescription() != null) jsonSchema.put("description", schema.getDescription());
-
-        if ("object".equals(schema.getType()) && schema.getProperties() != null) {
-            Map<String, Object> properties = new LinkedHashMap<>();
-            for (Map.Entry<String, Schema> entry : schema.getProperties().entrySet()) {
-                properties.put(entry.getKey(), extractSchemaRecursive(entry.getValue()));
-            }
-            jsonSchema.put("properties", properties);
-        }
-
-        if ("array".equals(schema.getType()) && schema.getItems() != null) {
-            jsonSchema.put("items", extractSchemaRecursive(schema.getItems()));
-        }
-
-        if (schema.getRequired() != null) {
-            jsonSchema.put("required", schema.getRequired());
-        }
-
         return jsonSchema;
     }
 
     private Map<String, Object> parameterMetaMap(Parameter p) {
         Map<String, Object> paramMeta = new LinkedHashMap<>();
-        paramMeta.put("name", p.getName());
-        paramMeta.put("required", Boolean.TRUE.equals(p.getRequired()));
+        paramMeta.put(CommonConstant.NAME, p.getName());
+        paramMeta.put(CommonConstant.REQUIRED, Boolean.TRUE.equals(p.getRequired()));
         if (p.getDescription() != null) {
-            paramMeta.put("description", p.getDescription());
+            paramMeta.put(CommonConstant.DESCRIPTION, p.getDescription());
         }
         if (p.getSchema() != null && p.getSchema().getType() != null) {
-            paramMeta.put("type", p.getSchema().getType());
+            paramMeta.put(CommonConstant.TYPE, p.getSchema().getType());
         }
         return paramMeta;
     }
 
-    private String makeUniqueName(String base) {
+    private String makeUniqueName(Set<String> toolNames,String base) {
         String name = base;
         int counter = 1;
-        while (usedNames.contains(name)) {
-            name = base + "_" + counter++;
+        while (toolNames.contains(name)) {
+            name = base + CommonConstant.UNDER_SCORE + counter++;
         }
-        usedNames.add(name);
+        toolNames.add(name);
         return name;
-    }
-
-    private static String toCamelCase(String input) {
-        String[] parts = input.split("[^a-zA-Z0-9]+");
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < parts.length; i++) {
-            if (parts[i].isEmpty()) continue;
-            String word = parts[i].toLowerCase();
-            if (i == 0) {
-                sb.append(word);
-            } else {
-                sb.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
-            }
-        }
-        return sb.toString();
     }
 }

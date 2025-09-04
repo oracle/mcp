@@ -12,6 +12,7 @@ import com.oracle.mcp.openapi.enums.OpenApiSchemaAuthType;
 import com.oracle.mcp.openapi.model.McpServerConfig;
 import com.oracle.mcp.openapi.enums.OpenApiSchemaSourceType;
 import com.oracle.mcp.openapi.enums.OpenApiSchemaType;
+import com.oracle.mcp.openapi.rest.RestApiAuthHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,14 +20,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.Base64;
+import java.util.Map;
 
 /**
  * Utility class responsible for fetching and parsing OpenAPI schema definitions.
@@ -48,6 +46,7 @@ public class OpenApiSchemaFetcher {
 
     private final ObjectMapper jsonMapper;
     private final ObjectMapper yamlMapper;
+    private final RestApiAuthHandler restApiAuthHandler;
 
     /**
      * Creates a new {@code OpenApiSchemaFetcher}.
@@ -55,9 +54,10 @@ public class OpenApiSchemaFetcher {
      * @param jsonMapper {@link ObjectMapper} configured for JSON parsing.
      * @param yamlMapper {@link ObjectMapper} configured for YAML parsing.
      */
-    public OpenApiSchemaFetcher(ObjectMapper jsonMapper, ObjectMapper yamlMapper) {
+    public OpenApiSchemaFetcher(ObjectMapper jsonMapper, ObjectMapper yamlMapper, RestApiAuthHandler restApiAuthHandler) {
         this.jsonMapper = jsonMapper;
         this.yamlMapper = yamlMapper;
+        this.restApiAuthHandler = restApiAuthHandler;
     }
 
     /**
@@ -129,46 +129,9 @@ public class OpenApiSchemaFetcher {
      * @param mcpServerConfig configuration containing authentication details.
      */
     private void applyAuth(HttpURLConnection conn, McpServerConfig mcpServerConfig) {
-        OpenApiSchemaAuthType authType = mcpServerConfig.getAuthType();
-        if (authType != OpenApiSchemaAuthType.BASIC) {
-            return;
-        }
-
-        String username = mcpServerConfig.getAuthUsername();
-        char[] passwordChars = mcpServerConfig.getAuthPassword();
-
-        if (username == null || passwordChars == null) {
-            System.err.println("Username or password is not configured for Basic Auth.");
-            return;
-        }
-
-        byte[] credentialsBytes = null;
-        byte[] passwordBytes = null;
-
-        try {
-            byte[] usernameBytes = username.getBytes(StandardCharsets.UTF_8);
-            byte[] separator = {':'};
-
-            ByteBuffer passwordByteBuffer = StandardCharsets.UTF_8.encode(CharBuffer.wrap(passwordChars));
-            passwordBytes = new byte[passwordByteBuffer.remaining()];
-            passwordByteBuffer.get(passwordBytes);
-
-            credentialsBytes = new byte[usernameBytes.length + separator.length + passwordBytes.length];
-            System.arraycopy(usernameBytes, 0, credentialsBytes, 0, usernameBytes.length);
-            System.arraycopy(separator, 0, credentialsBytes, usernameBytes.length, separator.length);
-            System.arraycopy(passwordBytes, 0, credentialsBytes, usernameBytes.length + separator.length, passwordBytes.length);
-
-            String encoded = Base64.getEncoder().encodeToString(credentialsBytes);
-            conn.setRequestProperty("Authorization", "Basic " + encoded);
-
-        } finally {
-            Arrays.fill(passwordChars, '0');
-            if (passwordBytes != null) {
-                Arrays.fill(passwordBytes, (byte) 0);
-            }
-            if (credentialsBytes != null) {
-                Arrays.fill(credentialsBytes, (byte) 0);
-            }
+        Map<String, String> headers = restApiAuthHandler.extractAuthHeaders(mcpServerConfig);
+        for (Map.Entry<String, String> entry : headers.entrySet()) {
+            conn.setRequestProperty(entry.getKey(), entry.getValue());
         }
     }
 

@@ -21,4 +21,8 @@ public interface ErrorMessage {
     String MISSING_API_SPEC = "API specification not provided. Please pass --api-spec or set the API_SPEC environment variable.";
 
     String MISSING_API_BASE_URL = "API base url not provided. Please pass --api-base-url or set the API_BASE_URL environment variable.";
+
+    String MISSING_PATH_IN_SPEC = "'paths' object not found in the specification.";
+
+    String INVALID_SPEC_DEFINITION = "Unsupported API definition: missing 'openapi' or 'swagger' field";
 }

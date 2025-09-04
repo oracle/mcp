@@ -8,8 +8,10 @@ package com.oracle.mcp.openapi.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oracle.mcp.openapi.cache.McpServerCacheService;
+import com.oracle.mcp.openapi.constants.CommonConstant;
 import com.oracle.mcp.openapi.enums.OpenApiSchemaAuthType;
 import com.oracle.mcp.openapi.model.McpServerConfig;
+import com.oracle.mcp.openapi.rest.RestApiAuthHandler;
 import com.oracle.mcp.openapi.rest.RestApiExecutionService;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -19,7 +21,14 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
 /**
  * Executes OpenAPI-based MCP tools. This class translates MCP tool requests
@@ -40,6 +49,7 @@ public class OpenApiMcpToolExecutor {
     private final McpServerCacheService mcpServerCacheService;
     private final RestApiExecutionService restApiExecutionService;
     private final ObjectMapper jsonMapper;
+    private final RestApiAuthHandler restApiAuthHandler;
 
     /**
      * Constructs a new {@code OpenApiMcpToolExecutor}.
@@ -50,10 +60,11 @@ public class OpenApiMcpToolExecutor {
      */
     public OpenApiMcpToolExecutor(McpServerCacheService mcpServerCacheService,
                                   RestApiExecutionService restApiExecutionService,
-                                  ObjectMapper jsonMapper) {
+                                  ObjectMapper jsonMapper, RestApiAuthHandler restApiAuthHandler) {
         this.mcpServerCacheService = mcpServerCacheService;
         this.restApiExecutionService = restApiExecutionService;
         this.jsonMapper = jsonMapper;
+        this.restApiAuthHandler = restApiAuthHandler;
     }
 
     /**
@@ -83,7 +94,7 @@ public class OpenApiMcpToolExecutor {
         try {
             McpSchema.Tool toolToExecute = mcpServerCacheService.getTool(callRequest.name());
             String httpMethod = toolToExecute.meta().get("httpMethod").toString().toUpperCase();
-            String path = toolToExecute.meta().get("path").toString();
+            String path = toolToExecute.meta().get(CommonConstant.PATH).toString();
             McpServerConfig config = mcpServerCacheService.getServerConfig();
 
             Map<String, Object> arguments = new HashMap<>(callRequest.arguments());
@@ -93,7 +104,7 @@ public class OpenApiMcpToolExecutor {
             finalUrl = appendQueryParameters(finalUrl, toolToExecute, arguments, config);
 
             // Prepare headers and request body
-            Map<String, String> headers = prepareHeaders(config);
+            Map<String, String> headers = restApiAuthHandler.extractAuthHeaders(config);
             String body = null;
             if (shouldHaveBody(httpMethod)) {
                 body = jsonMapper.writeValueAsString(arguments);
@@ -108,8 +119,8 @@ public class OpenApiMcpToolExecutor {
             LOGGER.error("Execution failed for tool '{}': {}", callRequest.name(), e.getMessage());
             throw new RuntimeException("Failed to execute tool: " + callRequest.name(), e);
         }
-
-        String wrappedResponse = "{\"response\":" + response + "}";
+        Map<String, Object> wrappedResponse = new HashMap<>();
+        wrappedResponse.put("response",response);
         return McpSchema.CallToolResult.builder()
                 .structuredContent(wrappedResponse)
                 .build();

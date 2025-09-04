@@ -29,7 +29,8 @@ import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.server.McpSyncServer;
 import org.springframework.context.ConfigurableApplicationContext;
 
-import java.util.*;
+import java.util.List;
+
 
 /**
  * Entry point for the OpenAPI MCP server.

@@ -1,0 +1,2 @@
+[console_scripts]
+oci-limits-mcp = oci_limits_mcp_server:main

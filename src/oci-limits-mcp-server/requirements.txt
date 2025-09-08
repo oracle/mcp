@@ -1,0 +1,3 @@
+# OCI Limits MCP Server Dependencies
+fastmcp>=2.0.0
+oci>=2.100.0

@@ -31,26 +31,26 @@ This server acts as a bridge 🌉, dynamically generating **Model Context Protoc
 ---
 ## 🔧 Configuration
 
-You can configure the server in two primary ways: command-line arguments or environment variables. This configuration is provided to the MCP client, which then uses it to launch the server.
+The MCP OpenAPI Server can be configured via **command-line arguments** or **environment variables**.  
 
-### Environment Variables
-
-The server supports the following environment variables. These can be set within the MCP client's configuration.
-
-| Environment Variable | Description | Example |
-| :--- | :--- | :--- |
-| `API_BASE_URL` | Base URL of the API. | `https://api.example.com/v1` |
-| `API_SPEC` | Path or URL to the OpenAPI specification. | `/configs/openapi.yaml` |
-| `AUTH_TYPE` | Authentication type (`BASIC`, `BEARER`, `API_KEY`). | `BEARER` |
-| `AUTH_TOKEN` | Token for Bearer authentication. | `eyJhbGciOiJIUzI1NiIsInR5cCI6...` |
-| `AUTH_USERNAME` | Username for Basic authentication. | `adminUser` |
-| `AUTH_PASSWORD` | Password for Basic authentication. | `P@ssw0rd!` |
-| `AUTH_API_KEY` | API key value for `API_KEY` authentication. | `12345-abcdef-67890` |
-| `API_API_KEY_NAME`| Name of the API key parameter. | `X-API-KEY` |
-| `API_API_KEY_IN` | Location of API key (`header` or `query`). | `header` |
-| `AUTH_CUSTOM_HEADERS`| JSON string of custom authentication headers. | `{"X-Tenant-ID": "acme"}` |
-| `API_HTTP_CONNECT_TIMEOUT`| Connection timeout in milliseconds. | `5000` |
-| `API_HTTP_RESPONSE_TIMEOUT`| Response timeout in milliseconds. | `10000` |
+| CLI Argument | Environment Variable | Description | Example |
+| :--- | :--- | :--- | :--- |
+| `--api-name` | `API_NAME` | Friendly name for the API (used in logs/debug). | `PetStore` |
+| `--api-base-url` | `API_BASE_URL` | Base URL of the API. | `https://api.example.com/v1` |
+| `--api-spec` | `API_SPEC` | Path or URL to the OpenAPI specification. | `/configs/openapi.yaml` |
+| `--auth-type` | `AUTH_TYPE` | Authentication type (`BASIC`, `BEARER`, `API_KEY`). | `BEARER` |
+| `--auth-token` | `AUTH_TOKEN` | Token for Bearer authentication. | `eyJhbGciOiJIUzI1NiIsInR5cCI6...` |
+| `--auth-username` | `AUTH_USERNAME` | Username for Basic authentication. | `adminUser` |
+| `--auth-password` | `AUTH_PASSWORD` | Password for Basic authentication. | `P@ssw0rd!` |
+| `--auth-api-key` | `AUTH_API_KEY` | API key value for `API_KEY` authentication. | `12345-abcdef-67890` |
+| `--auth-api-key-name` | `API_API_KEY_NAME` | Name of the API key parameter. | `X-API-KEY` |
+| `--auth-api-key-in` | `API_API_KEY_IN` | Location of API key (`header` or `query`). | `header` |
+| `--auth-custom-headers` | `AUTH_CUSTOM_HEADERS` | JSON string of custom authentication headers. | `{"X-Tenant-ID": "acme"}` |
+| `--http-version` | `API_HTTP_VERSION` | HTTP version (`HTTP_1_1`, `HTTP_2`). | `HTTP_2` |
+| `--http-redirect` | `API_HTTP_REDIRECT` | Redirect policy (`NEVER`, `NORMAL`, `ALWAYS`). | `NORMAL` |
+| `--proxy-host` | `API_HTTP_PROXY_HOST` | Proxy host if needed. | `proxy.example.com` |
+| `--proxy-port` | `API_HTTP_PROXY_PORT` | Proxy port number. | `8080` |
+| `--tool-overrides` | `MCP_TOOL_OVERRIDES` | JSON string of tool override configuration. | `{ "includeOnly": ["listUsers", "getUser"], "exclude": ["deleteUser"], "tools": [ { "name": "listUsers", "description": "Custom listUsers tool with pagination" ] }` |
 
 ---
 ## 🔌 Integrating with an MCP Client

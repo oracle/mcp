@@ -113,7 +113,7 @@ public class OpenApiMcpServer implements CommandLineRunner {
 
             // Fetch and convert OpenAPI to tools
             JsonNode openApiJson = openApiSchemaFetcher.fetch(argument);
-            List<McpSchema.Tool> mcpTools = openApiMcpToolInitializer.extractTools(openApiJson);
+            List<McpSchema.Tool> mcpTools = openApiMcpToolInitializer.extractTools(argument,openApiJson);
 
             // Build MCP server capabilities
             McpSchema.ServerCapabilities serverCapabilities = McpSchema.ServerCapabilities.builder()

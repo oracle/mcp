@@ -22,8 +22,6 @@ import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -136,15 +134,30 @@ public class OpenApiMcpToolExecutor {
      * @return the final URL with substituted path parameters
      */
     private String substitutePathParameters(String url, McpSchema.Tool tool, Map<String, Object> arguments) {
-        Map<String, Object> pathParams = (Map<String, Object>) tool.meta().getOrDefault("pathParams", Collections.emptyMap());
+        if (tool == null || tool.meta() == null) {
+            return url;
+        }
+
+        Map<String, Object> pathParams =
+                (Map<String, Object>) tool.meta().getOrDefault("pathParams", Collections.emptyMap());
+
         String finalUrl = url;
+
         for (String paramName : pathParams.keySet()) {
             if (arguments.containsKey(paramName)) {
                 String value = String.valueOf(arguments.get(paramName));
-                finalUrl = finalUrl.replace("{" + paramName + "}", URLEncoder.encode(value, StandardCharsets.UTF_8));
+
+                // Proper encoding for path variables (spaces → %20 instead of +)
+                String encoded = URLEncoder.encode(value, StandardCharsets.UTF_8)
+                        .replace("+", "%20");
+
+                finalUrl = finalUrl.replace("{" + paramName + "}", encoded);
+
+                // remove consumed argument so it doesn't get added again as query param
                 arguments.remove(paramName);
             }
         }
+
         return finalUrl;
     }
 
@@ -185,53 +198,6 @@ public class OpenApiMcpToolExecutor {
 
         String queryPart = String.join("&", queryParts);
         return url + (url.contains("?") ? "&" : "?") + queryPart;
-    }
-
-    /**
-     * Prepares HTTP headers, including authentication headers based on server configuration.
-     *
-     * @param config the server configuration
-     * @return a map of HTTP headers
-     */
-    private Map<String, String> prepareHeaders(McpServerConfig config) {
-        Map<String, String> headers = new HashMap<>();
-        headers.put("Accept", "application/json");
-
-        OpenApiSchemaAuthType authType = config.getAuthType();
-        if (authType == null) {
-            authType = OpenApiSchemaAuthType.NONE;
-        }
-
-        switch (authType) {
-            case NONE:
-                break;
-            case BASIC:
-                char[] passwordChars = config.getAuthPassword();
-                assert passwordChars != null;
-                String password = new String(passwordChars);
-                String encoded = Base64.getEncoder().encodeToString(
-                        (config.getAuthUsername() + ":" + password).getBytes(StandardCharsets.UTF_8)
-                );
-                headers.put("Authorization", "Basic " + encoded);
-                Arrays.fill(passwordChars, ' ');
-                break;
-            case BEARER:
-                char[] tokenChars = config.getAuthToken();
-                assert tokenChars != null;
-                String token = new String(tokenChars);
-                headers.put("Authorization", "Bearer " + token);
-                Arrays.fill(tokenChars, ' ');
-                break;
-            case API_KEY:
-                if ("header".equalsIgnoreCase(config.getAuthApiKeyIn())) {
-                    headers.put(config.getAuthApiKeyName(), new String(Objects.requireNonNull(config.getAuthApiKey())));
-                }
-                break;
-            case CUSTOM:
-                headers.putAll(config.getAuthCustomHeaders());
-                break;
-        }
-        return headers;
     }
 
     /**

@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oracle.mcp.openapi.constants.ErrorMessage;
 import com.oracle.mcp.openapi.enums.OpenApiSchemaAuthType;
 import com.oracle.mcp.openapi.exception.McpServerToolInitializeException;
+import com.oracle.mcp.openapi.model.override.ToolOverridesConfig;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -52,6 +53,7 @@ public final class McpServerConfig {
     private final String redirectPolicy;
     private final String proxyHost;
     private final Integer proxyPort;
+    private final String toolOverridesJson;
 
     public McpServerConfig(Builder builder) {
         this.apiName = builder.apiName;
@@ -71,6 +73,7 @@ public final class McpServerConfig {
         this.redirectPolicy = builder.redirectPolicy;
         this.proxyHost = builder.proxyHost;
         this.proxyPort = builder.proxyPort;
+        this.toolOverridesJson = builder.toolOverridesJson;
     }
 
     // ----------------- GETTERS -----------------
@@ -164,6 +167,18 @@ public final class McpServerConfig {
         return proxyPort;
     }
 
+    public String getToolOverridesJson() {
+        return toolOverridesJson;
+    }
+
+    public ToolOverridesConfig getToolOverridesConfig() throws JsonProcessingException {
+        String toolOverridesJson = getToolOverridesJson();
+        if(toolOverridesJson==null){
+            return ToolOverridesConfig.EMPTY_TOOL_OVERRIDE_CONFIG;
+        }
+        return OBJECT_MAPPER.readValue(toolOverridesJson,ToolOverridesConfig.class);
+    }
+
     // ----------------- BUILDER -----------------
     public static class Builder {
         private String apiName;
@@ -183,6 +198,7 @@ public final class McpServerConfig {
         private String redirectPolicy;
         private String proxyHost;
         private Integer proxyPort;
+        private String toolOverridesJson;
 
         public Builder apiName(String apiName) {
             this.apiName = apiName;
@@ -269,6 +285,13 @@ public final class McpServerConfig {
             return this;
         }
 
+        public Builder toolOverridesJson(String toolOverridesJson) {
+            this.toolOverridesJson = toolOverridesJson;
+            return this;
+        }
+
+
+
         public McpServerConfig build() {
             return new McpServerConfig(this);
         }
@@ -299,6 +322,7 @@ public final class McpServerConfig {
         String authApiKeyName = getStringValue(argMap.get("--auth-api-key-name"), "API_API_KEY_NAME");
         String authApiKeyIn = getStringValue(argMap.get("--auth-api-key-in"), "API_API_KEY_IN");
 
+        String toolOverridesJson = getStringValue(argMap.get("--tool-overrides"), "MCP_TOOL_OVERRIDES");
 
         // Validation for API key
         if ("API_KEY".equalsIgnoreCase(authType)) {
@@ -370,6 +394,7 @@ public final class McpServerConfig {
                 .redirectPolicy(redirectPolicy)
                 .proxyHost(proxyHost)
                 .proxyPort(proxyPort)
+                .toolOverridesJson(toolOverridesJson)
                 .build();
     }
 

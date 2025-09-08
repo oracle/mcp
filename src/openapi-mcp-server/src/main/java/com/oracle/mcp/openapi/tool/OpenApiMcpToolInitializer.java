@@ -6,6 +6,7 @@
  */
 package com.oracle.mcp.openapi.tool;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.oracle.mcp.openapi.cache.McpServerCacheService;
 import com.oracle.mcp.openapi.constants.CommonConstant;
@@ -14,6 +15,8 @@ import com.oracle.mcp.openapi.exception.McpServerToolInitializeException;
 import com.oracle.mcp.openapi.exception.UnsupportedApiDefinitionException;
 import com.oracle.mcp.openapi.mapper.impl.OpenApiToMcpToolMapper;
 import com.oracle.mcp.openapi.mapper.impl.SwaggerToMcpToolMapper;
+import com.oracle.mcp.openapi.model.McpServerConfig;
+import com.oracle.mcp.openapi.model.override.ToolOverridesConfig;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,9 +61,9 @@ public class OpenApiMcpToolInitializer {
      * @throws IllegalArgumentException           if {@code openApiJson} is {@code null}
      * @throws UnsupportedApiDefinitionException if the API definition is not recognized
      */
-    public List<McpSchema.Tool> extractTools(JsonNode openApiJson) throws McpServerToolInitializeException {
+    public List<McpSchema.Tool> extractTools(McpServerConfig serverConfig,JsonNode openApiJson) throws McpServerToolInitializeException {
         LOGGER.debug("Parsing OpenAPI JsonNode to OpenAPI object...");
-        List<McpSchema.Tool> mcpTools = parseApi(openApiJson);
+        List<McpSchema.Tool> mcpTools = parseApi(serverConfig,openApiJson);
         LOGGER.debug("Conversion complete. Total tools created: {}", mcpTools.size());
         updateToolsToCache(mcpTools);
         return mcpTools;
@@ -93,17 +96,24 @@ public class OpenApiMcpToolInitializer {
      * @throws IllegalArgumentException           if {@code jsonNode} is {@code null}
      * @throws UnsupportedApiDefinitionException if the specification type is unsupported
      */
-    private List<McpSchema.Tool> parseApi(JsonNode jsonNode) throws McpServerToolInitializeException {
+    private List<McpSchema.Tool> parseApi(McpServerConfig serverConfig,JsonNode jsonNode) throws McpServerToolInitializeException {
         if (jsonNode == null) {
             throw new IllegalArgumentException("jsonNode cannot be null");
         }
+        ToolOverridesConfig toolOverridesJson = null;
+        try {
+            toolOverridesJson = serverConfig.getToolOverridesConfig();
+        } catch (JsonProcessingException e) {
+            LOGGER.warn("Failed to parse tool overrides JSON: {}", e.getMessage());
+        }
         // Detect version
         if (jsonNode.has(CommonConstant.OPEN_API)) {
-            return new OpenApiToMcpToolMapper(mcpServerCacheService).convert(jsonNode);
+            return new OpenApiToMcpToolMapper(mcpServerCacheService).convert(jsonNode,toolOverridesJson);
         } else if (jsonNode.has(CommonConstant.SWAGGER)) {
-            return new SwaggerToMcpToolMapper(mcpServerCacheService).convert(jsonNode);
+            return new SwaggerToMcpToolMapper(mcpServerCacheService).convert(jsonNode,toolOverridesJson);
         } else {
             throw new McpServerToolInitializeException(ErrorMessage.INVALID_SPEC_DEFINITION);
         }
+
     }
 }

@@ -1,3 +1,9 @@
+/*
+ * --------------------------------------------------------------------------
+ * Copyright (c) 2025, Oracle and/or its affiliates.
+ * Licensed under the Universal Permissive License v1.0 as shown at http://oss.oracle.com/licenses/upl.
+ * --------------------------------------------------------------------------
+ */
 package com.oracle.mcp.openapi.model;
 
 import com.oracle.mcp.openapi.constants.ErrorMessage;
@@ -9,6 +15,11 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+/**
+ * Unit tests for {@link McpServerConfig}.
+ *
+ * @author Joby Wilson Mathews (joby.mathews@oracle.com)
+ */
 class McpServerConfigTest {
 
     @Test

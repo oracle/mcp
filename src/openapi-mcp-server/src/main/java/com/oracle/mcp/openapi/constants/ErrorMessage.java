@@ -25,4 +25,7 @@ public interface ErrorMessage {
     String MISSING_PATH_IN_SPEC = "'paths' object not found in the specification.";
 
     String INVALID_SPEC_DEFINITION = "Unsupported API definition: missing 'openapi' or 'swagger' field";
+
+    String INVALID_SWAGGER_SPEC = "Invalid Swagger specification provided.";
+
 }

@@ -34,5 +34,27 @@ public final class McpServerUtil {
         }
         return sb.toString();
     }
+    /**
+     * Capitalizes the first letter of the given string.
+     * If the string is null or empty, it is returned as is.
+     *
+     * @param str The input string to capitalize.
+     * @return The capitalized string, or the original string if it is null or empty.
+     */
+    public static  String capitalize(String str) {
+        if (str == null || str.isEmpty()){
+            return str;
+        }
+        return str.substring(0, 1).toUpperCase() + str.substring(1);
+    }
+    /**
+     * Checks if a string is not null and not empty.
+     *
+     * @param str The string to check.
+     * @return true if the string is not null and not empty, false otherwise.
+     */
+    public static boolean isNotBlank(String str) {
+        return str != null && !str.isEmpty();
+    }
 
 }

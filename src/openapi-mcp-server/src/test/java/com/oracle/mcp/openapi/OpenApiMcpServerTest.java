@@ -1,3 +1,9 @@
+/*
+ * --------------------------------------------------------------------------
+ * Copyright (c) 2025, Oracle and/or its affiliates.
+ * Licensed under the Universal Permissive License v1.0 as shown at http://oss.oracle.com/licenses/upl.
+ * --------------------------------------------------------------------------
+ */
 package com.oracle.mcp.openapi;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -25,8 +31,16 @@ import java.nio.file.Paths;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
+/**
+ * Integration tests for the OpenAPI MCP server using a mocked OpenAPI specification.
+ * <p>
+ * This test class uses WireMock to simulate an OpenAPI server with various authentication methods.
+ * It verifies that the MCP server correctly initializes tools and executes them with different auth types.
+ *
+ * @author Joby Wilson Mathews (joby.mathews@oracle.com)
+ */
 @SpringBootTest(
         args = {
                 "--api-spec", "http://localhost:8080/rest/v1/metadata-catalog/companies",

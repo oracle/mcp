@@ -12,6 +12,8 @@ import com.oracle.mcp.openapi.constants.CommonConstant;
 import com.oracle.mcp.openapi.constants.ErrorMessage;
 import com.oracle.mcp.openapi.exception.McpServerToolInitializeException;
 import com.oracle.mcp.openapi.mapper.McpToolMapper;
+import com.oracle.mcp.openapi.model.override.ToolOverride;
+import com.oracle.mcp.openapi.model.override.ToolOverridesConfig;
 import com.oracle.mcp.openapi.util.McpServerUtil;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.swagger.v3.oas.models.OpenAPI;
@@ -22,6 +24,7 @@ import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.parser.OpenAPIV3Parser;
 import io.swagger.v3.parser.core.models.ParseOptions;
+import io.swagger.v3.parser.core.models.SwaggerParseResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,7 +58,7 @@ public class OpenApiToMcpToolMapper implements McpToolMapper {
     }
 
     @Override
-    public List<McpSchema.Tool> convert(JsonNode openApiJson) throws McpServerToolInitializeException {
+    public List<McpSchema.Tool> convert(JsonNode openApiJson,ToolOverridesConfig toolOverridesConfig) throws McpServerToolInitializeException {
         LOGGER.debug("Parsing OpenAPI schema to OpenAPI object.");
         OpenAPI openAPI = parseOpenApi(openApiJson);
         LOGGER.debug("Successfully parsed OpenAPI schema");
@@ -64,13 +67,13 @@ public class OpenApiToMcpToolMapper implements McpToolMapper {
             throw new McpServerToolInitializeException(ErrorMessage.MISSING_PATH_IN_SPEC);
         }
 
-        List<McpSchema.Tool> mcpTools = processPaths(openAPI);
+        List<McpSchema.Tool> mcpTools = processPaths(openAPI,toolOverridesConfig);
         LOGGER.debug("Conversion complete. Total tools created: {}", mcpTools.size());
         updateToolsToCache(mcpTools);
         return mcpTools;
     }
 
-    private List<McpSchema.Tool> processPaths(OpenAPI openAPI) {
+    private List<McpSchema.Tool> processPaths(OpenAPI openAPI, ToolOverridesConfig toolOverridesConfig) {
         List<McpSchema.Tool> mcpTools = new ArrayList<>();
         Set<String> toolNames = new HashSet<>();
         for (Map.Entry<String, PathItem> pathEntry : openAPI.getPaths().entrySet()) {
@@ -81,12 +84,12 @@ public class OpenApiToMcpToolMapper implements McpToolMapper {
                 continue;
             }
 
-            processOperationsForPath(path, pathItem, mcpTools,toolNames);
+            processOperationsForPath(path, pathItem, mcpTools,toolNames,toolOverridesConfig);
         }
         return mcpTools;
     }
 
-    private void processOperationsForPath(String path, PathItem pathItem, List<McpSchema.Tool> mcpTools,Set<String> toolNames) {
+    private void processOperationsForPath(String path, PathItem pathItem, List<McpSchema.Tool> mcpTools, Set<String> toolNames, ToolOverridesConfig toolOverridesConfig) {
         for (Map.Entry<PathItem.HttpMethod, Operation> methodEntry : pathItem.readOperationsMap().entrySet()) {
             PathItem.HttpMethod method = methodEntry.getKey();
             Operation operation = methodEntry.getValue();
@@ -94,25 +97,26 @@ public class OpenApiToMcpToolMapper implements McpToolMapper {
                 continue;
             }
 
-            McpSchema.Tool tool = buildToolFromOperation(path, method, operation,toolNames);
+            McpSchema.Tool tool = buildToolFromOperation(path, method, operation,toolNames,toolOverridesConfig);
             if (tool != null) {
                 mcpTools.add(tool);
             }
         }
     }
 
-    private McpSchema.Tool buildToolFromOperation(String path, PathItem.HttpMethod method, Operation operation, Set<String> toolNames) {
-        String rawOperationId = (operation.getOperationId() != null && !operation.getOperationId().isEmpty())
-                ? operation.getOperationId()
-                : McpServerUtil.toCamelCase(method.name() + " " + path);
+    private McpSchema.Tool buildToolFromOperation(String path, PathItem.HttpMethod method, Operation operation, Set<String> toolNames, ToolOverridesConfig toolOverridesConfig) {
 
-        String toolName = makeUniqueName(toolNames,rawOperationId);
+        String toolName = generateToolName(method.name(), path,  operation.getOperationId(),toolNames);
+
+        if(skipTool(toolName,toolOverridesConfig)){
+            LOGGER.debug("Skipping tool: {} as it is in tool override file", toolName);
+            return null;
+        }
+
         LOGGER.debug("--- Parsing Operation: {} {} (ID: {}) ---", method.name().toUpperCase(), path, toolName);
-
-        String toolTitle = (operation.getSummary() != null && !operation.getSummary().isEmpty())
-                ? operation.getSummary()
-                : toolName;
-        String toolDescription = getDescription(operation);
+        ToolOverride toolOverride = toolOverridesConfig.getTools().getOrDefault(toolName,ToolOverride.EMPTY_TOOL_OVERRIDE);
+        String toolTitle = getToolTitle(operation,toolOverride,toolName);
+        String toolDescription = getToolDescription(operation,toolOverride);
 
         Map<String, Object> properties = new LinkedHashMap<>();
         List<String> requiredParams = new ArrayList<>();
@@ -141,6 +145,31 @@ public class OpenApiToMcpToolMapper implements McpToolMapper {
                 .outputSchema(outputSchema)
                 .meta(meta)
                 .build();
+    }
+
+    private String getToolTitle(Operation operation, ToolOverride toolOverride,String toolName) {
+        String overrideTitle = toolOverride.getTitle();
+        if (McpServerUtil.isNotBlank(overrideTitle)) {
+            return overrideTitle;
+        }
+        return (operation.getSummary() != null && !operation.getSummary().isEmpty())
+                ? operation.getSummary()
+                : toolName;
+    }
+
+
+    private String getToolDescription(Operation operation, ToolOverride toolOverride) {
+        String overrideDescription = toolOverride.getDescription();
+        if (McpServerUtil.isNotBlank(overrideDescription)) {
+            return overrideDescription;
+        }
+        if (McpServerUtil.isNotBlank(operation.getSummary())) {
+            return operation.getSummary();
+        }
+        if (McpServerUtil.isNotBlank(operation.getDescription())) {
+            return operation.getDescription();
+        }
+        return "";
     }
 
     private Map<String, Object> getOutputSchema() {
@@ -209,21 +238,17 @@ public class OpenApiToMcpToolMapper implements McpToolMapper {
         }
     }
 
-    private String getDescription(Operation operation) {
-        if (operation.getSummary() != null && !operation.getSummary().isEmpty()) {
-            return operation.getSummary();
-        } else if (operation.getDescription() != null && !operation.getDescription().isEmpty()) {
-            return operation.getDescription();
-        }
-        return "";
-    }
-
     private OpenAPI parseOpenApi(JsonNode jsonNode) {
         String jsonString = jsonNode.toString();
         ParseOptions options = new ParseOptions();
         options.setResolve(true);
         options.setResolveFully(true);
-        return new OpenAPIV3Parser().readContents(jsonString, null, options).getOpenAPI();
+        SwaggerParseResult result = new OpenAPIV3Parser().readContents(jsonString, null, options);
+        List<String> messages = result.getMessages();
+        if (messages != null && !messages.isEmpty()) {
+            LOGGER.info("OpenAPI validation errors: {}", messages);
+        }
+        return result.getOpenAPI();
     }
 
     private void extractRequestBody(Operation operation, Map<String, Object> properties, List<String> requiredParams) {
@@ -243,7 +268,7 @@ public class OpenApiToMcpToolMapper implements McpToolMapper {
         }
     }
 
-    private Map<String, Object> extractInputSchema(Schema<?> openApiSchema) {
+    protected Map<String, Object> extractInputSchema(Schema<?> openApiSchema) {
         if (openApiSchema == null) {
             return new LinkedHashMap<>();
         }
@@ -295,13 +320,5 @@ public class OpenApiToMcpToolMapper implements McpToolMapper {
         return paramMeta;
     }
 
-    private String makeUniqueName(Set<String> toolNames,String base) {
-        String name = base;
-        int counter = 1;
-        while (toolNames.contains(name)) {
-            name = base + CommonConstant.UNDER_SCORE + counter++;
-        }
-        toolNames.add(name);
-        return name;
-    }
+
 }

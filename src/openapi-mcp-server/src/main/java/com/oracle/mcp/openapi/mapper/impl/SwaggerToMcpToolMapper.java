@@ -9,7 +9,11 @@ package com.oracle.mcp.openapi.mapper.impl;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.oracle.mcp.openapi.cache.McpServerCacheService;
 import com.oracle.mcp.openapi.constants.CommonConstant;
+import com.oracle.mcp.openapi.constants.ErrorMessage;
+import com.oracle.mcp.openapi.exception.McpServerToolInitializeException;
 import com.oracle.mcp.openapi.mapper.McpToolMapper;
+import com.oracle.mcp.openapi.model.override.ToolOverride;
+import com.oracle.mcp.openapi.model.override.ToolOverridesConfig;
 import com.oracle.mcp.openapi.util.McpServerUtil;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.swagger.models.ArrayModel;
@@ -56,7 +60,6 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
 
     private final McpServerCacheService mcpServerCacheService;
     private static final Logger LOGGER = LoggerFactory.getLogger(SwaggerToMcpToolMapper.class);
-    private Swagger swaggerSpec; // Stores the full spec to resolve $ref definitions
 
     /**
      * Creates a new {@code SwaggerToMcpToolMapper}.
@@ -76,15 +79,18 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
      * @throws IllegalArgumentException if the specification does not contain a {@code paths} object.
      */
     @Override
-    public List<McpSchema.Tool> convert(JsonNode swaggerJson) {
+    public List<McpSchema.Tool> convert(JsonNode swaggerJson, ToolOverridesConfig toolOverridesConfig) throws McpServerToolInitializeException {
         LOGGER.debug("Parsing Swagger 2 JsonNode to Swagger object...");
-        this.swaggerSpec = parseSwagger(swaggerJson);
-
-        if (swaggerSpec.getPaths() == null || swaggerSpec.getPaths().isEmpty()) {
-            throw new IllegalArgumentException("'paths' object not found in the specification.");
+        Swagger swaggerSpec = parseSwagger(swaggerJson);
+        if(swaggerSpec ==null){
+            throw new McpServerToolInitializeException(ErrorMessage.INVALID_SWAGGER_SPEC);
         }
 
-        List<McpSchema.Tool> mcpTools = processPaths(swaggerSpec);
+        if (swaggerSpec.getPaths() == null || swaggerSpec.getPaths().isEmpty()) {
+            throw new McpServerToolInitializeException(ErrorMessage.MISSING_PATH_IN_SPEC);
+        }
+
+        List<McpSchema.Tool> mcpTools = processPaths(swaggerSpec,toolOverridesConfig);
         LOGGER.debug("Conversion complete. Total tools created: {}", mcpTools.size());
         updateToolsToCache(mcpTools);
         return mcpTools;
@@ -93,10 +99,11 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
     /**
      * Processes all paths in the Swagger specification and builds corresponding MCP tools.
      *
-     * @param swagger the parsed Swagger object.
+     * @param swagger             the parsed Swagger object.
+     * @param toolOverridesConfig the tool overrides configuration.
      * @return list of {@link McpSchema.Tool}.
      */
-    private List<McpSchema.Tool> processPaths(Swagger swagger) {
+    private List<McpSchema.Tool> processPaths(Swagger swagger, ToolOverridesConfig toolOverridesConfig) {
         List<McpSchema.Tool> mcpTools = new ArrayList<>();
         Set<String> toolNames = new HashSet<>();
         if (swagger.getPaths() == null) return mcpTools;
@@ -108,7 +115,7 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
                 continue;
             }
 
-            processOperationsForPath(path, pathItem, mcpTools,toolNames);
+            processOperationsForPath(swagger,path, pathItem, mcpTools,toolNames,toolOverridesConfig);
         }
         return mcpTools;
     }
@@ -116,18 +123,19 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
     /**
      * Extracts operations (GET, POST, etc.) for a given Swagger path and converts them to MCP tools.
      *
-     * @param path     the API path (e.g., {@code /users}).
-     * @param pathItem the Swagger path item containing operations.
-     * @param mcpTools the list to which new tools will be added.
+     * @param path                the API path (e.g., {@code /users}).
+     * @param pathItem            the Swagger path item containing operations.
+     * @param mcpTools            the list to which new tools will be added.
+     * @param toolOverridesConfig the tool overrides configuration.
      */
-    private void processOperationsForPath(String path, Path pathItem, List<McpSchema.Tool> mcpTools,Set<String> toolNames) {
+    private void processOperationsForPath(Swagger swaggerSpec, String path, Path pathItem, List<McpSchema.Tool> mcpTools, Set<String> toolNames, ToolOverridesConfig toolOverridesConfig) {
         Map<HttpMethod, Operation> operations = pathItem.getOperationMap();
         if (operations == null){
             return;
         }
 
         for (Map.Entry<HttpMethod, Operation> methodEntry : operations.entrySet()) {
-            McpSchema.Tool tool = buildToolFromOperation(path, methodEntry.getKey(), methodEntry.getValue(),toolNames);
+            McpSchema.Tool tool = buildToolFromOperation(swaggerSpec,path, methodEntry.getKey(), methodEntry.getValue(),toolNames,toolOverridesConfig);
             if (tool != null) {
                 mcpTools.add(tool);
             }
@@ -137,21 +145,26 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
     /**
      * Builds an MCP tool definition from a Swagger operation.
      *
-     * @param path      the API path.
-     * @param method    the HTTP method.
-     * @param operation the Swagger operation metadata.
+     * @param path                the API path.
+     * @param method              the HTTP method.
+     * @param operation           the Swagger operation metadata.
+     * @param toolOverridesConfig the tool overrides configuration.
      * @return a constructed {@link McpSchema.Tool}, or {@code null} if the operation is invalid.
      */
-    private McpSchema.Tool buildToolFromOperation(String path, HttpMethod method, Operation operation,Set<String> toolNames) {
+    private McpSchema.Tool buildToolFromOperation(Swagger swaggerSpec, String path, HttpMethod method, Operation operation, Set<String> toolNames, ToolOverridesConfig toolOverridesConfig) {
         String rawOperationId = (operation.getOperationId() != null && !operation.getOperationId().isEmpty())
                 ? operation.getOperationId()
                 : McpServerUtil.toCamelCase(method.name() + " " + path);
 
         String toolName = makeUniqueName(toolNames,rawOperationId);
+        if(skipTool(toolName,toolOverridesConfig)){
+            LOGGER.debug("Skipping tool: {} as it is in tool override file", toolName);
+            return null;
+        }
         LOGGER.debug("--- Parsing Operation: {} {} (ID: {}) ---", method.name(), path, toolName);
-
-        String toolTitle = operation.getSummary() != null ? operation.getSummary() : toolName;
-        String toolDescription = operation.getDescription() != null ? operation.getDescription() : toolTitle;
+        ToolOverride toolOverride = toolOverridesConfig.getTools().getOrDefault(toolName,ToolOverride.EMPTY_TOOL_OVERRIDE);
+        String toolTitle = getToolTitle(operation,toolOverride,toolName);
+        String toolDescription = getToolDescription(operation,toolOverride);
 
         Map<String, Object> properties = new LinkedHashMap<>();
         List<String> requiredParams = new ArrayList<>();
@@ -159,7 +172,7 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
         Map<String, Map<String, Object>> pathParams = new HashMap<>();
         Map<String, Map<String, Object>> queryParams = new HashMap<>();
         extractPathAndQueryParams(operation, pathParams, queryParams, properties, requiredParams);
-        extractRequestBody(operation, properties, requiredParams);
+        extractRequestBody(swaggerSpec,operation, properties, requiredParams);
 
         McpSchema.JsonSchema inputSchema = new McpSchema.JsonSchema(
                 CommonConstant.OBJECT,
@@ -179,6 +192,31 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
                 .outputSchema(outputSchema)
                 .meta(meta)
                 .build();
+    }
+
+    private String getToolDescription(Operation operation, ToolOverride toolOverride) {
+        String overrideDescription = toolOverride.getDescription();
+        if (McpServerUtil.isNotBlank(overrideDescription)) {
+            return overrideDescription;
+        }
+        if (McpServerUtil.isNotBlank(operation.getSummary())) {
+            return operation.getSummary();
+        }
+        if (McpServerUtil.isNotBlank(operation.getDescription())) {
+            return operation.getDescription();
+        }
+        return "";
+
+    }
+
+    private String getToolTitle(Operation operation, ToolOverride toolOverride, String toolName) {
+        String overrideTitle = toolOverride.getTitle();
+        if (McpServerUtil.isNotBlank(overrideTitle)) {
+            return overrideTitle;
+        }
+        return (operation.getSummary() != null && !operation.getSummary().isEmpty())
+                ? operation.getSummary()
+                : toolName;
     }
 
     private Map<String, Object> getOutputSchema() {
@@ -223,7 +261,7 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
     /**
      * Extracts request body schema (if present) from a Swagger operation.
      */
-    private void extractRequestBody(Operation operation, Map<String, Object> properties, List<String> requiredParams) {
+    private void extractRequestBody(Swagger swaggerSpec,Operation operation, Map<String, Object> properties, List<String> requiredParams) {
         if (operation.getParameters() == null){
             return;
         }
@@ -234,7 +272,7 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
                 .ifPresent(p -> {
                     BodyParameter bodyParam = (BodyParameter) p;
                     Model schema = bodyParam.getSchema();
-                    Map<String, Object> bodyProps = extractModelSchema(schema);
+                    Map<String, Object> bodyProps = extractModelSchema(swaggerSpec,schema);
 
                     if (!bodyProps.isEmpty()) {
                         properties.put(bodyParam.getName(), bodyProps);
@@ -248,17 +286,17 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
     /**
      * Recursively extracts schema details from a Swagger model definition.
      */
-    private Map<String, Object> extractModelSchema(Model model) {
+    private Map<String, Object> extractModelSchema(Swagger swagger,Model model) {
         if (model instanceof RefModel) {
             String ref = ((RefModel) model).getSimpleRef();
-            model = swaggerSpec.getDefinitions().get(ref);
+            model = swagger.getDefinitions().get(ref);
         }
 
         Map<String, Object> schema = new LinkedHashMap<>();
         if (model instanceof ModelImpl && model.getProperties() != null) {
             Map<String, Object> props = new LinkedHashMap<>();
              model.getProperties().forEach((key, prop) ->
-                props.put(key, extractPropertySchema(prop))
+                props.put(key, extractPropertySchema(swagger,prop))
             );
             schema.put(CommonConstant.TYPE, CommonConstant.OBJECT);
             schema.put(CommonConstant.PROPERTIES, props);
@@ -267,7 +305,7 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
             }
         } else if (model instanceof ArrayModel) {
             schema.put(CommonConstant.TYPE, CommonConstant.ARRAY);
-            schema.put(CommonConstant.ITEMS, extractPropertySchema(((ArrayModel) model).getItems()));
+            schema.put(CommonConstant.ITEMS, extractPropertySchema(swagger,((ArrayModel) model).getItems()));
         }
         return schema;
     }
@@ -275,12 +313,12 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
     /**
      * Extracts schema information from a Swagger property.
      */
-    private Map<String, Object> extractPropertySchema(Property property) {
+    private Map<String, Object> extractPropertySchema(Swagger swagger,Property property) {
         if (property instanceof RefProperty) {
             String simpleRef = ((RefProperty) property).getSimpleRef();
-            Model definition = swaggerSpec.getDefinitions().get(simpleRef);
+            Model definition = swagger.getDefinitions().get(simpleRef);
             if (definition != null) {
-                return extractModelSchema(definition);
+                return extractModelSchema(swagger,definition);
             } else {
                 return Map.of("type", CommonConstant.OBJECT, CommonConstant.DESCRIPTION, "Unresolved reference: " + simpleRef);
             }
@@ -293,11 +331,11 @@ public class SwaggerToMcpToolMapper implements McpToolMapper {
         if (property instanceof ObjectProperty) {
             Map<String, Object> props = new LinkedHashMap<>();
             ((ObjectProperty) property).getProperties().forEach((key, prop) ->
-                props.put(key, extractPropertySchema(prop))
+                props.put(key, extractPropertySchema(swagger,prop))
             );
             schema.put(CommonConstant.PROPERTIES, props);
         } else if (property instanceof ArrayProperty) {
-            schema.put(CommonConstant.ITEMS, extractPropertySchema(((ArrayProperty) property).getItems()));
+            schema.put(CommonConstant.ITEMS, extractPropertySchema(swagger,((ArrayProperty) property).getItems()));
         }
         return schema;
     }

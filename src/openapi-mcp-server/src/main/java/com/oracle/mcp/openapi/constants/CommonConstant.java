@@ -36,4 +36,5 @@ public interface CommonConstant {
 
     //REST constants
     String APPLICATION_JSON = "application/json";
+
 }

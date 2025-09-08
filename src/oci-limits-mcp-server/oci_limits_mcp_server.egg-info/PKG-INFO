@@ -1,7 +1,0 @@
-Metadata-Version: 2.4
-Name: oci-limits-mcp-server
-Version: 0.1.0
-Summary: OCI Service Limits and Quota Policies MCP Server
-Requires-Python: >=3.11
-Requires-Dist: fastmcp>=2.0.0
-Requires-Dist: oci>=2.100.0

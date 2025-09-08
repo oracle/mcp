@@ -1,9 +1,0 @@
-README.md
-oci_limits_mcp_server.py
-pyproject.toml
-oci_limits_mcp_server.egg-info/PKG-INFO
-oci_limits_mcp_server.egg-info/SOURCES.txt
-oci_limits_mcp_server.egg-info/dependency_links.txt
-oci_limits_mcp_server.egg-info/entry_points.txt
-oci_limits_mcp_server.egg-info/requires.txt
-oci_limits_mcp_server.egg-info/top_level.txt

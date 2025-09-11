@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling>=1.18.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcp-atlassian-oauth"
+version = "0.1.0"
+description = "Model Context Protocol (MCP) server for Atlassian (Jira/Confluence) with OAuth/Token support."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Oracle", email = "opensource_ww@oracle.com" }]
+keywords = ["mcp", "modelcontextprotocol", "jira", "confluence", "atlassian", "server"]
+dependencies = [
+  "mcp>=1.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0"
+]
+semantic = [
+  "sentence-transformers>=2,<3",
+  "numpy>=1.24",
+  "scipy>=1.10"
+]
+ops = [
+  "python-dotenv>=1.0",
+  "websockets>=11,<12"
+]
+
+[project.urls]
+Homepage = "https://github.com/oracle/mcp"
+Repository = "https://github.com/oracle/mcp"
+Issues = "https://github.com/oracle/mcp/issues"
+
+[project.scripts]
+mcp-atlassian-oauth = "mcp_atlassian_oauth.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_atlassian_oauth"]
+
+[tool.hatch.version]
+path = "src/mcp_atlassian_oauth/__init__.py"

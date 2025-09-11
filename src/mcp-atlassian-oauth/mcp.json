@@ -1,0 +1,43 @@
+{
+  "name": "mcp-atlassian-oauth",
+  "id": "oracle.atlassian.oauth",
+  "version": "0.1.0",
+  "description": "MCP server for Atlassian Jira and Confluence (OAuth/Token) implemented in Python.",
+  "license": "UPL-1.0",
+  "homepage": "https://github.com/oracle/mcp",
+  "keywords": ["mcp", "modelcontextprotocol", "jira", "confluence", "atlassian", "python"],
+  "categories": ["productivity", "devtools", "issue-tracking", "documentation"],
+  "languages": ["python"],
+  "command": "/usr/bin/env",
+  "args": ["python3", "-m", "mcp_atlassian_oauth"],
+  "capabilities": { "tools": true, "resources": true },
+  "env": {
+    "JIRA_BASE_URL": { "required": true, "description": "e.g., https://your-domain.atlassian.net" },
+    "JIRA_ACCESS_TOKEN": { "required": false, "description": "OAuth access token (optional if using refresh)" },
+    "JIRA_CLIENT_ID": { "required": false, "description": "OAuth client ID (refresh flow)" },
+    "JIRA_CLIENT_SECRET": { "required": false, "description": "OAuth client secret (refresh flow)" },
+    "JIRA_REFRESH_TOKEN": { "required": false, "description": "OAuth refresh token (refresh flow)" },
+    "CONF_BASE_URL": { "required": true, "description": "e.g., https://your-domain.atlassian.net/wiki" },
+    "CONF_ACCESS_TOKEN": { "required": false, "description": "OAuth access token (optional if using refresh)" },
+    "CONF_CLIENT_ID": { "required": false, "description": "OAuth client ID (refresh flow)" },
+    "CONF_CLIENT_SECRET": { "required": false, "description": "OAuth client secret (refresh flow)" },
+    "CONF_REFRESH_TOKEN": { "required": false, "description": "OAuth refresh token (refresh flow)" },
+    "MCP_SSL_VERIFY": { "required": false, "description": "Set to false/0/no/off to disable TLS verification" },
+    "MCP_CA_BUNDLE": { "required": false, "description": "Absolute path to a PEM CA bundle" }
+  },
+  "tools": [
+    { "name": "jira_get_myself", "description": "GET /rest/api/latest/myself" },
+    { "name": "jira_search_issues", "description": "Search Jira issues by JQL" },
+    { "name": "jira_get_issue", "description": "Get Jira issue by key" },
+    { "name": "jira_add_comment", "description": "Add a comment to a Jira issue" },
+    { "name": "jira_find_similar", "description": "Find related Jira issues by key or free text (title/description)" },
+    { "name": "set_defaults", "description": "Set or view runtime defaults for preferred user, Jira project, Confluence space, and output format" },
+    { "name": "conf_get_server_info", "description": "Confluence system info (fallback to '/')" },
+    { "name": "conf_get_page", "description": "Get Confluence page by ID" },
+    { "name": "conf_search_cql", "description": "Search Confluence using CQL" }
+  ],
+  "examples": {
+    "config": "examples/cline_mcp_settings.json",
+    "run": "tools/run_local.sh"
+  }
+}

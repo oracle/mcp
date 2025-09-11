@@ -1,0 +1,27 @@
+{
+  "servers": [
+    {
+      "name": "mcp-atlassian-oauth", 
+      "command": "/path/to/venv/.venv/bin/python",
+      "args": ["-m", "mcp_atlassian_oauth"],
+      "env": {
+        "JIRA_BASE_URL": "https://your-domain.atlassian.net",
+        "JIRA_ACCESS_TOKEN": "",
+        "JIRA_CLIENT_ID": "",
+        "JIRA_CLIENT_SECRET": "",
+        "JIRA_REFRESH_TOKEN": "",
+        "CONF_BASE_URL": "https://your-domain.atlassian.net/wiki",
+        "CONF_ACCESS_TOKEN": "",
+        "CONF_CLIENT_ID": "",
+        "CONF_CLIENT_SECRET": "",
+        "CONF_REFRESH_TOKEN": "",
+        "MCP_SSL_VERIFY": "true",
+        "MCP_CA_BUNDLE": "",
+        "MCP_PREFERRED_USER": "automation.bot",
+        "JIRA_DEFAULT_PROJECT": "ENG",
+        "CONF_DEFAULT_SPACE": "DOCS",
+        "MCP_DEFAULT_OUTPUT_FORMAT": "markdown"
+      }
+    }
+  ]
+}

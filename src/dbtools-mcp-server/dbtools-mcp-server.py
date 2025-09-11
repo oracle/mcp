@@ -40,29 +40,64 @@ auth_signer = Signer(
 )
 tenancy_id = os.getenv("TENANCY_ID_OVERRIDE", config['tenancy'])
 
+def list_all_compartments_internal(only_one_page: bool , limit = 100  ):
+    """Internal function to get List all compartments in a tenancy"""
+    response = identity_client.list_compartments(
+            compartment_id=tenancy_id,
+            compartment_id_in_subtree=True,
+            access_level="ACCESSIBLE",
+            lifecycle_state="ACTIVE",
+            limit = limit
+       )
+    compartments = response.data
+    compartments.append(identity_client.get_compartment(compartment_id=tenancy_id).data)
+    if only_one_page : # limiting the number of items returned
+        return  compartments   
+    while response.has_next_page:
+        response = identity_client.list_compartments(
+            compartment_id=tenancy_id,
+            compartment_id_in_subtree=True,
+            access_level="ACCESSIBLE",
+            lifecycle_state="ACTIVE",
+            page=response.next_page,
+            limit = limit
+        )
+        compartments.extend(response.data)
+    
+    return compartments
+
 @mcp.tool()
 def list_all_compartments() -> str:
     """List all compartments in a tenancy with clear formatting"""
-    compartments = identity_client.list_compartments(tenancy_id).data
-    compartments.append(identity_client.get_compartment(compartment_id=tenancy_id).data)
-    return str(compartments)
+    return str(list_all_compartments_internal(True))
 
 def get_compartment_by_name(compartment_name: str):
     """Internal function to get compartment by name with caching"""
-    compartments = identity_client.list_compartments(
-        compartment_id=tenancy_id,
-        compartment_id_in_subtree=True,
-        access_level="ACCESSIBLE",
-        lifecycle_state="ACTIVE"
-    )
-    compartments.data.append(identity_client.get_compartment(compartment_id=tenancy_id).data)
-
+    compartments = list_all_compartments_internal(False)
     # Search for the compartment by name
-    for compartment in compartments.data:
+    for compartment in compartments:
         if compartment.name.lower() == compartment_name.lower():
             return compartment
 
     return None
+
+def get_compartment_by_name_v2(compartment_name: str):
+    """Internal function to get compartment by name using the query API"""
+    search_details = StructuredSearchDetails(
+        query=f"query compartment resources where displayName = '{compartment_name}'",
+        type="Structured",
+        matching_context_type="NONE"
+    )
+    try:
+        resp = search_client.search_resources(search_details=search_details, tenant_id=config['tenancy']).data
+        if not hasattr(resp, 'items') or len(resp.items) == 0:
+            return None       
+        # being compatible with get_compartment_by_name behavior - retrieving a Compartment
+        compartment = identity_client.get_compartment( compartment_id= resp.items[0].identifier )
+        return compartment.data
+        
+    except Exception as e:
+        return None
 
 @mcp.tool()
 def get_compartment_by_name_tool(name: str) -> str:

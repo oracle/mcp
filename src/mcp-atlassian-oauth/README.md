@@ -119,6 +119,24 @@ jira_find_similar supports a semantic re-ranking mode behind an optional extra.
 
 Default model: sentence-transformers/all-MiniLM-L6-v2
 
+## Remote (URL) deployment
+
+To run this server as a remote endpoint consumable by Cline’s “Remote MCP”:
+
+- Install ops extra (WebSocket + .env):
+  - pip install ".[ops]"
+  - or pip install -r requirements-ops.txt
+- Set environment (example):
+  - MCP_TRANSPORT=ws
+  - MCP_HOST=0.0.0.0
+  - MCP_PORT=8765
+- Keep org-wide credentials on the server (e.g., an .env file in the working directory). Users set personal defaults via the set_defaults tool from their client.
+- Start the server:
+  - python -m mcp_atlassian_oauth
+- Expose wss:// via a TLS reverse proxy (e.g., NGINX/IIS/ARR) and add the URL in Cline’s “Remote MCP” tab.
+
+Full Linux and Windows setup instructions: see [REMOTE_SERVER_SETUP.md](./REMOTE_SERVER_SETUP.md)
+
 ## Single Setup Approach (Repo-local venv)
 
 We standardize on a dedicated virtual environment inside this project. Your MCP host must launch THIS venv’s python with -m mcp_atlassian_oauth.

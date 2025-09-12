@@ -27,7 +27,12 @@ jobs:
 
       - name: 🔄 Generate environment variables
         id: os_arch
-        run: echo "OS_ARCH=$(uname -m)" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ "$(uname -m)" == "aarch64"] ; then
+            echo "OS_ARCH=arm64" >> "$GITHUB_OUTPUT"
+          else
+            echo "OS_ARCH=amd64" >> "$GITHUB_OUTPUT"
+          fi;
 
       - name: ⏬ Install build dependencies
         run: sudo apt-get install -y buildah
@@ -35,7 +40,7 @@ jobs:
       - name: Build image
         run: |
           cd src/oracle-db-mcp-server/
-          buildah bud -f Dockerfile -t oracle-doc-mcp-${{ steps.os_arch.outputs.OS_ARCH }} .
+          buildah bud -f Dockerfile -t oracle-doc-mcp:latest-${{ steps.os_arch.outputs.OS_ARCH }} .
 
 
       - name: 🔓 Login to GHCR registry

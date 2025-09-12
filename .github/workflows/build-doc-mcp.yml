@@ -34,9 +34,6 @@ jobs:
             echo "OS_ARCH=amd64" >> "$GITHUB_OUTPUT"
           fi;
 
-      - name: ⏬ Install build dependencies
-        run: sudo apt-get install -y buildah
-
       - name: Build image
         run: |
           cd src/oracle-db-mcp-server/
@@ -51,7 +48,6 @@ jobs:
           registry: ghcr.io
 
       - name: 🫸 Push image to Container Registry
-        id: push-to-ghcr
         uses: redhat-actions/push-to-registry@v2
         with:
           registry: ghcr.io/gvenzl/mcp

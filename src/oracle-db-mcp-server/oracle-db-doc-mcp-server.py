@@ -77,12 +77,7 @@ mcp = FastMCP(
     - If the search tool returns too few results, increase the max_results limit.
     - If the search tool returns too many results, reduce the max_results limit.
     - If the search tool returns results that are not relevant, try to refine the query.
-    """,
-    dependencies=[
-        "markdownify>=1.2.0",
-        "fastmcp>=2.11.3",
-        "pocketsearch>=0.40.0",
-    ]
+    """
 )
 
 
@@ -462,6 +457,9 @@ def main():
     # Parse command line arguments
     args = parse_args()
 
+    # Build the home directory structure, needed also for the log file
+    build_folder_structure()
+
     # Set up logging
     ch = logging.StreamHandler()
     formatter = logging.Formatter(
@@ -477,8 +475,6 @@ def main():
         logger.error("Cannot specify both -doc and -mcp options at the same time.")
         return
 
-    build_folder_structure()
-
     if args.doc:
         global PREPROCESS
         PREPROCESS = args.preprocess.upper()
@@ -488,11 +484,11 @@ def main():
         logger.error(f"Index does not exist. Please create the index first pointing to a valid doc directory to index.")
         return
 
-    global INDEX
-    logger.debug("Opening index file.")
-    INDEX = PocketSearch(db_name=INDEX_FILE)
-
     if args.mcp:
+        global INDEX
+        logger.debug("Opening index file.")
+        INDEX = PocketSearch(db_name=INDEX_FILE)
+
         logger.info("Serving MCP server for Oracle documentation.")
         if args.mode == "stdio":
             mcp.run(transport="stdio")

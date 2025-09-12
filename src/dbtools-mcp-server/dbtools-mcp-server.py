@@ -81,24 +81,6 @@ def get_compartment_by_name(compartment_name: str):
 
     return None
 
-def get_compartment_by_name_v2(compartment_name: str):
-    """Internal function to get compartment by name using the query API"""
-    search_details = StructuredSearchDetails(
-        query=f"query compartment resources where displayName = '{compartment_name}'",
-        type="Structured",
-        matching_context_type="NONE"
-    )
-    try:
-        resp = search_client.search_resources(search_details=search_details, tenant_id=config['tenancy']).data
-        if not hasattr(resp, 'items') or len(resp.items) == 0:
-            return None       
-        # being compatible with get_compartment_by_name behavior - retrieving a Compartment
-        compartment = identity_client.get_compartment( compartment_id= resp.items[0].identifier )
-        return compartment.data
-        
-    except Exception as e:
-        return None
-
 @mcp.tool()
 def get_compartment_by_name_tool(name: str) -> str:
     """Return a compartment matching the provided name"""

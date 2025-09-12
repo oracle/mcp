@@ -73,8 +73,8 @@ jobs:
 
       - name: 🫸 Push multi-arch manifest
         run: |
-          podman manifest create gvenzl/mcp/oracle-doc:latest
-          podman manifest add    gvenzl/mcp/oracle-doc:latest  gvenzl/mcp/oracle-doc:latest-amd64
-          podman manifest add    gvenzl/mcp/oracle-doc:latest  gvenzl/mcp/oracle-doc:latest-arm64
-          podman push gvenzl/mcp/oracle-doc:latest
+          podman manifest create ghcr.io/gvenzl/mcp/oracle-doc:latest
+          podman manifest add    ghcr.io/gvenzl/mcp/oracle-doc:latest  ghcr.io/gvenzl/mcp/oracle-doc:latest-amd64
+          podman manifest add    ghcr.io/gvenzl/mcp/oracle-doc:latest  ghcr.io/gvenzl/mcp/oracle-doc:latest-arm64
+          podman push ghcr.io/gvenzl/mcp/oracle-doc:latest
           

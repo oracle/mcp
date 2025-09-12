@@ -3,7 +3,6 @@ on:
   push:
     paths:
       - 'src/oracle-db-mcp-server/**'
-      - '.github/**'
   pull_request:
     paths:
       - 'src/oracle-db-mcp-server/**'

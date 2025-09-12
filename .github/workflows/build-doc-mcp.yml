@@ -64,13 +64,6 @@ jobs:
 
     steps:
 
-      - name: 🔓 Login to GHCR registry
-        uses: redhat-actions/podman-login@v1
-        with:
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          registry: ghcr.io
-
       - name: 🫸 Push multi-arch manifest
         run: |
           podman manifest create ghcr.io/gvenzl/mcp/oracle-doc:latest

@@ -28,7 +28,7 @@ jobs:
       - name: 🔄 Generate environment variables
         id: os_arch
         run: |
-          if [ "$(uname -m)" == "aarch64"] ; then
+          if [ "$(uname -m)" == "aarch64" ]; then
             echo "OS_ARCH=arm64" >> "$GITHUB_OUTPUT"
           else
             echo "OS_ARCH=amd64" >> "$GITHUB_OUTPUT"

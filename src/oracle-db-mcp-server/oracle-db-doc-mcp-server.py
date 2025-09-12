@@ -19,6 +19,7 @@
 # limitations under the License.
 
 import argparse
+from bs4 import BeautifulSoup
 import hashlib
 from fastmcp import FastMCP
 import logging
@@ -44,6 +45,8 @@ RESOURCES_DIR = HOME_DIR.joinpath(PurePath("resources"))
 
 # Temp directory for zip file extraction
 ZIP_TEMP_OUTPUT = HOME_DIR.joinpath("zip_temp")
+
+PREPROCESS = "BASIC"
 
 logger = logging.getLogger(__name__)
 
@@ -86,13 +89,13 @@ mcp = FastMCP(
 @mcp.tool()
 def search(
         search_query: str,
-        max_results: int = 10,
+        max_results: int = 4,
 ) -> list[str]:
     """Search for information about how to use Oracle Database for a query string and return a list of results.
 
     Args:
         search_query: The search phrase to search for.
-        max_results: The maximum number of results to return, defaults to 10.
+        max_results: The maximum number of results to return, defaults to 4.
 
     Usage:
         search(search_query="create table syntax")
@@ -110,7 +113,7 @@ def search(
 
 
 # Function to search the index
-def search_index(query_str: str, limit: int = 10) -> list[str]:
+def search_index(query_str: str, limit: int = 4) -> list[str]:
     """
     Search the index for the query string and return matching sections with context.
     Returns a list of content.
@@ -295,8 +298,15 @@ def convert_to_markdown_chunks(file: Path) -> list[str]:
     with file.open("r", encoding="utf-8") as f:
         html = f.read()
 
+        if PREPROCESS == "ADVANCED":
+            # Preprocess HTML to remove boilerplate and navigation
+            html = preprocess_html(html)
+
         # Convert HTML to Markdown
-        markdown = remove_markdown_urls(md.markdownify(html))
+        markdown = md.markdownify(html)
+        if PREPROCESS != "NONE":
+            markdown = remove_markdown_urls(markdown)
+
         pattern = r'(^#{1,6}\s+[^\n]*\n?)(.*?)(?=(?:^#{1,6}\s+|\Z))'
 
         # Find all matches with re.MULTILINE and re.DOTALL flags
@@ -318,10 +328,88 @@ def convert_to_markdown_chunks(file: Path) -> list[str]:
 
 
 def remove_markdown_urls(text):
-    # Regex pattern to match Markdown links [text](url)
-    pattern = r'\[([^\]]*)\]\([^\)]*\)'
-    # Replace the entire link with just the link text (group 1)
-    return re.sub(pattern, r'\1', text)
+    # Remove Markdown links [text](url) and replace with just the text
+    text = re.sub(r'\[([^\]]*)\]\([^\)]*\)', r'\1', text)
+
+    # Remove URLs with GUIDs (32-char hex with hyphens)
+    text = re.sub(r'https?://[^\s]*[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}[^\s]*', '', text)
+
+    # Remove URLs with long hex strings (likely file hashes or identifiers)
+    text = re.sub(r'https?://[^\s]*[a-f0-9]{16,}[^\s]*', '', text)
+
+    # Remove standalone URLs that start with http/https
+    text = re.sub(r'https?://[^\s]+', '', text)
+
+    # Clean up extra whitespace left by removed URLs
+    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'\n\s*\n', '\n\n', text)
+
+    return text.strip()
+
+
+def preprocess_html(html_content: str) -> str:
+    """Preprocess HTML to remove boilerplate and navigation elements.
+
+    Args:
+        html_content (str): The raw HTML content.
+
+    Returns:
+        str: Cleaned HTML content ready for markdown conversion.
+    """
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    # Remove script and style tags
+    for tag in soup.find_all(['script', 'style']):
+        tag.decompose()
+
+    # Remove navigation elements
+    for tag in soup.find_all(['nav', 'header', 'footer']):
+        tag.decompose()
+
+    # Remove elements with navigation-related classes/ids
+    nav_classes = [
+        'noscript', 'alert', 'pull-left', 'pull-right', 'skip', 'navigation',
+        'breadcrumb', 'nav-', 'header-', 'footer-', 'menu', 'sidebar', 'toc'
+    ]
+    for nav_class in nav_classes:
+        for tag in soup.find_all(attrs={'class': lambda x: x and any(nav_class in str(cls).lower() for cls in (x if isinstance(x, list) else [x]))}):
+            tag.decompose()
+        for tag in soup.find_all(attrs={'id': lambda x: x and nav_class in str(x).lower()}):
+            tag.decompose()
+
+    # Remove common Oracle doc boilerplate text patterns
+    boilerplate_patterns = [
+        r'JavaScript.*(?:disabled|enabled).*browser',
+        r'Skip navigation.*',
+        r'Oracle®.*(?:Database.*)?(?:Reference|Guide|Manual|Documentation)',
+        r'Release \d+[a-z]*[\s-]*[A-Z0-9-]*',
+        r'Previous.*Next',
+        r'All Classes.*',
+        r'Overview.*Package.*Class.*Use.*Tree.*Deprecated.*Index.*Help'
+    ]
+
+    for pattern in boilerplate_patterns:
+        for tag in soup.find_all(string=re.compile(pattern, re.IGNORECASE)):
+            parent = tag.parent if hasattr(tag, 'parent') else None
+            if parent:
+                parent.decompose()
+
+    # Remove elements likely to be navigation by common Oracle doc structure
+    # Remove elements with common Oracle navigation text content
+    nav_text_patterns = [
+        'Skip navigation links',
+        'JavaScript is disabled on your browser',
+        'All Classes',
+        'SEARCH:'
+    ]
+
+    for pattern in nav_text_patterns:
+        for element in soup.find_all(string=lambda text: text and pattern in text):
+            parent = element.parent if hasattr(element, 'parent') else None
+            if parent:
+                parent.decompose()
+
+    return str(soup)
 
 
 def build_folder_structure() -> None:
@@ -361,6 +449,8 @@ def parse_args() -> argparse.Namespace:
                         help="The IP address that the MCP server is reachable at.")
     parser.add_argument("-port", type=int, default="8000",
                         help="The port that the MCP server is reachable at.")
+    parser.add_argument("-preprocess", type=str, default="BASIC",
+                        help="Preprocessing level of documentation (NONE, BASIC, ADVANCED).")
     args = parser.parse_args()
 
     return args
@@ -369,6 +459,9 @@ def parse_args() -> argparse.Namespace:
 def main():
     """Main entrypoint for the Oracle Documentation MCP server."""
 
+    # Parse command line arguments
+    args = parse_args()
+
     # Set up logging
     ch = logging.StreamHandler()
     formatter = logging.Formatter(
@@ -376,16 +469,19 @@ def main():
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
-    # Parse command line arguments
-    args = parse_args()
-
-    build_folder_structure()
-
     # Set log level
     logging.basicConfig(filename=HOME_DIR.joinpath(Path('oracle-db-doc.log')), filemode='w', level=logging.ERROR)
     logger.setLevel(getattr(logging, args.log_level.upper(), logging.ERROR))
 
+    if args.doc and args.mcp:
+        logger.error("Cannot specify both -doc and -mcp options at the same time.")
+        return
+
+    build_folder_structure()
+
     if args.doc:
+        global PREPROCESS
+        PREPROCESS = args.preprocess.upper()
         maintain_content(args.doc)
 
     if not INDEX_FILE.exists():

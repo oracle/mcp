@@ -1,3 +1,4 @@
+beautifulsoup4 >= 4.9.0
 markdownify >= 1.2.0
 fastmcp >= 2.11.3
 pocketsearch >= 0.40.0

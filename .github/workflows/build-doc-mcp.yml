@@ -1,0 +1,52 @@
+name: 🛠️ Build an image
+on:
+  push:
+    paths:
+      - 'src/oracle-db-mcp-server/**'
+      - '.github/**'
+  pull_request:
+    paths:
+      - 'src/oracle-db-mcp-server/**'
+
+jobs:
+
+  build-image:
+    strategy:
+      matrix:
+        runner: [ "ubuntu-24.04", "ubuntu-24.04-arm" ]
+
+    permissions:
+      packages: write
+    
+    name: 🛠️ Build image
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: 📂 Checkout repo
+        uses: actions/checkout@v4
+
+      - name: 🔄 Generate environment variables
+        id: os_arch
+        run: echo "OS_ARCH=$(uname -m)" >> "$GITHUB_OUTPUT"
+
+      - name: ⏬ Install build dependencies
+        run: sudo apt-get install -y buildah
+
+      - name: Build image
+        run: buildah bud -f Dockerfile -t oracle-doc-mcp-${{ steps.os_arch.outputs.OS_ARCH }} .
+
+
+      - name: 🔓 Login to GHCR registry
+        uses: redhat-actions/podman-login@v1
+        with:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ghcr.io
+
+      - name: 🫸 Push image to Container Registry
+        id: push-to-ghcr
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          registry: ghcr.io/gvenzl
+          image: mcp
+          tags: latest-${{ steps.os_arch.outputs.OS_ARCH }}

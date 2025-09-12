@@ -58,6 +58,7 @@ jobs:
   upload-multi-arch:
     name: 🫸 Push multi-arch manifest
     runs-on: "ubuntu-24.04"
+    needs: build-image
 
     permissions:
       packages: write

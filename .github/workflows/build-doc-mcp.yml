@@ -53,3 +53,20 @@ jobs:
           registry: ghcr.io/gvenzl/mcp
           image: oracle-doc
           tags: latest-${{ steps.os_arch.outputs.OS_ARCH }}
+
+
+  upload-multi-arch:
+    name: 🫸 Push multi-arch manifest
+    runs-on: "ubuntu-24.04"
+
+    permissions:
+      packages: write
+
+    steps:
+      - name: 🫸 Push multi-arch manifest
+        run: |
+          podman manifest create gvenzl/mcp/oracle-doc:latest
+          podman manifest add    gvenzl/mcp/oracle-doc:latest  gvenzl/mcp/oracle-doc:latest-amd64
+          podman manifest add    gvenzl/mcp/oracle-doc:latest  gvenzl/mcp/oracle-doc:latest-arm64
+          podman push gvenzl/mcp/oracle-doc:latest
+          

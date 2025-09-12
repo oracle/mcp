@@ -39,7 +39,6 @@ jobs:
           cd src/oracle-db-mcp-server/
           buildah bud -f Dockerfile -t oracle-doc:latest-${{ steps.os_arch.outputs.OS_ARCH }} .
 
-
       - name: 🔓 Login to GHCR registry
         uses: redhat-actions/podman-login@v1
         with:
@@ -64,6 +63,14 @@ jobs:
       packages: write
 
     steps:
+
+      - name: 🔓 Login to GHCR registry
+        uses: redhat-actions/podman-login@v1
+        with:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ghcr.io
+
       - name: 🫸 Push multi-arch manifest
         run: |
           podman manifest create gvenzl/mcp/oracle-doc:latest

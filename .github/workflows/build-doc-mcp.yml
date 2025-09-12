@@ -40,7 +40,7 @@ jobs:
       - name: Build image
         run: |
           cd src/oracle-db-mcp-server/
-          buildah bud -f Dockerfile -t oracle-doc-mcp:latest-${{ steps.os_arch.outputs.OS_ARCH }} .
+          buildah bud -f Dockerfile -t oracle-doc:latest-${{ steps.os_arch.outputs.OS_ARCH }} .
 
 
       - name: 🔓 Login to GHCR registry
@@ -54,6 +54,6 @@ jobs:
         id: push-to-ghcr
         uses: redhat-actions/push-to-registry@v2
         with:
-          registry: ghcr.io/gvenzl/mcp
-          image: oracle-doc-mcp
+          registry: ghcr.io/gvenzl
+          image: oracle-doc
           tags: latest-${{ steps.os_arch.outputs.OS_ARCH }}

@@ -20,14 +20,14 @@
 #
 FROM alpine
 
-COPY oracle-db-doc-mcp-server.py requirements.txt .
+COPY oracle-db-doc-mcp-server.py fastmcp.json requirements.txt ./
 
 RUN apk --update --no-cache add python3 py3-pip curl && \
     pip install -r requirements.txt --break-system-packages && \
     rm requirements.txt && \
     mkdir /input && \
     curl -L -o /input/db23.zip https://docs.oracle.com/en/database/oracle/oracle-database/23/zip/oracle-database_23.zip && \
-    python3 oracle-db-doc-mcp-server.py --log-level DEBUG --doc /input/db23.zip && \
+    python3 oracle-db-doc-mcp-server.py -log-level DEBUG -doc /input/db23.zip && \
     rm -r /input && \
     apk del curl && \
     rm -rf /var/cache/apk/* /tmp/*
@@ -36,4 +36,4 @@ LABEL org.opencontainers.image.source=https://github.com/oracle/mcp
 LABEL org.opencontainers.image.description="Oracle Database Documentation MCP Server"
 LABEL org.opencontainers.image.licenses=Apache-2.0
 
-ENTRYPOINT [ "python3", "oracle-db-doc-mcp-server.py", "-mcp" ]
+ENTRYPOINT [ "python3", "oracle-db-doc-mcp-server.py", "-mcp", "-mode", "http" ]

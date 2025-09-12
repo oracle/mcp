@@ -54,6 +54,6 @@ jobs:
         id: push-to-ghcr
         uses: redhat-actions/push-to-registry@v2
         with:
-          registry: ghcr.io/gvenzl
-          image: mcp
+          registry: ghcr.io/gvenzl/mcp
+          image: oracle-doc-mcp
           tags: latest-${{ steps.os_arch.outputs.OS_ARCH }}

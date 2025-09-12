@@ -33,7 +33,9 @@ jobs:
         run: sudo apt-get install -y buildah
 
       - name: Build image
-        run: buildah bud -f Dockerfile -t oracle-doc-mcp-${{ steps.os_arch.outputs.OS_ARCH }} .
+        run: |
+          cd src/oracle-db-mcp-server/
+          buildah bud -f Dockerfile -t oracle-doc-mcp-${{ steps.os_arch.outputs.OS_ARCH }} .
 
 
       - name: 🔓 Login to GHCR registry

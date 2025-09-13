@@ -28,7 +28,12 @@ python3 -m pip install -r requirements.txt
 
 ## Usage
 
-The MCP server has two modes, one to create or maintain the documentation index and one to run the MCP server. Both modes can be combined.
+The MCP server has two modes:
+
+1. `-doc`: Create or maintain the documentation index
+2. `-mcp`: Run the MCP server.
+
+Building the index will take some time and some MCP clients will time out while waiting for the index to be built. Hence the two modes cannot be intermixed.
 
 The server will create a new folder under `$HOME/.oracle/oracle-db-mcp-server` to store the index and the server log file.
 
@@ -62,14 +67,6 @@ To run just the MCP server, provide the `-mcp` parameter. The index will have to
 python3 oracle-db-doc-mcp-server.py -mcp
 ```
 
-### Combining index creation/maintenance and MCP server mode
-
-You can combine the index maintainenance and MCP server mode into one command, for example:
-
-```console
-python3 oracle-db-doc-mcp-server.py -mcp -doc ~/Downloads/oracle-database_23.zip
-```
-
 ### VSCode integration
 
 Replace the `<>` placeholders with the paths to the MCP server installation and Oracle Database Documentation zip file.
@@ -80,7 +77,7 @@ Replace the `<>` placeholders with the paths to the MCP server installation and 
     "oracle-db-doc": {
       "type": "stdio",
       "command": "<installation>/.venv/bin/python3",
-      "args": [ "oracle-db-doc-mcp-server.py", "-doc", "<zip file location>", "-mcp" ]
+      "args": [ "oracle-db-doc-mcp-server.py", "-mcp" ]
     }
   }
 }

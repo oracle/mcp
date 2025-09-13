@@ -480,11 +480,13 @@ def main():
         PREPROCESS = args.preprocess.upper()
         maintain_content(args.doc)
 
-    if not INDEX_FILE.exists():
-        logger.error(f"Index does not exist. Please create the index first pointing to a valid doc directory to index.")
-        return
-
     if args.mcp:
+
+        # If no index is present (not index was built), refuse to start the server.
+        if not INDEX_FILE.exists():
+            logger.error(f"Index does not exist. Please create the index first via the '-doc' option.")
+            return
+
         global INDEX
         logger.debug("Opening index file.")
         INDEX = PocketSearch(db_name=INDEX_FILE)
@@ -497,4 +499,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        None

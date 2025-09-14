@@ -16,6 +16,8 @@ public interface CommonConstant {
     String SECURITY = "security";
     String PATH_PARAMS = "pathParams";
     String QUERY_PARAMS = "queryParams";
+    String HEADER_PARAMS = "headerParams";
+    String COOKIE_PARAMS = "cookieParams";
 
     // Schema keys
     String TYPE = "type";

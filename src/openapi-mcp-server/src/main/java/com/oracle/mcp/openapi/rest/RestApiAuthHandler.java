@@ -8,6 +8,8 @@ package com.oracle.mcp.openapi.rest;
 
 import com.oracle.mcp.openapi.enums.OpenApiSchemaAuthType;
 import com.oracle.mcp.openapi.model.McpServerConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -23,6 +25,8 @@ import java.util.Objects;
  */
 public class RestApiAuthHandler {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(RestApiAuthHandler.class);
+
     /**
      * Prepares HTTP headers, including authentication headers based on server configuration.
      *
@@ -31,7 +35,6 @@ public class RestApiAuthHandler {
      */
     public Map<String, String> extractAuthHeaders(McpServerConfig config) {
         Map<String, String> headers = new HashMap<>();
-        //headers.put("Accept", "application/json");
 
         OpenApiSchemaAuthType authType = config.getAuthType();
         if (authType == null) {

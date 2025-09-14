@@ -25,16 +25,19 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.IOException;
+import java.net.http.HttpResponse;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -112,8 +115,12 @@ class OpenApiMcpToolExecutorTest {
         Map<String,String> headers = new HashMap<>();
         headers.put("Authorization", "Bearer token");
         when(restApiAuthHandler.extractAuthHeaders(serverConfig)).thenReturn(headers);
+        HttpResponse<String> mockResponse = mock(HttpResponse.class);
+        when(mockResponse.statusCode()).thenReturn(200);
+        when(mockResponse.body()).thenReturn("{\"status\":\"success\"}");
+
         when(restApiExecutionService.executeRequest(anyString(), anyString(), anyString(), any()))
-                .thenReturn("{\"status\":\"success\"}");
+                .thenReturn(mockResponse);
 
         // Act
         McpSchema.CallToolResult result = openApiMcpToolExecutor.execute(callRequest);
@@ -147,8 +154,12 @@ class OpenApiMcpToolExecutorTest {
 
         when(mcpServerCacheService.getTool("getUser")).thenReturn(tool);
         when(mcpServerCacheService.getServerConfig()).thenReturn(serverConfig);
+        HttpResponse<String> mockResponse = mock(HttpResponse.class);
+        when(mockResponse.statusCode()).thenReturn(200);
+        when(mockResponse.body()).thenReturn("{\"id\":1}");
+
         when(restApiExecutionService.executeRequest(anyString(), anyString(), any(), any()))
-                .thenReturn("{\"id\":1}");
+                .thenReturn(mockResponse);
 
         // Act
         openApiMcpToolExecutor.execute(callRequest);
@@ -157,7 +168,7 @@ class OpenApiMcpToolExecutorTest {
         verify(restApiExecutionService).executeRequest(urlCaptor.capture(), methodCaptor.capture(), bodyCaptor.capture(), any());
         assertEquals("https://api.example.com/user", urlCaptor.getValue());
         assertEquals("GET", methodCaptor.getValue());
-        assertNull(bodyCaptor.getValue()); // No body for GET requests
+        assertNull(bodyCaptor.getValue());
     }
 
     /**
@@ -166,11 +177,13 @@ class OpenApiMcpToolExecutorTest {
     @Test
     void execute_ApiKeyInQuery_Successful() throws IOException, InterruptedException {
         // Arrange
-        serverConfig = new McpServerConfig.Builder().apiBaseUrl("https://api.example.com")
-        .authType(OpenApiSchemaAuthType.API_KEY.name())
+        serverConfig = new McpServerConfig.Builder()
+                .apiBaseUrl("https://api.example.com")
+                .authType(OpenApiSchemaAuthType.API_KEY.name())
                 .authApiKeyIn("query")
-        .authApiKeyName("api_key")
-        .authApiKey("test-secret-key".toCharArray()).build();
+                .authApiKeyName("api_key")
+                .authApiKey("test-secret-key".toCharArray())
+                .build();
 
         McpSchema.CallToolRequest callRequest = McpSchema.CallToolRequest.builder()
                 .name("getData")
@@ -182,6 +195,14 @@ class OpenApiMcpToolExecutorTest {
 
         when(mcpServerCacheService.getTool("getData")).thenReturn(tool);
         when(mcpServerCacheService.getServerConfig()).thenReturn(serverConfig);
+
+        // Mock HTTP response
+        HttpResponse<String> mockResponse = mock(HttpResponse.class);
+        when(mockResponse.statusCode()).thenReturn(200);
+        when(mockResponse.body()).thenReturn("{\"status\":\"success\"}");
+
+        when(restApiExecutionService.executeRequest(anyString(), anyString(), any(), any()))
+                .thenReturn(mockResponse);
 
         // Act
         openApiMcpToolExecutor.execute(callRequest);
@@ -211,17 +232,33 @@ class OpenApiMcpToolExecutorTest {
         meta.put(CommonConstant.PATH, "/files/{folderName}");
         meta.put("pathParams", Map.of("folderName", "string"));
         meta.put("queryParams", Map.of("searchTerm", "string"));
-        McpSchema.Tool tool = McpSchema.Tool.builder().name("searchFiles").meta(meta).build();
+        McpSchema.Tool tool = McpSchema.Tool.builder()
+                .name("searchFiles")
+                .meta(meta)
+                .build();
 
         when(mcpServerCacheService.getTool("searchFiles")).thenReturn(tool);
         when(mcpServerCacheService.getServerConfig()).thenReturn(serverConfig);
 
+        // Mock HTTP response
+        HttpResponse<String> mockResponse = mock(HttpResponse.class);
+        when(mockResponse.statusCode()).thenReturn(200);
+        when(mockResponse.body()).thenReturn("{\"result\":\"ok\"}");
+
+        when(restApiExecutionService.executeRequest(anyString(), anyString(), any(), any()))
+                .thenReturn(mockResponse);
+
         // Act
-        openApiMcpToolExecutor.execute(callRequest);
+        McpSchema.CallToolResult result = openApiMcpToolExecutor.execute(callRequest);
 
         // Assert
         verify(restApiExecutionService).executeRequest(urlCaptor.capture(), anyString(), any(), any());
         String expectedUrl = "https://api.example.com/files/my%20documents%2Fwork?searchTerm=a%26b%3Dc";
         assertEquals(expectedUrl, urlCaptor.getValue());
+
+        // Verify executor processed the response correctly
+        assertFalse(result.isError());
+        assertEquals("{\"result\":\"ok\"}", result.structuredContent().get("response"));
     }
+
 }

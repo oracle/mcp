@@ -6,11 +6,13 @@
  */
 package com.oracle.mcp.openapi.mapper.impl;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.oracle.mcp.openapi.cache.McpServerCacheService;
 import com.oracle.mcp.openapi.constants.ErrorMessage;
 import com.oracle.mcp.openapi.exception.McpServerToolInitializeException;
+import com.oracle.mcp.openapi.model.override.ToolOverride;
 import com.oracle.mcp.openapi.model.override.ToolOverridesConfig;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,7 +44,7 @@ class OpenApiToMcpToolMapperTest {
     }
 
     @Test
-    void convert_ShouldReturnToolList_ForValidOpenApiJson() throws McpServerToolInitializeException {
+    void convert_ShouldReturnToolList_ForValidOpenApiJson1() throws McpServerToolInitializeException {
         // Arrange: simple OpenAPI JSON with one GET /users path
         ObjectNode openApiJson = objectMapper.createObjectNode();
         openApiJson.put("openapi", "3.0.0");
@@ -104,11 +106,608 @@ class OpenApiToMcpToolMapperTest {
         verify(cacheService, never()).putTool(anyString(), any(McpSchema.Tool.class));
     }
 
+    @Test
+    void convert_ShouldReturnToolList_ForValidOpenApiJson() throws Exception {
+        String openApi = """
+            {
+              "openapi": "3.0.0",
+              "paths": {
+                "/users": {
+                  "get": {
+                    "operationId": "getUsers",
+                    "summary": "Fetch users"
+                  }
+                }
+              }
+            }
+        """;
+
+        JsonNode node = objectMapper.readTree(openApi);
+        List<McpSchema.Tool> tools = mapper.convert(node, new ToolOverridesConfig());
+
+        assertEquals(1, tools.size());
+        McpSchema.Tool tool = tools.getFirst();
+        assertEquals("getUsers", tool.name());
+        assertEquals("Fetch users", tool.title());
+        verify(cacheService).putTool(eq("getUsers"), any(McpSchema.Tool.class));
+    }
 
     @Test
-    void extractInputSchema_ShouldHandleNullSchema() {
-        Map<String, Object> result = mapper.extractInputSchema(null);
-        assertNotNull(result);
-        assertTrue(result.isEmpty());
+    void convert_ShouldThrow_WhenPathsMissing() {
+        String openApi = """
+            { "openapi": "3.0.0" }
+        """;
+
+        JsonNode node;
+        try {
+            node = objectMapper.readTree(openApi);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        McpServerToolInitializeException ex =
+                assertThrows(McpServerToolInitializeException.class,
+                        () -> mapper.convert(node, new ToolOverridesConfig()));
+
+        assertEquals(ErrorMessage.MISSING_PATH_IN_SPEC, ex.getMessage());
+    }
+
+    @Test
+    void convert_ShouldSkipTool_WhenExcluded() throws Exception {
+        String openApi = """
+            {
+              "openapi": "3.0.0",
+              "paths": {
+                "/skip": {
+                  "get": { "operationId": "skipTool" }
+                }
+              }
+            }
+        """;
+
+        JsonNode node = objectMapper.readTree(openApi);
+        ToolOverridesConfig overrides = new ToolOverridesConfig();
+        overrides.setExclude(Set.of("skipTool"));
+
+        List<McpSchema.Tool> tools = mapper.convert(node, overrides);
+
+        assertTrue(tools.isEmpty());
+        verify(cacheService, never()).putTool(anyString(), any(McpSchema.Tool.class));
+    }
+
+    @Test
+    void convert_ShouldParseParametersAndBody() throws Exception {
+        String openApi = """
+            {
+              "openapi": "3.0.0",
+              "paths": {
+                "/users/{id}": {
+                  "post": {
+                    "operationId": "createUser",
+                    "parameters": [
+                      { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+                      { "name": "active", "in": "query", "schema": { "type": "boolean" } },
+                      { "name": "traceId", "in": "header", "schema": { "type": "string" } },
+                      { "name": "session", "in": "cookie", "schema": { "type": "string" } }
+                    ],
+                    "requestBody": {
+                      "required": true,
+                      "content": {
+                        "application/json": {
+                          "schema": {
+                            "type": "object",
+                            "properties": {
+                              "name": { "type": "string" },
+                              "age": { "type": "integer" }
+                            },
+                            "required": ["name"]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        """;
+
+        JsonNode node = objectMapper.readTree(openApi);
+        List<McpSchema.Tool> tools = mapper.convert(node, new ToolOverridesConfig());
+
+        McpSchema.Tool tool = tools.getFirst();
+        assertEquals("createUser", tool.name());
+        assertNotNull(tool.inputSchema());
+        Map<String, Object> props = tool.inputSchema().properties();
+        assertTrue(props.containsKey("id"));
+        assertTrue(props.containsKey("active"));
+        assertTrue(props.containsKey("name"));
+        assertTrue(tool.inputSchema().required().contains("id"));
+        assertTrue(tool.inputSchema().required().contains("name"));
+    }
+
+    @Test
+    void convert_ShouldHandleOneOf() throws Exception {
+        String openApi = """
+        {
+          "openapi": "3.0.0",
+          "paths": {
+            "/shapes": {
+              "post": {
+                "operationId": "createShape",
+                "requestBody": {
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "oneOf": [
+                          { "type": "object", "properties": { "circle": { "type": "number" } } },
+                          { "type": "object", "properties": { "square": { "type": "number" } } }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+    """;
+
+        JsonNode node = objectMapper.readTree(openApi);
+        List<McpSchema.Tool> tools = mapper.convert(node, new ToolOverridesConfig());
+
+        McpSchema.Tool tool = tools.getFirst();
+        McpSchema.JsonSchema schema = tool.inputSchema();
+
+        assertNotNull(schema);
+    }
+
+
+    @Test
+    void testPrimitiveRootTypeRequestBody() throws Exception {
+        String openApi = """
+            {
+              "openapi": "3.0.0",
+              "paths": {
+                "/ping": {
+                  "post": {
+                    "operationId": "ping",
+                    "requestBody": {
+                      "content": {
+                        "application/json": { "schema": { "type": "string" } }
+                      },
+                      "required": true
+                    }
+                  }
+                }
+              }
+            }
+        """;
+
+        JsonNode node = objectMapper.readTree(openApi);
+        List<McpSchema.Tool> tools = mapper.convert(node, new ToolOverridesConfig());
+
+        McpSchema.Tool tool = tools.getFirst();
+        assertEquals("ping", tool.name());
+        assertTrue(tool.inputSchema().properties().containsKey("body"));
+    }
+
+    @Test
+    void testArrayRootRequestBody() throws Exception {
+        String openApi = """
+            {
+              "openapi": "3.0.0",
+              "paths": {
+                "/numbers": {
+                  "post": {
+                    "operationId": "postNumbers",
+                    "requestBody": {
+                      "content": {
+                        "application/json": { "schema": { "type": "array", "items": { "type": "integer" } } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        """;
+
+        JsonNode node = objectMapper.readTree(openApi);
+        List<McpSchema.Tool> tools = mapper.convert(node, new ToolOverridesConfig());
+
+        McpSchema.Tool tool = tools.getFirst();
+        Map<String, Object> body = (Map<String, Object>) tool.inputSchema().properties().get("body");
+        assertEquals("array", body.get("type"));
+    }
+
+    @Test
+    void testOneOfNestedProperty() throws Exception {
+        String openApi = """
+            {
+              "openapi": "3.0.0",
+              "paths": {
+                "/shapes": {
+                  "post": {
+                    "operationId": "createShape",
+                    "requestBody": {
+                      "content": {
+                        "application/json": {
+                          "schema": {
+                            "type": "object",
+                            "properties": {
+                              "shape": {
+                                "oneOf": [
+                                  { "type": "object", "properties": { "circle": { "type": "number" } } },
+                                  { "type": "object", "properties": { "square": { "type": "number" } } }
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        """;
+
+        JsonNode node = objectMapper.readTree(openApi);
+        List<McpSchema.Tool> tools = mapper.convert(node, new ToolOverridesConfig());
+        McpSchema.Tool tool = tools.getFirst();
+        Map<String, Object> shapeProp = (Map<String, Object>) tool.inputSchema().properties().get("shape");
+        assertTrue(shapeProp.containsKey("oneOf"));
+    }
+
+    void testAllOfAnyOfCombination() throws Exception {
+        String openApi = """
+            {
+              "openapi": "3.0.0",
+              "paths": {
+                "/complex": {
+                  "post": {
+                    "operationId": "complexBody",
+                    "requestBody": {
+                      "content": {
+                        "application/json": {
+                          "schema": {
+                            "allOf": [
+                              {
+                                "type": "object",
+                                "properties": { "a": { "type": "string" } }
+                              },
+                              {
+                                "anyOf": [
+                                  { "type": "object", "properties": { "b": { "type": "integer" } } },
+                                  { "type": "object", "properties": { "c": { "type": "boolean" } } }
+                                ]
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+        """;
+
+        JsonNode node = objectMapper.readTree(openApi);
+        List<McpSchema.Tool> tools = mapper.convert(node, new ToolOverridesConfig());
+        McpSchema.Tool tool = tools.getFirst();
+        Map<String, Object> schemaProps = tool.inputSchema().properties();
+        assertTrue(schemaProps.containsKey("a"));
+        // allOf and anyOf keys might be under schema object
+        assertTrue(schemaProps.values().stream().anyMatch(v -> v instanceof Map && (((Map<?, ?>) v).containsKey("anyOf"))));
+    }
+
+    @Test
+    void testParameterEnumAndArray() throws Exception {
+        String openApi = """
+            {
+              "openapi": "3.0.0",
+              "paths": {
+                "/query": {
+                  "get": {
+                    "operationId": "queryParams",
+                    "parameters": [
+                      { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["open", "closed"] } },
+                      { "name": "ids", "in": "query", "schema": { "type": "array", "items": { "type": "integer" } } }
+                    ]
+                  }
+                }
+              }
+            }
+        """;
+
+        JsonNode node = objectMapper.readTree(openApi);
+        List<McpSchema.Tool> tools = mapper.convert(node, new ToolOverridesConfig());
+        McpSchema.Tool tool = tools.getFirst();
+        Map<String, Object> props = tool.inputSchema().properties();
+        Map<String, Object> statusProp = (Map<String, Object>) props.get("status");
+        Map<String, Object> idsProp = (Map<String, Object>) props.get("ids");
+        assertTrue(statusProp.containsKey("enum"));
+        assertEquals("array", idsProp.get("type"));
+    }
+
+    @Test
+    void testToolOverridesTitleDescription() throws Exception {
+        String openApi = """
+            {
+              "openapi": "3.0.0",
+              "paths": {
+                "/override": {
+                  "get": {
+                    "operationId": "overrideTool",
+                    "summary": "Original summary",
+                    "description": "Original description"
+                  }
+                }
+              }
+            }
+        """;
+
+        JsonNode node = objectMapper.readTree(openApi);
+        ToolOverridesConfig overrides = new ToolOverridesConfig();
+        ToolOverride override = new ToolOverride();
+        override.setTitle("Overridden Title");
+        override.setDescription("Overridden Description");
+        overrides.setTools(Map.of("overrideTool", override));
+
+        List<McpSchema.Tool> tools = mapper.convert(node, overrides);
+        McpSchema.Tool tool = tools.getFirst();
+        assertEquals("Overridden Title", tool.title());
+        assertEquals("Overridden Description", tool.description());
+    }
+
+    @Test
+    void testRefResolution() throws Exception {
+        String openApi = """
+            {
+              "openapi": "3.0.0",
+              "components": {
+                "schemas": {
+                  "User": {
+                    "type": "object",
+                    "properties": { "name": { "type": "string" } },
+                    "required": ["name"]
+                  }
+                }
+              },
+              "paths": {
+                "/user": {
+                  "post": {
+                    "operationId": "createUserRef",
+                    "requestBody": {
+                      "content": {
+                        "application/json": { "schema": { "$ref": "#/components/schemas/User" } }
+                      },
+                      "required": true
+                    }
+                  }
+                }
+              }
+            }
+        """;
+
+        JsonNode node = objectMapper.readTree(openApi);
+        List<McpSchema.Tool> tools = mapper.convert(node, new ToolOverridesConfig());
+        McpSchema.Tool tool = tools.getFirst();
+        Map<String, Object> body = (Map<String, Object>) tool.inputSchema().properties().get("name");
+        assertNotNull(body);
+    }
+
+    @Test
+    void testEmptyPathsThrowsException() {
+        ObjectNode openApiJson = objectMapper.createObjectNode();
+        openApiJson.put("openapi", "3.0.0");
+        ToolOverridesConfig overrides = new ToolOverridesConfig();
+
+        McpServerToolInitializeException ex = assertThrows(McpServerToolInitializeException.class,
+                () -> mapper.convert(openApiJson, overrides));
+        assertEquals(ErrorMessage.MISSING_PATH_IN_SPEC, ex.getMessage());
+    }
+
+    @Test
+    void testUnknownParameterLocationDoesNotCrash() throws Exception {
+        String openApi = """
+            {
+              "openapi": "3.0.0",
+              "paths": {
+                "/weird": {
+                  "get": {
+                    "operationId": "weirdParam",
+                    "parameters": [
+                      { "name": "unknown", "in": "body", "schema": { "type": "string" } }
+                    ]
+                  }
+                }
+              }
+            }
+        """;
+
+        JsonNode node = objectMapper.readTree(openApi);
+        List<McpSchema.Tool> tools = mapper.convert(node, new ToolOverridesConfig());
+        assertEquals(1, tools.size());
+        McpSchema.Tool tool = tools.getFirst();
+        assertNull(tool.inputSchema().properties());
+    }
+
+    @Test
+    void testCacheUpdatedForAllTools() throws Exception {
+        String openApi = """
+            {
+              "openapi": "3.0.0",
+              "paths": {
+                "/one": { "get": { "operationId": "toolOne" } },
+                "/two": { "get": { "operationId": "toolTwo" } }
+              }
+            }
+        """;
+
+        JsonNode node = objectMapper.readTree(openApi);
+        mapper.convert(node, new ToolOverridesConfig());
+
+        verify(cacheService).putTool(eq("toolOne"), any(McpSchema.Tool.class));
+        verify(cacheService).putTool(eq("toolTwo"), any(McpSchema.Tool.class));
+    }
+
+    @Test
+    void testConvert_WithEmptyRequestBody_DoesNotFail() throws Exception {
+        String openApi = """
+        {
+          "openapi": "3.0.0",
+          "paths": {
+            "/emptyBody": {
+              "post": {
+                "operationId": "emptyBodyTool"
+              }
+            }
+          }
+        }
+    """;
+        JsonNode node = objectMapper.readTree(openApi);
+        List<McpSchema.Tool> tools = mapper.convert(node, new ToolOverridesConfig());
+
+        assertEquals(1, tools.size());
+        McpSchema.Tool tool = tools.getFirst();
+        assertNotNull(tool.inputSchema());
+        assertNull(tool.inputSchema().properties());
+        assertNull(tool.inputSchema().required());
+    }
+
+    @Test
+    void testConvert_WithNestedAllOf_ShouldMergeProperties() throws Exception {
+        String openApi = """
+        {
+          "openapi": "3.0.0",
+          "paths": {
+            "/nestedAllOf": {
+              "post": {
+                "operationId": "nestedAllOfTool",
+                "requestBody": {
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "allOf": [
+                          { "type": "object", "properties": { "a": { "type": "string" } } },
+                          { "type": "object", "properties": { "b": { "type": "integer" } } }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+    """;
+        JsonNode node = objectMapper.readTree(openApi);
+        List<McpSchema.Tool> tools = mapper.convert(node, new ToolOverridesConfig());
+
+        McpSchema.Tool tool = tools.getFirst();
+        Map<String, Object> props = tool.inputSchema().properties();
+        assertTrue(props.containsKey("a"));
+        assertTrue(props.containsKey("b"));
+    }
+
+    @Test
+    void testConvert_WithEnumInRequestBodyArrayItems() throws Exception {
+        String openApi = """
+        {
+          "openapi": "3.0.0",
+          "paths": {
+            "/arrayEnum": {
+              "post": {
+                "operationId": "arrayEnumTool",
+                "requestBody": {
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "array",
+                        "items": { "type": "string", "enum": ["X", "Y"] }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+    """;
+
+        JsonNode node = objectMapper.readTree(openApi);
+        List<McpSchema.Tool> tools = mapper.convert(node, new ToolOverridesConfig());
+
+        McpSchema.Tool tool = tools.getFirst();
+        Map<String, Object> body = (Map<String, Object>) tool.inputSchema().properties().get("body");
+        assertEquals("array", body.get("type"));
+        Map<String, Object> items = (Map<String, Object>) body.get("items");
+        assertEquals(List.of("X", "Y"), items.get("enum"));
+    }
+
+    @Test
+    void testConvert_WithMultipleMethodsOnSamePath() throws Exception {
+        String openApi = """
+        {
+          "openapi": "3.0.0",
+          "paths": {
+            "/multiMethod": {
+              "get": { "operationId": "getMulti" },
+              "post": { "operationId": "postMulti" }
+            }
+          }
+        }
+    """;
+
+        JsonNode node = objectMapper.readTree(openApi);
+        List<McpSchema.Tool> tools = mapper.convert(node, new ToolOverridesConfig());
+
+        assertEquals(2, tools.size());
+        assertTrue(tools.stream().anyMatch(t -> t.name().equals("getMulti")));
+        assertTrue(tools.stream().anyMatch(t -> t.name().equals("postMulti")));
+        verify(cacheService).putTool(eq("getMulti"), any(McpSchema.Tool.class));
+        verify(cacheService).putTool(eq("postMulti"), any(McpSchema.Tool.class));
+    }
+
+    @Test
+    void testConvert_WithEmptyComponents_ShouldNotFail() throws Exception {
+        String openApi = """
+        {
+          "openapi": "3.0.0",
+          "components": {},
+          "paths": {
+            "/simple": { "get": { "operationId": "simpleTool" } }
+          }
+        }
+    """;
+
+        JsonNode node = objectMapper.readTree(openApi);
+        List<McpSchema.Tool> tools = mapper.convert(node, new ToolOverridesConfig());
+
+        assertEquals(1, tools.size());
+        McpSchema.Tool tool = tools.getFirst();
+        assertNotNull(tool.inputSchema());
+        verify(cacheService).putTool(eq("simpleTool"), any(McpSchema.Tool.class));
+    }
+
+    @Test
+    void testConvert_WithDuplicateToolNames_ShouldGenerateUniqueNames() throws Exception {
+        String openApi = """
+        {
+          "openapi": "3.0.0",
+          "paths": {
+            "/dup": { "get": { "operationId": "tool" } },
+            "/dup2": { "get": { "operationId": "tool" } }
+          }
+        }
+    """;
+
+        JsonNode node = objectMapper.readTree(openApi);
+        List<McpSchema.Tool> tools = mapper.convert(node, new ToolOverridesConfig());
+
+        assertEquals(2, tools.size());
+        Set<String> names = tools.stream().map(McpSchema.Tool::name).collect(java.util.stream.Collectors.toSet());
+        assertEquals(2, names.size()); // ensure uniqueness
     }
 }

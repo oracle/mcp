@@ -17,7 +17,6 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
-import java.util.stream.Stream;
 
 /**
  * Service for executing REST API requests using Java's {@link HttpClient}.
@@ -79,19 +78,24 @@ public class RestApiExecutionService {
     }
 
     /**
-     * Executes an HTTP request against the target URL with the specified method,
-     * request body, and headers.
+     * Executes an HTTP request using the given URL, method, optional request body, and headers.
+     * <p>
+     * This method supports all standard HTTP methods. For {@code GET} and {@code DELETE},
+     * the request body is ignored. For {@code POST}, {@code PUT}, and {@code PATCH}, the
+     * body is included in the request if provided.
+     * </p>
      *
-     * @param targetUrl the URL to call (must be a valid absolute URI)
-     * @param method    HTTP method (GET, POST, PUT, PATCH, DELETE)
-     * @param body      request body content, used only for POST, PUT, or PATCH methods;
-     *                  ignored for GET and DELETE
-     * @param headers   optional request headers; may be {@code null} or empty
-     * @return the response body as a {@link String}
-     * @throws IOException          if an I/O error occurs while sending or receiving
-     * @throws InterruptedException if the operation is interrupted while waiting
+     * @param targetUrl the absolute URL to send the request to (must be a valid URI)
+     * @param method    the HTTP method (e.g., GET, POST, PUT, PATCH, DELETE)
+     * @param body      the request body content; only used for POST, PUT, or PATCH requests;
+     *                  ignored for other methods; may be {@code null} or empty
+     * @param headers   optional request headers; may be {@code null} or empty; headers with
+     *                  {@code null} values are skipped
+     * @return the HTTP response containing status, headers, and body as a {@link String}
+     * @throws IOException          if an I/O error occurs while sending or receiving the request
+     * @throws InterruptedException if the operation is interrupted while waiting for a response
      */
-    public String executeRequest(String targetUrl, String method, String body, Map<String, String> headers)
+    public HttpResponse<String> executeRequest(String targetUrl, String method, String body, Map<String, String> headers)
             throws IOException, InterruptedException {
 
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
@@ -101,9 +105,11 @@ public class RestApiExecutionService {
 
         // Add headers
         if (headers != null && !headers.isEmpty()) {
-            requestBuilder.headers(headers.entrySet().stream()
-                    .flatMap(e -> Stream.of(e.getKey(), e.getValue()))
-                    .toArray(String[]::new));
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                if (entry.getValue() != null) {
+                    requestBuilder.header(entry.getKey(), entry.getValue());
+                }
+            }
         }
 
         // Attach body only for methods that support it
@@ -118,7 +124,7 @@ public class RestApiExecutionService {
         HttpResponse<String> response =
                 getHttpClient().send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
-        return response.body();
+        return response;
     }
 
     /**
@@ -131,6 +137,6 @@ public class RestApiExecutionService {
      * @throws InterruptedException if the operation is interrupted while waiting
      */
     public String get(String url, Map<String, String> headers) throws IOException, InterruptedException {
-        return executeRequest(url, GET, null, headers);
+        return executeRequest(url, GET, null, headers).body();
     }
 }

@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.net.URLEncoder;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -88,7 +89,7 @@ public class OpenApiMcpToolExecutor {
      * @return the result of executing the tool
      */
     public McpSchema.CallToolResult execute(McpSchema.CallToolRequest callRequest) {
-        String response;
+        HttpResponse<String> response;
         try {
             McpSchema.Tool toolToExecute = mcpServerCacheService.getTool(callRequest.name());
             String httpMethod = toolToExecute.meta().get("httpMethod").toString().toUpperCase();
@@ -117,9 +118,14 @@ public class OpenApiMcpToolExecutor {
             LOGGER.error("Execution failed for tool '{}': {}", callRequest.name(), e.getMessage());
             throw new RuntimeException("Failed to execute tool: " + callRequest.name(), e);
         }
+        int statusCode = response.statusCode();
         Map<String, Object> wrappedResponse = new HashMap<>();
-        wrappedResponse.put("response",response);
+        wrappedResponse.put("response",response.body());
+        boolean isSuccessful = statusCode >= 200 && statusCode < 300;
+
+
         return McpSchema.CallToolResult.builder()
+                .isError(!isSuccessful)
                 .structuredContent(wrappedResponse)
                 .build();
     }

@@ -6,7 +6,17 @@ import urllib.parse
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
-from . import http
+
+def _http_request(
+    url: str,
+    method: str = "GET",
+    headers: Optional[dict] = None,
+    data: Optional[bytes] = None,
+    timeout: float = 30.0,
+) -> Tuple[int, str, bytes]:
+    # Lazy import to avoid circular dependency with http -> server -> api -> auth
+    from .http import http_request as _req  # type: ignore
+    return _req(url, method=method, headers=headers, data=data, timeout=timeout)
 
 
 @dataclass
@@ -45,7 +55,7 @@ class TokenState:
         }
         url = self.token_url() + "?" + urllib.parse.urlencode(params)
 
-        status, _, body = http.http_request(
+        status, _, body = _http_request(
             url,
             method="POST",
             headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -136,11 +146,11 @@ def authed_fetch(
     if state.access_token:
         headers["Authorization"] = f"Bearer {state.access_token}"
 
-    status, ctype, body = http.http_request(url, method=method, headers=headers, data=data)
+    status, ctype, body = _http_request(url, method=method, headers=headers, data=data)
 
     if status == 401 and state.can_refresh():
         if state.refresh():
             headers["Authorization"] = f"Bearer {state.access_token}"
-            status, ctype, body = http.http_request(url, method=method, headers=headers, data=data)
+            status, ctype, body = _http_request(url, method=method, headers=headers, data=data)
 
     return status, ctype, body

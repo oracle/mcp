@@ -4,7 +4,6 @@ import json
 import urllib.parse
 from typing import Any, Dict, List, Optional, Tuple
 
-from mcp.types import Resource, TextResourceContents
 
 from ..resources.registry import parse_uri
 from . import api as jira_api
@@ -18,7 +17,7 @@ def _q_int(q: Dict[str, str], key: str, default: int) -> int:
         return default
 
 
-async def list_resources(uri: str) -> List[Resource]:
+async def list_resources(uri: str) -> List[Dict[str, Any]]:
     """
     List Jira resources under a given prefix.
     Supported:
@@ -33,11 +32,11 @@ async def list_resources(uri: str) -> List[Resource]:
     path = (path or "").strip("/")
     limit = _q_int(q, "limit", 10)
 
-    resources: List[Resource] = []
+    resources: List[Dict[str, Any]] = []
     if path == "" or path == "/":
         # Project root resource + advertise child issues listing
-        resources.append(Resource(uri=f"jira://{project_key}", name=f"Jira Project {project_key}"))
-        resources.append(Resource(uri=f"jira://{project_key}/issues", name=f"Issues (recent)"))
+        resources.append({"uri": f"jira://{project_key}", "name": f"Jira Project {project_key}"})
+        resources.append({"uri": f"jira://{project_key}/issues", "name": "Issues (recent)"})
         # Additionally, list a few recent issues as children for convenience
         jql = f'project = "{project_key}" ORDER BY updated DESC'
         st, _, body = jira_api.search_issues(jql=jql, fields=["summary", "status", "updated"], max_results=limit, start_at=0)
@@ -48,14 +47,14 @@ async def list_resources(uri: str) -> List[Resource]:
                     key = it.get("key")
                     summary = ((it.get("fields") or {}).get("summary") or "")[:120]
                     if key:
-                        resources.append(Resource(uri=f"jira://{project_key}/issues/{urllib.parse.quote(key)}", name=f"{key}: {summary}"))
+                        resources.append({"uri": f"jira://{project_key}/issues/{urllib.parse.quote(key)}", "name": f"{key}: {summary}"})
             except Exception:
                 pass
         return resources
 
     if path == "issues":
         # List recent issues under this project
-        resources.append(Resource(uri=f"jira://{project_key}/issues", name=f"{project_key} Issues"))
+        resources.append({"uri": f"jira://{project_key}/issues", "name": f"{project_key} Issues"})
         jql = f'project = "{project_key}" ORDER BY updated DESC'
         st, _, body = jira_api.search_issues(jql=jql, fields=["summary", "status", "updated"], max_results=limit, start_at=0)
         if st == 200:
@@ -65,7 +64,7 @@ async def list_resources(uri: str) -> List[Resource]:
                     key = it.get("key")
                     summary = ((it.get("fields") or {}).get("summary") or "")[:120]
                     if key:
-                        resources.append(Resource(uri=f"jira://{project_key}/issues/{urllib.parse.quote(key)}", name=f"{key}: {summary}"))
+                        resources.append({"uri": f"jira://{project_key}/issues/{urllib.parse.quote(key)}", "name": f"{key}: {summary}"})
             except Exception:
                 pass
         return resources
@@ -95,7 +94,7 @@ def _format_issue_markdown(issue: Dict[str, Any]) -> str:
     return "\n".join(md).strip() + "\n"
 
 
-async def read_resource(uri: str) -> List[TextResourceContents]:
+async def read_resource(uri: str) -> List[Dict[str, Any]]:
     """
     Read Jira resources:
       - jira://{project_key}
@@ -131,7 +130,7 @@ async def read_resource(uri: str) -> List[TextResourceContents]:
                 issues = []
         if fmt == "json":
             payload = {"project": project_key, "issues": issues}
-            return [TextResourceContents(uri=uri, mimeType="application/json", text=json.dumps(payload, indent=2))]
+            return [{"type": "text", "uri": uri, "mimeType": "application/json", "text": json.dumps(payload, indent=2)}]
         # markdown
         lines = [f"# Jira Project {project_key}", "", f"Recent {len(issues)} issues:"]
         for it in issues:
@@ -140,7 +139,7 @@ async def read_resource(uri: str) -> List[TextResourceContents]:
             if key:
                 lines.append(f"- {key}: {summary}")
         text = "\n".join(lines) + "\n"
-        return [TextResourceContents(uri=uri, mimeType="text/markdown", text=text)]
+        return [{"type": "text", "uri": uri, "mimeType": "text/markdown", "text": text}]
 
     # Support explicit listing node path
     if path == "issues":
@@ -152,15 +151,15 @@ async def read_resource(uri: str) -> List[TextResourceContents]:
         issue_key = path.split("/", 1)[1]
         st, _, body = jira_api.get_issue(issue_key, fields=["summary", "status", "assignee", "description"])
         if st != 200:
-            return [TextResourceContents(uri=uri, mimeType="text/plain", text=f"Error: Jira {st}")]
+            return [{"type": "text", "uri": uri, "mimeType": "text/plain", "text": f"Error: Jira {st}"}]
         try:
             doc = json.loads(body.decode("utf-8"))
         except Exception:
             doc = {}
         if fmt == "json":
-            return [TextResourceContents(uri=uri, mimeType="application/json", text=json.dumps(doc, indent=2))]
+            return [{"type": "text", "uri": uri, "mimeType": "application/json", "text": json.dumps(doc, indent=2)}]
         text = _format_issue_markdown(doc)
-        return [TextResourceContents(uri=uri, mimeType="text/markdown", text=text)]
+        return [{"type": "text", "uri": uri, "mimeType": "text/markdown", "text": text}]
 
     # Unknown
     return []

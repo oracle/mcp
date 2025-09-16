@@ -6,7 +6,6 @@ import re
 import urllib.parse
 from typing import Any, Dict, List, Optional
 
-from mcp.types import Resource, TextResourceContents
 
 from ..resources.registry import parse_uri
 from . import api as conf_api
@@ -38,7 +37,7 @@ def _strip_html_to_text(s: str) -> str:
     return s.strip()
 
 
-async def list_resources(uri: str) -> List[Resource]:
+async def list_resources(uri: str) -> List[Dict[str, Any]]:
     """
     List Confluence resources under a given prefix.
     Supported:
@@ -53,11 +52,11 @@ async def list_resources(uri: str) -> List[Resource]:
     path = (path or "").strip("/")
     limit = _q_int(q, "limit", 10)
 
-    resources: List[Resource] = []
+    resources: List[Dict[str, Any]] = []
     if path == "" or path == "/":
         # Space root + advertise child listing
-        resources.append(Resource(uri=f"confluence://{space_key}", name=f"Confluence Space {space_key}"))
-        resources.append(Resource(uri=f"confluence://{space_key}/pages", name="Pages (recent)"))
+        resources.append({"uri": f"confluence://{space_key}", "name": f"Confluence Space {space_key}"})
+        resources.append({"uri": f"confluence://{space_key}/pages", "name": "Pages (recent)"})
 
         # Add a few recent pages for convenience via CQL
         cql = f'space="{space_key}" AND type=page ORDER BY lastmodified DESC'
@@ -73,17 +72,14 @@ async def list_resources(uri: str) -> List[Resource]:
                     title = content.get("title") or it.get("title") or ""
                     if cid and title:
                         resources.append(
-                            Resource(
-                                uri=f"confluence://{space_key}/pages/{urllib.parse.quote(title)}",
-                                name=str(title)[:200],
-                            )
+                            {"uri": f"confluence://{space_key}/pages/{urllib.parse.quote(title)}", "name": str(title)[:200]}
                         )
             except Exception:
                 pass
         return resources
 
     if path == "pages":
-        resources.append(Resource(uri=f"confluence://{space_key}/pages", name=f"{space_key} Pages"))
+        resources.append({"uri": f"confluence://{space_key}/pages", "name": f"{space_key} Pages"})
         cql = f'space="{space_key}" AND type=page ORDER BY lastmodified DESC'
         st, _, body = conf_api.cql_search(cql=cql, limit=limit, start=0)
         if st == 200:
@@ -95,10 +91,7 @@ async def list_resources(uri: str) -> List[Resource]:
                     title = content.get("title") or it.get("title") or ""
                     if title:
                         resources.append(
-                            Resource(
-                                uri=f"confluence://{space_key}/pages/{urllib.parse.quote(title)}",
-                                name=str(title)[:200],
-                            )
+                            {"uri": f"confluence://{space_key}/pages/{urllib.parse.quote(title)}", "name": str(title)[:200]}
                         )
             except Exception:
                 pass
@@ -108,7 +101,7 @@ async def list_resources(uri: str) -> List[Resource]:
     return []
 
 
-async def read_resource(uri: str) -> List[TextResourceContents]:
+async def read_resource(uri: str) -> List[Dict[str, Any]]:
     """
     Read Confluence resources:
       - confluence://{space_key}
@@ -148,7 +141,7 @@ async def read_resource(uri: str) -> List[TextResourceContents]:
                 pages = []
         if fmt == "json":
             payload = {"space": space_key, "pages": pages}
-            return [TextResourceContents(uri=uri, mimeType="application/json", text=json.dumps(payload, indent=2))]
+            return [{"type": "text", "uri": uri, "mimeType": "application/json", "text": json.dumps(payload, indent=2)}]
         # markdown
         lines = [f"# Confluence Space {space_key}", "", f"Recent {len(pages)} pages:"]
         for p in pages:
@@ -156,7 +149,7 @@ async def read_resource(uri: str) -> List[TextResourceContents]:
             enc = urllib.parse.quote(title)
             lines.append(f"- {title} (confluence://{space_key}/pages/{enc})")
         text = "\n".join(lines) + "\n"
-        return [TextResourceContents(uri=uri, mimeType="text/markdown", text=text)]
+        return [{"type": "text", "uri": uri, "mimeType": "text/markdown", "text": text}]
 
     if path.startswith("pages/"):
         title_enc = path.split("/", 1)[1]
@@ -165,7 +158,7 @@ async def read_resource(uri: str) -> List[TextResourceContents]:
         cql = f'space="{space_key}" AND type=page AND title="{title}" ORDER BY version DESC'
         st, _, body = conf_api.cql_search(cql=cql, limit=1, start=0)
         if st != 200:
-            return [TextResourceContents(uri=uri, mimeType="text/plain", text=f"Error: Confluence {st}")]
+            return [{"type": "text", "uri": uri, "mimeType": "text/plain", "text": f"Error: Confluence {st}"}]
         try:
             data = json.loads(body.decode("utf-8"))
             results = data.get("results") or []
@@ -175,23 +168,23 @@ async def read_resource(uri: str) -> List[TextResourceContents]:
             page_id = None
 
         if not page_id:
-            return [TextResourceContents(uri=uri, mimeType="text/plain", text=f"Not found: {space_key}/{title}")]
+            return [{"type": "text", "uri": uri, "mimeType": "text/plain", "text": f"Not found: {space_key}/{title}"}]
 
         st2, _, page_body = conf_api.get_page(page_id)
         if st2 != 200:
-            return [TextResourceContents(uri=uri, mimeType="text/plain", text=f"Error: Confluence {st2}")]
+            return [{"type": "text", "uri": uri, "mimeType": "text/plain", "text": f"Error: Confluence {st2}"}]
         try:
             page = json.loads(page_body.decode("utf-8"))
         except Exception:
             page = {}
 
         if fmt == "json":
-            return [TextResourceContents(uri=uri, mimeType="application/json", text=json.dumps(page, indent=2))]
+            return [{"type": "text", "uri": uri, "mimeType": "application/json", "text": json.dumps(page, indent=2)}]
 
         # raw storage (XHTML) if requested
         if fmt == "storage":
             storage = (((page.get("body") or {}).get("storage") or {}).get("value") or "")
-            return [TextResourceContents(uri=uri, mimeType="text/xml", text=str(storage))]
+            return [{"type": "text", "uri": uri, "mimeType": "text/xml", "text": str(storage)}]
 
         # default: markdown (best-effort)
         storage = (((page.get("body") or {}).get("storage") or {}).get("value") or "")
@@ -201,7 +194,7 @@ async def read_resource(uri: str) -> List[TextResourceContents]:
         # Title as header
         title_hdr = page.get("title") or title
         md = f"# {title_hdr}\n\n{text}\n"
-        return [TextResourceContents(uri=uri, mimeType="text/markdown", text=md)]
+        return [{"type": "text", "uri": uri, "mimeType": "text/markdown", "text": md}]
 
     # Unknown
     return []

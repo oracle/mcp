@@ -23,7 +23,7 @@ def test_jira_list_resources_project_root(monkeypatch):
 
     uri = "jira://ENG"
     res = asyncio.run(jira_res.list_resources(uri))
-    uris = [str(r.uri) for r in res]
+    uris = [str(r["uri"]) for r in res]
     # Should include project root, issues listing, and individual issue URIs
     assert "jira://ENG" in uris
     assert "jira://ENG/issues" in uris
@@ -50,7 +50,7 @@ def test_jira_read_issue_markdown(monkeypatch):
     uri = "jira://ENG/issues/ENG-123"
     contents = asyncio.run(jira_res.read_resource(uri))
     assert contents, "Expected non-empty contents"
-    text = contents[0].text
+    text = contents[0]["text"]
     assert "# ENG-123 Demo summary" in text
     assert "Status: To Do" in text
     assert "Assignee: Alice" in text
@@ -72,7 +72,7 @@ def test_confluence_list_resources_space_root(monkeypatch):
 
     uri = "confluence://DOCS"
     res = asyncio.run(conf_res.list_resources(uri))
-    uris = [str(r.uri) for r in res]
+    uris = [str(r["uri"]) for r in res]
     assert "confluence://DOCS" in uris
     assert "confluence://DOCS/pages" in uris
     # Titles must be URL-encoded
@@ -104,7 +104,7 @@ def test_confluence_read_page_markdown(monkeypatch):
     uri = "confluence://DOCS/pages/Getting%20Started"
     contents = asyncio.run(conf_res.read_resource(uri))
     assert contents, "Expected non-empty contents"
-    text = contents[0].text
+    text = contents[0]["text"]
     assert text.startswith("# Getting Started"), "Title header missing"
     assert "Welcome" in text
     assert "Intro paragraph" in text

@@ -14,16 +14,20 @@
   "env": {
     "JIRA_BASE_URL": { "required": true, "description": "e.g., https://your-domain.atlassian.net" },
     "JIRA_ACCESS_TOKEN": { "required": false, "description": "OAuth access token (optional if using refresh)" },
-    "JIRA_CLIENT_ID": { "required": false, "description": "OAuth client ID (refresh flow)" },
-    "JIRA_CLIENT_SECRET": { "required": false, "description": "OAuth client secret (refresh flow)" },
-    "JIRA_REFRESH_TOKEN": { "required": false, "description": "OAuth refresh token (refresh flow)" },
+    "JIRA_CLIENT_ID": { "required": false, "description": "OAuth client ID (refresh flow; required at runtime if using refresh)" },
+    "JIRA_CLIENT_SECRET": { "required": false, "description": "OAuth client secret (refresh flow; required at runtime if using refresh)" },
+    "JIRA_REFRESH_TOKEN": { "required": false, "description": "OAuth refresh token (refresh flow; required at runtime if using refresh)" },
     "CONF_BASE_URL": { "required": true, "description": "e.g., https://your-domain.atlassian.net/wiki" },
     "CONF_ACCESS_TOKEN": { "required": false, "description": "OAuth access token (optional if using refresh)" },
-    "CONF_CLIENT_ID": { "required": false, "description": "OAuth client ID (refresh flow)" },
-    "CONF_CLIENT_SECRET": { "required": false, "description": "OAuth client secret (refresh flow)" },
-    "CONF_REFRESH_TOKEN": { "required": false, "description": "OAuth refresh token (refresh flow)" },
+    "CONF_CLIENT_ID": { "required": false, "description": "OAuth client ID (refresh flow; required at runtime if using refresh)" },
+    "CONF_CLIENT_SECRET": { "required": false, "description": "OAuth client secret (refresh flow; required at runtime if using refresh)" },
+    "CONF_REFRESH_TOKEN": { "required": false, "description": "OAuth refresh token (refresh flow; required at runtime if using refresh)" },
     "MCP_SSL_VERIFY": { "required": false, "description": "Set to false/0/no/off to disable TLS verification" },
-    "MCP_CA_BUNDLE": { "required": false, "description": "Absolute path to a PEM CA bundle" }
+    "MCP_CA_BUNDLE": { "required": false, "description": "Absolute path to a PEM CA bundle" },
+    "MCP_PREFERRED_USER": { "required": false, "description": "Optional default user identity for JQL/CQL currentUser() substitution" },
+    "JIRA_DEFAULT_PROJECT": { "required": false, "description": "Optional default Jira project key (e.g., ENG)" },
+    "CONF_DEFAULT_SPACE": { "required": false, "description": "Optional default Confluence space key (e.g., DOCS)" },
+    "MCP_DEFAULT_OUTPUT_FORMAT": { "required": false, "description": "Default output format for resources: markdown (default) | json | storage" }
   },
   "tools": [
     { "name": "jira_get_myself", "description": "GET /rest/api/latest/myself" },

@@ -1,80 +1,111 @@
 """
-Example: Programmatically start the MCP Atlassian server and call a tool.
+Example: Streamable HTTP client for the Atlassian MCP server.
 
-Note:
-- This example relies on the MCP Python client API being available in your installed "mcp" package.
-- The exact client API may differ by version. If imports fail, consult the MCP Python SDK docs.
-- Prefer configuring this server in Cline and using use_mcp_tool for day-to-day use.
+This example sends a couple of JSON-RPC messages over a single HTTP POST
+using NDJSON and prints streamed NDJSON responses from the server.
+
+Prereqs:
+  - Server running (in another terminal):
+      uv run -m mcp_atlassian_oauth
+    Default endpoint: http://localhost:8765/mcp
+
+  - httpx must be available (included in [dev] extras):
+      uv run -m pytest -q   # just to ensure environment is synced
+      # or simply: uv run python examples/python_client.py
 
 Usage:
-  python examples/python_client.py
+  uv run python src/mcp-atlassian-oauth/examples/python_client.py
 """
 
 import asyncio
+import json
 import os
-import sys
+from typing import AsyncGenerator
 
-try:
-    # The client API location may vary by version; adjust if needed.
-    from mcp.client.stdio import stdio_client  # type: ignore
-except Exception as e:
-    print("[error] MCP Python client API not found in 'mcp' package.")
-    print("Install/upgrade MCP SDK and see https://github.com/modelcontextprotocol for client usage.")
-    print(f"Import error: {e}")
-    sys.exit(1)
+import httpx
 
 
-async def main():
-    # Ensure required env vars are set before running.
-    required = ["JIRA_BASE_URL", "CONF_BASE_URL"]
-    missing = [k for k in required if not os.environ.get(k)]
-    if missing:
-        print(f"[warn] Missing environment variables: {', '.join(missing)}")
-        print("       You can copy examples/.env.example to examples/.env and use tools/run_local.sh")
-        # Continue anyway; some tools may not require both services for a simple list
+def ndjson_line(obj) -> bytes:
+    return (json.dumps(obj) + "\n").encode("utf-8")
 
-    # Command to launch this server via stdio
-    command = sys.executable
-    args = ["-m", "mcp_atlassian_oauth"]
 
-    print(f"[info] Spawning server: {command} {' '.join(args)}")
-    # Connect to the server over stdio. Exact tuple contents depend on SDK version.
-    async with stdio_client(command, args) as (client, read, write):  # type: ignore
-        # Initialize handshake (method name may vary with SDK)
-        if hasattr(client, "initialize"):
-            await client.initialize()
-        print("[info] Initialized MCP client.")
+async def request_body() -> AsyncGenerator[bytes, None]:
+    # Minimal handshake and a tools/list request.
+    # You can add more lines here to exercise call_tool, etc.
+    initialize = {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "clientInfo": {"name": "examples/python_client.py", "version": "0.1.0"},
+            "capabilities": {}
+        },
+    }
+    list_tools = {
+        "jsonrpc": "2.0",
+        "id": "2",
+        "method": "tools/list"
+    }
 
-        # List tools
-        tools = []
-        if hasattr(client, "list_tools"):
-            tools = await client.list_tools()
-        elif hasattr(client, "listTools"):
-            tools = await client.listTools()
-        else:
-            print("[warn] Client SDK does not expose list_tools(); skipping.")
-        print("[info] Tools available:", [getattr(t, "name", str(t)) for t in tools])
+    # Send initialize, wait for server to process, then initialized + list_tools
+    yield ndjson_line(initialize)
+    # Give the server a brief moment to emit the initialize result
+    await asyncio.sleep(0.5)
 
-        # Example tool call: jira_get_myself (requires JIRA_* env and valid token)
-        tool_name = "jira_get_myself"
-        print(f"[info] Attempting tool call: {tool_name}")
-        result = None
-        if hasattr(client, "call_tool"):
-            result = await client.call_tool(tool_name, {})
-        elif hasattr(client, "callTool"):
-            result = await client.callTool(tool_name, {})
-        else:
-            print("[warn] Client SDK does not expose call_tool(); skipping.")
+    initialized = {
+        "jsonrpc": "2.0",
+        "method": "notifications/initialized",
+        "params": {}
+    }
+    yield ndjson_line(initialized)
+    await asyncio.sleep(0.5)
 
-        if result is not None:
-            # Result format may differ by SDK; try to print safely
-            try:
-                # Many SDKs return a list of content parts
-                print("[info] Tool result:", result)
-            except Exception:
-                print("[info] Tool result received (unprintable structure).")
+    yield ndjson_line(list_tools)
+    await asyncio.sleep(0.5)
 
-        print("[info] Done.")
+    # Optionally, you can call tools/call after verifying tools/list succeeds.
+    # Example:
+    # call_set_defaults_show = {
+    #     "jsonrpc": "2.0",
+    #     "id": "3",
+    #     "method": "tools/call",
+    #     "params": {
+    #         "name": "set_defaults",
+    #         "arguments": {"show": True}
+    #     }
+    # }
+    # yield ndjson_line(call_set_defaults_show)
+    # await asyncio.sleep(0.15)
+
+    # End of request body (generator completes).
+    # For interactive sessions, you could await input() and yield more lines.
+
+
+async def main() -> None:
+    url = os.environ.get("MCP_URL", "http://localhost:8765/mcp")
+    headers = {"Content-Type": "application/x-ndjson"}
+
+    print(f"[client] Connecting to {url}")
+    async with httpx.AsyncClient(timeout=None) as client:
+        # Stream both upload (content=request_body()) and response chunks
+        async with client.stream("POST", url, headers=headers, content=request_body()) as resp:
+            print(f"[client] HTTP {resp.status_code}")
+            async for chunk in resp.aiter_bytes():
+                if not chunk:
+                    continue
+                # Response may contain multiple NDJSON lines per chunk; split safely
+                for line in chunk.split(b"\n"):
+                    s = line.strip()
+                    if not s:
+                        continue
+                    try:
+                        obj = json.loads(s.decode("utf-8"))
+                        print("[server]", json.dumps(obj, indent=2))
+                    except Exception:
+                        print("[server/raw]", s)
+
+    print("[client] Done.")
 
 
 if __name__ == "__main__":

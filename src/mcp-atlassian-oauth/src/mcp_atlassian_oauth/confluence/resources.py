@@ -123,6 +123,31 @@ async def read_resource(uri: str) -> List[Dict[str, Any]]:
     limit = _q_int(q, "limit", 10)
     path = (path or "").strip("/")
 
+    # Probe space existence/permissions up front to distinguish 404 vs 401/403
+    try:
+        st_space, _, _ = conf_api.get_space(space_key)
+        if st_space in (401, 403):
+            return [
+                {
+                    "type": "text",
+                    "uri": uri,
+                    "mimeType": "text/plain",
+                    "text": f"Permission denied: you do not have access to space {space_key}",
+                }
+            ]
+        if st_space == 404:
+            return [
+                {
+                    "type": "text",
+                    "uri": uri,
+                    "mimeType": "text/plain",
+                    "text": f"Space not found: {space_key}",
+                }
+            ]
+    except Exception:
+        # If probing fails unexpectedly, continue with best-effort behavior below.
+        pass
+
     if path == "" or path == "/":
         # Space summary (recent pages)
         cql = f'space="{space_key}" AND type=page ORDER BY lastmodified DESC'
@@ -154,20 +179,45 @@ async def read_resource(uri: str) -> List[Dict[str, Any]]:
     if path.startswith("pages/"):
         title_enc = path.split("/", 1)[1]
         title = urllib.parse.unquote(title_enc)
-        # Find the page by CQL
-        cql = f'space="{space_key}" AND type=page AND title="{title}" ORDER BY version DESC'
+        # Find the page by CQL (use lastmodified sort; escape quotes in title)
+        title_esc = title.replace('"', '\\"')
+        cql = f'space="{space_key}" AND type=page AND title="{title_esc}" ORDER BY lastmodified DESC'
         st, _, body = conf_api.cql_search(cql=cql, limit=1, start=0)
-        if st != 200:
-            return [{"type": "text", "uri": uri, "mimeType": "text/plain", "text": f"Error: Confluence {st}"}]
-        try:
-            data = json.loads(body.decode("utf-8"))
-            results = data.get("results") or []
-            content = (results[0].get("content") if results else None) or {}
-            page_id = content.get("id")
-        except Exception:
-            page_id = None
+        page_id: Optional[str] = None
+        if st == 200:
+            try:
+                data = json.loads(body.decode("utf-8"))
+                results = data.get("results") or []
+                first = results[0] if results else {}
+                content = (first.get("content") if isinstance(first, dict) else None) or first or {}
+                page_id = content.get("id") if isinstance(content, dict) else None
+            except Exception:
+                page_id = None
+
+        # Fallback: if CQL failed or returned no id, use content API by spaceKey + title
+        if not page_id:
+            try:
+                st_fb, _, body_fb = conf_api.find_page_by_space_and_title(space_key, title)
+                if st_fb == 200:
+                    data_fb = json.loads(body_fb.decode("utf-8"))
+                    results_fb = (data_fb.get("results") or [])
+                    # Prefer exact title match (case-insensitive), else first result
+                    for it in results_fb:
+                        if not isinstance(it, dict):
+                            continue
+                        t = it.get("title") or ""
+                        if (t == title) or (str(t).strip().lower() == str(title).strip().lower()):
+                            page_id = it.get("id")
+                            break
+                    if not page_id and results_fb:
+                        first_fb = results_fb[0]
+                        if isinstance(first_fb, dict):
+                            page_id = first_fb.get("id")
+            except Exception:
+                page_id = page_id or None
 
         if not page_id:
+            # If CQL errored earlier, avoid surfacing that code; show not found for cleaner UX
             return [{"type": "text", "uri": uri, "mimeType": "text/plain", "text": f"Not found: {space_key}/{title}"}]
 
         st2, _, page_body = conf_api.get_page(page_id)

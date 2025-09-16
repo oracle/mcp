@@ -21,15 +21,14 @@ def _tokenize(s: str) -> List[str]:
 
 def _select_tokens(title: str, description: str, max_tokens: int = 10) -> List[str]:
     toks = _tokenize(title) + _tokenize(description)
-    uniq: List[str] = []
-    seen: set[str] = set()
-    for t in sorted(toks, key=lambda x: (-len(x), toks.index(x))):
-        if t not in seen:
-            uniq.append(t)
-            seen.add(t)
-        if len(uniq) >= max_tokens:
-            break
-    return uniq
+    # Map each token to its first occurrence index to avoid O(n^2) toks.index calls
+    first_idx: Dict[str, int] = {}
+    for i, t in enumerate(toks):
+        if t not in first_idx:
+            first_idx[t] = i
+    # Sort unique tokens by length (desc), then first occurrence index (asc)
+    sorted_uniq = sorted(first_idx.keys(), key=lambda t: (-len(t), first_idx[t]))
+    return sorted_uniq[:max_tokens]
 
 
 def _jql_quote(s: str) -> str:

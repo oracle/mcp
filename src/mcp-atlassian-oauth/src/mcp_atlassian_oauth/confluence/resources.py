@@ -64,7 +64,7 @@ async def list_resources(uri: str) -> List[Dict[str, Any]]:
         if st == 200:
             try:
                 data = json.loads(body.decode("utf-8"))
-                results = data.get("results") or data.get("results", [])  # different deployments may vary
+                results = data.get("results") or []
                 for it in results[:limit]:
                     # Cloud search payload usually at it.get("content")
                     content = it.get("content") or it
@@ -85,7 +85,7 @@ async def list_resources(uri: str) -> List[Dict[str, Any]]:
         if st == 200:
             try:
                 data = json.loads(body.decode("utf-8"))
-                results = data.get("results") or data.get("results", [])
+                results = data.get("results") or []
                 for it in results[:limit]:
                     content = it.get("content") or it
                     title = content.get("title") or it.get("title") or ""
@@ -156,7 +156,7 @@ async def read_resource(uri: str) -> List[Dict[str, Any]]:
         if st == 200:
             try:
                 data = json.loads(body.decode("utf-8"))
-                results = data.get("results") or data.get("results", [])
+                results = data.get("results") or []
                 for it in results[:limit]:
                     content = it.get("content") or it
                     title = content.get("title") or it.get("title") or ""

@@ -539,7 +539,7 @@ def create_app(path: str = "/mcp") -> FastAPI:
             return StreamingResponse(_oneshot(), headers=headers, media_type="application/json")
 
         # Streaming path for NDJSON/concatenated JSON
-        outbound_queue: "asyncio.Queue[Optional[str]]" = asyncio.Queue()
+        outbound_queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
 
         async def _read_and_dispatch():
             from json import JSONDecoder, JSONDecodeError

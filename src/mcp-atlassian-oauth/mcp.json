@@ -1,7 +1,7 @@
 {
   "name": "mcp-atlassian-oauth",
   "id": "oracle.atlassian.oauth",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "MCP server for Atlassian Jira and Confluence (OAuth/Token) implemented in Python.",
   "license": "UPL-1.0",
   "homepage": "https://github.com/oracle/mcp",

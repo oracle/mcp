@@ -38,7 +38,7 @@ async def request_body() -> AsyncGenerator[bytes, None]:
         "method": "initialize",
         "params": {
             "protocolVersion": "2024-11-05",
-            "clientInfo": {"name": "examples/python_client.py", "version": "0.1.0"},
+            "clientInfo": {"name": "examples/python_client.py", "version": "1.0.0"},
             "capabilities": {}
         },
     }

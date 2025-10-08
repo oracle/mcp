@@ -82,7 +82,7 @@ mcp = FastMCP(
 
 
 @mcp.tool()
-def search(
+def search_oracle_database_documentation(
         search_query: str,
         max_results: int = 4,
 ) -> list[str]:
@@ -93,11 +93,11 @@ def search(
         max_results: The maximum number of results to return, defaults to 4.
 
     Usage:
-        search(search_query="create table syntax")
-        search(search_query="alter a parameter", max_results=13)
-        search(search_query="database user concept", max_results=20)
-        search(search_query="data use case domains best practices", max_results=15)
-        search(search_query="external table definition", max_results=100)
+        search_oracle_database_documentation(search_query="create table syntax")
+        search_oracle_database_documentation(search_query="alter a parameter", max_results=13)
+        search_oracle_database_documentation(search_query="database user concept", max_results=20)
+        search_oracle_database_documentation(search_query="data use case domains best practices", max_results=15)
+        search_oracle_database_documentation(search_query="external table definition", max_results=100)
         Returns:
             A list of results.
             Each result a string in Markdown format with the most relevant search topic.
@@ -493,9 +493,9 @@ def main():
 
         logger.info("Serving MCP server for Oracle documentation.")
         if args.mode == "stdio":
-            mcp.run(transport="stdio")
+            mcp.run(transport="stdio", show_banner=False)
         elif args.mode == "http":
-            mcp.run(transport="http", host=args.host, port=args.port)
+            mcp.run(transport="http", host=args.host, port=args.port, show_banner=False)
 
 
 if __name__ == "__main__":

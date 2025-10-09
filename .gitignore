@@ -9,3 +9,7 @@ env/
 env.bak/
 venv.bak/
 
+.vscode
+uv.lock
+
+.DS_Store

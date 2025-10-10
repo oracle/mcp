@@ -52,10 +52,15 @@ Always see the respective `src/<server>/README.md` for detailed setup instructio
     ```sh
     python3 -m venv venv
     source venv/bin/activate        # On Windows: venv\Scripts\activate
-    pip install -r requirements.txt
+    pip install -r requirements-dev.txt
     ```
     *(For Node.js/Java/other servers, follow respective instructions in that server’s README)*
-`
+
+5. **Build and Install servers in the current virtual environment**
+    ```sh
+    make build
+    make install
+    ```
 
 ## Authentication
 

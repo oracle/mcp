@@ -1,4 +1,4 @@
-SUBDIRS := $(wildcard src/*)
+SUBDIRS := $(filter-out src/dbtools-mcp-server src/mysql-mcp-server src/oci-pricing-mcp-server,$(wildcard src/*))
 
 .PHONY: test format
 

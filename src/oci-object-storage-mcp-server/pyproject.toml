@@ -4,12 +4,12 @@ version = "0.1.0"
 description = "OCI Object Storage Service MCP server"
 readme = "README.md"
 authors = [
-    {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"}
+    {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
 ]
 requires-python = ">=3.13"
 dependencies = [
     "fastmcp==2.12.2",
-    "oci==2.160.0"
+    "oci==2.160.0",
 ]
 
 classifiers = [

@@ -6,7 +6,7 @@ readme = "README.md"
 license = "UPL-1.0"
 license-files = ["LICENSE.txt"]
 authors = [
-    {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"}
+    {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
 ]
 requires-python = ">=3.11"
 dependencies = [

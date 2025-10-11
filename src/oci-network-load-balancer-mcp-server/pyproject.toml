@@ -7,7 +7,7 @@ requires-python = ">=3.13"
 license = "UPL-1.0"
 license-files = ["LICENSE.txt"]
 authors = [
-    {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"}
+    {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
 ]
 dependencies = [
     "fastmcp==2.12.2",

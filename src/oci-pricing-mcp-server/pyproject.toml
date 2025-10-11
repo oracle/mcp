@@ -16,6 +16,15 @@ dependencies = [
   "pycountry>=22.3.5",
 ]
 
+classifiers = [
+    "License :: OSI Approved :: Universal Permissive License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
 [project.scripts]
 oci-pricing-mcp = "oci_pricing_mcp.entry:main"
 

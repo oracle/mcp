@@ -12,6 +12,13 @@ dependencies = [
     "oci==2.160.0"
 ]
 
+classifiers = [
+    "License :: OSI Approved :: Universal Permissive License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.13",
+]
+
 [project.scripts]
 "oracle.oci-logging-mcp-server" = "oracle.oci_logging_mcp_server.server:main"
 

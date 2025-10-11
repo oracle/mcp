@@ -1,6 +1,13 @@
 [project]
 name = "oci-pricing-mcp-server"
 version = "0.1.0"
+description = "OCI Pricing MCP Server"
+readme = "README.md"
+license = "UPL-1.0"
+license-files = ["LICENSE.txt"]
+authors = [
+    {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"}
+]
 requires-python = ">=3.11"
 dependencies = [
   "fastmcp>=2.0.0",
@@ -30,4 +37,4 @@ fix = true
 
 [tool.ruff.lint]
 select = ["E","F","I","UP","B"]
-ignore = ["E501"] 
+ignore = ["E501"]

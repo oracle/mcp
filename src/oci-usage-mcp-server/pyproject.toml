@@ -1,8 +1,13 @@
 [project]
-name = "oracle.oci-Usage-mcp-server"
+name = "oracle.oci-usage-mcp-server"
 version = "0.1.0"
 description = "OCI Usage MCP server"
 readme = "README.md"
+license = "UPL-1.0"
+license-files = ["LICENSE.txt"]
+authors = [
+    {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"}
+]
 requires-python = ">=3.13"
 dependencies = [
     "fastmcp==2.12.2",

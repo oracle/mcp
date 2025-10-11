@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "OCI Logging Service MCP server"
 readme = "README.md"
 authors = [
-    { name = "Richard Gebhardt", email = "richard.gebhardt@oracle.com" }
+    {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"}
 ]
 requires-python = ">=3.13"
 dependencies = [

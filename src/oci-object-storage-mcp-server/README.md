@@ -2,15 +2,15 @@
 
 ## Overview
 This server provides tools to interact with the OCI Object Storage resources.
-It includes resources and tools to help with managing object storage configurations.
+It includes tools to help with managing object storage configurations.
 
 ## Running the server
 ```sh
 uv run oracle.oci-object-storage-mcp-server
 ```
 
-## Tools and Resources
-| Tool/Resource Name | Description |
+## Tools
+| Tool Name | Description |
 | --- | --- |
 | get_namespace | Get the object storage namespace for the tenancy |
 | list_buckets | List object storage buckets in a given compartment |
@@ -20,6 +20,20 @@ uv run oracle.oci-object-storage-mcp-server
 | get_object | Get a specific object from an object storage bucket |
 | upload_object | Upload an object to an object storage bucket |
 
-<span style="font-size: small;">Copyright (c) 2025, Oracle and/or its affiliates.
-Licensed under the Universal Permissive License v1.0 as shown at
-https://oss.oracle.com/licenses/upl.</span>
+NOTE: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
+
+## Third-Party APIs
+
+Developers choosing to distribute a binary implementation of this project are responsible for obtaining and providing all required licenses and copyright notices for the third-party code used in order to ensure compliance with their respective open source licenses.
+
+## Disclaimer
+
+Users are responsible for their local environment and credential safety. Different language model selections may yield different results and performance.
+
+## License
+
+Copyright (c) 2025 Oracle and/or its affiliates.
+ 
+Released under the Universal Permissive License v1.0 as shown at  
+<https://oss.oracle.com/licenses/upl/>.
+

@@ -21,7 +21,7 @@ uv run oracle.oci-network-load-balancer-mcp-server
 | list_network_load_balancer_backends | List backends in a given backend set and network load balancer |
 | get_network_load_balancer_backend | Get a backend with a given backend name from a backend set and network load balancer |
 
-NOTE: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
+⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 
 ## Third-Party APIs
 

@@ -17,7 +17,7 @@ uv run oracle.oci-registry-mcp-server
 | get_container_repo_details | Get details for a specific container repository |
 | delete_container_repository | Delete a container repository |
 
-NOTE: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
+⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 
 ## Third-Party APIs
 

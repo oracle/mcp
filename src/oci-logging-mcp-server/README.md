@@ -16,7 +16,7 @@ uv run oracle.oci-logging-mcp-server
 | list_logs | List logs in a given log group |
 | get_log | Get a log with a given log OCID |
 
-NOTE: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
+⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 
 ## Third-Party APIs
 

@@ -18,7 +18,7 @@ uv run oracle.oci-identity-mcp-server
 | create_auth_token | Create an authentication token for a user. |
 | get_current_user | Get current user information. |
 
-NOTE: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
+⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 
 ## Third-Party APIs
 

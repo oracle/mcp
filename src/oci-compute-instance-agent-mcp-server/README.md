@@ -17,7 +17,7 @@ uv run oracle.oci-compute-instance-agent-mcp-server
 | create_instance_agent_command | Create a new instance agent command |
 | list_instance_agent_command_executions | List command executions for an instance agent command |
 
-NOTE: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
+⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 
 ## Third-Party APIs
 

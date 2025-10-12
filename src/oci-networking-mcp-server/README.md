@@ -24,7 +24,7 @@ uv run oracle.oci-networking-mcp-server
 | list_network_security_groups | List network security groups in a given compartment and VCN |
 | get_network_security_group | Get a network security group with a given NSG OCID |
 
-NOTE: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
+⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 
 ## Third-Party APIs
 

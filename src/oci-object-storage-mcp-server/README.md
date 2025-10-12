@@ -20,7 +20,7 @@ uv run oracle.oci-object-storage-mcp-server
 | get_object | Get a specific object from an object storage bucket |
 | upload_object | Upload an object to an object storage bucket |
 
-NOTE: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
+⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 
 ## Third-Party APIs
 

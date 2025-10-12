@@ -15,7 +15,7 @@ uv run oracle.oci-usage-mcp-server
 | list_usage_reports | List usage reports in the tenancy |
 | get_usage_report | Get usage report by ID |
 
-NOTE: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
+⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 
 ## Third-Party APIs
 

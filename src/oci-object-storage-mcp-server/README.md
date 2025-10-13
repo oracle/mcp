@@ -1,15 +1,18 @@
 # OCI Object Storage MCP Server
 
 ## Overview
+
 This server provides tools to interact with the OCI Object Storage resources.
 It includes tools to help with managing object storage configurations.
 
 ## Running the server
+
 ```sh
 uv run oracle.oci-object-storage-mcp-server
 ```
 
 ## Tools
+
 | Tool Name | Description |
 | --- | --- |
 | get_namespace | Get the object storage namespace for the tenancy |

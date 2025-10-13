@@ -1,15 +1,18 @@
 # OCI Compute MCP Server
 
 ## Overview
+
 This server provides tools to interact with the OCI Compute resources.
 It includes tools to help with managing compute instances.
 
 ## Running the server
+
 ```sh
 uv run oracle.oci-compute-mcp-server
 ```
 
 ## Tools
+
 | Tool Name | Description |
 | --- | --- |
 | list_instances | List Instances in a given compartment |

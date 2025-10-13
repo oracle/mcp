@@ -1,15 +1,18 @@
 # OCI Logging MCP Server
 
 ## Overview
+
 This server provides tools to interact with the OCI Logging resources.
 It includes tools to help with managing logging configurations.
 
 ## Running the server
+
 ```sh
 uv run oracle.oci-logging-mcp-server
 ```
 
 ## Tools
+
 | Tool Name | Description |
 | --- | --- |
 | list_log_groups | List log groups in a given compartment |

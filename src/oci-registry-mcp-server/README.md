@@ -1,15 +1,18 @@
 # OCI Registry MCP Server
 
 ## Overview
+
 This server provides tools to interact with the OCI Registry resources.
 It includes tools to help with managing container repositories.
 
 ## Running the server
+
 ```sh
 uv run oracle.oci-registry-mcp-server
 ```
 
 ## Tools
+
 | Tool Name | Description |
 | --- | --- |
 | create_container_repository | Create a new container repository |

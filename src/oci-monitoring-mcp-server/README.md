@@ -5,11 +5,13 @@
 This server provides tools for interacting with Oracle Cloud Infrastructure (OCI) Monitoring service.
 
 ## Running the server
+
 ```sh
 uv run oracle.oci-monitoring-mcp-server
 ```
 
 ## Tools
+
 | Tool Name | Description |
 | --- | --- |
 | list_metrics | List metrics in the tenancy |

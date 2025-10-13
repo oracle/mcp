@@ -5,11 +5,13 @@
 This server provides tools for interacting with Oracle Cloud Infrastructure (OCI) Resource Search service.
 
 ## Running the server
+
 ```sh
 uv run oracle.oci-resource-search-mcp-server
 ```
 
 ## Tools
+
 | Tool Name | Description |
 | --- | --- |
 | search_resources | Search for resources in the tenancy |

@@ -5,11 +5,13 @@
 This server provides tools for interacting with Oracle Cloud Infrastructure (OCI) Migration service.
 
 ## Running the server
+
 ```sh
 uv run oracle.oci-migration-mcp-server
 ```
 
 ## Tools
+
 | Tool Name | Description |
 | --- | --- |
 | list_migrations | List migrations in the tenancy |

@@ -1,15 +1,18 @@
 # OCI Networking MCP Server
 
 ## Overview
+
 This server provides tools to interact with the OCI Networking resources.
 It includes tools to help with managing network configurations.
 
 ## Running the server
+
 ```sh
 uv run oracle.oci-networking-mcp-server
 ```
 
 ## Tools
+
 | Tool Name | Description |
 | --- | --- |
 | list_vcns | List Virtual Cloud Networks (VCNs) in a given compartment |

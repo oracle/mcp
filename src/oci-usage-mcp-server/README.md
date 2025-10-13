@@ -5,11 +5,13 @@
 This server provides tools for interacting with Oracle Cloud Infrastructure (OCI) Usage service.
 
 ## Running the server
+
 ```sh
 uv run oracle.oci-usage-mcp-server
 ```
 
 ## Tools
+
 | Tool Name | Description |
 | --- | --- |
 | list_usage_reports | List usage reports in the tenancy |

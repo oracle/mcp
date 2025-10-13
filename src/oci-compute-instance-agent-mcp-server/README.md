@@ -5,11 +5,13 @@
 This server provides tools for interacting with Oracle Cloud Infrastructure (OCI) Compute Instance Agent service.
 
 ## Running the server
+
 ```sh
 uv run oracle.oci-compute-instance-agent-mcp-server
 ```
 
 ## Tools
+
 | Tool Name | Description |
 | --- | --- |
 | list_instance_agent_commands | List instance agent commands |

@@ -1,15 +1,18 @@
 # OCI Network Load Balancer MCP Server
 
 ## Overview
+
 This server provides tools to interact with the OCI Network Load Balancer resources.
 It includes tools to help with managing network load balancers.
 
 ## Running the server
+
 ```sh
 uv run oracle.oci-network-load-balancer-mcp-server
 ```
 
 ## Tools
+
 | Tool Name | Description |
 | --- | --- |
 | list_network_load_balancers | List network load balancers in a given compartment |

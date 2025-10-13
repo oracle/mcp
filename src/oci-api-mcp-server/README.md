@@ -1,14 +1,17 @@
 # OCI API MCP Server
 
 ## Overview
+
 This server provides tools to run OCI CLI commands to interact with the OCI services.
 It includes tools to help with OCI command execution and provide helpful information.
 
 ## Running the server
+
 ```sh
 uv run oracle.oci-api-mcp-server
 ```
 ## Tools
+
 | Tool Name | Description |
 | --- | --- |
 | get_oci_command_help | Returns helpful instructions for running an OCI CLI command. Only provide the command after 'oci', do not include the string 'oci' in your command. |

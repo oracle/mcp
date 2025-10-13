@@ -1,14 +1,17 @@
 # OCI Identity MCP Server
 
 ## Overview
+
 This server provides tools to interact with the OCI Identity service.
 
 ## Running the server
+
 ```sh
 uv run oracle.oci-identity-mcp-server
 ```
 
 ## Tools
+
 | Tool Name | Description |
 | --- | --- |
 | list_compartments | List compartments in a given tenancy. |

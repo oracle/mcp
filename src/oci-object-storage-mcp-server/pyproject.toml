@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-object-storage-mcp-server"
-version = "0.1.0"
+version = "1.0.0"
 description = "OCI Object Storage Service MCP server"
 readme = "README.md"
 authors = [

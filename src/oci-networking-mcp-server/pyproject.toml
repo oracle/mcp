@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-networking-mcp-server"
-version = "0.1.0"
+version = "1.0.0"
 description = "OCI Networking Service MCP server"
 readme = "README.md"
 requires-python = ">=3.13"

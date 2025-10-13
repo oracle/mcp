@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-logging-mcp-server"
-version = "0.1.0"
+version = "1.0.0"
 description = "OCI Logging Service MCP server"
 readme = "README.md"
 authors = [

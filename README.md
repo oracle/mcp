@@ -27,40 +27,33 @@ Always see the respective `src/<server>/README.md` for detailed setup instructio
 
 ## Quick Start
 
-1. **Clone this repository:**
-    ```sh
-    git clone https://github.com/oracle/mcp.git
-    cd mcp
-    ```
+Follow these instructions to get started as quickly as possible. Once finished, look [here](#local-development) to set up your local development environment if you wish to [contribute](#contributing) changes.
 
-2. **List available MCP servers:**
-    ```sh
-    ls src/
-    ```
+1. Install `uv` from [here](https://docs.astral.sh/uv/getting-started/installation/)
+2. Install python with `uv python install 3.13`
+3. If you are using OCI servers, configure your [OCI authentication](#authentication)
+4. Add desired servers to your [MCP client configuration](#client-configuration)
 
-3. **Read the appropriate server's README for setup instructions:**
-    ```sh
-    cat src/<server-name>/README.md
-    ```
-    - Example: For the Python-based DBTools MCP server:
-      ```
-      cd src/dbtools-mcp-server/
-      cat README.md
-      ```
+Below is an example MCP client configuration for a typical python server
 
-4. **Typical Python Server Setup Example:**
-    ```sh
-    python3 -m venv venv
-    source venv/bin/activate        # On Windows: venv\Scripts\activate
-    pip install -r requirements-dev.txt
-    ```
-    *(For Node.js/Java/other servers, follow respective instructions in that server’s README)*
+*(For Node.js/Java/other servers, follow respective instructions in that server’s README)*
 
-5. **Build and Install servers in the current virtual environment**
-    ```sh
-    make build
-    make install
-    ```
+For macOS/Linux:
+```
+{
+  "mcpServers": {
+    "oracle-oci-api-mcp-server": {
+      "command": "uvx",
+      "args": [
+        "oracle.oci-api-mcp-server@latest"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    }
+  }
+}
+```
 
 ## Authentication
 
@@ -72,8 +65,10 @@ For OCI MCP servers, you'll need to install and authenticate using the OCI CLI.
 oci session authenticate --region=<region> --tenancy-name=<tenancy_name>
 ```
 where:
-<region> is the region you would like to authenticate in (e.g. `us-phoenix-1`)
-<tenancy_name> is the name of your OCI tenancy
+`<region>` is the region you would like to authenticate in (e.g. `us-phoenix-1`)
+`<tenancy_name>` is the name of your OCI tenancy
+
+Some MCP servers may not work with token-based authentication alone. See more about API key-based authentication [here](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/clitoken.htm).
 
 All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 
@@ -81,6 +76,8 @@ Remember to refresh the session once it expires with:
 ```bash
 oci session authenticate --profile-name <profile_name> --region <region> --auth security_token
 ```
+
+`<profile_name>` is the profile that you set up in the steps above. You can view a list of your profiles by running `cat ~/.oci/config` on macOS/Linux if you forget which profile you have set up.
 
 ## Client configuration
 
@@ -93,25 +90,24 @@ Refer to the sections below for client-specific configuration instructions.
 <details>
 <summary>Setup</summary>
 
-Before continuing, make sure you have already followed the steps above in the [Getting Started](#getting-started) section.
+Before continuing, make sure you have already followed the steps above in the [Quick start](#quick-start) section.
 
 1. If using Visual Studio Code, install the [Cline VS Code Extension](https://marketplace.visualstudio.com/items?itemName=saoudrizwan.claude-dev) (or equivalent extension for your preferred IDE). 
 2. Once installed, click the extension to open it.
 3. Click the **MCP Servers** button near the top of the the extension's panel.
 4. Select the **Installed** tab.
 5. Click **Configure MCP Servers** to open the `cline_mcp_settings.json` file.
-6. In the `cline_mcp_settings.json` file, add your desired MCP servers in the `mcpServers` object. Below is an example for for the compute OCI MCP server. Make sure to save the file after editing.
+6. In the `cline_mcp_settings.json` file, add your desired MCP servers in the `mcpServers` object. Below is an example for for the generic OCI API MCP server. Make sure to save the file after editing. `<profile_name>` is the profile that you set up during the [authentication](#authentication) steps.
 
-For macOS/Linux
+For macOS/Linux:
 ```json
 {
   "mcpServers": {
     "oracle-oci-api-mcp-server": {
       "type": "stdio",
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "run",
-        "oracle.oci-api-mcp-server"
+        "oracle.oci-api-mcp-server@latest"
       ],
       "env": {
         "OCI_CONFIG_PROFILE": "<profile_name>",
@@ -134,7 +130,7 @@ For Windows - **TODO**
 <details>
 <summary>Setup</summary>
 
-Before continuing, make sure you have already followed the steps above in the [Getting Started](#getting-started) section.
+Before continuing, make sure you have already followed the steps above in the [Quick start](#quick-start) section.
 
 1. You can place MCP configurations in two locations, depending on your use case:
 
@@ -145,15 +141,13 @@ Before continuing, make sure you have already followed the steps above in the [G
 **`.cursor/mcp.json`**
 
 For macOS/Linux:
-
 ```json
 {
   "mcpServers": {
     "oracle-oci-api-mcp-server": {
       "type": "stdio",
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "run",
         "oracle.oci-api-mcp-server"
       ],
       "env": {
@@ -164,6 +158,8 @@ For macOS/Linux:
   }
 }
 ```
+
+`<profile_name>` is the profile that you set up during the [authentication](#authentication) steps.
 
 For Windows - **TODO**
 
@@ -176,7 +172,7 @@ For Windows - **TODO**
 <details>
 <summary>Setup</summary>
 
-Before continuing, make sure you have already followed the steps above in the [Getting Started](#getting-started) section.
+Before continuing, make sure you have already followed the steps above in the [Quick start](#quick-start) section.
 
 1. Download [Ollama](https://ollama.com/download)
 2. Start the Ollama server
@@ -195,26 +191,26 @@ For Linux: `sudo systemctl start ollama`
 8. Create an mcphost configuration file (e.g. `./mcphost.json`)
 9. Add your desired server to the `mcpServers` object. Below is an example for for the compute OCI MCP server. Make sure to save the file after editing.
 
-For macOS/Linux
-
+For macOS/Linux:
 ```json
 {
   "mcpServers": {
     "oracle-oci-api-mcp-server": {
       "type": "stdio",
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "run",
         "oracle.oci-api-mcp-server"
       ],
       "env": {
-        "VIRTUAL_ENV": "<path to your cloned repo>/oci-mcp/.venv",
+        "OCI_CONFIG_PROFILE": "<profile_name>",
         "FASTMCP_LOG_LEVEL": "ERROR"
       }
     }
   }
 }
 ```
+
+`<profile_name>` is the profile that you set up during the [authentication](#authentication) steps.
 
 For Windows - **TODO**
 
@@ -224,6 +220,50 @@ For Windows - **TODO**
     3.  `<config-path>` is the path to the mcphost configuration json file that you made above
 
 </details>
+
+## Local development
+
+This section will help you set up your environment to prepare it for local development if you wish to [contribute](#contributing) changes.
+
+1. Set up python virtual environment and install dev requirements
+    ```sh
+    python3 -m venv venv
+    source venv/bin/activate        # On Windows: venv\Scripts\activate
+    pip install -r requirements-dev.txt
+    ```
+
+2.  Locally build and install servers within the virtual environment
+    ```sh
+    make build
+    make install
+    ```
+
+3. Add desired servers to your MCP client configuration, but run them using the locally installed server package instead
+
+Below is an example MCP client configuration for a typical python server using the local server package
+
+*(For Node.js/Java/other servers, follow respective instructions in that server’s README)*
+
+For macOS/Linux:
+```
+{
+  "mcpServers": {
+    "oracle-oci-api-mcp-server": {
+      "command": "uv",
+      "args": [
+        "run"
+        "oracle.oci-api-mcp-server"
+      ],
+      "env": {
+        "VIRTUAL_ENV": "<path to your cloned repo>/mcp/venv",
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    }
+  }
+}
+```
+
+where `<path to your cloned repo>` is the absolute path to wherever you cloned this repo that will help point to the venv created above (e.g. `/Users/myuser/dev/mcp/venv`)
 
 ## Directory Structure
 

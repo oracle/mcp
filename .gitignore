@@ -9,6 +9,7 @@ env/
 env.bak/
 venv.bak/
 
+.idea
 
 # test environments
 .env

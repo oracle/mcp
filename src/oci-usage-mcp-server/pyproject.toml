@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-usage-mcp-server"
-version = "1.0.0"
+version = "1.0.1"
 description = "OCI Usage MCP server"
 readme = "README.md"
 license = "UPL-1.0"

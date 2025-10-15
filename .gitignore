@@ -19,5 +19,8 @@ uv.lock
 # Mac files
 .DS_Store
 
+#IDE
+.idea
+
 # test environments
 .env

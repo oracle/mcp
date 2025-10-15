@@ -120,7 +120,7 @@ class TestLimitsTools:
                         "compartment_id": "ocid1.compartment.oc1..xxxx",
                         "service_name": "service1",
                         "name": "limit_value1",
-                        "scope_type": "GLOBAL"
+                        "scope_type": "GLOBAL",
                     },
                 )
             ).structured_content["result"]
@@ -131,13 +131,17 @@ class TestLimitsTools:
     @pytest.mark.asyncio
     @patch("oracle.oci_limits_mcp_server.server.get_limits_client")
     @patch("oracle.oci_limits_mcp_server.server.list_availability_domains")
-    async def test_get_resource_availability_ad_scope(self, mock_list_ad, mock_get_client):
+    async def test_get_resource_availability_ad_scope(
+        self, mock_list_ad, mock_get_client
+    ):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
-        mock_limit_definition = create_autospec(oci.limits.models.LimitDefinitionSummary)
+        mock_limit_definition = create_autospec(
+            oci.limits.models.LimitDefinitionSummary
+        )
         mock_limit_definition.is_resource_availability_supported = True
-        mock_limit_definition.scope_type = 'AD'
+        mock_limit_definition.scope_type = "AD"
 
         mock_response = create_autospec(oci.response.Response)
         mock_response.data = [mock_limit_definition]
@@ -148,11 +152,18 @@ class TestLimitsTools:
         mock_list_ad.return_value = [{"name": "AD1"}, {"name": "AD2"}]
 
         mock_response_ad1 = create_autospec(oci.response.Response)
-        mock_response_ad1.data = oci.limits.models.ResourceAvailability(used=10, available=100)
+        mock_response_ad1.data = oci.limits.models.ResourceAvailability(
+            used=10, available=100
+        )
         mock_response_ad2 = create_autospec(oci.response.Response)
-        mock_response_ad2.data = oci.limits.models.ResourceAvailability(used=20, available=200)
+        mock_response_ad2.data = oci.limits.models.ResourceAvailability(
+            used=20, available=200
+        )
 
-        mock_client.get_resource_availability.side_effect = [mock_response_ad1, mock_response_ad2]
+        mock_client.get_resource_availability.side_effect = [
+            mock_response_ad1,
+            mock_response_ad2,
+        ]
 
         async with Client(mcp) as client:
             result = await client.call_tool(
@@ -164,11 +175,17 @@ class TestLimitsTools:
                 },
             )
 
-            assert len(result.structured_content['result']) == 2
-            assert result.structured_content['result'][0]["availabilityDomain"] == "AD1"
-            assert result.structured_content['result'][0]["resourceAvailability"]["used"] == 10
-            assert result.structured_content['result'][1]["availabilityDomain"] == "AD2"
-            assert result.structured_content['result'][1]["resourceAvailability"]["used"] == 20
+            assert len(result.structured_content["result"]) == 2
+            assert result.structured_content["result"][0]["availabilityDomain"] == "AD1"
+            assert (
+                result.structured_content["result"][0]["resourceAvailability"]["used"]
+                == 10
+            )
+            assert result.structured_content["result"][1]["availabilityDomain"] == "AD2"
+            assert (
+                result.structured_content["result"][1]["resourceAvailability"]["used"]
+                == 20
+            )
 
     @pytest.mark.asyncio
     @patch("oracle.oci_limits_mcp_server.server.get_limits_client")
@@ -176,9 +193,11 @@ class TestLimitsTools:
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
-        mock_limit_definition = create_autospec(oci.limits.models.LimitDefinitionSummary)
+        mock_limit_definition = create_autospec(
+            oci.limits.models.LimitDefinitionSummary
+        )
         mock_limit_definition.is_resource_availability_supported = True
-        mock_limit_definition.scope_type = 'REGION'
+        mock_limit_definition.scope_type = "REGION"
 
         mock_response = create_autospec(oci.response.Response)
         mock_response.data = [mock_limit_definition]
@@ -187,7 +206,9 @@ class TestLimitsTools:
         mock_client.list_limit_definitions.return_value = mock_response
 
         mock_response = create_autospec(oci.response.Response)
-        mock_response.data = oci.limits.models.ResourceAvailability(used=10, available=100)
+        mock_response.data = oci.limits.models.ResourceAvailability(
+            used=10, available=100
+        )
         mock_client.get_resource_availability.return_value = mock_response
 
         async with Client(mcp) as client:
@@ -200,6 +221,6 @@ class TestLimitsTools:
                 },
             )
 
-            assert len(result.structured_content['result']) == 1
-            assert result.structured_content['result'][0]["used"] == 10
-            assert result.structured_content['result'][0]["available"] == 100
+            assert len(result.structured_content["result"]) == 1
+            assert result.structured_content["result"][0]["used"] == 10
+            assert result.structured_content["result"][0]["available"] == 100

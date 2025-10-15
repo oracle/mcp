@@ -12,7 +12,11 @@ import oci
 from fastmcp import FastMCP
 
 from . import __project__, __version__
-from .utils import list_services_with_pagination, list_limit_definitions_with_pagination, list_limit_values_with_pagination
+from .utils import (
+    list_limit_definitions_with_pagination,
+    list_limit_values_with_pagination,
+    list_services_with_pagination,
+)
 
 logger = Logger(__name__, level="INFO")
 
@@ -164,7 +168,7 @@ def list_services(
             page=page,
             subscription_id=subscription_id,
         )
-        service_summary =  [map_service_summary(svc) for svc in services]
+        service_summary = [map_service_summary(svc) for svc in services]
         return service_summary
     except Exception as e:
         logger.error(f"Error in list_services: {e}")
@@ -211,9 +215,7 @@ def get_limit_value(
     compartment_id: Annotated[str, "OCID of the root compartment (tenancy)"],
     service_name: Annotated[str, "Target service name"],
     name: Annotated[str, "Specific resource limit name filter"],
-    scope_type: Annotated[
-        str, "Filter by scope type: GLOBAL, REGION, or AD"
-    ],
+    scope_type: Annotated[str, "Filter by scope type: GLOBAL, REGION, or AD"],
     availability_domain: Annotated[
         Optional[str], "If scope_type is AD, filter by availability domain"
     ] = None,
@@ -272,7 +274,9 @@ def get_resource_availability(
             name=limit_name,
         )
         if len(limits) == 0:
-            return {"message": f"Limit '{limit_name}' not found for service '{service_name}'"}
+            return {
+                "message": f"Limit '{limit_name}' not found for service '{service_name}'"
+            }
 
         limit_definition = limits[0]
         if not limit_definition.is_resource_availability_supported:
@@ -280,7 +284,7 @@ def get_resource_availability(
                 "message": f"Resource availability not supported for limit '{limit_name}'. Consider calling get_limit_value to get the limit value."
             }
 
-        if limit_definition.scope_type == 'AD':
+        if limit_definition.scope_type == "AD":
             availability_domains = list_availability_domains(compartment_id)
             resource_availability = []
             for ad in availability_domains:
@@ -288,14 +292,16 @@ def get_resource_availability(
                     service_name=service_name,
                     limit_name=limit_name,
                     compartment_id=compartment_id,
-                    availability_domain=ad['name'],
+                    availability_domain=ad["name"],
                     subscription_id=subscription_id,
                 )
                 data: oci.limits.models.ResourceAvailability = response.data
-                resource_availability.append({
-                    "availabilityDomain": ad['name'],
-                    "resourceAvailability": map_resource_availability(data)
-                })
+                resource_availability.append(
+                    {
+                        "availabilityDomain": ad["name"],
+                        "resourceAvailability": map_resource_availability(data),
+                    }
+                )
             return resource_availability
         else:
             response: oci.response.Response = client.get_resource_availability(

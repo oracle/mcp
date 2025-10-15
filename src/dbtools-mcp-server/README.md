@@ -35,6 +35,8 @@ dbtools-mcp-server.py is a FastMCP-based server that provides various tools for 
   - HeatWave similarity search and RAG on existing vector stores
   - HeatWave AutoML syntax reference helper
   - Create HeatWave vector store from objects in Object Store
+  - [NOTE] MySQL AI is not compatible with DBTools MCP Server
+  - [NOTE] MySQL MCP Server relies on MySQL connector python and is recommended for new MySQL HeatWave or MySQL AI users
 
 - **Additional Features**
   - OCI Object Store list buckets and objects
@@ -145,11 +147,11 @@ python dbtools-mcp-server.py
 16. `list_reports(dbtools_connection_display_name)`: Lists all reports for a connection
 17. `find_matching_reports(dbtools_connection_display_name, search_text, limit=5)`: Finds similar reports using vector similarity search
 18. `ragify_column(dbtools_connection_display_name, table_name, column_names, vector_column_name)`: Creates and populates a vector column for RAG integration
-19. `call_nl2ml(dbtools_connection_display_name: string, question: string)`: Ask natural language questions to machine learning help tool to get answers about heatwave ML (AutoML)
-20. `ask_ml_rag(dbtools_connection_display_name: string, question: string)`: Ask ml_rag - retrieval augmented generation tool a question. This is the preferred tool for answering questions using vector stores.
-21. `call_load_vector_store(dbtools_connection_display_name: string, namespace: string, bucket_name: string, document_prefix: string, schema_name: string, table_name: string)`: Load documents from object storage into a vector store for similarity search and RAG. Path can be file name, prefix, or full path.
-22. `call_list_buckets(dbtools_connection_display_name: string, compartment_id: string)`: List all accessible object store buckets
-23. `call_list_objects(dbtools_connection_display_name: string, namespace: string, bucket_name: string)`: List objects/files stored in a given object store bucket
+19. `heatwave_ask_help(dbtools_connection_display_name: string, question: string)`: Ask natural language questions to machine learning help tool to get answers about heatwave ML (AutoML)
+20. `heatwave_ask_ml_rag(dbtools_connection_display_name: string, question: string)`: Ask ml_rag - retrieval augmented generation tool a question. This is the preferred tool for answering questions using vector stores.
+21. `heatwave_load_vector_store(dbtools_connection_display_name: string, namespace: string, bucket_name: string, document_prefix: string, schema_name: string, table_name: string)`: Load documents from object storage into a vector store for similarity search and RAG. Path can be file name, prefix, or full path.
+22. `object_storage_list_buckets(compartment_id: string)`: List all accessible object store buckets
+23. `object_storage_list_objects(namespace: string, bucket_name: string)`: List objects/files stored in a given object store bucket
 
 ## Security
 

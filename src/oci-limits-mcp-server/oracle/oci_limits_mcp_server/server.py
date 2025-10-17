@@ -285,7 +285,7 @@ def get_resource_availability(
             return [
                 {
                     "message": f"Resource availability not supported for limit '{limit_name}'. "
-                               f"Consider calling get_limit_value to get the limit value."
+                    f"Consider calling get_limit_value to get the limit value."
                 }
             ]
 

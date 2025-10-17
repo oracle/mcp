@@ -274,15 +274,15 @@ def get_resource_availability(
             name=limit_name,
         )
         if len(limits) == 0:
-            return {
+            return [{
                 "message": f"Limit '{limit_name}' not found for service '{service_name}'"
-            }
+            }]
 
         limit_definition = limits[0]
         if not limit_definition.is_resource_availability_supported:
-            return {
+            return [{
                 "message": f"Resource availability not supported for limit '{limit_name}'. Consider calling get_limit_value to get the limit value."
-            }
+            }]
 
         if limit_definition.scope_type == "AD":
             availability_domains = list_availability_domains(compartment_id)

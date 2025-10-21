@@ -1,0 +1,30 @@
+{
+  "request": {
+    "method": "POST",
+    "url": "/rest/v1/companies",
+    "headers": {
+      "X-API-KEY": {
+        "equalTo": "test-api-key"
+      },
+      "Content-Type": {
+        "equalTo": "application/json"
+      }
+    },
+    "bodyPatterns": [
+      {
+        "matchesJsonPath": "$.name"
+      },
+      {
+        "matchesJsonPath": "$.address"
+      }
+    ]
+  },
+  "response": {
+    "status": 201,
+    "bodyFileName": "company-1-response.json",
+    "headers": {
+      "Content-Type": "application/json",
+      "Location": "/rest/v1/companies/1"
+    }
+  }
+}

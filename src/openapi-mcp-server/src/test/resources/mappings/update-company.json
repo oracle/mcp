@@ -1,0 +1,22 @@
+{
+  "request": {
+    "method": "PATCH",
+    "url": "/rest/v1/companies/1",
+    "headers": {
+      "CUSTOM-HEADER": {
+        "equalTo": "test-custom-key"
+      },
+      "Content-Type": {
+        "equalTo": "application/json"
+      }
+    }
+  },
+  "response": {
+    "status": 201,
+    "bodyFileName": "company-1-response.json",
+    "headers": {
+      "Content-Type": "application/json",
+      "Location": "/rest/v1/companies/1"
+    }
+  }
+}

@@ -88,6 +88,13 @@ def get_oci_command_help(command: str) -> str:
         1. compute instance list
         2. compute instance
         3. compute
+
+    There are some services that have different command structure. In such cases, 
+    you may need to experiment with the level of specificity to get the help you 
+    need.
+    Listing resources in Autonomous Recovery Service is as below:
+        oci recovery protected-database-collection list-protected-databases
+        oci recovery protection-policy-collection list-protection-policies    
     """
     logger.info(f"get_oci_command_help called with command: {command}")
     env_copy = os.environ.copy()

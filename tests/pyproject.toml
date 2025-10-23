@@ -16,5 +16,6 @@ dev = [
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
     "pytest-bdd>=6.1.1",
+    "pytest-cov>=7.0.0",
     "behave>=1.2.6"
 ]

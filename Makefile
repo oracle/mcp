@@ -44,12 +44,21 @@ lock:
 
 test:
 	uv tool run --from 'tox==4.30.2' tox -e lint
+	rm -f .coverage*
+	rm -rf htmlcov
+	find src -type d -name htmlcov -exec rm -rf {} +
+	find src -type f -name '.coverage' -delete
 	@for dir in $(SUBDIRS); do \
 		if [ -f $$dir/pyproject.toml ]; then \
 			echo "Testing $$dir"; \
-			cd $$dir && uv run pytest && cd ../..; \
+			cd $$dir && \
+				COVERAGE_FILE=../../.coverage.$$(_basename=$$(basename $$dir); echo $$_basename) \
+				uv run pytest --cov=. --cov-append --cov-report= && \
+			cd ../..; \
 		fi \
 	done
+	uv run coverage combine
+	uv run coverage html
 
 format:
 	uv tool run --from 'tox==4.30.2' tox -e format

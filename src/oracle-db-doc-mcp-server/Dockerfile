@@ -27,7 +27,7 @@ RUN apk --update --no-cache add python3 py3-pip curl && \
     rm requirements.txt && \
     mkdir /input && \
     curl -L -o /input/dbdoc.zip https://docs.oracle.com/en/database/oracle/oracle-database/26/zip/oracle-database_26.zip && \
-    python3 oracle-db-doc-mcp-server.py -log-level DEBUG -doc /input/dbdoc.zip && \
+    python3 oracle-db-doc-mcp-server.py -log-level DEBUG idx -path /input/dbdoc.zip && \
     rm -r /input && \
     apk del curl && \
     rm -rf /var/cache/apk/* /tmp/*

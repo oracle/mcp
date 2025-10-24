@@ -12,3 +12,6 @@ venv.bak/
 
 # test environments
 .env
+
+# client configurations
+mcphost.json

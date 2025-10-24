@@ -35,7 +35,7 @@ jobs:
       - name: Build image
         run: |
           cd src/oracle-db-doc-mcp-server/
-          buildah bud -f Dockerfile -t oracle-doc:latest-${{ steps.os_arch.outputs.OS_ARCH }} .
+          buildah bud -f Dockerfile -t oracle-db-doc:latest-${{ steps.os_arch.outputs.OS_ARCH }} .
 
       - name: 🔓 Login to GHCR registry
         uses: redhat-actions/podman-login@v1

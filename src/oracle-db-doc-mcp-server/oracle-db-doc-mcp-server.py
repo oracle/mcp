@@ -31,7 +31,7 @@ import shutil
 import zipfile
 
 # Working home directory
-HOME_DIR = Path.home().joinpath(PurePath(".oracle/oracle-db-mcp-server"))
+HOME_DIR = Path.home().joinpath(PurePath(".oracle/oracle-db-doc-mcp-server"))
 
 # Index
 INDEX = None
@@ -300,8 +300,10 @@ def convert_to_markdown_chunks(file: Path) -> list[str]:
         # Convert HTML to Markdown
         markdown = md.markdownify(html)
         if PREPROCESS != "NONE":
+            markdown = markdown.replace("Previous\nNext\n JavaScript must be enabled to correctly display this content", "")
             markdown = remove_markdown_urls(markdown)
 
+        # Split markdown into sections based on headings
         pattern = r'(^#{1,6}\s+[^\n]*\n?)(.*?)(?=(?:^#{1,6}\s+|\Z))'
 
         # Find all matches with re.MULTILINE and re.DOTALL flags
@@ -335,9 +337,11 @@ def remove_markdown_urls(text):
     # Remove standalone URLs that start with http/https
     text = re.sub(r'https?://[^\s]+', '', text)
 
-    # Clean up extra whitespace left by removed URLs
-    text = re.sub(r'\s+', ' ', text)
-    text = re.sub(r'\n\s*\n', '\n\n', text)
+    # Clean up extra spaces/tabs but preserve new lines (\s includes \n)
+    text = re.sub(r'[ \t]+', ' ', text)
+
+    # Clean up extra spaces within new lines
+    text = re.sub(r'\n *\n', '\n\n', text)
 
     return text.strip()
 
@@ -434,18 +438,26 @@ def write_file_content(path: str, content: str) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Oracle Database Documentation MCP Server.")
-    parser.add_argument("-doc", type=str,
-                        help="Path to the documentation input zip file or extracted directory.")
-    parser.add_argument("-mcp", action="store_true", help="Run the MCP server.")
+
     parser.add_argument("-log-level", type=str, default="ERROR",
-                        help="Set the log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).")
-    parser.add_argument("-mode", choices=["stdio", "http"], default="stdio")
-    parser.add_argument("-host", type=str, default="0.0.0.0",
-                        help="The IP address that the MCP server is reachable at.")
-    parser.add_argument("-port", type=int, default="8000",
-                        help="The port that the MCP server is reachable at.")
-    parser.add_argument("-preprocess", type=str, default="BASIC",
-                        help="Preprocessing level of documentation (NONE, BASIC, ADVANCED).")
+                        help="Set the log level (DEBUG, INFO, WARNING, ERROR (default), CRITICAL).")
+
+    subparser = parser.add_subparsers(title="subcommands", dest="command", required=True)
+
+    parser_doc = subparser.add_parser("idx", help="create/maintain the index")
+    parser_doc.add_argument("-path", type=str, required=True,
+                            help="path to the documentation input zip file or extracted directory")
+    parser_doc.add_argument("-preprocess", type=str, default="BASIC",
+                            help="preprocessing level of documentation (NONE, BASIC (default), ADVANCED)")
+
+    parser_mcp = subparser.add_parser("mcp", help="run the MCP server")
+    parser_mcp.add_argument("-mode", choices=["stdio", "http"], default="stdio",
+                            help="the transport mode for the MCP server (stdio (default) or http)")
+    parser_mcp.add_argument("-host", type=str, default="0.0.0.0",
+                            help="the IP address (default 0.0.0.0) that the MCP server is reachable at")
+    parser_mcp.add_argument("-port", type=int, default=8000,
+                            help="the port (default 8000) that the MCP server is reachable at")
+
     args = parser.parse_args()
 
     return args
@@ -468,30 +480,26 @@ def main():
     logger.addHandler(ch)
 
     # Set log level
-    logging.basicConfig(filename=HOME_DIR.joinpath(Path('oracle-db-doc.log')), filemode='w', level=logging.ERROR)
+    logging.basicConfig(filename=HOME_DIR.joinpath(Path('oracle-db-doc-mcp-server.log')), filemode='w', level=logging.ERROR)
     logger.setLevel(getattr(logging, args.log_level.upper(), logging.ERROR))
 
-    if args.doc and args.mcp:
-        logger.error("Cannot specify both -doc and -mcp options at the same time.")
-        return
-
-    if args.doc:
+    if args.command == "idx":
         global PREPROCESS
         PREPROCESS = args.preprocess.upper()
-        maintain_content(args.doc)
+        maintain_content(args.path)
 
-    if args.mcp:
+    if args.command == "mcp":
 
         # If no index is present (not index was built), refuse to start the server.
         if not INDEX_FILE.exists():
-            logger.error(f"Index does not exist. Please create the index first via the '-doc' option.")
+            logger.error(f"Index does not exist. Please create the index first via the 'idx' subcommand.")
             return
 
         global INDEX
         logger.debug("Opening index file.")
         INDEX = PocketSearch(db_name=INDEX_FILE)
 
-        logger.info("Serving MCP server for Oracle documentation.")
+        logger.info("Serving MCP server for Oracle Database documentation.")
         if args.mode == "stdio":
             mcp.run(transport="stdio", show_banner=False)
         elif args.mode == "http":
@@ -502,4 +510,4 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        None
+        logger.info("Shutting down Oracle Database Documentation MCP Server.")

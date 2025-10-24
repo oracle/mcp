@@ -26,8 +26,8 @@ RUN apk --update --no-cache add python3 py3-pip curl && \
     pip install -r requirements.txt --break-system-packages && \
     rm requirements.txt && \
     mkdir /input && \
-    curl -L -o /input/db23.zip https://docs.oracle.com/en/database/oracle/oracle-database/23/zip/oracle-database_23.zip && \
-    python3 oracle-db-doc-mcp-server.py -log-level DEBUG -doc /input/db23.zip && \
+    curl -L -o /input/dbdoc.zip https://docs.oracle.com/en/database/oracle/oracle-database/26/zip/oracle-database_26.zip && \
+    python3 oracle-db-doc-mcp-server.py -log-level DEBUG -doc /input/dbdoc.zip && \
     rm -r /input && \
     apk del curl && \
     rm -rf /var/cache/apk/* /tmp/*
@@ -36,4 +36,4 @@ LABEL org.opencontainers.image.source=https://github.com/oracle/mcp
 LABEL org.opencontainers.image.description="Oracle Database Documentation MCP Server"
 LABEL org.opencontainers.image.licenses=Apache-2.0
 
-ENTRYPOINT [ "python3", "oracle-db-doc-mcp-server.py", "-mcp", "-mode", "http" ]
+ENTRYPOINT [ "python3", "oracle-db-doc-mcp-server.py", "mcp" ]

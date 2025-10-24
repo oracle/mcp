@@ -2,21 +2,20 @@ name: 🛠️ Build an image
 on:
   push:
     paths:
-      - 'src/oracle-db-mcp-server/**'
+      - "src/oracle-db-doc-mcp-server/**"
   pull_request:
     paths:
-      - 'src/oracle-db-mcp-server/**'
+      - "src/oracle-db-doc-mcp-server/**"
 
 jobs:
-
   build-image:
     strategy:
       matrix:
-        runner: [ "ubuntu-24.04", "ubuntu-24.04-arm" ]
+        runner: ["ubuntu-24.04", "ubuntu-24.04-arm"]
 
     permissions:
       packages: write
-    
+
     name: 🛠️ Build image
     runs-on: ${{ matrix.runner }}
 
@@ -35,7 +34,7 @@ jobs:
 
       - name: Build image
         run: |
-          cd src/oracle-db-mcp-server/
+          cd src/oracle-db-doc-mcp-server/
           buildah bud -f Dockerfile -t oracle-doc:latest-${{ steps.os_arch.outputs.OS_ARCH }} .
 
       - name: 🔓 Login to GHCR registry
@@ -52,7 +51,6 @@ jobs:
           image: oracle-doc
           tags: latest-${{ steps.os_arch.outputs.OS_ARCH }}
 
-
   upload-multi-arch:
     name: 🫸 Push multi-arch manifest
     runs-on: "ubuntu-24.04"
@@ -62,7 +60,6 @@ jobs:
       packages: write
 
     steps:
-
       - name: 🔓 Login to GHCR registry
         uses: redhat-actions/podman-login@v1
         with:
@@ -72,8 +69,7 @@ jobs:
 
       - name: 🫸 Push multi-arch manifest
         run: |
-          podman manifest create ghcr.io/gvenzl/mcp/oracle-doc:latest
-          podman manifest add    ghcr.io/gvenzl/mcp/oracle-doc:latest  ghcr.io/gvenzl/mcp/oracle-doc:latest-amd64
-          podman manifest add    ghcr.io/gvenzl/mcp/oracle-doc:latest  ghcr.io/gvenzl/mcp/oracle-doc:latest-arm64
-          podman push ghcr.io/gvenzl/mcp/oracle-doc:latest
-          
+          podman manifest create ghcr.io/gvenzl/mcp/oracle-db-doc:latest
+          podman manifest add    ghcr.io/gvenzl/mcp/oracle-db-doc:latest  ghcr.io/gvenzl/mcp/oracle-db-doc:latest-amd64
+          podman manifest add    ghcr.io/gvenzl/mcp/oracle-db-doc:latest  ghcr.io/gvenzl/mcp/oracle-db-doc:latest-arm64
+          podman push ghcr.io/gvenzl/mcp/oracle-db-doc:latest

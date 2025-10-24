@@ -5,6 +5,7 @@ https://oss.oracle.com/licenses/upl.
 """
 
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, List, Literal, Optional
 
 import oci
@@ -505,6 +506,22 @@ def map_instance(
             getattr(instance_data, "licensing_configs", None)
         ),
     )
+
+
+class LifecycleState(str, Enum):
+    """
+    LifecycleState options for an Instance
+    """
+
+    MOVING = "MOVING"
+    PROVISIONING = "PROVISIONING"
+    RUNNING = "RUNNING"
+    STARTING = "STARTING"
+    STOPPING = "STOPPING"
+    STOPPED = "STOPPED"
+    CREATING_IMAGE = "CREATING_IMAGE"
+    TERMINATING = "TERMINATING"
+    TERMINATED = "TERMINATED"
 
 
 # endregion

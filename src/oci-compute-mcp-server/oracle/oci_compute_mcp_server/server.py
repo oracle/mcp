@@ -6,10 +6,16 @@ https://oss.oracle.com/licenses/upl.
 
 import os
 from logging import Logger
-from typing import Annotated
+from typing import Annotated, Literal, Optional
 
 import oci
 from fastmcp import FastMCP
+from oracle.oci_compute_mcp_server.consts import (
+    DEFAULT_MEMORY_IN_GBS,
+    DEFAULT_OCPU_COUNT,
+    E5_FLEX,
+    ORACLE_LINUX_9_IMAGE,
+)
 from oracle.oci_compute_mcp_server.models import (
     Image,
     Instance,
@@ -18,6 +24,7 @@ from oracle.oci_compute_mcp_server.models import (
     map_instance,
     map_response,
 )
+from pydantic import Field
 
 from . import __project__, __version__
 
@@ -45,18 +52,25 @@ def get_compute_client():
 
 @mcp.tool(description="List Instances in a given compartment")
 def list_instances(
-    compartment_id: Annotated[str, "The OCID of the compartment"],
-    limit: Annotated[
-        int,
-        "The maximum amount of instances to return. If None, there is no limit. "
-        "If the value is not None, then it must be a positive number greater than 0.",
-    ] = None,
-    lifecycle_state: Annotated[
-        str,
-        "The lifecycle state of the instance to filter on. The values can be: "
-        "'MOVING', 'PROVISIONING', 'RUNNING', 'STARTING', 'STOPPING', 'STOPPED', "
-        "'CREATING_IMAGE', 'TERMINATING', 'TERMINATED'",
-    ] = None,
+    compartment_id: str = Field(..., description="The OCID of the compartment"),
+    limit: Optional[int] = Field(
+        None,
+        description="The maximum amount of instances to return. If None, there is no limit.",
+        ge=1,
+    ),
+    lifecycle_state: Optional[
+        Literal[
+            "MOVING",
+            "PROVISIONING",
+            "RUNNING",
+            "STARTING",
+            "STOPPING",
+            "STOPPED",
+            "CREATING_IMAGE",
+            "TERMINATING",
+            "TERMINATED",
+        ]
+    ] = Field(None, description="The lifecycle state of the instance to filter on"),
 ) -> list[Instance]:
     instances: list[Instance] = []
 
@@ -107,14 +121,6 @@ def get_instance(instance_id: str) -> Instance:
     except Exception as e:
         logger.error(f"Error in get_instance tool: {str(e)}")
         raise
-
-
-ORACLE_LINUX_9_IMAGE = (
-    "ocid1.image.oc1.iad.aaaaaaaa4l64brs5udx52nedrhlex4cpaorcd2jwvpoududksmw4lgmameqq"
-)
-E5_FLEX = "VM.Standard.E5.Flex"
-DEFAULT_OCPU_COUNT = 1
-DEFAULT_MEMORY_IN_GBS = 12
 
 
 @mcp.tool(

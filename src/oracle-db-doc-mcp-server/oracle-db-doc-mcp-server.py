@@ -20,8 +20,8 @@
 
 import argparse
 from bs4 import BeautifulSoup
-import hashlib
 from fastmcp import FastMCP
+import hashlib
 import logging
 import markdownify as md
 from pathlib import PurePath, Path

@@ -117,7 +117,7 @@ To run the MCP server from inside a Docker container:
     "oracle-db-doc": {
       "type": "stdio",
       "command": "docker",
-      "args": [ "run", "-ti", ghcr.io/oracle/mcp/oracle-db-doc" ]
+      "args": [ "run", "--rm", "-i", "ghcr.io/oracle/mcp/oracle-db-doc" ]
     }
   }
 }

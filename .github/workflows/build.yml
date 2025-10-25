@@ -20,7 +20,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.13'
+          python-version: "3.13"
 
       - name: Install requirements
         run: pip install -r requirements-dev.txt
@@ -53,7 +53,6 @@ jobs:
         working-directory: src/${{ matrix.directory }}
         run: uv pip install .
 
-
   get-directories:
     runs-on: ubuntu-latest
     outputs:
@@ -65,5 +64,5 @@ jobs:
       - name: Get directories
         id: get-directories
         run: |
-          directories=$(ls src | grep -v dbtools-mcp-server | grep -v mysql-mcp-server | grep -v oci-pricing-mcp-server | jq -R -s -c 'split("\n")[:-1]')
+          directories=$(ls src | grep -v dbtools-mcp-server | grep -v mysql-mcp-server | grep -v oci-pricing-mcp-server | grep -v oracle-db-doc-mcp-server | jq -R -s -c 'split("\n")[:-1]')
           echo "directories=$directories" >> $GITHUB_OUTPUT

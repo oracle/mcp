@@ -4,7 +4,7 @@ A Python-based MCP (Model Context Protocol) server that provides tools for searc
 
 The MCP server leverages an inverted index to serve snippets of the Oracle Database documentation. Because the Oracle Database documentation is large and gets updated from time to time, it is unfeasible to ship a ready to go documentation index with this repository. Doing so will bloat the repository and runs risk of users searching on an outdated documentation.
 
-Instead, users can create their own index and maintain it as often as required. See [Index creation/maintenance](#index-creation-maintenance) for more on that topic.
+Instead, users can create their own index and maintain it as often as required. See [Index creation/maintenance](#index-creationmaintenance) for more on that topic.
 
 ## Features
 
@@ -128,7 +128,7 @@ To run the MCP server from inside a Docker container:
 To run the MCP server directly from your machine:
 
 1. Follow the [Installation](#installation) instructions first.
-2. Create an index as explained in [Index creation/maintenance](#index-creation-maintenance)
+2. Create an index as explained in [Index creation/maintenance](#index-creationmaintenance)
 3. Add a new file `mcp.json` file to your project folder.
 4. Add the following content to your `.vscode/mcp.json` file. Replace the `<>` placeholders with the paths to the MCP server installation.
 

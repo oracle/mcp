@@ -1,4 +1,4 @@
-__pycache__/
+**/__pycache__/**
 
 # Virtual environment
 venv/
@@ -9,7 +9,14 @@ env/
 env.bak/
 venv.bak/
 
-.vscode
+# Python uv
 uv.lock
 
+# VScode
+.vscode
+
+# Mac files
 .DS_Store
+
+# test environments
+.env

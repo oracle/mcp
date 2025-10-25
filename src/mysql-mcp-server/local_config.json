@@ -1,0 +1,11 @@
+{
+  "server_infos": {
+    "local_server": {
+      "host": "localhost",
+      "user": "root",
+      "password": "",
+      "database": "mysql_mcp",
+      "port": 3306
+    }
+  }
+}

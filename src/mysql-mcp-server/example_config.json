@@ -1,0 +1,28 @@
+{
+  "server_infos": {
+    "example_local_server": {
+      "host": "<local-db-hostname-or-ip>",
+      "user": "<local-db-username>",
+      "password": "<local-db-password>",
+      "database": "<local-default-schema>",
+      "port": 3306
+    },
+    "example_remote_server": {
+      "host": "<remote-db-hostname-or-ip-or-tunnel-endpoint>",
+      "user": "<remote-db-username>",
+      "password": "<remote-db-password>",
+      "database": "<remote-default-schema>",
+      "port": 3306
+    }
+  },
+  "bastion": {
+    "bastion_host": "<bastion-hostname-or-ip>",
+    "bastion_username": "<bastion-ssh-username>",
+    "private_key_path": "<absolute-path-to-private-key>",
+    "db_host": "<remote-db-hostname-or-ip>",
+    "db_port": 3306,
+    "bastion_port": 22,
+    "local_bind_host": "127.0.0.1",
+    "local_bind_port": 3306
+  }
+}

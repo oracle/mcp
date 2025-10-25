@@ -1,0 +1,20 @@
+[project]
+name = "oracle.oci-e2e-tests"
+version = "0.1.0"
+description = "OCI MCP Servers e2e tests"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "UPL-1.0"
+license-files = ["LICENSE.txt"]
+dependencies = [
+    "fastmcp==2.12.2",
+    "oci==2.160.0"
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+    "pytest-bdd>=6.1.1",
+    "behave>=1.2.6"
+]

@@ -1,12 +1,28 @@
 [project]
 name = "oci-pricing-mcp-server"
 version = "0.1.0"
+description = "OCI Pricing MCP Server"
+readme = "README.md"
+license = "UPL-1.0"
+license-files = ["LICENSE.txt"]
+authors = [
+    {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
+]
 requires-python = ">=3.11"
 dependencies = [
   "fastmcp>=2.0.0",
   "httpx>=0.27.0",
   "babel>=2.10",
   "pycountry>=22.3.5",
+]
+
+classifiers = [
+    "License :: OSI Approved :: Universal Permissive License (UPL)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 
 [project.scripts]
@@ -30,4 +46,4 @@ fix = true
 
 [tool.ruff.lint]
 select = ["E","F","I","UP","B"]
-ignore = ["E501"] 
+ignore = ["E501"]

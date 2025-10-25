@@ -1,3 +1,5 @@
+*Detailed instructions on how to contribute to the project, if applicable. Must include section about Oracle Contributor Agreement with link and instructions*
+
 # Contributing to this repository
 
 We welcome your contributions! There are multiple ways to contribute.
@@ -35,14 +37,14 @@ can be accepted.
 
 1. Ensure there is an issue created to track and discuss the fix or enhancement
    you intend to submit.
-1. Fork this repository
-1. Create a branch in your fork to implement the changes. We recommend using
-   the issue number as part of your branch name, e.g. `1234-fixes`
-1. Ensure that any documentation is updated with the changes that are required
+2. Fork this repository.
+3. Create a branch in your fork to implement the changes. We recommend using
+   the issue number as part of your branch name, e.g. `1234-fixes`.
+4. Ensure that any documentation is updated with the changes that are required
    by your change.
-1. Ensure that any samples are updated if the base image has been changed.
-1. Submit the pull request. *Do not leave the pull request blank*. Explain exactly
-   what your changes are meant to do and provide simple steps on how to validate
+5. Ensure that any samples are updated if the base image has been changed.
+6. Submit the pull request. *Do not leave the pull request blank*. Explain exactly
+   what your changes are meant to do and provide simple steps on how to validate.
    your changes. Ensure that you reference the issue you created as well.
 1. We will assign the pull request to 2-3 people for review before it is merged.
 

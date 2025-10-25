@@ -1,0 +1,1975 @@
+# Copyright (c) 2025, Oracle and/or its affiliates.
+# Licensed under the Universal Permissive License v1.0 as shown at
+# https://oss.oracle.com/licenses/upl.
+
+# This list contains the list of commands that can change the configuration of the cloud system.
+# These commands will be denied execution and the AI client should immediately stop processing the command.
+# It should also stop suggesting any alternatives to the user
+
+access-governance-cp governance-instance delete
+access-governance-cp governance-instance update
+access-governance-cp governance-instance update-governance-instance-configuration
+adm knowledge-base delete
+adm knowledge-base update
+adm remediation-recipe delete
+adm remediation-recipe update
+adm remediation-run delete
+adm remediation-run update
+adm vulnerability-audit delete
+adm vulnerability-audit update
+ai language endpoint delete
+ai language endpoint update
+ai language job delete
+ai language job update
+ai language model delete
+ai language model update
+ai language project delete
+ai language project update
+ai-data-platform ai-data-platform delete
+ai-data-platform ai-data-platform update
+ai-document model delete
+ai-document model patch
+ai-document model remove
+ai-document model update
+ai-document project delete
+ai-document project remove
+ai-document project update
+ai-vision model delete
+ai-vision model update
+ai-vision project delete
+ai-vision project update
+ai-vision stream-group delete
+ai-vision stream-group update
+ai-vision stream-job delete
+ai-vision stream-job update
+ai-vision stream-job update-stream-job-object-storage-output-location
+ai-vision stream-source delete
+ai-vision stream-source update
+ai-vision stream-source update-stream-source-rtsp-source-details
+ai-vision vision-private-endpoint delete
+ai-vision vision-private-endpoint update
+analytics analytics-instance delete
+analytics analytics-instance delete-private-access-channel
+analytics analytics-instance delete-vanity-url
+analytics analytics-instance update
+analytics analytics-instance update-private-access-channel
+analytics analytics-instance update-vanity-url
+analytics work-request delete
+announce announcement-subscription delete
+announce announcement-subscription delete-filter-group
+announce announcement-subscription update
+announce announcement-subscription update-filter-group
+announce announcements-preferences update
+announce user-status update
+api-gateway api delete
+api-gateway api remove-lock
+api-gateway api update
+api-gateway certificate delete
+api-gateway certificate remove-lock
+api-gateway certificate update
+api-gateway deployment delete
+api-gateway deployment remove-lock
+api-gateway deployment update
+api-gateway gateway delete
+api-gateway gateway remove-lock
+api-gateway gateway update
+api-gateway sdk delete
+api-gateway sdk remove-lock
+api-gateway sdk update
+api-gateway subscriber delete
+api-gateway subscriber remove-lock
+api-gateway subscriber update
+api-gateway usage-plan delete
+api-gateway usage-plan remove-lock
+api-gateway usage-plan update
+api-platform api-platform-instance delete
+api-platform api-platform-instance update
+apiaccesscontrol privileged-api-control delete
+apiaccesscontrol privileged-api-control update
+apm-config config delete
+apm-config config update-agent
+apm-config config update-apdex-rules
+apm-config config update-macs-extension
+apm-config config update-metric-group
+apm-config config update-options
+apm-config config update-span-filter
+apm-config match-agents-with-attribute-key update
+apm-control-plane apm-domain delete
+apm-control-plane apm-domain update
+apm-control-plane data-key remove
+apm-synthetics dedicated-vantage-point delete
+apm-synthetics dedicated-vantage-point update-with-oracle-rm-stack
+apm-synthetics monitor delete
+apm-synthetics monitor update-browser-monitor
+apm-synthetics monitor update-dns-sec-monitor
+apm-synthetics monitor update-dns-server-monitor
+apm-synthetics monitor update-dns-trace-monitor
+apm-synthetics monitor update-ftp-monitor
+apm-synthetics monitor update-network-monitor
+apm-synthetics monitor update-rest-monitor
+apm-synthetics monitor update-scripted-browser-monitor
+apm-synthetics monitor update-scripted-rest-monitor
+apm-synthetics monitor update-sql-monitor
+apm-synthetics on-premise-vantage-point delete
+apm-synthetics on-premise-vantage-point update
+apm-synthetics script delete
+apm-synthetics script update
+apm-synthetics worker delete
+apm-synthetics worker update
+apm-traces attributes update-attribute
+apm-traces attributes update-auto-activate
+apm-traces attributes update-notes
+apm-traces scheduled-query delete
+apm-traces scheduled-query update
+artifacts container configuration update
+artifacts container image delete
+artifacts container image remove-version
+artifacts container image update
+artifacts container image-signature delete
+artifacts container image-signature update
+artifacts container repository delete
+artifacts container repository update
+artifacts generic artifact delete
+artifacts generic artifact delete-by-path
+artifacts generic artifact update
+artifacts generic artifact update-by-path
+artifacts repository delete
+artifacts repository update
+artifacts repository update-generic-repository
+audit config update
+autoscaling configuration delete
+autoscaling configuration update
+autoscaling policy delete
+autoscaling policy update
+bastion bastion delete
+bastion bastion update
+bastion session delete
+bastion session update
+bds auto-scale-config delete
+bds bds-api-key delete
+bds bds-metastore-configuration delete
+bds bds-metastore-configuration update
+bds cloudsql remove
+bds identity-configuration delete
+bds identity-configuration update
+bds instance delete
+bds instance remove
+bds instance replace-node
+bds instance update
+bds instance update-node-backup-configuration
+bds instance update-node-backup-configuration-node-level-details
+bds instance update-node-backup-configuration-node-type-level-details
+bds instance update-node-replace-configuration
+bds instance update-node-replace-configuration-node-level-details
+bds instance update-node-replace-configuration-node-type-level-details
+bds instance update-resource-principal-configuration
+bds kafka remove
+bds node-backup delete
+bds node-backup-configuration delete
+bds node-replace-configuration remove
+bds resource-principal-configuration remove
+blockchain blockchain-platform delete
+blockchain blockchain-platform delete-osn
+blockchain blockchain-platform delete-peer
+blockchain blockchain-platform update
+blockchain blockchain-platform update-osn
+blockchain blockchain-platform update-peer
+blockchain work-request delete
+budgets alert-rule delete
+budgets alert-rule update
+budgets budget delete
+budgets budget update
+bv backup delete
+bv backup update
+bv boot-volume delete
+bv boot-volume update
+bv boot-volume-backup delete
+bv boot-volume-backup update
+bv boot-volume-kms-key delete
+bv boot-volume-kms-key update
+bv volume delete
+bv volume update
+bv volume-backup-policy delete
+bv volume-backup-policy update
+bv volume-backup-policy-assignment delete
+bv volume-group delete
+bv volume-group update
+bv volume-group-backup delete
+bv volume-group-backup update
+bv volume-kms-key delete
+bv volume-kms-key update
+capacity-management demand-signal occm-demand-signal delete
+capacity-management demand-signal occm-demand-signal update
+capacity-management demand-signal occm-demand-signal-item delete
+capacity-management demand-signal occm-demand-signal-item update
+capacity-management internal-demand-signal internal-occm-demand-signal update
+capacity-management internal-demand-signal internal-occm-demand-signal-delivery delete
+capacity-management internal-demand-signal internal-occm-demand-signal-delivery update
+capacity-management occ-availability-catalog delete
+capacity-management occ-availability-catalog update
+capacity-management occ-capacity-request delete
+capacity-management occ-capacity-request patch
+capacity-management occ-capacity-request patch-internal
+capacity-management occ-capacity-request update
+capacity-management occ-capacity-request update-internal
+capacity-management occ-customer delete
+capacity-management occ-customer update
+capacity-management occ-customer-group delete
+capacity-management occ-customer-group update
+ccc infrastructure delete
+ccc infrastructure update
+ccc upgrade-schedule delete
+ccc upgrade-schedule update
+ce cluster delete
+ce cluster replace-boot-volume-cluster-node
+ce cluster update
+ce cluster update-addon
+ce cluster update-endpoint-config
+ce node-pool delete
+ce node-pool delete-node
+ce node-pool update
+ce virtual-node-pool delete
+ce virtual-node-pool update
+ce work-request delete
+ce workload-mapping delete
+ce workload-mapping update
+certs-mgmt ca-bundle delete
+certs-mgmt ca-bundle update
+certs-mgmt certificate update
+certs-mgmt certificate update-certificate-by-importing-config-details
+certs-mgmt certificate update-certificate-managed-externally
+certs-mgmt certificate update-certificate-managed-internally
+certs-mgmt certificate-authority update-root-ca-by-generating-config-details
+certs-mgmt certificate-authority update-subordinate-ca-issued-by-internal-ca
+cloud-bridge discovery asset-source delete
+cloud-bridge discovery asset-source update
+cloud-bridge discovery discovery-schedule delete
+cloud-bridge discovery discovery-schedule update
+cloud-bridge inventory asset delete
+cloud-bridge inventory asset update
+cloud-bridge inventory inventory delete
+cloud-bridge inventory inventory update
+cloud-bridge ocb-agent-svc agent delete
+cloud-bridge ocb-agent-svc agent update
+cloud-bridge ocb-agent-svc agent-dependency delete
+cloud-bridge ocb-agent-svc agent-dependency update
+cloud-bridge ocb-agent-svc environment delete
+cloud-bridge ocb-agent-svc environment remove
+cloud-bridge ocb-agent-svc environment update
+cloud-bridge ocb-agent-svc plugin update
+cloud-guard adhoc-query delete
+cloud-guard configuration update
+cloud-guard data-mask-rule delete
+cloud-guard data-mask-rule update
+cloud-guard data-mask-rule update-for-all-targets
+cloud-guard data-mask-rule update-for-services
+cloud-guard data-mask-rule update-for-targets
+cloud-guard data-source delete
+cloud-guard data-source update
+cloud-guard data-source update-data-source-logging-query-data-source-details
+cloud-guard data-source update-data-source-scheduled-query-data-source-obj-details
+cloud-guard detector-recipe delete
+cloud-guard detector-recipe update
+cloud-guard detector-recipe-detector-rule delete
+cloud-guard detector-recipe-detector-rule delete-detector-recipe-detector-rule-data-source
+cloud-guard detector-recipe-detector-rule update
+cloud-guard managed-list delete
+cloud-guard managed-list update
+cloud-guard problem update-bulk-problem-status
+cloud-guard problem update-problem-status
+cloud-guard responder-recipe delete
+cloud-guard responder-recipe update
+cloud-guard responder-recipe-responder-rule update
+cloud-guard saved-query delete
+cloud-guard saved-query update
+cloud-guard security-recipe delete
+cloud-guard security-recipe update
+cloud-guard security-zone delete
+cloud-guard security-zone remove
+cloud-guard security-zone update
+cloud-guard target delete
+cloud-guard target update
+cloud-guard target-detector-recipe delete
+cloud-guard target-detector-recipe update
+cloud-guard target-detector-recipe-detector-rule update
+cloud-guard target-responder-recipe delete
+cloud-guard target-responder-recipe update
+cloud-guard target-responder-recipe-responder-rule update
+cloud-guard wlp-agent delete
+cloud-guard wlp-agent update
+cloud-migrations migration delete
+cloud-migrations migration update
+cloud-migrations migration-asset delete
+cloud-migrations migration-asset update
+cloud-migrations migration-plan delete
+cloud-migrations migration-plan update
+cloud-migrations replication-schedule delete
+cloud-migrations replication-schedule update
+cloud-migrations target-asset delete
+cloud-migrations target-asset update
+compute capacity-reservation delete
+compute capacity-reservation update
+compute capacity-topology delete
+compute capacity-topology update
+compute compute-cluster delete
+compute compute-cluster update
+compute compute-gpu-memory-cluster delete
+compute compute-gpu-memory-cluster update
+compute compute-gpu-memory-fabric update
+compute compute-host update
+compute compute-host-group delete
+compute compute-host-group update
+compute console-history delete
+compute console-history update
+compute dedicated-vm-host delete
+compute dedicated-vm-host update
+compute image delete
+compute image update
+compute image-capability-schema delete
+compute image-capability-schema update
+compute image-shape-compatibility-entry remove
+compute instance terminate
+compute instance update
+compute instance update-instance-amd-vm-update-instance-platform-config
+compute instance update-instance-intel-vm-update-instance-platform-config
+compute instance update-instance-update-instance-source-via-boot-volume-details
+compute instance update-instance-update-instance-source-via-image-details
+compute instance-console-connection delete
+compute instance-console-connection update
+compute instance-maintenance-event update
+compute pic subscription delete
+compute volume-attachment update
+compute-management cluster-network terminate
+compute-management cluster-network update
+compute-management instance-configuration delete
+compute-management instance-configuration update
+compute-management instance-pool terminate
+compute-management instance-pool update
+container-instances container update
+container-instances container-instance delete
+container-instances container-instance update
+cpg cluster-placement-group delete
+cpg cluster-placement-group update
+dashboard-service dashboard delete
+dashboard-service dashboard update-dashboard-v1
+dashboard-service dashboard-group delete
+dashboard-service dashboard-group update
+data-catalog attribute delete
+data-catalog attribute update
+data-catalog attribute-tag delete
+data-catalog catalog delete
+data-catalog catalog remove
+data-catalog catalog update
+data-catalog catalog-private-endpoint delete
+data-catalog catalog-private-endpoint remove
+data-catalog catalog-private-endpoint update
+data-catalog connection delete
+data-catalog connection update
+data-catalog custom-property delete
+data-catalog custom-property update
+data-catalog data-asset delete
+data-catalog data-asset remove-data-selector-patterns
+data-catalog data-asset update
+data-catalog data-asset-tag delete
+data-catalog entity delete
+data-catalog entity update
+data-catalog entity-tag delete
+data-catalog folder delete
+data-catalog folder update
+data-catalog folder-tag delete
+data-catalog glossary delete
+data-catalog glossary update
+data-catalog job delete
+data-catalog job update
+data-catalog job-definition delete
+data-catalog job-definition update
+data-catalog metastore delete
+data-catalog metastore remove
+data-catalog metastore update
+data-catalog namespace delete
+data-catalog namespace update
+data-catalog pattern delete
+data-catalog pattern update
+data-catalog term delete
+data-catalog term update
+data-catalog term-relationship delete
+data-catalog term-relationship update
+data-flow application delete
+data-flow application update
+data-flow pool delete
+data-flow pool update
+data-flow private-endpoint delete
+data-flow private-endpoint update
+data-flow run delete
+data-flow run update
+data-flow sql-endpoint delete
+data-flow sql-endpoint update
+data-flow statement delete
+data-integration application delete
+data-integration application delete-patch
+data-integration application update
+data-integration connection delete
+data-integration connection update
+data-integration connection update-connection-update-connection-from-bip
+data-integration connection-validation delete
+data-integration data-asset delete
+data-integration data-asset update
+data-integration data-flow delete
+data-integration data-flow update
+data-integration data-flow-validation delete
+data-integration detailed-description delete-application
+data-integration detailed-description delete-dis-application
+data-integration detailed-description update-application
+data-integration detailed-description update-dis-application
+data-integration dis-application delete
+data-integration dis-application update
+data-integration external-publication delete
+data-integration external-publication update
+data-integration external-publication-validation delete
+data-integration folder delete
+data-integration folder update
+data-integration function-library delete
+data-integration function-library update
+data-integration pipeline delete
+data-integration pipeline update
+data-integration pipeline-validation delete
+data-integration project delete
+data-integration project update
+data-integration reference update
+data-integration schedule delete
+data-integration schedule update
+data-integration schedule update-custom-frequency
+data-integration schedule update-daily-frequency
+data-integration schedule update-hourly-frequency
+data-integration schedule update-monthly-frequency
+data-integration schedule update-monthly-rule-frequency
+data-integration schedule update-weekly-frequency
+data-integration task delete
+data-integration task update-data-loader-task
+data-integration task update-integration-task
+data-integration task update-pipeline-task
+data-integration task update-task-from-dataflow-task
+data-integration task update-task-from-rest-task
+data-integration task update-task-from-sql-task
+data-integration task-run delete
+data-integration task-run update
+data-integration task-schedule delete
+data-integration task-schedule update
+data-integration task-validation delete
+data-integration user-defined-function delete
+data-integration user-defined-function update
+data-integration user-defined-function-validation delete
+data-integration workspace delete
+data-integration workspace delete-copy-object-request
+data-integration workspace delete-export-request
+data-integration workspace delete-import-request
+data-integration workspace update
+data-integration workspace update-copy-object-request
+data-integration workspace update-export-request
+data-integration workspace update-import-request
+data-labeling-service dataset delete
+data-labeling-service dataset remove
+data-labeling-service dataset update
+data-labeling-service-dataplane annotation delete
+data-labeling-service-dataplane annotation update
+data-labeling-service-dataplane record delete
+data-labeling-service-dataplane record update
+data-labeling-service-dataplane record update-record-document-metadata
+data-labeling-service-dataplane record update-record-image-metadata
+data-labeling-service-dataplane record update-record-text-metadata
+data-safe alert patch
+data-safe alert update
+data-safe alert-policy delete
+data-safe alert-policy update
+data-safe alert-policy-rule delete
+data-safe alert-policy-rule update
+data-safe attribute-set delete
+data-safe attribute-set update
+data-safe audit-archive-retrieval delete
+data-safe audit-archive-retrieval update
+data-safe audit-policy update
+data-safe audit-profile delete
+data-safe audit-profile update
+data-safe audit-trail delete
+data-safe audit-trail update
+data-safe database-security-config update
+data-safe discovery-job delete
+data-safe discovery-job patch-discovery-job-results
+data-safe discovery-job-result delete
+data-safe finding update
+data-safe library-masking-format delete
+data-safe library-masking-format update
+data-safe masking-column delete
+data-safe masking-column patch
+data-safe masking-column update
+data-safe masking-policy delete
+data-safe masking-policy update
+data-safe masking-policy update-masking-policy-update-column-source-sdm-details
+data-safe masking-policy update-masking-policy-update-column-source-target-details
+data-safe masking-policy-health-report delete
+data-safe masking-report delete
+data-safe on-prem-connector delete
+data-safe on-prem-connector update
+data-safe on-prem-connector update-on-prem-connector-wallet
+data-safe peer-target-database delete
+data-safe peer-target-database update
+data-safe peer-target-database update-peer-target-database-database-cloud-service-details
+data-safe private-endpoint delete
+data-safe private-endpoint update
+data-safe referential-relation delete
+data-safe report update
+data-safe report-definition delete
+data-safe report-definition remove
+data-safe report-definition update
+data-safe sdm-masking-policy-difference delete
+data-safe sdm-masking-policy-difference patch-sdm-masking-policy-difference-columns
+data-safe sdm-masking-policy-difference update
+data-safe security-assessment delete
+data-safe security-assessment patch-checks
+data-safe security-assessment patch-findings
+data-safe security-assessment remove
+data-safe security-assessment update
+data-safe security-policy delete
+data-safe security-policy update
+data-safe security-policy-config delete
+data-safe security-policy-config update
+data-safe security-policy-deployment delete
+data-safe security-policy-deployment update
+data-safe sensitive-column delete
+data-safe sensitive-column patch
+data-safe sensitive-column update
+data-safe sensitive-data-model delete
+data-safe sensitive-data-model update
+data-safe sensitive-type delete
+data-safe sensitive-type update
+data-safe sensitive-type update-sensitive-type-update-sensitive-category-details
+data-safe sensitive-type update-sensitive-type-update-sensitive-type-pattern-details
+data-safe sensitive-type-group delete
+data-safe sensitive-type-group patch-grouped-sensitive-types
+data-safe sensitive-type-group update
+data-safe sensitive-types-export delete
+data-safe sensitive-types-export update
+data-safe sql-collection delete
+data-safe sql-collection update
+data-safe sql-firewall-policy delete
+data-safe sql-firewall-policy update
+data-safe target-alert-policy-association delete
+data-safe target-alert-policy-association patch
+data-safe target-alert-policy-association update
+data-safe target-database delete
+data-safe target-database update
+data-safe target-database-group delete
+data-safe target-database-group update
+data-safe unified-audit-policy delete
+data-safe unified-audit-policy update
+data-safe unified-audit-policy-definition delete
+data-safe unified-audit-policy-definition update
+data-safe user-assessment delete
+data-safe user-assessment update
+data-science ds-private-endpoint delete
+data-science ds-private-endpoint update
+data-science job delete
+data-science job update
+data-science job-run delete
+data-science job-run update
+data-science ml-app delete
+data-science ml-app update
+data-science ml-app-implementation delete
+data-science ml-app-implementation update
+data-science ml-app-implementation-version update
+data-science ml-app-instance delete
+data-science ml-app-instance update
+data-science ml-app-instance-view update
+data-science model delete
+data-science model delete-model-custom-metadatum-artifact
+data-science model delete-model-defined-metadatum-artifact
+data-science model update
+data-science model update-model-custom-metadatum-artifact
+data-science model update-model-defined-metadatum-artifact
+data-science model update-model-provenance
+data-science model-deployment delete
+data-science model-deployment update
+data-science model-deployment update-model-deployment-update-model-group-deployment-configuration-details
+data-science model-group delete
+data-science model-group update
+data-science model-group-version-history delete
+data-science model-group-version-history update
+data-science model-version-set delete
+data-science model-version-set update
+data-science notebook-session delete
+data-science notebook-session update
+data-science pipeline delete
+data-science pipeline update
+data-science pipeline-run delete
+data-science pipeline-run update
+data-science project delete
+data-science project update
+data-science schedule delete
+data-science schedule update
+database-management cloud-asm update
+database-management cloud-asm-instance update
+database-management cloud-cluster update
+database-management cloud-cluster-instance update
+database-management cloud-db-home update
+database-management cloud-db-node update
+database-management cloud-db-system delete
+database-management cloud-db-system update
+database-management cloud-db-system-connector delete
+database-management cloud-db-system-connector update
+database-management cloud-db-system-connector update-cloud-db-system-connector-update-cloud-db-system-macs-connector-details
+database-management cloud-db-system-discovery delete
+database-management cloud-db-system-discovery patch
+database-management cloud-db-system-discovery update
+database-management cloud-listener update
+database-management external-asm update
+database-management external-asm-instance update
+database-management external-cluster update
+database-management external-cluster-instance update
+database-management external-db-home update
+database-management external-db-node update
+database-management external-db-system delete
+database-management external-db-system update
+database-management external-db-system-connector delete
+database-management external-db-system-connector update-macs-connector
+database-management external-db-system-discovery delete
+database-management external-db-system-discovery patch
+database-management external-db-system-discovery update
+database-management external-exadata-infrastructure delete
+database-management external-exadata-infrastructure update
+database-management external-exadata-storage-connector delete
+database-management external-exadata-storage-connector update
+database-management external-exadata-storage-grid update
+database-management external-exadata-storage-server update
+database-management external-listener update
+database-management job delete
+database-management job update
+database-management job update-result-location
+database-management job update-sql-job-details
+database-management managed-database update
+database-management managed-database-group delete
+database-management managed-database-group remove
+database-management managed-database-group update
+database-management named-credential delete
+database-management named-credential update
+database-management named-credential update-named-credential-basic-named-credential-content
+database-management preferred-credential delete
+database-management preferred-credential update
+database-management preferred-credential update-basic-preferred-credential-details
+database-management preferred-credential update-preferred-credential-update-named-preferred-credential-details
+database-management private-endpoint delete
+database-management private-endpoint update
+database-management tablespace remove
+database-management tablespace remove-data-file-database-named-credential-details
+database-management tablespace remove-data-file-database-password-credential-details
+database-management tablespace remove-data-file-database-secret-credential-details
+database-management tablespace remove-datafile-with-pwd
+database-management tablespace remove-datafile-with-secret
+database-management tablespace update
+database-migration connection delete
+database-migration connection update-mysql-connection
+database-migration connection update-oracle-connection
+database-migration job delete
+database-migration job delete-parameter-file-version
+database-migration job update
+database-migration migration delete
+database-migration migration remove-mysql-objects
+database-migration migration remove-oracle-objects
+database-migration migration update-mysql-migration
+database-migration migration update-oracle-migration
+db application-vip delete
+db autonomous-container-database terminate
+db autonomous-container-database update
+db autonomous-container-database-dataguard update
+db autonomous-database delete
+db autonomous-database update
+db autonomous-database-backup delete
+db autonomous-database-backup update
+db autonomous-database-software-image delete
+db autonomous-database-software-image update
+db autonomous-exadata-infrastructure terminate
+db autonomous-exadata-infrastructure update
+db autonomous-vm-cluster delete
+db autonomous-vm-cluster update
+db backup delete
+db backup update
+db backup-destination delete
+db backup-destination update
+db cloud-autonomous-vm-cluster delete
+db cloud-autonomous-vm-cluster update
+db cloud-exa-infra delete
+db cloud-exa-infra update
+db cloud-vm-cluster delete
+db cloud-vm-cluster remove
+db cloud-vm-cluster update
+db cloud-vm-cluster update-exadata-iorm-config
+db console-connection delete
+db console-connection update
+db console-history delete
+db console-history update
+db data-guard-association update
+db database delete
+db database patch
+db database update
+db database update-data-guard
+db database-software-image delete
+db database-software-image update
+db db-home delete
+db db-home update
+db exadata-infrastructure delete
+db exadata-infrastructure update
+db exadb-vm-cluster delete
+db exadb-vm-cluster remove
+db exadb-vm-cluster update
+db exascale-db-storage-vault delete
+db exascale-db-storage-vault update
+db execution-action delete
+db execution-action update
+db execution-window delete
+db execution-window update
+db external-cdb delete
+db external-cdb update
+db external-db-connector delete
+db external-db-connector update
+db external-db-connector update-macs-connector
+db external-non-cdb delete
+db external-non-cdb update
+db external-pdb delete
+db external-pdb update
+db key-store delete
+db key-store update-oracle-key-vault-details
+db maintenance-run update
+db node update
+db oneoff-patch delete
+db oneoff-patch update
+db pluggable-database delete
+db pluggable-database delete-snapshot
+db pluggable-database update
+db scheduled-action delete
+db scheduled-action update
+db scheduling-plan delete
+db scheduling-policy delete
+db scheduling-policy update
+db scheduling-window delete
+db scheduling-window update
+db system patch
+db system terminate
+db system update
+db system update-exadata-iorm-config
+db vm-cluster delete
+db vm-cluster remove
+db vm-cluster update
+db vm-cluster-network delete
+db vm-cluster-network update
+dbmulticloud multi-cloud-resource-discovery delete
+dbmulticloud multi-cloud-resource-discovery update
+dbmulticloud oracle-db-azure-blob-container delete
+dbmulticloud oracle-db-azure-blob-container update
+dbmulticloud oracle-db-azure-blob-mount delete
+dbmulticloud oracle-db-azure-blob-mount update
+dbmulticloud oracle-db-azure-connector delete
+dbmulticloud oracle-db-azure-connector patch
+dbmulticloud oracle-db-azure-connector update
+dbmulticloud oracle-db-azure-vault delete
+dbmulticloud oracle-db-azure-vault update
+dbmulticloud oracle-db-azure-vault-association delete
+dbmulticloud oracle-db-azure-vault-association update
+dbmulticloud oracle-db-gcp-identity-connector delete
+dbmulticloud oracle-db-gcp-identity-connector update
+dbmulticloud oracle-db-gcp-key-ring delete
+dbmulticloud oracle-db-gcp-key-ring update
+dbtools connection delete
+dbtools connection remove-lock
+dbtools connection update-generic-jdbc
+dbtools connection update-mysql-database
+dbtools connection update-oracle-database
+dbtools connection update-postgresql
+dbtools private-endpoint delete
+dbtools private-endpoint remove-lock
+dbtools private-endpoint update
+delegate-access-control delegation-control delete
+delegate-access-control delegation-control update
+delegate-access-control delegation-subscription delete
+delegate-access-control delegation-subscription update
+demand-signal occ-demand-signal delete
+demand-signal occ-demand-signal patch
+demand-signal occ-demand-signal update
+desktops desktop delete
+desktops desktop update
+desktops desktop-pool delete
+desktops desktop-pool update
+devops build-pipeline delete
+devops build-pipeline update
+devops build-pipeline-stage delete
+devops build-pipeline-stage update-build-stage
+devops build-pipeline-stage update-deliver-artifact-stage
+devops build-pipeline-stage update-trigger-deployment-stage
+devops build-pipeline-stage update-wait-stage
+devops build-run update
+devops connection delete
+devops connection update-bitbucket-cloud-connection
+devops connection update-bitbucket-server-connection
+devops connection update-github-connection
+devops connection update-gitlab-connection
+devops connection update-gitlab-server-connection
+devops connection update-vbs-connection
+devops deploy-artifact delete
+devops deploy-artifact update
+devops deploy-artifact update-generic-artifact
+devops deploy-artifact update-helm-command-spec
+devops deploy-artifact update-helm-repository-artifact
+devops deploy-artifact update-inline-artifact
+devops deploy-artifact update-ocir-artifact
+devops deploy-environment delete
+devops deploy-environment update
+devops deploy-environment update-compute-instance-environment
+devops deploy-environment update-function-environment
+devops deploy-environment update-oke-cluster-environment
+devops deploy-pipeline delete
+devops deploy-pipeline update
+devops deploy-stage delete
+devops deploy-stage update
+devops deploy-stage update-compute-instance-group-blue-green-traffic-shift-stage
+devops deploy-stage update-compute-instance-group-canary-approval-stage
+devops deploy-stage update-compute-instance-group-canary-traffic-shift-stage
+devops deploy-stage update-deploy-compute-instance-group-blue-green-stage
+devops deploy-stage update-deploy-compute-instance-group-canary-stage
+devops deploy-stage update-deploy-compute-instance-group-stage
+devops deploy-stage update-deploy-function-stage
+devops deploy-stage update-deploy-oke-blue-green-stage
+devops deploy-stage update-deploy-oke-canary-stage
+devops deploy-stage update-deploy-oke-stage
+devops deploy-stage update-invoke-function-stage
+devops deploy-stage update-load-balancer-traffic-shift-stage
+devops deploy-stage update-manual-approval-stage
+devops deploy-stage update-oke-blue-green-traffic-shift-stage
+devops deploy-stage update-oke-canary-approval-stage
+devops deploy-stage update-oke-canary-traffic-shift-stage
+devops deploy-stage update-oke-helm-chart-stage
+devops deploy-stage update-shell-stage
+devops deploy-stage update-wait-stage
+devops deployment update
+devops deployment update-single-stage-redeployment
+devops project delete
+devops project delete-project-settings
+devops project update
+devops project update-notification-preference
+devops project update-project-settings
+devops protected-branch delete
+devops pull-request delete
+devops pull-request delete-pull-request-attachment
+devops pull-request patch
+devops pull-request update
+devops pull-request update-pull-request-notification-preference
+devops pull-request-comment delete-pull-request-comment
+devops pull-request-comment update-pull-request-comment
+devops repository delete
+devops repository delete-git-ref
+devops repository delete-ref
+devops repository delete-repository-settings
+devops repository put-repository-ref-branch-details
+devops repository put-repository-ref-tag-details
+devops repository update
+devops repository update-repository-notification-preference
+devops repository update-repository-settings
+devops trigger delete
+devops trigger update-bitbucket-cloud-trigger
+devops trigger update-bitbucket-server-trigger
+devops trigger update-devops-code-repo-trigger
+devops trigger update-github-trigger
+devops trigger update-gitlab-server-trigger
+devops trigger update-gitlab-trigger
+devops trigger update-vbs-trigger
+disaster-recovery dr-plan delete
+disaster-recovery dr-plan update
+disaster-recovery dr-plan-execution delete
+disaster-recovery dr-plan-execution update
+disaster-recovery dr-protection-group delete
+disaster-recovery dr-protection-group update
+disaster-recovery dr-protection-group update-role
+distributed-database distributed-autonomous-db-service distributed-autonomous-database delete
+distributed-database distributed-autonomous-db-service distributed-autonomous-database patch
+distributed-database distributed-autonomous-db-service distributed-autonomous-database update
+distributed-database distributed-db-private-endpoint-service distributed-database-private-endpoint delete
+distributed-database distributed-db-private-endpoint-service distributed-database-private-endpoint update
+distributed-database distributed-db-service distributed-database delete
+distributed-database distributed-db-service distributed-database patch
+distributed-database distributed-db-service distributed-database update
+dns record domain delete
+dns record domain patch
+dns record domain update
+dns record rrset delete
+dns record rrset patch
+dns record rrset update
+dns record zone patch
+dns record zone update
+dns resolver update
+dns resolver-endpoint delete
+dns resolver-endpoint update
+dns steering-policy delete
+dns steering-policy update
+dns steering-policy-attachment delete
+dns steering-policy-attachment update
+dns tsig-key delete
+dns tsig-key update
+dns view delete
+dns view update
+dns zone delete
+dns zone update
+em-warehouse em-warehouse delete
+em-warehouse em-warehouse update
+email dkim delete
+email dkim update
+email domain delete
+email domain remove
+email domain update
+email email-return-path delete
+email email-return-path remove
+email email-return-path update
+email sender delete
+email sender remove
+email sender update
+email suppression delete
+events rule delete
+events rule update
+fleet-apps-management fleet delete
+fleet-apps-management fleet update
+fleet-apps-management fleet update-fleet-dynamic-resource-selection
+fleet-apps-management fleet update-fleet-manual-resource-selection
+fleet-apps-management fleet-apps-management-admin compliance-policy-rule delete
+fleet-apps-management fleet-apps-management-admin compliance-policy-rule update
+fleet-apps-management fleet-apps-management-admin compliance-policy-rule update-compliance-policy-rule-patch-level-selection-details
+fleet-apps-management fleet-apps-management-admin compliance-policy-rule update-compliance-policy-rule-patch-name-selection-details
+fleet-apps-management fleet-apps-management-admin compliance-policy-rule update-compliance-policy-rule-patch-release-date-selection-details
+fleet-apps-management fleet-apps-management-admin onboarding delete
+fleet-apps-management fleet-apps-management-admin onboarding update
+fleet-apps-management fleet-apps-management-admin platform-configuration delete
+fleet-apps-management fleet-apps-management-admin platform-configuration update
+fleet-apps-management fleet-apps-management-admin platform-configuration update-platform-configuration-credential-config-category-details
+fleet-apps-management fleet-apps-management-admin platform-configuration update-platform-configuration-environment-config-category-details
+fleet-apps-management fleet-apps-management-admin platform-configuration update-platform-configuration-lifecycle-operation-config-category-details
+fleet-apps-management fleet-apps-management-admin platform-configuration update-platform-configuration-patch-type-config-category-details
+fleet-apps-management fleet-apps-management-admin platform-configuration update-platform-configuration-product-config-category-details
+fleet-apps-management fleet-apps-management-admin platform-configuration update-platform-configuration-product-stack-config-category-details
+fleet-apps-management fleet-apps-management-admin platform-configuration update-platform-configuration-self-hosted-instance-config-category-details
+fleet-apps-management fleet-apps-management-admin property delete
+fleet-apps-management fleet-apps-management-admin property update
+fleet-apps-management fleet-apps-management-catalog catalog-item delete
+fleet-apps-management fleet-apps-management-catalog catalog-item update
+fleet-apps-management fleet-apps-management-maintenance-window maintenance-window delete
+fleet-apps-management fleet-apps-management-maintenance-window maintenance-window update
+fleet-apps-management fleet-apps-management-operations patch delete
+fleet-apps-management fleet-apps-management-operations patch update
+fleet-apps-management fleet-apps-management-operations patch update-patch-generic-artifact-details
+fleet-apps-management fleet-apps-management-operations patch update-patch-platform-specific-artifact-details
+fleet-apps-management fleet-apps-management-operations scheduler-definition delete
+fleet-apps-management fleet-apps-management-operations scheduler-definition update
+fleet-apps-management fleet-apps-management-operations scheduler-definition update-scheduler-definition-custom-schedule
+fleet-apps-management fleet-apps-management-operations scheduler-definition update-scheduler-definition-maintenance-window-schedule
+fleet-apps-management fleet-apps-management-operations scheduler-job delete
+fleet-apps-management fleet-apps-management-operations scheduler-job update
+fleet-apps-management fleet-apps-management-provision provision delete
+fleet-apps-management fleet-apps-management-provision provision update
+fleet-apps-management fleet-apps-management-runbooks runbook delete
+fleet-apps-management fleet-apps-management-runbooks runbook update
+fleet-apps-management fleet-apps-management-runbooks runbook-version delete
+fleet-apps-management fleet-apps-management-runbooks runbook-version update
+fleet-apps-management fleet-apps-management-runbooks task-record delete
+fleet-apps-management fleet-apps-management-runbooks task-record update
+fleet-apps-management fleet-credential delete
+fleet-apps-management fleet-credential update
+fleet-apps-management fleet-property delete
+fleet-apps-management fleet-property update
+fleet-apps-management fleet-resource delete
+fleet-apps-management fleet-resource update
+fleet-software-update fsu-action delete
+fleet-software-update fsu-action update
+fleet-software-update fsu-action update-apply
+fleet-software-update fsu-action update-cleanup
+fleet-software-update fsu-action update-fsu-action-update-rollback-cycle-action-details
+fleet-software-update fsu-action update-precheck
+fleet-software-update fsu-action update-rollback
+fleet-software-update fsu-action update-stage
+fleet-software-update fsu-collection delete
+fleet-software-update fsu-collection delete-fsu-collection-target
+fleet-software-update fsu-collection remove
+fleet-software-update fsu-collection remove-targets
+fleet-software-update fsu-collection update
+fleet-software-update fsu-cycle delete
+fleet-software-update fsu-cycle update
+fleet-software-update fsu-cycle update-fifty-batch
+fleet-software-update fsu-cycle update-fsu-cycle-update-upgrade-fsu-cycle
+fleet-software-update fsu-cycle update-image-id-target
+fleet-software-update fsu-cycle update-non-rolling-batch
+fleet-software-update fsu-cycle update-none-batch
+fleet-software-update fsu-cycle update-patch
+fleet-software-update fsu-cycle update-saf-batch
+fleet-software-update fsu-cycle update-sequential-batch
+fleet-software-update fsu-cycle update-version-target
+fleet-software-update fsu-discovery delete
+fleet-software-update fsu-discovery update
+fleet-software-update fsu-job delete
+fleet-software-update fsu-job update
+fn application delete
+fn application update
+fn function delete
+fn function update
+fs export delete
+fs export remove
+fs export update
+fs export-set update
+fs file-system delete
+fs file-system delete-quota-rule
+fs file-system remove
+fs file-system update
+fs file-system update-quota-rule
+fs filesystem-snapshot-policy delete
+fs filesystem-snapshot-policy remove
+fs filesystem-snapshot-policy update
+fs mount-target delete
+fs mount-target remove
+fs mount-target update
+fs outbound-connector delete
+fs outbound-connector remove
+fs outbound-connector update
+fs replication delete
+fs replication remove
+fs replication update
+fs replication-target delete
+fs snapshot delete
+fs snapshot remove
+fs snapshot update
+fusion-apps fusion-environment delete
+fusion-apps fusion-environment delete-fusion-environment-admin-user
+fusion-apps fusion-environment update
+fusion-apps fusion-environment-family delete
+fusion-apps fusion-environment-family update
+fusion-apps refresh-activity delete
+fusion-apps service-attachment delete
+fusion-apps update-refresh-activity-details update-refresh-activity
+gdd private-endpoint delete
+gdd private-endpoint update
+gdd sharded-database delete
+gdd sharded-database patch
+gdd sharded-database update
+generative-ai dedicated-ai-cluster delete
+generative-ai dedicated-ai-cluster update
+generative-ai endpoint delete
+generative-ai endpoint update
+generative-ai model delete
+generative-ai model update
+generative-ai-agent agent delete
+generative-ai-agent agent update
+generative-ai-agent agent-endpoint delete
+generative-ai-agent agent-endpoint update
+generative-ai-agent data-ingestion-job delete
+generative-ai-agent data-source delete
+generative-ai-agent data-source update
+generative-ai-agent data-source update-object-storage-ds
+generative-ai-agent knowledge-base delete
+generative-ai-agent knowledge-base update
+generative-ai-agent knowledge-base update-oci-database-kb
+generative-ai-agent knowledge-base update-oci-open-search-kb
+generative-ai-agent tool delete
+generative-ai-agent tool update
+generative-ai-agent tool update-tool-agent-tool-config
+generative-ai-agent tool update-tool-function-calling-tool-config
+generative-ai-agent tool update-tool-http-endpoint-tool-config
+generative-ai-agent tool update-tool-rag-tool-config
+generative-ai-agent tool update-tool-sql-tool-config
+generative-ai-agent-runtime session delete
+generative-ai-agent-runtime session update
+goldengate certificate delete
+goldengate connection delete
+goldengate connection remove-lock
+goldengate connection update-amazon-kinesis-connection
+goldengate connection update-amazon-redshift-connection
+goldengate connection update-amazon-s3-connection
+goldengate connection update-azure-data-lake-storage-connection
+goldengate connection update-azure-synapse-connection
+goldengate connection update-databricks-connection
+goldengate connection update-db2-connection
+goldengate connection update-elasticsearch-connection
+goldengate connection update-generic-connection
+goldengate connection update-goldengate-connection
+goldengate connection update-google-big-query-connection
+goldengate connection update-google-cloud-storage-connection
+goldengate connection update-google-pub-sub-connection
+goldengate connection update-hdfs-connection
+goldengate connection update-iceberg-connection
+goldengate connection update-jms-connection
+goldengate connection update-kafka-connection
+goldengate connection update-kafka-schema-registry-connection
+goldengate connection update-microsoft-fabric-connection
+goldengate connection update-microsoft-sqlserver-connection
+goldengate connection update-mongo-db-connection
+goldengate connection update-mysql-connection
+goldengate connection update-object-storage-connection
+goldengate connection update-oracle-connection
+goldengate connection update-oracle-nosql-connection
+goldengate connection update-postgresql-connection
+goldengate connection update-redis-connection
+goldengate connection update-snowflake-connection
+goldengate connection-assignment delete
+goldengate database-registration delete
+goldengate database-registration update
+goldengate deployment delete
+goldengate deployment remove-deployment-local-peer
+goldengate deployment remove-lock
+goldengate deployment update
+goldengate deployment-backup delete
+goldengate deployment-backup remove-lock
+goldengate deployment-backup update
+goldengate pipeline delete
+goldengate pipeline update-zero-etl-pipeline
+governance-rules-control-plane governance-rule governance-rule delete
+governance-rules-control-plane governance-rule governance-rule update
+governance-rules-control-plane governance-rule governance-rule update-governance-rule-allowed-regions-template
+governance-rules-control-plane governance-rule governance-rule update-governance-rule-quota-template
+governance-rules-control-plane governance-rule governance-rule update-governance-rule-tag-template
+governance-rules-control-plane governance-rule inclusion-criterion delete
+health-checks http-monitor delete
+health-checks http-monitor update
+health-checks ping-monitor delete
+health-checks ping-monitor update
+iam auth-token delete
+iam auth-token update
+iam authentication-policy update
+iam compartment delete
+iam compartment update
+iam customer-secret-key delete
+iam customer-secret-key update
+iam domain delete
+iam domain update
+iam dynamic-group delete
+iam dynamic-group update
+iam group delete
+iam group remove-user
+iam group update
+iam identity-provider delete
+iam identity-provider update
+iam mfa-totp-device delete
+iam network-sources delete
+iam network-sources update
+iam policy delete
+iam policy update
+iam smtp-credential delete
+iam smtp-credential update
+iam tag delete
+iam tag update
+iam tag-default delete
+iam tag-default remove
+iam tag-default update
+iam tag-namespace delete
+iam tag-namespace remove
+iam tag-namespace update
+iam user api-key delete
+iam user delete
+iam user delete-db-credential
+iam user oauth2-credential delete
+iam user oauth2-credential update
+iam user swift-password delete
+iam user swift-password update
+iam user update
+iam user update-user-capabilities
+iam user update-user-state
+identity-domains account-recovery-setting patch
+identity-domains account-recovery-setting put
+identity-domains api-key delete
+identity-domains api-key patch
+identity-domains app delete
+identity-domains app patch
+identity-domains app put
+identity-domains app-role delete
+identity-domains app-role patch
+identity-domains app-status-changer put
+identity-domains approval-workflow delete
+identity-domains approval-workflow patch
+identity-domains approval-workflow put
+identity-domains approval-workflow-assignment delete
+identity-domains approval-workflow-step delete
+identity-domains approval-workflow-step patch
+identity-domains auth-token delete
+identity-domains auth-token patch
+identity-domains authentication-factor-setting put
+identity-domains cloud-gate delete
+identity-domains cloud-gate patch
+identity-domains cloud-gate put
+identity-domains cloud-gate-mapping delete
+identity-domains cloud-gate-mapping patch
+identity-domains cloud-gate-mapping put
+identity-domains cloud-gate-server delete
+identity-domains cloud-gate-server patch
+identity-domains cloud-gate-server put
+identity-domains condition delete
+identity-domains condition patch
+identity-domains condition put
+identity-domains customer-secret-key delete
+identity-domains customer-secret-key patch
+identity-domains dynamic-resource-group delete
+identity-domains dynamic-resource-group patch
+identity-domains dynamic-resource-group put
+identity-domains grant delete
+identity-domains grant patch
+identity-domains group delete
+identity-domains group patch
+identity-domains group put
+identity-domains identity-propagation-trust delete
+identity-domains identity-propagation-trust patch
+identity-domains identity-propagation-trust put
+identity-domains identity-provider delete
+identity-domains identity-provider patch
+identity-domains identity-provider put
+identity-domains identity-setting patch
+identity-domains identity-setting put
+identity-domains kmsi-setting patch
+identity-domains kmsi-setting put
+identity-domains me patch
+identity-domains me put
+identity-domains me-password-changer put
+identity-domains my-api-key delete
+identity-domains my-api-key patch
+identity-domains my-auth-token delete
+identity-domains my-auth-token patch
+identity-domains my-customer-secret-key delete
+identity-domains my-customer-secret-key patch
+identity-domains my-device delete
+identity-domains my-device patch
+identity-domains my-o-auth2-client-credential delete
+identity-domains my-o-auth2-client-credential patch
+identity-domains my-pending-approval patch
+identity-domains my-request patch
+identity-domains my-smtp-credential delete
+identity-domains my-smtp-credential patch
+identity-domains my-support-account delete
+identity-domains my-trusted-user-agent delete
+identity-domains my-user-db-credential delete
+identity-domains network-perimeter delete
+identity-domains network-perimeter patch
+identity-domains network-perimeter put
+identity-domains notification-setting put
+identity-domains o-auth-client-certificate delete
+identity-domains o-auth-partner-certificate delete
+identity-domains o-auth2-client-credential delete
+identity-domains o-auth2-client-credential patch
+identity-domains password-policy delete
+identity-domains password-policy patch
+identity-domains password-policy put
+identity-domains policy delete
+identity-domains policy patch
+identity-domains policy put
+identity-domains rule delete
+identity-domains rule patch
+identity-domains rule put
+identity-domains schema patch
+identity-domains schema put
+identity-domains security-question delete
+identity-domains security-question patch
+identity-domains security-question-setting patch
+identity-domains security-question-setting put
+identity-domains self-registration-profile delete
+identity-domains self-registration-profile patch
+identity-domains self-registration-profile put
+identity-domains setting patch
+identity-domains setting put
+identity-domains smtp-credential delete
+identity-domains smtp-credential patch
+identity-domains social-identity-provider delete
+identity-domains social-identity-provider patch
+identity-domains social-identity-provider put
+identity-domains user delete
+identity-domains user patch
+identity-domains user put
+identity-domains user-attributes-setting patch
+identity-domains user-capabilities-changer put
+identity-domains user-db-credential delete
+identity-domains user-password-changer put
+identity-domains user-password-resetter put
+identity-domains user-status-changer put
+integration integration-instance delete
+integration integration-instance remove
+integration integration-instance update
+jms blocklist delete
+jms crypto-analysis-result delete
+jms drs-file delete
+jms export-setting update
+jms fleet delete
+jms fleet update
+jms fleet update-drs-file
+jms fleet-advanced-feature-configuration update
+jms fleet-agent-configuration update
+jms installation-site-summary remove
+jms java-migration-analysis-result delete
+jms jms-plugin delete
+jms jms-plugin update
+jms performance-tuning-analysis-result delete
+jms-java-downloads java-download-report delete
+jms-java-downloads java-download-token delete
+jms-java-downloads java-download-token update
+jms-java-downloads java-license-acceptance-record delete
+jms-java-downloads java-license-acceptance-record update
+kafka cluster delete
+kafka cluster update
+kafka cluster-config delete
+kafka cluster-config update
+kafka cluster-config-version delete
+kms ekm ekms-private-endpoint delete
+kms ekm ekms-private-endpoint update
+kms kms-hsm-cluster hsm-cluster update
+kms management key update
+kms management vault delete-vault-replica
+kms management vault update
+lb backend delete
+lb backend update
+lb backend-set delete
+lb backend-set update
+lb certificate delete
+lb health-checker update
+lb hostname delete
+lb hostname update
+lb listener delete
+lb listener update
+lb load-balancer delete
+lb load-balancer update
+lb load-balancer update-load-balancer-shape
+lb nsg update
+lb path-route-set delete
+lb path-route-set update
+lb routing-policy delete
+lb routing-policy update
+lb rule-set delete
+lb rule-set update
+lb ssl-cipher-suite delete
+lb ssl-cipher-suite update
+lfs lustre-file-system delete
+lfs lustre-file-system update
+license-manager configuration update
+license-manager license-record delete
+license-manager license-record update
+license-manager product-license delete
+license-manager product-license update
+limits quota delete
+limits quota removelock
+limits quota update
+log-analytics assoc delete-assocs
+log-analytics category remove-resource-category
+log-analytics category update-resource-category
+log-analytics em-bridge delete
+log-analytics em-bridge update
+log-analytics entity delete
+log-analytics entity remove-associations
+log-analytics entity update
+log-analytics entity-type delete
+log-analytics entity-type update
+log-analytics field delete-field
+log-analytics ingest-time-rule delete
+log-analytics ingest-time-rule update
+log-analytics label delete-label
+log-analytics log-group delete
+log-analytics log-group update
+log-analytics lookup delete
+log-analytics lookup update
+log-analytics lookup update-data
+log-analytics object-collection-rule delete
+log-analytics object-collection-rule update
+log-analytics parser delete-parser
+log-analytics preference remove
+log-analytics preference update
+log-analytics scheduled-task delete
+log-analytics scheduled-task update
+log-analytics source delete-source
+log-analytics source remove-event-types
+log-analytics storage update
+log-analytics upload delete
+log-analytics upload delete-upload-file
+log-analytics upload delete-upload-warning
+logging agent-configuration delete
+logging agent-configuration update
+logging agent-configuration update-log-configuration
+logging agent-configuration update-unified-agent-configuration-unified-agent-monitoring-configuration-details
+logging log delete
+logging log update
+logging log-group delete
+logging log-group update
+logging log-saved-search delete
+logging log-saved-search update
+logging work-request delete
+logging-ingestion put-logs
+management-agent agent delete
+management-agent agent delete-data-source
+management-agent agent delete-named-credential
+management-agent agent update
+management-agent agent update-named-credential
+management-agent agent update-prometheus-datasource
+management-agent install-key delete
+management-agent install-key update
+management-agent work-request delete
+management-dashboard dashboard delete
+management-dashboard dashboard update
+management-dashboard saved-search delete
+management-dashboard saved-search update
+marketplace accepted-agreement delete
+marketplace accepted-agreement update
+marketplace publication delete
+marketplace publication update
+marketplace-private-offer attachment attachment delete
+marketplace-private-offer offer offer delete
+marketplace-private-offer offer offer update
+marketplace-publisher artifact delete
+marketplace-publisher artifact update
+marketplace-publisher artifact update-artifact-update-container-image-artifact-details
+marketplace-publisher artifact update-artifact-update-kubernetes-image-artifact-details
+marketplace-publisher artifact update-artifact-update-machine-image-artifact-details
+marketplace-publisher artifact update-artifact-update-stack-artifact-details
+marketplace-publisher listing delete
+marketplace-publisher listing update
+marketplace-publisher listing-revision delete
+marketplace-publisher listing-revision update
+marketplace-publisher listing-revision update-listing-revision-icon-content
+marketplace-publisher listing-revision update-listing-revision-update-lead-gen-listing-revision-details
+marketplace-publisher listing-revision update-listing-revision-update-oci-listing-revision-details
+marketplace-publisher listing-revision update-listing-revision-update-service-listing-revision-details
+marketplace-publisher listing-revision-attachment delete
+marketplace-publisher listing-revision-attachment update
+marketplace-publisher listing-revision-attachment update-listing-revision-attachment-content
+marketplace-publisher listing-revision-attachment update-listing-revision-attachment-update-customer-success-attachment
+marketplace-publisher listing-revision-attachment update-listing-revision-attachment-update-related-document-attachment-details
+marketplace-publisher listing-revision-attachment update-listing-revision-attachment-update-review-support-document-attachment
+marketplace-publisher listing-revision-attachment update-listing-revision-attachment-update-screen-shot-attachment-details
+marketplace-publisher listing-revision-attachment update-listing-revision-attachment-update-supported-service-attachment
+marketplace-publisher listing-revision-attachment update-listing-revision-attachment-update-video-attachment-details
+marketplace-publisher listing-revision-note delete
+marketplace-publisher listing-revision-note update
+marketplace-publisher listing-revision-package delete
+marketplace-publisher listing-revision-package update
+marketplace-publisher term delete
+marketplace-publisher term update
+marketplace-publisher term-version delete
+marketplace-publisher term-version update
+marketplace-publisher term-version update-term-version-content
+media-services media-asset delete
+media-services media-asset remove
+media-services media-asset update
+media-services media-asset-distribution-channel-attachment delete
+media-services media-workflow delete
+media-services media-workflow remove
+media-services media-workflow update
+media-services media-workflow-configuration delete
+media-services media-workflow-configuration remove
+media-services media-workflow-configuration update
+media-services media-workflow-job delete
+media-services media-workflow-job remove
+media-services media-workflow-job update
+media-services stream-cdn-config delete
+media-services stream-cdn-config remove
+media-services stream-cdn-config update-akamai-stream-cdn-config
+media-services stream-cdn-config update-edge-stream-cdn-config
+media-services stream-distribution-channel delete
+media-services stream-distribution-channel remove
+media-services stream-distribution-channel update
+media-services stream-packaging-config delete
+media-services stream-packaging-config remove
+media-services stream-packaging-config update
+mngdmac mac-device mac-device terminate
+mngdmac mac-order mac-order update
+monitoring alarm delete
+monitoring alarm update
+monitoring alarm-suppression delete
+monitoring suppression remove
+mysql backup delete
+mysql backup update
+mysql channel delete
+mysql channel update-from-mysql
+mysql configuration delete
+mysql configuration update
+mysql db-system delete
+mysql db-system heatwave-cluster delete
+mysql db-system heatwave-cluster update
+mysql db-system update
+mysql replica delete
+mysql replica update
+network byoasn delete
+network byoasn update
+network byoip-range delete
+network byoip-range update
+network capture-filter delete
+network capture-filter update
+network cpe delete
+network cpe update
+network cross-connect delete
+network cross-connect update
+network cross-connect-group delete
+network cross-connect-group update
+network dhcp-options delete
+network dhcp-options update
+network drg delete
+network drg update
+network drg-attachment delete
+network drg-attachment remove-export-route-distribution
+network drg-attachment update
+network drg-route-distribution delete
+network drg-route-distribution update
+network drg-route-distribution-statement remove
+network drg-route-distribution-statement update
+network drg-route-rule remove
+network drg-route-rule update
+network drg-route-table delete
+network drg-route-table remove-import-route-distribution
+network drg-route-table update
+network internet-gateway delete
+network internet-gateway update
+network ip-sec-connection delete
+network ip-sec-connection update
+network ip-sec-psk update
+network ip-sec-tunnel update
+network ipv6 delete
+network ipv6 update
+network local-peering-gateway delete
+network local-peering-gateway update
+network nat-gateway delete
+network nat-gateway update
+network nsg delete
+network nsg rules remove
+network nsg rules update
+network nsg update
+network private-ip delete
+network private-ip update
+network public-ip delete
+network public-ip update
+network public-ip-pool delete
+network public-ip-pool remove
+network public-ip-pool update
+network remote-peering-connection delete
+network remote-peering-connection update
+network route-table delete
+network route-table update
+network security-list delete
+network security-list update
+network service-gateway delete
+network service-gateway update
+network subnet delete
+network subnet remove-ipv6-subnet-cidr
+network subnet update
+network tunnel-cpe-device-config update
+network vcn delete
+network vcn remove-ipv6-vcn-cidr
+network vcn remove-vcn-cidr
+network vcn update
+network virtual-circuit delete
+network virtual-circuit update
+network vlan delete
+network vlan update
+network vnic update
+network vtap delete
+network vtap update
+network-firewall address-list delete
+network-firewall address-list update
+network-firewall address-list update-address-list-update-fqdn-address-list-details
+network-firewall address-list update-address-list-update-ip-address-list-details
+network-firewall application delete
+network-firewall application update
+network-firewall application-group delete
+network-firewall application-group update
+network-firewall decryption-profile delete
+network-firewall decryption-profile update
+network-firewall decryption-rule delete
+network-firewall decryption-rule update
+network-firewall mapped-secret delete
+network-firewall mapped-secret update
+network-firewall nat-rule delete
+network-firewall nat-rule update
+network-firewall network-firewall delete
+network-firewall network-firewall update
+network-firewall network-firewall-policy delete
+network-firewall network-firewall-policy update
+network-firewall security-rule delete
+network-firewall security-rule update
+network-firewall service delete
+network-firewall service update
+network-firewall service-list delete
+network-firewall service-list update
+network-firewall tunnel-inspection-rule delete
+network-firewall tunnel-inspection-rule update
+network-firewall url-list delete
+network-firewall url-list update
+nlb backend delete
+nlb backend update
+nlb backend-set delete
+nlb backend-set update
+nlb health-checker update
+nlb listener delete
+nlb listener update
+nlb network-load-balancer delete
+nlb network-load-balancer update
+nlb network-load-balancer update-network-security-groups
+nosql configuration update-hosted
+nosql index delete
+nosql row delete
+nosql row update
+nosql table delete
+nosql table delete-replica
+nosql table update
+nosql work-request delete
+oce oce-instance delete
+oce oce-instance update
+ocvs cluster cluster delete
+ocvs cluster cluster update
+ocvs esxi-host delete
+ocvs esxi-host replace-host
+ocvs esxi-host update
+ocvs sddc delete
+ocvs sddc update
+oda instance delete
+oda instance update
+oda management authentication-provider delete
+oda management authentication-provider update
+oda management channel delete
+oda management channel update
+oda management channel update-channel-update-android-channel-details
+oda management channel update-channel-update-app-event-channel-details
+oda management channel update-channel-update-application-channel-details
+oda management channel update-channel-update-cortana-channel-details
+oda management channel update-channel-update-facebook-channel-details
+oda management channel update-channel-update-ios-channel-details
+oda management channel update-channel-update-ms-teams-channel-details
+oda management channel update-channel-update-oss-channel-details
+oda management channel update-channel-update-osvc-channel-details
+oda management channel update-channel-update-service-cloud-channel-details
+oda management channel update-channel-update-slack-channel-details
+oda management channel update-channel-update-twilio-channel-details
+oda management channel update-channel-update-web-channel-details
+oda management channel update-channel-update-webhook-channel-details
+oda management digital-assistant delete
+oda management digital-assistant update
+oda management digital-assistant-parameter update
+oda management oda-private-endpoint delete
+oda management oda-private-endpoint update
+oda management oda-private-endpoint-attachment delete
+oda management oda-private-endpoint-scan-proxy delete
+oda management skill delete
+oda management skill update
+oda management skill-parameter delete
+oda management skill-parameter update
+oda management translator delete
+oda management translator update
+oda oda-instance-attachment delete
+oda oda-instance-attachment update
+oda odapackage imported-package delete
+oda odapackage imported-package update
+oma approval-template delete
+oma approval-template update
+oma lockbox delete
+oma lockbox update
+ons subscription delete
+ons subscription update
+ons topic delete
+ons topic update
+opa opa-instance delete
+opa opa-instance update
+opctl operator-control delete
+opctl operator-control update
+opctl operator-control-assignment delete
+opctl operator-control-assignment update
+opensearch backup delete
+opensearch backup update
+opensearch cluster delete
+opensearch cluster update
+opensearch pipeline delete
+opensearch pipeline update
+opsi awr-hub-objects delete
+opsi awr-hub-objects put
+opsi awr-hub-sources delete
+opsi awr-hub-sources update
+opsi awr-hubs delete
+opsi awr-hubs update
+opsi database-insights delete
+opsi database-insights update-autonomous-db
+opsi database-insights update-em-external-db
+opsi database-insights update-external-mysql-database-insight
+opsi database-insights update-macs-external-db
+opsi database-insights update-macs-managed-autonomous-database-insight
+opsi database-insights update-macs-managed-cloud-database-insight
+opsi database-insights update-mds-my-sql-database
+opsi database-insights update-pe-comanaged-database
+opsi enterprise-manager-bridges delete
+opsi enterprise-manager-bridges update
+opsi exadata-insights delete
+opsi exadata-insights update-em-external-exadata
+opsi exadata-insights update-macs-managed-cloud-exadata-insight
+opsi exadata-insights update-pe-comanaged-exadata
+opsi host-insights delete
+opsi host-insights update-em-external-host
+opsi host-insights update-host-insight-update-pe-comanaged-host-insight-details
+opsi host-insights update-macs-cloud-host
+opsi host-insights update-macs-external-host
+opsi host-insights update-macs-managed-database-host-insight
+opsi news-reports delete
+opsi news-reports update
+opsi operations-insights-warehouse-users delete
+opsi operations-insights-warehouse-users update
+opsi operations-insights-warehouses delete
+opsi operations-insights-warehouses update
+opsi opsi-configurations delete
+opsi opsi-configurations update-opsi-ux-configuration-details
+opsi opsi-private-endpoint delete
+opsi opsi-private-endpoint update
+optimizer enrollment-status update
+optimizer profile delete
+optimizer profile update
+optimizer recommendation update
+optimizer resource-action update
+organizations domain delete
+organizations domain update
+organizations domain-governance delete
+organizations domain-governance update
+organizations governance organization-tenancy remove
+organizations link delete
+organizations organization update
+organizations organization-tenancy delete
+organizations recipient-invitation update
+organizations sender-invitation update
+organizations subscription-mapping delete
+os bucket delete
+os bucket update
+os ns update-metadata
+os object delete
+os object put
+os object update-storage-tier
+os object-lifecycle-policy delete
+os object-lifecycle-policy put
+os preauth-request delete
+os private-endpoint delete
+os private-endpoint update
+os replication delete-replication-policy
+os retention-rule delete
+os retention-rule update
+os-management-hub event delete
+os-management-hub event delete-event-content
+os-management-hub event update
+os-management-hub lifecycle-environment delete
+os-management-hub lifecycle-environment update
+os-management-hub managed-instance delete
+os-management-hub managed-instance remove-module-profile
+os-management-hub managed-instance remove-packages
+os-management-hub managed-instance update
+os-management-hub managed-instance update-packages
+os-management-hub managed-instance-group delete
+os-management-hub managed-instance-group remove-module-profile
+os-management-hub managed-instance-group remove-packages
+os-management-hub managed-instance-group update
+os-management-hub managed-instance-group update-all-packages
+os-management-hub management-station delete
+os-management-hub management-station update
+os-management-hub profile delete
+os-management-hub profile update
+os-management-hub scheduled-job delete
+os-management-hub scheduled-job update
+os-management-hub software-source delete
+os-management-hub software-source remove-packages
+os-management-hub software-source replace-packages
+os-management-hub software-source update-custom-swsrc
+os-management-hub software-source update-private-swsrc
+os-management-hub software-source update-software-source-manifest
+os-management-hub software-source update-third-party-swsrc
+os-management-hub software-source update-versioned-custom-swsrc
+os-management-hub update-all-packages-in-compartment
+osp-gateway subscription-service subscription update
+psql backup delete
+psql backup update
+psql configuration delete
+psql configuration update
+psql db-system delete
+psql db-system patch
+psql db-system update
+psql db-system update-db-system-db-instance
+queue messages delete-message
+queue messages delete-messages
+queue messages put-messages
+queue messages update-message
+queue messages update-messages
+queue queue-admin queue delete
+queue queue-admin queue update
+recovery protected-database delete
+recovery protected-database update
+recovery protection-policy delete
+recovery protection-policy update
+recovery recovery-service-subnet delete
+recovery recovery-service-subnet update
+redis oci-cache-config-set oci-cache-config-set delete
+redis oci-cache-config-set oci-cache-config-set update
+redis oci-cache-user oci-cache-user delete
+redis oci-cache-user oci-cache-user update
+redis oci-cache-user oci-cache-user update-oci-cache-user-iam-authentication-mode
+redis oci-cache-user oci-cache-user update-oci-cache-user-password-authentication-mode
+redis redis-cluster redis-cluster delete
+redis redis-cluster redis-cluster update
+resource-manager configuration-source-provider delete
+resource-manager configuration-source-provider update
+resource-manager configuration-source-provider update-bitbucket-cloud-username-app-password-provider
+resource-manager configuration-source-provider update-bitbucket-server-access-token-provider
+resource-manager configuration-source-provider update-github-access-token-provider
+resource-manager configuration-source-provider update-gitlab-access-token-provider
+resource-manager job update
+resource-manager private-endpoint delete
+resource-manager private-endpoint update
+resource-manager stack delete
+resource-manager stack update
+resource-manager stack update-from-bitbucket-cloud
+resource-manager stack update-from-git-provider
+resource-manager stack update-from-object-storage
+resource-manager stack update-stack-update-dev-ops-config-source-details
+resource-manager template delete
+resource-manager template update
+resource-scheduler schedule delete
+resource-scheduler schedule update
+rover device data-sync task-definition delete
+rover device data-sync task-definition update
+rover node certificate update
+rover node certificate-authority update-root-ca
+rover node delete
+rover node delete-workload
+rover node update
+rover standalone-cluster delete
+rover standalone-cluster delete-workload
+rover standalone-cluster update
+rover station-cluster delete
+rover station-cluster delete-workload
+rover station-cluster update
+sch service-connector delete
+sch service-connector update
+security-attribute security-attribute delete
+security-attribute security-attribute update
+security-attribute security-attribute-namespace delete
+security-attribute security-attribute-namespace update
+service-catalog private-application delete
+service-catalog private-application update
+service-catalog service-catalog delete
+service-catalog service-catalog update
+service-catalog service-catalog-association delete
+speech customization delete
+speech customization update
+speech customization update-customization-entity-list-dataset
+speech customization update-customization-object-storage-dataset
+speech transcription-job delete
+speech transcription-job update
+stack-monitoring alarm-condition delete
+stack-monitoring alarm-condition update
+stack-monitoring baselineable-metric delete
+stack-monitoring baselineable-metric update
+stack-monitoring config delete
+stack-monitoring config update
+stack-monitoring config update-auto-promote-config
+stack-monitoring config update-compute-auto-activate-plugin-config
+stack-monitoring config update-license-auto-assign-config
+stack-monitoring config update-license-enterprise-extensibility-config
+stack-monitoring config update-onboard-config
+stack-monitoring discovery-job delete
+stack-monitoring maintenance-window delete
+stack-monitoring maintenance-window update
+stack-monitoring metric-extension delete
+stack-monitoring metric-extension update
+stack-monitoring metric-extension update-http-metric-ext
+stack-monitoring metric-extension update-jmx-metric-ext
+stack-monitoring metric-extension update-os-cmd-metric-ext
+stack-monitoring metric-extension update-sql-metric-ext
+stack-monitoring monitoring-template delete
+stack-monitoring monitoring-template update
+stack-monitoring process-set delete
+stack-monitoring process-set update
+stack-monitoring resource delete
+stack-monitoring resource update
+stack-monitoring resource update-and-propagate-tags
+stack-monitoring resource-task update
+stack-monitoring resource-task update-agent-receiver
+stack-monitoring resource-task update-resource-type-configs
+stack-monitoring resource-type delete
+stack-monitoring resource-type update
+stack-monitoring resource-type update-system-format-resource-type
+streaming admin connect-harness delete
+streaming admin connect-harness update
+streaming admin stream delete
+streaming admin stream update
+streaming admin stream-pool delete
+streaming admin stream-pool update
+streaming stream group update
+streaming stream message put
+support incident put-attachment
+support incident update
+support update-incident update-incident
+usage rewards redeemable-user delete
+usage-api custom-table delete
+usage-api custom-table update
+usage-api email-recipients-group delete
+usage-api email-recipients-group update
+usage-api query delete
+usage-api query update
+usage-api schedule delete
+usage-api schedule update
+usage-api usage-carbon-emissions-query delete
+usage-api usage-carbon-emissions-query update
+vault secret update
+vault secret update-base64
+vbstudio instance delete
+vbstudio instance update
+visual-builder vb-instance delete
+visual-builder vb-instance update
+visual-builder vb-instance update-vb-instance-update-private-endpoint-details
+visual-builder vb-instance update-vb-instance-update-public-endpoint-details
+vn-monitoring path-analyzer-test delete
+vn-monitoring path-analyzer-test update
+vulnerability-scanning container scan recipe delete
+vulnerability-scanning container scan recipe update
+vulnerability-scanning container scan result delete
+vulnerability-scanning container scan target delete
+vulnerability-scanning container scan target update
+vulnerability-scanning host scan recipe delete
+vulnerability-scanning host scan recipe update
+vulnerability-scanning host scan result agent delete
+vulnerability-scanning host scan result cis-benchmark delete
+vulnerability-scanning host scan result endpoint-protection delete
+vulnerability-scanning host scan result port delete
+vulnerability-scanning host scan target delete
+vulnerability-scanning host scan target update
+waa web-app-acceleration delete
+waa web-app-acceleration update
+waa web-app-acceleration-policy delete
+waa web-app-acceleration-policy update
+waas access-rule update
+waas address-list delete
+waas address-list update
+waas address-rate-limiting update-waf
+waas caching-rule update
+waas captcha update
+waas certificate delete
+waas certificate update
+waas certificate update-address-list
+waas custom-protection-rule delete
+waas custom-protection-rule update
+waas custom-protection-rule update-setting
+waas device-fingerprint-challenge update
+waas good-bot update
+waas http-redirect delete
+waas http-redirect update
+waas human-interaction-challenge update
+waas js-challenge update
+waas policy-config update
+waas protection-rule update
+waas protection-settings update
+waas threat-feed update
+waas waas-policy delete
+waas waas-policy update
+waas waf-config update
+waas whitelist update
+waf network-address-list delete
+waf network-address-list update-addresses-list
+waf network-address-list update-vcn-addresses-list
+waf web-app-firewall delete
+waf web-app-firewall update-for-load-balancer
+waf web-app-firewall-policy delete
+waf web-app-firewall-policy update
+wlms configuration update
+wlms managed-instance update
+wlms wls-domain delete
+wlms wls-domain update
+wlms wls-domain update-credential
+zpr zpr-policy delete
+zpr zpr-policy update

@@ -1,0 +1,124 @@
+{
+  "mcpServers": {
+    "oracle-datetime-helper-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "oracle.datetime-helper-mcp-server"
+      ]
+    },
+    "oracle-oci-api-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "oracle.oci-api-mcp-server"
+      ]
+    },
+    "oracle-oci-compute-instance-agent-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "oracle.oci-compute-instance-agent-mcp-server"
+      ]
+    },
+    "oracle-oci-compute-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "oracle.oci-compute-mcp-server"
+      ]
+    },
+    "oracle-oci-identity-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "oracle.oci-identity-mcp-server"
+      ]
+    },
+    "oracle-oci-migration-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "oracle.oci-migration-mcp-server"
+      ]
+    },
+    "oracle-oci-monitoring-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "oracle.oci-monitoring-mcp-server"
+      ]
+    },
+    "oracle-oci-network-load-balancer-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "oracle.oci-network-load-balancer-mcp-server"
+      ]
+    },
+    "oracle-oci-networking-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "oracle.oci-networking-mcp-server"
+      ]
+    },
+    "oracle-oci-object-storage-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "oracle.oci-object-storage-mcp-server"
+      ]
+    },
+    "oracle-oci-registry-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "oracle.oci-registry-mcp-server"
+      ]
+    },
+    "oracle-oci-resource-search-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "oracle.oci-resource-search-mcp-server"
+      ]
+    }
+  }
+}

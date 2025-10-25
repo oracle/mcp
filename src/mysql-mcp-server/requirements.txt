@@ -1,0 +1,3 @@
+oci
+fastmcp
+mysql-connector-python

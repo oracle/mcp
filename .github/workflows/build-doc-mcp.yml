@@ -1,4 +1,4 @@
-name: 🛠️ Build an image
+name: 🛠️ Build Docker image for Oracle Database Documentation MCP Server
 on:
   push:
     paths:
@@ -48,7 +48,7 @@ jobs:
         uses: redhat-actions/push-to-registry@v2
         with:
           registry: ghcr.io/gvenzl/mcp
-          image: oracle-doc
+          image: oracle-db-doc
           tags: latest-${{ steps.os_arch.outputs.OS_ARCH }}
 
   upload-multi-arch:

@@ -19,16 +19,17 @@
 # limitations under the License.
 
 import argparse
-from bs4 import BeautifulSoup
-from fastmcp import FastMCP
 import hashlib
 import logging
-import markdownify as md
-from pathlib import PurePath, Path
-from pocketsearch import PocketSearch, PocketWriter
 import re
 import shutil
 import zipfile
+from pathlib import Path, PurePath
+
+import markdownify as md
+from bs4 import BeautifulSoup
+from fastmcp import FastMCP
+from pocketsearch import PocketSearch, PocketWriter
 
 # Working home directory
 HOME_DIR = Path.home().joinpath(PurePath(".oracle/oracle-db-doc-mcp-server"))
@@ -36,7 +37,7 @@ HOME_DIR = Path.home().joinpath(PurePath(".oracle/oracle-db-doc-mcp-server"))
 # Index
 INDEX = None
 INDEX_FILE = HOME_DIR.joinpath(PurePath("index.db"))
-INDEX_VERSION="1.0.0"
+INDEX_VERSION = "1.0.0"
 INDEX_VERSION_FILE = HOME_DIR.joinpath(PurePath("index.version"))
 CONTENT_CHECKSUM_FILE = HOME_DIR.joinpath(PurePath("content.checksum"))
 
@@ -57,10 +58,14 @@ mcp = FastMCP(
     # Oracle Database Documentation MCP Server.
 
     This server is used to search the Oracle Database documentation for information.
-    It can be used to find information about SQL syntax, PL/SQL, database concepts, best practices, examples and many more.
-    It is also used to search the official Oracle Database documentation for additional information on a particular feature, its use cases, restrictions or interoperability with other features.
-    The tool should be used to augment any existing knowledge or to find information that is not available in the current context.
-    The server is designed to search the Oracle Database documentation for search phrases and will return a list of results.
+    It can be used to find information about SQL syntax, PL/SQL, database concepts, best practices,
+    examples and many more.
+    It is also used to search the official Oracle Database documentation for additional information
+    on a particular feature, its use cases, restrictions or interoperability with other features.
+    The tool should be used to augment any existing knowledge or to find information that is
+    not available in the current context.
+    The server is designed to search the Oracle Database documentation for search phrases and
+    will return a list of results.
 
     You can use the following tools to search the documentation:
     - search: Search the documentation for a query string or search phrase.
@@ -72,21 +77,23 @@ mcp = FastMCP(
 
     - Use the search tool to search for phrases or query strings.
     - Use the search tool to search for specific topics or features.
-    - Always use the search tool to search for additional and official information for Oracle Database features.
+    - Always use the search tool to search for additional and official information
+      for Oracle Database features.
     - If the search tool returns no results, try to rephrase the query.
     - If the search tool returns too few results, increase the max_results limit.
     - If the search tool returns too many results, reduce the max_results limit.
     - If the search tool returns results that are not relevant, try to refine the query.
-    """
+    """,
 )
 
 
 @mcp.tool()
 def search_oracle_database_documentation(
-        search_query: str,
-        max_results: int = 4,
+    search_query: str,
+    max_results: int = 4,
 ) -> list[str]:
-    """Search for information about how to use Oracle Database for a query string and return a list of results.
+    """Search for information about how to use Oracle Database for a query string
+       and return a list of results.
 
     Args:
         search_query: The search phrase to search for.
@@ -96,7 +103,8 @@ def search_oracle_database_documentation(
         search_oracle_database_documentation(search_query="create table syntax")
         search_oracle_database_documentation(search_query="alter a parameter", max_results=13)
         search_oracle_database_documentation(search_query="database user concept", max_results=20)
-        search_oracle_database_documentation(search_query="data use case domains best practices", max_results=15)
+        search_oracle_database_documentation(search_query="data use case domains best practices",
+                                             max_results=15)
         search_oracle_database_documentation(search_query="external table definition", max_results=100)
         Returns:
             A list of results.
@@ -135,7 +143,6 @@ def maintain_content(path: str) -> None:
     Returns:
         None
     """
-    global INDEX
     logger.info("Maintaining index...")
     # Logic to create or update the index goes here
 
@@ -151,8 +158,10 @@ def maintain_content(path: str) -> None:
     index_version = get_file_content(INDEX_VERSION_FILE)
 
     # Only directories and zip files are currently supported
-    if location.is_file() and not location.suffix == '.zip':
-        logger.error(f"Unsupported file type: {location}. Must be a zip file or directory.")
+    if location.is_file() and not location.suffix == ".zip":
+        logger.error(
+            f"Unsupported file type: {location}. Must be a zip file or directory."
+        )
         return
 
     # Calculate the checksum of the input directory or zip file
@@ -168,16 +177,20 @@ def maintain_content(path: str) -> None:
     else:
         if input_checksum != content_checksum:
             logger.info("Checksum has changed.")
-            logger.debug(f"Old index checksum: {content_checksum}, New input checksum: {input_checksum}")
+            logger.debug(
+                f"Old index checksum: {content_checksum}, New input checksum: {input_checksum}"
+            )
 
         if index_version != INDEX_VERSION:
             logger.info("Index version has changed.")
-            logger.debug(f"Old index version: {index_version}, New index version: {INDEX_VERSION}")
+            logger.debug(
+                f"Old index version: {index_version}, New index version: {INDEX_VERSION}"
+            )
 
         INDEX_FILE.unlink(missing_ok=True)
         logger.info("Recreating index...")
         # Extract the zip file to a temporary directory
-        if location.is_file() and location.suffix == '.zip':
+        if location.is_file() and location.suffix == ".zip":
 
             # Check if temp output directory exists and remove it
             zip_output = Path(ZIP_TEMP_OUTPUT)
@@ -187,7 +200,7 @@ def maintain_content(path: str) -> None:
 
             logger.debug(f"Creating zip output directory: {zip_output}")
             zip_output.mkdir()
-            with zipfile.ZipFile(location, 'r') as zip_ref:
+            with zipfile.ZipFile(location, "r") as zip_ref:
                 logger.debug(f"Extracting zip file {location} to {zip_output}")
                 zip_ref.extractall(ZIP_TEMP_OUTPUT)
 
@@ -200,12 +213,16 @@ def maintain_content(path: str) -> None:
         update_content(location)
 
         # Write the new checksum to the checksum file
-        logger.debug(f"Writing new checksum {input_checksum} to {CONTENT_CHECKSUM_FILE}")
+        logger.debug(
+            f"Writing new checksum {input_checksum} to {CONTENT_CHECKSUM_FILE}"
+        )
         write_file_content(CONTENT_CHECKSUM_FILE, input_checksum)
 
         if index_version != INDEX_VERSION:
             # Write index version to version file
-            logger.debug(f"Writing index version {INDEX_VERSION} to {INDEX_VERSION_FILE}")
+            logger.debug(
+                f"Writing index version {INDEX_VERSION} to {INDEX_VERSION_FILE}"
+            )
             write_file_content(INDEX_VERSION_FILE, INDEX_VERSION)
 
         # Delete temporary zip output directory if it exists
@@ -260,7 +277,6 @@ def update_index(content: list[str]) -> None:
     Returns:
         None
     """
-    global INDEX
     with PocketWriter(db_name=INDEX_FILE) as writer:
         for segment in content:
             writer.insert(text=segment)
@@ -300,11 +316,14 @@ def convert_to_markdown_chunks(file: Path) -> list[str]:
         # Convert HTML to Markdown
         markdown = md.markdownify(html)
         if PREPROCESS != "NONE":
-            markdown = markdown.replace("Previous\nNext\n JavaScript must be enabled to correctly display this content", "")
+            markdown = markdown.replace(
+                "Previous\nNext\n JavaScript must be enabled to correctly display this content",
+                "",
+            )
             markdown = remove_markdown_urls(markdown)
 
         # Split markdown into sections based on headings
-        pattern = r'(^#{1,6}\s+[^\n]*\n?)(.*?)(?=(?:^#{1,6}\s+|\Z))'
+        pattern = r"(^#{1,6}\s+[^\n]*\n?)(.*?)(?=(?:^#{1,6}\s+|\Z))"
 
         # Find all matches with re.MULTILINE and re.DOTALL flags
         matches = re.finditer(pattern, markdown, re.MULTILINE | re.DOTALL)
@@ -326,22 +345,26 @@ def convert_to_markdown_chunks(file: Path) -> list[str]:
 
 def remove_markdown_urls(text):
     # Remove Markdown links [text](url) and replace with just the text
-    text = re.sub(r'\[([^\]]*)\]\([^\)]*\)', r'\1', text)
+    text = re.sub(r"\[([^\]]*)\]\([^\)]*\)", r"\1", text)
 
     # Remove URLs with GUIDs (32-char hex with hyphens)
-    text = re.sub(r'https?://[^\s]*[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}[^\s]*', '', text)
+    text = re.sub(
+        r"https?://[^\s]*[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}[^\s]*",
+        "",
+        text,
+    )
 
     # Remove URLs with long hex strings (likely file hashes or identifiers)
-    text = re.sub(r'https?://[^\s]*[a-f0-9]{16,}[^\s]*', '', text)
+    text = re.sub(r"https?://[^\s]*[a-f0-9]{16,}[^\s]*", "", text)
 
     # Remove standalone URLs that start with http/https
-    text = re.sub(r'https?://[^\s]+', '', text)
+    text = re.sub(r"https?://[^\s]+", "", text)
 
     # Clean up extra spaces/tabs but preserve new lines (\s includes \n)
-    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r"[ \t]+", " ", text)
 
     # Clean up extra spaces within new lines
-    text = re.sub(r'\n *\n', '\n\n', text)
+    text = re.sub(r"\n *\n", "\n\n", text)
 
     return text.strip()
 
@@ -355,56 +378,77 @@ def preprocess_html(html_content: str) -> str:
     Returns:
         str: Cleaned HTML content ready for markdown conversion.
     """
-    soup = BeautifulSoup(html_content, 'html.parser')
+    soup = BeautifulSoup(html_content, "html.parser")
 
     # Remove script and style tags
-    for tag in soup.find_all(['script', 'style']):
+    for tag in soup.find_all(["script", "style"]):
         tag.decompose()
 
     # Remove navigation elements
-    for tag in soup.find_all(['nav', 'header', 'footer']):
+    for tag in soup.find_all(["nav", "header", "footer"]):
         tag.decompose()
 
     # Remove elements with navigation-related classes/ids
     nav_classes = [
-        'noscript', 'alert', 'pull-left', 'pull-right', 'skip', 'navigation',
-        'breadcrumb', 'nav-', 'header-', 'footer-', 'menu', 'sidebar', 'toc'
+        "noscript",
+        "alert",
+        "pull-left",
+        "pull-right",
+        "skip",
+        "navigation",
+        "breadcrumb",
+        "nav-",
+        "header-",
+        "footer-",
+        "menu",
+        "sidebar",
+        "toc",
     ]
     for nav_class in nav_classes:
-        for tag in soup.find_all(attrs={'class': lambda x: x and any(nav_class in str(cls).lower() for cls in (x if isinstance(x, list) else [x]))}):
+        for tag in soup.find_all(
+            attrs={
+                "class": lambda x: x
+                and any(
+                    nav_class in str(cls).lower()
+                    for cls in (x if isinstance(x, list) else [x])
+                )
+            }
+        ):
             tag.decompose()
-        for tag in soup.find_all(attrs={'id': lambda x: x and nav_class in str(x).lower()}):
+        for tag in soup.find_all(
+            attrs={"id": lambda x: x and nav_class in str(x).lower()}
+        ):
             tag.decompose()
 
     # Remove common Oracle doc boilerplate text patterns
     boilerplate_patterns = [
-        r'JavaScript.*(?:disabled|enabled).*browser',
-        r'Skip navigation.*',
-        r'Oracle®.*(?:Database.*)?(?:Reference|Guide|Manual|Documentation)',
-        r'Release \d+[a-z]*[\s-]*[A-Z0-9-]*',
-        r'Previous.*Next',
-        r'All Classes.*',
-        r'Overview.*Package.*Class.*Use.*Tree.*Deprecated.*Index.*Help'
+        r"JavaScript.*(?:disabled|enabled).*browser",
+        r"Skip navigation.*",
+        r"Oracle®.*(?:Database.*)?(?:Reference|Guide|Manual|Documentation)",
+        r"Release \d+[a-z]*[\s-]*[A-Z0-9-]*",
+        r"Previous.*Next",
+        r"All Classes.*",
+        r"Overview.*Package.*Class.*Use.*Tree.*Deprecated.*Index.*Help",
     ]
 
     for pattern in boilerplate_patterns:
         for tag in soup.find_all(string=re.compile(pattern, re.IGNORECASE)):
-            parent = tag.parent if hasattr(tag, 'parent') else None
+            parent = tag.parent if hasattr(tag, "parent") else None
             if parent:
                 parent.decompose()
 
     # Remove elements likely to be navigation by common Oracle doc structure
     # Remove elements with common Oracle navigation text content
     nav_text_patterns = [
-        'Skip navigation links',
-        'JavaScript is disabled on your browser',
-        'All Classes',
-        'SEARCH:'
+        "Skip navigation links",
+        "JavaScript is disabled on your browser",
+        "All Classes",
+        "SEARCH:",
     ]
 
     for pattern in nav_text_patterns:
         for element in soup.find_all(string=lambda text: text and pattern in text):
-            parent = element.parent if hasattr(element, 'parent') else None
+            parent = element.parent if hasattr(element, "parent") else None
             if parent:
                 parent.decompose()
 
@@ -420,8 +464,8 @@ def build_folder_structure() -> None:
 def get_file_content(path: str) -> str:
     """Reads the content of a file and returns it or 'N/A' if the file does not exist.
 
-        Args:
-            file (Path): The path to the file.
+    Args:
+        file (Path): The path to the file.
     """
     if Path(path).exists():
         with Path(path).open("r") as f:
@@ -437,26 +481,54 @@ def write_file_content(path: str, content: str) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Oracle Database Documentation MCP Server.")
+    parser = argparse.ArgumentParser(
+        description="Oracle Database Documentation MCP Server."
+    )
 
-    parser.add_argument("-log-level", type=str, default="ERROR",
-                        help="Set the log level (DEBUG, INFO, WARNING, ERROR (default), CRITICAL).")
+    parser.add_argument(
+        "-log-level",
+        type=str,
+        default="ERROR",
+        help="Set the log level (DEBUG, INFO, WARNING, ERROR (default), CRITICAL).",
+    )
 
-    subparser = parser.add_subparsers(title="subcommands", dest="command", required=True)
+    subparser = parser.add_subparsers(
+        title="subcommands", dest="command", required=True
+    )
 
     parser_doc = subparser.add_parser("idx", help="create/maintain the index")
-    parser_doc.add_argument("-path", type=str, required=True,
-                            help="path to the documentation input zip file or extracted directory")
-    parser_doc.add_argument("-preprocess", type=str, default="BASIC",
-                            help="preprocessing level of documentation (NONE, BASIC (default), ADVANCED)")
+    parser_doc.add_argument(
+        "-path",
+        type=str,
+        required=True,
+        help="path to the documentation input zip file or extracted directory",
+    )
+    parser_doc.add_argument(
+        "-preprocess",
+        type=str,
+        default="BASIC",
+        help="preprocessing level of documentation (NONE, BASIC (default), ADVANCED)",
+    )
 
     parser_mcp = subparser.add_parser("mcp", help="run the MCP server")
-    parser_mcp.add_argument("-mode", choices=["stdio", "http"], default="stdio",
-                            help="the transport mode for the MCP server (stdio (default) or http)")
-    parser_mcp.add_argument("-host", type=str, default="0.0.0.0",
-                            help="the IP address (default 0.0.0.0) that the MCP server is reachable at")
-    parser_mcp.add_argument("-port", type=int, default=8000,
-                            help="the port (default 8000) that the MCP server is reachable at")
+    parser_mcp.add_argument(
+        "-mode",
+        choices=["stdio", "http"],
+        default="stdio",
+        help="the transport mode for the MCP server (stdio (default) or http)",
+    )
+    parser_mcp.add_argument(
+        "-host",
+        type=str,
+        default="0.0.0.0",
+        help="the IP address (default 0.0.0.0) that the MCP server is reachable at",
+    )
+    parser_mcp.add_argument(
+        "-port",
+        type=int,
+        default=8000,
+        help="the port (default 8000) that the MCP server is reachable at",
+    )
 
     args = parser.parse_args()
 
@@ -475,12 +547,17 @@ def main():
     # Set up logging
     ch = logging.StreamHandler()
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
     # Set log level
-    logging.basicConfig(filename=HOME_DIR.joinpath(Path('oracle-db-doc-mcp-server.log')), filemode='w', level=logging.ERROR)
+    logging.basicConfig(
+        filename=HOME_DIR.joinpath(Path("oracle-db-doc-mcp-server.log")),
+        filemode="w",
+        level=logging.ERROR,
+    )
     logger.setLevel(getattr(logging, args.log_level.upper(), logging.ERROR))
 
     if args.command == "idx":
@@ -492,7 +569,9 @@ def main():
 
         # If no index is present (not index was built), refuse to start the server.
         if not INDEX_FILE.exists():
-            logger.error(f"Index does not exist. Please create the index first via the 'idx' subcommand.")
+            logger.error(
+                "Index does not exist. Please create the index first via the 'idx' subcommand."
+            )
             return
 
         global INDEX

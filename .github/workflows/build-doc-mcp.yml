@@ -17,9 +17,6 @@ jobs:
 
     permissions:
       packages: write
-      contents: read
-      attestations: write
-      id-token: write
 
     name: 🛠️ Build image
     runs-on: ${{ matrix.runner }}
@@ -55,9 +52,6 @@ jobs:
 
     permissions:
       packages: write
-      contents: read
-      attestations: write
-      id-token: write
 
     steps:
       - name: 🫸 Push multi-arch image to Container Registry

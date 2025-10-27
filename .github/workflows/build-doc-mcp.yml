@@ -37,19 +37,11 @@ jobs:
           cd src/oracle-db-doc-mcp-server/
           buildah bud -f Dockerfile -t oracle-db-doc:latest-${{ steps.os_arch.outputs.OS_ARCH }} .
 
-      - name: 🔓 Login to GHCR registry
-        uses: redhat-actions/podman-login@v1
-        with:
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          registry: ghcr.io
-
-      - name: 🫸 Push image to Container Registry
-        uses: redhat-actions/push-to-registry@v2
-        with:
-          registry: ghcr.io/gvenzl/mcp
-          image: oracle-db-doc
-          tags: latest-${{ steps.os_arch.outputs.OS_ARCH }}
+      - name: 🫸 Push arch-specific image to Container Registry
+        run: |
+          podman login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
+          podman tag oracle-db-doc:latest-${{ steps.os_arch.outputs.OS_ARCH }} ghcr.io/gvenzl/mcp/oracle-db-doc:latest-${{ steps.os_arch.outputs.OS_ARCH }}
+          podman push ghcr.io/gvenzl/mcp/oracle-db-doc:latest-${{ steps.os_arch.outputs.OS_ARCH }}
 
   upload-multi-arch:
     name: 🫸 Push multi-arch manifest
@@ -60,15 +52,9 @@ jobs:
       packages: write
 
     steps:
-      - name: 🔓 Login to GHCR registry
-        uses: redhat-actions/podman-login@v1
-        with:
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          registry: ghcr.io
-
-      - name: 🫸 Push multi-arch manifest
+      - name: 🫸 Push multi-arch image to Container Registry
         run: |
+          podman login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
           podman manifest create ghcr.io/gvenzl/mcp/oracle-db-doc:latest
           podman manifest add    ghcr.io/gvenzl/mcp/oracle-db-doc:latest  ghcr.io/gvenzl/mcp/oracle-db-doc:latest-amd64
           podman manifest add    ghcr.io/gvenzl/mcp/oracle-db-doc:latest  ghcr.io/gvenzl/mcp/oracle-db-doc:latest-arm64

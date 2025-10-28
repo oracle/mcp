@@ -1,4 +1,4 @@
-SUBDIRS := $(filter-out src/dbtools-mcp-server src/mysql-mcp-server src/oci-pricing-mcp-server,$(wildcard src/*))
+SUBDIRS := $(filter-out src/dbtools-mcp-server src/mysql-mcp-server src/oci-pricing-mcp-server src/oracle-db-doc-mcp-server,$(wildcard src/*))
 
 .PHONY: test format
 
@@ -42,12 +42,14 @@ lock:
 		fi \
 	done
 
-test:
+lint:
 	uv tool run --from 'tox==4.30.2' tox -e lint
+
+test:
 	@for dir in $(SUBDIRS); do \
 		if [ -f $$dir/pyproject.toml ]; then \
 			echo "Testing $$dir"; \
-			cd $$dir && uv run pytest && cd ../..; \
+			cd $$dir && uv sync && uv run pytest && cd ../..; \
 		fi \
 	done
 

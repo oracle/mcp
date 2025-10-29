@@ -9,6 +9,15 @@ env/
 env.bak/
 venv.bak/
 
+# Python uv
+uv.lock
+.python-version
+
+# VScode
+.vscode
+
+# Mac files
+.DS_Store
 
 # test environments
 .env

@@ -4,10 +4,6 @@ on:
     paths:
       - "src/oracle-db-doc-mcp-server/**"
       - ".github/workflows/build-doc-mcp.yml"
-  pull_request:
-    paths:
-      - "src/oracle-db-doc-mcp-server/**"
-      - ".github/workflows/build-doc-mcp.yml"
 
 jobs:
   build-image:

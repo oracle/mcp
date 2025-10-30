@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-compute-mcp-server"
-version = "1.0.1"
+version = "1.0.2"
 description = "OCI Compute Service MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -12,6 +12,7 @@ authors = [
 dependencies = [
     "fastmcp==2.12.2",
     "oci==2.160.0",
+    "pydantic==2.12.3",
 ]
 
 classifiers = [

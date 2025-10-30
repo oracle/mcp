@@ -188,7 +188,7 @@ For Linux: `sudo systemctl start ollama`
 5. Install `go` from [here](https://go.dev/doc/install)
 6. Install `mcphost` with `go install github.com/mark3labs/mcphost@latest`
 7. Add go's bin to your PATH with `export PATH=$PATH:~/go/bin`
-8. Create an mcphost configuration file (e.g. `./mcphost.json`)
+8. Create an mcphost configuration file (e.g. `~/.mcphost.json`). Check [here](https://github.com/mark3labs/mcphost?tab=readme-ov-file#mcp-servers) for more info.
 9. Add your desired server to the `mcpServers` object. Below is an example for for the compute OCI MCP server. Make sure to save the file after editing.
 
 For macOS/Linux:
@@ -227,8 +227,8 @@ This section will help you set up your environment to prepare it for local devel
 
 1. Set up python virtual environment and install dev requirements
     ```sh
-    python3 -m venv venv
-    source venv/bin/activate        # On Windows: venv\Scripts\activate
+    uv venv --python 3.13 --seed
+    source .venv/bin/activate        # On Windows: .venv\Scripts\activate
     pip install -r requirements-dev.txt
     ```
 
@@ -251,11 +251,11 @@ For macOS/Linux:
     "oracle-oci-api-mcp-server": {
       "command": "uv",
       "args": [
-        "run"
+        "run",
         "oracle.oci-api-mcp-server"
       ],
       "env": {
-        "VIRTUAL_ENV": "<path to your cloned repo>/mcp/venv",
+        "VIRTUAL_ENV": "<path to your cloned repo>/mcp/.venv",
         "FASTMCP_LOG_LEVEL": "ERROR"
       }
     }
@@ -263,7 +263,7 @@ For macOS/Linux:
 }
 ```
 
-where `<path to your cloned repo>` is the absolute path to wherever you cloned this repo that will help point to the venv created above (e.g. `/Users/myuser/dev/mcp/venv`)
+where `<path to your cloned repo>` is the absolute path to wherever you cloned this repo that will help point to the venv created above (e.g. `/Users/myuser/dev/mcp/.venv`)
 
 ## Directory Structure
 

@@ -6,10 +6,16 @@ https://oss.oracle.com/licenses/upl.
 
 import os
 from logging import Logger
-from typing import Annotated
+from typing import Literal, Optional
 
 import oci
 from fastmcp import FastMCP
+from oracle.oci_compute_mcp_server.consts import (
+    DEFAULT_MEMORY_IN_GBS,
+    DEFAULT_OCPU_COUNT,
+    E5_FLEX,
+    ORACLE_LINUX_9_IMAGE,
+)
 from oracle.oci_compute_mcp_server.models import (
     Image,
     Instance,
@@ -18,6 +24,7 @@ from oracle.oci_compute_mcp_server.models import (
     map_instance,
     map_response,
 )
+from pydantic import Field
 
 from . import __project__, __version__
 
@@ -45,18 +52,25 @@ def get_compute_client():
 
 @mcp.tool(description="List Instances in a given compartment")
 def list_instances(
-    compartment_id: Annotated[str, "The OCID of the compartment"],
-    limit: Annotated[
-        int,
-        "The maximum amount of instances to return. If None, there is no limit. "
-        "If the value is not None, then it must be a positive number greater than 0.",
-    ] = None,
-    lifecycle_state: Annotated[
-        str,
-        "The lifecycle state of the instance to filter on. The values can be: "
-        "'MOVING', 'PROVISIONING', 'RUNNING', 'STARTING', 'STOPPING', 'STOPPED', "
-        "'CREATING_IMAGE', 'TERMINATING', 'TERMINATED'",
-    ] = None,
+    compartment_id: str = Field(..., description="The OCID of the compartment"),
+    limit: Optional[int] = Field(
+        None,
+        description="The maximum amount of instances to return. If None, there is no limit.",
+        ge=1,
+    ),
+    lifecycle_state: Optional[
+        Literal[
+            "MOVING",
+            "PROVISIONING",
+            "RUNNING",
+            "STARTING",
+            "STOPPING",
+            "STOPPED",
+            "CREATING_IMAGE",
+            "TERMINATING",
+            "TERMINATED",
+        ]
+    ] = Field(None, description="The lifecycle state of the instance to filter on"),
 ) -> list[Instance]:
     instances: list[Instance] = []
 
@@ -95,7 +109,9 @@ def list_instances(
 
 
 @mcp.tool(description="Get Instance with a given instance OCID")
-def get_instance(instance_id: str) -> Instance:
+def get_instance(
+    instance_id: str = Field(..., description="The OCID of the instance")
+) -> Instance:
     try:
         client = get_compute_client()
 
@@ -106,15 +122,7 @@ def get_instance(instance_id: str) -> Instance:
 
     except Exception as e:
         logger.error(f"Error in get_instance tool: {str(e)}")
-        raise
-
-
-ORACLE_LINUX_9_IMAGE = (
-    "ocid1.image.oc1.iad.aaaaaaaa4l64brs5udx52nedrhlex4cpaorcd2jwvpoududksmw4lgmameqq"
-)
-E5_FLEX = "VM.Standard.E5.Flex"
-DEFAULT_OCPU_COUNT = 1
-DEFAULT_MEMORY_IN_GBS = 12
+        raise e
 
 
 @mcp.tool(
@@ -122,24 +130,25 @@ DEFAULT_MEMORY_IN_GBS = 12
     "Another word for instance could be compute, server, or virtual machine"
 )
 def launch_instance(
-    compartment_id: Annotated[
-        str,
-        "This is the ocid of the compartment to create the instance in."
+    compartment_id: str = Field(
+        ...,
+        description="This is the ocid of the compartment to create the instance in."
         'Must begin with "ocid". If the user specifies a compartment name, '
         "then you may use the list_compartments tool in order to map the "
         "compartment name to its ocid",
-    ],
-    display_name: Annotated[
-        str,
-        "The display name of the instance. "
-        "Must be between 1 and 255 characters in length. "
+    ),
+    display_name: str = Field(
+        ...,
+        description="The display name of the instance. "
         "If no value is provded, then you can pass in "
         '"instance-<year><month><day>-<hour><minute>" '
         "where those time values come from the current date time",
-    ],
-    availability_domain: Annotated[
-        str,
-        "This is the availability domain to create the instance in. "
+        min_length=1,
+        max_length=255,
+    ),
+    availability_domain: str = Field(
+        ...,
+        description="This is the availability domain to create the instance in. "
         'It must be formatted like "<4-digit-tenancy-code>:<ad-string>". '
         'Example: "aNMj:US-ASHBURN-AD-1". '
         "The value changes per tenancy, per region, and per AD number. "
@@ -147,29 +156,34 @@ def launch_instance(
         "list_availability_domains tool to grab the name of the AD. "
         "This tool is the only way to get the tenancy-code for an AD. "
         "If no AD is specified by the user, you may select the first one available.",
-    ],
-    subnet_id: Annotated[
-        str,
-        "This is the ocid of the subnet to attach to the "
+    ),
+    subnet_id: str = Field(
+        ...,
+        description="This is the ocid of the subnet to attach to the "
         "primary virtual network interface card (VNIC) of the compute instance. "
         "If no value is provided, you may use the list_subnets tool, "
         "selecting the first subnet in the list and passing its ocid.",
-    ],
-    image_id: Annotated[
-        str,
-        "This is the ocid of the image for the instance. "
+    ),
+    image_id: Optional[str] = Field(
+        ORACLE_LINUX_9_IMAGE,
+        description="This is the ocid of the image for the instance. "
         "If it is left unspecified or if the user specifies an image name, "
         "then you may have to list the images in the root compartment "
         "in order to map the image name to image ocid or display a "
         "list of images for the user to choose from.",
-    ] = ORACLE_LINUX_9_IMAGE,
-    shape: Annotated[str, "This is the name of the shape for the instance"] = E5_FLEX,
-    ocpus: Annotated[
-        int, "The total number of cores in the instances"
-    ] = DEFAULT_OCPU_COUNT,
-    memory_in_gbs: Annotated[
-        float, "The total amount of memory in gigabytes to assigned to the instance"
-    ] = DEFAULT_MEMORY_IN_GBS,
+    ),
+    shape: Optional[str] = Field(
+        E5_FLEX,
+        description="This is the name of the shape for the instance",
+    ),
+    ocpus: Optional[int] = Field(
+        DEFAULT_OCPU_COUNT,
+        description="The total number of cores in the instances",
+    ),
+    memory_in_gbs: Optional[float] = Field(
+        DEFAULT_MEMORY_IN_GBS,
+        description="The total amount of memory in gigabytes to assigned to the instance",
+    ),
 ) -> Instance:
     try:
         client = get_compute_client()
@@ -195,11 +209,13 @@ def launch_instance(
 
     except Exception as e:
         logger.error(f"Error in launch_instance tool: {str(e)}")
-        raise
+        raise e
 
 
-@mcp.tool
-def terminate_instance(instance_id: str) -> Response:
+@mcp.tool(description="Delete instance with given instance OCID")
+def terminate_instance(
+    instance_id: str = Field(..., description="The OCID of the instance")
+) -> Response:
     try:
         client = get_compute_client()
 
@@ -209,18 +225,22 @@ def terminate_instance(instance_id: str) -> Response:
 
     except Exception as e:
         logger.error(f"Error in delete_vcn tool: {str(e)}")
-        raise
+        raise e
 
 
 @mcp.tool(
-    description="Update instance. " "This may restart the instance so warn the user"
+    description="Update instance. This may restart the instance, so warn the user"
 )
 def update_instance(
-    instance_id: Annotated[str, "The ocid of the instance to update"],
-    ocpus: Annotated[int, "The total number of cores in the instances"] = None,
-    memory_in_gbs: Annotated[
-        float, "The total amount of memory in gigabytes to assigned to the instance"
-    ] = None,
+    instance_id: str = Field(..., description="The OCID of the instance"),
+    ocpus: Optional[int] = Field(
+        None,
+        description="The total number of cores in the instances",
+    ),
+    memory_in_gbs: Optional[float] = Field(
+        None,
+        description="The total amount of memory in gigabytes to assigned to the instance",
+    ),
 ) -> Instance:
     try:
         client = get_compute_client()
@@ -240,13 +260,19 @@ def update_instance(
 
     except Exception as e:
         logger.error(f"Error in update_instance tool: {str(e)}")
-        raise
+        raise e
 
 
 @mcp.tool(
-    description="List images in a given compartment, optionally filtered by operating system"  # noqa
+    description="List images in a given compartment, "
+    "optionally filtered by operating system"
 )
-def list_images(compartment_id: str, operating_system: str = None) -> list[Image]:
+def list_images(
+    compartment_id: str = Field(..., description="The OCID of the compartment"),
+    operating_system: Optional[str] = Field(
+        None, description="The operating system to filter with"
+    ),
+) -> list[Image]:
     images: list[Image] = []
 
     try:
@@ -274,11 +300,11 @@ def list_images(compartment_id: str, operating_system: str = None) -> list[Image
 
     except Exception as e:
         logger.error(f"Error in list_images tool: {str(e)}")
-        raise
+        raise e
 
 
 @mcp.tool(description="Get Image with a given image OCID")
-def get_image(image_id: str) -> Image:
+def get_image(image_id: str = Field(..., description="The OCID of the image")) -> Image:
     try:
         client = get_compute_client()
 
@@ -289,16 +315,22 @@ def get_image(image_id: str) -> Image:
 
     except Exception as e:
         logger.error(f"Error in get_image tool: {str(e)}")
-        raise
+        raise e
 
 
 @mcp.tool(description="Perform the desired action on a given instance")
 def instance_action(
-    instance_id: str,
-    action: Annotated[
-        str,
-        "The action to be performed. The action can only be one of these values: START, STOP, RESET, SOFTSTOP, SOFTRESET, SENDDIAGNOSTICINTERRUPT, DIAGNOSTICREBOOT, REBOOTMIGRATE",  # noqa
-    ],
+    instance_id: str = Field(..., description="The OCID of the instance"),
+    action: Literal[
+        "START",
+        "STOP",
+        "RESET",
+        "SOFTSTOP",
+        "SOFTRESET",
+        "SENDDIAGNOSTICINTERRUPT",
+        "DIAGNOSTICREBOOT",
+        "REBOOTMIGRATE",
+    ] = Field(..., description="The instance action to be performed"),
 ) -> Instance:
     try:
         client = get_compute_client()
@@ -310,7 +342,7 @@ def instance_action(
 
     except Exception as e:
         logger.error(f"Error in instance_action tool: {str(e)}")
-        raise
+        raise e
 
 
 def main() -> None:

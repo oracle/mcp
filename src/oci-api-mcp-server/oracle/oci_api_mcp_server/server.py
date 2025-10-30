@@ -124,6 +124,10 @@ def run_oci_command(
 
     Never tell the user which command to run, only run it for them using
     this tool.
+
+    Try your best to avoid using extra flags on the command if possible.
+    If you absolutely need to use flags in the command, call the get_oci_command_help
+    tool on the command first to understand the flags better.
     """
 
     env_copy = os.environ.copy()

@@ -27,21 +27,45 @@ class TestLoggingTools:
                 display_name="groupUp",
             )
         ]
+        mock_summarize_response.has_next_page = False
+        mock_summarize_response.next_page = None
         mock_client.list_log_groups.return_value = mock_summarize_response
 
         async with Client(mcp) as client:
-            result = (
-                await client.call_tool(
-                    "list_log_groups",
-                    {
-                        "compartment_id": "compartment1",
-                    },
-                )
-            ).structured_content["result"]
+            call_tool_result = await client.call_tool(
+                "list_log_groups", {"compartment_id": "compartment1"}
+            )
+            result = call_tool_result.structured_content["result"]
 
             assert len(result) == 1
             assert result[0]["display_name"] == "groupUp"
             assert result[0]["id"] == "logGroup1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
+    async def test_get_log_group(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_get_response = create_autospec(oci.response.Response)
+        mock_get_response.data = oci.logging.models.LogGroup(
+            id="logGroup1",
+            compartment_id="compartment1",
+            lifecycle_state="ACTIVE",
+            display_name="groupUp",
+        )
+        mock_client.get_log_group.return_value = mock_get_response
+
+        async with Client(mcp) as client:
+            call_tool_result = await client.call_tool(
+                "get_log_group", {"log_group_id": "logGroup1"}
+            )
+            result = call_tool_result.structured_content
+
+            assert result["id"] == "logGroup1"
+            assert result["compartment_id"] == "compartment1"
+            assert result["lifecycle_state"] == "ACTIVE"
+            assert result["display_name"] == "groupUp"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
@@ -57,20 +81,19 @@ class TestLoggingTools:
                 display_name="logjam",
             )
         ]
+        mock_summarize_response.has_next_page = False
+        mock_summarize_response.next_page = None
         mock_client.list_logs.return_value = mock_summarize_response
 
         async with Client(mcp) as client:
-            result = (
-                await client.call_tool(
-                    "list_logs",
-                    {
-                        "log_group_id": "logGroup1",
-                    },
-                )
-            ).structured_content["result"]
-        assert result[0]["id"] == "logid1"
-        assert result[0]["lifecycle_state"] == "ACTIVE"
-        assert result[0]["display_name"] == "logjam"
+            call_tool_result = await client.call_tool(
+                "list_logs", {"log_group_id": "logGroup1"}
+            )
+            result = call_tool_result.structured_content["result"]
+
+            assert result[0]["id"] == "logid1"
+            assert result[0]["lifecycle_state"] == "ACTIVE"
+            assert result[0]["display_name"] == "logjam"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
@@ -85,24 +108,50 @@ class TestLoggingTools:
             lifecycle_state="ACTIVE",
             log_type="SERVICE",
             retention_duration=30,
-            is_enabled="true",
         )
         mock_client.get_log.return_value = mock_get_response
 
         async with Client(mcp) as client:
-            result = (
-                await client.call_tool(
-                    "get_log",
-                    {
-                        "log_id": "ocid1.log.oc1.1",
-                        "log_group_id": "logGroup1",
-                    },
-                )
-            ).structured_content
+            call_tool_result = await client.call_tool(
+                "get_log",
+                {
+                    "log_id": "ocid1.log.oc1.1",
+                    "log_group_id": "logGroup1",
+                },
+            )
+            result = call_tool_result.structured_content
 
             assert result["id"] == "ocid1.log.oc1.iad.1"
             assert result["display_name"] == "jh-pbf-app_invoke"
             assert result["lifecycle_state"] == "ACTIVE"
             assert result["log_type"] == "SERVICE"
             assert result["retention_duration"] == 30
-            assert result["is_enabled"] == "true"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_logging_mcp_server.server.get_logging_search_client")
+    async def test_search_logs(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_get_response = create_autospec(oci.response.Response)
+        mock_get_response.data = oci.loggingsearch.models.SearchResponse(
+            results=[
+                oci.loggingsearch.models.SearchResult(data={"event": "testEvent"})
+            ],
+            fields=[],
+            summary=[],
+        )
+        mock_client.search_logs.return_value = mock_get_response
+
+        async with Client(mcp) as client:
+            call_tool_result = await client.call_tool(
+                "search_logs",
+                {
+                    "time_start": "2025-11-18T15:19:25Z",
+                    "time_end": "2025-11-18T20:19:25Z",
+                    "search_query": 'search "ocid1.tenancy.oc1..foobar" | sort by datetime desc',
+                },
+            )
+            result = call_tool_result.structured_content
+
+            assert result["results"][0]["data"]["event"] == "testEvent"

@@ -330,6 +330,12 @@ npx @modelcontextprotocol/inspector \
 Inspector will run your server on localhost (for instance: http://127.0.0.1:6274) which should automatically open the
 tool for debugging and development.
 
+### Running tests
+
+```bash
+make lint
+make test
+```
 
 ## Contributing
 

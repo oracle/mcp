@@ -1,4 +1,4 @@
-name: Matrix Build
+name: Build and Test
 on:
   push:
     branches:

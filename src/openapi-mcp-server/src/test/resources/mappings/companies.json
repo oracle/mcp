@@ -1,0 +1,17 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/rest/v1/companies",
+    "basicAuth": {
+      "username": "test-user",
+      "password": "test-password"
+    }
+  },
+  "response": {
+    "status": 200,
+    "bodyFileName": "companies-response.json",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  }
+}

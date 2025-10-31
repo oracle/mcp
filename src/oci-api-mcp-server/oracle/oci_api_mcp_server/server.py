@@ -161,17 +161,30 @@ def run_oci_command(
             check=True,
             shell=False,
         )
-        return (
-            json.loads(result.stdout)
-            if result.stdout
-            else {
-                "error": result.stderr,
-            }
-        )
+
+        result.check_returncode()
+
+        response = {
+            "command": command,
+            "output": result.stdout,
+            "error": result.stderr,
+            "returncode": result.returncode,
+        }
+
+        try:
+            response["output"] = json.loads(result.stdout)
+        except TypeError:
+            pass
+        except json.JSONDecodeError:
+            pass
+
+        return response
     except subprocess.CalledProcessError as e:
         return {
-            "error": e.stderr,
+            "command": command,
             "output": e.stdout,
+            "error": e.stderr,
+            "returncode": e.returncode,
         }
 
 

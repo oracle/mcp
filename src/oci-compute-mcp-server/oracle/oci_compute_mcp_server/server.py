@@ -20,9 +20,11 @@ from oracle.oci_compute_mcp_server.models import (
     Image,
     Instance,
     Response,
+    VnicAttachment,
     map_image,
     map_instance,
     map_response,
+    map_vnic_attachment,
 )
 from pydantic import Field
 
@@ -88,7 +90,7 @@ def list_instances(
                 "limit": limit,
             }
 
-            if lifecycle_state is not None:
+            if lifecycle_state:
                 kwargs["lifecycle_state"] = lifecycle_state
 
             response = client.list_instances(**kwargs)
@@ -272,6 +274,11 @@ def list_images(
     operating_system: Optional[str] = Field(
         None, description="The operating system to filter with"
     ),
+    limit: Optional[int] = Field(
+        None,
+        description="The maximum amount of resources to return. If None, there is no limit.",
+        ge=1,
+    ),
 ) -> list[Image]:
     images: list[Image] = []
 
@@ -282,8 +289,14 @@ def list_images(
         has_next_page = True
         next_page: str = None
 
-        while has_next_page:
-            response = client.list_images(compartment_id=compartment_id, page=next_page)
+        while has_next_page and (limit is None or len(images) < limit):
+            kwargs = {
+                "compartment_id": compartment_id,
+                "page": next_page,
+                "limit": limit,
+            }
+
+            response = client.list_images(**kwargs)
             has_next_page = response.has_next_page
             next_page = response.next_page if hasattr(response, "next_page") else None
 
@@ -342,6 +355,78 @@ def instance_action(
 
     except Exception as e:
         logger.error(f"Error in instance_action tool: {str(e)}")
+        raise e
+
+
+@mcp.tool(
+    description="List vnic attachments in a given compartment and/or on a given instance. "
+)
+def list_vnic_attachments(
+    compartment_id: str = Field(
+        ...,
+        description="The OCID of the compartment. "
+        "If an instance_id is passed in, but no compartment_id is passed in,"
+        "then the compartment OCID of the instance may be used as a default.",
+    ),
+    instance_id: Optional[str] = Field(None, description="The OCID of the instance"),
+    limit: Optional[int] = Field(
+        None,
+        description="The maximum amount of resources to return. If None, there is no limit.",
+        ge=1,
+    ),
+) -> list[VnicAttachment]:
+    vnic_attachments: list[VnicAttachment] = []
+
+    try:
+        client = get_compute_client()
+
+        response: oci.response.Response = None
+        has_next_page = True
+        next_page: str = None
+
+        while has_next_page and (limit is None or len(vnic_attachments) < limit):
+            kwargs = {
+                "compartment_id": compartment_id,
+                "page": next_page,
+                "limit": limit,
+            }
+
+            if instance_id:
+                kwargs["instance_id"] = instance_id
+
+            response = client.list_vnic_attachments(**kwargs)
+            has_next_page = response.has_next_page
+            next_page = response.next_page if hasattr(response, "next_page") else None
+
+            data: list[oci.core.models.VnicAttachment] = response.data
+
+            for d in data:
+                vnic_attachments.append(map_vnic_attachment(d))
+
+        logger.info(f"Found {len(vnic_attachments)} Vnic Attachments")
+        return vnic_attachments
+
+    except Exception as e:
+        logger.error(f"Error in list_vnic_attachments tool: {str(e)}")
+        raise e
+
+
+@mcp.tool(description="Get Vnic Attachment with a given OCID")
+def get_vnic_attachment(
+    vnic_attachment_id: str = Field(..., description="The OCID of the vnic attachment")
+) -> VnicAttachment:
+    try:
+        client = get_compute_client()
+
+        response: oci.response.Response = client.get_vnic_attachment(
+            vnic_attachment_id=vnic_attachment_id
+        )
+        data: oci.core.models.VnicAttachment = response.data
+        logger.info("Found Vnic Attachment")
+        return map_vnic_attachment(data)
+
+    except Exception as e:
+        logger.error(f"Error in get_vnic_attachment tool: {str(e)}")
         raise e
 
 

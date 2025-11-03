@@ -227,3 +227,55 @@ class TestComputeTools:
 
             assert result["id"] == "instance1"
             assert result["lifecycle_state"] == "STOPPING"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_list_vnic_attachments(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_list_response = create_autospec(oci.response.Response)
+        mock_list_response.data = [
+            oci.core.models.VnicAttachment(
+                id="vnicattachment1",
+                display_name="VNIC attachment 1",
+                lifecycle_state="ATTACHED",
+            )
+        ]
+        mock_list_response.has_next_page = False
+        mock_list_response.next_page = None
+        mock_client.list_vnic_attachments.return_value = mock_list_response
+
+        async with Client(mcp) as client:
+            call_tool_result = await client.call_tool(
+                "list_vnic_attachments",
+                {
+                    "compartment_id": "test_compartment",
+                },
+            )
+            result = call_tool_result.structured_content["result"]
+
+            assert len(result) == 1
+            assert result[0]["id"] == "vnicattachment1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_get_vnic_attachment(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_get_response = create_autospec(oci.response.Response)
+        mock_get_response.data = oci.core.models.VnicAttachment(
+            id="vnicattachment1",
+            display_name="VNIC attachment 1",
+            lifecycle_state="ATTACHED",
+        )
+        mock_client.get_vnic_attachment.return_value = mock_get_response
+
+        async with Client(mcp) as client:
+            call_tool_result = await client.call_tool(
+                "get_vnic_attachment", {"vnic_attachment_id": "vnicattachment1"}
+            )
+            result = call_tool_result.structured_content
+
+            assert result["id"] == "vnicattachment1"

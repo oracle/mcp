@@ -781,3 +781,104 @@ def map_response(resp: oci.response.Response) -> Response | None:
 
 
 # endregion
+
+# region VnicAttachment
+
+
+class VnicAttachment(BaseModel):
+    """
+    Pydantic model mirroring the fields of oci.core.models.VnicAttachment.
+    """
+
+    availability_domain: Optional[str] = Field(
+        None,
+        description="The availability domain of the instance. Example: `Uocm:PHX-AD-1`",
+    )
+    compartment_id: Optional[str] = Field(
+        None,
+        description=(
+            "The OCID of the compartment the VNIC attachment is in, which is the "
+            "same compartment the instance is in."
+        ),
+    )
+    display_name: Optional[str] = Field(
+        None,
+        description=(
+            "A user-friendly name. Does not have to be unique, and it's changeable. "
+            "Avoid entering confidential information."
+        ),
+    )
+    id: Optional[str] = Field(None, description="The OCID of the VNIC attachment.")
+    instance_id: Optional[str] = Field(None, description="The OCID of the instance.")
+    lifecycle_state: Optional[
+        Literal["ATTACHING", "ATTACHED", "DETACHING", "DETACHED", "UNKNOWN_ENUM_VALUE"]
+    ] = Field(None, description="The current state of the VNIC attachment.")
+    nic_index: Optional[int] = Field(
+        None,
+        description=(
+            "Which physical network interface card (NIC) the VNIC uses. Certain bare "
+            "metal instance shapes have two active physical NICs (0 and 1). If you add "
+            "a secondary VNIC to one of these instances, you can specify which NIC "
+            "the VNIC will use. For more information, see Virtual Network Interface "
+            "Cards (VNICs)."
+        ),
+    )
+    subnet_id: Optional[str] = Field(
+        None, description="The OCID of the subnet to create the VNIC in."
+    )
+    vlan_id: Optional[str] = Field(
+        None,
+        description=(
+            "The OCID of the VLAN to create the VNIC in. Creating the VNIC in a VLAN "
+            "(instead of a subnet) is possible only if you are an Oracle Cloud VMware "
+            "Solution customer. See Vlan. An error is returned if the instance already "
+            "has a VNIC attached to it from this VLAN."
+        ),
+    )
+    time_created: Optional[datetime] = Field(
+        None,
+        description=(
+            "The date and time the VNIC attachment was created, in the format defined "
+            "by RFC3339. Example: `2016-08-25T21:10:29.600Z`"
+        ),
+    )
+    vlan_tag: Optional[int] = Field(
+        None,
+        description=(
+            "The Oracle-assigned VLAN tag of the attached VNIC. Available after the "
+            "attachment process is complete. However, if the VNIC belongs to a VLAN "
+            "as part of the Oracle Cloud VMware Solution, the `vlanTag` value is "
+            "instead the value of the `vlanTag` attribute for the VLAN. See Vlan. "
+            "Example: `0`"
+        ),
+    )
+    vnic_id: Optional[str] = Field(
+        None,
+        description=(
+            "The OCID of the VNIC. Available after the attachment process is "
+            "complete."
+        ),
+    )
+
+
+def map_vnic_attachment(va: oci.core.models.VnicAttachment) -> VnicAttachment:
+    """
+    Convert an oci.core.models.VnicAttachment to oracle.oci_compute_mcp_server.models.VnicAttachment.
+    """
+    return VnicAttachment(
+        availability_domain=getattr(va, "availability_domain", None),
+        compartment_id=getattr(va, "compartment_id", None),
+        display_name=getattr(va, "display_name", None),
+        id=getattr(va, "id", None),
+        instance_id=getattr(va, "instance_id", None),
+        lifecycle_state=getattr(va, "lifecycle_state", None),
+        nic_index=getattr(va, "nic_index", None),
+        subnet_id=getattr(va, "subnet_id", None),
+        vlan_id=getattr(va, "vlan_id", None),
+        time_created=getattr(va, "time_created", None),
+        vlan_tag=getattr(va, "vlan_tag", None),
+        vnic_id=getattr(va, "vnic_id", None),
+    )
+
+
+# endregion

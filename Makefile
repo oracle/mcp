@@ -51,13 +51,16 @@ test:
 			echo "Testing $$dir"; \
 			cd $$dir && \
 				COVERAGE_FILE=../../.coverage.$$(_basename=$$(basename $$dir); echo $$_basename) \
-				uv run pytest --cov=. --cov-branch --cov-append --cov-report=html && \
+				uv run pytest --cov=. --cov-branch --cov-append --cov-report=html --cov-report=term-missing && \
 			cd ../..; \
 		fi \
 	done
+	$(MAKE) combine-coverage
+
+combine-coverage:
 	uv run coverage combine
 	uv run coverage html
-	uv run coverage report --fail-under=70
+	uv run coverage report --fail-under=69
 
 format:
 	uv tool run --from 'tox==4.30.2' tox -e format

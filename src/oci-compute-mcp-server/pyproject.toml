@@ -46,3 +46,7 @@ omit = [
     "dist/*",
     ".venv/*",
 ]
+
+[tool.coverage.report]
+precision = 2
+fail_under = 69.64

@@ -5,6 +5,7 @@ https://oss.oracle.com/licenses/upl.
 """
 
 import importlib.metadata
+import json
 import subprocess
 from unittest.mock import ANY, MagicMock, patch
 
@@ -72,47 +73,77 @@ class TestOCITools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_api_mcp_server.server.subprocess.run")
-    @patch("oracle.oci_api_mcp_server.server.json.loads")
-    async def test_run_oci_command_success(self, mock_json_loads, mock_run):
+    async def test_run_oci_command_success(self, mock_run):
+        command = "compute instance list"
+
         mock_result = MagicMock()
         mock_result.stdout = '{"key": "value"}'
         mock_result.stderr = ""
+        mock_result.returncode = 0
         mock_run.return_value = mock_result
-        mock_json_loads.return_value = {"key": "value"}
 
         async with Client(mcp) as client:
             result = (
-                await client.call_tool(
-                    "run_oci_command", {"command": "compute instance list"}
-                )
+                await client.call_tool("run_oci_command", {"command": command})
             ).data
 
-            assert result == {"key": "value"}
-            mock_json_loads.assert_called_once_with('{"key": "value"}')
+            assert result == {
+                "command": command,
+                "output": json.loads(mock_result.stdout),
+                "error": mock_result.stderr,
+                "returncode": mock_result.returncode,
+            }
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_api_mcp_server.server.subprocess.run")
+    async def test_run_oci_command_string_success(self, mock_run):
+        command = "compute instance list"
+
+        mock_result = MagicMock()
+        mock_result.stdout = "This is not JSON"
+        mock_result.stderr = ""
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool("run_oci_command", {"command": command})
+            ).data
+
+            assert result == {
+                "command": command,
+                "output": mock_result.stdout,
+                "error": mock_result.stderr,
+                "returncode": mock_result.returncode,
+            }
 
     @pytest.mark.asyncio
     @patch("oracle.oci_api_mcp_server.server.subprocess.run")
     async def test_run_oci_command_failure(self, mock_run):
+        command = "compute instance list"
+
         mock_result = MagicMock()
         mock_result.stdout = "Some output"
         mock_result.stderr = "Some error"
+        mock_result.returncode = 1
+
         mock_run.side_effect = subprocess.CalledProcessError(
-            returncode=1,
-            cmd=["oci", "compute", "instance", "list"],
+            returncode=mock_result.returncode,
+            cmd=["oci"] + command.split(),
             output=mock_result.stdout,
             stderr=mock_result.stderr,
         )
 
         async with Client(mcp) as client:
             result = (
-                await client.call_tool(
-                    "run_oci_command", {"command": "compute instance list"}
-                )
+                await client.call_tool("run_oci_command", {"command": command})
             ).data
 
             assert result == {
-                "error": "Some error",
-                "output": "Some output",
+                "command": command,
+                "output": mock_result.stdout,
+                "error": mock_result.stderr,
+                "returncode": mock_result.returncode,
             }
 
     @pytest.mark.asyncio

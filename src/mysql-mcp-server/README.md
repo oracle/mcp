@@ -4,22 +4,23 @@ A Python-based MCP (Model Context Protocol) server that provides a suite of tool
 
 ## Overview
 
-`mysql_mcp_server.py` is a FastMCP-based server that provides tools for managing MySQL connections, executing SQL, using MySQL AI ML/AI features, and working with OCI Object Storage.
+`mysql_mcp_server.py` is a FastMCP-based server that provides tools for managing MySQL connections, executing SQL, using MySQL AI or MySQL HeatWave ML/GenAI features, and working with OCI Object Storage. MySQL MCP Server is the recommended server to get started with MySQL HeatWave or MySQL AI and the only server in this repo that supports MySQL AI.
 
 ## Features
 
 - **Database Connection Management**
   - Load connection configs from JSON or environment variables
   - List all configured database connections
-  - Validate connectivity and resolve provider mode (MySQL AI vs. OCI)
+  - Validate connectivity and resolve provider mode (MySQL AI vs. MySQL HeatWave)
 
 - **Database Operations**
   - Execute SQL queries
 
-- **MySQL AI ML and AI Tools**
-  - `ml_generate`: Text generation with MySQL AI GenAI
+- **MySQL AI and MySQL HeatWave ML and GenAI Tools**
+  - `ml_generate`: Text generation with GenAI
   - `ragify_column`: Create/populate vector columns for embeddings
   - `ask_ml_rag`: Retrieval-augmented generation from vector stores
+  - `heatwave_ask_help`: Answers questions about how to use HeatWave ML
 
 - **Vector Store Management**
   - List files in `secure_file_priv` (local mode)
@@ -62,14 +63,13 @@ see the [OCI SDK documentation](https://docs.oracle.com/en-us/iaas/Content/API/C
 ## Required Python Packages
 
 - `oci`
-- `requests`
 - `fastmcp`
 - `mysql-connector-python`
 
 ## Supported Database Modes
 
-- **MYSQL_AI** (local MySQL AI AI mode)
-- **OCI** (Oracle Cloud Infrastructure-managed databases)
+- `MySQL AI`
+- `HeatWave`
 
 ## MCP Server Configuration
 
@@ -202,16 +202,17 @@ python mysql_mcp_server.py
 
 1. `list_all_connections()`: List configured database connections and modes
 2. `execute_sql_tool_by_connection_id(connection_id, sql, params)`: Execute SQL on a database connection
-3. `ml_generate(connection_id, question)`: Generate text via MySQL AI ML
+3. `ml_generate(connection_id, question)`: Generate text
 4. `ragify_column(connection_id, table, input_col, embedding_col)`: Embed text into a VECTOR column
 5. `list_vector_store_files_local(connection_id)`: List available files in `secure_file_priv`
 6. `load_vector_store_local(connection_id, file_path)`: Load documents from local filesystem
 7. `load_vector_store_oci(connection_id, namespace, bucket, prefix, schema, table)`: Load documents from OCI Object Storage
 8. `ask_ml_rag_vector_store(connection_id, question)`: RAG query on default vector store
 9. `ask_ml_rag_innodb(connection_id, question, segment_col, embedding_col)`: RAG query restricted to InnoDB tables
-10. `list_all_compartments()`: List OCI compartments
-11. `object_storage_list_buckets(compartment_name | compartment_id)`: List buckets in a compartment
-12. `object_storage_list_objects(namespace, bucket_name)`: List objects in a bucket
+10. `heatwave_ask_help(connection_id, question)`: Ask natural language questions about MySQL HeatWave AutoML via NL2ML
+11. `list_all_compartments()`: List OCI compartments
+12. `object_storage_list_buckets(compartment_name | compartment_id)`: List buckets in a compartment
+13. `object_storage_list_objects(namespace, bucket_name)`: List objects in a bucket
 
 ## Security
 
@@ -230,10 +231,10 @@ Here are example prompts you can use to interact with the MCP server, note that 
 "Add embeddings for 'body' column into 'embedding' column in docs table"
 ```
 
-### 2. MySQL AI AI
+### 2. MySQL AI/MySQL HeatWave
 
 ```
-"Generate a summary of error logs using MySQL AI ML"
+"Generate a summary of error logs"
 "Ask ml_rag: Show me refund policy from the vector store"
 ```
 
@@ -251,3 +252,38 @@ Here are example prompts you can use to interact with the MCP server, note that 
 "Load all documents with prefix 'manuals/' into schema hr, table product_docs"
 "List local files for vector store ingestion"
 ```
+
+---
+
+## Appendix: Feature Compatibility and Common Questions
+
+### Q&A Reference
+
+**Q: Is the repo for both HeatWave and MySQL AI?**
+A: Yes. This repository supports both MySQL HeatWave and MySQL AI.
+
+**Q: What happened to call_nl2ml for HeatWave? Does one need to use the dbtools server for that?**
+A: The `heatwave_ask_help` (NL2ML) tool works only for HeatWave (not for MySQL AI connections). It provides clear, useful error messages if used with an unsupported connection. The dbtools MCP server is not required.
+
+**Q: Do all tools work with both MySQL HeatWave and MySQL AI, with only the connection differing?**
+A: No. Not all tools are universally supported. Some are exclusive to MySQL HeatWave (OCI), while others are only for MySQL AI. Refer to the specific tool answers in this appendix.
+
+**Q: What happens if you try to use `list_vector_store_files_local` with a HeatWave connection?**
+A: The `list_vector_store_files_local` tool does not function with HeatWave connections. If called on a MySQL HeatWave connection, it  will fail gracefully with an error message. When working with MySQL HeatWave, use `load_vector_store_oci` to load documents from object store instead.
+
+**Q: Can `load_vector_store_oci` be used with MySQL AI (e.g., to load files from OCI Object Store into the InnoDB vector store)?**
+A: No. The `load_vector_store_oci` tool only works with MySQL HeatWave (OCI) connections. If called on a MySQL AI connection, it will fail gracefully with an error message. When working with MySQL AI, use `load_vector_store_local` to load documents from the local file system instead.
+
+**Q: Will `ragify_column` work with both HeatWave and MySQL AI?**
+A: Yes. The `ragify_column` tool is fully supported on both MySQL AI and MySQL HeatWave connections. Its operation and results are the same on both platforms.
+
+**Q: Where does `ask_ml_rag_innodb` execute its vector processing? For example, does it always run solely in MySQL Database Service (MDS), or will the table be loaded into HeatWave and the vector computations performed on the HeatWave cluster?**
+A: On MySQL HeatWave (OCI) connections, `ask_ml_rag_innodb` loads the relevant InnoDB table into the HeatWave cluster, and all vector search and processing are executed on the HeatWave cluster for maximum performance. On MySQL AI connections, the processing takes place within the database service instance itself (not a distributed cluster).
+
+**Q: Is the `.oci/config` always needed, or only when (a) listing Compartments/Object Store or (b) loading files from the Object Store?**
+A: The OCI config file is required only for features that interact with Oracle Cloud Infrastructure—such as listing compartments, accessing Object Store, or loading files from Object Store. All other functionality can be used without `.oci/config`.
+
+**Q: Will the MCP server work with MySQL AI if there is no OCI config present? Will it support a purely on-premises user?**
+A: Yes. The MCP server supports MySQL AI connections without requiring an OCI config file, making it suitable for on-premises environments. For MySQL HeatWave (OCI) connections, any features not dependent on cloud resources will also continue to work if the OCI config is absent. Cloud-dependent requests (such as for OCI Object Store or Compartments) will fail gracefully if attempted without an OCI config.
+
+---

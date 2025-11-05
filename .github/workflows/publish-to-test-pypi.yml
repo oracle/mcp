@@ -1,0 +1,76 @@
+name: Upload Python Packages to test PyPI
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  publish-to-test-pypi:
+    runs-on: ubuntu-latest
+    needs: [get-directories]
+    strategy:
+      matrix:
+        directory: ${{ fromJson(needs.get-directories.outputs.directories) }}
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/${{ matrix.directory }}
+    permissions:
+      id-token: write # IMPORTANT: this permission is mandatory for trusted publishing
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install requirements
+        run: pip install -r requirements-dev.txt
+
+      - name: Update __init__.py
+        working-directory: src/${{ matrix.directory }}
+        run: |
+          name=$(uv run tomlq -r '.project.name' pyproject.toml)
+          version=$(uv run tomlq -r '.project.version' pyproject.toml)
+          if [ -d oracle/*_mcp_server ]; then
+            init_py_file=oracle/*_mcp_server/__init__.py
+            echo "\"\"\"\nCopyright (c) 2025, Oracle and/or its affiliates.\nLicensed under the Universal Permissive License v1.0 as shown at\nhttps://oss.oracle.com/licenses/upl.\n\"\"\"\n" > $$init_py_file; \
+            echo "__project__ = \"$name\"" >> $init_py_file
+            echo "__version__ = \"$version\"" >> $init_py_file
+          fi
+
+      - name: Sync
+        working-directory: src/${{ matrix.directory }}
+        run: uv sync --locked --all-extras --dev
+
+      - name: Build
+        working-directory: src/${{ matrix.directory }}
+        run: uv build
+
+      - name: Test install
+        working-directory: src/${{ matrix.directory }}
+        run: uv pip install .
+
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: ./src/${{ matrix.directory }}/dist/
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+
+
+  get-directories:
+    runs-on: ubuntu-latest
+    outputs:
+      directories: ${{ steps.get-directories.outputs.directories }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get directories
+        id: get-directories
+        run: |
+          directories=$(ls src | grep -v dbtools-mcp-server | grep -v mysql-mcp-server | grep -v oci-pricing-mcp-server | grep -v oracle-db-doc-mcp-server | jq -R -s -c 'split("\n")[:-1]')
+          echo "directories=$directories" >> $GITHUB_OUTPUT

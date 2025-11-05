@@ -49,9 +49,15 @@ test:
 	@for dir in $(SUBDIRS); do \
 		if [ -f $$dir/pyproject.toml ]; then \
 			echo "Testing $$dir"; \
-			cd $$dir && uv sync && uv run pytest -vv && cd ../..; \
+			cd $$dir && \
+				COVERAGE_FILE=../../.coverage.$$(_basename=$$(basename $$dir); echo $$_basename) \
+				uv run pytest --cov=. --cov-branch --cov-append --cov-report=html && \
+			cd ../..; \
 		fi \
 	done
+	uv run coverage combine
+	uv run coverage html
+	uv run coverage report --fail-under=70
 
 format:
 	uv tool run --from 'tox==4.30.2' tox -e format

@@ -21,6 +21,7 @@ A Python-based MCP (Model Context Protocol) server that provides a suite of tool
   - `ragify_column`: Create/populate vector columns for embeddings
   - `ask_ml_rag`: Retrieval-augmented generation from vector stores
   - `heatwave_ask_help`: Answers questions about how to use HeatWave ML
+  - `ask_nl_sql`: Convert natural language questions into SQL queries and execute them automatically
 
 - **Vector Store Management**
   - List files in `secure_file_priv` (local mode)
@@ -213,6 +214,7 @@ python mysql_mcp_server.py
 11. `list_all_compartments()`: List OCI compartments
 12. `object_storage_list_buckets(compartment_name | compartment_id)`: List buckets in a compartment
 13. `object_storage_list_objects(namespace, bucket_name)`: List objects in a bucket
+14. `ask_nl_sql(connection_id, question)`: Convert natural language questions into SQL queries and execute them automatically
 
 ## Security
 
@@ -236,6 +238,7 @@ Here are example prompts you can use to interact with the MCP server, note that 
 ```
 "Generate a summary of error logs"
 "Ask ml_rag: Show me refund policy from the vector store"
+"What is the average delay incurred by flights?"
 ```
 
 ### 3. Object Storage

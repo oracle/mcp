@@ -30,6 +30,8 @@ import markdownify as md
 from bs4 import BeautifulSoup
 from fastmcp import FastMCP
 from pocketsearch import PocketSearch, PocketWriter
+from pydantic import Field
+from typing import Annotated
 
 # Working home directory
 HOME_DIR = Path.home().joinpath(PurePath(".oracle/oracle-db-doc-mcp-server"))
@@ -89,8 +91,8 @@ mcp = FastMCP(
 
 @mcp.tool()
 def search_oracle_database_documentation(
-    search_query: str,
-    max_results: int = 4,
+    search_query: Annotated[str, Field(description="The search phrase to search for in the documentation.")],
+    max_results: Annotated[int, Field(description="The maximum number of search results that should be returned, default 4.")] = 4
 ) -> list[str]:
     """Search for information about how to use Oracle Database for a query string
        and return a list of results.
@@ -193,20 +195,19 @@ def maintain_content(path: str) -> None:
         if location.is_file() and location.suffix == ".zip":
 
             # Check if temp output directory exists and remove it
-            zip_output = Path(ZIP_TEMP_OUTPUT)
-            if zip_output.exists():
-                logger.debug(f"Removing existing zip output directory: {zip_output}")
-                shutil.rmtree(zip_output)
+            if ZIP_TEMP_OUTPUT.exists():
+                logger.debug(f"Removing existing zip output directory: {ZIP_TEMP_OUTPUT}")
+                shutil.rmtree(ZIP_TEMP_OUTPUT)
 
-            logger.debug(f"Creating zip output directory: {zip_output}")
-            zip_output.mkdir()
+            logger.debug(f"Creating zip output directory: {ZIP_TEMP_OUTPUT}")
+            ZIP_TEMP_OUTPUT.mkdir()
             with zipfile.ZipFile(location, "r") as zip_ref:
-                logger.debug(f"Extracting zip file {location} to {zip_output}")
+                logger.debug(f"Extracting zip file {location} to {ZIP_TEMP_OUTPUT}")
                 zip_ref.extractall(ZIP_TEMP_OUTPUT)
 
-            logger.debug(f"Done creating zip output directory: {zip_output}")
+            logger.debug(f"Done creating zip output directory: {ZIP_TEMP_OUTPUT}")
             # Set the location to the extracted output directory
-            location = zip_output
+            location = ZIP_TEMP_OUTPUT
 
         logger.debug("Indexing all html files in the directory...")
 
@@ -226,9 +227,9 @@ def maintain_content(path: str) -> None:
             write_file_content(INDEX_VERSION_FILE, INDEX_VERSION)
 
         # Delete temporary zip output directory if it exists
-        if Path(ZIP_TEMP_OUTPUT).exists():
-            logger.debug(f"Removing temporary zip output directory: {zip_output}")
-            shutil.rmtree(zip_output)
+        if ZIP_TEMP_OUTPUT.exists():
+            logger.debug(f"Removing temporary zip output directory: {ZIP_TEMP_OUTPUT}")
+            shutil.rmtree(ZIP_TEMP_OUTPUT)
 
 
 def update_content(location: Path) -> None:
@@ -316,10 +317,7 @@ def convert_to_markdown_chunks(file: Path) -> list[str]:
         # Convert HTML to Markdown
         markdown = md.markdownify(html)
         if PREPROCESS != "NONE":
-            markdown = markdown.replace(
-                "Previous\nNext\n JavaScript must be enabled to correctly display this content",
-                "",
-            )
+            # Remove URLs from markdown
             markdown = remove_markdown_urls(markdown)
 
         # Split markdown into sections based on headings
@@ -423,6 +421,7 @@ def preprocess_html(html_content: str) -> str:
     # Remove common Oracle doc boilerplate text patterns
     boilerplate_patterns = [
         r"JavaScript.*(?:disabled|enabled).*browser",
+        r"JavaScript must be enabled to correctly display this content",
         r"Skip navigation.*",
         r"Oracle®.*(?:Database.*)?(?:Reference|Guide|Manual|Documentation)",
         r"Release \d+[a-z]*[\s-]*[A-Z0-9-]*",
@@ -461,22 +460,22 @@ def build_folder_structure() -> None:
         RESOURCES_DIR.mkdir(parents=True)
 
 
-def get_file_content(path: str) -> str:
+def get_file_content(path: Path) -> str:
     """Reads the content of a file and returns it or 'N/A' if the file does not exist.
 
     Args:
         file (Path): The path to the file.
     """
-    if Path(path).exists():
-        with Path(path).open("r") as f:
+    if path.exists():
+        with path.open("r") as f:
             return f.read().strip()
     else:
         return "N/A"
 
 
-def write_file_content(path: str, content: str) -> None:
+def write_file_content(path: Path, content: str) -> None:
     """Writes the content to a file."""
-    with Path(path).open("w") as f:
+    with path.open("w") as f:
         f.write(content)
 
 

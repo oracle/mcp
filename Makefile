@@ -55,6 +55,9 @@ test:
 			cd ../..; \
 		fi \
 	done
+	$(MAKE) combine-coverage
+
+combine-coverage:
 	uv run coverage combine
 	uv run coverage html
 	uv run coverage report --fail-under=70

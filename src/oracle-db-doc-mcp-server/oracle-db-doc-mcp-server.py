@@ -91,8 +91,15 @@ mcp = FastMCP(
 
 @mcp.tool()
 def search_oracle_database_documentation(
-    search_query: Annotated[str, Field(description="The search phrase to search for in the documentation.")],
-    max_results: Annotated[int, Field(description="The maximum number of search results that should be returned, default 4.")] = 4
+    search_query: Annotated[
+        str, Field(description="The search phrase to search for in the documentation.")
+    ],
+    max_results: Annotated[
+        int,
+        Field(
+            description="The maximum number of search results that should be returned, default 4."
+        ),
+    ] = 4,
 ) -> list[str]:
     """Search for information about how to use Oracle Database for a query string
        and return a list of results.
@@ -196,7 +203,9 @@ def maintain_content(path: str) -> None:
 
             # Check if temp output directory exists and remove it
             if ZIP_TEMP_OUTPUT.exists():
-                logger.debug(f"Removing existing zip output directory: {ZIP_TEMP_OUTPUT}")
+                logger.debug(
+                    f"Removing existing zip output directory: {ZIP_TEMP_OUTPUT}"
+                )
                 shutil.rmtree(ZIP_TEMP_OUTPUT)
 
             logger.debug(f"Creating zip output directory: {ZIP_TEMP_OUTPUT}")

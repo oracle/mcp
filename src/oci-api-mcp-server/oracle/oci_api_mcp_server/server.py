@@ -103,7 +103,7 @@ def get_oci_command_help(command: str) -> str:
       - Additionally, if a service commonly uses hyphenated commands for 
         list operations, try hyphenated forms as well 
         e.g. 
-          recovery protected-database list-protected-databases OR
+          recovery protected-database-collection list-protected-databases OR
           psql db-system-collection list-db-systems.
   
     """

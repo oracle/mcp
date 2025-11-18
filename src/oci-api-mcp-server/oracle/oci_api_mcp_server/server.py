@@ -71,23 +71,23 @@ def get_oci_command_help(command: str) -> str:
     """Returns helpful instructions for running an OCI CLI command.
 
     IMPORTANT:
-      - Only provide the command _after_ 'oci' — do not include the string 
+      - Only provide the command _after_ 'oci' — do not include the string
         'oci' in `command`.
-      - Never use the information returned by this tool to instruct an end 
-        user directly. Use it only to determine which command to run 
+      - Never use the information returned by this tool to instruct an end
+        user directly. Use it only to determine which command to run
         yourself using run_oci_command.
 
     Command structure guidance:
-      - OCI subcommands are organized as: 
+      - OCI subcommands are organized as:
             <service> <subcommand> <subcommand> ...
-        e.g. 
-        compute instance list OR 
-        compute instance action-name OR 
+        e.g.
+        compute instance list OR
+        compute instance action-name OR
         recovery protected-database-collection list-protected-databases
       - Services vary in how they structure their CLI. Some use
-        explicit resource tokens (compute instance list), others use 
-        collection names or hyphenated actions 
-        (e.g. list-protected-databases), 
+        explicit resource tokens (compute instance list), others use
+        collection names or hyphenated actions
+        (e.g. list-protected-databases),
         and some have deeper subcommand chains (service sub1 sub2 sub3 ...).
 
     How to ask for help:
@@ -95,17 +95,17 @@ def get_oci_command_help(command: str) -> str:
           compute instance list
           compute instance action-name
           recovery protected-database-collection list-protected-databases
-      - If the specific request returns an error, progressively make it 
+      - If the specific request returns an error, progressively make it
         less specific:
           1. try the full command (most specific)
           2. remove the final token and try again
           3. repeat until you reach just the service name (e.g. compute)
-      - Additionally, if a service commonly uses hyphenated commands for 
-        list operations, try hyphenated forms as well 
-        e.g. 
+      - Additionally, if a service commonly uses hyphenated commands for
+        list operations, try hyphenated forms as well
+        e.g.
           recovery protected-database-collection list-protected-databases OR
           psql db-system-collection list-db-systems.
-  
+
     """
     logger.info(f"get_oci_command_help called with command: {command}")
     env_copy = os.environ.copy()

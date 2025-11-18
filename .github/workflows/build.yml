@@ -41,9 +41,11 @@ jobs:
         working-directory: src/${{ matrix.directory }}
         run: uv sync --locked --all-extras --dev
 
-      - name: Test
+      - name: Test and Coverage
         working-directory: src/${{ matrix.directory }}
-        run: uv run pytest
+        run: uv run pytest --cov=. --cov-branch --cov-report=html:htmlcov/${{ matrix.directory }} --cov-report=term-missing
+        env:
+          COVERAGE_FILE: .coverage.${{ matrix.directory }}
 
       - name: Build
         working-directory: src/${{ matrix.directory }}
@@ -52,6 +54,15 @@ jobs:
       - name: Test install
         working-directory: src/${{ matrix.directory }}
         run: uv pip install .
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.directory }}-coverage-report
+          path: |
+            src/${{ matrix.directory }}/htmlcov/*
+            src/${{ matrix.directory }}/.coverage.${{ matrix.directory }}
+          include-hidden-files: true
 
   get-directories:
     runs-on: ubuntu-latest
@@ -66,3 +77,38 @@ jobs:
         run: |
           directories=$(ls src | grep -v dbtools-mcp-server | grep -v mysql-mcp-server | grep -v oci-pricing-mcp-server | grep -v oracle-db-doc-mcp-server | jq -R -s -c 'split("\n")[:-1]')
           echo "directories=$directories" >> $GITHUB_OUTPUT
+
+  combined-coverage:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install requirements
+        run: pip install -r requirements-dev.txt
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-coverage-report' # Downloads all artifacts starting with 'my-artifact-'
+          merge-multiple: true # Merges the contents of multiple artifacts into a single directory
+
+      - name: Combine Coverage reports
+        run: |
+          make combine-coverage
+
+      - name: Upload combined reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-in-one-coverage-report
+          path: |
+            oracle-mcp-coverage-report/*
+            .coverage
+          include-hidden-files: true
+

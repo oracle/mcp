@@ -12,25 +12,29 @@ uv run oracle.oci-monitoring-mcp-server
 
 ## Tools
 
-| Tool Name | Description |
-| --- | --- |
-| list_metrics | List metrics in the tenancy |
-| get_metric | Get metric by name |
+| Tool Name             | Description                                                      |
+|-----------------------|------------------------------------------------------------------|
+| list_alarms           | List Alarms in the tenancy                                       |
+| get_metrics_data      | Gets aggregated metric data                                      |
+| get_available_metrics | Lists the available metrics a user can query on in their tenancy |
 
-
-⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
+⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege
+IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 
 ## Third-Party APIs
 
-Developers choosing to distribute a binary implementation of this project are responsible for obtaining and providing all required licenses and copyright notices for the third-party code used in order to ensure compliance with their respective open source licenses.
+Developers choosing to distribute a binary implementation of this project are responsible for obtaining and providing
+all required licenses and copyright notices for the third-party code used in order to ensure compliance with their
+respective open source licenses.
 
 ## Disclaimer
 
-Users are responsible for their local environment and credential safety. Different language model selections may yield different results and performance.
+Users are responsible for their local environment and credential safety. Different language model selections may yield
+different results and performance.
 
 ## License
 
 Copyright (c) 2025 Oracle and/or its affiliates.
- 
+
 Released under the Universal Permissive License v1.0 as shown at  
 <https://oss.oracle.com/licenses/upl/>.

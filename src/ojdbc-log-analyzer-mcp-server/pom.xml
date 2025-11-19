@@ -9,7 +9,7 @@
     <version>1.0.0</version>
     <packaging>jar</packaging>
     <name>Oracle JDBC Log Analyzer MCP Server</name>
-    <description>The OJDBC Log Analyzer MCP Server provides tools for analyzing
+    <description>The Oracle JDBC Log Analyzer MCP Server provides tools for analyzing
         Oracle JDBC thin client logs and RDBMS/SQLNet trace files.</description>
     <url>https://github.com/Youssef-Erradi/mcp/tree/main/src/ojdbc-log-analyzer-mcp-server</url>
 
@@ -32,7 +32,6 @@
         <mcp.version>0.12.1</mcp.version>
         <ojdbc.version>23.9.0.25.07</ojdbc.version>
         <logAnalyzer.version>1.0.0</logAnalyzer.version>
-        <jetty.version>12.1.4</jetty.version>
         <junit.version>5.10.0</junit.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
@@ -72,12 +71,18 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.1</version>
                 <executions>
                     <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
                         <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.oracle.database.jdbc.mcp.loganalyzer.OracleJDBCLogAnalyzerMCPServer</mainClass>
+                                    <mainClass>com.oracle.database.jdbc.OracleJDBCLogAnalyzerMCPServer</mainClass>
                                 </transformer>
                             </transformers>
                         </configuration>
@@ -85,24 +90,6 @@
                 </executions>
             </plugin>
         </plugins>
-
-        <resources>
-            <resource>
-                <directory>${project.basedir}</directory>
-                <includes>
-                    <include>THIRD_PARTY_LICENSES.txt</include>
-                </includes>
-                <targetPath>META-INF</targetPath>
-            </resource>
-
-            <resource>
-                <directory>${project.basedir}</directory>
-                <includes>
-                    <include>LICENSE.txt</include>
-                </includes>
-                <targetPath>META-INF</targetPath>
-            </resource>
-        </resources>
 
     </build>
 

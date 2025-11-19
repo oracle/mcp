@@ -29,4 +29,3 @@ htmlcov/
 
 # Maven
 **/target/
-dependency-reduced-pom.xml

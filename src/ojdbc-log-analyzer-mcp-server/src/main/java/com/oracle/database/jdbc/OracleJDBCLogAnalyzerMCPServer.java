@@ -212,7 +212,7 @@ public final class OracleJDBCLogAnalyzerMCPServer {
       .tool(Tool.builder()
         .name("list-log-files-from-directory")
         .title("List Files From Directory")
-        .description("List visible files from a specified directory, which helps the user to analyze multiple files with one prompt.")
+        .description("List all visible files from a specified directory, which helps the user analyze multiple files with one prompt.")
         .inputSchema(FILE_PATH_SCHEMA)
         .build())
       .callHandler((exchange, callReq) -> tryCall(() -> {

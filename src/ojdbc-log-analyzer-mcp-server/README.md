@@ -10,7 +10,7 @@ The `ojdbc-log-analyzer-mcp-server` provides 8 tools for analyzing Oracle JDBC t
 - **`get-queries`**: Retrieves all executed SQL queries with timestamps and execution times.
 - **`get-errors`**: Extracts all errors reported by both server and client.
 - **`get-connections-events`**: Shows connection open/close events.
-- **`get-log-files-from-directory`**: Lists all Oracle JDBC log files in a directory.
+- **`list-log-files-from-directory`**: List all visible files from a specified directory, which helps the user analyze multiple files with one prompt.
 - **`log-comparison`**: Compares two log files for performance metrics, errors, and network information.
 
 ### RDBMS/SQLNet Trace Analysis:

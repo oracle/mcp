@@ -26,3 +26,7 @@ venv.bak/
 
 .coverage
 htmlcov/
+
+# Maven
+**/target/
+dependency-reduced-pom.xml

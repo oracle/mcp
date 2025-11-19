@@ -43,6 +43,7 @@ Add (or merge) the following JSON to the configuration file to an MCP client (su
 {
   "mcpServers": {
     "ojdbc-log-analyzer-mcp-server": {
+      "type": "stdio",
       "command": "java",
       "args": [
         "-jar",

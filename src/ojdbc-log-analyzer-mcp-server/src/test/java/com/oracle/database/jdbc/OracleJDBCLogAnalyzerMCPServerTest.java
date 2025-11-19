@@ -1,4 +1,4 @@
-package com.oracle.database.jdbc.mcp.loganalyzer;
+package com.oracle.database.jdbc;
 
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema;

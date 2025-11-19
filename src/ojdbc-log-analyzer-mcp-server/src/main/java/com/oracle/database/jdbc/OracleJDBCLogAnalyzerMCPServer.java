@@ -107,14 +107,14 @@ public final class OracleJDBCLogAnalyzerMCPServer {
    */
   public static List<SyncToolSpecification> getSyncToolSpecifications() {
     return List.of(
-      buildGetStatsTool(),
-      buildGetQueriesTool(),
-      buildGetErrorsTool(),
-      buildListLogsDirectoryTool(),
-      buildGetConnectionEventsTool(),
-      buildLogComparisonTool(),
-      buildGetRdbmsErrorsTool(),
-      buildGetPacketDumpsTool());
+      getStatsTool(),
+      getQueriesTool(),
+      getErrorsTool(),
+      getListLogsDirectoryTool(),
+      getConnectionEventsTool(),
+      logComparisonTool(),
+      getRdbmsErrorsTool(),
+      getPacketDumpsTool());
   }
 
   /**
@@ -127,11 +127,11 @@ public final class OracleJDBCLogAnalyzerMCPServer {
    *
    * @return a {@link SyncToolSpecification SyncToolSpecification} instance for the {@code get-stats} tool.
    */
-  private static SyncToolSpecification buildGetStatsTool() {
+  private static SyncToolSpecification getStatsTool() {
     return SyncToolSpecification.builder()
       .tool(McpSchema.Tool.builder()
         .name("get-stats")
-        .title("Get JDBC Log Stats")
+        .title("Get JDBC Stats")
         .description("Return aggregated stats (error count, packets, bytes) from an Oracle JDBC thin log.")
         .inputSchema(FILE_PATH_SCHEMA)
         .build())
@@ -152,13 +152,14 @@ public final class OracleJDBCLogAnalyzerMCPServer {
    *
    * @return a {@link SyncToolSpecification SyncToolSpecification} instance for the {@code get-queries} tool.
    */
-  private static SyncToolSpecification buildGetQueriesTool() {
+  private static SyncToolSpecification getQueriesTool() {
     return SyncToolSpecification.builder()
       .tool(Tool.builder()
-          .name("get-queries")
-          .description("Get all executed queries from an Oracle JDBC thin log file, including the timestamp and execution time.")
-          .inputSchema(FILE_PATH_SCHEMA)
-          .build())
+        .name("get-queries")
+        .title("Get JDBC Queries")
+        .description("Get all executed queries from an Oracle JDBC thin log file, including the timestamp and execution time.")
+        .inputSchema(FILE_PATH_SCHEMA)
+        .build())
       .callHandler((exchange, callReq) -> tryCall(() -> {
         final var filePath = String.valueOf(callReq.arguments().get(FILE_PATH));
         final var queries = new JDBCLog(filePath).getQueries();
@@ -179,15 +180,16 @@ public final class OracleJDBCLogAnalyzerMCPServer {
    * `
    * @return a {@link SyncToolSpecification SyncToolSpecification} representing the <code>get-errors</code> tool.
    */
-  private static SyncToolSpecification buildGetErrorsTool() {
+  private static SyncToolSpecification getErrorsTool() {
     return SyncToolSpecification.builder()
       .tool(Tool.builder()
         .name("get-errors")
+        .title("Get JDBC Errors")
         .description("Get all reported errors from an Oracle JDBC thin log file, including stacktrace and log context.")
         .inputSchema(FILE_PATH_SCHEMA)
         .build())
-    .callHandler((exchange, callReq) -> tryCall(() -> {
-      final var filePath = String.valueOf(callReq.arguments().get(FILE_PATH));
+      .callHandler((exchange, callReq) -> tryCall(() -> {
+        final var filePath = String.valueOf(callReq.arguments().get(FILE_PATH));
         final var errors = new JDBCLog(filePath).getLogErrors();
         return errors.stream()
           .map(LogError::toJSONString)
@@ -205,11 +207,12 @@ public final class OracleJDBCLogAnalyzerMCPServer {
    *
    * @return a {@link SyncToolSpecification SyncToolSpecification} for the {@code get-log-files-from-directory} tool.
    */
-  private static SyncToolSpecification buildListLogsDirectoryTool() {
+  private static SyncToolSpecification getListLogsDirectoryTool() {
     return SyncToolSpecification.builder()
       .tool(Tool.builder()
-        .name("get-log-files-from-directory")
-        .description("List all Oracle JDBC log files from the specified directory.")
+        .name("list-log-files-from-directory")
+        .title("List Files From Directory")
+        .description("List visible files from a specified directory, which helps the user to analyze multiple files with one prompt.")
         .inputSchema(FILE_PATH_SCHEMA)
         .build())
       .callHandler((exchange, callReq) -> tryCall(() -> {
@@ -236,10 +239,11 @@ public final class OracleJDBCLogAnalyzerMCPServer {
    *
    * @return a {@link SyncToolSpecification SyncToolSpecification} instance that defines the {@code log-comparison} tool.
    */
-  private static SyncToolSpecification buildLogComparisonTool() {
+  private static SyncToolSpecification logComparisonTool() {
     return SyncToolSpecification.builder()
       .tool(Tool.builder()
         .name("log-comparison")
+        .title("JDBC Log Comparison")
         .description("Compare two JDBC log files for performance metrics, errors, and network information.")
         .inputSchema(FILE_COMPARISON_SCHEMA)
         .build())
@@ -259,10 +263,11 @@ public final class OracleJDBCLogAnalyzerMCPServer {
    *
    * @return a {@link SyncToolSpecification SyncToolSpecification} instance for the {@code get-connection-events} tool.
    */
-  private static SyncToolSpecification buildGetConnectionEventsTool() {
+  private static SyncToolSpecification getConnectionEventsTool() {
     return SyncToolSpecification.builder()
       .tool(Tool.builder()
         .name("get-connection-events")
+        .title("Get JDBC Connection Events")
         .description("Retrieve opened and closed JDBC connection events from the log file with timestamp and connection details.")
         .inputSchema(FILE_PATH_SCHEMA)
         .build())
@@ -272,7 +277,8 @@ public final class OracleJDBCLogAnalyzerMCPServer {
         return events.stream()
           .map(JDBCConnectionEvent::toJSONString)
           .collect(Collectors.joining(",", "[", "]"));
-      })).build();
+      }))
+      .build();
   }
 
   /**
@@ -285,10 +291,11 @@ public final class OracleJDBCLogAnalyzerMCPServer {
    *
    * @return a {@link SyncToolSpecification SyncToolSpecification} representing the {@code get-rdbms-errors} tool.
    */
-  private static SyncToolSpecification buildGetRdbmsErrorsTool() {
+  private static SyncToolSpecification getRdbmsErrorsTool() {
     return SyncToolSpecification.builder()
       .tool(Tool.builder()
         .name("get-rdbms-errors")
+        .title("Get RDBMS/SQLNet Errors")
         .description("Retrieve errors from an RDBMS/SQLNet trace file.")
         .inputSchema(RDBMS_TOOLS_SCHEMA)
         .build())
@@ -311,10 +318,11 @@ public final class OracleJDBCLogAnalyzerMCPServer {
    *
    * @return a {@link SyncToolSpecification SyncToolSpecification} instance for the {@code get-packet-dumps} tool.
    */
-  private static SyncToolSpecification buildGetPacketDumpsTool() {
+  private static SyncToolSpecification getPacketDumpsTool() {
     return SyncToolSpecification.builder()
       .tool(Tool.builder()
         .name("get-packet-dumps")
+        .title("Get RDBMS/SQLNet Packet Dumps")
         .description("Extract packet dumps from RDBMS/SQLNet trace file for given connection ID.")
         .inputSchema(RDBMS_TOOLS_SCHEMA)
         .build())

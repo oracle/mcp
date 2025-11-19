@@ -31,7 +31,7 @@ class OracleJDBCLogAnalyzerMCPServerTest {
     "get-stats",
     "get-queries",
     "get-errors",
-    "get-log-files-from-directory",
+    "list-log-files-from-directory",
     "get-connection-events",
     "log-comparison",
     "get-rdbms-errors",

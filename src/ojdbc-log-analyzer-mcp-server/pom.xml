@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.oracle.database.jdbc</groupId>
+    <artifactId>ojdbc-log-analyzer-mcp-server</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+    <name>Oracle JDBC Log Analyzer MCP Server</name>
+    <description>The OJDBC Log Analyzer MCP Server provides tools for analyzing
+        Oracle JDBC thin client logs and RDBMS/SQLNet trace files.</description>
+    <url>https://github.com/Youssef-Erradi/mcp/tree/main/src/ojdbc-log-analyzer-mcp-server</url>
+
+    <licenses>
+        <license>
+            <name>The Universal Permissive License (UPL), Version 1.0</name>
+            <url>https://oss.oracle.com/licenses/upl/</url>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <organization>Oracle Corporation</organization>
+            <organizationUrl>https://www.oracle.com</organizationUrl>
+        </developer>
+    </developers>
+
+    <properties>
+        <java.version>17</java.version>
+        <mcp.version>0.12.1</mcp.version>
+        <ojdbc.version>23.9.0.25.07</ojdbc.version>
+        <logAnalyzer.version>1.0.0</logAnalyzer.version>
+        <jetty.version>12.1.4</jetty.version>
+        <junit.version>5.10.0</junit.version>
+        <maven.compiler.source>${java.version}</maven.compiler.source>
+        <maven.compiler.target>${java.version}</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp</artifactId>
+            <version>${mcp.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.oracle.database.jdbc</groupId>
+            <artifactId>ojdbc17</artifactId>
+            <version>${ojdbc.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.oracle.database.jdbc</groupId>
+            <artifactId>ojdbc-log-analyzer</artifactId>
+            <version>${logAnalyzer.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <configuration>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>com.oracle.database.jdbc.mcp.loganalyzer.OracleJDBCLogAnalyzerMCPServer</mainClass>
+                                </transformer>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+
+        <resources>
+            <resource>
+                <directory>${project.basedir}</directory>
+                <includes>
+                    <include>THIRD_PARTY_LICENSES.txt</include>
+                </includes>
+                <targetPath>META-INF</targetPath>
+            </resource>
+
+            <resource>
+                <directory>${project.basedir}</directory>
+                <includes>
+                    <include>LICENSE.txt</include>
+                </includes>
+                <targetPath>META-INF</targetPath>
+            </resource>
+        </resources>
+
+    </build>
+
+</project>

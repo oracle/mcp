@@ -1,6 +1,14 @@
 package com.oracle.database.jdbc;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oracle.database.jdbc.config.ConfigRoot;
+import com.oracle.database.jdbc.config.SourceConfig;
+import com.oracle.database.jdbc.config.ToolConfig;
+import com.oracle.database.jdbc.config.ToolParameterConfig;
+import io.modelcontextprotocol.server.McpServerFeatures;
+import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
+import org.yaml.snakeyaml.Yaml;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -12,6 +20,9 @@ import java.nio.file.Paths;
 import java.security.Provider;
 import java.security.Security;
 import java.sql.Clob;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -20,16 +31,140 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Stream;
 
 public class Utils {
 
-  static McpSchema.CallToolResult errorResult(String toolName, Exception e) {
-    String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-    return McpSchema.CallToolResult.builder()
-        .isError(true)
-        .addTextContent("Error in " + toolName + ": " + msg)
-        .build();
+  /**
+   * <p>
+   *   Returns the list of all available tools for this server.
+   * </p>
+   */
+  static void addSyncToolSpecifications(McpSyncServer server, ServerConfig config) {
+    List<McpServerFeatures.SyncToolSpecification> specs = OracleJDBCLogAnalyzerMCPServer.getLogAnalyzerTools();
+    for (McpServerFeatures.SyncToolSpecification spec : specs) {
+      server.addTool(spec);
+    }
+
+    // ---------- Dynamically Added Tools ----------
+    for (Map.Entry<String, ToolConfig> entry : config.tools.entrySet()) {
+      ToolConfig tc = entry.getValue();
+      server.addTool(
+          McpServerFeatures.SyncToolSpecification.builder()
+              .tool(McpSchema.Tool.builder()
+                  .name(tc.name)
+                  .title(tc.name)
+                  .description(tc.description)
+                  .inputSchema(ToolSchemas.SQL_ONLY)
+                  .build()
+              )
+              .callHandler((exchange, callReq) ->
+                  Utils.tryCall(() -> {
+                    // Resolve source
+                    SourceConfig src = config.sources.get(tc.source);
+                    String jdbcUrl = (src != null) ? src.toJdbcUrl() : config.dbUrl;
+                    String dbUser = (src != null) ? src.user : config.dbUser;
+                    String dbPassword = (src != null) ? src.password : config.dbPassword;
+                    try (Connection c = DriverManager.getConnection(jdbcUrl, dbUser, dbPassword)) {
+                      PreparedStatement ps = c.prepareStatement(tc.statement);
+                      int paramIdx = 1;
+                      if (tc.parameters != null) {
+                        for (ToolParameterConfig param : tc.parameters) {
+                          Object argVal = callReq.arguments().get(param.name);
+                          ps.setObject(paramIdx++, argVal);
+                        }
+                      }
+                      if (tc.statement.trim().toLowerCase().startsWith("select")) {
+                        ResultSet rs = ps.executeQuery();
+                        List<Map<String,Object>> rows = rsToList(rs);
+                        return McpSchema.CallToolResult.builder()
+                            .structuredContent(Map.of("rows", rows, "rowCount", rows.size()))
+                            .addTextContent(new ObjectMapper().writeValueAsString(rows))
+                            .build();
+                      } else {
+                        int n = ps.executeUpdate();
+                        return McpSchema.CallToolResult.builder()
+                            .structuredContent(Map.of("updateCount", n))
+                            .addTextContent("{\"updateCount\":" + n + "}")
+                            .build();
+                      }
+                    }
+                  })
+              )
+              .build()
+      );
+    }
+  }
+
+  /**
+   * Loads the server configuration from a YAML file specified by the <code>configFile</code> system property.
+   * If the file cannot be read or parsed, falls back to using only system properties.
+   * Also initializes tool names for dynamic tool entries.
+   *
+   * @return the loaded and initialized {@link ServerConfig} instance.
+   */
+  static ServerConfig loadConfig() {
+    ServerConfig config;
+    String configFilePath = System.getProperty("configFile");
+    ConfigRoot yamlConfig = null;
+    try {
+      try (Reader reader = Files.newBufferedReader(Paths.get(configFilePath))) {
+        Yaml yaml = new Yaml();
+        yamlConfig = yaml.loadAs(reader, ConfigRoot.class);
+      }
+    } catch (Exception e) {
+      Logger logger = Logger.getLogger(OracleDBToolboxMCPServer.class.getName());
+      logger.log(Level.SEVERE, e.getMessage());
+    }
+    if (yamlConfig == null) {
+      config = ServerConfig.fromSystemProperties();
+    } else {
+      String defaultSourceKey = yamlConfig.sources.keySet().stream().findFirst().orElseThrow();
+      config = ServerConfig.fromSystemPropertiesAndYaml(yamlConfig, defaultSourceKey);
+      if (config.tools != null) {
+        for (Map.Entry<String, ToolConfig> entry : config.tools.entrySet()) {
+          entry.getValue().name = entry.getKey();
+        }
+      }
+    }
+    return config;
+  }
+
+
+  /**
+   * <p>
+   *   Executes the provided {@link OracleJDBCLogAnalyzerMCPServer.ThrowingSupplier ThrowingSupplier} action,
+   *   which may throw an {@link Exception}, and returns the resulting {@link McpSchema.CallToolResult}.
+   *   <br>
+   *   If the action executes successfully, its {@link McpSchema.CallToolResult} is returned as-is.
+   *   If any exception is thrown, this method returns a {@link McpSchema.CallToolResult}
+   *   with the exception message added as {@link McpSchema.TextContent} and {@code isError} set to {@code true}.
+   * </p>
+   *
+   * <p>
+   *   This utility method provides standardized error handling and result formatting for methods that may throw exceptions,
+   *   ensuring that errors are consistently reported back to the MCP server.
+   * </p>
+   *
+   * @param action The supplier action to execute, which may throw an {@link Exception} and returns a {@link McpSchema.CallToolResult}.
+   * @return The result of the supplier if successful, or an error {@link McpSchema.CallToolResult} if an exception occurs.
+   */
+  static McpSchema.CallToolResult tryCall(ThrowingSupplier<McpSchema.CallToolResult> action) {
+    try {
+      return action.get();
+    } catch (Exception e) {
+      return McpSchema.CallToolResult.builder()
+          .addTextContent("Unexpected: " + e.getMessage())
+          .isError(true)
+          .build();
+    }
+  }
+
+  @FunctionalInterface
+  public interface ThrowingSupplier<T> {
+    T get() throws Exception;
   }
 
   /**

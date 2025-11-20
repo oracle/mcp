@@ -1,8 +1,8 @@
-# Oracle JDBC Log Analyzer MCP Server
+# Oracle DB Toolbox MCP Server
 
 ## Overview
 
-The `ojdbc-log-analyzer-mcp-server` provides 8 tools for analyzing Oracle JDBC thin client logs and RDBMS/SQLNet trace files:
+The `oracle-db-toolbox-mcp-server` provides the capability to build your own custom tools along with 8 tools for analyzing Oracle JDBC thin client logs and RDBMS/SQLNet trace files:
 
 ### Oracle JDBC Log Analysis:
 
@@ -69,6 +69,10 @@ sources:
 tools:
   hotels-by-name:
     source: prod-db
+    parameters:
+      - name: name
+        type: string
+        description: Hotel name to search for.
     statement: SELECT * FROM hotels WHERE name LIKE '%' || :name || '%'
 ```
 To enable YAML configuration, launch the server with:

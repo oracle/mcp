@@ -7,20 +7,15 @@
 
 package com.oracle.database.jdbc;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oracle.database.jdbc.logs.model.JDBCConnectionEvent;
 import com.oracle.database.jdbc.logs.model.JDBCExecutedQuery;
 import com.oracle.database.jdbc.logs.model.LogError;
 import com.oracle.database.jdbc.logs.model.RDBMSError;
 import com.oracle.database.jdbc.logs.model.RDBMSPacketDump;
-import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
-import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
-import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
-import io.modelcontextprotocol.spec.McpSchema.TextContent;
 
 import com.oracle.database.jdbc.logs.analyzer.JDBCLog;
 import com.oracle.database.jdbc.logs.analyzer.RDBMSLog;
@@ -73,10 +68,13 @@ public final class OracleJDBCLogAnalyzerMCPServer {
         .description("Return aggregated stats (error count, packets, bytes) from an Oracle JDBC thin log.")
         .inputSchema(ToolSchemas.FILE_PATH_SCHEMA)
         .build())
-      .callHandler((exchange, callReq) -> tryCall( () -> {
+      .callHandler((exchange, callReq) -> Utils.tryCall( () -> {
         final var filePath = String.valueOf(callReq.arguments().get(FILE_PATH));
         final var stats = new JDBCLog(filePath).getStats();
-        return stats.toJSONString();
+        return McpSchema.CallToolResult.builder()
+            .addTextContent(stats.toJSONString())
+            .isError(false)
+            .build();
       }))
       .build();
   }
@@ -98,12 +96,16 @@ public final class OracleJDBCLogAnalyzerMCPServer {
         .description("Get all executed queries from an Oracle JDBC thin log file, including the timestamp and execution time.")
         .inputSchema(ToolSchemas.FILE_PATH_SCHEMA)
         .build())
-      .callHandler((exchange, callReq) -> tryCall(() -> {
+      .callHandler((exchange, callReq) -> Utils.tryCall(() -> {
         final var filePath = String.valueOf(callReq.arguments().get(FILE_PATH));
         final var queries = new JDBCLog(filePath).getQueries();
-        return queries.stream()
+        String results = queries.stream()
           .map(JDBCExecutedQuery::toJSONString)
           .collect(Collectors.joining(",", "[", "]"));
+        return McpSchema.CallToolResult.builder()
+            .addTextContent(results)
+            .isError(false)
+            .build();
       }))
       .build();
   }
@@ -126,12 +128,16 @@ public final class OracleJDBCLogAnalyzerMCPServer {
         .description("Get all reported errors from an Oracle JDBC thin log file, including stacktrace and log context.")
         .inputSchema(ToolSchemas.FILE_PATH_SCHEMA)
         .build())
-      .callHandler((exchange, callReq) -> tryCall(() -> {
+      .callHandler((exchange, callReq) -> Utils.tryCall(() -> {
         final var filePath = String.valueOf(callReq.arguments().get(FILE_PATH));
         final var errors = new JDBCLog(filePath).getLogErrors();
-        return errors.stream()
+        String results = errors.stream()
           .map(LogError::toJSONString)
           .collect(Collectors.joining(",", "[", "]"));
+        return McpSchema.CallToolResult.builder()
+            .addTextContent(results)
+            .isError(false)
+            .build();
       }))
       .build();
   }
@@ -153,17 +159,22 @@ public final class OracleJDBCLogAnalyzerMCPServer {
         .description("List all visible files from a specified directory, which helps the user analyze multiple files with one prompt.")
         .inputSchema(ToolSchemas.FILE_PATH_SCHEMA)
         .build())
-      .callHandler((exchange, callReq) -> tryCall(() -> {
+      .callHandler((exchange, callReq) -> Utils.tryCall(() -> {
         final var directoryPath = String.valueOf(callReq.arguments().get(FILE_PATH));
         final var directory = new File(directoryPath);
         final var files = directory.listFiles();
         if (files == null || files.length == 0) {
           throw new IOException("No files found in the specified directory.");
         }
-        return Arrays.stream(files)
-          .filter(file -> !file.isHidden() && file.isFile())
-          .map(File::getName)
-          .collect(Collectors.joining(",", "[", "]"));
+        String results =Arrays.stream(files)
+            .filter(file -> !file.isHidden() && file.isFile())
+            .map(File::getName)
+            .collect(Collectors.joining(",", "[", "]"));
+
+        return McpSchema.CallToolResult.builder()
+            .addTextContent(results)
+            .isError(false)
+            .build();
       }))
       .build();
   }
@@ -185,11 +196,14 @@ public final class OracleJDBCLogAnalyzerMCPServer {
         .description("Compare two JDBC log files for performance metrics, errors, and network information.")
         .inputSchema(ToolSchemas.FILE_COMPARISON_SCHEMA)
         .build())
-      .callHandler((exchange, callReq) -> tryCall(() -> {
+      .callHandler((exchange, callReq) -> Utils.tryCall(() -> {
         final var filePath = String.valueOf(callReq.arguments().get(FILE_PATH));
         final var secondFilePath = String.valueOf(callReq.arguments().get(SECOND_FILE_PATH));
         final var comparison = new JDBCLog(filePath).compareTo(secondFilePath);
-        return comparison.toJSONString();
+        return McpSchema.CallToolResult.builder()
+            .addTextContent(comparison.toJSONString())
+            .isError(false)
+            .build();
       }))
       .build();
   }
@@ -209,12 +223,16 @@ public final class OracleJDBCLogAnalyzerMCPServer {
         .description("Retrieve opened and closed JDBC connection events from the log file with timestamp and connection details.")
         .inputSchema(ToolSchemas.FILE_PATH_SCHEMA)
         .build())
-      .callHandler((exchange, callReq) -> tryCall(() -> {
+      .callHandler((exchange, callReq) -> Utils.tryCall(() -> {
         final var filePath = String.valueOf(callReq.arguments().get(FILE_PATH));
         final var events = new JDBCLog(filePath).getConnectionEvents();
-        return events.stream()
+        String results = events.stream()
           .map(JDBCConnectionEvent::toJSONString)
           .collect(Collectors.joining(",", "[", "]"));
+        return McpSchema.CallToolResult.builder()
+            .addTextContent(results)
+            .isError(false)
+            .build();
       }))
       .build();
   }
@@ -237,12 +255,16 @@ public final class OracleJDBCLogAnalyzerMCPServer {
         .description("Retrieve errors from an RDBMS/SQLNet trace file.")
         .inputSchema(ToolSchemas.RDBMS_TOOLS_SCHEMA)
         .build())
-      .callHandler((exchange, callReq) -> tryCall(() -> {
+      .callHandler((exchange, callReq) -> Utils.tryCall(() -> {
         final var logFile = String.valueOf(callReq.arguments().get(FILE_PATH));
         final var errors = new RDBMSLog(logFile).getErrors();
-        return errors.stream()
+        String results = errors.stream()
           .map(RDBMSError::toJSONString)
           .collect(Collectors.joining(",", "[", "]"));
+        return McpSchema.CallToolResult.builder()
+            .addTextContent(results)
+            .isError(false)
+            .build();
       }))
       .build();
   }
@@ -264,13 +286,17 @@ public final class OracleJDBCLogAnalyzerMCPServer {
         .description("Extract packet dumps from RDBMS/SQLNet trace file for given connection ID.")
         .inputSchema(ToolSchemas.RDBMS_TOOLS_SCHEMA)
         .build())
-      .callHandler((exchange, callReq) -> tryCall(() -> {
+      .callHandler((exchange, callReq) -> Utils.tryCall(() -> {
         final var filePath = String.valueOf(callReq.arguments().get(FILE_PATH));
         final var connId = String.valueOf(callReq.arguments().get(CONNECTION_ID));
         final var packetDumps = new RDBMSLog(filePath).getPacketDumps(connId);
-        return packetDumps.stream()
+        String results = packetDumps.stream()
           .map(RDBMSPacketDump::toJSONString)
           .collect(Collectors.joining(",", "[", "]"));
+        return McpSchema.CallToolResult.builder()
+            .addTextContent(results)
+            .isError(false)
+            .build();
       }))
       .build();
   }
@@ -283,7 +309,7 @@ public final class OracleJDBCLogAnalyzerMCPServer {
    * @param <T> the type of results supplied by this supplier
    */
   @FunctionalInterface
-  private interface ThrowingSupplier<T> {
+  interface ThrowingSupplier<T> {
     /**
      * Gets a result, potentially throwing an {@link IOException}.
      *
@@ -294,36 +320,4 @@ public final class OracleJDBCLogAnalyzerMCPServer {
   }
 
 
-  /**
-   * <p>
-   *   Executes the given {@link ThrowingSupplier ThrowingSupplier} action that may throw an {@link IOException}
-   *   and wraps the result in a {@link CallToolResult CallToolResult}. If the action completes successfully,
-   *   the result is returned in a {@link CallToolResult CallToolResult} with {@code isError} set to {@code false}.
-   *   If an {@link IOException} is thrown, the exception message is returned as {@link TextContent TextContent}
-   *   and {@code isError} is set to {@code true}.
-   * </p>
-   *
-   * <p>
-   *   This utility method is used to standardize error handling and result formatting for
-   *   methods that perform I/O operations and return responses to the MCP server.
-   * </p>
-   *
-   * @param action The supplier action to execute, which may throw an {@link IOException}.
-   * @return a {@link CallToolResult} containing the response and error flag indicating success or failure.
-   */
-  private static CallToolResult tryCall(ThrowingSupplier<String> action) {
-    boolean isError = false;
-    String response;
-    try {
-      response = action.get();
-    } catch (IOException e) {
-      response = e.getMessage();
-      isError = true;
-    }
-
-    return CallToolResult.builder()
-      .addTextContent(response)
-      .isError(isError)
-      .build();
-  }
 }

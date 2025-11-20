@@ -22,7 +22,7 @@ import argparse
 import hashlib
 import logging
 import re
-import shutil
+import tempfile
 import zipfile
 from pathlib import Path, PurePath
 
@@ -45,9 +45,6 @@ CONTENT_CHECKSUM_FILE = HOME_DIR.joinpath(PurePath("content.checksum"))
 
 # Resources folder
 RESOURCES_DIR = HOME_DIR.joinpath(PurePath("resources"))
-
-# Temp directory for zip file extraction
-ZIP_TEMP_OUTPUT = HOME_DIR.joinpath("zip_temp")
 
 PREPROCESS = "BASIC"
 
@@ -198,29 +195,19 @@ def maintain_content(path: str) -> None:
 
         INDEX_FILE.unlink(missing_ok=True)
         logger.info("Recreating index...")
+        if location.is_dir():
+            logger.debug("Indexing all html files in the directory...")
+            update_content(location)
         # Extract the zip file to a temporary directory
-        if location.is_file() and location.suffix == ".zip":
-
-            # Check if temp output directory exists and remove it
-            if ZIP_TEMP_OUTPUT.exists():
-                logger.debug(
-                    f"Removing existing zip output directory: {ZIP_TEMP_OUTPUT}"
-                )
-                shutil.rmtree(ZIP_TEMP_OUTPUT)
-
-            logger.debug(f"Creating zip output directory: {ZIP_TEMP_OUTPUT}")
-            ZIP_TEMP_OUTPUT.mkdir()
-            with zipfile.ZipFile(location, "r") as zip_ref:
-                logger.debug(f"Extracting zip file {location} to {ZIP_TEMP_OUTPUT}")
-                zip_ref.extractall(ZIP_TEMP_OUTPUT)
-
-            logger.debug(f"Done creating zip output directory: {ZIP_TEMP_OUTPUT}")
-            # Set the location to the extracted output directory
-            location = ZIP_TEMP_OUTPUT
-
-        logger.debug("Indexing all html files in the directory...")
-
-        update_content(location)
+        elif location.is_file() and location.suffix == ".zip":
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                logger.debug(f"Created zip output directory: {tmp_dir}")
+                with zipfile.ZipFile(location, "r") as zip_ref:
+                    logger.debug(f"Extracting zip file {location} to {tmp_dir}")
+                    zip_ref.extractall(tmp_dir)
+                logger.debug(f"Done creating zip output directory: {tmp_dir}")
+                logger.debug("Indexing all html files in the directory...")
+                update_content(Path(tmp_dir))
 
         # Write the new checksum to the checksum file
         logger.debug(
@@ -234,11 +221,6 @@ def maintain_content(path: str) -> None:
                 f"Writing index version {INDEX_VERSION} to {INDEX_VERSION_FILE}"
             )
             write_file_content(INDEX_VERSION_FILE, INDEX_VERSION)
-
-        # Delete temporary zip output directory if it exists
-        if ZIP_TEMP_OUTPUT.exists():
-            logger.debug(f"Removing temporary zip output directory: {ZIP_TEMP_OUTPUT}")
-            shutil.rmtree(ZIP_TEMP_OUTPUT)
 
 
 def update_content(location: Path) -> None:

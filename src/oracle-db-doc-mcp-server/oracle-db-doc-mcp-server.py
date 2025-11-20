@@ -22,7 +22,7 @@ import argparse
 import hashlib
 import logging
 import re
-import shutil
+import tempfile
 import zipfile
 from pathlib import Path, PurePath
 
@@ -30,6 +30,8 @@ import markdownify as md
 from bs4 import BeautifulSoup
 from fastmcp import FastMCP
 from pocketsearch import PocketSearch, PocketWriter
+from pydantic import Field
+from typing import Annotated
 
 # Working home directory
 HOME_DIR = Path.home().joinpath(PurePath(".oracle/oracle-db-doc-mcp-server"))
@@ -43,9 +45,6 @@ CONTENT_CHECKSUM_FILE = HOME_DIR.joinpath(PurePath("content.checksum"))
 
 # Resources folder
 RESOURCES_DIR = HOME_DIR.joinpath(PurePath("resources"))
-
-# Temp directory for zip file extraction
-ZIP_TEMP_OUTPUT = HOME_DIR.joinpath("zip_temp")
 
 PREPROCESS = "BASIC"
 
@@ -89,8 +88,15 @@ mcp = FastMCP(
 
 @mcp.tool()
 def search_oracle_database_documentation(
-    search_query: str,
-    max_results: int = 4,
+    search_query: Annotated[
+        str, Field(description="The search phrase to search for in the documentation.")
+    ],
+    max_results: Annotated[
+        int,
+        Field(
+            description="The maximum number of search results that should be returned, default 4."
+        ),
+    ] = 4,
 ) -> list[str]:
     """Search for information about how to use Oracle Database for a query string
        and return a list of results.
@@ -189,28 +195,19 @@ def maintain_content(path: str) -> None:
 
         INDEX_FILE.unlink(missing_ok=True)
         logger.info("Recreating index...")
+        if location.is_dir():
+            logger.debug("Indexing all html files in the directory...")
+            update_content(location)
         # Extract the zip file to a temporary directory
-        if location.is_file() and location.suffix == ".zip":
-
-            # Check if temp output directory exists and remove it
-            zip_output = Path(ZIP_TEMP_OUTPUT)
-            if zip_output.exists():
-                logger.debug(f"Removing existing zip output directory: {zip_output}")
-                shutil.rmtree(zip_output)
-
-            logger.debug(f"Creating zip output directory: {zip_output}")
-            zip_output.mkdir()
-            with zipfile.ZipFile(location, "r") as zip_ref:
-                logger.debug(f"Extracting zip file {location} to {zip_output}")
-                zip_ref.extractall(ZIP_TEMP_OUTPUT)
-
-            logger.debug(f"Done creating zip output directory: {zip_output}")
-            # Set the location to the extracted output directory
-            location = zip_output
-
-        logger.debug("Indexing all html files in the directory...")
-
-        update_content(location)
+        elif location.is_file() and location.suffix == ".zip":
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                logger.debug(f"Created zip output directory: {tmp_dir}")
+                with zipfile.ZipFile(location, "r") as zip_ref:
+                    logger.debug(f"Extracting zip file {location} to {tmp_dir}")
+                    zip_ref.extractall(tmp_dir)
+                logger.debug(f"Done creating zip output directory: {tmp_dir}")
+                logger.debug("Indexing all html files in the directory...")
+                update_content(Path(tmp_dir))
 
         # Write the new checksum to the checksum file
         logger.debug(
@@ -224,11 +221,6 @@ def maintain_content(path: str) -> None:
                 f"Writing index version {INDEX_VERSION} to {INDEX_VERSION_FILE}"
             )
             write_file_content(INDEX_VERSION_FILE, INDEX_VERSION)
-
-        # Delete temporary zip output directory if it exists
-        if Path(ZIP_TEMP_OUTPUT).exists():
-            logger.debug(f"Removing temporary zip output directory: {zip_output}")
-            shutil.rmtree(zip_output)
 
 
 def update_content(location: Path) -> None:
@@ -316,10 +308,7 @@ def convert_to_markdown_chunks(file: Path) -> list[str]:
         # Convert HTML to Markdown
         markdown = md.markdownify(html)
         if PREPROCESS != "NONE":
-            markdown = markdown.replace(
-                "Previous\nNext\n JavaScript must be enabled to correctly display this content",
-                "",
-            )
+            # Remove URLs from markdown
             markdown = remove_markdown_urls(markdown)
 
         # Split markdown into sections based on headings
@@ -423,6 +412,7 @@ def preprocess_html(html_content: str) -> str:
     # Remove common Oracle doc boilerplate text patterns
     boilerplate_patterns = [
         r"JavaScript.*(?:disabled|enabled).*browser",
+        r"JavaScript must be enabled to correctly display this content",
         r"Skip navigation.*",
         r"Oracle®.*(?:Database.*)?(?:Reference|Guide|Manual|Documentation)",
         r"Release \d+[a-z]*[\s-]*[A-Z0-9-]*",
@@ -461,22 +451,22 @@ def build_folder_structure() -> None:
         RESOURCES_DIR.mkdir(parents=True)
 
 
-def get_file_content(path: str) -> str:
+def get_file_content(path: Path) -> str:
     """Reads the content of a file and returns it or 'N/A' if the file does not exist.
 
     Args:
         file (Path): The path to the file.
     """
-    if Path(path).exists():
-        with Path(path).open("r") as f:
+    if path.exists():
+        with path.open("r") as f:
             return f.read().strip()
     else:
         return "N/A"
 
 
-def write_file_content(path: str, content: str) -> None:
+def write_file_content(path: Path, content: str) -> None:
     """Writes the content to a file."""
-    with Path(path).open("w") as f:
+    with path.open("w") as f:
         f.write(content)
 
 

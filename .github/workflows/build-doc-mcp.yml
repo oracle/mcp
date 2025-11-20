@@ -1,6 +1,8 @@
 name: 🛠️ Build Docker image for Oracle Database Documentation MCP Server
 on:
   push:
+    branches:
+      - main
     paths:
       - "src/oracle-db-doc-mcp-server/**"
       - ".github/workflows/build-doc-mcp.yml"

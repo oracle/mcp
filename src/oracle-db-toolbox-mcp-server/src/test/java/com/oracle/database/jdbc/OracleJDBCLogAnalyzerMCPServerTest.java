@@ -20,7 +20,7 @@ class OracleJDBCLogAnalyzerMCPServerTest {
 
   @BeforeAll
   static void initializeTools(){
-    tools = OracleJDBCLogAnalyzerMCPServer.getSyncToolSpecifications()
+    tools = OracleJDBCLogAnalyzerMCPServer.getLogAnalyzerTools()
       .stream()
       .map(SyncToolSpecification::tool)
       .collect(Collectors.toMap(McpSchema.Tool::name, identity()));

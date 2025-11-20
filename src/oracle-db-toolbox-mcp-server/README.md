@@ -53,3 +53,25 @@ Add (or merge) the following JSON to the configuration file to an MCP client (su
   }
 }
 ```
+
+## YAML Configuration Support
+
+The MCP server supports loading database connection and tool definitions from a YAML configuration file.
+
+**Example `config.yaml`:**
+```yaml
+sources:
+  prod-db:
+    url: jdbc:oracle:thin:@prod-host:1521/ORCLPDB1
+    user: ADMIN
+    password: mypassword
+
+tools:
+  hotels-by-name:
+    source: prod-db
+    statement: SELECT * FROM hotels WHERE name LIKE '%' || :name || '%'
+```
+To enable YAML configuration, launch the server with:
+```bash
+java -DconfigFile=/path/to/config.yaml -jar <mcp-server>.jar
+```

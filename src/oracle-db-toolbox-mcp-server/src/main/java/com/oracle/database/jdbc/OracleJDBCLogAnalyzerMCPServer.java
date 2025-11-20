@@ -8,20 +8,22 @@
 package com.oracle.database.jdbc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oracle.database.jdbc.logs.model.JDBCConnectionEvent;
+import com.oracle.database.jdbc.logs.model.JDBCExecutedQuery;
+import com.oracle.database.jdbc.logs.model.LogError;
+import com.oracle.database.jdbc.logs.model.RDBMSError;
+import com.oracle.database.jdbc.logs.model.RDBMSPacketDump;
 import io.modelcontextprotocol.server.McpServer;
+import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.TextContent;
-import oracle.jdbc.logs.analyzer.JDBCLog;
-import oracle.jdbc.logs.analyzer.RDBMSLog;
-import oracle.jdbc.logs.model.JDBCConnectionEvent;
-import oracle.jdbc.logs.model.JDBCExecutedQuery;
-import oracle.jdbc.logs.model.LogError;
-import oracle.jdbc.logs.model.RDBMSError;
-import oracle.jdbc.logs.model.RDBMSPacketDump;
+
+import com.oracle.database.jdbc.logs.analyzer.JDBCLog;
+import com.oracle.database.jdbc.logs.analyzer.RDBMSLog;
 
 import java.io.File;
 import java.io.IOException;
@@ -37,84 +39,20 @@ import java.util.stream.Collectors;
  */
 public final class OracleJDBCLogAnalyzerMCPServer {
 
-  public static void main(String[] args) {
-    McpServer.sync(new StdioServerTransportProvider(new ObjectMapper()))
-      .serverInfo("ojdbc-log-analyzer-mcp-server", "1.0.0")
-      .capabilities(McpSchema.ServerCapabilities.builder()
-        .tools(true)
-        .logging()
-        .build())
-      .tools(getSyncToolSpecifications())
-      .build();
-  }
-
   private static final String FILE_PATH = "filePath";
   private static final String SECOND_FILE_PATH = "secondFilePath";
   private static final String CONNECTION_ID = "connectionId";
-  private static final String FILE_PATH_SCHEMA = """
-            {
-              "type": "object",
-              "properties": {
-                "filePath": {
-                  "type": "string",
-                  "description": "Absolute path or an URL to the Oracle JDBC log file."
-                }
-              },
-              "required": ["filePath"]
-            }
-            """;
-  private static final String FILE_COMPARISON_SCHEMA = """
-            {
-              "type": "object",
-              "properties": {
-                "filePath": {
-                  "type": "string",
-                  "description": "Absolute path or an URL to the 1st Oracle JDBC log file"
-                },
-                "secondFilePath": {
-                  "type": "string",
-                  "description": "Absolute path or an URL to the 2nd Oracle JDBC log file"
-                }
-              },
-              "required": ["filePath", "secondFilePath"]
-            }
-            """;
-  private static final String RDBMS_TOOLS_SCHEMA = """
-            {
-              "type": "object",
-              "properties": {
-                "filePath": {
-                  "type": "string",
-                  "description": "Absolute path or an URL to the RDBMS/SQLNet trace file"
-                },
-                "connectionId": {
-                  "type": "string",
-                  "description": "Connection ID string"
-                }
-              },
-              "required": ["filePath", "connectionId"]
-            }
-            """;
 
-  private OracleJDBCLogAnalyzerMCPServer() {
-    // Prevent instantiation
-  }
-
-  /**
-   * <p>
-   *   Returns the list of all available SyncToolSpecification instances for this server.
-   * </p>
-   */
-  public static List<SyncToolSpecification> getSyncToolSpecifications() {
+  public static List<McpServerFeatures.SyncToolSpecification> getLogAnalyzerTools() {
     return List.of(
-      getStatsTool(),
-      getQueriesTool(),
-      getErrorsTool(),
-      getListLogsDirectoryTool(),
-      getConnectionEventsTool(),
-      logComparisonTool(),
-      getRdbmsErrorsTool(),
-      getPacketDumpsTool());
+        getStatsTool(),
+        getQueriesTool(),
+        getErrorsTool(),
+        getListLogsDirectoryTool(),
+        getConnectionEventsTool(),
+        logComparisonTool(),
+        getRdbmsErrorsTool(),
+        getPacketDumpsTool());
   }
 
   /**
@@ -133,7 +71,7 @@ public final class OracleJDBCLogAnalyzerMCPServer {
         .name("get-stats")
         .title("Get JDBC Stats")
         .description("Return aggregated stats (error count, packets, bytes) from an Oracle JDBC thin log.")
-        .inputSchema(FILE_PATH_SCHEMA)
+        .inputSchema(ToolSchemas.FILE_PATH_SCHEMA)
         .build())
       .callHandler((exchange, callReq) -> tryCall( () -> {
         final var filePath = String.valueOf(callReq.arguments().get(FILE_PATH));
@@ -158,7 +96,7 @@ public final class OracleJDBCLogAnalyzerMCPServer {
         .name("get-queries")
         .title("Get JDBC Queries")
         .description("Get all executed queries from an Oracle JDBC thin log file, including the timestamp and execution time.")
-        .inputSchema(FILE_PATH_SCHEMA)
+        .inputSchema(ToolSchemas.FILE_PATH_SCHEMA)
         .build())
       .callHandler((exchange, callReq) -> tryCall(() -> {
         final var filePath = String.valueOf(callReq.arguments().get(FILE_PATH));
@@ -186,7 +124,7 @@ public final class OracleJDBCLogAnalyzerMCPServer {
         .name("get-errors")
         .title("Get JDBC Errors")
         .description("Get all reported errors from an Oracle JDBC thin log file, including stacktrace and log context.")
-        .inputSchema(FILE_PATH_SCHEMA)
+        .inputSchema(ToolSchemas.FILE_PATH_SCHEMA)
         .build())
       .callHandler((exchange, callReq) -> tryCall(() -> {
         final var filePath = String.valueOf(callReq.arguments().get(FILE_PATH));
@@ -213,7 +151,7 @@ public final class OracleJDBCLogAnalyzerMCPServer {
         .name("list-log-files-from-directory")
         .title("List Files From Directory")
         .description("List all visible files from a specified directory, which helps the user analyze multiple files with one prompt.")
-        .inputSchema(FILE_PATH_SCHEMA)
+        .inputSchema(ToolSchemas.FILE_PATH_SCHEMA)
         .build())
       .callHandler((exchange, callReq) -> tryCall(() -> {
         final var directoryPath = String.valueOf(callReq.arguments().get(FILE_PATH));
@@ -245,7 +183,7 @@ public final class OracleJDBCLogAnalyzerMCPServer {
         .name("log-comparison")
         .title("JDBC Log Comparison")
         .description("Compare two JDBC log files for performance metrics, errors, and network information.")
-        .inputSchema(FILE_COMPARISON_SCHEMA)
+        .inputSchema(ToolSchemas.FILE_COMPARISON_SCHEMA)
         .build())
       .callHandler((exchange, callReq) -> tryCall(() -> {
         final var filePath = String.valueOf(callReq.arguments().get(FILE_PATH));
@@ -269,7 +207,7 @@ public final class OracleJDBCLogAnalyzerMCPServer {
         .name("get-connection-events")
         .title("Get JDBC Connection Events")
         .description("Retrieve opened and closed JDBC connection events from the log file with timestamp and connection details.")
-        .inputSchema(FILE_PATH_SCHEMA)
+        .inputSchema(ToolSchemas.FILE_PATH_SCHEMA)
         .build())
       .callHandler((exchange, callReq) -> tryCall(() -> {
         final var filePath = String.valueOf(callReq.arguments().get(FILE_PATH));
@@ -297,7 +235,7 @@ public final class OracleJDBCLogAnalyzerMCPServer {
         .name("get-rdbms-errors")
         .title("Get RDBMS/SQLNet Errors")
         .description("Retrieve errors from an RDBMS/SQLNet trace file.")
-        .inputSchema(RDBMS_TOOLS_SCHEMA)
+        .inputSchema(ToolSchemas.RDBMS_TOOLS_SCHEMA)
         .build())
       .callHandler((exchange, callReq) -> tryCall(() -> {
         final var logFile = String.valueOf(callReq.arguments().get(FILE_PATH));
@@ -324,7 +262,7 @@ public final class OracleJDBCLogAnalyzerMCPServer {
         .name("get-packet-dumps")
         .title("Get RDBMS/SQLNet Packet Dumps")
         .description("Extract packet dumps from RDBMS/SQLNet trace file for given connection ID.")
-        .inputSchema(RDBMS_TOOLS_SCHEMA)
+        .inputSchema(ToolSchemas.RDBMS_TOOLS_SCHEMA)
         .build())
       .callHandler((exchange, callReq) -> tryCall(() -> {
         final var filePath = String.valueOf(callReq.arguments().get(FILE_PATH));

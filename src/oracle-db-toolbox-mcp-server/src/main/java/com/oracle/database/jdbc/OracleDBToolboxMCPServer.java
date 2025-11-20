@@ -58,21 +58,6 @@ public class OracleDBToolboxMCPServer {
     }
   }
 
-  private static final String SQL_ONLY = """
-      {
-        "type":"object",
-        "properties": {
-          "sql": {
-            "type": "string"
-            },
-          "txId": {
-            "type": "string",
-            "description": "Optional active transaction id"
-            }
-          },
-          "required":["sql"]
-      }""";
-
   public static void main(String[] args) {
     installExternalExtensionsFromDir();
 
@@ -105,7 +90,7 @@ public class OracleDBToolboxMCPServer {
                   .name(tc.name)
                   .title(tc.name)
                   .description(tc.description)
-                  .inputSchema(SQL_ONLY)
+                  .inputSchema(ToolSchemas.SQL_ONLY)
                   .build()
               )
               .callHandler((exchange, callReq) -> {

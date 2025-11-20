@@ -23,12 +23,14 @@ import hashlib
 import logging
 import re
 import tempfile
+import shutil
 import zipfile
 from pathlib import Path, PurePath
 
 import markdownify as md
 from bs4 import BeautifulSoup
 from fastmcp import FastMCP
+from fastmcp.resources import FileResource
 from pocketsearch import PocketSearch, PocketWriter
 from pydantic import Field
 from typing import Annotated
@@ -39,7 +41,7 @@ HOME_DIR = Path.home().joinpath(PurePath(".oracle/oracle-db-doc-mcp-server"))
 # Index
 INDEX = None
 INDEX_FILE = HOME_DIR.joinpath(PurePath("index.db"))
-INDEX_VERSION = "1.0.0"
+INDEX_VERSION = "1.1.0"
 INDEX_VERSION_FILE = HOME_DIR.joinpath(PurePath("index.version"))
 CONTENT_CHECKSUM_FILE = HOME_DIR.joinpath(PurePath("content.checksum"))
 
@@ -253,6 +255,17 @@ def process_file(file: Path) -> None:
         if name not in ("readme", "toc", "index"):
             content_chunks = convert_to_markdown_chunks(file)
             update_index(content_chunks)
+    # Save PDFs for resources
+    elif file.suffix == ".pdf":
+        logger.debug(f"Copying {file.name} PDF to resource folder.")
+        if RESOURCES_DIR.joinpath(file.name).exists():
+            logger.debug(f"Resource {file.name} already exists, checking checksum.")
+            shasum_target = hashlib.sha256().hexdigest()
+            shasum_source = hashlib.sha256().hexdigest()
+            if shasum_source == shasum_target:
+                logger.debug(f"Resource {file.name} is unchanged, skipping copy.")
+                return
+        shutil.copy(file, RESOURCES_DIR)
 
 
 def optimize_index() -> None:
@@ -272,6 +285,14 @@ def update_index(content: list[str]) -> None:
     with PocketWriter(db_name=INDEX_FILE) as writer:
         for segment in content:
             writer.insert(text=segment)
+
+
+def shasum_file(file_path: Path) -> str:
+    """Calculate the SHA256 checksum of a file."""
+    sha256 = hashlib.sha256()
+    with file_path.open("rb") as f:
+        hashlib.file_digest(f, "sha256")
+    return sha256.hexdigest()
 
 
 def shasum_directory(directory: Path) -> str:
@@ -332,7 +353,7 @@ def convert_to_markdown_chunks(file: Path) -> list[str]:
             return sections
 
 
-def remove_markdown_urls(text):
+def remove_markdown_urls(text: str) -> str:
     # Remove Markdown links [text](url) and replace with just the text
     text = re.sub(r"\[([^\]]*)\]\([^\)]*\)", r"\1", text)
 
@@ -470,6 +491,22 @@ def write_file_content(path: Path, content: str) -> None:
         f.write(content)
 
 
+def add_resources() -> None:
+    """Adds resources to the MCP server."""
+    logger.debug("Adding resources to MCP server.")
+    for file in RESOURCES_DIR.rglob("*.pdf"):
+        logger.debug(f"Adding resource: {file.name}")
+        resource = FileResource(
+            uri=f"file://{file.as_posix()}",
+            path=file,
+            name=file.name,
+            description=f"Resource file {file.name}",
+            mime_type="application/pdf",
+            tags={"resource", "documentation", "PDF book"}
+        )
+        mcp.add_resource(resource)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Oracle Database Documentation MCP Server."
@@ -567,6 +604,9 @@ def main():
         global INDEX
         logger.debug("Opening index file.")
         INDEX = PocketSearch(db_name=INDEX_FILE)
+
+        # Add resources
+        add_resources()
 
         logger.info("Serving MCP server for Oracle Database documentation.")
         if args.mode == "stdio":

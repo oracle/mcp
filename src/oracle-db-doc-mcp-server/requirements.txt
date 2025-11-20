@@ -1,5 +1,5 @@
 beautifulsoup4 >= 4.9.0
 markdownify >= 1.2.0
-fastmcp >= 2.11.3
+fastmcp >= 2.13.1
 pocketsearch >= 0.40.0
 pydantic>=2.12.3

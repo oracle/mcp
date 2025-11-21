@@ -4,6 +4,7 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
+import argparse
 import os
 from logging import Logger
 from typing import Annotated
@@ -149,7 +150,16 @@ def list_resource_types() -> list[str]:
 
 
 def main():
-    mcp.run()
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, help="Port to use for HTTP mode")
+    parser.add_argument("--host", type=str, help="Hostname or IP address to bind to")
+    args = parser.parse_args()
+
+    if args.port and args.host:
+        mcp.run(transport="http", host=args.host, port=args.port)
+    else:
+        mcp.run()
 
 
 if __name__ == "__main__":

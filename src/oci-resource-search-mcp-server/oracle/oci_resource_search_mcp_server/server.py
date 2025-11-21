@@ -6,11 +6,16 @@ https://oss.oracle.com/licenses/upl.
 
 import os
 from logging import Logger
-from typing import Annotated
+from typing import Optional
 
 import oci
 from fastmcp import FastMCP
 from oci.resource_search.models import FreeTextSearchDetails, StructuredSearchDetails
+from oracle.oci_resource_search_mcp_server.models import (
+    ResourceSummary,
+    map_resource_summary,
+)
+from pydantic import Field
 
 from . import __project__, __version__
 
@@ -37,115 +42,268 @@ def get_search_client():
     return oci.resource_search.ResourceSearchClient(config, signer=signer)
 
 
-@mcp.tool
-def list_all_resources(compartment_id: str) -> list[dict]:
-    """Returns all resources"""
-    search_client = get_search_client()
-    structured_search = StructuredSearchDetails(
-        type="Structured",
-        query=f"query all resources where compartmentId = '{compartment_id}'",
-    )
-    response = search_client.search_resources(structured_search).data
-    return [
-        {
-            "resource_id": resource.identifier,
-            "compartment_id": compartment_id,
-            "display_name": resource.display_name,
-            "resource_type": resource.resource_type,
-            "lifecycle_state": resource.lifecycle_state,
-            "freeform_tags": resource.freeform_tags,
-            "defined_tags": resource.defined_tags,
-        }
-        for resource in response.items
-    ]
+@mcp.tool(description="Returns all resources")
+def list_all_resources(
+    tenant_id: str = Field(
+        ...,
+        description="The tenancy ID, which can be used to specify a different tenancy "
+        "(for cross-tenancy authorization) when searching for resources in a different tenancy",
+    ),
+    compartment_id: str = Field(
+        ..., description="The OCID of the compartment to list from"
+    ),
+    limit: Optional[int] = Field(
+        None,
+        description="The maximum amount of resources to return. If None, there is no limit.",
+        ge=1,
+    ),
+) -> list[ResourceSummary]:
+    resources: list[ResourceSummary] = []
+
+    try:
+        client = get_search_client()
+
+        response: oci.response.Response = None
+        has_next_page = True
+        next_page: str = None
+
+        while has_next_page and (limit is None or len(resources) < limit):
+            kwargs = {
+                "tenant_id": tenant_id,
+                "search_details": StructuredSearchDetails(
+                    type="Structured",
+                    query=f"query all resources where compartmentId = '{compartment_id}'",
+                ),
+                "page": next_page,
+                "limit": limit,
+            }
+
+            response = client.search_resources(**kwargs)
+            has_next_page = response.has_next_page
+            next_page = response.next_page if hasattr(response, "next_page") else None
+
+            data: list[oci.resource_search.models.ResourceSummary] = response.data.items
+            for d in data:
+                resources.append(map_resource_summary(d))
+
+        logger.info(f"Found {len(resources)} Resources")
+        return resources
+
+    except Exception as e:
+        logger.error(f"Error in list_all_resources tool: {str(e)}")
+        raise e
 
 
-@mcp.tool
+@mcp.tool(description="Searches for resources by display name")
 def search_resources(
-    compartment_id: str,
-    display_name: Annotated[str, "Full display name or display name substring"],
-) -> list[dict]:
-    """Searches for resources by display name"""
-    search_client = get_search_client()
-    structured_search = StructuredSearchDetails(
-        type="Structured",
-        query=(
-            f"query all resources where compartmentId = '{compartment_id}' "
-            f"&& displayName =~ '{display_name}'"
-        ),
-    )
-    response = search_client.search_resources(structured_search).data
-    return [
-        {
-            "resource_id": resource.identifier,
-            "compartment_id": compartment_id,
-            "display_name": resource.display_name,
-            "resource_type": resource.resource_type,
-            "lifecycle_state": resource.lifecycle_state,
-            "freeform_tags": resource.freeform_tags,
-            "defined_tags": resource.defined_tags,
-        }
-        for resource in response.items
-    ]
+    tenant_id: str = Field(
+        ...,
+        description="The tenancy ID, which can be used to specify a different tenancy "
+        "(for cross-tenancy authorization) when searching for resources in a different tenancy",
+    ),
+    compartment_id: str = Field(
+        ..., description="The OCID of the compartment to list from"
+    ),
+    display_name: str = Field(
+        ..., description="The display name (full or substring) of the resource"
+    ),
+    limit: Optional[int] = Field(
+        None,
+        description="The maximum amount of resources to return. If None, there is no limit.",
+        ge=1,
+    ),
+) -> list[ResourceSummary]:
+    resources: list[ResourceSummary] = []
+
+    try:
+        client = get_search_client()
+
+        oci.identity.models.Compartment
+
+        response: oci.response.Response = None
+        has_next_page = True
+        next_page: str = None
+
+        while has_next_page and (limit is None or len(resources) < limit):
+            kwargs = {
+                "tenant_id": tenant_id,
+                "search_details": StructuredSearchDetails(
+                    type="Structured",
+                    query=(
+                        f"query all resources where compartmentId = '{compartment_id}' "
+                        f"&& displayName =~ '{display_name}'"
+                    ),
+                ),
+                "page": next_page,
+                "limit": limit,
+            }
+
+            response = client.search_resources(**kwargs)
+            has_next_page = response.has_next_page
+            next_page = response.next_page if hasattr(response, "next_page") else None
+
+            data: list[oci.resource_search.models.ResourceSummary] = response.data.items
+            for d in data:
+                resources.append(map_resource_summary(d))
+
+        logger.info(f"Found {len(resources)} Resources")
+        return resources
+
+    except Exception as e:
+        logger.error(f"Error in search_resources tool: {str(e)}")
+        raise e
 
 
-@mcp.tool
+@mcp.tool(
+    description="Searches for the presence of the search string in all resource fields"
+)
 def search_resources_free_form(
-    compartment_id: str,
-    text: Annotated[str, "Free-form search string"],
-) -> list[dict]:
-    """Searches for the presence of the search string in all resource fields"""
-    search_client = get_search_client()
-    freetext_search = FreeTextSearchDetails(
-        type="FreeText",
-        text=text,
-    )
-    response = search_client.search_resources(freetext_search).data
-    return [
-        {
-            "resource_id": resource.identifier,
-            "compartment_id": compartment_id,
-            "display_name": resource.display_name,
-            "resource_type": resource.resource_type,
-            "lifecycle_state": resource.lifecycle_state,
-            "freeform_tags": resource.freeform_tags,
-            "defined_tags": resource.defined_tags,
-        }
-        for resource in response.items
-    ]
+    tenant_id: str = Field(
+        ...,
+        description="The tenancy ID, which can be used to specify a different tenancy "
+        "(for cross-tenancy authorization) when searching for resources in a different tenancy",
+    ),
+    text: str = Field(..., description="Free-form search string"),
+    limit: Optional[int] = Field(
+        None,
+        description="The maximum amount of resources to return. If None, there is no limit.",
+        ge=1,
+    ),
+) -> list[ResourceSummary]:
+    resources: list[ResourceSummary] = []
+
+    try:
+        client = get_search_client()
+
+        response: oci.response.Response = None
+        has_next_page = True
+        next_page: str = None
+
+        while has_next_page and (limit is None or len(resources) < limit):
+            kwargs = {
+                "tenant_id": tenant_id,
+                "search_details": FreeTextSearchDetails(
+                    type="FreeText",
+                    text=text,
+                ),
+                "page": next_page,
+                "limit": limit,
+            }
+
+            response = client.search_resources(**kwargs)
+            has_next_page = response.has_next_page
+            next_page = response.next_page if hasattr(response, "next_page") else None
+
+            data: list[oci.resource_search.models.ResourceSummary] = response.data.items
+            for d in data:
+                resources.append(map_resource_summary(d))
+
+        logger.info(f"Found {len(resources)} Resources")
+        return resources
+
+    except Exception as e:
+        logger.error(f"Error in search_resources_free_form tool: {str(e)}")
+        raise e
 
 
-def search_resources_by_type(compartment_id: str, resource_type: str):
-    """Search for resources by resource type"""
-    search_client = get_search_client()
-    structured_search = StructuredSearchDetails(
-        type="Structured",
-        query=(
-            f"query all {resource_type} "
-            f"resources where compartmentId = '{compartment_id}'"
-        ),
-    )
-    response = search_client.search_resources(structured_search).data
-    return [
-        {
-            "resource_id": resource.identifier,
-            "compartment_id": compartment_id,
-            "display_name": resource.display_name,
-            "resource_type": resource.resource_type,
-            "lifecycle_state": resource.lifecycle_state,
-            "freeform_tags": resource.freeform_tags,
-            "defined_tags": resource.defined_tags,
-        }
-        for resource in response.items
-    ]
+@mcp.tool(description="Search for resources by resource type")
+def search_resources_by_type(
+    tenant_id: str = Field(
+        ...,
+        description="The tenancy ID, which can be used to specify a different tenancy "
+        "(for cross-tenancy authorization) when searching for resources in a different tenancy",
+    ),
+    compartment_id: str = Field(
+        ..., description="The OCID of the compartment to list from"
+    ),
+    resource_type: str = Field(
+        ...,
+        description="The source type to search by"
+        "You may call list_resource_types to see the list of possible values"
+        "Note: The values MUST be in lowercase",
+    ),
+    limit: Optional[int] = Field(
+        None,
+        description="The maximum amount of resources to return. If None, there is no limit.",
+        ge=1,
+    ),
+) -> list[ResourceSummary]:
+    resources: list[ResourceSummary] = []
+
+    try:
+        client = get_search_client()
+
+        response: oci.response.Response = None
+        has_next_page = True
+        next_page: str = None
+
+        while has_next_page and (limit is None or len(resources) < limit):
+            kwargs = {
+                "tenant_id": tenant_id,
+                "search_details": StructuredSearchDetails(
+                    type="Structured",
+                    query=(
+                        f"query {resource_type.lower()} "
+                        f"resources where compartmentId = '{compartment_id}'"
+                    ),
+                ),
+                "page": next_page,
+                "limit": limit,
+            }
+
+            response = client.search_resources(**kwargs)
+            has_next_page = response.has_next_page
+            next_page = response.next_page if hasattr(response, "next_page") else None
+
+            data: list[oci.resource_search.models.ResourceSummary] = response.data.items
+            for d in data:
+                resources.append(map_resource_summary(d))
+
+        logger.info(f"Found {len(resources)} Resources")
+        return resources
+
+    except Exception as e:
+        logger.error(f"Error in search_resources_by_type tool: {str(e)}")
+        raise e
 
 
-@mcp.tool
-def list_resource_types() -> list[str]:
-    """Returns a list of all supported OCI resource types"""
-    search_client = get_search_client()
-    resource_types = search_client.list_resource_types()
-    return [x.name for x in resource_types.data]
+@mcp.tool(description="Returns a list of all supported OCI resource types")
+def list_resource_types(
+    limit: Optional[int] = Field(
+        None,
+        description="The maximum amount of resources to return. If None, there is no limit.",
+        ge=1,
+    ),
+) -> list[str]:
+    resource_types: list[str] = []
+
+    try:
+        client = get_search_client()
+
+        response: oci.response.Response = None
+        has_next_page = True
+        next_page: str = None
+
+        while has_next_page and (limit is None or len(resource_types) < limit):
+            kwargs = {
+                "page": next_page,
+                "limit": limit,
+            }
+
+            response = client.list_resource_types(**kwargs)
+            has_next_page = response.has_next_page
+            next_page = response.next_page if hasattr(response, "next_page") else None
+
+            data: list[oci.resource_search.models.ResourceType] = response.data
+            for d in data:
+                resource_types.append(d.name)
+
+        logger.info(f"Found {len(resource_types)} resource types")
+        return resource_types
+
+    except Exception as e:
+        logger.error(f"Error in list_resource_types tool: {str(e)}")
+        raise e
 
 
 def main():

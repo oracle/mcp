@@ -15,6 +15,64 @@ from oracle.oci_registry_mcp_server.server import mcp
 class TestRegistryTools:
     @pytest.mark.asyncio
     @patch("oracle.oci_registry_mcp_server.server.get_ocir_client")
+    async def test_list_container_repositories(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_list_response = create_autospec(oci.response.Response)
+        mock_list_response.data = oci.artifacts.models.ContainerRepositoryCollection(
+            items=[
+                oci.artifacts.models.ContainerRepositorySummary(
+                    display_name="repo1",
+                    id="repo1_id",
+                    is_public=False,
+                    compartment_id="compartment1",
+                )
+            ]
+        )
+        mock_list_response.has_next_page = False
+        mock_list_response.next_page = None
+        mock_client.list_container_repositories.return_value = mock_list_response
+
+        async with Client(mcp) as client:
+            call_tool_result = await client.call_tool(
+                "list_container_repositories",
+                {"compartment_id": "compartment1"},
+            )
+            result = call_tool_result.structured_content["result"]
+
+            assert len(result) == 1
+            assert result[0]["display_name"] == "repo1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_registry_mcp_server.server.get_ocir_client")
+    async def test_get_container_repository(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_get_response = create_autospec(oci.response.Response)
+        mock_get_response.data = oci.artifacts.models.ContainerRepository(
+            display_name="repo1",
+            id="repo1_id",
+            is_public=False,
+            compartment_id="compartment1",
+        )
+        mock_client.get_container_repository.return_value = mock_get_response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "get_container_repository",
+                    {
+                        "repository_id": "repo1_id",
+                    },
+                )
+            ).structured_content
+
+            assert result["display_name"] == "repo1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_registry_mcp_server.server.get_ocir_client")
     async def test_create_container_repository(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -36,59 +94,7 @@ class TestRegistryTools:
                 )
             ).structured_content
 
-            assert result["repository_name"] == "repo1"
-
-    # @pytest.mark.asyncio
-    # @patch("oracle.oci_registry_mcp_server.server.get_ocir_client")
-    # async def test_list_container_repositories(self, mock_get_client):
-    #    mock_client = MagicMock()
-    #    mock_get_client.return_value = mock_client
-
-    #    mock_list_response = create_autospec(oci.response.Response)
-    #    mock_list_response.data = oci.artifacts.models.ContainerRepositoryCollection(
-    #        items=[MagicMock(display_name="repo1", id="repo1_id", is_public=False)]
-    #    )
-    #    mock_client.list_container_repositories.return_value = mock_list_response
-
-    #    async with Client(mcp) as client:
-    #        result = (
-    #            await client.call_tool(
-    #                "list_container_repositories",
-    #                {
-    #                    "compartment_id": "compartment1",
-    #                },
-    #            )
-    #        ).structured_content
-
-    #        assert len(result) == 1
-    #        assert result[0]["repository_name"] == "repo1"
-
-    @pytest.mark.asyncio
-    @patch("oracle.oci_registry_mcp_server.server.get_ocir_client")
-    async def test_get_container_repo_details(self, mock_get_client):
-        mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
-
-        mock_get_response = create_autospec(oci.response.Response)
-        mock_get_response.data = MagicMock(
-            display_name="repo1",
-            id="repo1_id",
-            is_public=False,
-            compartment_id="compartment1",
-        )
-        mock_client.get_container_repository.return_value = mock_get_response
-
-        async with Client(mcp) as client:
-            result = (
-                await client.call_tool(
-                    "get_container_repo_details",
-                    {
-                        "repository_id": "repo1_id",
-                    },
-                )
-            ).data
-
-            assert result["repository_name"] == "repo1"
+            assert result["display_name"] == "repo1"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_registry_mcp_server.server.get_ocir_client")
@@ -97,6 +103,7 @@ class TestRegistryTools:
         mock_get_client.return_value = mock_client
 
         mock_delete_response = create_autospec(oci.response.Response)
+        mock_delete_response.status = 204
         mock_client.delete_container_repository.return_value = mock_delete_response
 
         async with Client(mcp) as client:
@@ -107,6 +114,6 @@ class TestRegistryTools:
                         "repository_id": "repo1_id",
                     },
                 )
-            ).data
+            ).structured_content
 
-            assert result["success"]
+            assert result["status"] == 204

@@ -13,30 +13,25 @@ from oracle.oci_migration_mcp_server.server import mcp
 
 
 class TestMigrationTools:
-    # @pytest.mark.asyncio
-    # @patch("oracle.oci_migration_mcp_server.server.get_migration_client")
-    # async def test_get_migration(self, mock_get_client):
-    #    mock_client = MagicMock()
-    #    mock_get_client.return_value = mock_client
+    @pytest.mark.asyncio
+    @patch("oracle.oci_migration_mcp_server.server.get_migration_client")
+    async def test_get_migration(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
 
-    #    mock_get_response = create_autospec(oci.response.Response)
-    #    mock_get_response.data = oci.cloud_migrations.models.Migration(
-    #        id="migration1",
-    #        display_name="Migration 1",
-    #    )
-    #    mock_client.get_migration.return_value = mock_get_response
+        mock_get_response = create_autospec(oci.response.Response)
+        mock_get_response.data = oci.cloud_migrations.models.Migration(
+            id="migration1", display_name="Migration 1", lifecycle_state="ACTIVE"
+        )
+        mock_client.get_migration.return_value = mock_get_response
 
-    #    async with Client(mcp) as client:
-    #        result = (
-    #            await client.call_tool(
-    #                "get_migration",
-    #                {
-    #                    "migration_id": "migration1",
-    #                },
-    #            )
-    #        ).data
+        async with Client(mcp) as client:
+            call_tool_result = await client.call_tool(
+                "get_migration", {"migration_id": "migration1"}
+            )
+            result = call_tool_result.structured_content
 
-    #        assert result.id == "migration1"
+            assert result["id"] == "migration1"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_migration_mcp_server.server.get_migration_client")
@@ -55,6 +50,8 @@ class TestMigrationTools:
                 )
             ]
         )
+        mock_list_response.has_next_page = False
+        mock_list_response.next_page = None
         mock_client.list_migrations.return_value = mock_list_response
 
         async with Client(mcp) as client:

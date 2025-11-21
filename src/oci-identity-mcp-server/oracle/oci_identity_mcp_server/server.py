@@ -7,11 +7,28 @@ https://oss.oracle.com/licenses/upl.
 import base64
 import json
 import os
+from logging import Logger
+from typing import Optional
 
 import oci
 from fastmcp import FastMCP
+from oracle.oci_identity_mcp_server.models import (
+    AuthToken,
+    AvailabilityDomain,
+    Compartment,
+    Tenancy,
+    User,
+    map_auth_token,
+    map_availability_domain,
+    map_compartment,
+    map_tenancy,
+    map_user,
+)
+from pydantic import Field
 
 from . import __project__, __version__
+
+logger = Logger(__name__, level="INFO")
 
 mcp = FastMCP(name=__project__)
 
@@ -30,119 +47,186 @@ def get_identity_client():
     return oci.identity.IdentityClient(config, signer=signer)
 
 
-@mcp.tool
-def list_compartments(tenancy_id: str) -> list[dict]:
-    identity = get_identity_client()
-    compartments = identity.list_compartments(tenancy_id).data
-    return [
-        {
-            "id": compartment.id,
-            "name": compartment.name,
-            "description": compartment.description,
-            "lifecycle_state": compartment.lifecycle_state,
-        }
-        for compartment in compartments
-    ]
+@mcp.tool(description="List compartments in a given compartment")
+def list_compartments(
+    compartment_id: str = Field(
+        ...,
+        description="The OCID of the compartment (remember that the tenancy is simply the root compartment)",
+    ),
+    limit: Optional[int] = Field(
+        None,
+        description="The maximum amount of compartments to return. If None, there is no limit.",
+        ge=1,
+    ),
+) -> list[Compartment]:
+    compartments: list[Compartment] = []
+
+    try:
+        client = get_identity_client()
+
+        response: oci.response.Response = None
+        has_next_page = True
+        next_page: str = None
+
+        while has_next_page and (limit is None or len(compartments) < limit):
+            kwargs = {
+                "compartment_id": compartment_id,
+                "page": next_page,
+                "limit": limit,
+            }
+
+            response = client.list_compartments(**kwargs)
+            has_next_page = response.has_next_page
+            next_page = response.next_page if hasattr(response, "next_page") else None
+
+            data: list[oci.identity.models.Compartment] = response.data
+            for d in data:
+                compartments.append(map_compartment(d))
+
+        logger.info(f"Found {len(compartments)} Compartments")
+        return compartments
+
+    except Exception as e:
+        logger.error(f"Error in list_compartments tool: {str(e)}")
+        raise e
 
 
-@mcp.tool
-def get_tenancy_info(tenancy_id: str) -> dict:
-    identity = get_identity_client()
-    tenancy = identity.get_tenancy(tenancy_id).data
-    return {
-        "id": tenancy.id,
-        "name": tenancy.name,
-        "description": tenancy.description,
-        "home_region_key": tenancy.home_region_key,
-    }
+@mcp.tool(description="Get tenancy with a given OCID")
+def get_tenancy(
+    tenancy_id: str = Field(..., description="The OCID of the tenancy")
+) -> Tenancy:
+    try:
+        client = get_identity_client()
+
+        response: oci.response.Response = client.get_tenancy(tenancy_id)
+        data: oci.identity.models.Tenancy = response.data
+        logger.info("Found Tenancy")
+        return map_tenancy(data)
+
+    except Exception as e:
+        logger.error(f"Error in get_tenancy tool: {str(e)}")
+        raise e
 
 
 @mcp.tool(description="Lists all of the availability domains in a given tenancy")
-def list_availability_domains(tenancy_id: str) -> list[dict]:
-    identity = get_identity_client()
-    ads: list[oci.identity.models.AvailabilityDomain] = (
-        identity.list_availability_domains(tenancy_id).data
-    )
-    return [
-        {
-            "id": ad.id,
-            "name": ad.name,
-            "compartment_id": ad.compartment_id,
-        }
-        for ad in ads
-    ]
+def list_availability_domains(
+    compartment_id: str = Field(
+        ...,
+        description="The OCID of the compartment (remember that the tenancy is simply the root compartment)",
+    ),
+) -> list[AvailabilityDomain]:
+    ads: list[AvailabilityDomain] = []
+
+    try:
+        client = get_identity_client()
+
+        response = client.list_availability_domains(compartment_id)
+
+        data: list[oci.identity.models.AvailabilityDomain] = response.data
+        for d in data:
+            ads.append(map_availability_domain(d))
+
+        logger.info(f"Found {len(ads)} Availability Domains")
+        return ads
+
+    except Exception as e:
+        logger.error(f"Error in list_availability_domains tool: {str(e)}")
+        raise e
 
 
 @mcp.tool
-def get_current_tenancy() -> dict:
-    config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
-    )
-    tenancy_id = config["tenancy"]
-    identity = get_identity_client()
-    tenancy = identity.get_tenancy(tenancy_id).data
-    return {
-        "id": tenancy.id,
-        "name": tenancy.name,
-        "description": tenancy.description,
-        "home_region_key": tenancy.home_region_key,
-    }
+def get_current_tenancy() -> Tenancy:
+    try:
+        client = get_identity_client()
+
+        config = oci.config.from_file(
+            profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+        )
+        tenancy_id = config["tenancy"]
+
+        response: oci.response.Response = client.get_tenancy(tenancy_id)
+        data: oci.identity.models.Tenancy = response.data
+        logger.info("Found Tenancy")
+        return map_tenancy(data)
+
+    except Exception as e:
+        logger.error(f"Error in get_tenancy tool: {str(e)}")
+        raise e
 
 
 @mcp.tool
-def create_auth_token(user_id: str) -> dict:
-    identity = get_identity_client()
-    token = identity.create_auth_token(user_id=user_id).data
-    return {
-        "token": token.token,
-        "description": token.description,
-        "lifecycle_state": token.lifecycle_state,
-    }
+def create_auth_token(
+    user_id: str = Field(..., description="The OCID of the user"),
+    description: Optional[str] = Field(
+        "", description="The description of the auth token"
+    ),
+) -> AuthToken:
+    try:
+        client = get_identity_client()
+
+        create_auth_token_details = oci.identity.models.CreateAuthTokenDetails(
+            description=description
+        )
+
+        response: oci.response.Response = client.create_auth_token(
+            user_id=user_id,
+            create_auth_token_details=create_auth_token_details,
+        )
+        data: oci.identity.models.AuthToken = response.data
+        logger.info("Created auth token")
+        return map_auth_token(data)
+
+    except Exception as e:
+        logger.error(f"Error in create_auth_token tool: {str(e)}")
+        raise e
 
 
 @mcp.tool
-def get_current_user() -> dict:
-    identity = get_identity_client()
-    config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
-    )
+def get_current_user() -> User:
+    try:
+        client = get_identity_client()
+        config = oci.config.from_file(
+            profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+        )
 
-    # Prefer explicit user from config if present
-    user_id = config.get("user")
+        # Prefer explicit user from config if present
+        user_id = config.get("user")
 
-    # Fallback: derive user OCID from the security token (session auth)
-    if not user_id:
-        token_file = config.get("security_token_file")
-        if token_file and os.path.exists(token_file):
-            with open(token_file, "r") as f:
-                token = f.read().strip()
-
-            # Expect JWT-like token: header.payload.signature (base64url)
-            if "." in token:
-                try:
-                    payload_b64 = token.split(".", 2)[1]
-                    padding = "=" * (-len(payload_b64) % 4)
-                    payload_json = base64.urlsafe_b64decode(
-                        payload_b64 + padding
-                    ).decode("utf-8")
-                    payload = json.loads(payload_json)
-                    # 'sub' typically contains the user OCID for session tokens;
-                    # fallback to opc-user-id if present
-                    user_id = payload.get("sub") or payload.get("opc-user-id")
-                except Exception:
-                    user_id = None
-
+        # Fallback: derive user OCID from the security token (session auth)
         if not user_id:
-            raise KeyError(
-                "Unable to determine current user OCID from config or security token"
-            )
+            token_file = config.get("security_token_file")
+            if token_file and os.path.exists(token_file):
+                with open(token_file, "r") as f:
+                    token = f.read().strip()
 
-    user = identity.get_user(user_id).data
-    return {
-        "id": user.id,
-        "name": user.name,
-        "description": user.description,
-    }
+                # Expect JWT-like token: header.payload.signature (base64url)
+                if "." in token:
+                    try:
+                        payload_b64 = token.split(".", 2)[1]
+                        padding = "=" * (-len(payload_b64) % 4)
+                        payload_json = base64.urlsafe_b64decode(
+                            payload_b64 + padding
+                        ).decode("utf-8")
+                        payload = json.loads(payload_json)
+                        # 'sub' typically contains the user OCID for session tokens;
+                        # fallback to opc-user-id if present
+                        user_id = payload.get("sub") or payload.get("opc-user-id")
+                    except Exception:
+                        user_id = None
+
+            if not user_id:
+                raise KeyError(
+                    "Unable to determine current user OCID from config or security token"
+                )
+
+        response: oci.response.Response = client.get_user(user_id)
+        data: oci.identity.models.User = response.data
+        logger.info("Found current user")
+        return map_user(data)
+
+    except Exception as e:
+        logger.error(f"Error in get_current_user tool: {str(e)}")
+        raise e
 
 
 def main():

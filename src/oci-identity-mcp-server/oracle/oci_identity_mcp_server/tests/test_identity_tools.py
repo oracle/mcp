@@ -30,6 +30,8 @@ class TestIdentityTools:
                 time_created="1970-01-01T00:00:00",
             )
         ]
+        mock_list_response.has_next_page = False
+        mock_list_response.next_page = None
         mock_client.list_compartments.return_value = mock_list_response
 
         async with Client(mcp) as client:
@@ -37,7 +39,7 @@ class TestIdentityTools:
                 await client.call_tool(
                     "list_compartments",
                     {
-                        "tenancy_id": "test_tenancy",
+                        "compartment_id": "test_tenancy",
                     },
                 )
             ).structured_content["result"]
@@ -66,7 +68,7 @@ class TestIdentityTools:
                 await client.call_tool(
                     "list_availability_domains",
                     {
-                        "tenancy_id": "test_tenancy",
+                        "compartment_id": "test_tenancy",
                     },
                 )
             ).structured_content["result"]
@@ -76,7 +78,7 @@ class TestIdentityTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
-    async def test_get_tenancy_info(self, mock_get_client):
+    async def test_get_tenancy(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -90,14 +92,13 @@ class TestIdentityTools:
         mock_client.get_tenancy.return_value = mock_get_response
 
         async with Client(mcp) as client:
-            result = (
-                await client.call_tool(
-                    "get_tenancy_info",
-                    {
-                        "tenancy_id": "test_tenancy",
-                    },
-                )
-            ).data
+            call_tool_result = await client.call_tool(
+                "get_tenancy",
+                {
+                    "tenancy_id": "test_tenancy",
+                },
+            )
+            result = call_tool_result.structured_content
 
             assert result["id"] == "tenancy1"
 
@@ -110,7 +111,7 @@ class TestIdentityTools:
         mock_get_client.return_value = mock_client
 
         mock_get_response = create_autospec(oci.response.Response)
-        mock_get_response.data = MagicMock(
+        mock_get_response.data = oci.identity.models.Tenancy(
             id="tenancy1",
             name="Tenancy 1",
             description="Test tenancy",
@@ -119,7 +120,11 @@ class TestIdentityTools:
         mock_client.get_tenancy.return_value = mock_get_response
 
         async with Client(mcp) as client:
-            result = (await client.call_tool("get_current_tenancy", {})).data
+            call_tool_result = await client.call_tool(
+                "get_current_tenancy",
+                {},
+            )
+            result = call_tool_result.structured_content
 
             assert result["id"] == "tenancy1"
 
@@ -136,14 +141,13 @@ class TestIdentityTools:
         mock_client.create_auth_token.return_value = mock_create_response
 
         async with Client(mcp) as client:
-            result = (
-                await client.call_tool(
-                    "create_auth_token",
-                    {
-                        "user_id": "test_user",
-                    },
-                )
-            ).data
+            call_tool_result = await client.call_tool(
+                "create_auth_token",
+                {
+                    "user_id": "test_user",
+                },
+            )
+            result = call_tool_result.structured_content
 
             assert result["token"] == "token1"
 
@@ -156,12 +160,16 @@ class TestIdentityTools:
         mock_get_client.return_value = mock_client
 
         mock_get_response = create_autospec(oci.response.Response)
-        mock_get_response.data = MagicMock(
+        mock_get_response.data = oci.identity.models.User(
             id="user1", name="User 1", description="Test user"
         )
         mock_client.get_user.return_value = mock_get_response
 
         async with Client(mcp) as client:
-            result = (await client.call_tool("get_current_user", {})).data
+            call_tool_result = await client.call_tool(
+                "get_current_user",
+                {},
+            )
+            result = call_tool_result.structured_content
 
             assert result["id"] == "user1"

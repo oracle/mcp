@@ -12,7 +12,7 @@ import oci
 from fastmcp import FastMCP
 from mysql import connector
 from mysql.connector.abstracts import MySQLConnectionAbstract
-from utils import (
+from oracle.mysql_mcp_server.utils import (
     DatabaseConnectionError,
     Mode,
     OciInfo,
@@ -20,9 +20,7 @@ from utils import (
     load_mysql_config,
 )
 
-MIN_CONTEXT_SIZE = 10
-DEFAULT_CONTEXT_SIZE = 20
-MAX_CONTEXT_SIZE = 100
+from oracle.mysql_mcp_server.consts import MIN_CONTEXT_SIZE, DEFAULT_CONTEXT_SIZE, MAX_CONTEXT_SIZE
 
 ###############################################################
 # Start setup
@@ -828,10 +826,13 @@ def ask_nl_sql(connection_id: str, question: str) -> str:
         set_response = _execute_sql_tool(db_connection, "SET @response = NULL;")
         if check_error(set_response):
             return json.dumps({"error": f"Error with NL_SQL: {set_response}"})
-
+        if db_connection.database is not None:
+            call_nl_sql = f"CALL sys.NL_SQL(%s, @response, JSON_OBJECT('schemas', JSON_ARRAY(\"{db_connection.database}\"), 'execute', FALSE, 'model_id', 'meta.llama-4-maverick-17b-128e-instruct-fp8'))"
+        else:
+            call_nl_sql = "CALL sys.NL_SQL(%s, @response, NULL)"
         nl2sql_response = _execute_sql_tool(
             db_connection,
-            f"CALL sys.NL_SQL(%s, @response, NULL)",
+            call_nl_sql,
             params=[question],
         )
         if check_error(nl2sql_response):
@@ -839,7 +840,7 @@ def ask_nl_sql(connection_id: str, question: str) -> str:
 
         fetch_response = _execute_sql_tool(db_connection, "SELECT @response;")
         if check_error(fetch_response):
-            return json.dumps({"error": f"Error with ML_RAG: {fetch_response}"})
+            return json.dumps({"error": f"Error with NL_SQL: {fetch_response}"})
 
         try:
             response = json.loads(fetch_one(fetch_response))
@@ -849,10 +850,89 @@ def ask_nl_sql(connection_id: str, question: str) -> str:
             return json.dumps({"error": "Unexpected response format from NL_SQL"})
 
 
+@mcp.tool()
+def retrieve_relevant_schema_information(connection_id: str, question: str) -> str:
+    """
+    [MCP Tool] Retrieve relevant schemas and tables for a given natural language question.
+
+    This tool analyzes the input question and, from the provided list of schema and/or table names, 
+    identifies only those that are relevant with respect to the question. 
+    It can optionally consider table and column comments for improved semantic matching. The results contain only the relevant schemas and tables in a JSON object.
+
+    Args:
+        connection_id (str): MySQL connection key.
+        input (str): Input question for use with ML_SCHEMA_RETRIEVAL.
+        
+    Returns:
+        JSON object of the form:
+        {
+            "tables": ["schema1.tableA", "schema2.tableB", ...],
+            "schemas": ["schema1","schema",...],
+            "schema_metadata": [
+                {
+                "fkey_info": [
+                    {
+                    "fkey_column": "customer_id",
+                    "fkey_ref_col_name": "customer_id",
+                    "fkey_ref_tbl_name": "customers"
+                    }
+                ],
+                "table_name": "customer_addresses",
+                "column_info": [
+                    {
+                    "data_type": "int",
+                    "column_name": "address_id",
+                    "column_comment": ""
+                    },
+                    {
+                    "data_type": "int",
+                    "column_name": "customer_id",
+                    "column_comment": ""
+                    },...]
+                "table_schema": "db_anatoly",
+                "table_comment": ""
+            }
+        }
+        Where both arrays include only the schemas/tables relevant to the question.
+
+    MCP usage example:
+        - name: retrieve_relevant_schema_information
+          arguments: {
+            "input": "Which tables store customer address data?",
+          }
+        # Example output:
+        # {
+        #     "tables": ["schema1.customers", "schema2.tableB"],
+              "schemas": ["schema1","schema"]
+        # }
+    """
+    with _get_database_connection_cm(connection_id) as db_connection:
+        set_response = _execute_sql_tool(db_connection, "SET @response = NULL;")
+        if check_error(set_response):
+            return json.dumps({"error": f"Error with ML_RETRIEVE_SCHEMA: {set_response}"})
+
+        ml_retrieval_response = _execute_sql_tool(
+            db_connection,
+            f"CALL sys.ML_SQL_SCHEMA_METADATA(%s, NULL, TRUE, @response)",
+            params=[question],
+        )
+        if check_error(ml_retrieval_response):
+            return json.dumps({"error": f"Error with ML_RETRIEVE_SCHEMA: {ml_retrieval_response}"})
+
+        fetch_response = _execute_sql_tool(db_connection, "SELECT @response;")
+        if check_error(fetch_response):
+            return json.dumps({"error": f"Error with ML_RETRIEVE_SCHEMA: {fetch_response}"})
+
+        try:
+            response = json.loads(fetch_one(fetch_response))
+            return json.dumps(response)
+        except:
+            return json.dumps({"error": "Unexpected response format from ML_RETRIEVE_SCHEMA"})
+
+
 """
 Object store
 """
-
 
 def verify_compartment_access(compartments):
     access_report = {}
@@ -1034,7 +1114,9 @@ def object_storage_list_objects(namespace: str, bucket_name: str) -> str:
 
     return str(list_object_response.data.objects)
 
-
-if __name__ == "__main__":
-    # Initialize and run the server
+def main():
+    """Run the MCP server with CLI argument support."""
     mcp.run(transport="stdio")
+
+if __name__ == '__main__':
+    main()

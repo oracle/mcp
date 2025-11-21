@@ -117,13 +117,13 @@ def fill_config_defaults(config : dict) -> dict:
 
     return config
 
-def load_mysql_config(config_path="config.json"):
+def load_mysql_config():
     """
     Load and validate the MySQL MCP server configuration file.
 
     Resolution:
       1) If MYSQL_MCP_CONFIG is set, load that absolute path.
-      2) Otherwise, load <module_dir>/local_config.json.
+      2) Otherwise, load <root__dir>/local_config.json.
 
     Notes:
       - No other fallbacks (e.g., config.json or CWD) are used.
@@ -139,13 +139,15 @@ def load_mysql_config(config_path="config.json"):
     env_path = os.environ.get('MYSQL_MCP_CONFIG')
     module_dir = os.path.dirname(os.path.abspath(__file__))
 
-    local_config_path = os.path.join(module_dir, "local_config.json")
+    local_config_path = os.path.abspath(
+        os.path.join(module_dir, "..", "..", "local_config.json")
+    )
     config_file = env_path if env_path else local_config_path
 
     if not os.path.isfile(config_file):
         raise Exception(
             f"Config file not found at {config_file}. "
-            "Set MYSQL_MCP_CONFIG to an absolute path or place local_config.json next to utils.py."
+            "Set MYSQL_MCP_CONFIG to an absolute path or create local_config.json in project root directory."
         )
 
     with open(config_file, "r") as f:

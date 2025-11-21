@@ -13,9 +13,8 @@ import unittest
 import uuid
 from unittest import mock
 
-import mysql_mcp_server as m
-from utils import get_ssh_command, fill_config_defaults
-
+from oracle.mysql_mcp_server.utils import get_ssh_command, fill_config_defaults, Mode
+import oracle.mysql_mcp_server.server as m
 SKIP_ESTABLISHED = False
 
 
@@ -23,7 +22,7 @@ def get_server_module():
     # Dynamically load the server module but shim fastmcp so @mcp.tool() returns the original function
     # This avoids FunctionTool non-callable wrappers when importing FastMCP from 'fastmcp'.
 
-    server_path = os.path.join(os.path.dirname(__file__), "mysql_mcp_server.py")
+    server_path = os.path.join(os.path.dirname(__file__), "../server.py")
     if not os.path.exists(server_path):
         raise FileNotFoundError(f"Server file not found at {server_path}")
 
@@ -93,13 +92,13 @@ def get_first_valid_connection_id(desired_mode=None):
 
 
 try:
-    get_first_valid_connection_id(m.Mode.MYSQL_AI)
+    get_first_valid_connection_id(Mode.MYSQL_AI)
     SKIP_MYSQL_AI = False
 except:
     SKIP_MYSQL_AI = True
 
 try:
-    get_first_valid_connection_id(m.Mode.OCI)
+    get_first_valid_connection_id(Mode.OCI)
     SKIP_OCI = False
 except:
     SKIP_OCI = True
@@ -241,9 +240,11 @@ class TestLoadMySQLConfig(unittest.TestCase):
         self.assertEqual(cfg, data)
 
     def test_load_uses_module_local_config_when_env_unset(self):
-        # Determine the utils module directory the function belongs to
-        utils_dir = os.path.dirname(os.path.abspath(m.load_mysql_config.__code__.co_filename))
-        local_path = os.path.join(utils_dir, "local_config.json")
+        
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+        local_path = os.path.abspath(
+        os.path.join(module_dir, "..", "..", "..", "local_config.json")
+    )
 
         def isfile_side_effect(path):
             return path == local_path

@@ -5,10 +5,19 @@
 This server provides tools to interact with the OCI Registry resources.
 It includes tools to help with managing container repositories.
 
+
 ## Running the server
 
+### STDIO transport mode
+
 ```sh
-uv run oracle.oci-registry-mcp-server
+uvx oracle.oci-registry-mcp-server
+```
+
+### HTTP streaming transport mode
+
+```sh
+MCP_HOST=<hostname/IP address> MCP_PORT=<port number> uvx oracle.oci-registry-mcp-server
 ```
 
 ## Tools

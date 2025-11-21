@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-cloud-guard-mcp-server"
-version = "1.0.1"
+version = "1.1.0"
 description = "OCI Cloud Guard Service MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -50,4 +50,3 @@ omit = [
 [tool.coverage.report]
 precision = 2
 fail_under = 64.8
-

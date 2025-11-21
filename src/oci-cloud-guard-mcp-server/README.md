@@ -7,8 +7,16 @@ It includes tools to help with managing cloud guard problems.
 
 ## Running the server
 
+### STDIO transport mode
+
 ```sh
-uv run oracle.oci-cloud-guard-mcp-server
+uvx oracle.oci-cloud-guard-mcp-server
+```
+
+### HTTP streaming transport mode
+
+```sh
+MCP_HOST=<hostname/IP address> MCP_PORT=<port number> uvx oracle.oci-cloud-guard-mcp-server
 ```
 
 ## Tools
@@ -35,5 +43,3 @@ Copyright (c) 2025 Oracle and/or its affiliates.
 
 Released under the Universal Permissive License v1.0 as shown at  
 <https://oss.oracle.com/licenses/upl/>.
-
-

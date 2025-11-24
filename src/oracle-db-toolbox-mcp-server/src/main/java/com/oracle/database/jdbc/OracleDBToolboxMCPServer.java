@@ -12,6 +12,8 @@ import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
 
+import javax.sql.DataSource;
+
 import static com.oracle.database.jdbc.Utils.installExternalExtensionsFromDir;
 
 public class OracleDBToolboxMCPServer {
@@ -20,6 +22,18 @@ public class OracleDBToolboxMCPServer {
 
   static {
     config = Utils.loadConfig();
+  }
+
+  /**
+   * Injects a custom {@link javax.sql.DataSource} used by all tools
+   * to obtain connections.
+   * <p>Call this before {@link #main(String[])} to override the default
+   * configuration-based data source.</p>
+   *
+   * @param ds the data source to use for all DB operations
+   */
+  public static void useDataSource(DataSource ds) {
+    Utils.useDataSource(ds);
   }
 
   public static void main(String[] args) {

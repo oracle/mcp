@@ -61,4 +61,54 @@ public class ToolSchemas {
               "required": ["filePath", "connectionId"]
             }
             """;
+  static final String SIMILARITY_SEARCH = """
+    {
+      "type": "object",
+      "properties": {
+        "question": {
+          "type": "string",
+          "description": "Natural-language query text"
+        },
+        "topK": {
+          "type": "integer",
+          "description": "Number of rows to return",
+          "default": 5
+        },
+        "table": {
+          "type": "string",
+          "description": "Override: table name"
+          },
+        "dataColumn": {
+           "type": "string",
+           "description": "Override: text/CLOB column"
+          },
+        "embeddingColumn": {
+          "type": "string",
+          "description": "Override: embedding column"
+          },
+        "modelName": {
+           "type": "string",
+           "description": "Override: vector model name"
+        },
+        "textFetchLimit": {
+           "type": "integer",
+           "description": "Override: substring length (CLOB)" }
+      },
+      "required": ["question"]
+    }""";
+  static final String EXPLAIN_PLAN = """
+    {
+      "type": "object",
+      "properties": {
+        "sql":        { "type": "string", "description": "SQL to plan" },
+        "mode":       { "type": "string", "enum": ["static","dynamic"], "description": "static=EXPLAIN PLAN, dynamic=DISPLAY_CURSOR" },
+        "maxRows":    { "type": "integer", "minimum": 1, "description": "When executing SELECT in dynamic mode, cap rows fetched" },
+        "execute":    { "type": "boolean", "description": "If true, actually run the SQL to collect runtime stats (A-Rows). Default: SELECT=true, DML/DDL=false" },
+        "xplanOptions": {
+          "type": "string",
+          "description": "Override DBMS_XPLAN options, e.g. 'ALLSTATS LAST +PEEKED_BINDS +OUTLINE +PROJECTION'"
+        }
+      },
+      "required": ["sql"]
+    }""";
 }

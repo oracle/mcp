@@ -53,6 +53,11 @@
             <artifactId>ojdbc17</artifactId>
             <version>${ojdbc.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.oracle.database.jdbc</groupId>
+            <artifactId>ucp17</artifactId>
+            <version>${ojdbc.version}</version>
+        </dependency>
 
         <dependency>
             <groupId>org.yaml</groupId>

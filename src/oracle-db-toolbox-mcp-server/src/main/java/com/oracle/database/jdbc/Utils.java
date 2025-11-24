@@ -45,7 +45,10 @@ public class Utils {
   static void addSyncToolSpecifications(McpSyncServer server, ServerConfig config) {
     List<McpServerFeatures.SyncToolSpecification> specs = OracleJDBCLogAnalyzerMCPServer.getLogAnalyzerTools();
     for (McpServerFeatures.SyncToolSpecification spec : specs) {
-      server.addTool(spec);
+      String toolName = spec.tool().name(); // e.g. "get-stats", "get-queries"
+      if (isToolEnabled(config, toolName)) {
+        server.addTool(spec);
+      }
     }
 
     // ---------- Dynamically Added Tools ----------
@@ -274,4 +277,13 @@ public class Utils {
     }
     return sb.toString();
   }
+
+  private static boolean isToolEnabled(ServerConfig config, String toolName) {
+    if (config.toolsFilter == null) {
+      return true;
+    }
+    String key = toolName.toLowerCase(Locale.ROOT);
+    return config.toolsFilter.contains(key);
+  }
+
 }

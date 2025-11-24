@@ -33,6 +33,7 @@
         <ojdbc.version>23.9.0.25.07</ojdbc.version>
         <snakeYaml.version>2.5</snakeYaml.version>
         <logAnalyzer.version>1.0.0</logAnalyzer.version>
+        <jetty.version>12.1.4</jetty.version>
         <junit.version>5.10.0</junit.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
@@ -59,10 +60,25 @@
             <version>${snakeYaml.version}</version>
         </dependency>
 
+        <!-- Log Analyzer -->
         <dependency>
             <groupId>com.oracle.database.jdbc</groupId>
             <artifactId>ojdbc-log-analyzer</artifactId>
             <version>${logAnalyzer.version}</version>
+        </dependency>
+
+        <!-- Jetty HTTP server -->
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-server</artifactId>
+            <version>${jetty.version}</version>
+        </dependency>
+
+        <!-- Jetty Servlet support -->
+        <dependency>
+            <groupId>org.eclipse.jetty.ee10</groupId>
+            <artifactId>jetty-ee10-servlet</artifactId>
+            <version>${jetty.version}</version>
         </dependency>
 
         <dependency>

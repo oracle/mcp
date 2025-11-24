@@ -822,14 +822,13 @@ def ask_nl_sql(connection_id: str, question: str) -> str:
         }
     """
     with _get_database_connection_cm(connection_id) as db_connection:
-        # Execute the heatwave chat query
         set_response = _execute_sql_tool(db_connection, "SET @response = NULL;")
         if check_error(set_response):
             return json.dumps({"error": f"Error with NL_SQL: {set_response}"})
         if db_connection.database is not None:
-            call_nl_sql = f"CALL sys.NL_SQL(%s, @response, JSON_OBJECT('schemas', JSON_ARRAY(\"{db_connection.database}\"), 'execute', FALSE, 'model_id', 'meta.llama-4-maverick-17b-128e-instruct-fp8'))"
+            call_nl_sql = f"CALL sys.NL_SQL(%s, @response, JSON_OBJECT('schemas', JSON_ARRAY(\"{db_connection.database}\"), 'execute', FALSE))"
         else:
-            call_nl_sql = "CALL sys.NL_SQL(%s, @response, NULL)"
+            call_nl_sql = "CALL sys.NL_SQL(%s, @response, JSON_OBJECT('execute', FALSE))"
         nl2sql_response = _execute_sql_tool(
             db_connection,
             call_nl_sql,
@@ -844,7 +843,6 @@ def ask_nl_sql(connection_id: str, question: str) -> str:
 
         try:
             response = json.loads(fetch_one(fetch_response))
-            response["sql_response"] = nl2sql_response
             return json.dumps(response)
         except:
             return json.dumps({"error": "Unexpected response format from NL_SQL"})
@@ -855,8 +853,7 @@ def retrieve_relevant_schema_information(connection_id: str, question: str) -> s
     """
     [MCP Tool] Retrieve relevant schemas and tables for a given natural language question.
 
-    This tool analyzes the input question and, from the provided list of schema and/or table names, 
-    identifies only those that are relevant with respect to the question. 
+    This tool analyzes the input question and identifies tables that are relevant with respect to the question. 
     It can optionally consider table and column comments for improved semantic matching. The results contain only the relevant schemas and tables in a JSON object.
 
     Args:
@@ -864,47 +861,27 @@ def retrieve_relevant_schema_information(connection_id: str, question: str) -> s
         input (str): Input question for use with ML_SCHEMA_RETRIEVAL.
         
     Returns:
-        JSON object of the form:
+        A single JSON of the form:
         {
-            "tables": ["schema1.tableA", "schema2.tableB", ...],
-            "schemas": ["schema1","schema",...],
-            "schema_metadata": [
-                {
-                "fkey_info": [
-                    {
-                    "fkey_column": "customer_id",
-                    "fkey_ref_col_name": "customer_id",
-                    "fkey_ref_tbl_name": "customers"
-                    }
-                ],
-                "table_name": "customer_addresses",
-                "column_info": [
-                    {
-                    "data_type": "int",
-                    "column_name": "address_id",
-                    "column_comment": ""
-                    },
-                    {
-                    "data_type": "int",
-                    "column_name": "customer_id",
-                    "column_comment": ""
-                    },...]
-                "table_schema": "db_anatoly",
-                "table_comment": ""
-            }
-        }
-        Where both arrays include only the schemas/tables relevant to the question.
+            "create_statements":  '''
+                CREATE TABLE `db2`.`singer`(
+                `Singer_ID` int,
+                `Name` varchar,
+                `Birth_Year` double,
+                `Net_Worth_Millions` double COMMENT 'Worth in millions $',
+                `Citizenship` varchar
+                ) COMMENT 'table about singers';
 
-    MCP usage example:
-        - name: retrieve_relevant_schema_information
-          arguments: {
-            "input": "Which tables store customer address data?",
-          }
-        # Example output:
-        # {
-        #     "tables": ["schema1.customers", "schema2.tableB"],
-              "schemas": ["schema1","schema"]
-        # }
+                CREATE TABLE `db2`.`album`(
+                `Album_ID` int,
+                `Singer_ID` int,
+                `Title` varchar,
+                FOREIGN KEY (`Singer_ID`) REFERENCES `db2`.`singer`(`Singer_ID`)
+                ) COMMENT 'album table';
+                '''       
+        }
+        
+        Where the DDL/CREATE statements of all relevant tables are listed        
     """
     with _get_database_connection_cm(connection_id) as db_connection:
         set_response = _execute_sql_tool(db_connection, "SET @response = NULL;")
@@ -913,13 +890,13 @@ def retrieve_relevant_schema_information(connection_id: str, question: str) -> s
 
         ml_retrieval_response = _execute_sql_tool(
             db_connection,
-            f"CALL sys.ML_SQL_SCHEMA_METADATA(%s, NULL, TRUE, @response)",
+            f"CALL sys.ML_RETRIEVE_SCHEMA_METADATA(%s, @response, NULL)",
             params=[question],
         )
         if check_error(ml_retrieval_response):
             return json.dumps({"error": f"Error with ML_RETRIEVE_SCHEMA: {ml_retrieval_response}"})
 
-        fetch_response = _execute_sql_tool(db_connection, "SELECT @response;")
+        fetch_response = _execute_sql_tool(db_connection, "SELECT JSON_OBJECT('create_statements', @response) AS jobj;")
         if check_error(fetch_response):
             return json.dumps({"error": f"Error with ML_RETRIEVE_SCHEMA: {fetch_response}"})
 

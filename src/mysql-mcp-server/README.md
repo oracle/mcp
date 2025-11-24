@@ -55,7 +55,7 @@ see the [OCI SDK documentation](https://docs.oracle.com/en-us/iaas/Content/API/C
 
 ## MCP Server Configuration
 
-Installation is dependent on the MCP Client being used, it usually consists of adding the MCP Server invocation in a json config file, for example with Claude UI on windows it looks like this:
+Installation is dependent on the MCP Client being used, it usually consists of adding the MCP Server invocation in a json config file, for example with Claude UI on Windows it looks like this:
 ```json
 {
   "mcpServers": {
@@ -71,6 +71,7 @@ Installation is dependent on the MCP Client being used, it usually consists of a
   }
 }
 ```
+**Note**: On Windows you may have to provide the suffix *.exe* to "oracle.mysql_mcp_server".
 
 
 

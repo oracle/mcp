@@ -337,6 +337,33 @@ make lint
 make test
 ```
 
+## Publishing
+
+### Publish & verify test packages
+
+Publish packages to PyPI test registry:
+```bash
+UV_PUBLISH_TOKEN=$(cat /path/to/testpypi/token-file) make test-publish
+```
+
+Verify installation:
+```bash
+uv run --index=https://test.pypi.org/simple <mcp server package>
+```
+example:
+```bash
+uv run --index=https://test.pypi.org/simple oracle.oci-api-mcp-server
+```
+
+### Publish packages
+
+>[!IMPORTANT]
+> NOTE: The `UV_PUBLISH_TOKEN` differs for Test PyPI and PyPI.
+
+```bash
+UV_PUBLISH_TOKEN=$(cat /path/to/pypi/token-file) make publish
+```
+
 ## Contributing
 
 This project welcomes contributions from the community. Before submitting a pull 

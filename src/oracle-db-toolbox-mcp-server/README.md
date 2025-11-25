@@ -380,3 +380,78 @@ If you enable **only** the Log Analyzer tools, you can omit <code>db.url</code>.
 
 <i>* Note:</i> If you’re using token-based authentication (e.g., IAM tokens) or a centralized configuration provided via the JARs you place in `-Dojdbc.ext.dir`,
 you can omit `db.user` and `db.password`. The driver will pick up credentials and security settings from those extensions.
+
+## Docker Image
+
+A `Dockerfile` is included at the root of the project so you can build and run the MCP server as a container.
+
+### Build the image
+From the project root (where the Dockerfile lives):
+
+```bash
+podman build -t oracle-db-toolbox-mcp-server:1.0.0 .
+```
+### Run the container (HTTP mode example)
+This example runs the MCP server over HTTP inside the container and exposes it on port 45450 on your host.
+
+```json
+podman run --rm \
+  -p 45450:45450 \
+  -e JAVA_TOOL_OPTIONS="\
+    -Dtransport=http \
+    -Dhttp.port=45450 \
+    -Dtools=get-stats,get-queries \
+    -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service \
+    -Ddb.user=your_user \
+    -Ddb.password=your_password" \
+  oracle-db-toolbox-mcp-server:1.0.0
+```
+This exposes the MCP endpoint at: http://localhost:45450/mcp
+
+You can then configure Cline or Claude Desktop as described in the Using HTTP from Cline / Claude Desktop sections above.
+
+If you need extra JDBC / security jars (e.g. `oraclepki`, `wallets`, `centralized config`),
+mount them and point `ojdbc.ext.dir` at that directory:
+
+```json
+podman run --rm \
+  -p 45450:45450 \
+  -v /path/to/ext:/ext:ro \
+  -e JAVA_TOOL_OPTIONS="\
+    -Dtransport=http \
+    -Dhttp.port=45450 \
+    -Dtools=get-stats,get-queries \
+    -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service \
+    -Ddb.user=your_user \
+    -Ddb.password=your_password" \
+    -Dojdbc.ext.dir=/ext" \
+  oracle-db-toolbox-mcp-server:1.0.0
+```
+
+### Using Docker/Podman with stdio
+Instead of running the MCP server over HTTP, you can keep using the **stdio** transport
+and let your MCP client spawn the container (via **podman run**) instead of spawning java directly.
+In this mode, the MCP client talks to the server over stdin/stdout, just like with a local JAR.
+
+#### Example: Claude Desktop using Podman (stdio)
+In this configuration, Claude Desktop runs `podman run --rm -i ... and connects to the server via stdio:
+
+```json
+{
+  "mcpServers": {
+    "oracle-db-toolbox-mcp-server": {
+      "command": "podman",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-v", "/absolute/path/to/ext:/ext:ro",
+        "-e",
+        "JAVA_TOOL_OPTIONS=-Dtools=get-stats,get-queries -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service -Ddb.user=your_user -Ddb.password=your_password -Dojdbc.ext.dir=/ext -DconfigFile=/config/config.yaml",
+        "oracle-db-toolbox-mcp-server:1.0.0"
+      ]
+    }
+  }
+}
+
+```

@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>com.oracle.database.jdbc</groupId>
-    <artifactId>ojdbc-log-analyzer-mcp-server</artifactId>
+    <artifactId>oracle-db-toolbox-mcp-server</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
     <name>Oracle JDBC Log Analyzer MCP Server</name>
@@ -31,7 +31,9 @@
         <java.version>17</java.version>
         <mcp.version>0.12.1</mcp.version>
         <ojdbc.version>23.9.0.25.07</ojdbc.version>
+        <snakeYaml.version>2.5</snakeYaml.version>
         <logAnalyzer.version>1.0.0</logAnalyzer.version>
+        <jetty.version>12.1.1</jetty.version>
         <junit.version>5.10.0</junit.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
@@ -51,11 +53,37 @@
             <artifactId>ojdbc17</artifactId>
             <version>${ojdbc.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.oracle.database.jdbc</groupId>
+            <artifactId>ucp17</artifactId>
+            <version>${ojdbc.version}</version>
+        </dependency>
 
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <version>${snakeYaml.version}</version>
+        </dependency>
+
+        <!-- Log Analyzer -->
         <dependency>
             <groupId>com.oracle.database.jdbc</groupId>
             <artifactId>ojdbc-log-analyzer</artifactId>
             <version>${logAnalyzer.version}</version>
+        </dependency>
+
+        <!-- Jetty HTTP server -->
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-server</artifactId>
+            <version>${jetty.version}</version>
+        </dependency>
+
+        <!-- Jetty Servlet support -->
+        <dependency>
+            <groupId>org.eclipse.jetty.ee10</groupId>
+            <artifactId>jetty-ee10-servlet</artifactId>
+            <version>${jetty.version}</version>
         </dependency>
 
         <dependency>
@@ -82,7 +110,7 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.oracle.database.jdbc.OracleJDBCLogAnalyzerMCPServer</mainClass>
+                                    <mainClass>com.oracle.database.jdbc.OracleDBToolboxMCPServer</mainClass>
                                 </transformer>
                             </transformers>
                         </configuration>

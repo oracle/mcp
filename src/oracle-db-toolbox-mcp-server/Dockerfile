@@ -23,6 +23,4 @@ USER appuser
 COPY --from=builder /src/target/oracle-db-toolbox-mcp-server-*.jar \
      /app/oracle-db-toolbox-mcp-server.jar
 
-EXPOSE 45450
-
 ENTRYPOINT ["java", "-jar", "/app/oracle-db-toolbox-mcp-server.jar"]

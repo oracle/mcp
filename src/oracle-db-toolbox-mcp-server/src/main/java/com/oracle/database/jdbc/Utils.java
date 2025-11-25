@@ -52,6 +52,7 @@ import java.util.stream.Stream;
  * {@link #useDataSource(DataSource)}.
  */
 public class Utils {
+  private static final Logger LOG = Logger.getLogger(Utils.class.getName());
 
   private static volatile DataSource dataSource;
   private static volatile Supplier<Connection> connectionSupplier;
@@ -78,7 +79,7 @@ public class Utils {
    * </p>
    */
   static void addSyncToolSpecifications(McpSyncServer server, ServerConfig config) {
-    List<McpServerFeatures.SyncToolSpecification> specs = OracleJDBCLogAnalyzerMCPServer.getLogAnalyzerTools();
+    List<McpServerFeatures.SyncToolSpecification> specs = OracleJDBCLogAnalyzer.getLogAnalyzerTools();
     for (McpServerFeatures.SyncToolSpecification spec : specs) {
       String toolName = spec.tool().name(); // e.g. "get-stats", "get-queries"
       if (isToolEnabled(config, toolName)) {
@@ -169,8 +170,7 @@ public class Utils {
         yamlConfig = yaml.loadAs(reader, ConfigRoot.class);
       }
     } catch (Exception e) {
-      Logger logger = Logger.getLogger(OracleDBToolboxMCPServer.class.getName());
-      logger.log(Level.SEVERE, e.getMessage());
+      LOG.log(Level.SEVERE, e.getMessage(), e);
     }
     if (yamlConfig == null) {
       config = ServerConfig.fromSystemProperties();
@@ -241,7 +241,7 @@ public class Utils {
 
   /**
    * <p>
-   *   Executes the provided {@link OracleJDBCLogAnalyzerMCPServer.ThrowingSupplier ThrowingSupplier} action,
+   *   Executes the provided {@link OracleJDBCLogAnalyzer.ThrowingSupplier ThrowingSupplier} action,
    *   which may throw an {@link Exception}, and returns the resulting {@link McpSchema.CallToolResult}.
    *   <br>
    *   If the action executes successfully, its {@link McpSchema.CallToolResult} is returned as-is.
@@ -295,7 +295,7 @@ public class Utils {
 
     final Path root = Paths.get(dir);
     if (!Files.isDirectory(root)) {
-      System.err.println("[mcp-ojdbc] ojdbc.ext.dir is not a directory: " + dir);
+      LOG.warning("[oracle-db-toolbox-mcp-server] ojdbc.ext.dir is not a directory: " + dir);
       return;
     }
     final List<URL> jarUrls = new ArrayList<>();
@@ -305,16 +305,16 @@ public class Utils {
             try {
               jarUrls.add(p.toUri().toURL());
             } catch (Exception e) {
-              System.err.println("[mcp-ojdbc] Failed to add jar: " + p + " -> " + e);
+              LOG.log(Level.WARNING, "[oracle-db-toolbox-mcp-server] Failed to add jar: " + p, e);
             }
           });
     } catch (Exception e) {
-      System.err.println("[mcp-ojdbc] Failed to scan " + dir + " -> " + e);
+      LOG.log(Level.WARNING, "[oracle-db-toolbox-mcp-server] Failed to scan " + dir, e);
       return;
     }
 
     if (jarUrls.isEmpty()) {
-      System.err.println("[mcp-ojdbc] No jars found under " + dir);
+      LOG.warning("[oracle-db-toolbox-mcp-server] No jars found under " + dir);
       return;
     }
 

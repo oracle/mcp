@@ -1,22 +1,29 @@
 package com.oracle.database.jdbc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oracle.database.jdbc.web.AuthorizationFilter;
+import com.oracle.database.jdbc.web.WellKnownServlet;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
+
+import org.eclipse.jetty.ee10.servlet.FilterHolder;
 import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
 import org.eclipse.jetty.ee10.servlet.ServletHolder;
-import org.eclipse.jetty.server.Server;
-import org.eclipse.jetty.server.ServerConnector;
+import org.eclipse.jetty.server.*;
+import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
 
 import javax.sql.DataSource;
 
+import java.util.logging.Logger;
+
 import static com.oracle.database.jdbc.Utils.installExternalExtensionsFromDir;
 
 public class OracleDBToolboxMCPServer {
+  private static final Logger LOG = Logger.getLogger(OracleDBToolboxMCPServer.class.getName());
 
   static ServerConfig config;
 
@@ -104,17 +111,51 @@ public class OracleDBToolboxMCPServer {
       var context = new ServletContextHandler();
       context.setContextPath("/");
       context.addServlet(new ServletHolder(transport), "/mcp/*");
+      context.addServlet(WellKnownServlet.class.getName(), "/.well-known/oauth-protected-resource");
+
+      var oauthFilter = new FilterHolder(new AuthorizationFilter());
+      context.addFilter(oauthFilter, "/mcp/*", null);
+
       jetty.setHandler(context);
 
       jetty.start();
 
-      System.out.println("[oracle-db-toolbox-mcp-server] HTTP transport " +
-              "started on port " + port + " (endpoint: /mcp)");
+      final String url = buildServerURL(jetty);
+      final String mcpEndpoint = url + "/mcp";
+
+      LOG.info(() -> "[oracle-db-toolbox-mcp-server] HTTP transport started on %s (endpoint: %s)".formatted(url, mcpEndpoint));
 
       return server;
     } catch (Exception e) {
       throw new RuntimeException("Failed to start HTTP/streamable server", e);
     }
+  }
+
+  private static String buildServerURL(Server jetty) {
+    String host = "localhost";
+    String protocol = "http";
+    int port = 45450;
+
+    for (final org.eclipse.jetty.server.Connector conn : jetty.getConnectors())
+      if (conn instanceof ServerConnector serverConnector) {
+        if (serverConnector.getHost() != null) {
+          host = serverConnector.getHost();
+          port = serverConnector.getPort();
+        }
+
+        for (final org.eclipse.jetty.server.ConnectionFactory factory : serverConnector.getConnectionFactories())
+          if (factory instanceof SslContextFactory || factory.getProtocol().toLowerCase().contains("ssl")) {
+            protocol = "https";
+          }
+
+        break;
+      }
+
+    final var url = "%s://%s:%s".formatted(protocol, host, port);
+
+    System.setProperty("serverURL", url);
+
+    return url;
   }
 
 }

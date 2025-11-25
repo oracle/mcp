@@ -8,6 +8,7 @@ This document lays out the best practices for an individual MCP server. You may 
 mcp-server-name/
 ├── LICENSE.txt             # License information
 ├── pyproject.toml          # Project configuration
+├── CHANGELOG.md            # The CHANGELOG for the server.
 ├── README.md               # Project description, setup instructions
 ├── uv.lock                 # Dependency lockfile
 └── oracle/                 # Source code directory

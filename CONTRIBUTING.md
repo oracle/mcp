@@ -42,11 +42,12 @@ can be accepted.
    the issue number as part of your branch name, e.g. `1234-fixes`.
 4. Ensure that any documentation is updated with the changes that are required
    by your change.
-5. Ensure that any samples are updated if the base image has been changed.
-6. Submit the pull request. *Do not leave the pull request blank*. Explain exactly
+5. Ensure that any change to any of the MCP servers has a corresponding update in the CHANGELOG.md for that respective MCP server. Changes to MCP servers without corresponding changes in the CHANGELOG.MD will be rejected.
+6. Ensure that any samples are updated if the base image has been changed.
+7. Submit the pull request. *Do not leave the pull request blank*. Explain exactly
    what your changes are meant to do and provide simple steps on how to validate.
    your changes. Ensure that you reference the issue you created as well.
-1. We will assign the pull request to 2-3 people for review before it is merged.
+8. We will assign the pull request to 2-3 people for review before it is merged.
 
 ## Code of conduct
 

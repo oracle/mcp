@@ -9,7 +9,10 @@ import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.yaml.snakeyaml.Yaml;
+import oracle.ucp.jdbc.PoolDataSource;
+import oracle.ucp.jdbc.PoolDataSourceFactory;
 
+import javax.sql.DataSource;
 import java.io.IOException;
 import java.io.Reader;
 import java.net.URL;
@@ -31,11 +34,43 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 
+/**
+ * Utility class for managing Oracle database connections and
+ * executing SQL operations.
+ *
+ * <p>Provides methods for connection pooling (using Oracle UCP),
+ * executing queries, converting results to JSON, and safely handling
+ * database identifiers.
+ *
+ * <p>The connection pool uses minimal settings (1 connection).
+ * Applications can override the default data source via
+ * {@link #useDataSource(DataSource)}.
+ */
 public class Utils {
+
+  private static volatile DataSource dataSource;
+  private static volatile Supplier<Connection> connectionSupplier;
+
+  /**
+   * Overrides the default data source with a caller-provided one.
+   * Call before the server starts registering tools.
+   *
+   * @param ds custom data source used to obtain connections
+   */
+  static void useDataSource(DataSource ds) {
+    connectionSupplier = () -> {
+      try {
+        return ds.getConnection();
+      } catch (SQLException e) {
+        throw new RuntimeException(e);
+      }
+    };
+  }
 
   /**
    * <p>
@@ -51,6 +86,16 @@ public class Utils {
       }
     }
 
+    // similarity_search
+    if (isToolEnabled(config, "similarity_search")) {
+      server.addTool(SimilaritySearchTool.getSymilaritySearchTool(config));
+    }
+
+    // explain_plan
+    if (isToolEnabled(config, "explain_plan")) {
+      server.addTool(ExplainAndExecutePlanTool.getExplainAndExecutePlanTool(config));
+    }
+
     // ---------- Dynamically Added Tools ----------
     for (Map.Entry<String, ToolConfig> entry : config.tools.entrySet()) {
       ToolConfig tc = entry.getValue();
@@ -64,7 +109,7 @@ public class Utils {
                   .build()
               )
               .callHandler((exchange, callReq) ->
-                  Utils.tryCall(() -> {
+                  tryCall(() -> {
                     // Resolve source
                     SourceConfig src = config.sources.get(tc.source);
                     String jdbcUrl = (src != null) ? src.toJdbcUrl() : config.dbUrl;
@@ -101,6 +146,12 @@ public class Utils {
     }
   }
 
+  static String getOrDefault(Object v, String def) {
+    if (v == null) return def;
+    String s = v.toString().trim();
+    return s.isEmpty() ? def : s;
+  }
+
   /**
    * Loads the server configuration from a YAML file specified by the <code>configFile</code> system property.
    * If the file cannot be read or parsed, falls back to using only system properties.
@@ -135,6 +186,58 @@ public class Utils {
     return config;
   }
 
+  /**
+   * Acquires a JDBC connection from the active data source.
+   *
+   * @param cfg server configuration
+   * @return open JDBC connection
+   * @throws SQLException on acquisition failure
+   */
+  static Connection openConnection(ServerConfig cfg) throws SQLException {
+    Supplier<Connection> s = connectionSupplier;
+    if (s != null) {
+      try {
+        return s.get();
+      } catch (RuntimeException re) {
+        if (re.getCause() instanceof SQLException se) throw se;
+        throw re;
+      }
+    }
+    return getDataSource(cfg).getConnection();
+  }
+
+  /**
+   * Lazily initializes and returns a UCP {@link PoolDataSource} using
+   * values from {@link ServerConfig}. The pool is kept minimal and
+   * predictable (initial/min/max = 1).
+   *
+   * @throws SQLException if creation or configuration fails
+   */
+  private static DataSource getDataSource(ServerConfig cfg) throws SQLException {
+    if (dataSource != null) return dataSource;
+    synchronized (Utils.class) {
+      if (dataSource != null)
+        return dataSource;
+
+      PoolDataSource pds = PoolDataSourceFactory.getPoolDataSource();
+      pds.setConnectionFactoryClassName("oracle.jdbc.pool.OracleDataSource");
+      pds.setURL(cfg.dbUrl);
+      if (cfg.dbUser != null)
+        pds.setUser(cfg.dbUser);
+      if (cfg.dbPassword != null)
+        pds.setPassword(cfg.dbPassword);
+
+      pds.setInitialPoolSize(1);
+      pds.setMinPoolSize(1);
+      pds.setConnectionWaitTimeout(10);
+      pds.setConnectionProperty("remarksReporting", "true");
+      pds.setConnectionProperty("oracle.jdbc.vectorDefaultGetObjectType", "double[]");
+      pds.setConnectionProperty("oracle.jdbc.jsonDefaultGetObjectType", "java.lang.String");
+
+      dataSource = pds;
+      return dataSource;
+    }
+  }
 
   /**
    * <p>

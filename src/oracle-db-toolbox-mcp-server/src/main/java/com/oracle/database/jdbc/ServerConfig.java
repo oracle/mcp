@@ -53,10 +53,7 @@ final class ServerConfig {
   }
 
   private static final Set<String> DB_TOOLS = Set.of(
-    "execute_query","read_query","write_query","create_table","delete_table",
-    "list_tables","describe_table","start_transaction","resume_transaction",
-    "commit_transaction","rollback_transaction","exec_in_tx","db_ping",
-    "db_metrics_range","similarity_search"
+    "similarity_search", "explain_plan"
   );
 
 
@@ -144,7 +141,7 @@ final class ServerConfig {
    * “enable every tool” and returns {@code null}.
    *
    * Examples:
-   *   "read_query,write_query"  -> ["read_query","write_query"]
+   *   "similarity_search,explain_plan"  -> ["similarity_search","explain_plan"]
    *   "*" or "all" or ""        -> null (treat as all tools enabled)
    *
    * @param prop comma-separated tool names

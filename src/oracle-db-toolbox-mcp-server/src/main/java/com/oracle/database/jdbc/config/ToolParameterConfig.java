@@ -1,7 +1,15 @@
 package com.oracle.database.jdbc.config;
 
+import com.oracle.database.jdbc.EnvSubstitutor;
+
 public class ToolParameterConfig {
   public String name;
   public String type;
   public String description;
+
+  public void substituteEnvVars() {
+    this.name        = EnvSubstitutor.substituteEnvVars(this.name);
+    this.type        = EnvSubstitutor.substituteEnvVars(this.type);
+    this.description = EnvSubstitutor.substituteEnvVars(this.description);
+  }
 }

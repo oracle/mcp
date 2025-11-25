@@ -14,13 +14,13 @@ import static java.util.function.Function.identity;
 import static org.junit.jupiter.api.Assertions.*;
 
 @SuppressWarnings("unchecked")
-class OracleJDBCLogAnalyzerMCPServerTest {
+class OracleJDBCLogAnalyzerTest {
 
   private static Map<String, McpSchema.Tool> tools;
 
   @BeforeAll
   static void initializeTools(){
-    tools = OracleJDBCLogAnalyzerMCPServer.getLogAnalyzerTools()
+    tools = OracleJDBCLogAnalyzer.getLogAnalyzerTools()
       .stream()
       .map(SyncToolSpecification::tool)
       .collect(Collectors.toMap(McpSchema.Tool::name, identity()));

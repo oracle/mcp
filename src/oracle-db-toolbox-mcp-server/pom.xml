@@ -33,7 +33,7 @@
         <ojdbc.version>23.9.0.25.07</ojdbc.version>
         <snakeYaml.version>2.5</snakeYaml.version>
         <logAnalyzer.version>1.0.0</logAnalyzer.version>
-        <jetty.version>12.1.4</jetty.version>
+        <jetty.version>12.1.1</jetty.version>
         <junit.version>5.10.0</junit.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>

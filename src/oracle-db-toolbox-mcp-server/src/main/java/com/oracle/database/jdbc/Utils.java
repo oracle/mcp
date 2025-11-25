@@ -184,6 +184,7 @@ public class Utils {
           entry.getValue().name = entry.getKey();
         }
       }
+      yamlConfig.substituteEnvVars();
     }
     return config;
   }

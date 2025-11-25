@@ -237,7 +237,8 @@ For more details regarding this MCP and OAuth, please see [MCP specification for
 
 ## YAML Configuration Support
 
-The MCP server supports loading database connection and tool definitions from a YAML configuration file.
+The MCP server supports loading database connection and tool definitions from a YAML configuration file. 
+This file can contain environment variables as well.
 
 **Example `config.yaml`:**
 ```yaml

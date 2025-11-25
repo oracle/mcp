@@ -394,7 +394,7 @@ podman build -t oracle-db-toolbox-mcp-server:1.0.0 .
 ### Run the container (HTTP mode example)
 This example runs the MCP server over HTTP inside the container and exposes it on port 45450 on your host.
 
-```json
+```bash
 podman run --rm \
   -p 45450:45450 \
   -e JAVA_TOOL_OPTIONS="\
@@ -413,7 +413,7 @@ You can then configure Cline or Claude Desktop as described in the Using HTTP fr
 If you need extra JDBC / security jars (e.g. `oraclepki`, `wallets`, `centralized config`),
 mount them and point `ojdbc.ext.dir` at that directory:
 
-```json
+```bash
 podman run --rm \
   -p 45450:45450 \
   -v /path/to/ext:/ext:ro \
@@ -453,5 +453,4 @@ In this configuration, Claude Desktop runs `podman run --rm -i ... and connects 
     }
   }
 }
-
 ```

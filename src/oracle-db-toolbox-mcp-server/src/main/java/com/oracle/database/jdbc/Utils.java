@@ -169,6 +169,8 @@ public class Utils {
         Yaml yaml = new Yaml();
         yamlConfig = yaml.loadAs(reader, ConfigRoot.class);
       }
+    } catch (NullPointerException ignored) {
+      LOG.info("YAML config file is not specified. Using values from system properties.");
     } catch (Exception e) {
       LOG.log(Level.SEVERE, e.getMessage(), e);
     }

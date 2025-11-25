@@ -170,6 +170,71 @@ you can use the `mcp-remote` workaround:
 }
 ```
 
+### HTTP Authentication Configuration
+
+If you want to configure authentication for the HTTP server, you must provide the following system properties:
+
+- `-DenableAuthentication`: (default: `false`) If it's enabled (e.g. set to `true`) without properly configuring the OAuth2,
+the MCP Server will generate a token (for development and testing purposes) once per JVM session and logs it at the <code>INFO</code> level,
+which needs to be provided in the Authorization header of each request using `Bearer `.
+- `-DauthServer`: The OAuth2 server URL which MUST provide the `/.well-known/oauth-authorization-server`.
+- `-DintrospectionEndpoint`: The OAuth2 server's introspection endpoint used to validate an access token. 
+- `-DclientId`: Client ID (e.g. `oracle-db-toolbox`)
+- `-DclientSecret`: Client Secret (e.g. `Xj9mPqR2vL5kN8tY3hB7wF4uD6cA1eZ0`)
+- `-DallowedHosts`: (default: `*`) The value of `Access-Control-Allow-Origin` header when requesting the `/.well-known/oauth-protected-resource` endpoint of the MCP Server.
+
+#### Examples
+
+##### Enabling Authentication with OAuth2
+
+```bash
+java \
+    -Ddb.url=jdbc:oracle:thin:@host:1521/service \
+    -Dtransport=http \
+    -Dhttp.port=45450 \
+    -DenableAuthentication=true \
+    -DauthServer=http://localhost:8080/realms/mcp \
+    -DintrospectionEndpoint=http://localhost:8080/realms/mcp/protocol/openid-connect/token/introspect \
+    -DclientId=oracle-db-toolbox \
+    -DclientSecret=Xj9mPqR2vL5kN8tY3hB7wF4uD6cA1eZ0 \
+    -DallowedHosts=http://localhost:6274 \
+    -jar <path-to-jar>/oracle-db-toolbox-mcp-server-1.0.0.jar
+```
+
+In the above example, we configured OAuth2 with a local KeyCloak server with a realm named `mcp`, and we only allowed a local [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector)
+running at <http://localhost:6274> to retrieve the data from <http://localhost:45450/.well-known/oauth-protected-resource>
+
+
+##### Enabling Authentication without OAuth2
+
+_Note: This mode is used only for local development and testing purposes._
+
+```bash
+java \
+    -Ddb.url=jdbc:oracle:thin:@host:1521/service \
+    -Dtransport=http \
+    -Dhttp.port=45450 \
+    -DenableAuthentication=true \
+    -jar <path-to-jar>/oracle-db-toolbox-mcp-server-1.0.0.jar
+```
+After starting the server, a UUID token will be generated and logged at <code>INFO</code> level:
+
+```log
+Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.oauth.OAuth2Configuration <init>
+INFO: Authentication is enabled
+Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.oauth.OAuth2Configuration <init>
+WARNING: OAuth2 is not configured
+Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.oauth.TokenGenerator <init>
+INFO: Authorization token generated: 0dd11948-37a3-470f-911e-4cd8b3d6f69c
+Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.OracleDBToolboxMCPServer startHttpServer
+INFO: [oracle-db-toolbox-mcp-server] HTTP transport started on http://localhost:45450 (endpoint: http://localhost:45450/mcp)
+```
+
+And the token must be included in the http request header (e.g. `Authorization: Bearer 0dd11948-37a3-470f-911e-4cd8b3d6f69c`).
+
+For more details regarding this MCP and OAuth, please see [MCP specification for authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization) (or a newer version if available).
+
+
 ## YAML Configuration Support
 
 The MCP server supports loading database connection and tool definitions from a YAML configuration file.
@@ -264,8 +329,45 @@ java -DconfigFile=/path/to/config.yaml -jar <mcp-server>.jar
     <tr>
       <td><code>configFile</code></td>
       <td>No</td>
-      <td>Path to a YAML file defining `sources` and `tools`.</td>
+      <td>Path to a YAML file defining <code>sources</code> and <code>tools</code>.</td>
       <td>/opt/mcp/config.yaml</td>
+    </tr>
+    <tr>
+      <td><code>enableAuthentication</code></td>
+      <td>No</td>
+      <td>Whether HTTP authentication is required or not (default <code>false</code>).<br/>
+      All the subsequent OAuth2 system properties are ignored if this property is set to <code>false</code>.</td>
+      <td><code>-DenableAuthentication=true</code></td>
+    </tr>
+    <tr>
+      <td><code>authServer</code></td>
+      <td>No</td>
+      <td>Configure the OAuth2 server URL</td>
+      <td><code>-DauthServer=http://localhost:8080/realms/master</code></td>
+    </tr>
+    <tr>
+      <td><code>introspectionEndpoint</code></td>
+      <td>No</td>
+      <td>The OAuth2 server endpoint used to validate and obtain metadata about an access token.</td>
+      <td><code>-DintrospectionEndpoint=http://localhost:8080/realms/mcp/protocol/openid-connect/token/introspect</code></td>
+    </tr>
+    <tr>
+      <td><code>clientId</code></td>
+      <td>No</td>
+      <td>The client identifier for registering with the configured OAuth2 server.</td>
+      <td><code>-DclientId=oracle-db-toolbox</code></td>
+    </tr>
+    <tr>
+      <td><code>clientSecret</code></td>
+      <td>No</td>
+      <td>The confidential key used to authenticate the client to the configured authorization server during the OAuth2 flow.</td>
+      <td><code>-DclientSecret=Xj9mPqR2vL5kN8tY3hB7wF4uD6cA1eZ0</code></td>
+    </tr>
+    <tr>
+      <td><code>allowedHosts</code></td>
+      <td>No</td>
+      <td>The <code>Access-Control-Allow-Origin</code> header value when making a request to the MCP Server's <code>/.well-known/oauth-protected-resource</code> endpoint (default <code>*</code> e.g. all hosts are allowed).</td>
+      <td><code>-DallowedHosts=http://localhost:6274</code></td>
     </tr>
   </tbody>
 </table>

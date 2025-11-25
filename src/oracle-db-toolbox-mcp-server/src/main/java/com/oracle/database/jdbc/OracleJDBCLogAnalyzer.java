@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
  *   to analyze and process Oracle JDBC and RDBMS/SQLNet log files.
  * </p>
  */
-public final class OracleJDBCLogAnalyzerMCPServer {
+public final class OracleJDBCLogAnalyzer {
 
   private static final String FILE_PATH = "filePath";
   private static final String SECOND_FILE_PATH = "secondFilePath";

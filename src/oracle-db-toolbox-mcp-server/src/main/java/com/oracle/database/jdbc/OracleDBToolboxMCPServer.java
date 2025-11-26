@@ -12,14 +12,14 @@ import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTrans
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
 
-import org.eclipse.jetty.ee10.servlet.FilterHolder;
-import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
-import org.eclipse.jetty.ee10.servlet.ServletHolder;
-import org.eclipse.jetty.server.*;
-import org.eclipse.jetty.util.thread.QueuedThreadPool;
+import org.apache.catalina.Context;
+import org.apache.catalina.startup.Tomcat;
+import org.apache.tomcat.util.descriptor.web.FilterDef;
+import org.apache.tomcat.util.descriptor.web.FilterMap;
 
 import javax.sql.DataSource;
 
+import java.io.File;
 import java.util.logging.Logger;
 
 import static com.oracle.database.jdbc.Utils.installExternalExtensionsFromDir;
@@ -80,7 +80,7 @@ public class OracleDBToolboxMCPServer {
   }
 
   /**
-   * Start HTTP Streamable MCP transport on /mcp using Jetty.
+   * Start HTTP Streamable MCP transport on /mcp using Tomcat.
    */
   private static McpSyncServer startHttpServer() {
     try {
@@ -102,28 +102,38 @@ public class OracleDBToolboxMCPServer {
         .immediateExecution(true)
         .build();
 
-      var threadPool = new QueuedThreadPool();
-      threadPool.setName("oracle-db-toolbox-mcp-server");
-      var jetty = new Server(threadPool);
+      Tomcat tomcat = new Tomcat();
+      tomcat.setPort(port);
+      tomcat.getConnector();
 
-      var connector = new ServerConnector(jetty);
-      connector.setPort(port);
-      jetty.addConnector(connector);
+      String ctxPath = "";
+      String docBase = new File(".").getAbsolutePath();
+      Context ctx = tomcat.addContext(ctxPath, docBase);
 
-      var context = new ServletContextHandler();
-      context.setContextPath("/");
-      context.addServlet(new ServletHolder(transport), "/mcp/*");
-      context.addServlet(WellKnownServlet.class.getName(), "/.well-known/oauth-protected-resource");
+      Tomcat.addServlet(ctx, "mcpServlet", transport);
+      ctx.addServletMappingDecoded("/mcp/*", "mcpServlet");
 
-      if (OAuth2Configuration.getInstance().isOAuth2Configured() && WebUtils.isRedirectOpenIDToOAuthEnabled())
-        context.addServlet(RedirectOAuthToOpenIDServlet.class.getName(), "/.well-known/oauth-authorization-server");
+      Tomcat.addServlet(ctx, "wellKnownServlet", new WellKnownServlet());
+      ctx.addServletMappingDecoded(
+              "/.well-known/oauth-protected-resource", "wellKnownServlet");
 
-      var oauthFilter = new FilterHolder(new AuthorizationFilter());
-      context.addFilter(oauthFilter, "/mcp/*", null);
+      if (OAuth2Configuration.getInstance().isOAuth2Configured() && WebUtils.isRedirectOpenIDToOAuthEnabled()) {
+        Tomcat.addServlet(ctx, "redirectOAuthToOpenIDServlet", new RedirectOAuthToOpenIDServlet());
+        ctx.addServletMappingDecoded("/.well-known/oauth-authorization-server", "redirectOAuthToOpenIDServlet");
+      }
 
-      jetty.setHandler(context);
+      FilterDef filterDef = new FilterDef();
+      filterDef.setFilterName("authFilter");
+      filterDef.setFilter(new AuthorizationFilter());
+      filterDef.setFilterClass(AuthorizationFilter.class.getName());
+      ctx.addFilterDef(filterDef);
 
-      jetty.start();
+      FilterMap filterMap = new FilterMap();
+      filterMap.setFilterName("authFilter");
+      filterMap.addURLPattern("/mcp/*");
+      ctx.addFilterMap(filterMap);
+
+      tomcat.start();
 
       LOG.info(() -> "[oracle-db-toolbox-mcp-server] HTTP transport started on " + port + " (endpoint: /mcp)");
 

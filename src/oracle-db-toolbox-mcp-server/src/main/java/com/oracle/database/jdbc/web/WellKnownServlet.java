@@ -9,7 +9,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 
 public class WellKnownServlet extends HttpServlet {
-  private static final String MCP_ENDPOINT = System.getProperty("serverURL", "http://localhost:45450") + "/mcp";
   private static final String ALLOWED_HOSTS = System.getProperty("allowedHosts","*");
 
   private static final OAuth2Configuration OAUTH2_CONFIG = OAuth2Configuration.getInstance();
@@ -24,12 +23,13 @@ public class WellKnownServlet extends HttpServlet {
     response.setContentType("application/json");
     response.addHeader("Access-Control-Allow-Origin", ALLOWED_HOSTS);
     response.setStatus(HttpServletResponse.SC_OK);
+    final String mcpEndpoint = WebUtils.buildURLFromRequest(request) + "/mcp";
 
     final String json = """
           {
             "resource":"%s",
             "authorization_servers":["%s"]
-          }""".formatted(MCP_ENDPOINT, OAUTH2_CONFIG.getAuthServer());
+          }""".formatted(mcpEndpoint, OAUTH2_CONFIG.getAuthServer());
     response.getWriter()
       .write(json);
   }

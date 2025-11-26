@@ -13,7 +13,6 @@ import org.eclipse.jetty.ee10.servlet.FilterHolder;
 import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
 import org.eclipse.jetty.ee10.servlet.ServletHolder;
 import org.eclipse.jetty.server.*;
-import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
 
 import javax.sql.DataSource;
@@ -120,42 +119,12 @@ public class OracleDBToolboxMCPServer {
 
       jetty.start();
 
-      final String url = buildServerURL(jetty);
-      final String mcpEndpoint = url + "/mcp";
-
-      LOG.info(() -> "[oracle-db-toolbox-mcp-server] HTTP transport started on %s (endpoint: %s)".formatted(url, mcpEndpoint));
+      LOG.info(() -> "[oracle-db-toolbox-mcp-server] HTTP transport started on " + port + " (endpoint: /mcp)");
 
       return server;
     } catch (Exception e) {
       throw new RuntimeException("Failed to start HTTP/streamable server", e);
     }
-  }
-
-  private static String buildServerURL(Server jetty) {
-    String host = "localhost";
-    String protocol = "http";
-    int port = 45450;
-
-    for (final org.eclipse.jetty.server.Connector conn : jetty.getConnectors())
-      if (conn instanceof ServerConnector serverConnector) {
-        if (serverConnector.getHost() != null) {
-          host = serverConnector.getHost();
-          port = serverConnector.getPort();
-        }
-
-        for (final org.eclipse.jetty.server.ConnectionFactory factory : serverConnector.getConnectionFactories())
-          if (factory instanceof SslContextFactory || factory.getProtocol().toLowerCase().contains("ssl")) {
-            protocol = "https";
-          }
-
-        break;
-      }
-
-    final var url = "%s://%s:%s".formatted(protocol, host, port);
-
-    System.setProperty("serverURL", url);
-
-    return url;
   }
 
 }

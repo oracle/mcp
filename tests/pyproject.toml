@@ -1,13 +1,13 @@
 [project]
 name = "oracle.oci-e2e-tests"
-version = "0.1.0"
+version = "0.1.2"
 description = "OCI MCP Servers e2e tests"
 readme = "README.md"
 requires-python = ">=3.13"
 license = "UPL-1.0"
 license-files = ["LICENSE.txt"]
 dependencies = [
-    "fastmcp==2.12.2",
+    "fastmcp==2.13.0",
     "oci==2.160.0"
 ]
 

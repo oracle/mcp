@@ -822,9 +822,6 @@ def ask_nl_sql(connection_id: str, question: str) -> str:
         }
     """
     with _get_database_connection_cm(connection_id) as db_connection:
-        set_response = _execute_sql_tool(db_connection, "SET @response = NULL;")
-        if check_error(set_response):
-            return json.dumps({"error": f"Error with NL_SQL: {set_response}"})
         if db_connection.database is not None:
             call_nl_sql = f"CALL sys.NL_SQL(%s, @response, JSON_OBJECT('schemas', JSON_ARRAY(\"{db_connection.database}\"), 'execute', FALSE))"
         else:
@@ -854,11 +851,12 @@ def retrieve_relevant_schema_information(connection_id: str, question: str) -> s
     [MCP Tool] Retrieve relevant schemas and tables for a given natural language question.
 
     This tool analyzes the input question and identifies tables that are relevant with respect to the question. 
-    It can optionally consider table and column comments for improved semantic matching. The results contain only the relevant schemas and tables in a JSON object.
+    It can optionally consider table and column comments for improved semantic matching. 
+    The results contain only the relevant schemas and tables in a JSON object.
 
     Args:
         connection_id (str): MySQL connection key.
-        input (str): Input question for use with ML_SCHEMA_RETRIEVAL.
+        input (str): Input question for use with ML_RETRIEVE_SCHEMA.
         
     Returns:
         A single JSON of the form:
@@ -903,8 +901,8 @@ def retrieve_relevant_schema_information(connection_id: str, question: str) -> s
         try:
             response = json.loads(fetch_one(fetch_response))
             return json.dumps(response)
-        except:
-            return json.dumps({"error": "Unexpected response format from ML_RETRIEVE_SCHEMA"})
+        except Exception as e:
+            return json.dumps({"error": f"Unexpected response format from ML_RETRIEVE_SCHEMA: {str(e)}"})
 
 
 """

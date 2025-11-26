@@ -694,7 +694,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastmcp", specifier = "==2.12.2" },
-    { name = "mysql-connector-python", specifier = ">=9.5.0" },
+    { name = "mysql-connector-python", specifier = "==9.5.0" },
     { name = "oci", specifier = "==2.160.0" },
 ]
 

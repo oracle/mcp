@@ -9,8 +9,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 
 public class WellKnownServlet extends HttpServlet {
-  private static final String ALLOWED_HOSTS = System.getProperty("allowedHosts","*");
-
   private static final OAuth2Configuration OAUTH2_CONFIG = OAuth2Configuration.getInstance();
 
   @Override
@@ -21,15 +19,18 @@ public class WellKnownServlet extends HttpServlet {
     }
 
     response.setContentType("application/json");
-    response.addHeader("Access-Control-Allow-Origin", ALLOWED_HOSTS);
+    response.addHeader("Access-Control-Allow-Origin", WebUtils.getAllowedHosts());
     response.setStatus(HttpServletResponse.SC_OK);
-    final String mcpEndpoint = WebUtils.buildURLFromRequest(request) + "/mcp";
+
+    final String serverURL = WebUtils.buildURLFromRequest(request);
+    final String mcpEndpoint = serverURL + "/mcp";
+    String authServer = WebUtils.isRedirectOpenIDToOAuthEnabled() ? serverURL : OAUTH2_CONFIG.getAuthServer();
 
     final String json = """
           {
             "resource":"%s",
             "authorization_servers":["%s"]
-          }""".formatted(mcpEndpoint, OAUTH2_CONFIG.getAuthServer());
+          }""".formatted(mcpEndpoint, authServer);
     response.getWriter()
       .write(json);
   }

@@ -177,11 +177,13 @@ If you want to configure authentication for the HTTP server, you must provide th
 - `-DenableAuthentication`: (default: `false`) If it's enabled (e.g. set to `true`) without properly configuring the OAuth2,
 the MCP Server will generate a token (for development and testing purposes) once per JVM session and logs it at the <code>INFO</code> level,
 which needs to be provided in the Authorization header of each request using `Bearer `.
-- `-DauthServer`: The OAuth2 server URL which MUST provide the `/.well-known/oauth-authorization-server`.
-- `-DintrospectionEndpoint`: The OAuth2 server's introspection endpoint used to validate an access token. 
+- `-DauthServer`: The OAuth2 server URL which MUST provide the `/.well-known/oauth-authorization-server`. But if the authorization server only provides the `/.well-known/openid-configuration` you can enable `-DredirectOAuthToOpenID`.
+- `-DredirectOAuthToOpenID`: (default: `false`) This system property is used to as a workaround to support OAuth servers that provide `/.well-known/openid-configuration` and not `/.well-known/oauth-authorization-server`.
+It works by creating an `/.well-known/oauth-authorization-server` endpoint on the MCP Server that redirects to the OAuth server's `/.well-known/openid-configuration` endpoint.
+- `-DintrospectionEndpoint`: The OAuth2 server's introspection endpoint used to validate an access token (The OAuth2 introspection JSON response MUST contain the `active` field, e.g. `{...,"active": false,..}`).
 - `-DclientId`: Client ID (e.g. `oracle-db-toolbox`)
 - `-DclientSecret`: Client Secret (e.g. `Xj9mPqR2vL5kN8tY3hB7wF4uD6cA1eZ0`)
-- `-DallowedHosts`: (default: `*`) The value of `Access-Control-Allow-Origin` header when requesting the `/.well-known/oauth-protected-resource` endpoint of the MCP Server.
+- `-DallowedHosts`: (default: `*`) The value of `Access-Control-Allow-Origin` header when requesting the `/.well-known/oauth-protected-resource` endpoint (and `/.well-known/oauth-authorization-server` if `-DredirectOAuthToOpenID` is set to `true`) of the MCP Server.
 
 #### Examples
 
@@ -369,6 +371,12 @@ java -DconfigFile=/path/to/config.yaml -jar <mcp-server>.jar
       <td>No</td>
       <td>The <code>Access-Control-Allow-Origin</code> header value when making a request to the MCP Server's <code>/.well-known/oauth-protected-resource</code> endpoint (default <code>*</code> e.g. all hosts are allowed).</td>
       <td><code>-DallowedHosts=http://localhost:6274</code></td>
+    </tr>
+    <tr>
+      <td><code>redirectOAuthToOpenID</code></td>
+      <td>No</td>
+      <td>System property that redirects MCP Server's <code>/.well-known/oauth-authorization-server</code> endpoint to the OAuth server's <code>/.well-known/openid-configuration</code> as a workaround for servers lacking the former (default value is <code>false</code>. If OAuth is not properly configured, then this system property is ignored).</td>
+      <td><code>-DredirectOAuthToOpenID=false</code></td>
     </tr>
   </tbody>
 </table>

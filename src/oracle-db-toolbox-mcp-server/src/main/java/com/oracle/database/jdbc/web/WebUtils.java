@@ -5,7 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.Objects;
 
 /**
- * Utility class for web-related operations, such as URL construction from HTTP requests.
+ * Utility class for web-related operations, such as reading web-related system properties.
  * This class is not intended to be instantiated and provides only static methods.
  */
 public class WebUtils {
@@ -49,4 +49,27 @@ public class WebUtils {
 
     return url.toString();
   }
+
+  /**
+   * Retrieves the value of the system property {@code allowedHosts}.
+   * If the property is not set, it defaults to {@code "*"}.
+   *
+   * @return the value of the {@code allowedHosts} system property, or {@code "*"} if not set
+   */
+  static String getAllowedHosts() {
+    return System.getProperty("allowedHosts","*");
+  }
+
+  /**
+   * Checks if redirection from OpenID to OAuth is enabled by examining the
+   * system property {@code redirectOpenIDToOAuth}. If the property is set to
+   * "true" (case-insensitive), the method returns {@code true}; otherwise,
+   * it returns {@code false}. If the property is not set, it defaults to {@code false}.
+   *
+   * @return {@code true} if redirection from OpenID to OAuth is enabled, {@code false} otherwise
+   */
+  public static boolean isRedirectOpenIDToOAuthEnabled() {
+    return Boolean.parseBoolean(System.getProperty("redirectOpenIDToOAuth", "false"));
+  }
+
 }

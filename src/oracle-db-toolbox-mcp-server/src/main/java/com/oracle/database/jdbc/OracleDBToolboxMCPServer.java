@@ -1,7 +1,10 @@
 package com.oracle.database.jdbc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oracle.database.jdbc.oauth.OAuth2Configuration;
 import com.oracle.database.jdbc.web.AuthorizationFilter;
+import com.oracle.database.jdbc.web.RedirectOAuthToOpenIDServlet;
+import com.oracle.database.jdbc.web.WebUtils;
 import com.oracle.database.jdbc.web.WellKnownServlet;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpSyncServer;
@@ -111,6 +114,9 @@ public class OracleDBToolboxMCPServer {
       context.setContextPath("/");
       context.addServlet(new ServletHolder(transport), "/mcp/*");
       context.addServlet(WellKnownServlet.class.getName(), "/.well-known/oauth-protected-resource");
+
+      if (OAuth2Configuration.getInstance().isOAuth2Configured() && WebUtils.isRedirectOpenIDToOAuthEnabled())
+        context.addServlet(RedirectOAuthToOpenIDServlet.class.getName(), "/.well-known/oauth-authorization-server");
 
       var oauthFilter = new FilterHolder(new AuthorizationFilter());
       context.addFilter(oauthFilter, "/mcp/*", null);

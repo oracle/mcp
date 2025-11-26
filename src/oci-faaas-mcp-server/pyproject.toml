@@ -1,0 +1,51 @@
+[project]
+name = "oracle.oci-faaas-mcp-server"
+version = "1.0.0"
+description = "OCI Fusion Applications (FAaaS) MCP server"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "UPL-1.0"
+license-files = ["LICENSE.txt"]
+authors = [
+    {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
+]
+dependencies = [
+    "fastmcp==2.12.2",
+    "oci==2.160.0",
+]
+
+classifiers = [
+    "License :: OSI Approved :: Universal Permissive License (UPL)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.scripts]
+"oracle.oci-faaas-mcp-server" = "oracle.oci_faaas_mcp_server.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["oracle"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+    "pytest-cov>=7.0.0",
+]
+
+[tool.coverage.run]
+omit = [
+    "**/__init__.py",
+    "**/tests/*",
+    "dist/*",
+    ".venv/*",
+]
+
+[tool.coverage.report]
+precision = 2
+fail_under = 75

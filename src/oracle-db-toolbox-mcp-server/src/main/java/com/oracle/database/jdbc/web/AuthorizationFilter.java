@@ -24,13 +24,13 @@ public class AuthorizationFilter implements Filter {
 
       final String authHeader = httpRequest.getHeader("Authorization");
       if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-        errorHeader(httpResponse);
+        handleError(httpResponse, httpRequest);
         return;
       }
 
       final String token = authHeader.substring("Bearer ".length()).trim();
       if (!VALIDATOR.isTokenValid(token)) {
-        errorHeader(httpResponse);
+        handleError(httpResponse, httpRequest);
         return;
       }
     }
@@ -39,19 +39,19 @@ public class AuthorizationFilter implements Filter {
     chain.doFilter(request, response);
   }
 
-  private void errorHeader(HttpServletResponse httpResponse) throws IOException {
-    final var serverURL = System.getProperty("serverURL", "http://localhost:45450");
+  private void handleError(HttpServletResponse httpResponse, HttpServletRequest httpRequest) throws IOException {
+    final String serverURL = WebUtils.buildURLFromRequest(httpRequest);
     final var resourceMetadataURL = serverURL + "/.well-known/oauth-protected-resource";
 
+    httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
     httpResponse.setHeader("WWW-Authenticate",
       "Bearer error=\"invalid_request\", " +
-        "error_description=\"No access token was provided in this request\", " +
+        "error_description=\"Access token is invalid or not provided in the request\", " +
         "resource_metadata=\"" + resourceMetadataURL + "\"");
-    httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
     final String json = """
             {
                 "error": "invalid_request",
-                "error_description": "Access token is invalid or not present in this request",
+                "error_description": "Access token is invalid or not provided in the request",
                 "resource_metadata": "%s"
             }
             """.formatted(resourceMetadataURL);

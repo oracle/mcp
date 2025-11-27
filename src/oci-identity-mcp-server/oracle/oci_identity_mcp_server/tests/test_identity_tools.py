@@ -174,6 +174,96 @@ class TestIdentityTools:
 
             assert result["id"] == "user1"
 
+    @pytest.mark.asyncio
+    @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
+    async def test_get_compartment_by_name(self, mock_get_client):
+        """
+        Tests finding a compartment by name, including simulating pagination
+        where the target is on the second page.
+        """
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_response_p1 = create_autospec(oci.response.Response)
+        mock_response_p1.data = [
+            oci.identity.models.Compartment(name="WrongName", id="wrong_id")
+        ]
+        mock_response_p1.has_next_page = True
+        mock_response_p1.next_page = "page_2_token"
+
+        mock_response_p2 = create_autospec(oci.response.Response)
+        mock_response_p2.data = [
+            oci.identity.models.Compartment(
+                name="TargetComp",
+                id="target_id",
+                lifecycle_state="ACTIVE",
+                time_created="2023-01-01T00:00:00.000Z",
+            )
+        ]
+        mock_response_p2.has_next_page = False
+        mock_response_p2.next_page = None
+
+        mock_client.list_compartments.side_effect = [mock_response_p1, mock_response_p2]
+
+        async with Client(mcp) as client:
+            raw_content = (
+                await client.call_tool(
+                    "get_compartment_by_name",
+                    {
+                        "name": "TargetComp",
+                        "parent_compartment_id": "test_parent_id",
+                    },
+                )
+            ).structured_content
+
+            if "result" in raw_content:
+                result = raw_content["result"]
+            else:
+                result = raw_content
+
+            assert result["id"] == "target_id"
+            assert result["name"] == "TargetComp"
+
+            assert mock_client.list_compartments.call_count == 2
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
+    async def test_list_subscribed_regions(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_list_response = create_autospec(oci.response.Response)
+        mock_list_response.data = [
+            oci.identity.models.RegionSubscription(
+                region_name="us-phoenix-1",
+                region_key="PHX",
+                status="READY",
+                is_home_region=True,
+            ),
+            oci.identity.models.RegionSubscription(
+                region_name="us-ashburn-1",
+                region_key="IAD",
+                status="READY",
+                is_home_region=False,
+            ),
+        ]
+        mock_client.list_region_subscriptions.return_value = mock_list_response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_subscribed_regions",
+                    {
+                        "tenancy_id": "test_tenancy",
+                    },
+                )
+            ).structured_content["result"]
+
+            assert len(result) == 2
+            assert result[0]["region_name"] == "us-phoenix-1"
+            assert result[0]["is_home_region"] is True
+            assert result[1]["region_key"] == "IAD"
+
 
 class TestServer:
     @patch("oracle.oci_identity_mcp_server.server.mcp.run")

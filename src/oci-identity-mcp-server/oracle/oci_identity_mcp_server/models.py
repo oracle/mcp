@@ -353,3 +353,37 @@ def map_user(user_data: oci.identity.models.User) -> User:
 
 
 # endregion
+
+
+class RegionSubscription(BaseModel):
+    """
+    Pydantic model mirroring the fields of oci.identity.models.RegionSubscription.
+    """
+
+    region_key: Optional[str] = Field(
+        None, description="The region key. Example: `PHX`"
+    )
+    region_name: Optional[str] = Field(
+        None, description="The region name. Example: `us-phoenix-1`"
+    )
+    status: Optional[str] = Field(
+        None, description="The status of the region subscription."
+    )
+    is_home_region: Optional[bool] = Field(
+        None, description="Indicates if the region is the home region for the tenancy."
+    )
+
+
+def map_region_subscription(
+    region_data: oci.identity.models.RegionSubscription,
+) -> RegionSubscription:
+    """
+    Convert an oci.identity.models.RegionSubscription to
+    oracle.oci_identity_mcp_server.models.RegionSubscription.
+    """
+    return RegionSubscription(
+        region_key=getattr(region_data, "region_key", None),
+        region_name=getattr(region_data, "region_name", None),
+        status=getattr(region_data, "status", None),
+        is_home_region=getattr(region_data, "is_home_region", None),
+    )

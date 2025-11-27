@@ -136,9 +136,14 @@ java \
 ```
 This exposes the MCP endpoint at: `http://localhost:45450/mcp`.
 
-#### Note 
-You can enable http + ssl by adding the path to your certificate and its password through -DcertificatePath and -DcertificatePassword. You can also change the port from -DhttpsPort (45451 by default).
-
+### Note
+You can enable HTTPS (SSL/TLS) by specifying the path to your certificate keystore and its password using the -DcertificatePath and -DcertificatePassword options.
+Only PKCS12 (.p12 or .pfx) keystore format is supported.
+You can also change the HTTPS port with the -DhttpsPort option (default is 45451).
+##### Example 
+```shell
+-DcertificatePath=/path/to/your-certificate.p12 -DcertificatePassword=yourPassword -DhttpsPort=443
+```
 ### Using HTTP from Cline
 Cline supports streamable HTTP directly. Example:
 

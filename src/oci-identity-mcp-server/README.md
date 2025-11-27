@@ -10,6 +10,13 @@ This server provides tools to interact with the OCI Identity service.
 uv run oracle.oci-identity-mcp-server
 ```
 
+## Environment Variables
+
+The server supports the following environment variables:
+
+- `OCI_CONFIG_PROFILE`: OCI configuration profile name (default: "DEFAULT")
+- `TENANCY_ID_OVERRIDE`: Overrides the tenancy ID from the config file
+
 ## Tools
 
 | Tool Name | Description |
@@ -20,6 +27,9 @@ uv run oracle.oci-identity-mcp-server
 | get_current_tenancy | Get current tenancy information. |
 | create_auth_token | Create an authentication token for a user. |
 | get_current_user | Get current user information. |
+| get_compartment_by_name_tool | Return a compartment matching the provided name                              |
+| list_subscribed_regions_tool | Return a list of all regions the customer (tenancy) is subscribed to         |
+
 
 ⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 

@@ -30,10 +30,31 @@ def get_identity_client():
     return oci.identity.IdentityClient(config, signer=signer)
 
 
-@mcp.tool
-def list_compartments(tenancy_id: str) -> list[dict]:
-    identity = get_identity_client()
-    compartments = identity.list_compartments(tenancy_id).data
+def list_compartments_internal(
+    tenancy_id: str, only_one_page: bool, limit=100
+) -> list[dict]:
+    """Internal function to get List all compartments in a tenancy"""
+    identity_client = get_identity_client()
+    response = identity_client.list_compartments(
+        compartment_id=tenancy_id,
+        compartment_id_in_subtree=True,
+        access_level="ACCESSIBLE",
+        lifecycle_state="ACTIVE",
+        limit=limit,
+    )
+    compartments = response.data
+    if not only_one_page:
+        while response.has_next_page:
+            response = identity_client.list_compartments(
+                compartment_id=tenancy_id,
+                compartment_id_in_subtree=True,
+                access_level="ACCESSIBLE",
+                lifecycle_state="ACTIVE",
+                page=response.next_page,
+                limit=limit,
+            )
+            compartments.extend(response.data)
+
     return [
         {
             "id": compartment.id,
@@ -46,6 +67,35 @@ def list_compartments(tenancy_id: str) -> list[dict]:
 
 
 @mcp.tool
+def list_compartments(tenancy_id: str) -> list[dict]:
+    return list_compartments_internal(tenancy_id, True)
+
+
+@mcp.tool(description="Returns a compartment id matching the provided name")
+def get_compartment_by_name(tenancy_id: str, compartment_name: str) -> dict:
+    compartments = list_compartments_internal(tenancy_id, False)
+    for compartment in compartments:
+        if compartment["name"].lower() == compartment_name.lower():
+            return compartment
+    return {"error": f"Compartment '{compartment_name}' not found."}
+
+
+@mcp.tool(
+    description="Return a list of all regions the customer (tenancy) is subscribed to"
+)
+def list_subscribed_regions(tenancy_id: str) -> dict:
+    try:
+        identity_client = get_identity_client()
+        response = identity_client.list_region_subscriptions(tenancy_id=tenancy_id)
+        regions = [region.region_name for region in response.data]
+        return {"regions": regions}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@mcp.tool(
+    description="Gets the information about user tenancy, like id, name and description"
+)
 def get_tenancy_info(tenancy_id: str) -> dict:
     identity = get_identity_client()
     tenancy = identity.get_tenancy(tenancy_id).data
@@ -78,7 +128,7 @@ def get_current_tenancy() -> dict:
     config = oci.config.from_file(
         profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
     )
-    tenancy_id = config["tenancy"]
+    tenancy_id = os.getenv("TENANCY_ID_OVERRIDE", config["tenancy"])
     identity = get_identity_client()
     tenancy = identity.get_tenancy(tenancy_id).data
     return {

@@ -30,6 +30,9 @@ class TestIdentityTools:
                 time_created="1970-01-01T00:00:00",
             )
         ]
+        mock_list_response.has_next_page = False
+        mock_list_response.next_page = None
+
         mock_client.list_compartments.return_value = mock_list_response
 
         async with Client(mcp) as client:
@@ -165,3 +168,51 @@ class TestIdentityTools:
             result = (await client.call_tool("get_current_user", {})).data
 
             assert result["id"] == "user1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_identity_mcp_server.server.list_compartments_internal")
+    async def test_get_compartment_by_name(self, mock_list_compartments):
+        mock_list_compartments.return_value = [
+            {"id": "comp1", "name": "TargetComp"},
+            {"id": "comp2", "name": "OtherComp"},
+        ]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "get_compartment_by_name",
+                    {
+                        "tenancy_id": "test_tenancy",
+                        "compartment_name": "TargetComp",
+                    },
+                )
+            ).structured_content
+
+            assert result["id"] == "comp1"
+            assert result["name"] == "TargetComp"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
+    async def test_list_subscribed_regions(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_list_response = create_autospec(oci.response.Response)
+        mock_list_response.data = [
+            MagicMock(region_name="us-phoenix-1"),
+            MagicMock(region_name="us-ashburn-1"),
+        ]
+        mock_client.list_region_subscriptions.return_value = mock_list_response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_subscribed_regions",
+                    {
+                        "tenancy_id": "test_tenancy",
+                    },
+                )
+            ).structured_content
+
+            assert "regions" in result
+            assert result["regions"] == ["us-phoenix-1", "us-ashburn-1"]

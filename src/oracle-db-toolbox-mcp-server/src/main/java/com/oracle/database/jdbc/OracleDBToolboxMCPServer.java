@@ -16,6 +16,9 @@ import org.apache.catalina.Context;
 import org.apache.catalina.startup.Tomcat;
 import org.apache.tomcat.util.descriptor.web.FilterDef;
 import org.apache.tomcat.util.descriptor.web.FilterMap;
+import org.apache.catalina.connector.Connector;
+import org.apache.tomcat.util.net.SSLHostConfig;
+import org.apache.tomcat.util.net.SSLHostConfigCertificate;
 
 import javax.sql.DataSource;
 
@@ -84,7 +87,7 @@ public class OracleDBToolboxMCPServer {
    */
   private static McpSyncServer startHttpServer() {
     try {
-      int port = Integer.parseInt(System.getProperty("http.port", "45450"));
+      int httpPort = Integer.parseInt(System.getProperty("http.port", "45450"));
 
       HttpServletStreamableServerTransportProvider transport =
               HttpServletStreamableServerTransportProvider.builder()
@@ -103,7 +106,7 @@ public class OracleDBToolboxMCPServer {
         .build();
 
       Tomcat tomcat = new Tomcat();
-      tomcat.setPort(port);
+      tomcat.setPort(httpPort);
       tomcat.getConnector();
 
       String ctxPath = "";
@@ -133,14 +136,59 @@ public class OracleDBToolboxMCPServer {
       filterMap.addURLPattern("/mcp/*");
       ctx.addFilterMap(filterMap);
 
+      enableHttps(tomcat);
       tomcat.start();
 
-      LOG.info(() -> "[oracle-db-toolbox-mcp-server] HTTP transport started on " + port + " (endpoint: /mcp)");
+      LOG.info(() -> "[oracle-db-toolbox-mcp-server] HTTP transport started on " + httpPort + " (endpoint: /mcp)");
 
       return server;
     } catch (Exception e) {
       throw new RuntimeException("Failed to start HTTP/streamable server", e);
     }
   }
+
+  private static void enableHttps(Tomcat tomcat) {
+    try {
+      String keystorePath = System.getProperty("certificatePath");
+      String keystorePassword = System.getProperty("certificatePassword");
+      int httpsPort = Integer.parseInt(System.getProperty("https.port", "45451"));
+
+
+      // Create HTTPS connector
+      Connector https = new Connector("org.apache.coyote.http11.Http11NioProtocol");
+      https.setPort(httpsPort);
+      https.setSecure(true);
+      https.setScheme("https");
+      https.setProperty("SSLEnabled", "true");
+
+      // Create SSL config
+      SSLHostConfig sslHostConfig = new SSLHostConfig();
+      sslHostConfig.setHostName("_default_");
+      sslHostConfig.setProtocols("+TLSv1.2,+TLSv1.3");
+
+
+      SSLHostConfigCertificate cert = new SSLHostConfigCertificate(
+          sslHostConfig,
+          SSLHostConfigCertificate.Type.RSA
+      );
+
+      cert.setCertificateKeystoreFile(keystorePath);
+      cert.setCertificateKeystorePassword(keystorePassword);
+      cert.setCertificateKeystoreType("PKCS12");
+
+      // Attach certificate to SSL config
+      sslHostConfig.addCertificate(cert);
+
+      // Enable SSL
+      https.addSslHostConfig(sslHostConfig);
+
+      // Register connector
+      tomcat.getService().addConnector(https);
+
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to enable HTTPS on Tomcat", e);
+    }
+  }
+
 
 }

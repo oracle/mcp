@@ -136,7 +136,11 @@ public class OracleDBToolboxMCPServer {
       filterMap.addURLPattern("/mcp/*");
       ctx.addFilterMap(filterMap);
 
-      enableHttps(tomcat);
+      String keystorePath = System.getProperty("certificatePath");
+      String keystorePassword = System.getProperty("certificatePassword");
+      if(keystorePath!=null && keystorePassword != null) enableHttps(tomcat, keystorePath, keystorePassword);
+      else LOG.warning("SSL setup is skipped: Keystore path or password not specified");
+
       tomcat.start();
 
       LOG.info(() -> "[oracle-db-toolbox-mcp-server] HTTP transport started on " + httpPort + " (endpoint: /mcp)");
@@ -147,13 +151,9 @@ public class OracleDBToolboxMCPServer {
     }
   }
 
-  private static void enableHttps(Tomcat tomcat) {
+  private static void enableHttps(Tomcat tomcat, String keystorePath, String keystorePassword) {
     try {
-      String keystorePath = System.getProperty("certificatePath");
-      String keystorePassword = System.getProperty("certificatePassword");
       int httpsPort = Integer.parseInt(System.getProperty("https.port", "45451"));
-
-
       // Create HTTPS connector
       Connector https = new Connector("org.apache.coyote.http11.Http11NioProtocol");
       https.setPort(httpsPort);

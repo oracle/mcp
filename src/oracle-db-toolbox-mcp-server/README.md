@@ -136,6 +136,14 @@ java \
 ```
 This exposes the MCP endpoint at: `http://localhost:45450/mcp`.
 
+### Note
+You can enable HTTPS (SSL/TLS) by specifying the path to your certificate keystore and its password using the -DcertificatePath and -DcertificatePassword options.
+Only PKCS12 (.p12 or .pfx) keystore format is supported.
+You can also change the HTTPS port with the -DhttpsPort option (default is 45451).
+##### Example 
+```shell
+-DcertificatePath=/path/to/your-certificate.p12 -DcertificatePassword=yourPassword -DhttpsPort=443
+```
 ### Using HTTP from Cline
 Cline supports streamable HTTP directly. Example:
 
@@ -406,16 +414,21 @@ This example runs the MCP server over HTTP inside the container and exposes it o
 ```bash
 podman run --rm \
   -p 45450:45450 \
+  -p 45451:45451 \
+  -v /path/to/certificate:/app/certif.p12:ro,z \
   -e JAVA_TOOL_OPTIONS="\
     -Dtransport=http \
     -Dhttp.port=45450 \
+    -Dhttps.port=45451 \
+    -DcertificatePath=[path/to/certificate] \
+    -DcertificatePassword=[password] \
     -Dtools=get-stats,get-queries \
     -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service \
     -Ddb.user=your_user \
     -Ddb.password=your_password" \
   oracle-db-toolbox-mcp-server:1.0.0
 ```
-This exposes the MCP endpoint at: http://localhost:45450/mcp
+This exposes the MCP endpoint at: http://[your-ip-address]:45450/mcp or https://[your-ip-address]:45451/mcp
 
 You can then configure Cline or Claude Desktop as described in the Using HTTP from Cline / Claude Desktop sections above.
 
@@ -425,10 +438,13 @@ mount them and point `ojdbc.ext.dir` at that directory:
 ```bash
 podman run --rm \
   -p 45450:45450 \
+  -p 45451:45451 \
   -v /path/to/ext:/ext:ro \
+  -v /path/to/certificate:/app/certif.p12:ro,z \
   -e JAVA_TOOL_OPTIONS="\
     -Dtransport=http \
     -Dhttp.port=45450 \
+    -Dhttps.port=45451 \
     -Dtools=get-stats,get-queries \
     -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service \
     -Ddb.user=your_user \

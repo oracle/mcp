@@ -420,6 +420,8 @@ podman run --rm \
     -Dtransport=http \
     -Dhttp.port=45450 \
     -Dhttps.port=45451 \
+    -DcertificatePath=[path/to/certificate] \
+    -DcertificatePassword=[password] \
     -Dtools=get-stats,get-queries \
     -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service \
     -Ddb.user=your_user \

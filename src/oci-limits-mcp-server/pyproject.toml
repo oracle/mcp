@@ -1,0 +1,39 @@
+[project]
+name = "oci-limits-mcp-server"
+version = "0.1.0"
+description = "OCI Service Limits and Quota Policies MCP Server"
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp>=2.0.0",
+    "oci>=2.100.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.10.0",
+]
+
+[project.scripts]
+oci-limits-mcp = "oci_limits_mcp_server:main"
+
+[tool.setuptools]
+py-modules = ["oci_limits_mcp_server"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+fix = true
+
+[tool.ruff.lint]
+select = ["E","F","I","UP","B"]
+ignore = ["E501"]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

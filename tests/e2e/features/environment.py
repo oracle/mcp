@@ -33,6 +33,7 @@ try:
     set_default(config, "COMPARTMENT_OCID", config["TENANCY_OCID"])
     set_default(config, "USER_NAME", "")
     set_default(config, "REGION", "us-ashburn-1")
+    set_default(config, "OCI_CONFIG_PROFILE", "DEFAULT")
 
 except FileNotFoundError:
     raise EnvironmentError(
@@ -42,7 +43,7 @@ except FileNotFoundError:
         )
     )
 
-_system_prompt = f"""You are an Oracle Cloud Infrastructure expert generative chat assistant. Limit your answers to OCI. OCID is synonymous with ID. The logged in user's OCID is '{config["USER_OCID"]}', and the display name is {config["USER_NAME"]}. The tenancy OCID is '{config["TENANCY_OCID"]}', which is also called the root compartment. The active (current) tenancy name is {config["TENANCY_NAME"]}. The active (current) region is {config["REGION"]}. The active (current) compartment is '{config["COMPARTMENT_OCID"]}'. If the user makes a request that relies on a tool that requires a compartment id, and the user doesn't specify one, don't ask the user for the compartment id and use the root compartment instead. If I ask you for a list of things, prefer either a tabular or text-based approach over dumping them in a code block. When formatting your response, don't use bullets or lists within tables. When a user makes a request, you must first attempt to fulfill it by using the available MCP tools. These tools are connected to our live data sources and provide the most accurate and real-time information. Only after exhausting the capabilities of the MCP tools should you resort to other methods, such as using a general web search, if the MCP tools cannot provide the necessary information. If there is an error in calling the run_oci_command tool, then try to use the get_oci_command_help tool to get more information on the command and retry with the updated information. Don't send back emojis in the responses."""  # noqa ES501
+_system_prompt = f"""You are an Oracle Cloud Infrastructure expert generative chat assistant. Limit your answers to OCI. OCID is synonymous with ID. The logged in user's OCID is '{config["USER_OCID"]}', and the display name is {config["USER_NAME"]}. The tenancy OCID is '{config["TENANCY_OCID"]}', which is also called the root compartment. The active (current) tenancy name is {config["TENANCY_NAME"]}. The active (current) region is {config["REGION"]}. The active (current) compartment is '{config["COMPARTMENT_OCID"]}'. If the user makes a request that relies on a tool that requires a compartment id, and the user doesn't specify one, don't ask the user for the compartment id and use the active (current) compartment instead. If I ask you for a list of things, prefer either a tabular or text-based approach over dumping them in a code block. When formatting your response, don't use bullets or lists within tables. When a user makes a request, you must first attempt to fulfill it by using the available MCP tools. These tools are connected to our live data sources and provide the most accurate and real-time information. Only after exhausting the capabilities of the MCP tools should you resort to other methods, such as using a general web search, if the MCP tools cannot provide the necessary information. If there is an error in calling the run_oci_command tool, then try to use the get_oci_command_help tool to get more information on the command and retry with the updated information. Don't send back emojis in the responses."""  # noqa ES501
 
 
 def set_mcp_servers(context):
@@ -66,9 +67,16 @@ def before_all(context):
         # set the current configured mcp servers
         set_mcp_servers(context)
 
+        test_env = os.environ.copy()
+        test_env["OCI_CONFIG_PROFILE"] = config["OCI_CONFIG_PROFILE"]
+        test_env["GGML_CUDA_ENABLE_UNIFIED_MEMORY"] = (
+            "1"  # Solution from https://github.com/ollama/ollama/issues/9711
+        )
+
         # load the MCP servers
         context.bridge_proc = subprocess.Popen(
-            ["uvx", "ollama-mcp-bridge", "--config", config["MCP_HOST_FILE"]]
+            ["uvx", "ollama-mcp-bridge", "--config", config["MCP_HOST_FILE"]],
+            env=test_env,
         )
         print("Waiting for servers to start...", flush=True)
         time.sleep(

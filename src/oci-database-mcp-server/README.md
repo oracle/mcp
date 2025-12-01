@@ -10,6 +10,12 @@ This server provides tools to interact with the OCI Database service.
 uv run oracle.database-mcp-server
 ```
 
+## Environment Variables
+
+The server supports the following environment variables:
+
+- `OCI_CONFIG_PROFILE`: OCI configuration profile name (default: "DEFAULT")
+
 ## Tools
 
 | Tool Name | Description                                                                  |
@@ -88,8 +94,6 @@ uv run oracle.database-mcp-server
 | delete_pluggable_database | Delete a specific pluggable database                                         |
 | get_pluggable_database | Get information about a specific pluggable database                          |
 | update_pluggable_database | Update a specific pluggable database                                         |
-| get_compartment_by_name_tool | Return a compartment matching the provided name                              |
-| list_subscribed_regions_tool | Return a list of all regions the customer (tenancy) is subscribed to         |
 | get_application_vip | Gets information about a specified application virtual IP (VIP) address. |
 | get_autonomous_container_database | Gets information about the specified Autonomous Container Database. |
 | get_autonomous_container_database_dataguard_association | Gets an Autonomous Container Database enabled with Autonomous Data Guard associated with the specified Autonomous Container Database. |

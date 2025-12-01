@@ -16,12 +16,15 @@ from oracle.oci_networking_mcp_server.models import (
     SecurityList,
     Subnet,
     Vcn,
+    Vnic,
     map_network_security_group,
     map_response,
     map_security_list,
     map_subnet,
     map_vcn,
+    map_vnic,
 )
+from pydantic import Field
 
 from . import __project__, __version__
 
@@ -310,6 +313,21 @@ def get_network_security_group(
     except Exception as e:
         logger.error(f"Error in get_network_security_group tool: {str(e)}")
         raise
+
+
+@mcp.tool(description="Get Vnic with a given OCID")
+def get_vnic(vnic_id: str = Field(..., description="The OCID of the vnic")) -> Vnic:
+    try:
+        client = get_networking_client()
+
+        response: oci.response.Response = client.get_vnic(vnic_id=vnic_id)
+        data: oci.core.models.Vnic = response.data
+        logger.info("Found Vnic")
+        return map_vnic(data)
+
+    except Exception as e:
+        logger.error(f"Error in get_vnic tool: {str(e)}")
+        raise e
 
 
 def main():

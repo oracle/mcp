@@ -307,3 +307,21 @@ class TestNetworkingTools:
             result = call_tool_result.structured_content
 
             assert result["id"] == "nsg1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_networking_mcp_server.server.get_networking_client")
+    async def get_get_vnic(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_get_response = create_autospec(oci.response.Response)
+        mock_get_response.data = oci.core.models.Vnic(
+            id="vnic1", display_name="VNIC 1", lifecycle_state="AVAILABLE"
+        )
+        mock_client.get_vnic.return_value = mock_get_response
+
+        async with Client(mcp) as client:
+            call_tool_result = await client.call_tool("get_vnic", {"vnic_id": "vnic1"})
+            result = call_tool_result.structured_content
+
+            assert result["id"] == "vnic1"

@@ -162,7 +162,7 @@ public class Utils {
    */
   static ServerConfig loadConfig() {
     ServerConfig config;
-    String configFilePath = System.getProperty("configFile");
+    String configFilePath = LoadedConstants.CONFIG_FILE;
     ConfigRoot yamlConfig = null;
     try {
       try (Reader reader = Files.newBufferedReader(Paths.get(configFilePath))) {
@@ -291,7 +291,7 @@ public class Utils {
    *
    */
   static void installExternalExtensionsFromDir() {
-    final String dir = System.getProperty("ojdbc.ext.dir");
+    final String dir = LoadedConstants.OJDBC_EXT_DIR;
     if (dir == null || dir.isBlank()) {
       return;
     }

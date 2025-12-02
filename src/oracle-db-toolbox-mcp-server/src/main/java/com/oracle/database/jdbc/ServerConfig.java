@@ -75,12 +75,12 @@ final class ServerConfig {
    * @throws IllegalStateException if required properties are missing from both system properties and YAML config
    */
   public static ServerConfig fromSystemPropertiesAndYaml(ConfigRoot configRoot, String defaultSourceKey) {
-    Set<String> tools = parseToolsProp(System.getProperty("tools"));
+    Set<String> tools = parseToolsProp(LoadedConstants.TOOLS);
     boolean needDb = wantsAnyDbTools(tools);
 
-    String dbUrl = System.getProperty("db.url");
-    String dbUser = System.getProperty("db.user");
-    String dbPass = System.getProperty("db.password");
+    String dbUrl = LoadedConstants.DB_URL;
+    String dbUser = LoadedConstants.DB_USER;
+    String dbPass = LoadedConstants.DB_PASSWORD;
 
     Map<String, SourceConfig> sources = configRoot != null ? configRoot.sources : Collections.emptyMap();
     Map<String, ToolConfig> toolsMap = configRoot != null ? configRoot.tools : Collections.emptyMap();
@@ -116,18 +116,18 @@ final class ServerConfig {
    * @throws IllegalStateException if {@code db.url} is missing or blank
    */
   static ServerConfig fromSystemProperties() {
-    Set<String> tools = parseToolsProp(System.getProperty("tools"));
+    Set<String> tools = parseToolsProp(LoadedConstants.TOOLS);
     boolean needDb = wantsAnyDbTools(tools);
 
-    String dbUrl = System.getProperty("db.url");
+    String dbUrl = LoadedConstants.DB_URL;
     if (needDb && (dbUrl == null || dbUrl.isBlank())) {
       throw new IllegalStateException("Missing required system property: db.url");
     }
 
     return new ServerConfig(
             dbUrl,
-            System.getProperty("db.user"),
-            System.getProperty("db.password"),
+            LoadedConstants.DB_USER,
+            LoadedConstants.DB_PASSWORD,
             tools,
             new HashMap<>(),
             new HashMap<>()

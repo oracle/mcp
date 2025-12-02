@@ -1,15 +1,5 @@
 {
   "mcpServers": {
-    "oracle-datetime-helper-mcp-server": {
-      "disabled": false,
-      "timeout": 60,
-      "type": "stdio",
-      "command": "uv",
-      "args": [
-        "run",
-        "oracle.datetime-helper-mcp-server"
-      ]
-    },
     "oracle-oci-api-mcp-server": {
       "disabled": false,
       "timeout": 60,

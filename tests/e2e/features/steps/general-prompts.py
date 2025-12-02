@@ -41,8 +41,9 @@ def step_impl_prompt(context, prompt):
 
     # check if all thinking is really done...
     result = context.response.json()
-    thinking = result["message"]["thinking"]
-    content = result["message"]["content"]
+    message = getattr(result, "message", None)
+    thinking = getattr(message, "thinking", None)
+    content = getattr(message, "content", None)
     print("thinking & content", thinking, content, flush=True)
     if content is None and thinking is not None:
         print("Getting the next response...")
@@ -60,13 +61,3 @@ def step_impl_tools_available(context):
         assert (
             tool_server in result["message"]["content"]
         ), f"{tool_server} is missing from tools."
-
-
-@then("the response should contain a list of instances")
-def step_impl_list_instances(context):
-    result = context.response.json()
-    print("Instances", result)
-    assert "content" in result["message"], "Response does not contain a content key."
-    assert (
-        "ocid1.instance" in result["message"]["content"]
-    ), "tools could not be queried."

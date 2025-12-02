@@ -1279,11 +1279,110 @@ def heatwave_ask_ml_rag(dbtools_connection_display_name: str, question: str) -> 
             response_data = json.loads(response)
             if 'items' in response_data and len(response_data['items']) > 0:
                 json_column_name = response_data['items'][2]['resultSet']['metadata'][0]['jsonColumnName']
-            return json.loads(response_data['items'][2]['resultSet']['items'][0][json_column_name])
+                return json.loads(response_data['items'][2]['resultSet']['items'][0][json_column_name])
             
         return json.dumps({"error": "Unexpected response format from Heatwave ML_RAG"})
     except Exception as e:
         return json.dumps({"error": f"Error with ML_RAG: {str(e)}"})
+
+@mcp.tool()
+def ask_nl_sql(dbtools_connection_display_name: str, question: str) -> str:
+    """
+    Convert natural language questions into SQL queries and execute them automatically.
+
+    This tool is ideal for database exploration using plain English questions like:
+    - "Show me the average price by category"
+    - "How many users registered last month?"
+    - "What are the column names in the customers table?"
+
+    Args:
+        dbtools_connection_display_name (str): MySQL dbtools connection name.
+        question (str): Natural language query.
+
+    Returns:
+        JSON object containing:
+
+        sql_response(str): The response from executing the generated SQL query.
+        sql_query(str): The generated SQL query
+        schemas(json): The schemas where metadata was retrieved
+        tables(json): The tables where metadata was retrieved
+        is_sql_valid(bool): Whether the generated SQL statement is valid
+        model_id(str): The LLM used for generation
+    """
+    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
+
+    if connection_info is None:
+        return json.dumps({
+            "error": f"No connection found with name '{dbtools_connection_display_name}'",
+            "suggestion": "Use list_all_connections() to see available connections"
+        })
+
+    try:
+        if connection_info.get('type') != 'MYSQL':
+            return json.dumps({
+                "error": "This connection is not a MySQL database. NL_SQL is only available for MySQL databases.",
+                "suggestion": "Please provide a MySQL database connection."
+            })
+
+        call_sql = f"CALL sys.NL_SQL('{question.replace("'","''")}', @response, JSON_OBJECT('execute', FALSE)); SELECT @response;"
+
+        response = execute_sql_tool_by_connection_id(connection_info['id'], call_sql)
+        # Parse the response
+        if isinstance(response, str):
+            response_data = json.loads(response)
+            if 'items' in response_data and len(response_data['items']) > 0:
+                json_column_name = response_data['items'][1]['resultSet']['metadata'][0]['jsonColumnName']
+                return response_data['items'][1]['resultSet']['items'][0][json_column_name]
+            
+        return json.dumps({"error": "Unexpected response format from Heatwave NL_SQL"})
+        
+    except Exception as e:
+        return json.dumps({"error": f"Error with NL_SQL: {str(e)}"})
+
+@mcp.tool()
+def retrieve_relevant_schema_information(dbtools_connection_display_name: str, question: str) -> str:
+    """
+    Retrieve relevant schemas and tables for a given natural language question.
+
+    This tool analyzes the input question and identifies tables that are relevant with respect to the question. 
+    It can optionally consider table and column comments for improved semantic matching. 
+    The results contain only the relevant schemas and tables in a JSON object.
+
+    Args:
+        dbtools_connection_display_name (str): MySQL dbtools connection name.
+        question (str): Input question for use with ML_RETRIEVE_SCHEMA.
+
+    Returns:
+        A single JSON of the form:
+        {
+            "create_statements": "CREATE ...; CREATE ...;"
+        }
+        Where the DDL/CREATE statements of all relevant tables are listed
+    """
+    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
+    if connection_info is None:
+        return json.dumps({
+            "error": f"No connection found with name '{dbtools_connection_display_name}'",
+            "suggestion": "Use list_all_connections() to see available connections"
+        })
+    try:
+        if connection_info.get('type') != 'MYSQL':
+            return json.dumps({
+                "error": "This connection is not a MySQL database. ML_RETRIEVE_SCHEMA is only available for MySQL databases.",
+                "suggestion": "Please provide a MySQL database connection."
+            })
+
+        call_sql = f"CALL sys.ML_RETRIEVE_SCHEMA_METADATA('{question.replace("'","''")}', @response, NULL);SELECT JSON_OBJECT('create_statements', @response) AS jobj;"
+        response = execute_sql_tool_by_connection_id(connection_info['id'], call_sql)
+        # Parse the response
+        if isinstance(response, str):
+            response_data = json.loads(response)
+            if 'items' in response_data and len(response_data['items']) > 0:
+                json_column_name = response_data['items'][1]['resultSet']['metadata'][0]['jsonColumnName']
+                return json.dumps(response_data['items'][1]['resultSet']['items'][0][json_column_name])
+        return json.dumps({"error": "Unexpected response format from Heatwave NL_SQL"})
+    except Exception as e:
+        return json.dumps({"error": f"Error with ML_RETRIEVE_SCHEMA: {str(e)}"})
 
 if __name__ == "__main__":
     # Initialize and run the server

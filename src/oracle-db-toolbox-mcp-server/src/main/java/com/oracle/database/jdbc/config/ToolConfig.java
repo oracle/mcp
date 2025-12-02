@@ -1,5 +1,8 @@
 package com.oracle.database.jdbc.config;
 
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.oracle.database.jdbc.EnvSubstitutor;
 
 import java.util.List;
@@ -21,5 +24,28 @@ public class ToolConfig {
         if (param != null) param.substituteEnvVars();
       }
     }
+  }
+
+  public String buildInputSchemaJson() {
+    ObjectNode schema = JsonNodeFactory.instance.objectNode();
+    schema.put("type", "object");
+    ObjectNode properties = schema.putObject("properties");
+    ArrayNode required = JsonNodeFactory.instance.arrayNode();
+
+      for (ToolParameterConfig param : this.parameters) {
+        if (param == null) {
+          continue;
+        }
+        ObjectNode prop = properties.putObject(param.name);
+        prop.put("type", param.type);
+        prop.put("description", param.description);
+        if (param.required) {
+          required.add(param.name);
+        }
+      }
+    if (!required.isEmpty()) {
+      schema.set("required", required);
+    }
+    return schema.toString();
   }
 }

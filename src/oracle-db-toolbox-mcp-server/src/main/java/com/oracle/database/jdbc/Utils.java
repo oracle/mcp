@@ -106,7 +106,7 @@ public class Utils {
                   .name(tc.name)
                   .title(tc.name)
                   .description(tc.description)
-                  .inputSchema(ToolSchemas.SQL_ONLY)
+                  .inputSchema(tc.buildInputSchemaJson())
                   .build()
               )
               .callHandler((exchange, callReq) ->

@@ -112,7 +112,7 @@ public class Utils {
               .callHandler((exchange, callReq) ->
                   tryCall(() -> {
                     // Resolve source
-                    SourceConfig src = config.sources.get(tc.source);
+                    SourceConfig src = config.sources!=null?config.sources.get(tc.source):null;
                     String jdbcUrl = (src != null) ? src.toJdbcUrl() : config.dbUrl;
                     String dbUser = (src != null) ? src.user : config.dbUser;
                     String dbPassword = (src != null) ? src.password : config.dbPassword;
@@ -177,7 +177,7 @@ public class Utils {
     if (yamlConfig == null) {
       config = ServerConfig.fromSystemProperties();
     } else {
-      String defaultSourceKey = yamlConfig.sources.keySet().stream().findFirst().orElseThrow();
+      String defaultSourceKey = yamlConfig.sources!=null?yamlConfig.sources.keySet().stream().findFirst().orElse(null):null;
       config = ServerConfig.fromSystemPropertiesAndYaml(yamlConfig, defaultSourceKey);
       if (config.tools != null) {
         for (Map.Entry<String, ToolConfig> entry : config.tools.entrySet()) {

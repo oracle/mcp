@@ -247,7 +247,8 @@ For more details regarding this MCP and OAuth, please see [MCP specification for
 
 ## YAML Configuration Support
 
-The MCP server supports loading database connection and tool definitions from a YAML configuration file. 
+The MCP server supports loading database connection and tool definitions from a YAML configuration file.
+For sources, if a tool has a specific source it will use it. Otherwise, it will look for the default source which is either the source we got from system properties, otherwise, the first source defined in the file (if any).
 This file can contain environment variables as well.
 
 **Example `config.yaml`:**
@@ -265,6 +266,7 @@ tools:
       - name: name
         type: string
         description: Hotel name to search for.
+        required: false
     statement: SELECT * FROM hotels WHERE name LIKE '%' || :name || '%'
 ```
 To enable YAML configuration, launch the server with:

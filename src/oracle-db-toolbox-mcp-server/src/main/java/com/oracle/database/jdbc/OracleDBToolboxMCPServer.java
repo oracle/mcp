@@ -36,18 +36,6 @@ public class OracleDBToolboxMCPServer {
     config = Utils.loadConfig();
   }
 
-  /**
-   * Injects a custom {@link javax.sql.DataSource} used by all tools
-   * to obtain connections.
-   * <p>Call this before {@link #main(String[])} to override the default
-   * configuration-based data source.</p>
-   *
-   * @param ds the data source to use for all DB operations
-   */
-  public static void useDataSource(DataSource ds) {
-    Utils.useDataSource(ds);
-  }
-
   public static void main(String[] args) {
     installExternalExtensionsFromDir();
 

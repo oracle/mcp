@@ -51,6 +51,22 @@ public class OAuth2Configuration {
         LOG.info("OAuth2 is configured");
       else {
         LOG.warning("OAuth2 is not configured");
+        if (authServer != null || introspectionEndpoint != null || clientId != null || clientSecret != null) {
+          final var stringBuilder = new StringBuilder();
+          if (authServer == null)
+            stringBuilder.append("Authentication server URL (-DauthServer) is missing");
+
+          if (introspectionEndpoint == null)
+            stringBuilder.append("Introspection endpoint (-DintrospectionEndpoint) is missing");
+
+          if (clientId == null)
+            stringBuilder.append("Client ID (-DclientId) is missing");
+
+          if (clientSecret == null)
+            stringBuilder.append("Client secret (-DclientSecret) is missing");
+
+          LOG.warning(stringBuilder.toString());
+        }
         // Generate a local UUID string token
         TokenGenerator.getInstance();
       }

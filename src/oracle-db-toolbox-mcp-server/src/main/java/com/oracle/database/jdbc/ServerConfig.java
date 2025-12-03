@@ -35,6 +35,7 @@ final class ServerConfig {
   public final Set<String> toolsFilter;
   public final Map<String, SourceConfig> sources;
   public final Map<String, ToolConfig> tools;
+  public static String defaultSourceName; // Only if the default db info are from yaml config to avoid redundancy
 
   private ServerConfig(
       String dbUrl,
@@ -85,14 +86,17 @@ final class ServerConfig {
     Map<String, SourceConfig> sources = configRoot != null ? configRoot.sources : Collections.emptyMap();
     Map<String, ToolConfig> toolsMap = configRoot != null ? configRoot.tools : Collections.emptyMap();
 
-    if ((dbUrl == null || dbUrl.isBlank() ||
-        dbUser == null || dbUser.isBlank() ||
-        dbPass == null || dbPass.isBlank())
-        && sources.containsKey(defaultSourceKey)) {
+    boolean allLoadedConstantsPresent =
+        dbUrl != null && !dbUrl.isBlank()
+        && dbUser != null && !dbUser.isBlank()
+        && dbPass != null && !dbPass.isBlank();
+
+    if (!allLoadedConstantsPresent && sources!=null && sources.containsKey(defaultSourceKey)) {
       SourceConfig src = sources.get(defaultSourceKey);
-      if (dbUrl == null || dbUrl.isBlank()) dbUrl = src.toJdbcUrl();
-      if (dbUser == null || dbUser.isBlank()) dbUser = src.user;
-      if (dbPass == null || dbPass.isBlank()) dbPass = src.password;
+      dbUrl = src.toJdbcUrl();
+      dbUser = src.user;
+      dbPass = src.password;
+      defaultSourceName = defaultSourceKey;
     }
 
     if (needDb && (dbUrl == null || dbUrl.isBlank())) {
@@ -104,7 +108,6 @@ final class ServerConfig {
     if (needDb && (dbPass == null || dbPass.isBlank())) {
       throw new IllegalStateException("Missing required db.password in both system properties and YAML config");
     }
-
     return new ServerConfig(dbUrl, dbUser, dbPass, tools, sources, toolsMap);
   }
 

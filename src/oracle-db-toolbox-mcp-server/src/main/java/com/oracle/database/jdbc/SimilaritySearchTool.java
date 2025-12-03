@@ -44,7 +44,7 @@ public class SimilaritySearchTool {
                 .inputSchema(ToolSchemas.SIMILARITY_SEARCH)
                 .build())
             .callHandler((exchange, callReq) -> tryCall(() -> {
-              try (Connection c = openConnection(config)) {
+              try (Connection c = openConnection(config, null)) {
                 Map<String, Object> arguments = callReq.arguments();
                 String question = String.valueOf(arguments.get("question"));
                 if (question == null || question.isBlank()) {

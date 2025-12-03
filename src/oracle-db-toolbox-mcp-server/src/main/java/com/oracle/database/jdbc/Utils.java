@@ -24,7 +24,6 @@ import java.security.Provider;
 import java.security.Security;
 import java.sql.Clob;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -34,7 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.function.Supplier;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
@@ -48,30 +47,12 @@ import java.util.stream.Stream;
  * database identifiers.
  *
  * <p>The connection pool uses minimal settings (1 connection).
- * Applications can override the default data source via
- * {@link #useDataSource(DataSource)}.
  */
 public class Utils {
   private static final Logger LOG = Logger.getLogger(Utils.class.getName());
 
-  private static volatile DataSource dataSource;
-  private static volatile Supplier<Connection> connectionSupplier;
-
-  /**
-   * Overrides the default data source with a caller-provided one.
-   * Call before the server starts registering tools.
-   *
-   * @param ds custom data source used to obtain connections
-   */
-  static void useDataSource(DataSource ds) {
-    connectionSupplier = () -> {
-      try {
-        return ds.getConnection();
-      } catch (SQLException e) {
-        throw new RuntimeException(e);
-      }
-    };
-  }
+  private static final Map<String, DataSource> dataSources = new ConcurrentHashMap<>();
+  private static volatile DataSource defaultDataSource;
 
   /**
    * <p>
@@ -111,12 +92,7 @@ public class Utils {
               )
               .callHandler((exchange, callReq) ->
                   tryCall(() -> {
-                    // Resolve source
-                    SourceConfig src = config.sources!=null?config.sources.get(tc.source):null;
-                    String jdbcUrl = (src != null) ? src.toJdbcUrl() : config.dbUrl;
-                    String dbUser = (src != null) ? src.user : config.dbUser;
-                    String dbPassword = (src != null) ? src.password : config.dbPassword;
-                    try (Connection c = DriverManager.getConnection(jdbcUrl, dbUser, dbPassword)) {
+                    try (Connection c = openConnection(config, tc.source)) {
                       PreparedStatement ps = c.prepareStatement(tc.statement);
                       int paramIdx = 1;
                       if (tc.parameters != null) {
@@ -193,53 +169,57 @@ public class Utils {
    * Acquires a JDBC connection from the active data source.
    *
    * @param cfg server configuration
+   * @param sourceName database source
    * @return open JDBC connection
    * @throws SQLException on acquisition failure
    */
-  static Connection openConnection(ServerConfig cfg) throws SQLException {
-    Supplier<Connection> s = connectionSupplier;
-    if (s != null) {
-      try {
-        return s.get();
-      } catch (RuntimeException re) {
-        if (re.getCause() instanceof SQLException se) throw se;
-        throw re;
-      }
-    }
-    return getDataSource(cfg).getConnection();
+  static Connection openConnection(ServerConfig cfg, String sourceName) throws SQLException {
+    return getOrCreateDataSource(cfg, sourceName).getConnection();
   }
 
   /**
-   * Lazily initializes and returns a UCP {@link PoolDataSource} using
-   * values from {@link ServerConfig}. The pool is kept minimal and
-   * predictable (initial/min/max = 1).
+   * Lazily initializes and returns a UCP {@link PoolDataSource} for the given source,
+   * using values from {@link ServerConfig}. Each source gets its own minimal pool.
    *
+   * @param cfg        the server configuration
+   * @param sourceName the name of the source; if null, uses the default source
+   * @return a {@link DataSource} for the specified source
    * @throws SQLException if creation or configuration fails
    */
-  private static DataSource getDataSource(ServerConfig cfg) throws SQLException {
-    if (dataSource != null) return dataSource;
-    synchronized (Utils.class) {
-      if (dataSource != null)
-        return dataSource;
-
-      PoolDataSource pds = PoolDataSourceFactory.getPoolDataSource();
-      pds.setConnectionFactoryClassName("oracle.jdbc.pool.OracleDataSource");
-      pds.setURL(cfg.dbUrl);
-      if (cfg.dbUser != null)
-        pds.setUser(cfg.dbUser);
-      if (cfg.dbPassword != null)
-        pds.setPassword(cfg.dbPassword);
-
-      pds.setInitialPoolSize(1);
-      pds.setMinPoolSize(1);
-      pds.setConnectionWaitTimeout(10);
-      pds.setConnectionProperty("remarksReporting", "true");
-      pds.setConnectionProperty("oracle.jdbc.vectorDefaultGetObjectType", "double[]");
-      pds.setConnectionProperty("oracle.jdbc.jsonDefaultGetObjectType", "java.lang.String");
-
-      dataSource = pds;
-      return dataSource;
+  private static DataSource getOrCreateDataSource(ServerConfig cfg, String sourceName) throws SQLException {
+    if (sourceName == null || sourceName.equals(ServerConfig.defaultSourceName)) {
+      if (defaultDataSource != null) return defaultDataSource;
+      synchronized (Utils.class) {
+        if (defaultDataSource != null) return defaultDataSource;
+        defaultDataSource = createDataSource(cfg.dbUrl, cfg.dbUser, cfg.dbPassword);
+        return defaultDataSource;
+      }
+    } else {
+      return dataSources.computeIfAbsent(sourceName, name -> {
+        try {
+          SourceConfig src = (cfg.sources != null) ? cfg.sources.get(name) : null;
+          if (src == null) throw new IllegalArgumentException("Unknown source: " + name);
+          return createDataSource(src.toJdbcUrl(), src.user, src.password);
+        } catch (SQLException ex) {
+          throw new RuntimeException(ex);
+        }
+      });
     }
+  }
+
+  private static DataSource createDataSource(String url, String user, String password) throws SQLException {
+    PoolDataSource pds = PoolDataSourceFactory.getPoolDataSource();
+    pds.setConnectionFactoryClassName("oracle.jdbc.pool.OracleDataSource");
+    pds.setURL(url);
+    if (user != null) pds.setUser(user);
+    if (password != null) pds.setPassword(password);
+    pds.setInitialPoolSize(1);
+    pds.setMinPoolSize(1);
+    pds.setConnectionWaitTimeout(10);
+    pds.setConnectionProperty("remarksReporting", "true");
+    pds.setConnectionProperty("oracle.jdbc.vectorDefaultGetObjectType", "double[]");
+    pds.setConnectionProperty("oracle.jdbc.jsonDefaultGetObjectType", "java.lang.String");
+    return pds;
   }
 
   /**

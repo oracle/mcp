@@ -3,7 +3,7 @@
 ## Overview
 
 This server provides tools to interact with the OCI Recovery Service resources.
-It includes tools to help with viewing Recovery Service configurations.
+It includes tools to help with reporting on backups utilizing the Recovery Service.
 
 ## Running the server
 
@@ -15,9 +15,11 @@ uv run oracle.oci-recovery-service-mcp-server
 
 | Tool Name | Description |
 | --- | --- |
-| list_databases_using_recovery_service | Lists the databases using the Recovery Service along with their detail |
-| list_compartments | List compartments available. listing protected databases requires a compartment |
-| get_tenancy_cost_summary | List tenancy usage for recovery service only |
+| list_compartments | List compartments |
+| list_databases_using_recovery_service | List databases using recovery service using compartment OCID |
+| list_recovery_service_subnets | List registered recovery service subnets using compartment OCID |
+| get_tenancy_cost_summary | get the cost and usage information for recovery service usage |
+
 
 ⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 

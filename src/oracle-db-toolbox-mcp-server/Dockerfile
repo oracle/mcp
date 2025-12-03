@@ -1,9 +1,18 @@
 # ---------- 1) Build stage ----------
-FROM eclipse-temurin:17-jdk-jammy AS builder
+FROM container-registry.oracle.com/java/openjdk:17 AS builder
 
-RUN apt-get update -y \
- && apt-get install -y --no-install-recommends maven ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+ARG MAVEN_VERSION=3.9.11
+ARG MAVEN_BASE_URL=https://dlcdn.apache.org/maven/maven-3
+
+RUN curl -fsSL \
+      ${MAVEN_BASE_URL}/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz \
+      -o /tmp/maven.tar.gz \
+  && tar -xzf /tmp/maven.tar.gz -C /opt \
+  && ln -s /opt/apache-maven-${MAVEN_VERSION} /opt/maven \
+  && rm /tmp/maven.tar.gz
+
+ENV MAVEN_HOME=/opt/maven
+ENV PATH="${MAVEN_HOME}/bin:${PATH}"
 
 WORKDIR /src
 
@@ -12,7 +21,7 @@ COPY . .
 RUN mvn -B -q -DskipTests clean package
 
 # ---------- 2) Runtime stage ----------
-FROM eclipse-temurin:17-jre-jammy
+FROM container-registry.oracle.com/java/openjdk:17
 
 RUN useradd -r -u 10001 appuser && \
     mkdir -p /app /ext && chown -R appuser:appuser /app /ext

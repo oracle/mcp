@@ -4,7 +4,6 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
-import argparse
 import os
 from logging import Logger
 
@@ -108,13 +107,11 @@ def delete_container_repository(repository_id: str):
 
 def main():
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, help="Port to use for HTTP mode")
-    parser.add_argument("--host", type=str, help="Hostname or IP address to bind to")
-    args = parser.parse_args()
+    host = os.getenv("MCP_HOST")
+    port = os.getenv("MCP_PORT")
 
-    if args.port and args.host:
-        mcp.run(transport="http", host=args.host, port=args.port)
+    if host and port:
+        mcp.run(transport="http", host=host, port=int(port))
     else:
         mcp.run()
 

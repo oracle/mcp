@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-object-storage-mcp-server"
-version = "1.0.2"
+version = "1.1.0"
 description = "OCI Object Storage Service MCP server"
 readme = "README.md"
 authors = [
@@ -47,4 +47,3 @@ omit = [
 [tool.coverage.report]
 precision = 2
 fail_under = 85.78
-

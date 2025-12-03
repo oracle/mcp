@@ -7,8 +7,16 @@ It includes tools to help with managing network load balancers.
 
 ## Running the server
 
+### STDIO transport mode
+
 ```sh
-uv run oracle.oci-network-load-balancer-mcp-server
+uvx oracle.oci-network-load-balancer-mcp-server
+```
+
+### HTTP streaming transport mode
+
+```sh
+MCP_HOST=<hostname/IP address> MCP_PORT=<port number> uvx oracle.oci-network-load-balancer-mcp-server
 ```
 
 ## Tools

@@ -787,6 +787,8 @@ def _map_response_data(data: Any) -> Any:
             return map_security_list(data)
         if isinstance(data, oci.core.models.NetworkSecurityGroup):
             return map_network_security_group(data)
+        if isinstance(data, oci.core.models.Vnic):
+            return map_vnic(data)
     except Exception:
         # Ignore import/type detection issues and fall through to generic handling
         pass
@@ -822,6 +824,167 @@ def map_response(resp: oci.response.Response) -> Response | None:
         next_page=next_page,
         request_id=request_id,
         has_next_page=(next_page is not None),
+    )
+
+
+# endregion
+
+# region Vnic
+
+
+class Vnic(BaseModel):
+    """
+    Pydantic model mirroring the fields of oci.core.models.Vnic.
+    """
+
+    availability_domain: Optional[str] = Field(
+        None, description="The VNIC's availability domain. Example: `Uocm:PHX-AD-1`"
+    )
+    compartment_id: Optional[str] = Field(
+        None, description="The OCID of the compartment containing the VNIC."
+    )
+    defined_tags: Optional[Dict[str, Dict[str, Any]]] = Field(
+        None,
+        description=(
+            "Defined tags for this resource. Each key is predefined and scoped to a "
+            'namespace. Example: `{"Operations": {"CostCenter": "42"}}`',
+        ),
+    )
+    display_name: Optional[str] = Field(
+        None,
+        description="A user-friendly name. Does not have to be unique, and it's changeable. "
+        "Avoid entering confidential information.",
+    )
+    security_attributes: Optional[Dict[str, Dict[str, Any]]] = Field(
+        None,
+        description="Security attributes for Zero Trust Packet Routing (ZPR), labeled by namespace. "
+        'Example: `{"Oracle-DataSecurity-ZPR": {"MaxEgressCount": {"value":"42","mode":"audit"}}}`',
+    )
+    freeform_tags: Optional[Dict[str, str]] = Field(
+        None,
+        description=(
+            "Free-form tags for this resource. Each tag is a simple key-value pair with no "
+            'predefined name, type, or namespace. Example: `{"Department": "Finance"}`',
+        ),
+    )
+    hostname_label: Optional[str] = Field(
+        None,
+        description=(
+            "The hostname for the VNIC's primary private IP. Used for DNS. The value is the "
+            "hostname portion of the primary private IP's fully qualified domain name (FQDN) "
+            "(for example, `bminstance1` in FQDN `bminstance1.subnet123.vcn1.oraclevcn.com`). "
+            "Must be unique across all VNICs in the subnet and comply with RFC 952 and RFC 1123. "
+            "Example: `bminstance1`",
+        ),
+    )
+    id: Optional[str] = Field(None, description="The OCID of the VNIC.")
+    is_primary: Optional[bool] = Field(
+        None,
+        description="Whether the VNIC is the primary VNIC "
+        "(the VNIC that is automatically created and attached during instance launch).",
+    )
+    lifecycle_state: Optional[
+        Literal[
+            "PROVISIONING",
+            "AVAILABLE",
+            "TERMINATING",
+            "TERMINATED",
+            "UNKNOWN_ENUM_VALUE",
+        ]
+    ] = Field(None, description="The current state of the VNIC.")
+    mac_address: Optional[str] = Field(
+        None,
+        description=(
+            "The MAC address of the VNIC. If the VNIC belongs to a VLAN as part of the Oracle "
+            "Cloud VMware Solution, the MAC address is learned. If the VNIC belongs to a subnet, "
+            "the MAC address is a static, Oracle-provided value. Example: `00:00:00:00:00:01`",
+        ),
+    )
+    nsg_ids: Optional[List[str]] = Field(
+        None,
+        description=(
+            "A list of the OCIDs of the network security groups that the VNIC belongs to. "
+            "If the VNIC belongs to a VLAN as part of the Oracle Cloud VMware Solution "
+            "(instead of belonging to a subnet), the value of the `nsgIds` attribute is ignored. "
+            "Instead, the VNIC belongs to the NSGs that are associated with the VLAN itself. "
+            "See Vlan.",
+        ),
+    )
+    vlan_id: Optional[str] = Field(
+        None,
+        description="If the VNIC belongs to a VLAN as part of the Oracle Cloud VMware Solution "
+        "(instead of belonging to a subnet), the `vlanId` is the OCID of the VLAN the VNIC is in. "
+        "See Vlan. If the VNIC is instead in a subnet, `subnetId` has a value.",
+    )
+    private_ip: Optional[str] = Field(
+        None,
+        description="The private IP address of the primary `privateIp` object on the VNIC. "
+        "The address is within the CIDR of the VNIC's subnet. Example: `10.0.3.3`",
+    )
+    public_ip: Optional[str] = Field(
+        None, description="The public IP address of the VNIC, if one is assigned."
+    )
+    skip_source_dest_check: Optional[bool] = Field(
+        None,
+        description=(
+            "Whether the source/destination check is disabled on the VNIC. Defaults to `false`, "
+            "which means the check is performed. For information about why you would skip the "
+            "source/destination check, see Using a Private IP as a Route Target. "
+            "If the VNIC belongs to a VLAN as part of the Oracle Cloud VMware Solution "
+            "(instead of belonging to a subnet), the `skipSourceDestCheck` attribute is `true`. "
+            "This is because the source/destination check is always disabled for VNICs in a VLAN. "
+            "Example: `true`",
+        ),
+    )
+    subnet_id: Optional[str] = Field(
+        None, description="The OCID of the subnet the VNIC is in."
+    )
+    time_created: Optional[datetime] = Field(
+        None,
+        description=(
+            "The date and time the VNIC was created, in the format defined by RFC3339. "
+            "Example: `2016-08-25T21:10:29.600Z`",
+        ),
+    )
+    ipv6_addresses: Optional[List[str]] = Field(
+        None,
+        description="List of IPv6 addresses assigned to the VNIC. Example: `2001:DB8::`",
+    )
+    route_table_id: Optional[str] = Field(
+        None,
+        description="The OCID of the route table the IP address or VNIC will use. "
+        "For more information, see Per-resource Routing.",
+    )
+
+
+def map_vnic(vnic: oci.core.models.Vnic) -> Vnic | None:
+    """
+    Convert an oci.core.models.Vnic to oracle.oci_networking_mcp_server.models.Vnic.
+    """
+    if vnic is None:
+        return None
+
+    return Vnic(
+        availability_domain=getattr(vnic, "availability_domain", None),
+        compartment_id=getattr(vnic, "compartment_id", None),
+        defined_tags=getattr(vnic, "defined_tags", None),
+        display_name=getattr(vnic, "display_name", None),
+        security_attributes=getattr(vnic, "security_attributes", None),
+        freeform_tags=getattr(vnic, "freeform_tags", None),
+        hostname_label=getattr(vnic, "hostname_label", None),
+        id=getattr(vnic, "id", None),
+        is_primary=getattr(vnic, "is_primary", None),
+        lifecycle_state=getattr(vnic, "lifecycle_state", None),
+        mac_address=getattr(vnic, "mac_address", None),
+        nsg_ids=getattr(vnic, "nsg_ids", None),
+        vlan_id=getattr(vnic, "vlan_id", None),
+        private_ip=getattr(vnic, "private_ip", None),
+        public_ip=getattr(vnic, "public_ip", None),
+        skip_source_dest_check=getattr(vnic, "skip_source_dest_check", None),
+        subnet_id=getattr(vnic, "subnet_id", None),
+        time_created=getattr(vnic, "time_created", None),
+        ipv6_addresses=getattr(vnic, "ipv6_addresses", None),
+        route_table_id=getattr(vnic, "route_table_id", None),
     )
 
 

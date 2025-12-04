@@ -36,28 +36,12 @@ public class OracleDBToolboxMCPServer {
     config = Utils.loadConfig();
   }
 
-  /**
-   * Injects a custom {@link javax.sql.DataSource} used by all tools
-   * to obtain connections.
-   * <p>Call this before {@link #main(String[])} to override the default
-   * configuration-based data source.</p>
-   *
-   * @param ds the data source to use for all DB operations
-   */
-  public static void useDataSource(DataSource ds) {
-    Utils.useDataSource(ds);
-  }
-
   public static void main(String[] args) {
     installExternalExtensionsFromDir();
 
-    final String transportKind = System.getProperty("transport", "stdio")
-      .trim()
-      .toLowerCase();
-
     McpSyncServer server;
 
-    switch (transportKind) {
+    switch (LoadedConstants.TRANSPORT_KIND) {
       case "http" -> {
         server = startHttpServer();
       }
@@ -73,7 +57,7 @@ public class OracleDBToolboxMCPServer {
           .build();
       }
       default -> throw new IllegalArgumentException(
-              "Unsupported transport: " + transportKind + " (expected 'stdio' or 'http')");
+              "Unsupported transport: " + LoadedConstants.TRANSPORT_KIND + " (expected 'stdio' or 'http')");
     }
     Utils.addSyncToolSpecifications(server, config);
   }
@@ -87,8 +71,6 @@ public class OracleDBToolboxMCPServer {
    */
   private static McpSyncServer startHttpServer() {
     try {
-      int httpPort = Integer.parseInt(System.getProperty("http.port", "45450"));
-
       HttpServletStreamableServerTransportProvider transport =
               HttpServletStreamableServerTransportProvider.builder()
                       .objectMapper(new ObjectMapper())
@@ -106,7 +88,7 @@ public class OracleDBToolboxMCPServer {
         .build();
 
       Tomcat tomcat = new Tomcat();
-      tomcat.setPort(httpPort);
+      tomcat.setPort(LoadedConstants.HTTP_PORT);
       tomcat.getConnector();
 
       String ctxPath = "";
@@ -136,14 +118,14 @@ public class OracleDBToolboxMCPServer {
       filterMap.addURLPattern("/mcp/*");
       ctx.addFilterMap(filterMap);
 
-      String keystorePath = System.getProperty("certificatePath");
-      String keystorePassword = System.getProperty("certificatePassword");
-      if(keystorePath!=null && keystorePassword != null) enableHttps(tomcat, keystorePath, keystorePassword);
+      if(LoadedConstants.KEYSTORE_PATH!=null && LoadedConstants.KEYSTORE_PASSWORD != null) {
+        enableHttps(tomcat, LoadedConstants.KEYSTORE_PATH, LoadedConstants.KEYSTORE_PASSWORD);
+      }
       else LOG.warning("SSL setup is skipped: Keystore path or password not specified");
 
       tomcat.start();
 
-      LOG.info(() -> "[oracle-db-toolbox-mcp-server] HTTP transport started on " + httpPort + " (endpoint: /mcp)");
+      LOG.info(() -> "[oracle-db-toolbox-mcp-server] HTTP transport started on " + LoadedConstants.HTTP_PORT + " (endpoint: /mcp)");
 
       return server;
     } catch (Exception e) {
@@ -153,10 +135,9 @@ public class OracleDBToolboxMCPServer {
 
   private static void enableHttps(Tomcat tomcat, String keystorePath, String keystorePassword) {
     try {
-      int httpsPort = Integer.parseInt(System.getProperty("https.port", "45451"));
       // Create HTTPS connector
       Connector https = new Connector("org.apache.coyote.http11.Http11NioProtocol");
-      https.setPort(httpsPort);
+      https.setPort(LoadedConstants.HTTPS_PORT);
       https.setSecure(true);
       https.setScheme("https");
       https.setProperty("SSLEnabled", "true");
@@ -164,8 +145,6 @@ public class OracleDBToolboxMCPServer {
       // Create SSL config
       SSLHostConfig sslHostConfig = new SSLHostConfig();
       sslHostConfig.setHostName("_default_");
-      sslHostConfig.setProtocols("+TLSv1.2,+TLSv1.3");
-
 
       SSLHostConfigCertificate cert = new SSLHostConfigCertificate(
           sslHostConfig,

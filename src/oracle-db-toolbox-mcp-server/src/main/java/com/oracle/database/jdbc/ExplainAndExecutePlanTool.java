@@ -45,7 +45,7 @@ public class ExplainAndExecutePlanTool {
                 .inputSchema(ToolSchemas.EXPLAIN_PLAN)
                 .build())
             .callHandler((exchange, callReq) -> tryCall(() -> {
-              try (Connection c = openConnection(config)) {
+              try (Connection c = openConnection(config, null)) {
                 final String sql = String.valueOf(callReq.arguments().get("sql"));
                 if (sql == null || sql.isBlank()) {
                   return new McpSchema.CallToolResult("Parameter 'sql' is required", true);

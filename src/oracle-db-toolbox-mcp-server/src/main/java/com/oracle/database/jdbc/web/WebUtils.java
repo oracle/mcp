@@ -1,5 +1,6 @@
 package com.oracle.database.jdbc.web;
 
+import com.oracle.database.jdbc.LoadedConstants;
 import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.Objects;
@@ -57,7 +58,7 @@ public class WebUtils {
    * @return the value of the {@code allowedHosts} system property, or {@code "*"} if not set
    */
   static String getAllowedHosts() {
-    return System.getProperty("allowedHosts","*");
+    return LoadedConstants.ALLOWED_HOSTS;
   }
 
   /**
@@ -69,7 +70,7 @@ public class WebUtils {
    * @return {@code true} if redirection from OpenID to OAuth is enabled, {@code false} otherwise
    */
   public static boolean isRedirectOpenIDToOAuthEnabled() {
-    return Boolean.parseBoolean(System.getProperty("redirectOpenIDToOAuth", "false"));
+    return Boolean.parseBoolean(LoadedConstants.REDIRECT_OPENID_TO_OAUTH);
   }
 
 }

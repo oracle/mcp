@@ -6,6 +6,7 @@ public class ToolParameterConfig {
   public String name;
   public String type;
   public String description;
+  public boolean required;
 
   public void substituteEnvVars() {
     this.name        = EnvSubstitutor.substituteEnvVars(this.name);

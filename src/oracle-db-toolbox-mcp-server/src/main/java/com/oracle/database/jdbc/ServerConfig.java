@@ -35,6 +35,7 @@ final class ServerConfig {
   public final Set<String> toolsFilter;
   public final Map<String, SourceConfig> sources;
   public final Map<String, ToolConfig> tools;
+  public static String defaultSourceName; // Only if the default db info are from yaml config to avoid redundancy
 
   private ServerConfig(
       String dbUrl,
@@ -75,24 +76,27 @@ final class ServerConfig {
    * @throws IllegalStateException if required properties are missing from both system properties and YAML config
    */
   public static ServerConfig fromSystemPropertiesAndYaml(ConfigRoot configRoot, String defaultSourceKey) {
-    Set<String> tools = parseToolsProp(System.getProperty("tools"));
+    Set<String> tools = parseToolsProp(LoadedConstants.TOOLS);
     boolean needDb = wantsAnyDbTools(tools);
 
-    String dbUrl = System.getProperty("db.url");
-    String dbUser = System.getProperty("db.user");
-    String dbPass = System.getProperty("db.password");
+    String dbUrl = LoadedConstants.DB_URL;
+    String dbUser = LoadedConstants.DB_USER;
+    String dbPass = LoadedConstants.DB_PASSWORD;
 
     Map<String, SourceConfig> sources = configRoot != null ? configRoot.sources : Collections.emptyMap();
     Map<String, ToolConfig> toolsMap = configRoot != null ? configRoot.tools : Collections.emptyMap();
 
-    if ((dbUrl == null || dbUrl.isBlank() ||
-        dbUser == null || dbUser.isBlank() ||
-        dbPass == null || dbPass.isBlank())
-        && sources.containsKey(defaultSourceKey)) {
+    boolean allLoadedConstantsPresent =
+        dbUrl != null && !dbUrl.isBlank()
+        && dbUser != null && !dbUser.isBlank()
+        && dbPass != null && !dbPass.isBlank();
+
+    if (!allLoadedConstantsPresent && sources!=null && sources.containsKey(defaultSourceKey)) {
       SourceConfig src = sources.get(defaultSourceKey);
-      if (dbUrl == null || dbUrl.isBlank()) dbUrl = src.toJdbcUrl();
-      if (dbUser == null || dbUser.isBlank()) dbUser = src.user;
-      if (dbPass == null || dbPass.isBlank()) dbPass = src.password;
+      dbUrl = src.toJdbcUrl();
+      dbUser = src.user;
+      dbPass = src.password;
+      defaultSourceName = defaultSourceKey;
     }
 
     if (needDb && (dbUrl == null || dbUrl.isBlank())) {
@@ -104,7 +108,6 @@ final class ServerConfig {
     if (needDb && (dbPass == null || dbPass.isBlank())) {
       throw new IllegalStateException("Missing required db.password in both system properties and YAML config");
     }
-
     return new ServerConfig(dbUrl, dbUser, dbPass, tools, sources, toolsMap);
   }
 
@@ -116,18 +119,18 @@ final class ServerConfig {
    * @throws IllegalStateException if {@code db.url} is missing or blank
    */
   static ServerConfig fromSystemProperties() {
-    Set<String> tools = parseToolsProp(System.getProperty("tools"));
+    Set<String> tools = parseToolsProp(LoadedConstants.TOOLS);
     boolean needDb = wantsAnyDbTools(tools);
 
-    String dbUrl = System.getProperty("db.url");
+    String dbUrl = LoadedConstants.DB_URL;
     if (needDb && (dbUrl == null || dbUrl.isBlank())) {
       throw new IllegalStateException("Missing required system property: db.url");
     }
 
     return new ServerConfig(
             dbUrl,
-            System.getProperty("db.user"),
-            System.getProperty("db.password"),
+            LoadedConstants.DB_USER,
+            LoadedConstants.DB_PASSWORD,
             tools,
             new HashMap<>(),
             new HashMap<>()

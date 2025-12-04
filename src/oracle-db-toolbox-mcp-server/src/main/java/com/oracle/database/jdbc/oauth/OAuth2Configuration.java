@@ -1,5 +1,7 @@
 package com.oracle.database.jdbc.oauth;
 
+import com.oracle.database.jdbc.LoadedConstants;
+
 import java.util.logging.Logger;
 
 /**
@@ -33,11 +35,11 @@ public class OAuth2Configuration {
    * If OAuth2 is not configured, initializes a TokenGenerator for local token generation.
    */
   private OAuth2Configuration() {
-    isAuthenticationEnabled = Boolean.parseBoolean(System.getProperty("enableAuthentication","false"));
-    authServer = System.getProperty("authServer");
-    introspectionEndpoint = System.getProperty("introspectionEndpoint");
-    clientId = System.getProperty("clientId");
-    clientSecret = System.getProperty("clientSecret");
+    isAuthenticationEnabled = LoadedConstants.ENABLE_AUTH;
+    authServer = LoadedConstants.AUTH_SERVER;
+    introspectionEndpoint = LoadedConstants.INTROSPECTION_ENDPOINT;
+    clientId = LoadedConstants.CLIENT_ID;
+    clientSecret = LoadedConstants.CLIENT_SECRET;
     isOAuth2Configured = authServer != null && introspectionEndpoint != null && clientId != null && clientSecret != null;
 
     if (!isAuthenticationEnabled)
@@ -49,6 +51,22 @@ public class OAuth2Configuration {
         LOG.info("OAuth2 is configured");
       else {
         LOG.warning("OAuth2 is not configured");
+        if (authServer != null || introspectionEndpoint != null || clientId != null || clientSecret != null) {
+          final var stringBuilder = new StringBuilder();
+          if (authServer == null)
+            stringBuilder.append("Authentication server URL (-DauthServer) is missing");
+
+          if (introspectionEndpoint == null)
+            stringBuilder.append("Introspection endpoint (-DintrospectionEndpoint) is missing");
+
+          if (clientId == null)
+            stringBuilder.append("Client ID (-DclientId) is missing");
+
+          if (clientSecret == null)
+            stringBuilder.append("Client secret (-DclientSecret) is missing");
+
+          LOG.warning(stringBuilder.toString());
+        }
         // Generate a local UUID string token
         TokenGenerator.getInstance();
       }

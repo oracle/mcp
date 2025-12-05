@@ -11,21 +11,36 @@ It includes tools to help with managing network configurations.
 uv run oracle.oci-networking-mcp-server
 ```
 
+## Running with Docker
+
+### Building the Docker Image
+
+To build the Docker image run:
+
+```sh
+docker build -t oracle.oci-networking-mcp-server .
+```
+
+This command builds the Docker image tagged as `oracle.oci-networking-mcp-server`.
+
+### MCP Client Configuration
+
+For examples of configuring MCP clients to run the server using Docker, see the [client-specific sections](../../README.md#cline) in the project README. Configurations typically involve using `docker run` as the command, with appropriate flags and volume mounts for credentials if needed (e.g., mounting `~/.oci` for OCI servers).
 ## Tools
 
-| Tool Name | Description |
-| --- | --- |
-| list_vcns | List Virtual Cloud Networks (VCNs) in a given compartment |
-| get_vcn | Get a VCN with a given VCN OCID |
-| delete_vcn | Delete a VCN with a given VCN OCID |
-| create_vcn | Create a new VCN |
-| list_subnets | List subnets in a given compartment and VCN |
-| get_subnet | Get a subnet with a given subnet OCID |
-| create_subnet | Create a new subnet |
-| list_security_lists | List security lists in a given VCN and compartment |
-| get_security_list | Get a security list with a given security list OCID |
+| Tool Name                    | Description                                                 |
+|------------------------------|-------------------------------------------------------------|
+| list_vcns                    | List Virtual Cloud Networks (VCNs) in a given compartment   |
+| get_vcn                      | Get a VCN with a given VCN OCID                             |
+| delete_vcn                   | Delete a VCN with a given VCN OCID                          |
+| create_vcn                   | Create a new VCN                                            |
+| list_subnets                 | List subnets in a given compartment and VCN                 |
+| get_subnet                   | Get a subnet with a given subnet OCID                       |
+| create_subnet                | Create a new subnet                                         |
+| list_security_lists          | List security lists in a given VCN and compartment          |
+| get_security_list            | Get a security list with a given security list OCID         |
 | list_network_security_groups | List network security groups in a given compartment and VCN |
-| get_network_security_group | Get a network security group with a given NSG OCID |
+| get_network_security_group   | Get a network security group with a given NSG OCID          |
 
 ⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 

@@ -11,18 +11,33 @@ It includes tools to help with managing compute instances.
 uv run oracle.oci-compute-mcp-server
 ```
 
+## Running with Docker
+
+### Building the Docker Image
+
+To build the Docker image run:
+
+```sh
+docker build -t oracle.oci-compute-mcp-server .
+```
+
+This command builds the Docker image tagged as `oracle.oci-compute-mcp-server`.
+
+### MCP Client Configuration
+
+For examples of configuring MCP clients to run the server using Docker, see the [client-specific sections](../../README.md#cline) in the project README. Configurations typically involve using `docker run` as the command, with appropriate flags and volume mounts for credentials if needed (e.g., mounting `~/.oci` for OCI servers).
 ## Tools
 
-| Tool Name | Description |
-| --- | --- |
-| list_instances | List Instances in a given compartment |
-| get_instance | Get Instance with a given instance OCID |
-| launch_instance | Create a new instance |
-| terminate_instance | Terminate an instance |
-| update_instance | Update instance configuration |
-| list_images | List images in a given compartment |
-| get_image | Get Image with a given image OCID |
-| instance_action | Perform actions on a given instance |
+| Tool Name          | Description                             |
+|--------------------|-----------------------------------------|
+| list_instances     | List Instances in a given compartment   |
+| get_instance       | Get Instance with a given instance OCID |
+| launch_instance    | Create a new instance                   |
+| terminate_instance | Terminate an instance                   |
+| update_instance    | Update instance configuration           |
+| list_images        | List images in a given compartment      |
+| get_image          | Get Image with a given image OCID       |
+| instance_action    | Perform actions on a given instance     |
 
 ⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 
@@ -40,4 +55,3 @@ Copyright (c) 2025 Oracle and/or its affiliates.
  
 Released under the Universal Permissive License v1.0 as shown at  
 <https://oss.oracle.com/licenses/upl/>.
-

@@ -10,13 +10,29 @@ It includes tools to help with OCI command execution and provide helpful informa
 ```sh
 uv run oracle.oci-api-mcp-server
 ```
+
+## Running with Docker
+
+### Building the Docker Image
+
+To build the Docker image run:
+
+```sh
+docker build -t oracle.oci-api-mcp-server .
+```
+
+This command builds the Docker image tagged as `oracle.oci-api-mcp-server`.
+
+### MCP Client Configuration
+
+For examples of configuring MCP clients to run the server using Docker, see the [client-specific sections](../../README.md#cline) in the project README. Configurations typically involve using `docker run` as the command, with appropriate flags and volume mounts for credentials if needed (e.g., mounting `~/.oci` for OCI servers).
 ## Tools
 
-| Tool Name | Description |
-| --- | --- |
-| get_oci_command_help | Returns helpful instructions for running an OCI CLI command. Only provide the command after 'oci', do not include the string 'oci' in your command. |
-| run_oci_command | Runs an OCI CLI command. This tool allows you to run OCI CLI commands on the user's behalf. Only provide the command after 'oci', do not include the string 'oci' in your command. |
-| get_oci_commands (Resource) | Returns helpful information on various OCI services and related commands. |
+| Tool Name                   | Description                                                                                                                                                                        |
+|-----------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| get_oci_command_help        | Returns helpful instructions for running an OCI CLI command. Only provide the command after 'oci', do not include the string 'oci' in your command.                                |
+| run_oci_command             | Runs an OCI CLI command. This tool allows you to run OCI CLI commands on the user's behalf. Only provide the command after 'oci', do not include the string 'oci' in your command. |
+| get_oci_commands (Resource) | Returns helpful information on various OCI services and related commands.                                                                                                          |
 
 ⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 

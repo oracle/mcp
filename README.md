@@ -55,6 +55,24 @@ For macOS/Linux:
 }
 ```
 
+## Running with Docker
+
+Some MCP servers in this repository support running via Docker.
+
+### Building the Docker Image
+
+Navigate to the server's directory (e.g., `src/oci-api-mcp-server`) where the Dockerfile is located and run:
+
+```sh
+docker build -t oracle.oci-api-mcp-server .
+```
+
+Replace the tag with an appropriate name for the server (e.g., oracle.oci-api-mcp-server). The above command builds the Docker image tagged as `oracle.oci-api-mcp-server`.
+
+### MCP Client Configuration
+
+For examples of configuring MCP clients to run the server using Docker, see the client-specific sections below. Configurations typically involve using `docker run` as the command, with appropriate flags and volume mounts for credentials if needed (e.g., mounting `~/.oci` for OCI servers).
+
 ## Authentication
 
 For OCI MCP servers, you'll need to install and authenticate using the OCI CLI.
@@ -118,6 +136,30 @@ For macOS/Linux:
 }
 ```
 
+Alternatively, to run using Docker (example for oracle-oci-api-mcp-server):
+
+```json
+{
+  "mcpServers": {
+    "oracle-oci-api-mcp-server": {
+      "autoApprove": [],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-v", "/path/to/your/.oci:/app/.oci", "oracle.oci-api-mcp-server"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+Replace `"/path/to/your/.oci"` with the actual path to your OCI configuration directory.
+
+For servers not requiring OCI credentials, omit the `-v` volume mount.
+
 For Windows - **TODO**
 
 7. Once installed, you should see a list of your **MCP Servers** under the **Installed** tab. They will have a green toggle that shows that they are enabled.
@@ -158,6 +200,27 @@ For macOS/Linux:
   }
 }
 ```
+
+Alternatively, to run using Docker (example for oracle-oci-api-mcp-server):
+
+```json
+{
+  "mcpServers": {
+    "oracle-oci-api-mcp-server": {
+      "type": "stdio",
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-v", "/path/to/your/.oci:/app/.oci", "oracle.oci-api-mcp-server"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+Replace `"/path/to/your/.oci"` with the actual path to your OCI configuration directory.
+
+For servers not requiring OCI credentials, omit the `-v` volume mount.
 
 `<profile_name>` is the profile that you set up during the [authentication](#authentication) steps.
 
@@ -209,6 +272,27 @@ For macOS/Linux:
   }
 }
 ```
+
+Alternatively, to run using Docker (example for oracle-oci-api-mcp-server):
+
+```json
+{
+  "mcpServers": {
+    "oracle-oci-api-mcp-server": {
+      "type": "stdio",
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "-v", "/path/to/your/.oci:/app/.oci", "oracle.oci-api-mcp-server"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+Replace `"/path/to/your/.oci"` with the actual path to your OCI configuration directory.
+
+For servers not requiring OCI credentials, omit the `-v` volume mount.
 
 `<profile_name>` is the profile that you set up during the [authentication](#authentication) steps.
 

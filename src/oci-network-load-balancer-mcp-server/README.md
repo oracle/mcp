@@ -11,18 +11,33 @@ It includes tools to help with managing network load balancers.
 uv run oracle.oci-network-load-balancer-mcp-server
 ```
 
+## Running with Docker
+
+### Building the Docker Image
+
+To build the Docker image run:
+
+```sh
+docker build -t oracle.oci-network-load-balancer-mcp-server .
+```
+
+This command builds the Docker image tagged as `oracle.oci-network-load-balancer-mcp-server`.
+
+### MCP Client Configuration
+
+For examples of configuring MCP clients to run the server using Docker, see the [client-specific sections](../../README.md#cline) in the project README. Configurations typically involve using `docker run` as the command, with appropriate flags and volume mounts for credentials if needed (e.g., mounting `~/.oci` for OCI servers).
 ## Tools
 
-| Tool Name | Description |
-| --- | --- |
-| list_network_load_balancers | List network load balancers in a given compartment |
-| get_network_load_balancer | Get network load balancer details |
-| list_network_load_balancer_listeners | List listeners in a given network load balancer |
-| get_network_load_balancer_listener | Get a listener with a given listener name from a network load balancer |
-| list_network_load_balancer_backend_sets | List backend sets in a given network load balancer |
-| get_network_load_balancer_backend_set | Get a backend set with a given backend set name from a network load balancer |
-| list_network_load_balancer_backends | List backends in a given backend set and network load balancer |
-| get_network_load_balancer_backend | Get a backend with a given backend name from a backend set and network load balancer |
+| Tool Name                               | Description                                                                          |
+|-----------------------------------------|--------------------------------------------------------------------------------------|
+| list_network_load_balancers             | List network load balancers in a given compartment                                   |
+| get_network_load_balancer               | Get network load balancer details                                                    |
+| list_network_load_balancer_listeners    | List listeners in a given network load balancer                                      |
+| get_network_load_balancer_listener      | Get a listener with a given listener name from a network load balancer               |
+| list_network_load_balancer_backend_sets | List backend sets in a given network load balancer                                   |
+| get_network_load_balancer_backend_set   | Get a backend set with a given backend set name from a network load balancer         |
+| list_network_load_balancer_backends     | List backends in a given backend set and network load balancer                       |
+| get_network_load_balancer_backend       | Get a backend with a given backend name from a backend set and network load balancer |
 
 ⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 

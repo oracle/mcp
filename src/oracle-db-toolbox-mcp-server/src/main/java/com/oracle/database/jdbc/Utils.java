@@ -155,12 +155,6 @@ public class Utils {
     } else {
       String defaultSourceKey = yamlConfig.sources!=null?yamlConfig.sources.keySet().stream().findFirst().orElse(null):null;
       config = ServerConfig.fromSystemPropertiesAndYaml(yamlConfig, defaultSourceKey);
-      if (config.tools != null) {
-        for (Map.Entry<String, ToolConfig> entry : config.tools.entrySet()) {
-          entry.getValue().name = entry.getKey();
-        }
-      }
-      yamlConfig.substituteEnvVars();
     }
     return config;
   }

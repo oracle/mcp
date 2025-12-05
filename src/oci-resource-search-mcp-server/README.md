@@ -10,10 +10,25 @@ This server provides tools for interacting with Oracle Cloud Infrastructure (OCI
 uv run oracle.oci-resource-search-mcp-server
 ```
 
+## Running with Docker
+
+### Building the Docker Image
+
+To build the Docker image run:
+
+```sh
+docker build -t oracle.oci-resource-search-mcp-server .
+```
+
+This command builds the Docker image tagged as `oracle.oci-resource-search-mcp-server`.
+
+### MCP Client Configuration
+
+For examples of configuring MCP clients to run the server using Docker, see the [client-specific sections](../../README.md#cline) in the project README. Configurations typically involve using `docker run` as the command, with appropriate flags and volume mounts for credentials if needed (e.g., mounting `~/.oci` for OCI servers).
 ## Tools
 
-| Tool Name | Description |
-| --- | --- |
+| Tool Name        | Description                         |
+|------------------|-------------------------------------|
 | search_resources | Search for resources in the tenancy |
 
 

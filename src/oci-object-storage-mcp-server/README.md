@@ -11,17 +11,32 @@ It includes tools to help with managing object storage configurations.
 uv run oracle.oci-object-storage-mcp-server
 ```
 
+## Running with Docker
+
+### Building the Docker Image
+
+To build the Docker image run:
+
+```sh
+docker build -t oracle.oci-object-storage-mcp-server .
+```
+
+This command builds the Docker image tagged as `oracle.oci-object-storage-mcp-server`.
+
+### MCP Client Configuration
+
+For examples of configuring MCP clients to run the server using Docker, see the [client-specific sections](../../README.md#cline) in the project README. Configurations typically involve using `docker run` as the command, with appropriate flags and volume mounts for credentials if needed (e.g., mounting `~/.oci` for OCI servers).
 ## Tools
 
-| Tool Name | Description |
-| --- | --- |
-| get_namespace | Get the object storage namespace for the tenancy |
-| list_buckets | List object storage buckets in a given compartment |
-| get_bucket_details | Get details for a specific object storage bucket |
-| list_objects | List objects in a given object storage bucket |
+| Tool Name            | Description                                           |
+|----------------------|-------------------------------------------------------|
+| get_namespace        | Get the object storage namespace for the tenancy      |
+| list_buckets         | List object storage buckets in a given compartment    |
+| get_bucket_details   | Get details for a specific object storage bucket      |
+| list_objects         | List objects in a given object storage bucket         |
 | list_object_versions | List object versions in a given object storage bucket |
-| get_object | Get a specific object from an object storage bucket |
-| upload_object | Upload an object to an object storage bucket |
+| get_object           | Get a specific object from an object storage bucket   |
+| upload_object        | Upload an object to an object storage bucket          |
 
 ⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 
@@ -39,4 +54,3 @@ Copyright (c) 2025 Oracle and/or its affiliates.
  
 Released under the Universal Permissive License v1.0 as shown at  
 <https://oss.oracle.com/licenses/upl/>.
-

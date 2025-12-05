@@ -1,4 +1,4 @@
-SUBDIRS := $(filter-out src/dbtools-mcp-server src/mysql-mcp-server src/oci-pricing-mcp-server src/oracle-db-doc-mcp-server,$(wildcard src/*))
+SUBDIRS ?= $(filter-out src/dbtools-mcp-server src/mysql-mcp-server src/oci-pricing-mcp-server src/oracle-db-doc-mcp-server,$(wildcard src/*))
 
 .PHONY: test format
 
@@ -67,3 +67,16 @@ format:
 
 e2e-tests: build install
 	behave tests/e2e/features && cd ..
+
+# Create docker images for the specified MCP servers
+dockerize:
+	@for dir in $(SUBDIRS); do \
+		if [[ -f $$dir/Dockerfile && (-f $$dir/pyproject.toml) ]]; then \
+			name=$$(uv run tomlq -r '.project.name' $$dir/pyproject.toml); \
+			version=$$(uv run tomlq -r '.project.version' $$dir/pyproject.toml); \
+			echo "Building Docker image for $$dir"; \
+			cd $$dir && docker build -t $$name:$$version .;\
+			echo "Docker image $$name:$$version built successfully";\
+			cd -;\
+		fi \
+	done

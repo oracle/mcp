@@ -79,7 +79,14 @@ def list_migrations(compartment_id: str, lifecycle_state: str = None) -> list[di
 
 
 def main():
-    mcp.run()
+
+    host = os.getenv("MCP_HOST")
+    port = os.getenv("MCP_PORT")
+
+    if host and port:
+        mcp.run(transport="http", host=host, port=int(port))
+    else:
+        mcp.run()
 
 
 if __name__ == "__main__":

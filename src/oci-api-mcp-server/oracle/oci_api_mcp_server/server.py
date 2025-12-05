@@ -207,7 +207,14 @@ def run_oci_command(
 
 
 def main():
-    mcp.run()
+
+    host = os.getenv("MCP_HOST")
+    port = os.getenv("MCP_PORT")
+
+    if host and port:
+        mcp.run(transport="http", host=host, port=int(port))
+    else:
+        mcp.run()
 
 
 if __name__ == "__main__":

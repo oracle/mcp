@@ -6,8 +6,16 @@ This server provides tools for interacting with Oracle Cloud Infrastructure (OCI
 
 ## Running the server
 
+### STDIO transport mode
+
 ```sh
-uv run oracle.oci-migration-mcp-server
+uvx oracle.oci-migration-mcp-server
+```
+
+### HTTP streaming transport mode
+
+```sh
+MCP_HOST=<hostname/IP address> MCP_PORT=<port number> uvx oracle.oci-migration-mcp-server
 ```
 
 ## Tools

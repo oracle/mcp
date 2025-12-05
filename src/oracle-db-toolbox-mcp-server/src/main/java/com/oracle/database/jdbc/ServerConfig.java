@@ -86,6 +86,12 @@ final class ServerConfig {
     Map<String, SourceConfig> sources = configRoot != null ? configRoot.sources : Collections.emptyMap();
     Map<String, ToolConfig> toolsMap = configRoot != null ? configRoot.tools : Collections.emptyMap();
 
+    if (toolsMap != null) {
+      for (Map.Entry<String, ToolConfig> entry : toolsMap.entrySet()) {
+        entry.getValue().name = entry.getKey();
+      }
+    }
+    configRoot.substituteEnvVars();
     boolean allLoadedConstantsPresent =
         dbUrl != null && !dbUrl.isBlank()
         && dbUser != null && !dbUser.isBlank()

@@ -180,11 +180,18 @@ you can use the `mcp-remote` workaround:
 
 ### HTTP Authentication Configuration
 
-If you want to configure authentication for the HTTP server, you must provide the following system properties:
+#### Generated Token (For Development and Testing)
 
-- `-DenableAuthentication`: (default: `false`) If it's enabled (e.g. set to `true`) without properly configuring the OAuth2,
-the MCP Server will generate a token (for development and testing purposes) once per JVM session and logs it at the <code>INFO</code> level,
-which needs to be provided in the Authorization header of each request using `Bearer `.
+To enable authentication for the HTTP server, you must set the `-DenableAuthentication` system property to `true` (default value is `false`).
+If it's enabled (e.g. set to `true`) the MCP Server will check if there's an environment variable called `ORACLE_DB_TOOLBOX_AUTH_TOKEN` and its value will be used as a token.
+If the environment variable is not found, then a random UUID token will be generated once per JVM session. The token would be logged at the `INFO` level.
+
+When connecting to the MCP server, the token needs to be provided in the Authorization header of each request using the `Bearer ` prefix.
+
+#### OAuth2 Configuration
+
+In order to configure an OAuth2 server, the `-DenableAuthentication` should be enabled alongside the following system properties:
+
 - `-DauthServer`: The OAuth2 server URL which MUST provide the `/.well-known/oauth-authorization-server`. But if the authorization server only provides the `/.well-known/openid-configuration` you can enable `-DredirectOAuthToOpenID`.
 - `-DredirectOAuthToOpenID`: (default: `false`) This system property is used to as a workaround to support OAuth servers that provide `/.well-known/openid-configuration` and not `/.well-known/oauth-authorization-server`.
 It works by creating an `/.well-known/oauth-authorization-server` endpoint on the MCP Server that redirects to the OAuth server's `/.well-known/openid-configuration` endpoint.
@@ -192,6 +199,8 @@ It works by creating an `/.well-known/oauth-authorization-server` endpoint on th
 - `-DclientId`: Client ID (e.g. `oracle-db-toolbox`)
 - `-DclientSecret`: Client Secret (e.g. `Xj9mPqR2vL5kN8tY3hB7wF4uD6cA1eZ0`)
 - `-DallowedHosts`: (default: `*`) The value of `Access-Control-Allow-Origin` header when requesting the `/.well-known/oauth-protected-resource` endpoint (and `/.well-known/oauth-authorization-server` if `-DredirectOAuthToOpenID` is set to `true`) of the MCP Server.
+
+For more details regarding this MCP and OAuth, please see [MCP specification for authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization) (or a newer version if available).
 
 #### Examples
 
@@ -217,7 +226,7 @@ running at <http://localhost:6274> to retrieve the data from <http://localhost:4
 
 ##### Enabling Authentication without OAuth2
 
-_Note: This mode is used only for local development and testing purposes._
+_Note: This mode is used only for development and testing purposes._
 
 ```bash
 java \
@@ -240,10 +249,24 @@ Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.OracleDBToolboxMCPServer startH
 INFO: [oracle-db-toolbox-mcp-server] HTTP transport started on http://localhost:45450 (endpoint: http://localhost:45450/mcp)
 ```
 
-And the token must be included in the http request header (e.g. `Authorization: Bearer 0dd11948-37a3-470f-911e-4cd8b3d6f69c`).
+If `ORACLE_DB_TOOLBOX_AUTH_TOKEN` environment variable is set:
 
-For more details regarding this MCP and OAuth, please see [MCP specification for authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization) (or a newer version if available).
+```bash
+export ORACLE_DB_TOOLBOX_AUTH_TOKEN=Secret_DeV_T0ken
+```
 
+Then the server logs will be the following:
+
+```log
+Nov 25, 2025 4:10:26 PM com.oracle.database.jdbc.oauth.OAuth2Configuration <init>
+INFO: Authentication is enabled
+Nov 25, 2025 4:10:26 PM com.oracle.database.jdbc.oauth.OAuth2Configuration <init>
+WARNING: OAuth2 is not configured
+Nov 25, 2025 4:10:26 PM com.oracle.database.jdbc.oauth.TokenGenerator <init>
+INFO: Authorization token generated (for testing and development use only): Secret_DeV_T0ken
+```
+
+Ultimately, the token must be included in the http request header (e.g. `Authorization: Bearer 0dd11948-37a3-470f-911e-4cd8b3d6f69c` or `Authorization: Bearer Secret_DeV_T0ken`).
 
 ## YAML Configuration Support
 

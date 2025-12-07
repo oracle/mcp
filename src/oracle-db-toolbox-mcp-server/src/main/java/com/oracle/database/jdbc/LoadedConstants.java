@@ -6,7 +6,7 @@ public final class LoadedConstants {
   /** Network config */
   public static final String TRANSPORT_KIND = System.getProperty("transport", "stdio")
       .trim()
-      .toLowerCase();;
+      .toLowerCase();
   public static final int HTTP_PORT = Integer.parseInt(System.getProperty("http.port", "45450"));
   public static final int HTTPS_PORT = Integer.parseInt(System.getProperty("https.port", "45451"));
   public static final String KEYSTORE_PATH = System.getProperty("certificatePath");
@@ -22,6 +22,7 @@ public final class LoadedConstants {
   public static final String ALLOWED_HOSTS= System.getProperty("allowedHosts","*");
   public static final String REDIRECT_OPENID_TO_OAUTH= System.getProperty("redirectOpenIDToOAuth","false");
   public static final boolean ENABLE_AUTH = Boolean.parseBoolean(System.getProperty("enableAuthentication","false"));
+  public static final String ORACLE_DB_TOOLBOX_AUTH_TOKEN = System.getenv("ORACLE_DB_TOOLBOX_AUTH_TOKEN");
   public static final String AUTH_SERVER = System.getProperty("authServer");
   public static final String INTROSPECTION_ENDPOINT = System.getProperty("introspectionEndpoint");
   public static final String CLIENT_ID = System.getProperty("clientId");

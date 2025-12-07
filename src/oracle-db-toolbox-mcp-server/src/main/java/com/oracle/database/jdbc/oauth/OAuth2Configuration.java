@@ -2,6 +2,8 @@ package com.oracle.database.jdbc.oauth;
 
 import com.oracle.database.jdbc.LoadedConstants;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.logging.Logger;
 
 /**
@@ -52,25 +54,33 @@ public class OAuth2Configuration {
       else {
         LOG.warning("OAuth2 is not configured");
         if (authServer != null || introspectionEndpoint != null || clientId != null || clientSecret != null) {
-          final var stringBuilder = new StringBuilder();
-          if (authServer == null)
-            stringBuilder.append("Authentication server URL (-DauthServer) is missing");
+          final var warningMessage = getMissingConfigurationWarningMessage();
 
-          if (introspectionEndpoint == null)
-            stringBuilder.append("Introspection endpoint (-DintrospectionEndpoint) is missing");
-
-          if (clientId == null)
-            stringBuilder.append("Client ID (-DclientId) is missing");
-
-          if (clientSecret == null)
-            stringBuilder.append("Client secret (-DclientSecret) is missing");
-
-          LOG.warning(stringBuilder.toString());
+          LOG.warning(warningMessage);
         }
-        // Generate a local UUID string token
+        // Generate a local UUID string token or load it from ORACLE_DB_TOOLBOX_AUTH_TOKEN env var.
         TokenGenerator.getInstance();
       }
     }
+  }
+
+  private String getMissingConfigurationWarningMessage() {
+    final List<String> warningMessages = new ArrayList<>();
+    final var mainMessage = "The following OAuth system properties are not configured correctly: ";
+
+    if (authServer == null)
+      warningMessages.add("Authentication server URL (-DauthServer)");
+
+    if (introspectionEndpoint == null)
+      warningMessages.add("Introspection endpoint (-DintrospectionEndpoint)");
+
+    if (clientId == null)
+      warningMessages.add("Client ID (-DclientId)");
+
+    if (clientSecret == null)
+      warningMessages.add("Client secret (-DclientSecret)");
+
+    return mainMessage + String.join(", ", warningMessages);
   }
 
   /**

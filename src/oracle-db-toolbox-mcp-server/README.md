@@ -244,7 +244,7 @@ INFO: Authentication is enabled
 Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.oauth.OAuth2Configuration <init>
 WARNING: OAuth2 is not configured
 Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.oauth.TokenGenerator <init>
-INFO: Authorization token generated: 0dd11948-37a3-470f-911e-4cd8b3d6f69c
+INFO: Authorization token generated (for testing and development use only): 0dd11948-37a3-470f-911e-4cd8b3d6f69c
 Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.OracleDBToolboxMCPServer startHttpServer
 INFO: [oracle-db-toolbox-mcp-server] HTTP transport started on http://localhost:45450 (endpoint: http://localhost:45450/mcp)
 ```

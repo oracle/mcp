@@ -7,8 +7,8 @@ public final class LoadedConstants {
   public static final String TRANSPORT_KIND = System.getProperty("transport", "stdio")
       .trim()
       .toLowerCase();
-  public static final int HTTP_PORT = Integer.parseInt(System.getProperty("http.port", "45450"));
-  public static final int HTTPS_PORT = Integer.parseInt(System.getProperty("https.port", "45451"));
+  public static final String HTTP_PORT = System.getProperty("http.port");
+  public static final String HTTPS_PORT = System.getProperty("https.port");
   public static final String KEYSTORE_PATH = System.getProperty("certificatePath");
   public static final String KEYSTORE_PASSWORD = System.getProperty("certificatePassword");
 

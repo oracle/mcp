@@ -20,8 +20,6 @@ import org.apache.catalina.connector.Connector;
 import org.apache.tomcat.util.net.SSLHostConfig;
 import org.apache.tomcat.util.net.SSLHostConfigCertificate;
 
-import javax.sql.DataSource;
-
 import java.io.File;
 import java.util.logging.Logger;
 
@@ -88,8 +86,14 @@ public class OracleDBToolboxMCPServer {
         .build();
 
       Tomcat tomcat = new Tomcat();
-      tomcat.setPort(LoadedConstants.HTTP_PORT);
-      tomcat.getConnector();
+      if(LoadedConstants.HTTP_PORT!=null){
+        tomcat.setPort(Integer.parseInt(LoadedConstants.HTTP_PORT));
+        tomcat.getConnector();
+      } else {
+        tomcat.setPort(-1);
+        LOG.warning("Http setup is skipped: http port is not specified");
+      }
+
 
       String ctxPath = "";
       String docBase = new File(".").getAbsolutePath();
@@ -118,10 +122,10 @@ public class OracleDBToolboxMCPServer {
       filterMap.addURLPattern("/mcp/*");
       ctx.addFilterMap(filterMap);
 
-      if(LoadedConstants.KEYSTORE_PATH!=null && LoadedConstants.KEYSTORE_PASSWORD != null) {
+      if(LoadedConstants.HTTPS_PORT!=null && LoadedConstants.KEYSTORE_PATH!=null && LoadedConstants.KEYSTORE_PASSWORD != null) {
         enableHttps(tomcat, LoadedConstants.KEYSTORE_PATH, LoadedConstants.KEYSTORE_PASSWORD);
       }
-      else LOG.warning("SSL setup is skipped: Keystore path or password not specified");
+      else LOG.warning("SSL setup is skipped: Https port or Keystore path or password not specified");
 
       tomcat.start();
 
@@ -137,7 +141,7 @@ public class OracleDBToolboxMCPServer {
     try {
       // Create HTTPS connector
       Connector https = new Connector("org.apache.coyote.http11.Http11NioProtocol");
-      https.setPort(LoadedConstants.HTTPS_PORT);
+      https.setPort(Integer.parseInt(LoadedConstants.HTTPS_PORT));
       https.setSecure(true);
       https.setScheme("https");
       https.setProperty("SSLEnabled", "true");

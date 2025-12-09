@@ -208,8 +208,8 @@ def run_oci_command(
 
 def main():
 
-    host = os.getenv("MCP_HOST")
-    port = os.getenv("MCP_PORT")
+    host = os.getenv("ORACLE_MCP_HOST")
+    port = os.getenv("ORACLE_MCP_PORT")
 
     if host and port:
         mcp.run(transport="http", host=host, port=int(port))

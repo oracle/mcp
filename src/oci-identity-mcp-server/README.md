@@ -15,7 +15,7 @@ uvx oracle.oci-identity-mcp-server
 ### HTTP streaming transport mode
 
 ```sh
-MCP_HOST=<hostname/IP address> MCP_PORT=<port number> uvx oracle.oci-identity-mcp-server
+ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.oci-identity-mcp-server
 ```
 
 ## Tools

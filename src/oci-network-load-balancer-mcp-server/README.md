@@ -16,7 +16,7 @@ uvx oracle.oci-network-load-balancer-mcp-server
 ### HTTP streaming transport mode
 
 ```sh
-MCP_HOST=<hostname/IP address> MCP_PORT=<port number> uvx oracle.oci-network-load-balancer-mcp-server
+ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.oci-network-load-balancer-mcp-server
 ```
 
 ## Tools

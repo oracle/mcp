@@ -58,7 +58,7 @@ For macOS/Linux:
 To connect to an MCP server running in HTTP streaming mode:
 Assuming you started the server by running:
 ```bash
-MCP_HOST=127.0.0.1 MCP_PORT=8888 uvx oracle.oci-api-mcp-server
+ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8888 uvx oracle.oci-api-mcp-server
 ```
 then place the following in your MCP client configuration:
 :warning: NOTE: the `type` attribute differs across MCP clients; some use `http` as the
@@ -337,7 +337,7 @@ make install
 
 then start the server:
 ```bash
-VIRTUAL_ENV=$(pwd)/.venv MCP_HOST=127.0.0.1 MCP_PORT=8888 uv run oracle.oci-api-mcp-server
+VIRTUAL_ENV=$(pwd)/.venv ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8888 uv run oracle.oci-api-mcp-server
 ```
 
 ### Inspector

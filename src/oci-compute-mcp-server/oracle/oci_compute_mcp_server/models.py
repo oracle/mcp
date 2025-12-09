@@ -350,7 +350,6 @@ def map_availability_config(ac) -> InstanceAvailabilityConfig | None:
     return InstanceAvailabilityConfig(
         is_live_migration_preferred=getattr(ac, "is_live_migration_preferred", None),
         recovery_action=getattr(ac, "recovery_action", None),
-        is_pmu_enabled=getattr(ac, "is_pmu_enabled", None),
     )
 
 
@@ -371,7 +370,6 @@ def map_shape_config(sc) -> InstanceShapeConfig | None:
         memory_in_gbs=getattr(sc, "memory_in_gbs", None),
         vcpus=getattr(sc, "vcpus", None),
         baseline_ocpu_utilization=getattr(sc, "baseline_ocpu_utilization", None),
-        nvmes=getattr(sc, "nvmes", None),
         local_disks=getattr(sc, "local_disks", None),
         local_disks_total_size_in_gbs=getattr(
             sc, "local_disks_total_size_in_gbs", None
@@ -428,10 +426,6 @@ def map_licensing_configs(items) -> list[LicensingConfig] | None:
             LicensingConfig(
                 license_type=getattr(it, "license_type", None)
                 or data.get("license_type"),
-                is_vendor_oracle=getattr(it, "is_vendor_oracle", None)
-                or data.get("is_vendor_oracle"),
-                is_bring_your_own_license=getattr(it, "is_bring_your_own_license", None)
-                or data.get("is_bring_your_own_license"),
             )
         )
     return result

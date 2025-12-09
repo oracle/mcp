@@ -6,6 +6,7 @@ https://oss.oracle.com/licenses/upl.
 
 from unittest.mock import MagicMock, create_autospec, patch
 
+import fastmcp.exceptions
 import oci
 import pytest
 from fastmcp import Client
@@ -34,12 +35,40 @@ class TestComputeTools:
 
         async with Client(mcp) as client:
             call_tool_result = await client.call_tool(
-                "list_instances", {"compartment_id": "test_compartment"}
+                "list_instances",
+                {"compartment_id": "test_compartment", "lifecycle_state": "RUNNING"},
             )
             result = call_tool_result.structured_content["result"]
 
             assert len(result) == 1
             assert result[0]["id"] == "instance1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_list_instances_exception(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        # Mock the client to raise an exception
+        mock_client.list_instances.side_effect = oci.exceptions.ServiceError(
+            status=500,
+            code="InternalServerError",
+            message="Internal server error",
+            opc_request_id="test_request_id",
+            headers={},
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(fastmcp.exceptions.ToolError) as e:
+                await client.call_tool(
+                    "list_instances", {"compartment_id": "test_compartment"}
+                )
+
+            # Verify the ToolError message contains the expected details
+            assert "Error calling tool 'list_instances'" in str(e.value)
+            assert "'status': 500" in str(e.value)
+            assert "'code': 'InternalServerError'" in str(e.value)
+            assert "'message': 'Internal server error'" in str(e.value)
 
     @pytest.mark.asyncio
     @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
@@ -60,6 +89,31 @@ class TestComputeTools:
             result = call_tool_result.structured_content
 
             assert result["id"] == "instance1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_get_instance_exception(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        # Mock the client to raise an exception
+        mock_client.get_instance.side_effect = oci.exceptions.ServiceError(
+            status=500,
+            code="InternalServerError",
+            message="Internal server error",
+            opc_request_id="test_request_id",
+            headers={},
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(fastmcp.exceptions.ToolError) as e:
+                await client.call_tool("get_instance", {"instance_id": "instance1"})
+
+            # Verify the ToolError message contains the expected details
+            assert "Error calling tool 'get_instance'" in str(e.value)
+            assert "'status': 500" in str(e.value)
+            assert "'code': 'InternalServerError'" in str(e.value)
+            assert "'message': 'Internal server error'" in str(e.value)
 
     @pytest.mark.asyncio
     @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
@@ -92,6 +146,40 @@ class TestComputeTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_launch_instance_exception(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        # Mock the client to raise an exception
+        mock_client.launch_instance.side_effect = oci.exceptions.ServiceError(
+            status=500,
+            code="InternalServerError",
+            message="Internal server error",
+            opc_request_id="test_request_id",
+            headers={},
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(fastmcp.exceptions.ToolError) as e:
+                await client.call_tool(
+                    "launch_instance",
+                    {
+                        "compartment_id": "test_compartment",
+                        "display_name": "test_instance",
+                        "availability_domain": "AD1",
+                        "image_id": "image1",
+                        "subnet_id": "subnet1",
+                    },
+                )
+
+            # Verify the ToolError message contains the expected details
+            assert "Error calling tool 'launch_instance'" in str(e.value)
+            assert "'status': 500" in str(e.value)
+            assert "'code': 'InternalServerError'" in str(e.value)
+            assert "'message': 'Internal server error'" in str(e.value)
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
     async def test_terminate_instance(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -110,6 +198,36 @@ class TestComputeTools:
             result = call_tool_result.structured_content
 
             assert result["status"] == 204
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_terminate_instance_exception(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        # Mock the client to raise an exception
+        mock_client.terminate_instance.side_effect = oci.exceptions.ServiceError(
+            status=500,
+            code="InternalServerError",
+            message="Internal server error",
+            opc_request_id="test_request_id",
+            headers={},
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(fastmcp.exceptions.ToolError) as e:
+                await client.call_tool(
+                    "terminate_instance",
+                    {
+                        "instance_id": "instance1",
+                    },
+                )
+
+            # Verify the ToolError message contains the expected details
+            assert "Error calling tool 'terminate_instance'" in str(e.value)
+            assert "'status': 500" in str(e.value)
+            assert "'code': 'InternalServerError'" in str(e.value)
+            assert "'message': 'Internal server error'" in str(e.value)
 
     @pytest.mark.asyncio
     @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
@@ -145,6 +263,38 @@ class TestComputeTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_update_instance_exception(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        # Mock the client to raise an exception
+        mock_client.update_instance.side_effect = oci.exceptions.ServiceError(
+            status=500,
+            code="InternalServerError",
+            message="Internal server error",
+            opc_request_id="test_request_id",
+            headers={},
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(fastmcp.exceptions.ToolError) as e:
+                await client.call_tool(
+                    "update_instance",
+                    {
+                        "instance_id": "instance1",
+                        "ocpus": 2,
+                        "memory_in_gbs": 16,
+                    },
+                )
+
+            # Verify the ToolError message contains the expected details
+            assert "Error calling tool 'update_instance'" in str(e.value)
+            assert "'status': 500" in str(e.value)
+            assert "'code': 'InternalServerError'" in str(e.value)
+            assert "'message': 'Internal server error'" in str(e.value)
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
     async def test_list_images(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -167,12 +317,43 @@ class TestComputeTools:
                 "list_images",
                 {
                     "compartment_id": "test_compartment",
+                    "operating_system": "Oracle Linux",
                 },
             )
             result = call_tool_result.structured_content["result"]
 
             assert len(result) == 1
             assert result[0]["id"] == "image1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_list_images_exception(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        # Mock the client to raise an exception
+        mock_client.list_images.side_effect = oci.exceptions.ServiceError(
+            status=500,
+            code="InternalServerError",
+            message="Internal server error",
+            opc_request_id="test_request_id",
+            headers={},
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(fastmcp.exceptions.ToolError) as e:
+                await client.call_tool(
+                    "list_images",
+                    {
+                        "compartment_id": "test_compartment",
+                    },
+                )
+
+            # Verify the ToolError message contains the expected details
+            assert "Error calling tool 'list_images'" in str(e.value)
+            assert "'status': 500" in str(e.value)
+            assert "'code': 'InternalServerError'" in str(e.value)
+            assert "'message': 'Internal server error'" in str(e.value)
 
     @pytest.mark.asyncio
     @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
@@ -192,13 +373,41 @@ class TestComputeTools:
         async with Client(mcp) as client:
             call_tool_result = await client.call_tool(
                 "get_image",
-                {
-                    "image_id": "image1",
-                },
+                {"image_id": "image1"},
             )
             result = call_tool_result.structured_content
 
             assert result["id"] == "image1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_get_image_exception(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        # Mock the client to raise an exception
+        mock_client.get_image.side_effect = oci.exceptions.ServiceError(
+            status=500,
+            code="InternalServerError",
+            message="Internal server error",
+            opc_request_id="test_request_id",
+            headers={},
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(fastmcp.exceptions.ToolError) as e:
+                await client.call_tool(
+                    "get_image",
+                    {
+                        "image_id": "image1",
+                    },
+                )
+
+            # Verify the ToolError message contains the expected details
+            assert "Error calling tool 'get_image'" in str(e.value)
+            assert "'status': 500" in str(e.value)
+            assert "'code': 'InternalServerError'" in str(e.value)
+            assert "'message': 'Internal server error'" in str(e.value)
 
     @pytest.mark.asyncio
     @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
@@ -230,6 +439,37 @@ class TestComputeTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_instance_action_exception(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        # Mock the client to raise an exception
+        mock_client.instance_action.side_effect = oci.exceptions.ServiceError(
+            status=500,
+            code="InternalServerError",
+            message="Internal server error",
+            opc_request_id="test_request_id",
+            headers={},
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(fastmcp.exceptions.ToolError) as e:
+                await client.call_tool(
+                    "instance_action",
+                    {
+                        "instance_id": "instance1",
+                        "action": "STOP",
+                    },
+                )
+
+            # Verify the ToolError message contains the expected details
+            assert "Error calling tool 'instance_action'" in str(e.value)
+            assert "'status': 500" in str(e.value)
+            assert "'code': 'InternalServerError'" in str(e.value)
+            assert "'message': 'Internal server error'" in str(e.value)
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
     async def test_list_vnic_attachments(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -249,14 +489,42 @@ class TestComputeTools:
         async with Client(mcp) as client:
             call_tool_result = await client.call_tool(
                 "list_vnic_attachments",
-                {
-                    "compartment_id": "test_compartment",
-                },
+                {"compartment_id": "test_compartment", "instance_id": "instance1"},
             )
             result = call_tool_result.structured_content["result"]
 
             assert len(result) == 1
             assert result[0]["id"] == "vnicattachment1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_list_vnic_attachments_exception(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        # Mock the client to raise an exception
+        mock_client.list_vnic_attachments.side_effect = oci.exceptions.ServiceError(
+            status=500,
+            code="InternalServerError",
+            message="Internal server error",
+            opc_request_id="test_request_id",
+            headers={},
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(fastmcp.exceptions.ToolError) as e:
+                await client.call_tool(
+                    "list_vnic_attachments",
+                    {
+                        "compartment_id": "test_compartment",
+                    },
+                )
+
+            # Verify the ToolError message contains the expected details
+            assert "Error calling tool 'list_vnic_attachments'" in str(e.value)
+            assert "'status': 500" in str(e.value)
+            assert "'code': 'InternalServerError'" in str(e.value)
+            assert "'message': 'Internal server error'" in str(e.value)
 
     @pytest.mark.asyncio
     @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
@@ -279,6 +547,33 @@ class TestComputeTools:
             result = call_tool_result.structured_content
 
             assert result["id"] == "vnicattachment1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_get_vnic_attachment_exception(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        # Mock the client to raise an exception
+        mock_client.get_vnic_attachment.side_effect = oci.exceptions.ServiceError(
+            status=500,
+            code="InternalServerError",
+            message="Internal server error",
+            opc_request_id="test_request_id",
+            headers={},
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(fastmcp.exceptions.ToolError) as e:
+                await client.call_tool(
+                    "get_vnic_attachment", {"vnic_attachment_id": "vnicattachment1"}
+                )
+
+            # Verify the ToolError message contains the expected details
+            assert "Error calling tool 'get_vnic_attachment'" in str(e.value)
+            assert "'status': 500" in str(e.value)
+            assert "'code': 'InternalServerError'" in str(e.value)
+            assert "'message': 'Internal server error'" in str(e.value)
 
 
 class TestServer:

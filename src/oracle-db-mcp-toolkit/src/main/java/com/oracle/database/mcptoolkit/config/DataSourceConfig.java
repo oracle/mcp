@@ -14,7 +14,7 @@ import com.oracle.database.mcptoolkit.EnvSubstitutor;
  * <p>
  * This class encapsulates the necessary properties to establish a connection to the database.
  */
-public class SourceConfig {
+public class DataSourceConfig {
   /**
    * The hostname or IP address of the database server.
    */

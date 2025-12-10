@@ -1,4 +1,4 @@
-package com.oracle.database.jdbc;
+package com.oracle.database.jdbc.tools;
 
 public class ToolSchemas {
 

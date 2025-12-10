@@ -5,8 +5,9 @@
  ** Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl/
  */
 
-package com.oracle.database.jdbc;
+package com.oracle.database.jdbc.tools;
 
+import com.oracle.database.jdbc.Utils;
 import com.oracle.database.jdbc.logs.model.JDBCConnectionEvent;
 import com.oracle.database.jdbc.logs.model.JDBCExecutedQuery;
 import com.oracle.database.jdbc.logs.model.LogError;
@@ -309,7 +310,7 @@ public final class OracleJDBCLogAnalyzer {
    * @param <T> the type of results supplied by this supplier
    */
   @FunctionalInterface
-  interface ThrowingSupplier<T> {
+  public interface ThrowingSupplier<T> {
     /**
      * Gets a result, potentially throwing an {@link IOException}.
      *

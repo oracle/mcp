@@ -28,7 +28,7 @@ import java.util.Set;
  *
  * <p>Use {@link #fromSystemProperties()} to create an instance with validation and defaults.</p>
  */
-final class ServerConfig {
+public final class ServerConfig {
   public final String dbUrl;
   public final String dbUser;
   public final String dbPassword;

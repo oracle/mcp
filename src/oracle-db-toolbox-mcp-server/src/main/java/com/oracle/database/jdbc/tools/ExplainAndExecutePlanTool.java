@@ -1,5 +1,6 @@
-package com.oracle.database.jdbc;
+package com.oracle.database.jdbc.tools;
 
+import com.oracle.database.jdbc.ServerConfig;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.spec.McpSchema;
 
@@ -20,7 +21,7 @@ import static com.oracle.database.jdbc.Utils.openConnection;
 import static com.oracle.database.jdbc.Utils.tryCall;
 
 public class ExplainAndExecutePlanTool {
-  static McpServerFeatures.SyncToolSpecification getExplainAndExecutePlanTool(ServerConfig config) {
+  public static McpServerFeatures.SyncToolSpecification getExplainAndExecutePlanTool(ServerConfig config) {
     return
         McpServerFeatures.SyncToolSpecification.builder()
             .tool(McpSchema.Tool.builder()

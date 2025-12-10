@@ -5,6 +5,9 @@ import com.oracle.database.jdbc.config.ConfigRoot;
 import com.oracle.database.jdbc.config.SourceConfig;
 import com.oracle.database.jdbc.config.ToolConfig;
 import com.oracle.database.jdbc.config.ToolParameterConfig;
+import com.oracle.database.jdbc.tools.ExplainAndExecutePlanTool;
+import com.oracle.database.jdbc.tools.OracleJDBCLogAnalyzer;
+import com.oracle.database.jdbc.tools.SimilaritySearchTool;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -123,7 +126,7 @@ public class Utils {
     }
   }
 
-  static String getOrDefault(Object v, String def) {
+  public static String getOrDefault(Object v, String def) {
     if (v == null) return def;
     String s = v.toString().trim();
     return s.isEmpty() ? def : s;
@@ -167,7 +170,7 @@ public class Utils {
    * @return open JDBC connection
    * @throws SQLException on acquisition failure
    */
-  static Connection openConnection(ServerConfig cfg, String sourceName) throws SQLException {
+  public static Connection openConnection(ServerConfig cfg, String sourceName) throws SQLException {
     return getOrCreateDataSource(cfg, sourceName).getConnection();
   }
 
@@ -234,7 +237,7 @@ public class Utils {
    * @param action The supplier action to execute, which may throw an {@link Exception} and returns a {@link McpSchema.CallToolResult}.
    * @return The result of the supplier if successful, or an error {@link McpSchema.CallToolResult} if an exception occurs.
    */
-  static McpSchema.CallToolResult tryCall(ThrowingSupplier<McpSchema.CallToolResult> action) {
+  public static McpSchema.CallToolResult tryCall(ThrowingSupplier<McpSchema.CallToolResult> action) {
     try {
       return action.get();
     } catch (Exception e) {

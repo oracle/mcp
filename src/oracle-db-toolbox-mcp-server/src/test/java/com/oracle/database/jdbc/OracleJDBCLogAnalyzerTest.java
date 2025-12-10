@@ -1,5 +1,6 @@
 package com.oracle.database.jdbc;
 
+import com.oracle.database.jdbc.tools.OracleJDBCLogAnalyzer;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.BeforeAll;

@@ -1,6 +1,7 @@
-package com.oracle.database.jdbc;
+package com.oracle.database.jdbc.tools;
 
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.oracle.database.jdbc.ServerConfig;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.spec.McpSchema;
 
@@ -34,7 +35,7 @@ public class SimilaritySearchTool {
     FETCH FIRST ? ROWS ONLY
   """;
 
-  static McpServerFeatures.SyncToolSpecification getSymilaritySearchTool(ServerConfig config) {
+  public static McpServerFeatures.SyncToolSpecification getSymilaritySearchTool(ServerConfig config) {
 
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(McpSchema.Tool.builder()

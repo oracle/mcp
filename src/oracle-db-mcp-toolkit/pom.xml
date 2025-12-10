@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.oracle.database.mcptoolkit</groupId>
+    <artifactId>oracle-db-mcp-toolkit</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+    <name>Oracle JDBC Log Analyzer MCP Server</name>
+    <description>The Oracle Database MCP Toolkit is a Model Context Protocol (MCP) server that enables users to analyze Oracle JDBC thin client logs and RDBMS/SQLNet trace files using built-in tools.
+        It also offers database-powered tools, such as vector similarity search and SQL execution plan analysis. Additionally, users can define custom tools through a YAML configuration file.</description>
+    <url>https://github.com/oracle/mcp/tree/main/src/oracle-db-mcp-toolkit</url>
+
+    <licenses>
+        <license>
+            <name>The Universal Permissive License (UPL), Version 1.0</name>
+            <url>https://oss.oracle.com/licenses/upl/</url>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <organization>Oracle Corporation</organization>
+            <organizationUrl>https://www.oracle.com</organizationUrl>
+        </developer>
+    </developers>
+
+    <properties>
+        <java.version>17</java.version>
+        <mcp.version>0.12.1</mcp.version>
+        <ojdbc.version>23.9.0.25.07</ojdbc.version>
+        <snakeYaml.version>2.5</snakeYaml.version>
+        <logAnalyzer.version>1.0.0</logAnalyzer.version>
+        <tomcat.version>11.0.14</tomcat.version>
+        <junit.version>5.10.0</junit.version>
+        <maven.compiler.source>${java.version}</maven.compiler.source>
+        <maven.compiler.target>${java.version}</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.modelcontextprotocol.sdk</groupId>
+            <artifactId>mcp</artifactId>
+            <version>${mcp.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.oracle.database.jdbc</groupId>
+            <artifactId>ojdbc17</artifactId>
+            <version>${ojdbc.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.oracle.database.jdbc</groupId>
+            <artifactId>ucp17</artifactId>
+            <version>${ojdbc.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <version>${snakeYaml.version}</version>
+        </dependency>
+
+        <!-- Log Analyzer -->
+        <dependency>
+            <groupId>com.oracle.database.jdbc</groupId>
+            <artifactId>ojdbc-log-analyzer</artifactId>
+            <version>${logAnalyzer.version}</version>
+        </dependency>
+
+        <!-- Tomcat HTTP server -->
+        <dependency>
+            <groupId>org.apache.tomcat.embed</groupId>
+            <artifactId>tomcat-embed-core</artifactId>
+            <version>${tomcat.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>com.oracle.database.mcptoolkit.OracleDBToolboxMCPServer</mainClass>
+                                </transformer>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+
+    </build>
+
+</project>

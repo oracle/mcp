@@ -9,7 +9,7 @@ package com.oracle.database.mcptoolkit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oracle.database.mcptoolkit.config.ConfigRoot;
-import com.oracle.database.mcptoolkit.config.SourceConfig;
+import com.oracle.database.mcptoolkit.config.DataSourceConfig;
 import com.oracle.database.mcptoolkit.config.ToolConfig;
 import com.oracle.database.mcptoolkit.config.ToolParameterConfig;
 import com.oracle.database.mcptoolkit.tools.ExplainAndExecutePlanTool;
@@ -102,7 +102,7 @@ public class Utils {
               )
               .callHandler((exchange, callReq) ->
                   tryCall(() -> {
-                    try (Connection c = openConnection(config, tc.source)) {
+                    try (Connection c = openConnection(config, tc.dataSource)) {
                       PreparedStatement ps = c.prepareStatement(tc.statement);
                       int paramIdx = 1;
                       if (tc.parameters != null) {
@@ -163,7 +163,7 @@ public class Utils {
     if (yamlConfig == null) {
       config = ServerConfig.fromSystemProperties();
     } else {
-      String defaultSourceKey = yamlConfig.sources!=null?yamlConfig.sources.keySet().stream().findFirst().orElse(null):null;
+      String defaultSourceKey = yamlConfig.dataSources!=null?yamlConfig.dataSources.keySet().stream().findFirst().orElse(null):null;
       config = ServerConfig.fromSystemPropertiesAndYaml(yamlConfig, defaultSourceKey);
     }
     return config;
@@ -201,7 +201,7 @@ public class Utils {
     } else {
       return dataSources.computeIfAbsent(sourceName, name -> {
         try {
-          SourceConfig src = (cfg.sources != null) ? cfg.sources.get(name) : null;
+          DataSourceConfig src = (cfg.sources != null) ? cfg.sources.get(name) : null;
           if (src == null) throw new IllegalArgumentException("Unknown source: " + name);
           return createDataSource(src.toJdbcUrl(), src.user, src.password);
         } catch (SQLException ex) {

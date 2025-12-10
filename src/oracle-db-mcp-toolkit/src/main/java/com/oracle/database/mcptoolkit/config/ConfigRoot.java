@@ -13,7 +13,7 @@ import java.util.Map;
  * Represents the root configuration for the application, containing a map of source configurations and tool configurations.
  */
 public class ConfigRoot {
-  public Map<String, SourceConfig> sources;
+  public Map<String, DataSourceConfig> dataSources;
   public Map<String, ToolConfig> tools;
 
   /**
@@ -23,8 +23,8 @@ public class ConfigRoot {
    * in each configuration's fields.
    */
   public void substituteEnvVars() {
-    if (sources != null) {
-      for (SourceConfig sc : sources.values()) {
+    if (dataSources != null) {
+      for (DataSourceConfig sc : dataSources.values()) {
         if (sc != null) sc.substituteEnvVars();
       }
     }

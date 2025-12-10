@@ -24,9 +24,9 @@ public class ToolConfig {
   public String name;
 
   /**
-   * Reference key from sources.
+   * Reference key from data sources.
    */
-  public String source;
+  public String dataSource;
 
   /**
    * A brief description of the tool.
@@ -51,7 +51,7 @@ public class ToolConfig {
    */
   public void substituteEnvVars() {
     this.name        = EnvSubstitutor.substituteEnvVars(this.name);
-    this.source      = EnvSubstitutor.substituteEnvVars(this.source);
+    this.dataSource      = EnvSubstitutor.substituteEnvVars(this.dataSource);
     this.description = EnvSubstitutor.substituteEnvVars(this.description);
     this.statement   = EnvSubstitutor.substituteEnvVars(this.statement);
     if (this.parameters != null) {

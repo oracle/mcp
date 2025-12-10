@@ -71,6 +71,56 @@ These tools operate on RDBMS/SQLNet trace files:
     * `llmPrompt`: A structured prompt for an LLM to explain + tune the plan.
 
 ---
+
+## Custom Tool Framework — Extending the MCP Server
+The MCP server can load both database connection definitions and custom tool definitions from a YAML configuration file.
+This provides a flexible and declarative way to extend the server without modifying or rebuilding the codebase.
+
+A YAML file may define:
+
+  * One or more **sources:** — named database configurations (URL, user, password, etc.)
+
+  * One or more **tools** — each with parameters, SQL statements, and optional metadata
+
+### Source Resolution Logic
+
+When executing a tool, the MCP server determines which source to use based on the following rules:
+
+1. If the tool specifies a source, that source is used.
+
+2. If the tool does not specify a source, the server looks for a default source:
+
+    * First, it checks whether a source was provided via system properties (db.url, db.user, db.password) (Higher priority).
+
+    * If no system property source is available, it falls back to the first source defined in the YAML file, if present.
+
+3. If no source can be resolved and the tool requires one (e.g., SQL-based tools), the server reports a configuration error.
+
+This design ensures that tools always have a predictable source while giving you flexibility to choose how connections are provided—either inline in YAML or externally via system properties and environment variables.
+
+**Example `config.yaml`:**
+```yaml
+sources:
+  prod-db:
+    url: jdbc:oracle:thin:@prod-host:1521/ORCLPDB1
+    user: ADMIN
+    password: ${password}
+
+tools:
+  hotels-by-name:
+    source: prod-db
+    parameters:
+      - name: name
+        type: string
+        description: Hotel name to search for.
+        required: false
+    statement: SELECT * FROM hotels WHERE name LIKE '%' || :name || '%'
+```
+To enable YAML configuration, launch the server with:
+```bash
+java -DconfigFile=/path/to/config.yaml -jar <mcp-server>.jar
+```
+
 ## Prerequisites
 
 - **Java 17+** (JDK)
@@ -136,13 +186,13 @@ java \
 ```
 This exposes the MCP endpoint at: `http://localhost:45450/mcp`.
 
-### Note
-You can enable HTTPS (SSL/TLS) by specifying the path to your certificate keystore and its password using the -DcertificatePath and -DcertificatePassword options.
-Only PKCS12 (.p12 or .pfx) keystore format is supported.
-You can also change the HTTPS port with the -DhttpsPort option (default is 45451).
+#### Enabling HTTPS (SSL/TLS)
+To enable HTTPS (SSL/TLS), specify your certificate keystore path and password using the `-DcertificatePath` and `-DcertificatePassword` options.  
+Only PKCS12 (`.p12` or `.pfx`) keystore files are supported.
+You can set the HTTPS port with the `-Dhttps.port` option.
 ##### Example 
 ```shell
--DcertificatePath=/path/to/your-certificate.p12 -DcertificatePassword=yourPassword -DhttpsPort=443
+-DcertificatePath=/path/to/your-certificate.p12 -DcertificatePassword=yourPassword -Dhttps.port=443
 ```
 ### Using HTTP from Cline
 Cline supports streamable HTTP directly. Example:
@@ -268,35 +318,6 @@ INFO: Authorization token generated (for testing and development use only): Secr
 
 Ultimately, the token must be included in the http request header (e.g. `Authorization: Bearer 0dd11948-37a3-470f-911e-4cd8b3d6f69c` or `Authorization: Bearer Secret_DeV_T0ken`).
 
-## YAML Configuration Support
-
-The MCP server supports loading database connection and tool definitions from a YAML configuration file.
-For sources, if a tool has a specific source it will use it. Otherwise, it will look for the default source which is either the source we got from system properties, otherwise, the first source defined in the file (if any).
-This file can contain environment variables as well.
-
-**Example `config.yaml`:**
-```yaml
-sources:
-  prod-db:
-    url: jdbc:oracle:thin:@prod-host:1521/ORCLPDB1
-    user: ADMIN
-    password: ${password}
-
-tools:
-  hotels-by-name:
-    source: prod-db
-    parameters:
-      - name: name
-        type: string
-        description: Hotel name to search for.
-        required: false
-    statement: SELECT * FROM hotels WHERE name LIKE '%' || :name || '%'
-```
-To enable YAML configuration, launch the server with:
-```bash
-java -DconfigFile=/path/to/config.yaml -jar <mcp-server>.jar
-```
-
 ### Supported System Properties
 <table>
   <thead>
@@ -361,6 +382,29 @@ java -DconfigFile=/path/to/config.yaml -jar <mcp-server>.jar
         TCP port used when <code>-Dtransport=http</code> is set.
       </td>
       <td><code>45450</code></td>
+    </tr>
+    <tr>
+      <td><code>https.port</code></td>
+      <td>No</td>
+      <td>
+        TCP port used for SSL connection.
+      </td>
+      <td><code>45451</code></td>
+    </tr>
+    <tr>
+      <td><code>certificatePath</code></td>
+      <td>No</td>
+      <td>
+        Path to SSL certificate keystore (Support PKCS12)
+      </td>
+      <td><code>/path/to/your/certificate</code></td>
+    </tr>
+    <tr>
+      <td><code>certificatePassword</code></td>
+      <td>No</td>
+      <td>
+        Password of SSL certificate keystore
+      </td>
     </tr>
     <tr>
       <td><code>configFile</code></td>
@@ -434,7 +478,7 @@ From the project root (where the Dockerfile lives):
 podman build -t oracle-db-toolbox-mcp-server:1.0.0 .
 ```
 ### Run the container (HTTP mode example)
-This example runs the MCP server over HTTP inside the container and exposes it on port 45450 on your host.
+This example runs the MCP server over HTTP and HTTPS inside the container and exposes it on port 45450 and 45451 on your host.
 
 ```bash
 podman run --rm \

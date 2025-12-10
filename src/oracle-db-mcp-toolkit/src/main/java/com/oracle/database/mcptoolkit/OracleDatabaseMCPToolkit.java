@@ -57,7 +57,7 @@ public class OracleDatabaseMCPToolkit {
       case "stdio" -> {
         server = McpServer
           .sync(new StdioServerTransportProvider(new ObjectMapper()))
-          .serverInfo("oracle-db-toolbox-mcp-server", "1.0.0")
+          .serverInfo("oracle-db-mcp-toolkit", "1.0.0")
           .capabilities(McpSchema.ServerCapabilities.builder()
              .tools(true)
              .logging()
@@ -88,7 +88,7 @@ public class OracleDatabaseMCPToolkit {
 
       McpSyncServer server = McpServer
         .sync(transport)
-        .serverInfo("oracle-db-toolbox-mcp-server", "1.0.0")
+        .serverInfo("oracle-db-mcp-toolkit", "1.0.0")
         .capabilities(McpSchema.ServerCapabilities.builder()
            .tools(true)
            .logging()
@@ -140,7 +140,7 @@ public class OracleDatabaseMCPToolkit {
 
       tomcat.start();
 
-      LOG.info(() -> "[oracle-db-toolbox-mcp-server] HTTP transport started on " + LoadedConstants.HTTP_PORT + " (endpoint: /mcp)");
+      LOG.info(() -> "[oracle-db-mcp-toolkit] HTTP transport started on " + LoadedConstants.HTTP_PORT + " (endpoint: /mcp)");
 
       return server;
     } catch (Exception e) {

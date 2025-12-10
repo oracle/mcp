@@ -282,7 +282,7 @@ public class Utils {
 
     final Path root = Paths.get(dir);
     if (!Files.isDirectory(root)) {
-      LOG.warning("[oracle-db-toolbox-mcp-server] ojdbc.ext.dir is not a directory: " + dir);
+      LOG.warning("[oracle-db-mcp-toolkit] ojdbc.ext.dir is not a directory: " + dir);
       return;
     }
     final List<URL> jarUrls = new ArrayList<>();
@@ -292,16 +292,16 @@ public class Utils {
             try {
               jarUrls.add(p.toUri().toURL());
             } catch (Exception e) {
-              LOG.log(Level.WARNING, "[oracle-db-toolbox-mcp-server] Failed to add jar: " + p, e);
+              LOG.log(Level.WARNING, "[oracle-db-mcp-toolkit] Failed to add jar: " + p, e);
             }
           });
     } catch (Exception e) {
-      LOG.log(Level.WARNING, "[oracle-db-toolbox-mcp-server] Failed to scan " + dir, e);
+      LOG.log(Level.WARNING, "[oracle-db-mcp-toolkit] Failed to scan " + dir, e);
       return;
     }
 
     if (jarUrls.isEmpty()) {
-      LOG.warning("[oracle-db-toolbox-mcp-server] No jars found under " + dir);
+      LOG.warning("[oracle-db-mcp-toolkit] No jars found under " + dir);
       return;
     }
 

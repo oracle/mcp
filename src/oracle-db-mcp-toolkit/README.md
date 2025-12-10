@@ -238,7 +238,7 @@ you can use the `mcp-remote` workaround:
 #### 4.7.1. Generated Token (For Development and Testing)
 
 To enable authentication for the HTTP server, you must set the `-DenableAuthentication` system property to `true` (default value is `false`).
-If it's enabled (e.g. set to `true`) the MCP Server will check if there's an environment variable called `ORACLE_DB_TOOLBOX_AUTH_TOKEN` and its value will be used as a token.
+If it's enabled (e.g. set to `true`) the MCP Server will check if there's an environment variable called `ORACLE_DB_TOOLKIT_AUTH_TOKEN` and its value will be used as a token.
 If the environment variable is not found, then a random UUID token will be generated once per JVM session. The token would be logged at the `INFO` level.
 
 When connecting to the MCP server, the token needs to be provided in the Authorization header of each request using the `Bearer ` prefix.
@@ -251,7 +251,7 @@ In order to configure an OAuth2 server, the `-DenableAuthentication` should be e
 - `-DredirectOAuthToOpenID`: (default: `false`) This system property is used to as a workaround to support OAuth servers that provide `/.well-known/openid-configuration` and not `/.well-known/oauth-authorization-server`.
 It works by creating an `/.well-known/oauth-authorization-server` endpoint on the MCP Server that redirects to the OAuth server's `/.well-known/openid-configuration` endpoint.
 - `-DintrospectionEndpoint`: The OAuth2 server's introspection endpoint used to validate an access token (The OAuth2 introspection JSON response MUST contain the `active` field, e.g. `{...,"active": false,..}`).
-- `-DclientId`: Client ID (e.g. `oracle-db-toolbox`)
+- `-DclientId`: Client ID (e.g. `oracle-db-toolkit`)
 - `-DclientSecret`: Client Secret (e.g. `Xj9mPqR2vL5kN8tY3hB7wF4uD6cA1eZ0`)
 - `-DallowedHosts`: (default: `*`) The value of `Access-Control-Allow-Origin` header when requesting the `/.well-known/oauth-protected-resource` endpoint (and `/.well-known/oauth-authorization-server` if `-DredirectOAuthToOpenID` is set to `true`) of the MCP Server.
 
@@ -269,7 +269,7 @@ java \
     -DenableAuthentication=true \
     -DauthServer=http://localhost:8080/realms/mcp \
     -DintrospectionEndpoint=http://localhost:8080/realms/mcp/protocol/openid-connect/token/introspect \
-    -DclientId=oracle-db-toolbox \
+    -DclientId=oracle-db-toolkit \
     -DclientSecret=Xj9mPqR2vL5kN8tY3hB7wF4uD6cA1eZ0 \
     -DallowedHosts=http://localhost:6274 \
     -jar <path-to-jar>/oracle-db-mcp-toolkit-1.0.0.jar
@@ -300,14 +300,14 @@ Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.oauth.OAuth2Configuration <init
 WARNING: OAuth2 is not configured
 Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.oauth.TokenGenerator <init>
 INFO: Authorization token generated (for testing and development use only): 0dd11948-37a3-470f-911e-4cd8b3d6f69c
-Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.OracleDBToolboxMCPServer startHttpServer
+Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.OracleDatabaseMCPToolkit startHttpServer
 INFO: [oracle-db-mcp-toolkit] HTTP transport started on http://localhost:45450 (endpoint: http://localhost:45450/mcp)
 ```
 
-If `ORACLE_DB_TOOLBOX_AUTH_TOKEN` environment variable is set:
+If `ORACLE_DB_TOOLKIT_AUTH_TOKEN` environment variable is set:
 
 ```bash
-export ORACLE_DB_TOOLBOX_AUTH_TOKEN=Secret_DeV_T0ken
+export ORACLE_DB_TOOLKIT_AUTH_TOKEN=Secret_DeV_T0ken
 ```
 
 Then the server logs will be the following:
@@ -442,7 +442,7 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
       <td><code>clientId</code></td>
       <td>No</td>
       <td>The client identifier for registering with the configured OAuth2 server.</td>
-      <td><code>-DclientId=oracle-db-toolbox</code></td>
+      <td><code>-DclientId=oracle-db-toolkit</code></td>
     </tr>
     <tr>
       <td><code>clientSecret</code></td>

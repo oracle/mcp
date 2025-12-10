@@ -4,7 +4,18 @@
  ** Copyright (c) 2025 Oracle and/or its affiliates.
  ** Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl/
  */
-
+/*
+TODO:
+  - Project name: Oracle Database MCP Toolkit
+  - Rename toolbox to toolkit everywhere
+  - Add copyright, author name (your name) to all files.
+  - Add UPL license to all files
+  - Add JavaDoc to all classes and most important methods.
+  - rename com.oracle.database.jdbc to com.oracle.database.mcptoolkit
+  - introduce a com.oracle.database.mcptoolkit.tools for the embedded tools (similarity search, log analyzer, etc.)
+  - rename OracleJDBCLogAnalyzer to LogAnalyzer
+  - update README to stress https, update the podman command
+ */
 package com.oracle.database.jdbc;
 
 import com.oracle.database.jdbc.logs.model.JDBCConnectionEvent;

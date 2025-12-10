@@ -8,7 +8,7 @@
 package com.oracle.database.mcptoolkit;
 
 import com.oracle.database.mcptoolkit.config.ConfigRoot;
-import com.oracle.database.mcptoolkit.config.SourceConfig;
+import com.oracle.database.mcptoolkit.config.DataSourceConfig;
 import com.oracle.database.mcptoolkit.config.ToolConfig;
 
 import java.util.Collections;
@@ -40,7 +40,7 @@ public final class ServerConfig {
   public final String dbUser;
   public final String dbPassword;
   public final Set<String> toolsFilter;
-  public final Map<String, SourceConfig> sources;
+  public final Map<String, DataSourceConfig> sources;
   public final Map<String, ToolConfig> tools;
   public static String defaultSourceName; // Only if the default db info are from yaml config to avoid redundancy
 
@@ -49,7 +49,7 @@ public final class ServerConfig {
       String dbUser,
       String dbPassword,
       Set<String> toolsFilter,
-      Map<String, SourceConfig> sources,
+      Map<String, DataSourceConfig> sources,
       Map<String, ToolConfig> tools
   ) {
     this.dbUrl = dbUrl;
@@ -90,7 +90,7 @@ public final class ServerConfig {
     String dbUser = LoadedConstants.DB_USER;
     String dbPass = LoadedConstants.DB_PASSWORD;
 
-    Map<String, SourceConfig> sources = configRoot != null ? configRoot.sources : Collections.emptyMap();
+    Map<String, DataSourceConfig> sources = configRoot != null ? configRoot.dataSources : Collections.emptyMap();
     Map<String, ToolConfig> toolsMap = configRoot != null ? configRoot.tools : Collections.emptyMap();
 
     if (toolsMap != null) {
@@ -105,7 +105,7 @@ public final class ServerConfig {
         && dbPass != null && !dbPass.isBlank();
 
     if (!allLoadedConstantsPresent && sources!=null && sources.containsKey(defaultSourceKey)) {
-      SourceConfig src = sources.get(defaultSourceKey);
+      DataSourceConfig src = sources.get(defaultSourceKey);
       dbUrl = src.toJdbcUrl();
       dbUser = src.user;
       dbPass = src.password;

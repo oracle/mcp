@@ -3,9 +3,58 @@
 ## Overview
 
 Oracle Database MCP Toolkit is a Model Context Protocol (MCP) server that lets you: 
+  * Define your own custom tools via a simple YAML configuration file.
   * Use 8 built-in tools to analyze Oracle JDBC thin client logs and RDBMS/SQLNet trace files.
   * Optionally use **database-powered tools**, including **vector similarity search** and **SQL execution plan analysis**, when JDBC configuration is provided.
-  * Define your own custom tools via a simple YAML configuration file.
+
+## Custom Tool Framework — Extending the MCP Server
+The MCP server can load both database connection definitions and custom tool definitions from a YAML configuration file.
+This provides a flexible and declarative way to extend the server without modifying or rebuilding the codebase.
+
+A YAML file may define:
+
+* One or more **sources:** — named database configurations (URL, user, password, etc.)
+
+* One or more **tools** — each with parameters, SQL statements, and optional metadata
+
+### Source Resolution Logic
+
+When executing a tool, the MCP server determines which source to use based on the following rules:
+
+1. If the tool specifies a source, that source is used.
+
+2. If the tool does not specify a source, the server looks for a default source:
+
+  * First, it checks whether a source was provided via system properties (db.url, db.user, db.password) (Higher priority).
+
+  * If no system property source is available, it falls back to the first source defined in the YAML file, if present.
+
+3. If no source can be resolved and the tool requires one (e.g., SQL-based tools), the server reports a configuration error.
+
+This design ensures that tools always have a predictable source while giving you flexibility to choose how connections are provided—either inline in YAML or externally via system properties and environment variables.
+
+**Example `config.yaml`:**
+```yaml
+sources:
+  prod-db:
+    url: jdbc:oracle:thin:@prod-host:1521/ORCLPDB1
+    user: ADMIN
+    password: ${password}
+
+tools:
+  hotels-by-name:
+    source: prod-db
+    parameters:
+      - name: name
+        type: string
+        description: Hotel name to search for.
+        required: false
+    statement: SELECT * FROM hotels WHERE name LIKE '%' || :name || '%'
+```
+To enable YAML configuration, launch the server with:
+```bash
+java -DconfigFile=/path/to/config.yaml -jar <mcp-server>.jar
+```
 
 ## Built-in Tools
 
@@ -71,55 +120,6 @@ These tools operate on RDBMS/SQLNet trace files:
     * `llmPrompt`: A structured prompt for an LLM to explain + tune the plan.
 
 ---
-
-## Custom Tool Framework — Extending the MCP Server
-The MCP server can load both database connection definitions and custom tool definitions from a YAML configuration file.
-This provides a flexible and declarative way to extend the server without modifying or rebuilding the codebase.
-
-A YAML file may define:
-
-  * One or more **sources:** — named database configurations (URL, user, password, etc.)
-
-  * One or more **tools** — each with parameters, SQL statements, and optional metadata
-
-### Source Resolution Logic
-
-When executing a tool, the MCP server determines which source to use based on the following rules:
-
-1. If the tool specifies a source, that source is used.
-
-2. If the tool does not specify a source, the server looks for a default source:
-
-    * First, it checks whether a source was provided via system properties (db.url, db.user, db.password) (Higher priority).
-
-    * If no system property source is available, it falls back to the first source defined in the YAML file, if present.
-
-3. If no source can be resolved and the tool requires one (e.g., SQL-based tools), the server reports a configuration error.
-
-This design ensures that tools always have a predictable source while giving you flexibility to choose how connections are provided—either inline in YAML or externally via system properties and environment variables.
-
-**Example `config.yaml`:**
-```yaml
-sources:
-  prod-db:
-    url: jdbc:oracle:thin:@prod-host:1521/ORCLPDB1
-    user: ADMIN
-    password: ${password}
-
-tools:
-  hotels-by-name:
-    source: prod-db
-    parameters:
-      - name: name
-        type: string
-        description: Hotel name to search for.
-        required: false
-    statement: SELECT * FROM hotels WHERE name LIKE '%' || :name || '%'
-```
-To enable YAML configuration, launch the server with:
-```bash
-java -DconfigFile=/path/to/config.yaml -jar <mcp-server>.jar
-```
 
 ## Prerequisites
 

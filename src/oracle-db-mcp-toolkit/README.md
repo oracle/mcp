@@ -135,11 +135,11 @@ java -DconfigFile=/path/to/config.yaml -jar <mcp-server>.jar
 mvn clean install
 ```
 
-The created jar can be found in `target/oracle-db-toolbox-mcp-server-1.0.0.jar`.
+The created jar can be found in `target/oracle-db-mcp-toolkit-1.0.0.jar`.
 
 ### Transport modes (stdio vs HTTP)
 
-`oracle-db-toolbox-mcp-server` supports two transport modes:
+`oracle-db-mcp-toolkit` supports two transport modes:
 
 - **Stdio (default)** – the MCP client spawns the JVM process and talks over stdin/stdout
 - **HTTP (streamable)** – the MCP server runs as an HTTP service, and clients connect via a URL
@@ -151,7 +151,7 @@ This is the mode used by tools like Claude Desktop, where the client directly la
 ```jsonc
 {
   "mcpServers": {
-    "oracle-db-toolbox-mcp-server": {
+    "oracle-db-mcp-toolkit": {
       "command": "java",
       "args": [
         "-Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service",
@@ -160,7 +160,7 @@ This is the mode used by tools like Claude Desktop, where the client directly la
         "-Dtools=get-jdbc-stats,get-jdbc-queries",
         "-Dojdbc.ext.dir=/path/to/extra-jars",
         "-jar",
-        "<path-to-jar>/oracle-db-toolbox-mcp-server-1.0.0.jar"
+        "<path-to-jar>/oracle-db-mcp-toolkit-1.0.0.jar"
       ]
     }
   }
@@ -182,7 +182,7 @@ java \
   -Ddb.user=your_user \
   -Ddb.password=your_password \
   -Dtools=get-jdbc-stats,get-jdbc-queries \
-  -jar <path-to-jar>/oracle-db-toolbox-mcp-server-1.0.0.jar
+  -jar <path-to-jar>/oracle-db-mcp-toolkit-1.0.0.jar
 ```
 This exposes the MCP endpoint at: `http://localhost:45450/mcp`.
 
@@ -200,7 +200,7 @@ Cline supports streamable HTTP directly. Example:
 ```json
 {
   "mcpServers": {
-    "oracle-db-toolbox-mcp-server": {
+    "oracle-db-mcp-toolkit": {
       "type": "streamableHttp",
       "url": "http://localhost:45450/mcp"
     }
@@ -216,7 +216,7 @@ you can use the `mcp-remote` workaround:
 ```json
 {
   "mcpServers": {
-    "oracle-db-toolbox-mcp-server": {
+    "oracle-db-mcp-toolkit": {
       "command": "npx",
       "args": [
         "-y",
@@ -267,7 +267,7 @@ java \
     -DclientId=oracle-db-toolbox \
     -DclientSecret=Xj9mPqR2vL5kN8tY3hB7wF4uD6cA1eZ0 \
     -DallowedHosts=http://localhost:6274 \
-    -jar <path-to-jar>/oracle-db-toolbox-mcp-server-1.0.0.jar
+    -jar <path-to-jar>/oracle-db-mcp-toolkit-1.0.0.jar
 ```
 
 In the above example, we configured OAuth2 with a local KeyCloak server with a realm named `mcp`, and we only allowed a local [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector)
@@ -284,7 +284,7 @@ java \
     -Dtransport=http \
     -Dhttp.port=45450 \
     -DenableAuthentication=true \
-    -jar <path-to-jar>/oracle-db-toolbox-mcp-server-1.0.0.jar
+    -jar <path-to-jar>/oracle-db-mcp-toolkit-1.0.0.jar
 ```
 After starting the server, a UUID token will be generated and logged at <code>INFO</code> level:
 
@@ -296,7 +296,7 @@ WARNING: OAuth2 is not configured
 Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.oauth.TokenGenerator <init>
 INFO: Authorization token generated (for testing and development use only): 0dd11948-37a3-470f-911e-4cd8b3d6f69c
 Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.OracleDBToolboxMCPServer startHttpServer
-INFO: [oracle-db-toolbox-mcp-server] HTTP transport started on http://localhost:45450 (endpoint: http://localhost:45450/mcp)
+INFO: [oracle-db-mcp-toolkit] HTTP transport started on http://localhost:45450 (endpoint: http://localhost:45450/mcp)
 ```
 
 If `ORACLE_DB_TOOLBOX_AUTH_TOKEN` environment variable is set:
@@ -475,7 +475,7 @@ A `Dockerfile` is included at the root of the project so you can build and run t
 From the project root (where the Dockerfile lives):
 
 ```bash
-podman build -t oracle-db-toolbox-mcp-server:1.0.0 .
+podman build -t oracle-db-mcp-toolkit:1.0.0 .
 ```
 ### Run the container (HTTP mode example)
 This example runs the MCP server over HTTP and HTTPS inside the container and exposes it on port 45450 and 45451 on your host.
@@ -495,7 +495,7 @@ podman run --rm \
     -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service \
     -Ddb.user=your_user \
     -Ddb.password=your_password" \
-  oracle-db-toolbox-mcp-server:1.0.0
+  oracle-db-mcp-toolkit:1.0.0
 ```
 This exposes the MCP endpoint at: http://[your-ip-address]:45450/mcp or https://[your-ip-address]:45451/mcp
 
@@ -519,7 +519,7 @@ podman run --rm \
     -Ddb.user=your_user \
     -Ddb.password=your_password \
     -Dojdbc.ext.dir=/ext" \
-  oracle-db-toolbox-mcp-server:1.0.0
+  oracle-db-mcp-toolkit:1.0.0
 ```
 
 ### Using Docker/Podman with stdio
@@ -533,7 +533,7 @@ In this configuration, Claude Desktop runs `podman run --rm -i ... and connects 
 ```json
 {
   "mcpServers": {
-    "oracle-db-toolbox-mcp-server": {
+    "oracle-db-mcp-toolkit": {
       "command": "podman",
       "args": [
         "run",
@@ -542,7 +542,7 @@ In this configuration, Claude Desktop runs `podman run --rm -i ... and connects 
         "-v", "/absolute/path/to/ext:/ext:ro",
         "-e",
         "JAVA_TOOL_OPTIONS=-Dtools=get-jdbc-stats,get-jdbc-queries -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service -Ddb.user=your_user -Ddb.password=your_password -Dojdbc.ext.dir=/ext -DconfigFile=/config/config.yaml",
-        "oracle-db-toolbox-mcp-server:1.0.0"
+        "oracle-db-mcp-toolkit:1.0.0"
       ]
     }
   }

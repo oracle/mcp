@@ -42,6 +42,14 @@ lock:
 		fi \
 	done
 
+lock-check:
+	@for dir in $(SUBDIRS); do \
+		if [ -f $$dir/pyproject.toml ]; then \
+			echo "Installing $$dir"; \
+			cd $$dir && uv lock --check && cd ../..; \
+		fi \
+	done
+
 lint:
 	uv tool run --from 'tox==4.30.2' tox -e lint
 

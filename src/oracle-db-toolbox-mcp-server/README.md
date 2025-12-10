@@ -13,19 +13,19 @@
 
 These tools operate on Oracle JDBC thin client logs:
 
-- **`get-stats`**: Extracts performance statistics including error counts, sent/received packets and byte counts.
-- **`get-queries`**: Retrieves all executed SQL queries with timestamps and execution times.
-- **`get-errors`**: Extracts all errors reported by both server and client.
-- **`get-connections-events`**: Shows connection open/close events.
+- **`get-jdbc-stats`**: Extracts performance statistics including error counts, sent/received packets and byte counts.
+- **`get-jdbc-queries`**: Retrieves all executed SQL queries with timestamps and execution times.
+- **`get-jdbc-errors`**: Extracts all errors reported by both server and client.
+- **`get-jdbc-connections-events`**: Shows connection open/close events.
 - **`list-log-files-from-directory`**: List all visible files from a specified directory, which helps the user analyze multiple files with one prompt.
-- **`log-comparison`**: Compares two log files for performance metrics, errors, and network information.
+- **`jdbc-log-comparison`**: Compares two log files for performance metrics, errors, and network information.
 
 ### RDBMS/SQLNet Trace Analysis:
 
 These tools operate on RDBMS/SQLNet trace files:
 
 - **`get-rdbms-errors`**: Extracts errors from RDBMS/SQLNet trace files.
-- **`get-packet-dumps`**: Extracts packet dumps for a specific connection ID.
+- **`get-rdbms-packet-dumps`**: Extracts packet dumps for a specific connection ID.
 
 ### Vector Similarity Search
 
@@ -107,7 +107,7 @@ This is the mode used by tools like Claude Desktop, where the client directly la
         "-Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service",
         "-Ddb.user=your_user",
         "-Ddb.password=your_password"
-        "-Dtools=get-stats,get-queries",
+        "-Dtools=get-jdbc-stats,get-jdbc-queries",
         "-Dojdbc.ext.dir=/path/to/extra-jars",
         "-jar",
         "<path-to-jar>/oracle-db-toolbox-mcp-server-1.0.0.jar"
@@ -131,7 +131,7 @@ java \
   -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service \
   -Ddb.user=your_user \
   -Ddb.password=your_password \
-  -Dtools=get-stats,get-queries \
+  -Dtools=get-jdbc-stats,get-jdbc-queries \
   -jar <path-to-jar>/oracle-db-toolbox-mcp-server-1.0.0.jar
 ```
 This exposes the MCP endpoint at: `http://localhost:45450/mcp`.
@@ -334,7 +334,7 @@ java -DconfigFile=/path/to/config.yaml -jar <mcp-server>.jar
         Use <code>*</code> or <code>all</code> to enable everything.  
         If omitted, all tools are enabled by default.
       </td>
-      <td><code>get-stats,get-queries</code></td>
+      <td><code>get-jdbc-stats,get-jdbc-queries</code></td>
     </tr>
     <tr>
       <td><code>ojdbc.ext.dir</code></td>
@@ -447,7 +447,7 @@ podman run --rm \
     -Dhttps.port=45451 \
     -DcertificatePath=[path/to/certificate] \
     -DcertificatePassword=[password] \
-    -Dtools=get-stats,get-queries \
+    -Dtools=get-jdbc-stats,get-jdbc-queries \
     -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service \
     -Ddb.user=your_user \
     -Ddb.password=your_password" \
@@ -470,7 +470,7 @@ podman run --rm \
     -Dtransport=http \
     -Dhttp.port=45450 \
     -Dhttps.port=45451 \
-    -Dtools=get-stats,get-queries \
+    -Dtools=get-jdbc-stats,get-jdbc-queries \
     -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service \
     -Ddb.user=your_user \
     -Ddb.password=your_password \
@@ -497,7 +497,7 @@ In this configuration, Claude Desktop runs `podman run --rm -i ... and connects 
         "-i",
         "-v", "/absolute/path/to/ext:/ext:ro",
         "-e",
-        "JAVA_TOOL_OPTIONS=-Dtools=get-stats,get-queries -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service -Ddb.user=your_user -Ddb.password=your_password -Dojdbc.ext.dir=/ext -DconfigFile=/config/config.yaml",
+        "JAVA_TOOL_OPTIONS=-Dtools=get-jdbc-stats,get-jdbc-queries -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service -Ddb.user=your_user -Ddb.password=your_password -Dojdbc.ext.dir=/ext -DconfigFile=/config/config.yaml",
         "oracle-db-toolbox-mcp-server:1.0.0"
       ]
     }

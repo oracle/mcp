@@ -53,17 +53,17 @@ public final class OracleJDBCLogAnalyzer {
   /**
    * <p>
    *   Builds and returns a {@link SyncToolSpecification SyncToolSpecification}
-   *   for the {@code get-stats} tool, which retrieves high-level statistics from an Oracle JDBC thin log file.
+   *   for the {@code get-jdbc-stats} tool, which retrieves high-level statistics from an Oracle JDBC thin log file.
    *   The tool gathers information such as error count, the number of sent and
    *   received packets, and byte counts from the specified log file.
    * </p>
    *
-   * @return a {@link SyncToolSpecification SyncToolSpecification} instance for the {@code get-stats} tool.
+   * @return a {@link SyncToolSpecification SyncToolSpecification} instance for the {@code get-jdbc-stats} tool.
    */
   private static SyncToolSpecification getStatsTool() {
     return SyncToolSpecification.builder()
       .tool(McpSchema.Tool.builder()
-        .name("get-stats")
+        .name("get-jdbc-stats")
         .title("Get JDBC Stats")
         .description("Return aggregated stats (error count, packets, bytes) from an Oracle JDBC thin log.")
         .inputSchema(ToolSchemas.FILE_PATH_SCHEMA)
@@ -81,17 +81,17 @@ public final class OracleJDBCLogAnalyzer {
 
   /**
    * <p>
-   *   Builds and returns a {@link SyncToolSpecification SyncToolSpecification} for the {@code get-queries} tool.
+   *   Builds and returns a {@link SyncToolSpecification SyncToolSpecification} for the {@code get-jdbc-queries} tool.
    *   This tool extracts all executed SQL queries from an Oracle JDBC thin log file.
    *   For each query, it provides the corresponding timestamp, execution time, connection id and tenant.
    * </p>
    *
-   * @return a {@link SyncToolSpecification SyncToolSpecification} instance for the {@code get-queries} tool.
+   * @return a {@link SyncToolSpecification SyncToolSpecification} instance for the {@code get-jdbc-queries} tool.
    */
   private static SyncToolSpecification getQueriesTool() {
     return SyncToolSpecification.builder()
       .tool(Tool.builder()
-        .name("get-queries")
+        .name("get-jdbc-queries")
         .title("Get JDBC Queries")
         .description("Get all executed queries from an Oracle JDBC thin log file, including the timestamp and execution time.")
         .inputSchema(ToolSchemas.FILE_PATH_SCHEMA)
@@ -113,17 +113,17 @@ public final class OracleJDBCLogAnalyzer {
 
   /**
    * <p>
-   *   Builds and returns a {@link SyncToolSpecification SyncToolSpecification} for the <code>get-errors</code> tool.
+   *   Builds and returns a {@link SyncToolSpecification SyncToolSpecification} for the <code>get-jdbc-errors</code> tool.
    *   This tool processes a specified Oracle JDBC thin log file and extracts all reported errors.
    *   Each error record includes details such as the stack trace and additional log context.
    * </p>
    * `
-   * @return a {@link SyncToolSpecification SyncToolSpecification} representing the <code>get-errors</code> tool.
+   * @return a {@link SyncToolSpecification SyncToolSpecification} representing the <code>get-jdbc-errors</code> tool.
    */
   private static SyncToolSpecification getErrorsTool() {
     return SyncToolSpecification.builder()
       .tool(Tool.builder()
-        .name("get-errors")
+        .name("get-jdbc-errors")
         .title("Get JDBC Errors")
         .description("Get all reported errors from an Oracle JDBC thin log file, including stacktrace and log context.")
         .inputSchema(ToolSchemas.FILE_PATH_SCHEMA)
@@ -145,17 +145,17 @@ public final class OracleJDBCLogAnalyzer {
 
   /**
    * <p>
-   *   Builds and returns a {@link SyncToolSpecification SyncToolSpecification} for the {@code get-log-files-from-directory} tool.
+   *   Builds and returns a {@link SyncToolSpecification SyncToolSpecification} for the {@code list-log-files-from-directory} tool.
    *   This tool lists all Oracle JDBC log files present in the specified directory path.
    * </p>
    *
-   * @return a {@link SyncToolSpecification SyncToolSpecification} for the {@code get-log-files-from-directory} tool.
+   * @return a {@link SyncToolSpecification SyncToolSpecification} for the {@code list-log-files-from-directory} tool.
    */
   private static SyncToolSpecification getListLogsDirectoryTool() {
     return SyncToolSpecification.builder()
       .tool(Tool.builder()
         .name("list-log-files-from-directory")
-        .title("List Files From Directory")
+        .title("List Log Files From Directory")
         .description("List all visible files from a specified directory, which helps the user analyze multiple files with one prompt.")
         .inputSchema(ToolSchemas.FILE_PATH_SCHEMA)
         .build())
@@ -181,17 +181,17 @@ public final class OracleJDBCLogAnalyzer {
 
   /**
    * <p>
-   *   Builds and returns a {@link SyncToolSpecification SyncToolSpecification} for the {@code log-comparison} tool.
+   *   Builds and returns a {@link SyncToolSpecification SyncToolSpecification} for the {@code jdbc-log-comparison} tool.
    *   This tool enables comparison of two Oracle JDBC log files. It analyzes the specified log files and provides a JSON report
    *   highlighting differences and similarities in performance metrics, encountered errors, and network-related information.
    * </p>
    *
-   * @return a {@link SyncToolSpecification SyncToolSpecification} instance that defines the {@code log-comparison} tool.
+   * @return a {@link SyncToolSpecification SyncToolSpecification} instance that defines the {@code jdbc-log-comparison} tool.
    */
   private static SyncToolSpecification logComparisonTool() {
     return SyncToolSpecification.builder()
       .tool(Tool.builder()
-        .name("log-comparison")
+        .name("jdbc-log-comparison")
         .title("JDBC Log Comparison")
         .description("Compare two JDBC log files for performance metrics, errors, and network information.")
         .inputSchema(ToolSchemas.FILE_COMPARISON_SCHEMA)
@@ -210,15 +210,15 @@ public final class OracleJDBCLogAnalyzer {
 
   /**
    * <p>
-   *   Builds and returns a {@link SyncToolSpecification SyncToolSpecification} for the {@code get-connection-events} tool.
+   *   Builds and returns a {@link SyncToolSpecification SyncToolSpecification} for the {@code get-jdbc-connection-events} tool.
    * </p>
    *
-   * @return a {@link SyncToolSpecification SyncToolSpecification} instance for the {@code get-connection-events} tool.
+   * @return a {@link SyncToolSpecification SyncToolSpecification} instance for the {@code get-jdbc-connection-events} tool.
    */
   private static SyncToolSpecification getConnectionEventsTool() {
     return SyncToolSpecification.builder()
       .tool(Tool.builder()
-        .name("get-connection-events")
+        .name("get-jdbc-connection-events")
         .title("Get JDBC Connection Events")
         .description("Retrieve opened and closed JDBC connection events from the log file with timestamp and connection details.")
         .inputSchema(ToolSchemas.FILE_PATH_SCHEMA)
@@ -271,17 +271,17 @@ public final class OracleJDBCLogAnalyzer {
 
   /**
    * <p>
-   *   Builds and returns a {@link SyncToolSpecification SyncToolSpecification} for the <code>get-packet-dumps</code> tool.
+   *   Builds and returns a {@link SyncToolSpecification SyncToolSpecification} for the <code>get-rdbms-packet-dumps</code> tool.
    *   This tool extracts packet dump information from a specified RDBMS/SQLNet trace file that matches a given connection ID.
    *   Each packet dump record includes its associated details and is serialized in JSON format.
    * </p>
    *
-   * @return a {@link SyncToolSpecification SyncToolSpecification} instance for the {@code get-packet-dumps} tool.
+   * @return a {@link SyncToolSpecification SyncToolSpecification} instance for the {@code get-rdbms-packet-dumps} tool.
    */
   private static SyncToolSpecification getPacketDumpsTool() {
     return SyncToolSpecification.builder()
       .tool(Tool.builder()
-        .name("get-packet-dumps")
+        .name("get-rdbms-packet-dumps")
         .title("Get RDBMS/SQLNet Packet Dumps")
         .description("Extract packet dumps from RDBMS/SQLNet trace file for given connection ID.")
         .inputSchema(ToolSchemas.RDBMS_TOOLS_SCHEMA)

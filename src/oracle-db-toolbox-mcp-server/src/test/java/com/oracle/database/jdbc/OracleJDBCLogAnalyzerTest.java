@@ -28,14 +28,14 @@ class OracleJDBCLogAnalyzerTest {
 
   @ParameterizedTest
   @ValueSource(strings = {
-    "get-stats",
-    "get-queries",
-    "get-errors",
+    "get-jdbc-stats",
+    "get-jdbc-queries",
+    "get-jdbc-errors",
     "list-log-files-from-directory",
-    "get-connection-events",
-    "log-comparison",
+    "get-jdbc-connection-events",
+    "jdbc-log-comparison",
     "get-rdbms-errors",
-    "get-packet-dumps"
+    "get-rdbms-packet-dumps"
   })
   void testToolPresence(final String toolName) {
     final var isToolPresent = tools.containsKey(toolName);
@@ -56,7 +56,7 @@ class OracleJDBCLogAnalyzerTest {
 
   @Test
   void testSecondFilePathParameterInLogComparisonTool() {
-    final var toolProperties = tools.get("log-comparison")
+    final var toolProperties = tools.get("jdbc-log-comparison")
       .inputSchema()
       .properties();
 
@@ -72,7 +72,7 @@ class OracleJDBCLogAnalyzerTest {
 
   @Test
   void testConnectionIdParameterInGetPacketDumpsTool() {
-    final var toolProperties = tools.get("get-packet-dumps")
+    final var toolProperties = tools.get("get-rdbms-packet-dumps")
       .inputSchema()
       .properties();
 

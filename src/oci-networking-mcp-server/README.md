@@ -7,8 +7,16 @@ It includes tools to help with managing network configurations.
 
 ## Running the server
 
+### STDIO transport mode
+
 ```sh
-uv run oracle.oci-networking-mcp-server
+uvx oracle.oci-networking-mcp-server
+```
+
+### HTTP streaming transport mode
+
+```sh
+ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.oci-networking-mcp-server
 ```
 
 ## Tools

@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-resource-search-mcp-server"
-version = "2.0.0"
+version = "2.1.0"
 description = "OCI Resource Search Service MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -49,5 +49,3 @@ omit = [
 [tool.coverage.report]
 precision = 2
 fail_under = 65.66
-
-

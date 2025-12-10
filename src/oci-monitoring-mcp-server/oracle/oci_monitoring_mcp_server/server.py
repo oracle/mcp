@@ -130,7 +130,14 @@ def list_alarms(
 
 
 def main():
-    mcp.run()
+
+    host = os.getenv("ORACLE_MCP_HOST")
+    port = os.getenv("ORACLE_MCP_PORT")
+
+    if host and port:
+        mcp.run(transport="http", host=host, port=int(port))
+    else:
+        mcp.run()
 
 
 if __name__ == "__main__":

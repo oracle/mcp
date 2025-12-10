@@ -6,8 +6,16 @@ This server provides tools to interact with the OCI Identity service.
 
 ## Running the server
 
+### STDIO transport mode
+
 ```sh
-uv run oracle.oci-identity-mcp-server
+uvx oracle.oci-identity-mcp-server
+```
+
+### HTTP streaming transport mode
+
+```sh
+ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.oci-identity-mcp-server
 ```
 
 ## Tools
@@ -37,4 +45,3 @@ Copyright (c) 2025 Oracle and/or its affiliates.
  
 Released under the Universal Permissive License v1.0 as shown at  
 <https://oss.oracle.com/licenses/upl/>.
-

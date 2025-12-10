@@ -55,6 +55,26 @@ For macOS/Linux:
 }
 ```
 
+To connect to an MCP server running in HTTP streaming mode:
+Assuming you started the server by running:
+```bash
+ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8888 uvx oracle.oci-api-mcp-server
+```
+then place the following in your MCP client configuration:
+:warning: NOTE: the `type` attribute differs across MCP clients; some use `http` as the
+transport value while others (like Cline) expect `streamableHttp`.
+
+```json
+{
+  "mcpServers": {
+    "oracle-oci-api-mcp-server": {
+      "type": "streamableHttp",
+      "url": "http://127.0.0.1:8888/mcp"
+    }
+  }
+}
+```
+
 ## Authentication
 
 For OCI MCP servers, you'll need to install and authenticate using the OCI CLI.
@@ -308,6 +328,17 @@ update it as needed. For instance:
 
 where `<absolute path to your server code>` is the absolute path to the server code, for instance
 `/Users/myuser/dev/oci-mcp/src/oci-identity-mcp-server/oracle/oci_identity_mcp_server`.
+
+To build and test servers running in HTTP transport mode:
+```bash
+make build
+make install
+```
+
+then start the server:
+```bash
+VIRTUAL_ENV=$(pwd)/.venv ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8888 uv run oracle.oci-api-mcp-server
+```
 
 ### Inspector
 

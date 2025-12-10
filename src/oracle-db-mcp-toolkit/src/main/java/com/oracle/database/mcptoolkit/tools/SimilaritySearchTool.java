@@ -1,3 +1,10 @@
+/*
+ ** Oracle Database MCP Toolkit version 1.0.0
+ **
+ ** Copyright (c) 2025 Oracle and/or its affiliates.
+ ** Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl/
+ */
+
 package com.oracle.database.mcptoolkit.tools;
 
 import com.fasterxml.jackson.databind.json.JsonMapper;
@@ -18,6 +25,12 @@ import static com.oracle.database.mcptoolkit.Utils.openConnection;
 import static com.oracle.database.mcptoolkit.Utils.tryCall;
 import static com.oracle.database.mcptoolkit.Utils.getOrDefault;
 
+/**
+ * Provides a tool for performing similarity searches using vector embeddings.
+ * <p>
+ * This class is responsible for handling the "similarity_search" tool, which allows users to
+ * search for similar text based on a given query.
+ */
 public class SimilaritySearchTool {
 
   private static final Pattern SAFE_IDENT = Pattern.compile("[A-Za-z0-9_$.#]+");
@@ -35,6 +48,14 @@ public class SimilaritySearchTool {
     FETCH FIRST ? ROWS ONLY
   """;
 
+  /**
+   * Returns a tool specification for the "similarity_search" tool.
+   * <p>
+   * This tool allows users to perform similarity searches using vector embeddings.
+   *
+   * @param config server configuration
+   * @return tool specification
+   */
   public static McpServerFeatures.SyncToolSpecification getSymilaritySearchTool(ServerConfig config) {
 
         return McpServerFeatures.SyncToolSpecification.builder()

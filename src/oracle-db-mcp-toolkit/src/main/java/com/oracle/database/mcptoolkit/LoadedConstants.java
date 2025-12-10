@@ -1,5 +1,19 @@
+/*
+ ** Oracle Database MCP Toolkit version 1.0.0
+ **
+ ** Copyright (c) 2025 Oracle and/or its affiliates.
+ ** Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl/
+ */
+
 package com.oracle.database.mcptoolkit;
 
+/**
+ * Provides a set of constants loaded from system properties and environment variables.
+ * These constants are used to configure various aspects of the application, including
+ * network settings, tool configurations, OAuth settings, and more.
+ *
+ * <p>This class is not intended to be instantiated and provides only static constants.
+ */
 public final class LoadedConstants {
   private LoadedConstants() {} // Prevent instantiation
 

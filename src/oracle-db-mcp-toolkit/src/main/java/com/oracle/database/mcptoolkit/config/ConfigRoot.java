@@ -1,11 +1,27 @@
+/*
+ ** Oracle Database MCP Toolkit version 1.0.0
+ **
+ ** Copyright (c) 2025 Oracle and/or its affiliates.
+ ** Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl/
+ */
+
 package com.oracle.database.mcptoolkit.config;
 
 import java.util.Map;
 
+/**
+ * Represents the root configuration for the application, containing a map of source configurations and tool configurations.
+ */
 public class ConfigRoot {
   public Map<String, SourceConfig> sources;
   public Map<String, ToolConfig> tools;
 
+  /**
+   * Substitutes environment variables in the source and tool configurations.
+   * <p>
+   * This method iterates over the source and tool configurations, substituting environment variables
+   * in each configuration's fields.
+   */
   public void substituteEnvVars() {
     if (sources != null) {
       for (SourceConfig sc : sources.values()) {

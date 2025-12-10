@@ -25,8 +25,12 @@ import java.util.logging.Logger;
 
 import static com.oracle.database.mcptoolkit.Utils.installExternalExtensionsFromDir;
 
-public class OracleDBToolboxMCPServer {
-  private static final Logger LOG = Logger.getLogger(OracleDBToolboxMCPServer.class.getName());
+/**
+ * The OracleDatabaseMCPToolkit class provides the main entry point for the MCP server.
+ * It initializes the configuration, sets up the transport layer, and starts the MCP server.
+ */
+public class OracleDatabaseMCPToolkit {
+  private static final Logger LOG = Logger.getLogger(OracleDatabaseMCPToolkit.class.getName());
 
   static ServerConfig config;
 
@@ -60,7 +64,7 @@ public class OracleDBToolboxMCPServer {
     Utils.addSyncToolSpecifications(server, config);
   }
 
-  private OracleDBToolboxMCPServer() {
+  private OracleDatabaseMCPToolkit() {
     // Prevent instantiation
   }
 

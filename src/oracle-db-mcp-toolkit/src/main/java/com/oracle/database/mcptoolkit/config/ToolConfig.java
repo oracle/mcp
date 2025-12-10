@@ -1,3 +1,10 @@
+/*
+ ** Oracle Database MCP Toolkit version 1.0.0
+ **
+ ** Copyright (c) 2025 Oracle and/or its affiliates.
+ ** Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl/
+ */
+
 package com.oracle.database.mcptoolkit.config;
 
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -7,13 +14,41 @@ import com.oracle.database.mcptoolkit.EnvSubstitutor;
 
 import java.util.List;
 
+/**
+ * Represents a tool configuration, encapsulating its properties and behavior.
+ */
 public class ToolConfig {
-  public String name;           // The tool name (from YAML key)
-  public String source;         // Reference key from sources
-  public String description;
-  public List<ToolParameterConfig> parameters;
-  public String statement;      // The SQL statement to execute
+  /**
+   * The tool name, derived from the YAML key.
+   */
+  public String name;
 
+  /**
+   * Reference key from sources.
+   */
+  public String source;
+
+  /**
+   * A brief description of the tool.
+   */
+  public String description;
+
+  /**
+   * A list of parameter configurations for the tool.
+   */
+  public List<ToolParameterConfig> parameters;
+
+  /**
+   * The SQL statement to be executed by the tool.
+   */
+  public String statement;
+
+  /**
+   * Substitutes environment variables in the tool configuration.
+   * <p>
+   * Replaces placeholders in the tool's name, source, description, and statement with their corresponding environment variable values.
+   * Also substitutes environment variables in the tool's parameters, if any.
+   */
   public void substituteEnvVars() {
     this.name        = EnvSubstitutor.substituteEnvVars(this.name);
     this.source      = EnvSubstitutor.substituteEnvVars(this.source);

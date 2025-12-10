@@ -1,5 +1,5 @@
 /*
- ** Oracle JDBC Log Analyzer MCP Server version 1.0.0
+ ** Oracle Database MCP Toolkit version 1.0.0
  **
  ** Copyright (c) 2025 Oracle and/or its affiliates.
  ** Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl/
@@ -33,13 +33,31 @@ import java.util.stream.Collectors;
  *   to analyze and process Oracle JDBC and RDBMS/SQLNet log files.
  * </p>
  */
-public final class OracleJDBCLogAnalyzer {
+public final class LogAnalyzerTools {
 
   private static final String FILE_PATH = "filePath";
   private static final String SECOND_FILE_PATH = "secondFilePath";
   private static final String CONNECTION_ID = "connectionId";
 
-  public static List<McpServerFeatures.SyncToolSpecification> getLogAnalyzerTools() {
+  /**
+   * <p>
+   *   Returns a list of available tools for Oracle JDBC Log Analyzer.
+   *   The tools provided include:
+   *   <ul>
+   *     <li>{@code get-jdbc-stats}: Retrieves high-level statistics from an Oracle JDBC thin log file.</li>
+   *     <li>{@code get-jdbc-queries}: Extracts all executed SQL queries from an Oracle JDBC thin log file.</li>
+   *     <li>{@code get-jdbc-errors}: Processes a specified Oracle JDBC thin log file and extracts all reported errors.</li>
+   *     <li>{@code list-log-files-from-directory}: Lists all Oracle JDBC log files present in the specified directory path.</li>
+   *     <li>{@code jdbc-log-comparison}: Compares two Oracle JDBC log files and provides a JSON report highlighting differences and similarities.</li>
+   *     <li>{@code get-jdbc-connection-events}: Retrieves opened and closed JDBC connection events from the log file.</li>
+   *     <li>{@code get-rdbms-errors}: Processes a specified Oracle RDBMS/SQLNet trace file to extract all reported errors.</li>
+   *     <li>{@code get-rdbms-packet-dumps}: Extracts packet dump information from a specified RDBMS/SQLNet trace file that matches a given connection ID.</li>
+   *   </ul>
+   * </p>
+   *
+   * @return a list of {@link McpServerFeatures.SyncToolSpecification SyncToolSpecification} instances representing the available tools.
+   */
+  public static List<McpServerFeatures.SyncToolSpecification> getTools() {
     return List.of(
         getStatsTool(),
         getQueriesTool(),

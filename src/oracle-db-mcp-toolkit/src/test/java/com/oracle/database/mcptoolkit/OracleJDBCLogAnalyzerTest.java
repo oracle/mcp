@@ -1,6 +1,6 @@
 package com.oracle.database.mcptoolkit;
 
-import com.oracle.database.mcptoolkit.tools.OracleJDBCLogAnalyzer;
+import com.oracle.database.mcptoolkit.tools.LogAnalyzerTools;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.BeforeAll;
@@ -21,7 +21,7 @@ class OracleJDBCLogAnalyzerTest {
 
   @BeforeAll
   static void initializeTools(){
-    tools = OracleJDBCLogAnalyzer.getLogAnalyzerTools()
+    tools = LogAnalyzerTools.getTools()
       .stream()
       .map(SyncToolSpecification::tool)
       .collect(Collectors.toMap(McpSchema.Tool::name, identity()));

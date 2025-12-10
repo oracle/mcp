@@ -1,3 +1,10 @@
+/*
+ ** Oracle Database MCP Toolkit version 1.0.0
+ **
+ ** Copyright (c) 2025 Oracle and/or its affiliates.
+ ** Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl/
+ */
+
 package com.oracle.database.mcptoolkit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -6,7 +13,7 @@ import com.oracle.database.mcptoolkit.config.SourceConfig;
 import com.oracle.database.mcptoolkit.config.ToolConfig;
 import com.oracle.database.mcptoolkit.config.ToolParameterConfig;
 import com.oracle.database.mcptoolkit.tools.ExplainAndExecutePlanTool;
-import com.oracle.database.mcptoolkit.tools.OracleJDBCLogAnalyzer;
+import com.oracle.database.mcptoolkit.tools.LogAnalyzerTools;
 import com.oracle.database.mcptoolkit.tools.SimilaritySearchTool;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServer;
@@ -63,7 +70,7 @@ public class Utils {
    * </p>
    */
   static void addSyncToolSpecifications(McpSyncServer server, ServerConfig config) {
-    List<McpServerFeatures.SyncToolSpecification> specs = OracleJDBCLogAnalyzer.getLogAnalyzerTools();
+    List<McpServerFeatures.SyncToolSpecification> specs = LogAnalyzerTools.getTools();
     for (McpServerFeatures.SyncToolSpecification spec : specs) {
       String toolName = spec.tool().name(); // e.g. "get-stats", "get-queries"
       if (isToolEnabled(config, toolName)) {
@@ -221,7 +228,7 @@ public class Utils {
 
   /**
    * <p>
-   *   Executes the provided {@link OracleJDBCLogAnalyzer.ThrowingSupplier ThrowingSupplier} action,
+   *   Executes the provided {@link LogAnalyzerTools.ThrowingSupplier ThrowingSupplier} action,
    *   which may throw an {@link Exception}, and returns the resulting {@link McpSchema.CallToolResult}.
    *   <br>
    *   If the action executes successfully, its {@link McpSchema.CallToolResult} is returned as-is.

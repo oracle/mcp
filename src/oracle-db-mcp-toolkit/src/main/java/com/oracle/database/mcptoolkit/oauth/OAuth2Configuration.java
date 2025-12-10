@@ -1,3 +1,10 @@
+/*
+ ** Oracle Database MCP Toolkit version 1.0.0
+ **
+ ** Copyright (c) 2025 Oracle and/or its affiliates.
+ ** Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl/
+ */
+
 package com.oracle.database.mcptoolkit.oauth;
 
 import com.oracle.database.mcptoolkit.LoadedConstants;
@@ -9,6 +16,7 @@ import java.util.logging.Logger;
 /**
  * The OAuth2Configuration class is a singleton that manages OAuth2 authentication configuration settings.
  * It reads configuration values from system properties and provides access to them via getter methods.
+ * <p>
  * This class also handles logging based on whether authentication and OAuth2 are enabled or configured.
  * If OAuth2 is not properly configured, it initializes a TokenGenerator for local token generation.
  */

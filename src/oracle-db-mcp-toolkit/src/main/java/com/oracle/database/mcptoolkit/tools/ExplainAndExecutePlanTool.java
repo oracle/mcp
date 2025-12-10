@@ -1,3 +1,10 @@
+/*
+ ** Oracle Database MCP Toolkit version 1.0.0
+ **
+ ** Copyright (c) 2025 Oracle and/or its affiliates.
+ ** Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl/
+ */
+
 package com.oracle.database.mcptoolkit.tools;
 
 import com.oracle.database.mcptoolkit.ServerConfig;
@@ -20,7 +27,20 @@ import java.util.regex.Pattern;
 import static com.oracle.database.mcptoolkit.Utils.openConnection;
 import static com.oracle.database.mcptoolkit.Utils.tryCall;
 
+/**
+ * Provides functionality for explaining and executing Oracle SQL plans.
+ * This class contains methods to generate execution plans for SQL queries and
+ * to explain these plans in a human-readable format.
+ */
 public class ExplainAndExecutePlanTool {
+  /**
+   * Returns a tool specification for the "explain_plan" tool.
+   * This tool generates an Oracle execution plan for the provided SQL and
+   * produces an accompanying LLM prompt to explain and tune the plan.
+   *
+   * @param config Server configuration
+   * @return Tool specification for the "explain_plan" tool
+   */
   public static McpServerFeatures.SyncToolSpecification getExplainAndExecutePlanTool(ServerConfig config) {
     return
         McpServerFeatures.SyncToolSpecification.builder()
@@ -103,7 +123,6 @@ public class ExplainAndExecutePlanTool {
    * @param execute      whether to execute or just parse (null = auto per SQL type)
    * @param xplanOptions DBMS_XPLAN formatting options
    */
-
   static ExplainResult getExplainPlan(
       Connection c,
       String sql,

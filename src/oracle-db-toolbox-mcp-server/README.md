@@ -473,7 +473,7 @@ podman run --rm \
     -Dtools=get-stats,get-queries \
     -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service \
     -Ddb.user=your_user \
-    -Ddb.password=your_password" \
+    -Ddb.password=your_password \
     -Dojdbc.ext.dir=/ext" \
   oracle-db-toolbox-mcp-server:1.0.0
 ```

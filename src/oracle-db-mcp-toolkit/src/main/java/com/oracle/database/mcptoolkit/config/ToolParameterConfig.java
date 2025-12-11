@@ -18,22 +18,22 @@ public class ToolParameterConfig {
   /**
    * The name of the tool parameter.
    */
-  public String name;
+  private String name;
 
   /**
    * The data type of the tool parameter.
    */
-  public String type;
+  private String type;
 
   /**
    * A human-readable description of the tool parameter.
    */
-  public String description;
+  private String description;
 
   /**
    * Indicates whether the tool parameter is required.
    */
-  public boolean required;
+  private boolean required;
 
   /**
    * Substitutes environment variables in the tool parameter's properties.
@@ -44,5 +44,21 @@ public class ToolParameterConfig {
     this.name        = EnvSubstitutor.substituteEnvVars(this.name);
     this.type        = EnvSubstitutor.substituteEnvVars(this.type);
     this.description = EnvSubstitutor.substituteEnvVars(this.description);
+  }
+
+  public String getName() {
+    return name;
+  }
+
+  public String getType() {
+    return type;
+  }
+
+  public String getDescription() {
+    return description;
+  }
+
+  public boolean isRequired() {
+    return required;
   }
 }

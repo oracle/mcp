@@ -13,8 +13,16 @@ import java.util.Map;
  * Represents the root configuration for the application, containing a map of source configurations and tool configurations.
  */
 public class ConfigRoot {
-  public Map<String, DataSourceConfig> dataSources;
-  public Map<String, ToolConfig> tools;
+  private Map<String, DataSourceConfig> dataSources;
+  private Map<String, ToolConfig> tools;
+
+  public Map<String, ToolConfig> getTools() {
+    return tools;
+  }
+
+  public Map<String, DataSourceConfig> getDataSources() {
+    return dataSources;
+  }
 
   /**
    * Substitutes environment variables in the source and tool configurations.

@@ -90,12 +90,12 @@ public final class ServerConfig {
     String dbUser = LoadedConstants.DB_USER;
     String dbPass = LoadedConstants.DB_PASSWORD;
 
-    Map<String, DataSourceConfig> sources = configRoot != null ? configRoot.dataSources : Collections.emptyMap();
-    Map<String, ToolConfig> toolsMap = configRoot != null ? configRoot.tools : Collections.emptyMap();
+    Map<String, DataSourceConfig> sources = configRoot != null ? configRoot.getDataSources() : Collections.emptyMap();
+    Map<String, ToolConfig> toolsMap = configRoot != null ? configRoot.getTools() : Collections.emptyMap();
 
     if (toolsMap != null) {
       for (Map.Entry<String, ToolConfig> entry : toolsMap.entrySet()) {
-        entry.getValue().name = entry.getKey();
+        entry.getValue().setName(entry.getKey());
       }
     }
     configRoot.substituteEnvVars();
@@ -107,8 +107,8 @@ public final class ServerConfig {
     if (!allLoadedConstantsPresent && sources!=null && sources.containsKey(defaultSourceKey)) {
       DataSourceConfig src = sources.get(defaultSourceKey);
       dbUrl = src.toJdbcUrl();
-      dbUser = src.user;
-      dbPass = src.password;
+      dbUser = src.getUser();
+      dbPass = src.getPassword();
       defaultSourceName = defaultSourceKey;
     }
 

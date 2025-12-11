@@ -38,7 +38,7 @@ import java.util.Set;
 public final class ServerConfig {
   public final String dbUrl;
   public final String dbUser;
-  public final String dbPassword;
+  public final char[] dbPassword;
   public final Set<String> toolsFilter;
   public final Map<String, DataSourceConfig> sources;
   public final Map<String, ToolConfig> tools;
@@ -47,7 +47,7 @@ public final class ServerConfig {
   private ServerConfig(
       String dbUrl,
       String dbUser,
-      String dbPassword,
+      char[] dbPassword,
       Set<String> toolsFilter,
       Map<String, DataSourceConfig> sources,
       Map<String, ToolConfig> tools
@@ -88,7 +88,7 @@ public final class ServerConfig {
 
     String dbUrl = LoadedConstants.DB_URL;
     String dbUser = LoadedConstants.DB_USER;
-    String dbPass = LoadedConstants.DB_PASSWORD;
+    char[] dbPass = LoadedConstants.DB_PASSWORD;
 
     Map<String, DataSourceConfig> sources = configRoot != null ? configRoot.dataSources : Collections.emptyMap();
     Map<String, ToolConfig> toolsMap = configRoot != null ? configRoot.tools : Collections.emptyMap();
@@ -102,7 +102,7 @@ public final class ServerConfig {
     boolean allLoadedConstantsPresent =
         dbUrl != null && !dbUrl.isBlank()
         && dbUser != null && !dbUser.isBlank()
-        && dbPass != null && !dbPass.isBlank();
+        && dbPass != null && dbPass.length > 0;
 
     if (!allLoadedConstantsPresent && sources!=null && sources.containsKey(defaultSourceKey)) {
       DataSourceConfig src = sources.get(defaultSourceKey);
@@ -118,7 +118,7 @@ public final class ServerConfig {
     if (needDb && (dbUser == null || dbUser.isBlank())) {
       throw new IllegalStateException("Missing required db.user in both system properties and YAML config");
     }
-    if (needDb && (dbPass == null || dbPass.isBlank())) {
+    if (needDb && (dbPass == null || dbPass.length == 0)) {
       throw new IllegalStateException("Missing required db.password in both system properties and YAML config");
     }
     return new ServerConfig(dbUrl, dbUser, dbPass, tools, sources, toolsMap);

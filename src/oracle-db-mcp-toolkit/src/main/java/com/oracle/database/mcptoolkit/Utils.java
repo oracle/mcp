@@ -211,12 +211,12 @@ public class Utils {
     }
   }
 
-  private static DataSource createDataSource(String url, String user, String password) throws SQLException {
+  private static DataSource createDataSource(String url, String user, char[] password) throws SQLException {
     PoolDataSource pds = PoolDataSourceFactory.getPoolDataSource();
     pds.setConnectionFactoryClassName("oracle.jdbc.pool.OracleDataSource");
     pds.setURL(url);
     if (user != null) pds.setUser(user);
-    if (password != null) pds.setPassword(password);
+    if (password != null) pds.setPassword(new String(password));
     pds.setInitialPoolSize(1);
     pds.setMinPoolSize(1);
     pds.setConnectionWaitTimeout(10);

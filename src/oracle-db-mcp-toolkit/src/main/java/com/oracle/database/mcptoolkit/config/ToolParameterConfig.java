@@ -45,4 +45,5 @@ public class ToolParameterConfig {
     this.type        = EnvSubstitutor.substituteEnvVars(this.type);
     this.description = EnvSubstitutor.substituteEnvVars(this.description);
   }
+
 }

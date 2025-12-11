@@ -1,0 +1,26 @@
+# Lens MCP Server Requirements
+# Model Context Protocol framework
+mcp>=0.9.0
+
+# HTTP client for lens API communication
+requests>=2.31.0
+
+# Environment variable management
+python-dotenv>=1.0.0
+
+# Type hints support
+typing-extensions>=4.0.0
+
+# Enhanced console output (cross-platform colors)
+colorama>=0.4.6
+
+# JSON handling and data validation
+pydantic>=2.0.0
+
+# Development dependencies (uncomment if needed)
+# pytest>=7.4.0
+# pytest-asyncio>=0.21.0
+# black>=23.0.0
+# flake8>=6.0.0
+# mypy>=1.5.0
+# pre-commit>=3.0.0

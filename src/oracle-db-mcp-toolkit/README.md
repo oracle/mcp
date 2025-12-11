@@ -13,29 +13,29 @@ This provides a flexible and declarative way to extend the server without modify
 
 A YAML file may define:
 
-* One or more **sources:** — named database configurations (URL, user, password, etc.)
+* One or more **datasources:** — named database configurations (URL, user, password, etc.)
 
 * One or more **tools** — each with parameters, SQL statements, and optional metadata
 
-### Source Resolution Logic
+### DataSource Resolution Logic
 
-When executing a tool, the MCP server determines which source to use based on the following rules:
+When executing a tool, the MCP server determines which datasource to use based on the following rules:
 
-1. If the tool specifies a source, that source is used.
+1. If the tool specifies a datasource, that datasource is used.
 
-2. If the tool does not specify a source, the server looks for a default source:
+2. If the tool does not specify a datasource, the server looks for a default datasource:
 
-  * First, it checks whether a source was provided via system properties (db.url, db.user, db.password) (Higher priority).
+  * First, it checks whether a datasource was provided via system properties (db.url, db.user, db.password) (Higher priority).
 
-  * If no system property source is available, it falls back to the first source defined in the YAML file, if present.
+  * If no system property datasource is available, it falls back to the first datasource defined in the YAML file, if present.
 
-3. If no source can be resolved and the tool requires one (e.g., SQL-based tools), the server reports a configuration error.
+3. If no datasource can be resolved and the tool requires one (e.g., SQL-based tools), the server reports a configuration error.
 
-This design ensures that tools always have a predictable source while giving you flexibility to choose how connections are provided—either inline in YAML or externally via system properties and environment variables.
+This design ensures that tools always have a predictable datasource while giving you flexibility to choose how connections are provided—either inline in YAML or externally via system properties and environment variables.
 
 **Example `config.yaml`:**
 ```yaml
-sources:
+dataSources:
   prod-db:
     url: jdbc:oracle:thin:@prod-host:1521/ORCLPDB1
     user: ADMIN
@@ -43,7 +43,7 @@ sources:
 
 tools:
   hotels-by-name:
-    source: prod-db
+    dataSource: prod-db
     parameters:
       - name: name
         type: string
@@ -409,7 +409,7 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
     <tr>
       <td><code>configFile</code></td>
       <td>No</td>
-      <td>Path to a YAML file defining <code>sources</code> and <code>tools</code>.</td>
+      <td>Path to a YAML file defining <code>datasources</code> and <code>tools</code>.</td>
       <td>/opt/mcp/config.yaml</td>
     </tr>
     <tr>

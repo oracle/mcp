@@ -203,7 +203,7 @@ public class Utils {
         try {
           DataSourceConfig src = (cfg.sources != null) ? cfg.sources.get(name) : null;
           if (src == null) throw new IllegalArgumentException("Unknown source: " + name);
-          return createDataSource(src.toJdbcUrl(), src.user, src.password);
+          return createDataSource(src.toJdbcUrl(), src.user, src.getPasswordChars());
         } catch (SQLException ex) {
           throw new RuntimeException(ex);
         }

@@ -108,7 +108,7 @@ public final class ServerConfig {
       DataSourceConfig src = sources.get(defaultSourceKey);
       dbUrl = src.toJdbcUrl();
       dbUser = src.user;
-      dbPass = src.password;
+      dbPass = src.getPasswordChars();
       defaultSourceName = defaultSourceKey;
     }
 

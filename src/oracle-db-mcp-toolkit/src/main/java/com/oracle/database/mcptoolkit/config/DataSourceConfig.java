@@ -44,7 +44,9 @@ public class DataSourceConfig {
   /**
    * The password to use for the database connection.
    */
-  public char[] password;
+  public String password;
+
+  private transient char[] passwordChars;
 
   /**
    * Returns the JDBC URL for the database connection. If the {@link #url} property is not set,
@@ -71,6 +73,15 @@ public class DataSourceConfig {
     this.database = EnvSubstitutor.substituteEnvVars(this.database);
     this.url      = EnvSubstitutor.substituteEnvVars(this.url);
     this.user     = EnvSubstitutor.substituteEnvVars(this.user);
-    this.password = EnvSubstitutor.substituteEnvVarsInCharArray(this.password);
+    this.passwordChars = EnvSubstitutor.substituteEnvVarsInCharArray(this.getPasswordChars());
+  }
+
+  public char[] getPasswordChars() {
+    if (passwordChars == null && password != null) {
+      passwordChars = password.toCharArray();
+      // To reduce exposure
+       password = null;
+    }
+    return passwordChars;
   }
 }

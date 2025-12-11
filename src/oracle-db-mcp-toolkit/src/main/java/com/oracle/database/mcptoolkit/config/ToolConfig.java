@@ -21,27 +21,27 @@ public class ToolConfig {
   /**
    * The tool name, derived from the YAML key.
    */
-  public String name;
+  private String name;
 
   /**
    * Reference key from data sources.
    */
-  public String dataSource;
+  private String dataSource;
 
   /**
    * A brief description of the tool.
    */
-  public String description;
+  private String description;
 
   /**
    * A list of parameter configurations for the tool.
    */
-  public List<ToolParameterConfig> parameters;
+  private List<ToolParameterConfig> parameters;
 
   /**
    * The SQL statement to be executed by the tool.
    */
-  public String statement;
+  private String statement;
 
   /**
    * Substitutes environment variables in the tool configuration.
@@ -71,16 +71,40 @@ public class ToolConfig {
         if (param == null) {
           continue;
         }
-        ObjectNode prop = properties.putObject(param.name);
-        prop.put("type", param.type);
-        prop.put("description", param.description);
-        if (param.required) {
-          required.add(param.name);
+        ObjectNode prop = properties.putObject(param.getName());
+        prop.put("type", param.getType());
+        prop.put("description", param.getDescription());
+        if (param.isRequired()) {
+          required.add(param.getName());
         }
       }
     if (!required.isEmpty()) {
       schema.set("required", required);
     }
     return schema.toString();
+  }
+
+  public String getName() {
+    return name;
+  }
+
+  public String getDataSource() {
+    return dataSource;
+  }
+
+  public String getDescription() {
+    return description;
+  }
+
+  public List<ToolParameterConfig> getParameters() {
+    return parameters;
+  }
+
+  public String getStatement() {
+    return statement;
+  }
+
+  public void setName(String name) {
+    this.name = name;
   }
 }

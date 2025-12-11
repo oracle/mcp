@@ -94,24 +94,24 @@ public class Utils {
       server.addTool(
           McpServerFeatures.SyncToolSpecification.builder()
               .tool(McpSchema.Tool.builder()
-                  .name(tc.name)
-                  .title(tc.name)
-                  .description(tc.description)
+                  .name(tc.getName())
+                  .title(tc.getName())
+                  .description(tc.getDescription())
                   .inputSchema(tc.buildInputSchemaJson())
                   .build()
               )
               .callHandler((exchange, callReq) ->
                   tryCall(() -> {
-                    try (Connection c = openConnection(config, tc.dataSource)) {
-                      PreparedStatement ps = c.prepareStatement(tc.statement);
+                    try (Connection c = openConnection(config, tc.getDataSource())) {
+                      PreparedStatement ps = c.prepareStatement(tc.getStatement());
                       int paramIdx = 1;
-                      if (tc.parameters != null) {
-                        for (ToolParameterConfig param : tc.parameters) {
-                          Object argVal = callReq.arguments().get(param.name);
+                      if (tc.getParameters() != null) {
+                        for (ToolParameterConfig param : tc.getParameters()) {
+                          Object argVal = callReq.arguments().get(param.getName());
                           ps.setObject(paramIdx++, argVal);
                         }
                       }
-                      if (tc.statement.trim().toLowerCase().startsWith("select")) {
+                      if (tc.getStatement().trim().toLowerCase().startsWith("select")) {
                         ResultSet rs = ps.executeQuery();
                         List<Map<String,Object>> rows = rsToList(rs);
                         return McpSchema.CallToolResult.builder()
@@ -163,7 +163,7 @@ public class Utils {
     if (yamlConfig == null) {
       config = ServerConfig.fromSystemProperties();
     } else {
-      String defaultSourceKey = yamlConfig.dataSources!=null?yamlConfig.dataSources.keySet().stream().findFirst().orElse(null):null;
+      String defaultSourceKey = yamlConfig.getDataSources()!=null?yamlConfig.getDataSources().keySet().stream().findFirst().orElse(null):null;
       config = ServerConfig.fromSystemPropertiesAndYaml(yamlConfig, defaultSourceKey);
     }
     return config;
@@ -203,7 +203,7 @@ public class Utils {
         try {
           DataSourceConfig src = (cfg.sources != null) ? cfg.sources.get(name) : null;
           if (src == null) throw new IllegalArgumentException("Unknown source: " + name);
-          return createDataSource(src.toJdbcUrl(), src.user, src.password);
+          return createDataSource(src.toJdbcUrl(), src.getUser(), src.getPassword());
         } catch (SQLException ex) {
           throw new RuntimeException(ex);
         }

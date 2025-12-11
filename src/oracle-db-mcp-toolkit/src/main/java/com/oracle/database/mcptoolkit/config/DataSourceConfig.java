@@ -18,33 +18,33 @@ public class DataSourceConfig {
   /**
    * The hostname or IP address of the database server.
    */
-  public String host;
+  private String host;
 
   /**
    * The port number on which the database server is listening.
    */
-  public String port;
+  private String port;
 
   /**
    * The Oracle SID or service name of the database.
    */
-  public String database;
+  private String database;
 
   /**
    * The JDBC URL for the database connection. If not provided, it will be constructed
    * using the host, port, and database properties.
    */
-  public String url;
+  private String url;
 
   /**
    * The username to use for the database connection.
    */
-  public String user;
+  private String user;
 
   /**
    * The password to use for the database connection.
    */
-  public String password;
+  private String password;
 
   /**
    * Returns the JDBC URL for the database connection. If the {@link #url} property is not set,
@@ -72,5 +72,13 @@ public class DataSourceConfig {
     this.url      = EnvSubstitutor.substituteEnvVars(this.url);
     this.user     = EnvSubstitutor.substituteEnvVars(this.user);
     this.password = EnvSubstitutor.substituteEnvVars(this.password);
+  }
+
+  public String getUser() {
+    return user;
+  }
+
+  public String getPassword() {
+    return password;
   }
 }

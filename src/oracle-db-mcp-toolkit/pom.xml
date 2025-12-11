@@ -8,9 +8,12 @@
     <artifactId>oracle-db-mcp-toolkit</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
-    <name>Oracle JDBC Log Analyzer MCP Server</name>
-    <description>The Oracle Database MCP Toolkit is a Model Context Protocol (MCP) server that enables users to analyze Oracle JDBC thin client logs and RDBMS/SQLNet trace files using built-in tools.
-        It also offers database-powered tools, such as vector similarity search and SQL execution plan analysis. Additionally, users can define custom tools through a YAML configuration file.</description>
+    <name>Oracle Database MCP Toolkit</name>
+    <description>The Oracle Database MCP Toolkit is a Model Context Protocol (MCP) server that
+        enables users to define custom tools through a YAML configuration file, analyze Oracle
+        JDBC thin client logs and RDBMS/SQLNet trace files using built-in tools.
+        It also offers database-powered tools, such as vector similarity search and SQL execution
+        plan analysis.</description>
     <url>https://github.com/oracle/mcp/tree/main/src/oracle-db-mcp-toolkit</url>
 
     <licenses>

@@ -7,7 +7,7 @@
 
 package com.oracle.database.mcptoolkit.oauth;
 
-import static com.oracle.database.mcptoolkit.LoadedConstants.ORACLE_DB_TOOLBOX_AUTH_TOKEN;
+import static com.oracle.database.mcptoolkit.LoadedConstants.ORACLE_DB_TOOLKIT_AUTH_TOKEN;
 
 import java.util.UUID;
 import java.util.logging.Level;
@@ -31,7 +31,7 @@ public class TokenGenerator {
    * Initializes the generated token based on the {@code ORACLE_DB_TOOLBOX_AUTH_TOKEN} environment variable or a random UUID.
    */
   private TokenGenerator() {
-    generatedToken = ORACLE_DB_TOOLBOX_AUTH_TOKEN != null ? ORACLE_DB_TOOLBOX_AUTH_TOKEN : UUID.randomUUID().toString() ;
+    generatedToken = ORACLE_DB_TOOLKIT_AUTH_TOKEN != null ? ORACLE_DB_TOOLKIT_AUTH_TOKEN : UUID.randomUUID().toString() ;
     LOG.log(Level.INFO, "Authorization token generated (for testing and development use only): {0}", generatedToken);
   }
 

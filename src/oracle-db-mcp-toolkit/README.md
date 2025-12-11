@@ -1,13 +1,15 @@
 # Oracle Database MCP Toolkit
 
-## Overview
+## 1. Overview
 
 Oracle Database MCP Toolkit is a Model Context Protocol (MCP) server that lets you: 
   * Define your own custom tools via a simple YAML configuration file.
   * Use 8 built-in tools to analyze Oracle JDBC thin client logs and RDBMS/SQLNet trace files.
   * Optionally use **database-powered tools**, including **vector similarity search** and **SQL execution plan analysis**, when JDBC configuration is provided.
 
-## Custom Tool Framework — Extending the MCP Server
+---
+
+## 2. Custom Tool Framework — Extending the MCP Server
 The MCP server can load both database connection definitions and custom tool definitions from a YAML configuration file.
 This provides a flexible and declarative way to extend the server without modifying or rebuilding the codebase.
 
@@ -56,9 +58,11 @@ To enable YAML configuration, launch the server with:
 java -DconfigFile=/path/to/config.yaml -jar <mcp-server>.jar
 ```
 
-## Built-in Tools
+---
 
-### Oracle JDBC Log Analysis:
+## 3. Built-in Tools
+
+### 3.1. Oracle JDBC Log Analysis:
 
 These tools operate on Oracle JDBC thin client logs:
 
@@ -69,14 +73,14 @@ These tools operate on Oracle JDBC thin client logs:
 - **`list-log-files-from-directory`**: List all visible files from a specified directory, which helps the user analyze multiple files with one prompt.
 - **`jdbc-log-comparison`**: Compares two log files for performance metrics, errors, and network information.
 
-### RDBMS/SQLNet Trace Analysis:
+### 3.2. RDBMS/SQLNet Trace Analysis:
 
 These tools operate on RDBMS/SQLNet trace files:
 
 - **`get-rdbms-errors`**: Extracts errors from RDBMS/SQLNet trace files.
 - **`get-rdbms-packet-dumps`**: Extracts packet dumps for a specific connection ID.
 
-### Vector Similarity Search
+### 3.3. Vector Similarity Search
 
 * **`similarity_search`**: Perform semantic similarity search using Oracle’s vector features (`VECTOR_EMBEDDING`, `VECTOR_DISTANCE`).
 
@@ -94,7 +98,7 @@ These tools operate on RDBMS/SQLNet trace files:
 
     * JSON array of similar rows with scores and truncated snippets.
 
-### SQL Execution Plan Analysis
+### 3.4. SQL Execution Plan Analysis
 
 * **`explain_plan`**: Generate Oracle execution plans and receive a pre-formatted LLM prompt for tuning and explanation.
 
@@ -121,15 +125,16 @@ These tools operate on RDBMS/SQLNet trace files:
 
 ---
 
-## Prerequisites
+## 4. Installation
 
+### 4.1. Prerequisites
 - **Java 17+** (JDK)
 - **Credentials** with permissions for your intended operations
 - **MCP client** (e.g., Claude Desktop) to call the tools
 
 > The server uses UCP pooling out of the box (initial/min= 1).
 
-### Build the MCP server jar
+### 4.2. Build the MCP server jar
 
 ```bash
 mvn clean install
@@ -137,14 +142,14 @@ mvn clean install
 
 The created jar can be found in `target/oracle-db-mcp-toolkit-1.0.0.jar`.
 
-### Transport modes (stdio vs HTTP)
+### 4.3. Choose a transport mode (stdio vs HTTP)
 
 `oracle-db-mcp-toolkit` supports two transport modes:
 
 - **Stdio (default)** – the MCP client spawns the JVM process and talks over stdin/stdout
 - **HTTP (streamable)** – the MCP server runs as an HTTP service, and clients connect via a URL
 
-#### Stdio mode (default)
+#### 4.3.1. Stdio mode (default)
 
 This is the mode used by tools like Claude Desktop, where the client directly launches:
 
@@ -168,7 +173,7 @@ This is the mode used by tools like Claude Desktop, where the client directly la
 ```
 If you don’t set `-Dtransport`, the server runs in stdio mode by default.
 
-#### HTTP mode
+#### 4.3.2. HTTP mode
 
 In HTTP mode, you run the server as a standalone HTTP service and point an MCP client to it.
 
@@ -186,7 +191,7 @@ java \
 ```
 This exposes the MCP endpoint at: `http://localhost:45450/mcp`.
 
-#### Enabling HTTPS (SSL/TLS)
+### 4.4. Enabling HTTPS (SSL/TLS)
 To enable HTTPS (SSL/TLS), specify your certificate keystore path and password using the `-DcertificatePath` and `-DcertificatePassword` options.  
 Only PKCS12 (`.p12` or `.pfx`) keystore files are supported.
 You can set the HTTPS port with the `-Dhttps.port` option.
@@ -194,7 +199,7 @@ You can set the HTTPS port with the `-Dhttps.port` option.
 ```shell
 -DcertificatePath=/path/to/your-certificate.p12 -DcertificatePassword=yourPassword -Dhttps.port=443
 ```
-### Using HTTP from Cline
+### 4.5. Using HTTP transport and Cline
 Cline supports streamable HTTP directly. Example:
 
 ```json
@@ -208,7 +213,7 @@ Cline supports streamable HTTP directly. Example:
 }
 ```
 
-### Using HTTP from Claude Desktop
+### 4.6. Using HTTP from Claude Desktop
 Claude Desktop accepts HTTPS endpoints for remote MCP servers.
 If your MCP server is only available over plain HTTP (e.g. http://localhost:45450/mcp),
 you can use the `mcp-remote` workaround:
@@ -228,17 +233,17 @@ you can use the `mcp-remote` workaround:
 }
 ```
 
-### HTTP Authentication Configuration
+### 4.7. HTTP Authentication Configuration
 
-#### Generated Token (For Development and Testing)
+#### 4.7.1. Generated Token (For Development and Testing)
 
 To enable authentication for the HTTP server, you must set the `-DenableAuthentication` system property to `true` (default value is `false`).
-If it's enabled (e.g. set to `true`) the MCP Server will check if there's an environment variable called `ORACLE_DB_TOOLBOX_AUTH_TOKEN` and its value will be used as a token.
+If it's enabled (e.g. set to `true`) the MCP Server will check if there's an environment variable called `ORACLE_DB_TOOLKIT_AUTH_TOKEN` and its value will be used as a token.
 If the environment variable is not found, then a random UUID token will be generated once per JVM session. The token would be logged at the `INFO` level.
 
 When connecting to the MCP server, the token needs to be provided in the Authorization header of each request using the `Bearer ` prefix.
 
-#### OAuth2 Configuration
+#### 4.7.2. OAuth2 Configuration
 
 In order to configure an OAuth2 server, the `-DenableAuthentication` should be enabled alongside the following system properties:
 
@@ -246,15 +251,15 @@ In order to configure an OAuth2 server, the `-DenableAuthentication` should be e
 - `-DredirectOAuthToOpenID`: (default: `false`) This system property is used to as a workaround to support OAuth servers that provide `/.well-known/openid-configuration` and not `/.well-known/oauth-authorization-server`.
 It works by creating an `/.well-known/oauth-authorization-server` endpoint on the MCP Server that redirects to the OAuth server's `/.well-known/openid-configuration` endpoint.
 - `-DintrospectionEndpoint`: The OAuth2 server's introspection endpoint used to validate an access token (The OAuth2 introspection JSON response MUST contain the `active` field, e.g. `{...,"active": false,..}`).
-- `-DclientId`: Client ID (e.g. `oracle-db-toolbox`)
+- `-DclientId`: Client ID (e.g. `oracle-db-toolkit`)
 - `-DclientSecret`: Client Secret (e.g. `Xj9mPqR2vL5kN8tY3hB7wF4uD6cA1eZ0`)
 - `-DallowedHosts`: (default: `*`) The value of `Access-Control-Allow-Origin` header when requesting the `/.well-known/oauth-protected-resource` endpoint (and `/.well-known/oauth-authorization-server` if `-DredirectOAuthToOpenID` is set to `true`) of the MCP Server.
 
 For more details regarding this MCP and OAuth, please see [MCP specification for authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization) (or a newer version if available).
 
-#### Examples
+##### Examples
 
-##### Enabling Authentication with OAuth2
+###### Enabling Authentication with OAuth2
 
 ```bash
 java \
@@ -264,7 +269,7 @@ java \
     -DenableAuthentication=true \
     -DauthServer=http://localhost:8080/realms/mcp \
     -DintrospectionEndpoint=http://localhost:8080/realms/mcp/protocol/openid-connect/token/introspect \
-    -DclientId=oracle-db-toolbox \
+    -DclientId=oracle-db-toolkit \
     -DclientSecret=Xj9mPqR2vL5kN8tY3hB7wF4uD6cA1eZ0 \
     -DallowedHosts=http://localhost:6274 \
     -jar <path-to-jar>/oracle-db-mcp-toolkit-1.0.0.jar
@@ -295,14 +300,14 @@ Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.oauth.OAuth2Configuration <init
 WARNING: OAuth2 is not configured
 Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.oauth.TokenGenerator <init>
 INFO: Authorization token generated (for testing and development use only): 0dd11948-37a3-470f-911e-4cd8b3d6f69c
-Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.OracleDBToolboxMCPServer startHttpServer
+Nov 25, 2025 3:30:46 PM com.oracle.database.jdbc.OracleDatabaseMCPToolkit startHttpServer
 INFO: [oracle-db-mcp-toolkit] HTTP transport started on http://localhost:45450 (endpoint: http://localhost:45450/mcp)
 ```
 
-If `ORACLE_DB_TOOLBOX_AUTH_TOKEN` environment variable is set:
+If `ORACLE_DB_TOOLKIT_AUTH_TOKEN` environment variable is set:
 
 ```bash
-export ORACLE_DB_TOOLBOX_AUTH_TOKEN=Secret_DeV_T0ken
+export ORACLE_DB_TOOLKIT_AUTH_TOKEN=Secret_DeV_T0ken
 ```
 
 Then the server logs will be the following:
@@ -318,7 +323,9 @@ INFO: Authorization token generated (for testing and development use only): Secr
 
 Ultimately, the token must be included in the http request header (e.g. `Authorization: Bearer 0dd11948-37a3-470f-911e-4cd8b3d6f69c` or `Authorization: Bearer Secret_DeV_T0ken`).
 
-### Supported System Properties
+---
+
+## 5. Supported System Properties
 <table>
   <thead>
     <tr>
@@ -435,7 +442,7 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
       <td><code>clientId</code></td>
       <td>No</td>
       <td>The client identifier for registering with the configured OAuth2 server.</td>
-      <td><code>-DclientId=oracle-db-toolbox</code></td>
+      <td><code>-DclientId=oracle-db-toolkit</code></td>
     </tr>
     <tr>
       <td><code>clientSecret</code></td>
@@ -467,17 +474,19 @@ If you enable **only** the Log Analyzer tools, you can omit <code>db.url</code>.
 <i>* Note:</i> If you’re using token-based authentication (e.g., IAM tokens) or a centralized configuration provided via the JARs you place in `-Dojdbc.ext.dir`,
 you can omit `db.user` and `db.password`. The driver will pick up credentials and security settings from those extensions.
 
-## Docker Image
+---
+
+## 6. Docker Image
 
 A `Dockerfile` is included at the root of the project so you can build and run the MCP server as a container.
 
-### Build the image
+### 6.1. Build the image
 From the project root (where the Dockerfile lives):
 
 ```bash
 podman build -t oracle-db-mcp-toolkit:1.0.0 .
 ```
-### Run the container (HTTP mode example)
+### 6.2. Run the container (HTTP mode example)
 This example runs the MCP server over HTTP and HTTPS inside the container and exposes it on port 45450 and 45451 on your host.
 
 ```bash
@@ -501,7 +510,8 @@ This exposes the MCP endpoint at: http://[your-ip-address]:45450/mcp or https://
 
 You can then configure Cline or Claude Desktop as described in the Using HTTP from Cline / Claude Desktop sections above.
 
-If you need extra JDBC / security jars (e.g. `oraclepki`, `wallets`, `centralized config`),
+If you need extra JDBC / security jars (e.g. `oraclepki`, wallets, centralized config, or providers that fetch full
+database credentials such as username, password, and connection string from a vault secret),
 mount them and point `ojdbc.ext.dir` at that directory:
 
 ```bash
@@ -522,7 +532,7 @@ podman run --rm \
   oracle-db-mcp-toolkit:1.0.0
 ```
 
-### Using Docker/Podman with stdio
+### 6.3. Using Docker/Podman with stdio
 Instead of running the MCP server over HTTP, you can keep using the **stdio** transport
 and let your MCP client spawn the container (via **podman run**) instead of spawning java directly.
 In this mode, the MCP client talks to the server over stdin/stdout, just like with a local JAR.

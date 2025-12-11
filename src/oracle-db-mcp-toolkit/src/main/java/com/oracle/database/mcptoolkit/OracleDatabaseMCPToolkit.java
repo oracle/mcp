@@ -1,3 +1,10 @@
+/*
+ ** Oracle Database MCP Toolkit version 1.0.0
+ **
+ ** Copyright (c) 2025 Oracle and/or its affiliates.
+ ** Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl/
+ */
+
 package com.oracle.database.mcptoolkit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -50,7 +57,7 @@ public class OracleDatabaseMCPToolkit {
       case "stdio" -> {
         server = McpServer
           .sync(new StdioServerTransportProvider(new ObjectMapper()))
-          .serverInfo("oracle-db-toolbox-mcp-server", "1.0.0")
+          .serverInfo("oracle-db-mcp-toolkit", "1.0.0")
           .capabilities(McpSchema.ServerCapabilities.builder()
              .tools(true)
              .logging()
@@ -81,7 +88,7 @@ public class OracleDatabaseMCPToolkit {
 
       McpSyncServer server = McpServer
         .sync(transport)
-        .serverInfo("oracle-db-toolbox-mcp-server", "1.0.0")
+        .serverInfo("oracle-db-mcp-toolkit", "1.0.0")
         .capabilities(McpSchema.ServerCapabilities.builder()
            .tools(true)
            .logging()
@@ -133,7 +140,7 @@ public class OracleDatabaseMCPToolkit {
 
       tomcat.start();
 
-      LOG.info(() -> "[oracle-db-toolbox-mcp-server] HTTP transport started on " + LoadedConstants.HTTP_PORT + " (endpoint: /mcp)");
+      LOG.info(() -> "[oracle-db-mcp-toolkit] HTTP transport started on " + LoadedConstants.HTTP_PORT + " (endpoint: /mcp)");
 
       return server;
     } catch (Exception e) {

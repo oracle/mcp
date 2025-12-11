@@ -510,7 +510,8 @@ This exposes the MCP endpoint at: http://[your-ip-address]:45450/mcp or https://
 
 You can then configure Cline or Claude Desktop as described in the Using HTTP from Cline / Claude Desktop sections above.
 
-If you need extra JDBC / security jars (e.g. `oraclepki`, `wallets`, `centralized config`),
+If you need extra JDBC / security jars (e.g. `oraclepki`, wallets, centralized config, or providers that fetch full
+database credentials such as username, password, and connection string from a vault secret),
 mount them and point `ojdbc.ext.dir` at that directory:
 
 ```bash

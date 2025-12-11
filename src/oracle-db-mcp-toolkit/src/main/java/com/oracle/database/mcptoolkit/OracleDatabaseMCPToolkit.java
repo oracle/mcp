@@ -141,6 +141,14 @@ public class OracleDatabaseMCPToolkit {
     }
   }
 
+  /**
+   * Configures and enables HTTPS on the provided Tomcat server using the specified keystore.
+   *
+   * @param tomcat          the Tomcat server instance to configure
+   * @param keystorePath    the file path to the PKCS12 keystore containing the SSL certificate
+   * @param keystorePassword the password for the keystore
+   * @throws RuntimeException if the HTTPS connector or SSL configuration fails
+   */
   private static void enableHttps(Tomcat tomcat, String keystorePath, String keystorePassword) {
     try {
       // Create HTTPS connector

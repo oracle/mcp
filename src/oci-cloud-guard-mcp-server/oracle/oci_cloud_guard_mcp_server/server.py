@@ -104,8 +104,14 @@ def get_problem_details(
 
 @mcp.tool(
     name="update_problem_status",
-    description="Changes the current status of the problem, identified by problemId, to the status "
-    "specified in the UpdateProblemStatusDetails resource that you pass.",
+    description=(
+        "Changes the current status of the problem, identified by problemId, to the status specified in the "
+        "UpdateProblemStatusDetails resource that you pass. WARNING: This action modifies the state of the "
+        "problem in Cloud Guard and may have implications for security monitoring. The AI client must "
+        "inform the user of the potential risks and ask for explicit confirmation before executing this "
+        "tool. Do not attempt this operation without getting a confirmation from the user."
+    ),
+    annotations={"destructiveHint": True},
 )
 def update_problem_status(
     problem_id: str = Field(..., description="The OCID of the problem"),

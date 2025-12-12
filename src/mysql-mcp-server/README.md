@@ -35,25 +35,11 @@ A Python-based MCP (Model Context Protocol) server that provides a suite of tool
   - List objects in a bucket
 
 ## Prerequisites
-
-- Python 3.x
-- `fastmcp`
-- `oci` SDK
-- `mysql-connector-python` SDK
 - Valid database connection file. Resolution order:
   1) Path specified by environment variable `MYSQL_MCP_CONFIG` (absolute or relative to this module)
-  2) `src/mysql-mcp-server/local_config.json` (default)
+  2) `local_config.json` (default)
 - Valid OCI configuration file (`~/.oci/config`) or environment variables
 
-## Installation
-
-1. Clone this repository.
-2. Install required dependencies using pip:
-   ```
-   pip install -r requirements.txt
-   ```
-   This will install `oci`, `fastmcp`, `mysql-connector-python`, and all other dependencies.
-3. Set up your OCI config file at ~/.oci/config
 
 ## OCI Configuration
 
@@ -61,11 +47,6 @@ The server requires a valid OCI config file with proper credentials.
 The default location is ~/.oci/config. For instructions on setting up this file,
 see the [OCI SDK documentation](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdkconfig.htm).
 
-## Required Python Packages
-
-- `oci`
-- `fastmcp`
-- `mysql-connector-python`
 
 ## Supported Database Modes
 
@@ -74,19 +55,23 @@ see the [OCI SDK documentation](https://docs.oracle.com/en-us/iaas/Content/API/C
 
 ## MCP Server Configuration
 
-Installation is dependent on the MCP Client being used, it usually consists of adding the MCP Server invocation in a json config file, for example with Claude UI on windows it looks like this:
+Installation is dependent on the MCP Client being used, it usually consists of adding the MCP Server invocation in a json config file, for example with Claude UI on Windows it looks like this:
 ```json
 {
   "mcpServers": {
     "mysqltools": {
-      "command": "C:\\Python\\python.exe",
+      "command": "uv",
       "args": [
-        "C:\\Users\\user1\\mysql-mcp-server\\mysql_mcp_server.py"
+        "--directory",
+        "C:\\ABSOLUTE\\PATH\\TO\\PARENT\\FOLDER\\mysql-mcp-server",
+        "run",
+        "oracle.mysql_mcp_server"
       ]
     }
   }
 }
 ```
+**Note**: On Windows you may have to provide the suffix *.exe* to "oracle.mysql_mcp_server".
 
 
 
@@ -95,9 +80,12 @@ Example with TENANCY_ID_OVERRIDE::
 {
   "mcpServers": {
     "mysqltools": {
-      "command": "C:\\Python\\python.exe",
+      "command": "uv",
       "args": [
-        "C:\\Users\\user1\\mysql-mcp-server\\mysql_mcp_server.py"
+        "--directory",
+        "C:\\ABSOLUTE\\PATH\\TO\\PARENT\\FOLDER\\mysql-mcp-server",
+        "run",
+        "oracle.mysql_mcp_server"
       ],
       "env": {
         "TENANCY_ID_OVERRIDE": "ocid1.tenancy.oc1..deadbeef"
@@ -196,7 +184,7 @@ Note:
 The server runs using stdio transport and can be started by running:
 
 ```bash
-python mysql_mcp_server.py
+uv run oracle.mysql_mcp_server
 ```
 
 ## API Tools

@@ -4,10 +4,9 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
-import json
 import os
 from logging import Logger
-from typing import Annotated, Any, List, Optional
+from typing import Annotated, Any, Optional
 
 import oci
 from fastmcp import FastMCP
@@ -17,7 +16,7 @@ from oci.database.models import (
     CreatePluggableDatabaseFromRemoteCloneDetails,
 )
 from oci.util import to_dict
-from oracle.database_mcp_server.models import (
+from oracle.oci_database_mcp_server.models import (
     ApplicationVip,
     ApplicationVipSummary,
     AutonomousContainerDatabase,
@@ -297,23 +296,9 @@ def get_database_client(region: str = None):
     signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
     if region is None:
         return oci.database.DatabaseClient(config, signer=signer)
-    regional_config = config.copy()  # make a shallow copy
+    regional_config = config.copy()
     regional_config["region"] = region
     return oci.database.DatabaseClient(regional_config, signer=signer)
-
-
-def get_identity_client():
-    config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
-    )
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = config["security_token_file"]
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    return oci.identity.IdentityClient(config, signer=signer)
 
 
 def call_create_pdb(client, details, opc_retry_token=None, opc_request_id=None):
@@ -324,76 +309,6 @@ def call_create_pdb(client, details, opc_retry_token=None, opc_request_id=None):
         kwargs["opc_request_id"] = opc_request_id
     response = client.create_pluggable_database(**kwargs)
     return map_pluggabledatabase(response.data)
-
-
-def get_tenancy():
-    config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
-    )
-    return os.getenv("TENANCY_ID_OVERRIDE", config["tenancy"])
-
-
-def list_all_compartments_internal(only_one_page: bool, limit=100):
-    """Internal function to get List all compartments in a tenancy"""
-    identity_client = get_identity_client()
-    response = identity_client.list_compartments(
-        compartment_id=get_tenancy(),
-        compartment_id_in_subtree=True,
-        access_level="ACCESSIBLE",
-        lifecycle_state="ACTIVE",
-        limit=limit,
-    )
-    compartments = response.data
-    compartments.append(
-        identity_client.get_compartment(compartment_id=get_tenancy()).data
-    )
-    if only_one_page:  # limiting the number of items returned
-        return compartments
-    while response.has_next_page:
-        response = identity_client.list_compartments(
-            compartment_id=get_tenancy(),
-            compartment_id_in_subtree=True,
-            access_level="ACCESSIBLE",
-            lifecycle_state="ACTIVE",
-            page=response.next_page,
-            limit=limit,
-        )
-        compartments.extend(response.data)
-
-    return compartments
-
-
-def get_compartment_by_name(compartment_name: str):
-    """Internal function to get compartment by name with caching"""
-    compartments = list_all_compartments_internal(False)
-    # Search for the compartment by name
-    for compartment in compartments:
-        if compartment.name.lower() == compartment_name.lower():
-            return compartment
-
-    return None
-
-
-@mcp.tool()
-def get_compartment_by_name_tool(name: str) -> str:
-    """Return a compartment matching the provided name"""
-    compartment = get_compartment_by_name(name)
-    if compartment:
-        return str(compartment)
-    else:
-        return json.dumps({"error": f"Compartment '{name}' not found."})
-
-
-@mcp.tool()
-def list_subscribed_regions_tool() -> str:
-    """Return a list of all regions the customer (tenancy) is subscribed to"""
-    try:
-        identity_client = get_identity_client()
-        response = identity_client.list_region_subscriptions(tenancy_id=get_tenancy())
-        regions = [region.region_name for region in response.data]
-        return json.dumps({"regions": regions})
-    except Exception as e:
-        return json.dumps({"error": str(e)})
 
 
 @mcp.tool(description="Deletes the specified pluggable database.")
@@ -411,7 +326,7 @@ def delete_pluggable_database(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> Any:
     try:
@@ -437,7 +352,7 @@ def get_pluggable_database(
     ],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> PluggableDatabase:
     try:
@@ -467,7 +382,7 @@ def update_pluggable_database(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> PluggableDatabase:
     try:
@@ -744,7 +659,7 @@ def list_application_vips(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[ApplicationVipSummary]:
     try:
@@ -789,7 +704,7 @@ def list_autonomous_container_database_dataguard_associations(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[AutonomousContainerDatabaseDataguardAssociation]:
     try:
@@ -844,7 +759,7 @@ def list_autonomous_container_database_versions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[AutonomousContainerDatabaseVersionSummary]:
     try:
@@ -957,7 +872,7 @@ def list_autonomous_container_databases(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[AutonomousContainerDatabaseSummary]:
     try:
@@ -1061,7 +976,7 @@ def list_autonomous_database_backups(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[AutonomousDatabaseBackupSummary]:
     try:
@@ -1127,7 +1042,7 @@ def list_autonomous_database_character_sets(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[AutonomousDatabaseCharacterSets]:
     try:
@@ -1217,7 +1132,7 @@ def list_autonomous_database_clones(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[AutonomousDatabaseSummary]:
     try:
@@ -1266,7 +1181,7 @@ def list_autonomous_database_dataguard_associations(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[AutonomousDatabaseDataguardAssociation]:
     try:
@@ -1308,7 +1223,7 @@ def list_autonomous_database_peers(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[AutonomousDatabasePeerCollection]:
     try:
@@ -1350,7 +1265,7 @@ def list_autonomous_database_refreshable_clones(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[RefreshableCloneCollection]:
     try:
@@ -1430,7 +1345,7 @@ def list_autonomous_database_software_images(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[AutonomousDatabaseSoftwareImageCollection]:
     try:
@@ -1600,7 +1515,7 @@ def list_autonomous_databases(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[AutonomousDatabaseSummary]:
     try:
@@ -1686,7 +1601,7 @@ def list_autonomous_db_preview_versions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[AutonomousDbPreviewVersionSummary]:
     try:
@@ -1741,7 +1656,7 @@ def list_autonomous_db_versions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[AutonomousDbVersionSummary]:
     try:
@@ -1797,7 +1712,7 @@ def list_autonomous_virtual_machines(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[AutonomousVirtualMachineSummary]:
     try:
@@ -1880,7 +1795,7 @@ def list_autonomous_vm_clusters(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[AutonomousVmClusterSummary]:
     try:
@@ -1933,7 +1848,7 @@ def list_backup_destination(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[BackupDestinationSummary]:
     try:
@@ -1981,7 +1896,7 @@ def list_backups(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[BackupSummary]:
     try:
@@ -2071,7 +1986,7 @@ def list_cloud_autonomous_vm_clusters(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[CloudAutonomousVmClusterSummary]:
     try:
@@ -2166,7 +2081,7 @@ def list_cloud_exadata_infrastructures(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[CloudExadataInfrastructureSummary]:
     try:
@@ -2225,7 +2140,7 @@ def list_cloud_vm_cluster_updates(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[UpdateSummary]:
     try:
@@ -2308,7 +2223,7 @@ def list_cloud_vm_clusters(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[CloudVmClusterSummary]:
     try:
@@ -2345,7 +2260,7 @@ def list_console_connections(
     db_node_id: Annotated[Optional[Any], ("The database node `OCID`__.")],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[ConsoleConnectionSummary]:
     try:
@@ -2406,7 +2321,7 @@ def list_console_histories(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[ConsoleHistoryCollection]:
     try:
@@ -2457,7 +2372,7 @@ def list_container_database_patches(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[AutonomousPatchSummary]:
     try:
@@ -2491,7 +2406,7 @@ def list_data_guard_associations(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[DataGuardAssociationSummary]:
     try:
@@ -2588,7 +2503,7 @@ def list_database_software_images(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[DatabaseSoftwareImageSummary]:
     try:
@@ -2679,7 +2594,7 @@ def list_databases(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[DatabaseSummary]:
     try:
@@ -2724,7 +2639,7 @@ def list_db_home_patch_history_entries(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[PatchHistoryEntrySummary]:
     try:
@@ -2755,7 +2670,7 @@ def list_db_home_patches(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[PatchSummary]:
     try:
@@ -2843,7 +2758,7 @@ def list_db_homes(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[DbHomeSummary]:
     try:
@@ -2929,7 +2844,7 @@ def list_db_nodes(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[DbNodeSummary]:
     try:
@@ -3011,7 +2926,7 @@ def list_db_servers(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[DbServerSummary]:
     try:
@@ -3059,7 +2974,7 @@ def list_db_system_compute_performances(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[DbSystemComputePerformanceSummary]:
     try:
@@ -3089,7 +3004,7 @@ def list_db_system_patches(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[PatchSummary]:
     try:
@@ -3127,7 +3042,7 @@ def list_db_system_shapes(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[DbSystemShapeSummary]:
     try:
@@ -3173,7 +3088,7 @@ def list_db_system_storage_performances(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[DbSystemStoragePerformanceSummary]:
     try:
@@ -3262,7 +3177,7 @@ def list_db_systems(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[DbSystemSummary]:
     try:
@@ -3344,7 +3259,7 @@ def list_db_versions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[DbVersionSummary]:
     try:
@@ -3435,7 +3350,7 @@ def list_exadata_infrastructures(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[ExadataInfrastructureSummary]:
     try:
@@ -3501,7 +3416,7 @@ def list_exadb_vm_cluster_updates(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[ExadbVmClusterUpdateSummary]:
     try:
@@ -3587,7 +3502,7 @@ def list_exadb_vm_clusters(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[ExadbVmClusterSummary]:
     try:
@@ -3675,7 +3590,7 @@ def list_exascale_db_storage_vaults(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[ExascaleDbStorageVaultSummary]:
     try:
@@ -3763,7 +3678,7 @@ def list_execution_actions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[ExecutionActionSummary]:
     try:
@@ -3850,7 +3765,7 @@ def list_execution_windows(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[ExecutionWindowSummary]:
     try:
@@ -3931,7 +3846,7 @@ def list_external_container_databases(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[ExternalContainerDatabaseSummary]:
     try:
@@ -4016,7 +3931,7 @@ def list_external_database_connectors(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[ExternalDatabaseConnectorSummary]:
     try:
@@ -4098,7 +4013,7 @@ def list_external_non_container_databases(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[ExternalNonContainerDatabaseSummary]:
     try:
@@ -4182,7 +4097,7 @@ def list_external_pluggable_databases(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[ExternalPluggableDatabaseSummary]:
     try:
@@ -4260,7 +4175,7 @@ def list_flex_components(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[FlexComponentCollection]:
     try:
@@ -4345,7 +4260,7 @@ def list_gi_version_minor_versions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[GiMinorVersionSummary]:
     try:
@@ -4406,7 +4321,7 @@ def list_gi_versions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[GiVersionSummary]:
     try:
@@ -4444,7 +4359,7 @@ def list_key_stores(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[KeyStoreSummary]:
     try:
@@ -4541,7 +4456,7 @@ def list_maintenance_run_history(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[MaintenanceRunHistorySummary]:
     try:
@@ -4650,7 +4565,7 @@ def list_maintenance_runs(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[MaintenanceRunSummary]:
     try:
@@ -4732,7 +4647,7 @@ def list_oneoff_patches(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[OneoffPatchSummary]:
     try:
@@ -4812,7 +4727,7 @@ def list_pluggable_databases(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[PluggableDatabaseSummary]:
     try:
@@ -4909,7 +4824,7 @@ def list_scheduled_actions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[ScheduledActionCollection]:
     try:
@@ -5011,7 +4926,7 @@ def list_scheduling_plans(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[SchedulingPlanCollection]:
     try:
@@ -5094,7 +5009,7 @@ def list_scheduling_policies(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[SchedulingPolicySummary]:
     try:
@@ -5172,7 +5087,7 @@ def list_scheduling_windows(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[SchedulingWindowSummary]:
     try:
@@ -5230,7 +5145,7 @@ def list_system_versions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[SystemVersionCollection]:
     try:
@@ -5311,7 +5226,7 @@ def list_vm_cluster_networks(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[VmClusterNetworkSummary]:
     try:
@@ -5356,7 +5271,7 @@ def list_vm_cluster_patches(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[PatchSummary]:
     try:
@@ -5409,7 +5324,7 @@ def list_vm_cluster_updates(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[VmClusterUpdateSummary]:
     try:
@@ -5490,7 +5405,7 @@ def list_vm_clusters(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[VmClusterSummary]:
     try:
@@ -5556,7 +5471,7 @@ def resource_pool_shapes(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[ResourcePoolShapeCollection]:
     try:
@@ -5593,7 +5508,7 @@ def get_application_vip(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ApplicationVip:
     try:
@@ -5618,7 +5533,7 @@ def get_autonomous_container_database(
     ],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> AutonomousContainerDatabase:
     try:
@@ -5653,7 +5568,7 @@ def get_autonomous_container_database_dataguard_association(
     ],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> AutonomousContainerDatabaseDataguardAssociation:
     try:
@@ -5688,7 +5603,7 @@ def get_autonomous_container_database_resource_usage(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> AutonomousContainerDatabaseResourceUsage:
     try:
@@ -5716,7 +5631,7 @@ def get_autonomous_database(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> AutonomousDatabase:
     try:
@@ -5744,7 +5659,7 @@ def get_autonomous_database_backup(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> AutonomousDatabaseBackup:
     try:
@@ -5782,7 +5697,7 @@ def get_autonomous_database_dataguard_association(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> AutonomousDatabaseDataguardAssociation:
     try:
@@ -5812,7 +5727,7 @@ def get_autonomous_database_regional_wallet(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> AutonomousDatabaseWallet:
     try:
@@ -5843,7 +5758,7 @@ def get_autonomous_database_software_image(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> AutonomousDatabaseSoftwareImage:
     try:
@@ -5873,7 +5788,7 @@ def get_autonomous_database_wallet(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> AutonomousDatabaseWallet:
     try:
@@ -5905,7 +5820,7 @@ def get_autonomous_exadata_infrastructure(
     ],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> AutonomousExadataInfrastructure:
     try:
@@ -5928,7 +5843,7 @@ def get_autonomous_patch(
     autonomous_patch_id: Annotated[Optional[Any], ("The autonomous patch `OCID`__.")],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> AutonomousPatch:
     try:
@@ -5952,7 +5867,7 @@ def get_autonomous_virtual_machine(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> AutonomousVirtualMachine:
     try:
@@ -5986,7 +5901,7 @@ def get_autonomous_vm_cluster(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> AutonomousVmCluster:
     try:
@@ -6016,7 +5931,7 @@ def get_autonomous_vm_cluster_resource_usage(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> AutonomousVmClusterResourceUsage:
     try:
@@ -6039,7 +5954,7 @@ def get_backup(
     backup_id: Annotated[Optional[Any], ("The backup `OCID`__.")],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> Backup:
     try:
@@ -6068,7 +5983,7 @@ def get_backup_destination(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> BackupDestination:
     try:
@@ -6100,7 +6015,7 @@ def get_cloud_autonomous_vm_cluster(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> CloudAutonomousVmCluster:
     try:
@@ -6133,7 +6048,7 @@ def get_cloud_autonomous_vm_cluster_resource_usage(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> CloudAutonomousVmClusterResourceUsage:
     try:
@@ -6169,7 +6084,7 @@ def get_cloud_exadata_infrastructure(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> CloudExadataInfrastructure:
     try:
@@ -6205,7 +6120,7 @@ def get_cloud_exadata_infrastructure_unallocated_resources(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> CloudExadataInfrastructureUnallocatedResources:
     try:
@@ -6241,7 +6156,7 @@ def get_cloud_vm_cluster(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> CloudVmCluster:
     try:
@@ -6270,7 +6185,7 @@ def get_cloud_vm_cluster_iorm_config(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ExadataIormConfig:
     try:
@@ -6302,7 +6217,7 @@ def get_cloud_vm_cluster_update(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> Update:
     try:
@@ -6335,7 +6250,7 @@ def get_cloud_vm_cluster_update_history_entry(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> UpdateHistoryEntry:
     try:
@@ -6364,7 +6279,7 @@ def get_console_connection(
     ],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ConsoleConnection:
     try:
@@ -6390,7 +6305,7 @@ def get_console_history(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ConsoleHistory:
     try:
@@ -6420,7 +6335,7 @@ def get_console_history_content(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> list[Any]:
     try:
@@ -6449,7 +6364,7 @@ def get_data_guard_association(
     ],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> DataGuardAssociation:
     try:
@@ -6469,7 +6384,7 @@ def get_database(
     database_id: Annotated[Optional[Any], ("The database `OCID`__.")],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> Database:
     try:
@@ -6488,7 +6403,7 @@ def get_database_software_image(
     database_software_image_id: Annotated[Optional[Any], ("The DB system `OCID`__.")],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> DatabaseSoftwareImage:
     try:
@@ -6513,7 +6428,7 @@ def get_database_upgrade_history_entry(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> DatabaseUpgradeHistoryEntry:
     try:
@@ -6537,7 +6452,7 @@ def get_db_home(
     db_home_id: Annotated[Optional[Any], ("The Database Home `OCID`__.")],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> DbHome:
     try:
@@ -6557,7 +6472,7 @@ def get_db_home_patch(
     patch_id: Annotated[Optional[Any], ("The `OCID`__ of the patch.")],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> Patch:
     try:
@@ -6582,7 +6497,7 @@ def get_db_home_patch_history_entry(
     ],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> PatchHistoryEntry:
     try:
@@ -6604,7 +6519,7 @@ def get_db_node(
     db_node_id: Annotated[Optional[Any], ("The database node `OCID`__.")],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> DbNode:
     try:
@@ -6629,7 +6544,7 @@ def get_db_server(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> DbServer:
     try:
@@ -6651,7 +6566,7 @@ def get_db_system(
     db_system_id: Annotated[Optional[Any], ("The DB system `OCID`__.")],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> DbSystem:
     try:
@@ -6671,7 +6586,7 @@ def get_db_system_patch(
     patch_id: Annotated[Optional[Any], ("The `OCID`__ of the patch.")],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> Patch:
     try:
@@ -6698,7 +6613,7 @@ def get_db_system_patch_history_entry(
     ],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> PatchHistoryEntry:
     try:
@@ -6731,7 +6646,7 @@ def get_db_system_upgrade_history_entry(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> DbSystemUpgradeHistoryEntry:
     try:
@@ -6772,7 +6687,7 @@ def get_exadata_infrastructure(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ExadataInfrastructure:
     try:
@@ -6805,7 +6720,7 @@ def get_exadata_infrastructure_ocpus(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> OCPUs:
     try:
@@ -6843,7 +6758,7 @@ def get_exadata_infrastructure_un_allocated_resources(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ExadataInfrastructureUnAllocatedResources:
     try:
@@ -6877,7 +6792,7 @@ def get_exadata_iorm_config(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ExadataIormConfig:
     try:
@@ -6909,7 +6824,7 @@ def get_exadb_vm_cluster(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ExadbVmCluster:
     try:
@@ -6941,7 +6856,7 @@ def get_exadb_vm_cluster_update(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ExadbVmClusterUpdate:
     try:
@@ -6976,7 +6891,7 @@ def get_exadb_vm_cluster_update_history_entry(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ExadbVmClusterUpdateHistoryEntry:
     try:
@@ -7010,7 +6925,7 @@ def get_exascale_db_storage_vault(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ExascaleDbStorageVault:
     try:
@@ -7034,7 +6949,7 @@ def get_execution_action(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ExecutionAction:
     try:
@@ -7058,7 +6973,7 @@ def get_execution_window(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ExecutionWindow:
     try:
@@ -7079,7 +6994,7 @@ def get_external_backup_job(
     backup_id: Annotated[Optional[Any], ("The backup `OCID`__.")],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ExternalBackupJob:
     try:
@@ -7105,7 +7020,7 @@ def get_external_container_database(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ExternalContainerDatabase:
     try:
@@ -7139,7 +7054,7 @@ def get_external_database_connector(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ExternalDatabaseConnector:
     try:
@@ -7169,7 +7084,7 @@ def get_external_non_container_database(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ExternalNonContainerDatabase:
     try:
@@ -7199,7 +7114,7 @@ def get_external_pluggable_database(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ExternalPluggableDatabase:
     try:
@@ -7242,7 +7157,7 @@ def get_infrastructure_target_versions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> InfrastructureTargetVersion:
     try:
@@ -7272,7 +7187,7 @@ def get_key_store(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> KeyStore:
     try:
@@ -7293,7 +7208,7 @@ def get_maintenance_run(
     maintenance_run_id: Annotated[Optional[Any], ("The maintenance run OCID.")],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> MaintenanceRun:
     try:
@@ -7314,7 +7229,7 @@ def get_maintenance_run_history(
     ],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> MaintenanceRunHistory:
     try:
@@ -7336,7 +7251,7 @@ def get_oneoff_patch(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> OneoffPatch:
     try:
@@ -7368,7 +7283,7 @@ def get_pdb_conversion_history_entry(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> PdbConversionHistoryEntry:
     try:
@@ -7395,7 +7310,7 @@ def get_scheduled_action(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> ScheduledAction:
     try:
@@ -7419,7 +7334,7 @@ def get_scheduling_plan(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> SchedulingPlan:
     try:
@@ -7443,7 +7358,7 @@ def get_scheduling_policy(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> SchedulingPolicy:
     try:
@@ -7468,7 +7383,7 @@ def get_scheduling_window(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> SchedulingWindow:
     try:
@@ -7498,7 +7413,7 @@ def get_vm_cluster(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> VmCluster:
     try:
@@ -7532,7 +7447,7 @@ def get_vm_cluster_network(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> VmClusterNetwork:
     try:
@@ -7555,7 +7470,7 @@ def get_vm_cluster_patch(
     patch_id: Annotated[Optional[Any], ("The `OCID`__ of the patch.")],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> Patch:
     try:
@@ -7582,7 +7497,7 @@ def get_vm_cluster_patch_history_entry(
     ],
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> PatchHistoryEntry:
     try:
@@ -7613,7 +7528,7 @@ def get_vm_cluster_update(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> VmClusterUpdate:
     try:
@@ -7646,7 +7561,7 @@ def get_vm_cluster_update_history_entry(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request, if no region is specified then default will be picked",
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
     ] = None,
 ) -> VmClusterUpdateHistoryEntry:
     try:

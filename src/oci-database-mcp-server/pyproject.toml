@@ -1,6 +1,6 @@
 [project]
-name = "oracle.database-mcp-server"
-version = "1.0.1"
+name = "oracle.oci-database-mcp-server"
+version = "1.0.2"
 description = "OCI Database Service MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -24,7 +24,7 @@ classifiers = [
 ]
 
 [project.scripts]
-"oracle.database-mcp-server" = "oracle.database_mcp_server.server:main"
+"oracle.oci-database-mcp-server" = "oracle.oci_database_mcp_server.server:main"
 
 [build-system]
 requires = ["hatchling"]

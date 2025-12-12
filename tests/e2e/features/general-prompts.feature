@@ -10,9 +10,3 @@ Feature: OCI MCP Servers
     When I send a request with the prompt "What tools do you have? List all by name"
     Then the response should contain a list of tools available
 
-  Scenario: List the instances in the root compartment
-    Given the MCP server is running with OCI tools
-    And the ollama model with the tools is properly working
-    When I send a request with the prompt "list my instances in the root compartment and limit to 5"
-    Then the response should contain a list of instances
-

@@ -22,3 +22,5 @@ jobs:
     - name: Test with tox
       run: |
         tox run -e lint
+    - name: Check uv.lock
+      run: make lock-check

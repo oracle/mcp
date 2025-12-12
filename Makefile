@@ -1,4 +1,4 @@
-SUBDIRS := $(filter-out src/dbtools-mcp-server src/mysql-mcp-server src/oci-pricing-mcp-server src/oracle-db-doc-mcp-server,$(wildcard src/*))
+SUBDIRS ?= $(filter-out src/dbtools-mcp-server src/mysql-mcp-server src/oci-pricing-mcp-server src/oracle-db-doc-mcp-server,$(wildcard src/*))
 
 .PHONY: test format
 
@@ -46,13 +46,13 @@ lint:
 	uv tool run --from 'tox==4.30.2' tox -e lint
 
 test:
+	uv run coverage erase
 	@for dir in $(SUBDIRS); do \
 		if [ -f $$dir/pyproject.toml ]; then \
 			echo "Testing $$dir"; \
-			cd $$dir && \
-				COVERAGE_FILE=../../.coverage.$$(_basename=$$(basename $$dir); echo $$_basename) \
-				uv run pytest --cov=. --cov-branch --cov-append --cov-report=html --cov-report=term-missing && \
-			cd ../..; \
+			( cd $$dir && \
+				COVERAGE_FILE=../../.coverage.$$(basename $$dir) \
+				uv run pytest --cov=. --cov-branch --cov-append --cov-report=html --cov-report=term-missing ) || exit 1; \
 		fi \
 	done
 	$(MAKE) combine-coverage
@@ -67,3 +67,17 @@ format:
 
 e2e-tests: build install
 	behave tests/e2e/features && cd ..
+
+# Create docker images for the specified MCP servers
+dockerize:
+	@for dir in $(SUBDIRS); do \
+		if [[ -f $$dir/Dockerfile && (-f $$dir/pyproject.toml) ]]; then \
+			name=$$(uv run tomlq -r '.project.name' $$dir/pyproject.toml); \
+			version=$$(uv run tomlq -r '.project.version' $$dir/pyproject.toml); \
+			echo "Building Docker image for $$dir"; \
+			cd $$dir && \
+				docker build -t $$name:$$version . && \
+				docker tag $$name:$$version $$name:latest && \
+				echo "Docker image $$name:$$version (tagged with $$name:latest) built successfully" && cd ../..; \
+		fi \
+	done

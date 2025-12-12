@@ -1286,17 +1286,19 @@ def heatwave_ask_ml_rag(dbtools_connection_display_name: str, question: str) -> 
         return json.dumps({"error": f"Error with ML_RAG: {str(e)}"})
 
 @mcp.tool()
-def ask_nl_sql(dbtools_connection_display_name: str, question: str) -> str:
+def heatwave_ask_nl_sql(dbtools_connection_display_name: str, question: str) -> str:
     """
-    Convert natural language questions into SQL queries and execute them automatically.
-
-    This tool is ideal for database exploration using plain English questions like:
-    - "Show me the average price by category"
+    Convert natural language questions into MySQL HeatWave queries and execute them automatically.
+    
+    This tool is only for MySQL HeatWave instances.
+    
+    This tool can produce SQL statements to answer Natural Language questions like:
+    - "Show me the average price of products by category"
     - "How many users registered last month?"
-    - "What are the column names in the customers table?"
+    - "What is the total number of sales for the past quarter?"
 
     Args:
-        dbtools_connection_display_name (str): MySQL dbtools connection name.
+        dbtools_connection_display_name (str): MySQL HeatWave dbtools connection name.
         question (str): Natural language query.
 
     Returns:
@@ -1340,12 +1342,14 @@ def ask_nl_sql(dbtools_connection_display_name: str, question: str) -> str:
         return json.dumps({"error": f"Error with NL_SQL: {str(e)}"})
 
 @mcp.tool()
-def retrieve_relevant_schema_information(dbtools_connection_display_name: str, question: str) -> str:
+def heatwave_retrieve_relevant_schema_information(dbtools_connection_display_name: str, question: str) -> str:
     """
-    Retrieve relevant schemas and tables for a given natural language question.
+    Retrieve relevant schemas and tables for a given natural language question for a MySQL HeatWave database.
 
-    This tool analyzes the input question and identifies tables that are relevant with respect to the question. 
-    It can optionally consider table and column comments for improved semantic matching. 
+    This tool is only for MySQL HeatWave instances.
+
+    This tool analyzes the input question and identifies tables that are relevant to it. 
+    It will consider table and column comments for improved semantic matching. 
     The results contain only the relevant schemas and tables in a JSON object.
 
     Args:
@@ -1355,9 +1359,25 @@ def retrieve_relevant_schema_information(dbtools_connection_display_name: str, q
     Returns:
         A single JSON of the form:
         {
-            "create_statements": "CREATE ...; CREATE ...;"
+            "create_statements":  '''
+                CREATE TABLE `db2`.`singer`(
+                `Singer_ID` int,
+                `Name` varchar,
+                `Birth_Year` double,
+                `Net_Worth_Millions` double COMMENT 'Worth in millions $',
+                `Citizenship` varchar
+                ) COMMENT 'table about singers';
+
+                CREATE TABLE `db2`.`album`(
+                `Album_ID` int,
+                `Singer_ID` int,
+                `Title` varchar,
+                FOREIGN KEY (`Singer_ID`) REFERENCES `db2`.`singer`(`Singer_ID`)
+                ) COMMENT 'album table';
+                '''       
         }
-        Where the DDL/CREATE statements of all relevant tables are listed
+        
+        Where the DDL/CREATE statements of all relevant tables are listed   
     """
     connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
     if connection_info is None:

@@ -774,11 +774,10 @@ def ask_nl_sql(connection_id: str, question: str) -> str:
     """
     [MCP Tool] Convert natural language questions into SQL queries and execute them automatically.
 
-    This tool is ideal for database exploration using plain English questions like:
-    - "What tables are available?"
-    - "Show me the average price by category"
+    This tool can produce SQL statements to answer Natural Language questions like:
+    - "Show me the average price of products by category"
     - "How many users registered last month?"
-    - "What are the column names in the customers table?"
+    - "What is the total number of sales for the past quarter?"
 
     Args:
         connection_id (str): MySQL connection key.
@@ -850,8 +849,8 @@ def retrieve_relevant_schema_information(connection_id: str, question: str) -> s
     """
     [MCP Tool] Retrieve relevant schemas and tables for a given natural language question.
 
-    This tool analyzes the input question and identifies tables that are relevant with respect to the question. 
-    It can optionally consider table and column comments for improved semantic matching. 
+    This tool analyzes the input question and identifies tables that are relevant to it. 
+    It will consider table and column comments for improved semantic matching. 
     The results contain only the relevant schemas and tables in a JSON object.
 
     Args:

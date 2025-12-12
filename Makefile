@@ -62,6 +62,20 @@ combine-coverage:
 	uv run coverage html
 	uv run coverage report --fail-under=69
 
+test-publish:
+	@for dir in $(SUBDIRS); do \
+		cd $$dir && \
+		uv publish --publish-url https://test.pypi.org/legacy/ --check-url=https://test.pypi.org/simple/ && \
+		cd ../..; \
+	done
+
+publish:
+	@for dir in $(SUBDIRS); do \
+		cd $$dir && \
+		uv publish --check-url=https://pypi.org/simple/ && \
+		cd ../..; \
+	done
+
 format:
 	uv tool run --from 'tox==4.30.2' tox -e format
 

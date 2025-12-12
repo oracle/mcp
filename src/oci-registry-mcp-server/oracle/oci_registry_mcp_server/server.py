@@ -141,7 +141,15 @@ def create_container_repository(
         raise e
 
 
-@mcp.tool
+@mcp.tool(
+    description=(
+        "Deletes the specified container repository. WARNING: This action is destructive and cannot be "
+        "undone. It will permanently delete the repository and all associated images and artifacts. The AI "
+        "client must inform the user of the potential risks and ask for explicit confirmation before "
+        "executing this tool. Do not attempt this operation without getting a confirmation from the user."
+    ),
+    annotations={"destructiveHint": True},
+)
 def delete_container_repository(
     repository_id: str = Field(..., description="The OCID of the container repository")
 ) -> Response:

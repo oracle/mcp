@@ -214,7 +214,15 @@ def launch_instance(
         raise e
 
 
-@mcp.tool(description="Delete instance with given instance OCID")
+@mcp.tool(
+    description=(
+        "Deletes the specified instance. WARNING: This action is destructive and cannot be undone. It will "
+        "permanently delete the instance and all associated data. The AI client must inform the user of this "
+        "destructive nature and ask for explicit confirmation before executing this tool. Do not attempt "
+        "this operation without getting a confirmations from the user."
+    ),
+    annotations={"destructiveHint": True},
+)
 def terminate_instance(
     instance_id: str = Field(..., description="The OCID of the instance")
 ) -> Response:
@@ -231,7 +239,13 @@ def terminate_instance(
 
 
 @mcp.tool(
-    description="Update instance. This may restart the instance, so warn the user"
+    description=(
+        "Updates the specified instance. WARNING: This action modifies the state of the instance and may "
+        "cause downtime or service disruption. The AI client must inform the user of the potential risks "
+        "and ask for explicit confirmation before executing this tool. Do not attempt this operation "
+        "without getting a confirmation from the user."
+    ),
+    annotations={"destructiveHint": True},
 )
 def update_instance(
     instance_id: str = Field(..., description="The OCID of the instance"),

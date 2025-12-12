@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-networking-mcp-server"
-version = "1.2.0"
+version = "1.2.1"
 description = "OCI Networking Service MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -49,5 +49,3 @@ omit = [
 [tool.coverage.report]
 precision = 2
 fail_under = 65.18
-
-

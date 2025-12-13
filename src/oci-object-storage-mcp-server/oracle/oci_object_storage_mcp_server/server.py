@@ -177,7 +177,15 @@ def get_object(
     return map_object_summary(obj)
 
 
-@mcp.tool(description="Upload an object to an object storage bucket")
+@mcp.tool(
+    description=(
+        "Uploads an object to the specified bucket. WARNING: This action modifies the object storage and "
+        "may overwrite existing objects. The AI client must inform the user of the potential risks and ask "
+        "for explicit confirmation before executing this tool. Do not attempt this operation without "
+        "getting a confirmation from the user."
+    ),
+    annotations={"destructiveHint": True},
+)
 def upload_object(
     bucket_name: Annotated[str, "The name of the bucket"],
     compartment_id: Annotated[

@@ -67,3 +67,7 @@ format:
 
 e2e-tests: build install
 	behave tests/e2e/features && cd ..
+
+generate-denylist:
+	cd scripts && python oci-api-denylist-generator.py
+	cp scripts/denylist src/oci-api-mcp-server/oracle/oci_api_mcp_server/denylist

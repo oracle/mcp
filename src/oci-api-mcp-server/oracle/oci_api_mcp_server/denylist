@@ -3,6 +3,7 @@
 # https://oss.oracle.com/licenses/upl.
 
 # This list contains the list of commands that can change the configuration of the cloud system.
+# This list has been generated from version 3.71.1 of the OCI CLI.
 # These commands will be denied execution and the AI client should immediately stop processing the command.
 # It should also stop suggesting any alternatives to the user
 
@@ -682,6 +683,7 @@ db autonomous-container-database update
 db autonomous-container-database-dataguard update
 db autonomous-database delete
 db autonomous-database update
+db autonomous-database update-autonomous-database-gcp-key-details
 db autonomous-database-backup delete
 db autonomous-database-backup update
 db autonomous-database-software-image delete
@@ -715,6 +717,7 @@ db database-software-image delete
 db database-software-image update
 db db-home delete
 db db-home update
+db dbnode-snapshot delete
 db exadata-infrastructure delete
 db exadata-infrastructure update
 db exadb-vm-cluster delete
@@ -762,6 +765,10 @@ db vm-cluster-network delete
 db vm-cluster-network update
 dbmulticloud multi-cloud-resource-discovery delete
 dbmulticloud multi-cloud-resource-discovery update
+dbmulticloud oracle-db-aws-identity-connector delete
+dbmulticloud oracle-db-aws-identity-connector update
+dbmulticloud oracle-db-aws-key delete
+dbmulticloud oracle-db-aws-key update
 dbmulticloud oracle-db-azure-blob-container delete
 dbmulticloud oracle-db-azure-blob-container update
 dbmulticloud oracle-db-azure-blob-mount delete
@@ -783,6 +790,9 @@ dbtools connection update-generic-jdbc
 dbtools connection update-mysql-database
 dbtools connection update-oracle-database
 dbtools connection update-postgresql
+dbtools identity delete
+dbtools identity remove-lock
+dbtools identity update-oracle-database-resource-principal
 dbtools private-endpoint delete
 dbtools private-endpoint remove-lock
 dbtools private-endpoint update
@@ -879,6 +889,10 @@ devops trigger update-github-trigger
 devops trigger update-gitlab-server-trigger
 devops trigger update-gitlab-trigger
 devops trigger update-vbs-trigger
+dif stack delete
+dif stack update
+disaster-recovery automatic-dr-configuration delete
+disaster-recovery automatic-dr-configuration update
 disaster-recovery dr-plan delete
 disaster-recovery dr-plan update
 disaster-recovery dr-plan-execution delete
@@ -922,6 +936,9 @@ email dkim update
 email domain delete
 email domain remove
 email domain update
+email email-ip-pool delete
+email email-ip-pool remove
+email email-ip-pool update
 email email-return-path delete
 email email-return-path remove
 email email-return-path update
@@ -997,6 +1014,7 @@ fleet-software-update fsu-collection update
 fleet-software-update fsu-cycle delete
 fleet-software-update fsu-cycle update
 fleet-software-update fsu-cycle update-fifty-batch
+fleet-software-update fsu-cycle update-fsu-cycle-exadb-stack-fsu-goal-version-details
 fleet-software-update fsu-cycle update-fsu-cycle-update-upgrade-fsu-cycle
 fleet-software-update fsu-cycle update-image-id-target
 fleet-software-update fsu-cycle update-non-rolling-batch
@@ -1055,6 +1073,10 @@ generative-ai dedicated-ai-cluster delete
 generative-ai dedicated-ai-cluster update
 generative-ai endpoint delete
 generative-ai endpoint update
+generative-ai generative-ai-private-endpoint delete
+generative-ai generative-ai-private-endpoint update
+generative-ai imported-model delete
+generative-ai imported-model update
 generative-ai model delete
 generative-ai model update
 generative-ai-agent agent delete
@@ -1104,6 +1126,7 @@ goldengate connection update-microsoft-sqlserver-connection
 goldengate connection update-mongo-db-connection
 goldengate connection update-mysql-connection
 goldengate connection update-object-storage-connection
+goldengate connection update-oracle-ai-data-platform-connection
 goldengate connection update-oracle-connection
 goldengate connection update-oracle-nosql-connection
 goldengate connection update-postgresql-connection
@@ -1288,6 +1311,18 @@ identity-domains user-status-changer put
 integration integration-instance delete
 integration integration-instance remove
 integration integration-instance update
+iot digital-twin-adapter delete
+iot digital-twin-adapter update
+iot digital-twin-instance delete
+iot digital-twin-instance update
+iot digital-twin-model delete
+iot digital-twin-model update
+iot digital-twin-relationship delete
+iot digital-twin-relationship update
+iot domain delete
+iot domain update
+iot domain-group delete
+iot domain-group update
 jms blocklist delete
 jms crypto-analysis-result delete
 jms drs-file delete
@@ -1302,11 +1337,26 @@ jms java-migration-analysis-result delete
 jms jms-plugin delete
 jms jms-plugin update
 jms performance-tuning-analysis-result delete
+jms task-schedule delete
+jms task-schedule update
+jms task-schedule update-task-schedule-add-installation-site-task-details
+jms task-schedule update-task-schedule-crypto-task-details
+jms task-schedule update-task-schedule-deployed-application-migration-task-details
+jms task-schedule update-task-schedule-java-migration-task-details
+jms task-schedule update-task-schedule-jfr-task-details
+jms task-schedule update-task-schedule-performance-tuning-task-details
+jms task-schedule update-task-schedule-remove-installation-site-task-details
+jms task-schedule update-task-schedule-scan-java-server-task-details
+jms task-schedule update-task-schedule-scan-library-task-details
 jms-java-downloads java-download-report delete
 jms-java-downloads java-download-token delete
 jms-java-downloads java-download-token update
 jms-java-downloads java-license-acceptance-record delete
 jms-java-downloads java-license-acceptance-record update
+jms-utils analyze-applications-configuration update
+jms-utils java-migration-analysis delete
+jms-utils performance-tuning-analysis delete
+jms-utils subscription-acknowledgment-configuration update
 kafka cluster delete
 kafka cluster update
 kafka cluster-config delete
@@ -1342,6 +1392,8 @@ lb ssl-cipher-suite delete
 lb ssl-cipher-suite update
 lfs lustre-file-system delete
 lfs lustre-file-system update
+lfs object-storage-link delete
+lfs object-storage-link update
 license-manager configuration update
 license-manager license-record delete
 license-manager license-record update
@@ -1547,6 +1599,7 @@ network security-list update
 network service-gateway delete
 network service-gateway update
 network subnet delete
+network subnet remove-ipv4-subnet-cidr
 network subnet remove-ipv6-subnet-cidr
 network subnet update
 network tunnel-cpe-device-config update
@@ -1613,6 +1666,11 @@ oce oce-instance delete
 oce oce-instance update
 ocvs cluster cluster delete
 ocvs cluster cluster update
+ocvs datastore delete
+ocvs datastore update
+ocvs datastore-cluster delete
+ocvs datastore-cluster remove-datastore
+ocvs datastore-cluster update
 ocvs esxi-host delete
 ocvs esxi-host replace-host
 ocvs esxi-host update
@@ -1773,6 +1831,8 @@ os-management-hub software-source update-third-party-swsrc
 os-management-hub software-source update-versioned-custom-swsrc
 os-management-hub update-all-packages-in-compartment
 osp-gateway subscription-service subscription update
+psa private-service-access delete
+psa private-service-access update
 psql backup delete
 psql backup update
 psql configuration delete
@@ -1802,6 +1862,11 @@ redis oci-cache-user oci-cache-user update-oci-cache-user-iam-authentication-mod
 redis oci-cache-user oci-cache-user update-oci-cache-user-password-authentication-mode
 redis redis-cluster redis-cluster delete
 redis redis-cluster redis-cluster update
+resource-analytics monitored-region delete
+resource-analytics resource-analytics-instance delete
+resource-analytics resource-analytics-instance update
+resource-analytics tenancy-attachment delete
+resource-analytics tenancy-attachment update
 resource-manager configuration-source-provider delete
 resource-manager configuration-source-provider update
 resource-manager configuration-source-provider update-bitbucket-cloud-username-app-password-provider

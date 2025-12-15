@@ -4,10 +4,19 @@
 
 This server provides tools for interacting with Oracle Cloud Infrastructure (OCI) Usage service.
 
+
 ## Running the server
 
+### STDIO transport mode
+
 ```sh
-uv run oracle.oci-usage-mcp-server
+uvx oracle.oci-usage-mcp-server
+```
+
+### HTTP streaming transport mode
+
+```sh
+ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.oci-usage-mcp-server
 ```
 
 ## Tools

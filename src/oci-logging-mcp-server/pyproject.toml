@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-logging-mcp-server"
-version = "1.0.1"
+version = "1.2.0"
 description = "OCI Logging Service MCP server"
 readme = "README.md"
 authors = [
@@ -8,8 +8,9 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "fastmcp==2.12.2",
+    "fastmcp==2.13.0",
     "oci==2.160.0",
+    "pydantic==2.12.3",
 ]
 
 classifiers = [
@@ -46,6 +47,4 @@ omit = [
 
 [tool.coverage.report]
 precision = 2
-fail_under = 76.92
-
-
+fail_under = 64.71

@@ -7,9 +7,18 @@ It includes tools to help with OCI command execution and provide helpful informa
 
 ## Running the server
 
+### STDIO transport mode
+
 ```sh
-uv run oracle.oci-api-mcp-server
+uvx oracle.oci-api-mcp-server
 ```
+
+### HTTP streaming transport mode
+
+```sh
+ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.oci-api-mcp-server
+```
+
 ## Tools
 
 | Tool Name | Description |

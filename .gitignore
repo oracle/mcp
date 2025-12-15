@@ -24,7 +24,7 @@ venv.bak/
 # test environments
 .env
 
-.coverage
+.coverage*
 htmlcov/
 
 # Maven

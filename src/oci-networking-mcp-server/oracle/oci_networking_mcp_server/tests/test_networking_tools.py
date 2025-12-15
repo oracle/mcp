@@ -307,3 +307,74 @@ class TestNetworkingTools:
             result = call_tool_result.structured_content
 
             assert result["id"] == "nsg1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_networking_mcp_server.server.get_networking_client")
+    async def get_get_vnic(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_get_response = create_autospec(oci.response.Response)
+        mock_get_response.data = oci.core.models.Vnic(
+            id="vnic1", display_name="VNIC 1", lifecycle_state="AVAILABLE"
+        )
+        mock_client.get_vnic.return_value = mock_get_response
+
+        async with Client(mcp) as client:
+            call_tool_result = await client.call_tool("get_vnic", {"vnic_id": "vnic1"})
+            result = call_tool_result.structured_content
+
+            assert result["id"] == "vnic1"
+
+
+class TestServer:
+    @patch("oracle.oci_networking_mcp_server.server.mcp.run")
+    @patch("os.getenv")
+    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run):
+        mock_env = {
+            "ORACLE_MCP_HOST": "1.2.3.4",
+            "ORACLE_MCP_PORT": "8888",
+        }
+
+        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        import oracle.oci_networking_mcp_server.server as server
+
+        server.main()
+        mock_mcp_run.assert_called_once_with(
+            transport="http",
+            host=mock_env["ORACLE_MCP_HOST"],
+            port=int(mock_env["ORACLE_MCP_PORT"]),
+        )
+
+    @patch("oracle.oci_networking_mcp_server.server.mcp.run")
+    @patch("os.getenv")
+    def test_main_without_host_and_port(self, mock_getenv, mock_mcp_run):
+        mock_getenv.return_value = None
+        import oracle.oci_networking_mcp_server.server as server
+
+        server.main()
+        mock_mcp_run.assert_called_once_with()
+
+    @patch("oracle.oci_networking_mcp_server.server.mcp.run")
+    @patch("os.getenv")
+    def test_main_with_only_host(self, mock_getenv, mock_mcp_run):
+        mock_env = {
+            "ORACLE_MCP_HOST": "1.2.3.4",
+        }
+        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        import oracle.oci_networking_mcp_server.server as server
+
+        server.main()
+        mock_mcp_run.assert_called_once_with()
+
+    @patch("oracle.oci_networking_mcp_server.server.mcp.run")
+    @patch("os.getenv")
+    def test_main_with_only_port(self, mock_getenv, mock_mcp_run):
+        mock_env = {
+            "ORACLE_MCP_PORT": "8888",
+        }
+        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        import oracle.oci_networking_mcp_server.server as server
+
+        server.main()
+        mock_mcp_run.assert_called_once_with()

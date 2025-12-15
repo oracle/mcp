@@ -190,3 +190,56 @@ class TestObjectStorageTools:
             assert len(result["items"]) == 1
             assert result["items"][0]["name"] == "object1"
             assert result["items"][0]["version_id"] == "version_1"
+
+
+class TestServer:
+    @patch("oracle.oci_object_storage_mcp_server.server.mcp.run")
+    @patch("os.getenv")
+    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run):
+        mock_env = {
+            "ORACLE_MCP_HOST": "1.2.3.4",
+            "ORACLE_MCP_PORT": "8888",
+        }
+
+        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        import oracle.oci_object_storage_mcp_server.server as server
+
+        server.main()
+        mock_mcp_run.assert_called_once_with(
+            transport="http",
+            host=mock_env["ORACLE_MCP_HOST"],
+            port=int(mock_env["ORACLE_MCP_PORT"]),
+        )
+
+    @patch("oracle.oci_object_storage_mcp_server.server.mcp.run")
+    @patch("os.getenv")
+    def test_main_without_host_and_port(self, mock_getenv, mock_mcp_run):
+        mock_getenv.return_value = None
+        import oracle.oci_object_storage_mcp_server.server as server
+
+        server.main()
+        mock_mcp_run.assert_called_once_with()
+
+    @patch("oracle.oci_object_storage_mcp_server.server.mcp.run")
+    @patch("os.getenv")
+    def test_main_with_only_host(self, mock_getenv, mock_mcp_run):
+        mock_env = {
+            "ORACLE_MCP_HOST": "1.2.3.4",
+        }
+        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        import oracle.oci_object_storage_mcp_server.server as server
+
+        server.main()
+        mock_mcp_run.assert_called_once_with()
+
+    @patch("oracle.oci_object_storage_mcp_server.server.mcp.run")
+    @patch("os.getenv")
+    def test_main_with_only_port(self, mock_getenv, mock_mcp_run):
+        mock_env = {
+            "ORACLE_MCP_PORT": "8888",
+        }
+        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        import oracle.oci_object_storage_mcp_server.server as server
+
+        server.main()
+        mock_mcp_run.assert_called_once_with()

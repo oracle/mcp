@@ -7,8 +7,16 @@ It includes tools to help with managing object storage configurations.
 
 ## Running the server
 
+### STDIO transport mode
+
 ```sh
-uv run oracle.oci-object-storage-mcp-server
+uvx oracle.oci-object-storage-mcp-server
+```
+
+### HTTP streaming transport mode
+
+```sh
+ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.oci-object-storage-mcp-server
 ```
 
 ## Tools

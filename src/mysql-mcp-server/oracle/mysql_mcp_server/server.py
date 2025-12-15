@@ -12,7 +12,7 @@ import oci
 from fastmcp import FastMCP
 from mysql import connector
 from mysql.connector.abstracts import MySQLConnectionAbstract
-from utils import (
+from oracle.mysql_mcp_server.utils import (
     DatabaseConnectionError,
     Mode,
     OciInfo,
@@ -20,9 +20,7 @@ from utils import (
     load_mysql_config,
 )
 
-MIN_CONTEXT_SIZE = 10
-DEFAULT_CONTEXT_SIZE = 20
-MAX_CONTEXT_SIZE = 100
+from oracle.mysql_mcp_server.consts import MIN_CONTEXT_SIZE, DEFAULT_CONTEXT_SIZE, MAX_CONTEXT_SIZE
 
 ###############################################################
 # Start setup
@@ -776,11 +774,10 @@ def ask_nl_sql(connection_id: str, question: str) -> str:
     """
     [MCP Tool] Convert natural language questions into SQL queries and execute them automatically.
 
-    This tool is ideal for database exploration using plain English questions like:
-    - "What tables are available?"
-    - "Show me the average price by category"
+    This tool can produce SQL statements to answer Natural Language questions like:
+    - "Show me the average price of products by category"
     - "How many users registered last month?"
-    - "What are the column names in the customers table?"
+    - "What is the total number of sales for the past quarter?"
 
     Args:
         connection_id (str): MySQL connection key.
@@ -824,14 +821,13 @@ def ask_nl_sql(connection_id: str, question: str) -> str:
         }
     """
     with _get_database_connection_cm(connection_id) as db_connection:
-        # Execute the heatwave chat query
-        set_response = _execute_sql_tool(db_connection, "SET @response = NULL;")
-        if check_error(set_response):
-            return json.dumps({"error": f"Error with NL_SQL: {set_response}"})
-
+        if db_connection.database is not None:
+            call_nl_sql = f"CALL sys.NL_SQL(%s, @response, JSON_OBJECT('schemas', JSON_ARRAY(\"{db_connection.database}\"), 'execute', FALSE))"
+        else:
+            call_nl_sql = "CALL sys.NL_SQL(%s, @response, JSON_OBJECT('execute', FALSE))"
         nl2sql_response = _execute_sql_tool(
             db_connection,
-            f"CALL sys.NL_SQL(%s, @response, NULL)",
+            call_nl_sql,
             params=[question],
         )
         if check_error(nl2sql_response):
@@ -839,20 +835,78 @@ def ask_nl_sql(connection_id: str, question: str) -> str:
 
         fetch_response = _execute_sql_tool(db_connection, "SELECT @response;")
         if check_error(fetch_response):
-            return json.dumps({"error": f"Error with ML_RAG: {fetch_response}"})
+            return json.dumps({"error": f"Error with NL_SQL: {fetch_response}"})
 
         try:
             response = json.loads(fetch_one(fetch_response))
-            response["sql_response"] = nl2sql_response
             return json.dumps(response)
         except:
             return json.dumps({"error": "Unexpected response format from NL_SQL"})
 
 
+@mcp.tool()
+def retrieve_relevant_schema_information(connection_id: str, question: str) -> str:
+    """
+    [MCP Tool] Retrieve relevant schemas and tables for a given natural language question.
+
+    This tool analyzes the input question and identifies tables that are relevant to it. 
+    It will consider table and column comments for improved semantic matching. 
+    The results contain only the relevant schemas and tables in a JSON object.
+
+    Args:
+        connection_id (str): MySQL connection key.
+        input (str): Input question for use with ML_RETRIEVE_SCHEMA.
+        
+    Returns:
+        A single JSON of the form:
+        {
+            "create_statements":  '''
+                CREATE TABLE `db2`.`singer`(
+                `Singer_ID` int,
+                `Name` varchar,
+                `Birth_Year` double,
+                `Net_Worth_Millions` double COMMENT 'Worth in millions $',
+                `Citizenship` varchar
+                ) COMMENT 'table about singers';
+
+                CREATE TABLE `db2`.`album`(
+                `Album_ID` int,
+                `Singer_ID` int,
+                `Title` varchar,
+                FOREIGN KEY (`Singer_ID`) REFERENCES `db2`.`singer`(`Singer_ID`)
+                ) COMMENT 'album table';
+                '''       
+        }
+        
+        Where the DDL/CREATE statements of all relevant tables are listed        
+    """
+    with _get_database_connection_cm(connection_id) as db_connection:
+        set_response = _execute_sql_tool(db_connection, "SET @response = NULL;")
+        if check_error(set_response):
+            return json.dumps({"error": f"Error with ML_RETRIEVE_SCHEMA: {set_response}"})
+
+        ml_retrieval_response = _execute_sql_tool(
+            db_connection,
+            f"CALL sys.ML_RETRIEVE_SCHEMA_METADATA(%s, @response, NULL)",
+            params=[question],
+        )
+        if check_error(ml_retrieval_response):
+            return json.dumps({"error": f"Error with ML_RETRIEVE_SCHEMA: {ml_retrieval_response}"})
+
+        fetch_response = _execute_sql_tool(db_connection, "SELECT JSON_OBJECT('create_statements', @response) AS jobj;")
+        if check_error(fetch_response):
+            return json.dumps({"error": f"Error with ML_RETRIEVE_SCHEMA: {fetch_response}"})
+
+        try:
+            response = json.loads(fetch_one(fetch_response))
+            return json.dumps(response)
+        except Exception as e:
+            return json.dumps({"error": f"Unexpected response format from ML_RETRIEVE_SCHEMA: {str(e)}"})
+
+
 """
 Object store
 """
-
 
 def verify_compartment_access(compartments):
     access_report = {}
@@ -1034,7 +1088,9 @@ def object_storage_list_objects(namespace: str, bucket_name: str) -> str:
 
     return str(list_object_response.data.objects)
 
-
-if __name__ == "__main__":
-    # Initialize and run the server
+def main():
+    """Run the MCP server with CLI argument support."""
     mcp.run(transport="stdio")
+
+if __name__ == '__main__':
+    main()

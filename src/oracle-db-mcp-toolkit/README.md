@@ -4,8 +4,12 @@
 
 Oracle Database MCP Toolkit is a Model Context Protocol (MCP) server that lets you: 
   * Define your own custom tools via a simple YAML configuration file.
-  * Use 8 built-in tools to analyze Oracle JDBC thin client logs and RDBMS/SQLNet trace files.
-  * Optionally use **database-powered tools**, including **vector similarity search** and **SQL execution plan analysis**, when JDBC configuration is provided.
+  * Use built-in tools:
+    * Analyze Oracle JDBC thin client logs and RDBMS/SQLNet trace files.
+    * **database-powered tools**, including **vector similarity search** and **SQL execution plan analysis**.
+  * Deploy locally or remotely - optionally as a container - with support for TLS and OAuth2
+
+![MCP Toolkit Architecture Diagram](./images/MCPToolkitArchitectureDiagram.svg)
 
 ---
 

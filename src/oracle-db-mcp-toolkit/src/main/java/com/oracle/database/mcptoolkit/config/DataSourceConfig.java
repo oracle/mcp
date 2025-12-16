@@ -26,7 +26,7 @@ public class DataSourceConfig {
   public String port;
 
   /**
-   * The Oracle SID or service name of the database.
+   * The Oracle service name of the database.
    */
   public String database;
 

@@ -2,12 +2,12 @@
 
 ## 1. Overview
 
-Oracle Database MCP Toolkit is a Model Context Protocol (MCP) server that lets you: 
-  * Define your own custom tools via a simple YAML configuration file.
-  * Use built-in tools:
-    * Analyze Oracle JDBC thin client logs and RDBMS/SQLNet trace files.
-    * **database-powered tools**, including **vector similarity search** and **SQL execution plan analysis**.
-  * Deploy locally or remotely - optionally as a container - with support for TLS and OAuth2
+Oracle Database MCP Toolkit is a Model Context Protocol (MCP) server that lets you:
+* Define your own custom tools via a simple YAML configuration file.
+* Use built-in tools:
+  * Analyze Oracle JDBC thin client logs and RDBMS/SQLNet trace files.
+  * **database-powered tools**, including **vector similarity search** and **SQL execution plan analysis**.
+* Deploy locally or remotely - optionally as a container - with support for TLS and OAuth2
 
 ![MCP Toolkit Architecture Diagram](./images/MCPToolkitArchitectureDiagram.svg)
 
@@ -19,9 +19,27 @@ This provides a flexible and declarative way to extend the server without modify
 
 A YAML file may define:
 
-* One or more **datasources:** — named database configurations (URL, user, password, etc.)
+* **datasources:** — Database configuration info:
+  * `url`: This the JDBC URL used by the MCP server to connect to the database using the JDBC driver.
+  * `user`: The username to use for the database connection.
+  * `password`: The password to use for the database connection.
+  * `host` (optional): The hostname or IP address of the database server.
+  * `port` (optional): The port number on which the database server is listening.
+  * `database` (optional): The Oracle service name of the database.
 
-* One or more **tools** — each with parameters, SQL statements, and optional metadata
+* One or more **tools** — The MCP tools:
+  * `dataSource` (optional): Defines the data source to be used (defaults to system properties `db.url`, `db.user` and `db.password`).
+  * `name`: The tool name and title, derived from the YAML key.
+  * `description`: A brief description of the tool.
+  * `parameters` (optional): A list of the parameters required for the tool. (To fill the statement's placeholders)
+  * `statement` The SQL statement to be executed by the tool.
+  
+* If you add **parameters**, you can add the following fields:
+  * `name`: The name of the tool parameter.
+  * `type`: The data type to respect when the LLM fills the parameter.
+  * `description`: The description to know what this parameter is about.
+  * `required` (optional): Indicates whether the tool parameter is required. (default: false)
+  * All the parameter fields are being used to generate an InputSchema.
 
 ### DataSource Resolution Logic
 
@@ -31,9 +49,9 @@ When executing a tool, the MCP server determines which datasource to use based o
 
 2. If the tool does not specify a datasource, the server looks for a default datasource:
 
-  * First, it checks whether a datasource was provided via system properties (db.url, db.user, db.password) (Higher priority).
+* First, it checks whether a datasource was provided via system properties (db.url, db.user, db.password) (Higher priority).
 
-  * If no system property datasource is available, it falls back to the first datasource defined in the YAML file, if present.
+* If no system property datasource is available, it falls back to the first datasource defined in the YAML file, if present.
 
 3. If no datasource can be resolved and the tool requires one (e.g., SQL-based tools), the server reports a configuration error.
 
@@ -44,12 +62,13 @@ This design ensures that tools always have a predictable datasource while giving
 dataSources:
   prod-db:
     url: jdbc:oracle:thin:@prod-host:1521/ORCLPDB1
-    user: ADMIN
+    user: ${user}
     password: ${password}
 
 tools:
   hotels-by-name:
     dataSource: prod-db
+    description: Returns the details of a hotel given its name. The details include the capacity, rating and address.
     parameters:
       - name: name
         type: string
@@ -90,17 +109,17 @@ These tools operate on RDBMS/SQLNet trace files:
 
   **Inputs:**
 
-    * `question` (string, required): Natural language query.
-    * `topK` (integer, optional, default: 5): Number of closest results.
-    * `table` (string, default: `profile_oracle`): Table containing text + vector embeddings.
-    * `dataColumn` (string, default: `text`): Text/CLOB column.
-    * `embeddingColumn` (string, default: `embedding`): Vector column.
-    * `modelName` (string, default: `doc_model`): Name of the DB vector model.
-    * `textFetchLimit` (integer, default: 4000): Max length of returned text.
+  * `question` (string, required): Natural language query.
+  * `topK` (integer, optional, default: 5): Number of closest results.
+  * `table` (string, default: `profile_oracle`): Table containing text + vector embeddings.
+  * `dataColumn` (string, default: `text`): Text/CLOB column.
+  * `embeddingColumn` (string, default: `embedding`): Vector column.
+  * `modelName` (string, default: `doc_model`): Name of the DB vector model.
+  * `textFetchLimit` (integer, default: 4000): Max length of returned text.
 
   **Returns:**
 
-    * JSON array of similar rows with scores and truncated snippets.
+  * JSON array of similar rows with scores and truncated snippets.
 
 ### 3.4. SQL Execution Plan Analysis
 
@@ -108,24 +127,24 @@ These tools operate on RDBMS/SQLNet trace files:
 
   **Modes:**
 
-    * `static` — Uses `EXPLAIN PLAN` (estimated plan; does not run the SQL).
-    * `dynamic` — Uses `DBMS_XPLAN.DISPLAY_CURSOR` for the **actual** plan of a cursor.
+  * `static` — Uses `EXPLAIN PLAN` (estimated plan; does not run the SQL).
+  * `dynamic` — Uses `DBMS_XPLAN.DISPLAY_CURSOR` for the **actual** plan of a cursor.
 
   **Inputs:**
 
-    * `sql` (required): SQL query to analyze.
-    * `mode` (static|dynamic, default: static)
-    * `execute` (boolean): Execute SQL to obtain a cursor in dynamic mode.
-    * `maxRows` (integer, default: 1): Limit rows fetched during execution.
-    * `xplanOptions` (string): Formatting options.
+  * `sql` (required): SQL query to analyze.
+  * `mode` (static|dynamic, default: static)
+  * `execute` (boolean): Execute SQL to obtain a cursor in dynamic mode.
+  * `maxRows` (integer, default: 1): Limit rows fetched during execution.
+  * `xplanOptions` (string): Formatting options.
 
-        * Default dynamic: `ALLSTATS LAST +PEEKED_BINDS +OUTLINE +PROJECTION`
-        * Default static: `BASIC +OUTLINE +PROJECTION +ALIAS`
+    * Default dynamic: `ALLSTATS LAST +PEEKED_BINDS +OUTLINE +PROJECTION`
+    * Default static: `BASIC +OUTLINE +PROJECTION +ALIAS`
 
   **Returns:**
 
-    * `planText`: DBMS_XPLAN output.
-    * `llmPrompt`: A structured prompt for an LLM to explain + tune the plan.
+  * `planText`: DBMS_XPLAN output.
+  * `llmPrompt`: A structured prompt for an LLM to explain + tune the plan.
 
 ---
 
@@ -199,7 +218,7 @@ This exposes the MCP endpoint at: `http://localhost:45450/mcp`.
 To enable HTTPS (SSL/TLS), specify your certificate keystore path and password using the `-DcertificatePath` and `-DcertificatePassword` options.  
 Only PKCS12 (`.p12` or `.pfx`) keystore files are supported.
 You can set the HTTPS port with the `-Dhttps.port` option.
-##### Example 
+##### Example
 ```shell
 -DcertificatePath=/path/to/your-certificate.p12 -DcertificatePassword=yourPassword -Dhttps.port=443
 ```
@@ -253,7 +272,7 @@ In order to configure an OAuth2 server, the `-DenableAuthentication` should be e
 
 - `-DauthServer`: The OAuth2 server URL which MUST provide the `/.well-known/oauth-authorization-server`. But if the authorization server only provides the `/.well-known/openid-configuration` you can enable `-DredirectOAuthToOpenID`.
 - `-DredirectOAuthToOpenID`: (default: `false`) This system property is used to as a workaround to support OAuth servers that provide `/.well-known/openid-configuration` and not `/.well-known/oauth-authorization-server`.
-It works by creating an `/.well-known/oauth-authorization-server` endpoint on the MCP Server that redirects to the OAuth server's `/.well-known/openid-configuration` endpoint.
+  It works by creating an `/.well-known/oauth-authorization-server` endpoint on the MCP Server that redirects to the OAuth server's `/.well-known/openid-configuration` endpoint.
 - `-DintrospectionEndpoint`: The OAuth2 server's introspection endpoint used to validate an access token (The OAuth2 introspection JSON response MUST contain the `active` field, e.g. `{...,"active": false,..}`).
 - `-DclientId`: Client ID (e.g. `oracle-db-toolkit`)
 - `-DclientSecret`: Client Secret (e.g. `Xj9mPqR2vL5kN8tY3hB7wF4uD6cA1eZ0`)

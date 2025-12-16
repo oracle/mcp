@@ -22,6 +22,27 @@ RDBMS/SQLNet trace analysis Tools:
 Custom tools (created using YAML configuration file):
 
 - **`hotels-by-name`**: Return the details of a hotel given its name. The details include the capacity, rating and address.
+This tool is created using the following YAML configuration file: 
+
+```yaml
+dataSources:
+  dev-db:
+    url: ${db_url}
+    user: ${user}
+    password: ${password}
+
+tools:
+  hotels-by-name:
+    dataSource: dev-db
+    description: Return the details of a hotel given its name. The details include the capacity, rating and address.
+    parameters:
+      - name: name
+        type: string
+        description: Hotel name to search for.
+    statement: SELECT * FROM hotels WHERE name LIKE '%' || :name || '%'
+```
+
+Where `${db_url}`, `${user}` and `${password}`are environment variables.
 
 ## 2. Requirements
 

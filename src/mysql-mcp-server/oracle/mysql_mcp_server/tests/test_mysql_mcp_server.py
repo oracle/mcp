@@ -13,9 +13,8 @@ import unittest
 import uuid
 from unittest import mock
 
-import mysql_mcp_server as m
-from utils import get_ssh_command, fill_config_defaults
-
+from oracle.mysql_mcp_server.utils import get_ssh_command, fill_config_defaults, Mode
+import oracle.mysql_mcp_server.server as m
 SKIP_ESTABLISHED = False
 
 
@@ -23,7 +22,7 @@ def get_server_module():
     # Dynamically load the server module but shim fastmcp so @mcp.tool() returns the original function
     # This avoids FunctionTool non-callable wrappers when importing FastMCP from 'fastmcp'.
 
-    server_path = os.path.join(os.path.dirname(__file__), "mysql_mcp_server.py")
+    server_path = os.path.join(os.path.dirname(__file__), "../server.py")
     if not os.path.exists(server_path):
         raise FileNotFoundError(f"Server file not found at {server_path}")
 
@@ -64,9 +63,12 @@ def get_server_module():
 src_module = get_server_module()
 
 
-def get_first_valid_connection_id(desired_mode=None):
+def get_first_valid_connection_id(desired_mode=None, db_key=None):
     payload = json.loads(src_module.list_all_connections())
     valid = payload.get("valid keys", [])
+    if db_key is not None:
+        valid = [obj for obj in valid if obj["key"]==db_key]
+
     if not isinstance(valid, list) or len(valid) == 0:
         raise Exception("No valid connections")
 
@@ -93,13 +95,13 @@ def get_first_valid_connection_id(desired_mode=None):
 
 
 try:
-    get_first_valid_connection_id(m.Mode.MYSQL_AI)
+    get_first_valid_connection_id(Mode.MYSQL_AI)
     SKIP_MYSQL_AI = False
 except:
     SKIP_MYSQL_AI = True
 
 try:
-    get_first_valid_connection_id(m.Mode.OCI)
+    get_first_valid_connection_id(Mode.OCI)
     SKIP_OCI = False
 except:
     SKIP_OCI = True
@@ -241,9 +243,11 @@ class TestLoadMySQLConfig(unittest.TestCase):
         self.assertEqual(cfg, data)
 
     def test_load_uses_module_local_config_when_env_unset(self):
-        # Determine the utils module directory the function belongs to
-        utils_dir = os.path.dirname(os.path.abspath(m.load_mysql_config.__code__.co_filename))
-        local_path = os.path.join(utils_dir, "local_config.json")
+        
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+        local_path = os.path.abspath(
+        os.path.join(module_dir, "..", "..", "..", "local_config.json")
+    )
 
         def isfile_side_effect(path):
             return path == local_path
@@ -1682,6 +1686,139 @@ class TestHeatwaveAskHelp(unittest.TestCase):
         self.assertFalse(src_module.check_error(out), f"heatwave_ask_help failed: {out}")
         self.assertIsInstance(out, str)
 
+class TestAskNlSql(unittest.TestCase):
+    
+
+    @contextlib.contextmanager
+    def cm(_cid):
+        class FakeConn:
+            database = "schema1"
+        yield FakeConn()
+
+    def test_ask_nl_sql_success_mocked(self):
+
+        # Mock a successful SQL tool call that returns a valid JSON object
+        sql_response = {
+            "tables": ["schema1.table1"],
+            "schemas": ["schema1"],
+            "sql_query": "SELECT * FROM schema1.table1",
+            "is_sql_valid": 1,
+            "model_id": "llm-test"
+        }
+        sql_response_str = json.dumps(sql_response)
+        nl2sql_response = f"[{sql_response}]"
+        fetch_one_patch = mock.patch.object(src_module, "fetch_one", return_value=sql_response_str)
+        cm_patch = mock.patch.object(src_module, "_get_database_connection_cm", new=TestAskNlSql.cm)
+        with cm_patch, \
+             fetch_one_patch, \
+             mock.patch.object(src_module, "_execute_sql_tool", return_value=nl2sql_response):
+            out = src_module.ask_nl_sql("cid", "Find data")
+        self.assertFalse(src_module.check_error(out))
+        data = json.loads(out)
+        for key in ["tables", "schemas", "sql_query", "is_sql_valid"]:
+            self.assertIn(key, data)
+
+    def test_ask_nl_sql_error_from_backend(self):
+        # _execute_sql_tool returns an error JSON on set_response, call_nl_sql, or fetch_response
+        err_json = json.dumps({"error": "bad news"})
+        # Patch an early error on set_response
+        def exec_sql_side_effect(conn, sql, params=None):
+            if "SET @response" not in sql:
+                return err_json
+            return "[[]]"
+        with mock.patch.object(src_module, "_get_database_connection_cm", new=TestAskNlSql.cm), \
+             mock.patch.object(src_module, "_execute_sql_tool", side_effect=exec_sql_side_effect):
+            out = src_module.ask_nl_sql("cid", "Find data")
+        self.assertTrue(src_module.check_error(out))
+        self.assertIn("Error with NL_SQL", json.loads(out)["error"])
+
+    def test_ask_nl_sql_unexpected_format(self):
+        # fetch_one returns a non-JSON string or missing keys (will cause json.loads in ask_nl_sql to fail)
+        with mock.patch.object(src_module, "_get_database_connection_cm", new=TestAskNlSql.cm), \
+             mock.patch.object(src_module, "fetch_one", return_value="not-json"), \
+             mock.patch.object(src_module, "_execute_sql_tool", return_value="[[1,2]]"):
+            out = src_module.ask_nl_sql("cid", "Find data")
+        self.assertTrue(src_module.check_error(out))
+        self.assertIn("Unexpected response format", json.loads(out)["error"])
+
+    @unittest.skipIf(SKIP_OCI, OCI_SKIP_MSG)
+    def test_ask_nl_sql_real_query(self):
+        conn_id = get_first_valid_connection_id()
+        out = src_module.ask_nl_sql(conn_id, "List the total numbers of rowns in any table")
+        self.assertFalse(src_module.check_error(out), f"ask_nl_sql failed: {out}")
+        data = json.loads(out)
+        for key in ["tables", "schemas", "sql_query", "is_sql_valid"]:
+            self.assertIn(key, data)
+        self.assertRegex(data["sql_query"], r"SELECT.*")
+
+class TestRetrieveRelevantSchemaInformation(unittest.TestCase):
+
+    @contextlib.contextmanager
+    def cm(_cid):
+        class FakeConn:
+            database = "schema1"
+        yield FakeConn()
+
+    def test_retrieve_relevant_schema_information_success_mocked(self):
+        # Mock a successful SQL tool call that returns a valid JSON object
+        schema_response = {
+            "create_statements":"""CREATE TABLE `db2`.`singer`(
+                `Singer_ID` int,
+                `Name` varchar,
+                `Birth_Year` double,
+                `Net_Worth_Millions` double COMMENT 'Worth in millions $',
+                `Citizenship` varchar
+                ) COMMENT 'table about singers';
+
+                CREATE TABLE `db2`.`album`(
+                `Album_ID` int,
+                `Singer_ID` int,
+                `Title` varchar,
+                FOREIGN KEY (`Singer_ID`) REFERENCES `db2`.`singer`(`Singer_ID`)
+                ) COMMENT 'album table';"""
+        }
+        schema_response_str = json.dumps(schema_response)
+        fetch_one_patch = mock.patch.object(src_module, "fetch_one", return_value=schema_response_str)
+        cm_patch = mock.patch.object(src_module, "_get_database_connection_cm", new=TestRetrieveRelevantSchemaInformation.cm)
+        with cm_patch, \
+             fetch_one_patch, \
+             mock.patch.object(src_module, "_execute_sql_tool", return_value="[[1,2]]"):  # called, but actual value mocked by fetch_one
+            out = src_module.retrieve_relevant_schema_information("cid", "Find address tables")
+        self.assertFalse(src_module.check_error(out))
+        data = json.loads(out)
+        self.assertIn("create_statements",data)
+        self.assertRegex(data["create_statements"], r"CREATE TABLE.*")
+
+    def test_retrieve_relevant_schema_information_error_from_backend(self):
+        # _execute_sql_tool returns an error JSON at set_response or ml_retrieval_response or fetch_response
+        err_json = json.dumps({"error": "backend error"})
+        def exec_sql_side_effect(conn, sql, params=None):
+            if "SET @response" not in sql:
+                return err_json
+            return "[[]]"
+        with mock.patch.object(src_module, "_get_database_connection_cm", new=TestRetrieveRelevantSchemaInformation.cm), \
+             mock.patch.object(src_module, "_execute_sql_tool", side_effect=exec_sql_side_effect):
+            out = src_module.retrieve_relevant_schema_information("cid", "Find address tables")
+        self.assertTrue(src_module.check_error(out))
+        self.assertIn("Error with ML_RETRIEVE_SCHEMA", json.loads(out)["error"])
+
+    def test_retrieve_relevant_schema_information_unexpected_format(self):
+        # fetch_one returns a non-JSON string or missing keys, triggers format error
+        with mock.patch.object(src_module, "_get_database_connection_cm", new=TestRetrieveRelevantSchemaInformation.cm), \
+             mock.patch.object(src_module, "fetch_one", return_value="not-json"), \
+             mock.patch.object(src_module, "_execute_sql_tool", return_value="[[1,2]]"):
+            out = src_module.retrieve_relevant_schema_information("cid", "Find address tables")
+        self.assertTrue(src_module.check_error(out))
+        self.assertIn("Unexpected response format", json.loads(out)["error"])
+
+    @unittest.skipIf(SKIP_OCI, OCI_SKIP_MSG)
+    def test_retrieve_relevant_schema_information_real_query(self):
+        conn_id = get_first_valid_connection_id(db_key="local_db")
+        out = src_module.retrieve_relevant_schema_information(conn_id, "How many users in the database ?")
+        self.assertFalse(src_module.check_error(out), f"retrieve_relevant_schema_information failed: {out}")
+        data = json.loads(out)
+        self.assertIn("create_statements", data)
+            
 
 if __name__ == "__main__":
     unittest.main()

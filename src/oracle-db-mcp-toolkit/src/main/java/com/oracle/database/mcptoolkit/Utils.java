@@ -223,6 +223,8 @@ public class Utils {
     pds.setConnectionProperty("remarksReporting", "true");
     pds.setConnectionProperty("oracle.jdbc.vectorDefaultGetObjectType", "double[]");
     pds.setConnectionProperty("oracle.jdbc.jsonDefaultGetObjectType", "java.lang.String");
+    pds.setConnectionProperty("oracle.net.keepAlive", "true");
+    pds.setValidateConnectionOnBorrow(true);
     return pds;
   }
 

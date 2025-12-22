@@ -19,8 +19,6 @@ from .dynamic_tools_loader import build_tools_from_latest_spec
 
 mcp = FastMCP(name=__project__)
 
-DEFAULT_ENDPOINT = "https://preprod-database.eu-zurich-1.oraclecloud.com/20160918/"
-
 # ---------------- TYPE MAPPING ----------------
 TYPE_MAP = {
     "integer": "int",
@@ -52,12 +50,11 @@ def invoke_oci_api(method, path, params=None, payload=None, headers=None):
 
     endpoint = f"https://database.{config['region']}.oraclecloud.com/20160918/"
     url = endpoint.rstrip("/") + "/" + path.lstrip("/")
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
 
     headers = headers or {"Content-Type": "application/json"}
     headers["authorization"] = f"Bearer {security_token}"
     headers["x-oci-secondary-auth"] = "true"
-    headers["User-Agent"] = user_agent_name
+    headers["User-Agent"] = "oci-database-mcp-server"
 
     with requests.Session() as session:
 
@@ -73,7 +70,7 @@ def invoke_oci_api(method, path, params=None, payload=None, headers=None):
         prepared = req.prepare()
 
         response = session.send(prepared)
-        return response
+        return response.text
 
 
 # ---------------- UNFLATTENER ----------------

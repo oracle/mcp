@@ -16,18 +16,13 @@ uv run oracle.oci-db-dynamic-mcp-server
 The server supports the following environment variables:
 
 - `OCI_CONFIG_PROFILE`: OCI configuration profile name (default: "DEFAULT")
+- `OCI_ALLOWED_RESOURCES`: A comma-separated list of OCI resources to load (e.g., `database`, `db_system`). If omitted, all available tools are loaded.
 
-## Parameters
-
-The server accepts the following parameters to control which OCI resources are loaded. This helps reduce startup time and token usage by only loading the tools you need.
-
-| Parameter | Type | CLI Flag            | Description |
-| :--- | :--- |:--------------------|:---------------------- |
-| **Resources** | String | `--resources or -r` | A comma-separated list of OCI resources to load (e.g., `database`, `db_system`). If omitted, all available tools are loaded. |
 
 ## Configuration Example
 This loads only the dbSystems and the databases resources (case-insensitive)
 ```json
+{
     "database-dynamic": {
       "autoApprove": [],
       "disabled": false,
@@ -36,14 +31,15 @@ This loads only the dbSystems and the databases resources (case-insensitive)
       "command": "uv",
       "args": [
         "run",
-        "oracle.oci-db-dynamic-mcp-server",
-        "--resources",
-        "dbSystems, databases"
+        "oracle.oci-db-dynamic-mcp-server"
       ],
       "env": {
         "VIRTUAL_ENV": "Documents/oci-mcp/.venv",
-        "OCI_CONFIG_PROFILE": "DEFAULT"
+        "OCI_CONFIG_PROFILE": "DEFAULT",
+        "OCI_ALLOWED_RESOURCES": "databases, dbSystems"
       }
+    }
+}
 ```
 
 ## Tools

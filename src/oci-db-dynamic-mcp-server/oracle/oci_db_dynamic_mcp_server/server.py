@@ -19,7 +19,7 @@ from .dynamic_tools_loader import build_tools_from_latest_spec
 
 mcp = FastMCP(name=__project__)
 
-DEFAULT_ENDPOINT = "https://database.us-ashburn-1.oraclecloud.com/20160918/"
+DEFAULT_ENDPOINT = "https://preprod-database.eu-zurich-1.oraclecloud.com/20160918/"
 
 # ---------------- TYPE MAPPING ----------------
 TYPE_MAP = {
@@ -150,10 +150,12 @@ def build_collapsed_parent_notes(resolved_schema: dict, flat_schema: dict) -> st
 
 
 def register_tools(allowed_resources: Optional[List[str]] = None):
-    """
-    Load tools dynamically.
-    allowed_resources: List of strings (e.g. ['database', 'dbsystem']) or None for ALL.
-    """
+
+    if allowed_resources is None:
+        env_resources = os.getenv("OCI_ALLOWED_RESOURCES")
+        if env_resources:
+            allowed_resources = [r.strip() for r in env_resources.split(",")]
+
     print(f"Loading OCI Specs (Filter: {allowed_resources})...")
     tools = build_tools_from_latest_spec(allowed_resources=allowed_resources)
     print(f"Loaded {len(tools)} tools.")
@@ -292,15 +294,7 @@ async def {tool_name}({args_sig}):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="OCI DBaaS MCP Server")
-    parser.add_argument(
-        "--resources", "-r", type=str, help="Comma-separated resources (e.g. databases)"
-    )
-    args = parser.parse_args()
-
-    allowed = [r.strip() for r in args.resources.split(",")] if args.resources else None
-    register_tools(allowed)
-
+    register_tools()
     print("Server running...")
     mcp.run(transport="stdio")
 

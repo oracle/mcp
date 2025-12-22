@@ -10,8 +10,6 @@ JDBC log analysis tools:
 - **`get-jdbc-stats`**: Extracts performance statistics including error counts, sent/received packets and byte counts.
 - **`get-jdbc-queries`**: Retrieves all executed SQL queries with timestamps and execution times.
 - **`get-jdbc-errors`**: Extracts all errors reported by both server and client.
-- **`get-jdbc-connections-events`**: Shows connection open/close events.
-- **`list-log-files-from-directory`**: List all visible files from a specified directory, which helps the user analyze multiple files with one prompt.
 - **`jdbc-log-comparison`**: Compares two log files for performance metrics, errors, and network information.
 
 RDBMS/SQLNet trace analysis Tools:

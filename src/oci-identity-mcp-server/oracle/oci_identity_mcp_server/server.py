@@ -145,7 +145,6 @@ def get_current_tenancy() -> Tenancy:
             profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
         )
         tenancy_id = os.getenv("TENANCY_ID_OVERRIDE", config["tenancy"])
-
         response: oci.response.Response = client.get_tenancy(tenancy_id)
         data: oci.identity.models.Tenancy = response.data
         logger.info("Found Tenancy")

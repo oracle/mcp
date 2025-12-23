@@ -7,7 +7,7 @@ This server provides tools to interact with the OCI Database service.
 ## Running the server
 
 ```sh
-uv run oracle.database-mcp-server
+uv run oracle.oci-database-mcp-server
 ```
 
 ## Environment Variables

@@ -16,11 +16,13 @@ from oracle.oci_identity_mcp_server.models import (
     AuthToken,
     AvailabilityDomain,
     Compartment,
+    RegionSubscription,
     Tenancy,
     User,
     map_auth_token,
     map_availability_domain,
     map_compartment,
+    map_region_subscription,
     map_tenancy,
     map_user,
 )
@@ -142,8 +144,7 @@ def get_current_tenancy() -> Tenancy:
         config = oci.config.from_file(
             profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
         )
-        tenancy_id = config["tenancy"]
-
+        tenancy_id = os.getenv("TENANCY_ID_OVERRIDE", config["tenancy"])
         response: oci.response.Response = client.get_tenancy(tenancy_id)
         data: oci.identity.models.Tenancy = response.data
         logger.info("Found Tenancy")
@@ -226,6 +227,73 @@ def get_current_user() -> User:
 
     except Exception as e:
         logger.error(f"Error in get_current_user tool: {str(e)}")
+        raise e
+
+
+@mcp.tool(
+    description="Get a specific compartment by its name within a parent compartment."
+)
+def get_compartment_by_name(
+    name: str = Field(description="The name of the compartment to find."),
+    parent_compartment_id: str = Field(
+        description="The OCID of the parent compartment to search within (or tenancy OCID).",
+    ),
+) -> Optional[Compartment]:
+    """
+    Searches for a compartment by name within a specific parent compartment.
+    Note: This is not a recursive search; it only looks at direct children.
+    """
+    try:
+        client = get_identity_client()
+
+        has_next_page = True
+        next_page: str = None
+
+        while has_next_page:
+            response = client.list_compartments(
+                compartment_id=parent_compartment_id,
+                page=next_page,
+                access_level="ACCESSIBLE",
+                lifecycle_state="ACTIVE",
+            )
+
+            for cmp in response.data:
+                if cmp.name == name:
+                    logger.info(f"Found compartment: {name}")
+                    return map_compartment(cmp)
+
+            has_next_page = response.has_next_page
+            next_page = response.next_page if hasattr(response, "next_page") else None
+
+        logger.warning(
+            f"Compartment '{name}' not found in parent '{parent_compartment_id}'"
+        )
+        return None
+
+    except Exception as e:
+        logger.error(f"Error in get_compartment_by_name tool: {str(e)}")
+        raise e
+
+
+@mcp.tool(description="List the regions a tenancy is subscribed to.")
+def list_subscribed_regions(
+    tenancy_id: str = Field(..., description="The OCID of the tenancy.")
+) -> list[RegionSubscription]:
+    regions: list[RegionSubscription] = []
+
+    try:
+        client = get_identity_client()
+        response = client.list_region_subscriptions(tenancy_id=tenancy_id)
+
+        data: list[oci.identity.models.RegionSubscription] = response.data
+        for d in data:
+            regions.append(map_region_subscription(d))
+
+        logger.info(f"Found {len(regions)} subscribed regions")
+        return regions
+
+    except Exception as e:
+        logger.error(f"Error in list_subscribed_regions tool: {str(e)}")
         raise e
 
 

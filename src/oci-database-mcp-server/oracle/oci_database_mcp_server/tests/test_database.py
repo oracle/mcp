@@ -3,11 +3,11 @@ from unittest.mock import MagicMock, create_autospec, patch
 import oci
 import pytest
 from fastmcp import Client
-from oracle.database_mcp_server.server import mcp
+from oracle.oci_database_mcp_server.server import mcp
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_application_vips(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -31,7 +31,7 @@ async def test_list_application_vips(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_autonomous_container_database_dataguard_associations(
     mock_get_client,
 ):
@@ -58,7 +58,7 @@ async def test_list_autonomous_container_database_dataguard_associations(
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_autonomous_container_database_versions(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -82,7 +82,7 @@ async def test_list_autonomous_container_database_versions(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_autonomous_container_databases(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -103,7 +103,7 @@ async def test_list_autonomous_container_databases(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_autonomous_database_backups(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -124,7 +124,7 @@ async def test_list_autonomous_database_backups(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_autonomous_database_character_sets(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -145,7 +145,7 @@ async def test_list_autonomous_database_character_sets(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_autonomous_database_clones(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -169,7 +169,7 @@ async def test_list_autonomous_database_clones(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_autonomous_database_dataguard_associations(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -192,7 +192,7 @@ async def test_list_autonomous_database_dataguard_associations(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_autonomous_database_peers(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -213,7 +213,7 @@ async def test_list_autonomous_database_peers(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_autonomous_database_refreshable_clones(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -234,7 +234,7 @@ async def test_list_autonomous_database_refreshable_clones(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_autonomous_database_software_images(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -258,7 +258,7 @@ async def test_list_autonomous_database_software_images(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_autonomous_databases(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -279,7 +279,7 @@ async def test_list_autonomous_databases(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_autonomous_db_preview_versions(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -300,7 +300,7 @@ async def test_list_autonomous_db_preview_versions(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_autonomous_db_versions(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -321,7 +321,7 @@ async def test_list_autonomous_db_versions(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_autonomous_virtual_machines(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -345,7 +345,7 @@ async def test_list_autonomous_virtual_machines(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_autonomous_vm_clusters(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -366,7 +366,7 @@ async def test_list_autonomous_vm_clusters(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_backup_destination(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -387,7 +387,7 @@ async def test_list_backup_destination(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_backups(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -408,7 +408,7 @@ async def test_list_backups(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_cloud_autonomous_vm_clusters(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -429,7 +429,7 @@ async def test_list_cloud_autonomous_vm_clusters(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_cloud_exadata_infrastructures(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -450,7 +450,7 @@ async def test_list_cloud_exadata_infrastructures(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_cloud_vm_cluster_updates(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -471,7 +471,7 @@ async def test_list_cloud_vm_cluster_updates(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_cloud_vm_clusters(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -492,7 +492,7 @@ async def test_list_cloud_vm_clusters(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_console_connections(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -513,7 +513,7 @@ async def test_list_console_connections(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_console_histories(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -534,7 +534,7 @@ async def test_list_console_histories(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_container_database_patches(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -558,7 +558,7 @@ async def test_list_container_database_patches(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_data_guard_associations(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -579,7 +579,7 @@ async def test_list_data_guard_associations(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_database_software_images(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -600,7 +600,7 @@ async def test_list_database_software_images(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_databases(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -621,7 +621,7 @@ async def test_list_databases(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_db_home_patch_history_entries(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -642,7 +642,7 @@ async def test_list_db_home_patch_history_entries(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_db_home_patches(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -663,7 +663,7 @@ async def test_list_db_home_patches(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_db_homes(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -684,7 +684,7 @@ async def test_list_db_homes(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_db_nodes(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -705,7 +705,7 @@ async def test_list_db_nodes(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_db_servers(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -729,7 +729,7 @@ async def test_list_db_servers(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_db_system_compute_performances(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -750,7 +750,7 @@ async def test_list_db_system_compute_performances(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_db_system_patches(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -771,7 +771,7 @@ async def test_list_db_system_patches(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_db_system_shapes(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -792,7 +792,7 @@ async def test_list_db_system_shapes(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_db_system_storage_performances(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -813,7 +813,7 @@ async def test_list_db_system_storage_performances(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_db_systems(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -834,7 +834,7 @@ async def test_list_db_systems(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_db_versions(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -855,7 +855,7 @@ async def test_list_db_versions(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_exadata_infrastructures(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -876,7 +876,7 @@ async def test_list_exadata_infrastructures(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_exadb_vm_cluster_updates(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -897,7 +897,7 @@ async def test_list_exadb_vm_cluster_updates(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_exadb_vm_clusters(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -918,7 +918,7 @@ async def test_list_exadb_vm_clusters(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_exascale_db_storage_vaults(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -939,7 +939,7 @@ async def test_list_exascale_db_storage_vaults(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_execution_actions(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -960,7 +960,7 @@ async def test_list_execution_actions(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_execution_windows(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -981,7 +981,7 @@ async def test_list_execution_windows(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_external_container_databases(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1002,7 +1002,7 @@ async def test_list_external_container_databases(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_external_database_connectors(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1026,7 +1026,7 @@ async def test_list_external_database_connectors(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_external_non_container_databases(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1047,7 +1047,7 @@ async def test_list_external_non_container_databases(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_external_pluggable_databases(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1068,7 +1068,7 @@ async def test_list_external_pluggable_databases(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_flex_components(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1089,7 +1089,7 @@ async def test_list_flex_components(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_gi_version_minor_versions(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1110,7 +1110,7 @@ async def test_list_gi_version_minor_versions(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_gi_versions(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1131,7 +1131,7 @@ async def test_list_gi_versions(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_key_stores(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1152,7 +1152,7 @@ async def test_list_key_stores(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_maintenance_run_history(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1173,7 +1173,7 @@ async def test_list_maintenance_run_history(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_maintenance_runs(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1194,7 +1194,7 @@ async def test_list_maintenance_runs(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_oneoff_patches(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1215,7 +1215,7 @@ async def test_list_oneoff_patches(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_pluggable_databases(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1236,7 +1236,7 @@ async def test_list_pluggable_databases(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_scheduled_actions(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1257,7 +1257,7 @@ async def test_list_scheduled_actions(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_scheduling_plans(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1278,7 +1278,7 @@ async def test_list_scheduling_plans(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_scheduling_policies(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1299,7 +1299,7 @@ async def test_list_scheduling_policies(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_scheduling_windows(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1320,7 +1320,7 @@ async def test_list_scheduling_windows(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_system_versions(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1345,7 +1345,7 @@ async def test_list_system_versions(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_vm_cluster_networks(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1369,7 +1369,7 @@ async def test_list_vm_cluster_networks(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_vm_cluster_patches(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1390,7 +1390,7 @@ async def test_list_vm_cluster_patches(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_vm_cluster_updates(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1411,7 +1411,7 @@ async def test_list_vm_cluster_updates(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_list_vm_clusters(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1432,7 +1432,7 @@ async def test_list_vm_clusters(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_resource_pool_shapes(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1453,7 +1453,7 @@ async def test_resource_pool_shapes(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_delete_pluggable_database(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1478,7 +1478,7 @@ async def test_delete_pluggable_database(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_pluggable_database(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1499,7 +1499,7 @@ async def test_get_pluggable_database(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_update_pluggable_database(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1523,7 +1523,7 @@ async def test_update_pluggable_database(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_create_pluggable_database(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1547,8 +1547,8 @@ async def test_create_pluggable_database(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
-@patch("oracle.database_mcp_server.server.call_create_pdb")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.call_create_pdb")
 async def test_create_pluggable_database_from_local_clone(mock_call, mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1571,8 +1571,8 @@ async def test_create_pluggable_database_from_local_clone(mock_call, mock_get_cl
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
-@patch("oracle.database_mcp_server.server.call_create_pdb")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.call_create_pdb")
 async def test_create_pluggable_database_from_remote_clone(mock_call, mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1596,8 +1596,8 @@ async def test_create_pluggable_database_from_remote_clone(mock_call, mock_get_c
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
-@patch("oracle.database_mcp_server.server.call_create_pdb")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.call_create_pdb")
 async def test_create_pluggable_database_from_relocate(mock_call, mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1621,7 +1621,7 @@ async def test_create_pluggable_database_from_relocate(mock_call, mock_get_clien
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_application_vip(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1642,7 +1642,7 @@ async def test_get_application_vip(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_autonomous_container_database(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1665,7 +1665,7 @@ async def test_get_autonomous_container_database(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_autonomous_container_database_dataguard_association(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1691,7 +1691,7 @@ async def test_get_autonomous_container_database_dataguard_association(mock_get_
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_autonomous_container_database_resource_usage(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1716,7 +1716,7 @@ async def test_get_autonomous_container_database_resource_usage(mock_get_client)
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_autonomous_database(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1737,7 +1737,7 @@ async def test_get_autonomous_database(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_autonomous_database_backup(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1758,7 +1758,7 @@ async def test_get_autonomous_database_backup(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_autonomous_database_dataguard_association(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1784,7 +1784,7 @@ async def test_get_autonomous_database_dataguard_association(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_autonomous_database_regional_wallet(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1805,7 +1805,7 @@ async def test_get_autonomous_database_regional_wallet(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_autonomous_database_software_image(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1826,7 +1826,7 @@ async def test_get_autonomous_database_software_image(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_autonomous_database_wallet(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1847,7 +1847,7 @@ async def test_get_autonomous_database_wallet(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_autonomous_exadata_infrastructure(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1868,7 +1868,7 @@ async def test_get_autonomous_exadata_infrastructure(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_autonomous_patch(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1889,7 +1889,7 @@ async def test_get_autonomous_patch(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_autonomous_virtual_machine(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1910,7 +1910,7 @@ async def test_get_autonomous_virtual_machine(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_autonomous_vm_cluster(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1931,7 +1931,7 @@ async def test_get_autonomous_vm_cluster(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_autonomous_vm_cluster_resource_usage(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1952,7 +1952,7 @@ async def test_get_autonomous_vm_cluster_resource_usage(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_backup(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1973,7 +1973,7 @@ async def test_get_backup(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_backup_destination(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -1994,7 +1994,7 @@ async def test_get_backup_destination(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_cloud_autonomous_vm_cluster(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2015,7 +2015,7 @@ async def test_get_cloud_autonomous_vm_cluster(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_cloud_autonomous_vm_cluster_resource_usage(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2038,7 +2038,7 @@ async def test_get_cloud_autonomous_vm_cluster_resource_usage(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_cloud_exadata_infrastructure(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2059,7 +2059,7 @@ async def test_get_cloud_exadata_infrastructure(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_cloud_exadata_infrastructure_unallocated_resources(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2082,7 +2082,7 @@ async def test_get_cloud_exadata_infrastructure_unallocated_resources(mock_get_c
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_cloud_vm_cluster(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2103,7 +2103,7 @@ async def test_get_cloud_vm_cluster(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_cloud_vm_cluster_iorm_config(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2124,7 +2124,7 @@ async def test_get_cloud_vm_cluster_iorm_config(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_cloud_vm_cluster_update(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2145,7 +2145,7 @@ async def test_get_cloud_vm_cluster_update(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_cloud_vm_cluster_update_history_entry(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2169,7 +2169,7 @@ async def test_get_cloud_vm_cluster_update_history_entry(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_console_connection(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2190,7 +2190,7 @@ async def test_get_console_connection(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_console_history(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2211,7 +2211,7 @@ async def test_get_console_history(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_console_history_content(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2232,7 +2232,7 @@ async def test_get_console_history_content(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_data_guard_association(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2256,7 +2256,7 @@ async def test_get_data_guard_association(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_database(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2277,7 +2277,7 @@ async def test_get_database(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_database_software_image(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2298,7 +2298,7 @@ async def test_get_database_software_image(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_database_upgrade_history_entry(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2322,7 +2322,7 @@ async def test_get_database_upgrade_history_entry(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_db_home(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2343,7 +2343,7 @@ async def test_get_db_home(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_db_home_patch(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2364,7 +2364,7 @@ async def test_get_db_home_patch(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_db_home_patch_history_entry(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2388,7 +2388,7 @@ async def test_get_db_home_patch_history_entry(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_db_node(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2409,7 +2409,7 @@ async def test_get_db_node(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_db_server(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2430,7 +2430,7 @@ async def test_get_db_server(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_db_system(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2451,7 +2451,7 @@ async def test_get_db_system(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_db_system_patch(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2475,7 +2475,7 @@ async def test_get_db_system_patch(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_db_system_patch_history_entry(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2499,7 +2499,7 @@ async def test_get_db_system_patch_history_entry(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_db_system_upgrade_history_entry(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2523,7 +2523,7 @@ async def test_get_db_system_upgrade_history_entry(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_exadata_infrastructure(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2544,7 +2544,7 @@ async def test_get_exadata_infrastructure(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_exadata_infrastructure_ocpus(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2565,7 +2565,7 @@ async def test_get_exadata_infrastructure_ocpus(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_exadata_infrastructure_un_allocated_resources(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2588,7 +2588,7 @@ async def test_get_exadata_infrastructure_un_allocated_resources(mock_get_client
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_exadata_iorm_config(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2609,7 +2609,7 @@ async def test_get_exadata_iorm_config(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_exadb_vm_cluster(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2630,7 +2630,7 @@ async def test_get_exadb_vm_cluster(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_exadb_vm_cluster_update(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2651,7 +2651,7 @@ async def test_get_exadb_vm_cluster_update(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_exadb_vm_cluster_update_history_entry(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2675,7 +2675,7 @@ async def test_get_exadb_vm_cluster_update_history_entry(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_exascale_db_storage_vault(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2696,7 +2696,7 @@ async def test_get_exascale_db_storage_vault(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_execution_action(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2717,7 +2717,7 @@ async def test_get_execution_action(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_execution_window(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2738,7 +2738,7 @@ async def test_get_execution_window(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_external_backup_job(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2759,7 +2759,7 @@ async def test_get_external_backup_job(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_external_container_database(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2780,7 +2780,7 @@ async def test_get_external_container_database(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_external_database_connector(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2801,7 +2801,7 @@ async def test_get_external_database_connector(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_external_non_container_database(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2822,7 +2822,7 @@ async def test_get_external_non_container_database(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_external_pluggable_database(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2843,7 +2843,7 @@ async def test_get_external_pluggable_database(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_infrastructure_target_versions(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2864,7 +2864,7 @@ async def test_get_infrastructure_target_versions(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_key_store(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2885,7 +2885,7 @@ async def test_get_key_store(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_maintenance_run(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2906,7 +2906,7 @@ async def test_get_maintenance_run(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_maintenance_run_history(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2927,7 +2927,7 @@ async def test_get_maintenance_run_history(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_oneoff_patch(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2948,7 +2948,7 @@ async def test_get_oneoff_patch(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_pdb_conversion_history_entry(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2972,7 +2972,7 @@ async def test_get_pdb_conversion_history_entry(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_pluggable_database(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -2993,7 +2993,7 @@ async def test_get_pluggable_database(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_scheduled_action(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -3014,7 +3014,7 @@ async def test_get_scheduled_action(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_scheduling_plan(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -3035,7 +3035,7 @@ async def test_get_scheduling_plan(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_scheduling_policy(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -3056,7 +3056,7 @@ async def test_get_scheduling_policy(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_scheduling_window(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -3080,7 +3080,7 @@ async def test_get_scheduling_window(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_vm_cluster(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -3101,7 +3101,7 @@ async def test_get_vm_cluster(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_vm_cluster_network(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -3125,7 +3125,7 @@ async def test_get_vm_cluster_network(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_vm_cluster_patch(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -3146,7 +3146,7 @@ async def test_get_vm_cluster_patch(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_vm_cluster_patch_history_entry(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -3167,7 +3167,7 @@ async def test_get_vm_cluster_patch_history_entry(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_vm_cluster_update(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
@@ -3188,7 +3188,7 @@ async def test_get_vm_cluster_update(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.database_mcp_server.server.get_database_client")
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
 async def test_get_vm_cluster_update_history_entry(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client

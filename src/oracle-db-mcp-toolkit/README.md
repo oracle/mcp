@@ -6,10 +6,14 @@ Oracle Database MCP Toolkit is a Model Context Protocol (MCP) server that lets y
 * Define your own custom tools via a simple YAML configuration file.
 * Use built-in tools:
   * Analyze Oracle JDBC thin client logs and RDBMS/SQLNet trace files.
-  * **database-powered tools**, including **vector similarity search** and **SQL execution plan analysis**.
+  * Database-powered tools, including vector similarity search and SQL execution plan analysis.
 * Deploy locally or remotely - optionally as a container - with support for TLS and OAuth2
 
 ![MCP Toolkit Architecture Diagram](./images/MCPToolkitArchitectureDiagram.svg)
+
+
+_Note_: The [Oracle SQLcl MCP Server](https://docs.oracle.com/en/database/oracle/sql-developer-command-line/25.4/sqcug/using-oracle-sqlcl-mcp-server.html) is a fully supported product
+with MCP capabilities for the Oracle Database.
 
 ---
 
@@ -55,7 +59,8 @@ When executing a tool, the MCP server determines which datasource to use based o
 
 3. If no datasource can be resolved and the tool requires one (e.g., SQL-based tools), the server reports a configuration error.
 
-This design ensures that tools always have a predictable datasource while giving you flexibility to choose how connections are provided—either inline in YAML or externally via system properties and environment variables.
+This design ensures that tools always have a predictable datasource while giving you flexibility to choose how connections are provided—either inline in YAML or externally via system
+properties and environment variables.
 
 **Example `config.yaml`:**
 ```yaml
@@ -215,6 +220,9 @@ java \
 This exposes the MCP endpoint at: `http://localhost:45450/mcp`.
 
 ### 4.4. Enabling HTTPS (SSL/TLS)
+
+__WARNING__: Enable https at your own risk. When enabling https pay extra attention to the MCP tools that you enable as they may create a new risk for your database server.
+
 To enable HTTPS (SSL/TLS), specify your certificate keystore path and password using the `-DcertificatePath` and `-DcertificatePassword` options.  
 Only PKCS12 (`.p12` or `.pfx`) keystore files are supported.
 You can set the HTTPS port with the `-Dhttps.port` option.
@@ -274,6 +282,7 @@ In order to configure an OAuth2 server, the `-DenableAuthentication` should be e
 - `-DredirectOAuthToOpenID`: (default: `false`) This system property is used to as a workaround to support OAuth servers that provide `/.well-known/openid-configuration` and not `/.well-known/oauth-authorization-server`.
   It works by creating an `/.well-known/oauth-authorization-server` endpoint on the MCP Server that redirects to the OAuth server's `/.well-known/openid-configuration` endpoint.
 - `-DintrospectionEndpoint`: The OAuth2 server's introspection endpoint used to validate an access token (The OAuth2 introspection JSON response MUST contain the `active` field, e.g. `{...,"active": false,..}`).
+Which means that whenever the MCP server receives an HTTP request, it sends an HTTP request to the OAuth2 server's introspection endpoint to check the validity of the JWT access token.
 - `-DclientId`: Client ID (e.g. `oracle-db-toolkit`)
 - `-DclientSecret`: Client Secret (e.g. `Xj9mPqR2vL5kN8tY3hB7wF4uD6cA1eZ0`)
 - `-DallowedHosts`: (default: `*`) The value of `Access-Control-Allow-Origin` header when requesting the `/.well-known/oauth-protected-resource` endpoint (and `/.well-known/oauth-authorization-server` if `-DredirectOAuthToOpenID` is set to `true`) of the MCP Server.

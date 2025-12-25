@@ -21,7 +21,6 @@ public final class LoadedConstants {
   public static final String TRANSPORT_KIND = System.getProperty("transport", "stdio")
       .trim()
       .toLowerCase();
-  public static final String HTTP_PORT = System.getProperty("http.port");
   public static final String HTTPS_PORT = System.getProperty("https.port");
   public static final String KEYSTORE_PATH = System.getProperty("certificatePath");
   public static final String KEYSTORE_PASSWORD = System.getProperty("certificatePassword");

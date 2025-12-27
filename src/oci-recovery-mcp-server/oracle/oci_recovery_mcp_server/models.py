@@ -5,10 +5,13 @@ https://oss.oracle.com/licenses/upl.
 """
 
 from datetime import datetime
-from typing import Any, Dict, Literal, Optional, List
+from typing import Any, Dict, List, Literal, Optional
 
 import oci
 from pydantic import BaseModel, Field
+
+# type aliases to keep line lengths within flake8 limits
+HealthStatus = Literal["PROTECTED", "WARNING", "ALERT", "UNKNOWN_ENUM_VALUE"]
 
 
 def _oci_to_dict(obj):
@@ -59,23 +62,40 @@ class ProtectedDatabaseHealthCounts(OCIBaseModel):
     """
     Aggregated counts of Protected Database health in a compartment/region scope.
     """
+
     compartment_id: Optional[str] = Field(
-        None, alias="compartmentId", description="The OCID of the compartment summarized."
+        None,
+        alias="compartmentId",
+        description="The OCID of the compartment summarized.",
     )
     region: Optional[str] = Field(
-        None, alias="region", description="The OCI region used for the query (if specified)."
+        None,
+        alias="region",
+        description="The OCI region used for the query (if specified).",
     )
     protected: int = Field(
-        0, alias="protected", description="Number of Protected Databases with health=PROTECTED."
+        0,
+        alias="protected",
+        description="Number of Protected Databases with health=PROTECTED.",
     )
     warning: int = Field(
-        0, alias="warning", description="Number of Protected Databases with health=WARNING."
+        0,
+        alias="warning",
+        description="Number of Protected Databases with health=WARNING.",
     )
     alert: int = Field(
         0, alias="alert", description="Number of Protected Databases with health=ALERT."
     )
+    unknown: int = Field(
+        0,
+        alias="unknown",
+        description=(
+            "Number of Protected Databases with unknown or missing health "
+            "(e.g., DELETED or transitional)."
+        ),
+    )
     total: int = Field(
-        0, alias="total", description="Total counted (protected + warning + alert)."
+        0, alias="total", description="Total Protected Databases scanned."
     )
 
 
@@ -83,17 +103,26 @@ class ProtectedDatabaseRedoCounts(OCIBaseModel):
     """
     Aggregated counts of redo transport enablement for Protected Databases in a compartment/region scope.
     """
+
     compartment_id: Optional[str] = Field(
-        None, alias="compartmentId", description="The OCID of the compartment summarized."
+        None,
+        alias="compartmentId",
+        description="The OCID of the compartment summarized.",
     )
     region: Optional[str] = Field(
-        None, alias="region", description="The OCI region used for the query (if specified)."
+        None,
+        alias="region",
+        description="The OCI region used for the query (if specified).",
     )
     enabled: int = Field(
-        0, alias="enabled", description="Count of Protected Databases with is_redo_logs_enabled = True."
+        0,
+        alias="enabled",
+        description="Count of Protected Databases with is_redo_logs_enabled = True.",
     )
     disabled: int = Field(
-        0, alias="disabled", description="Count of Protected Databases with is_redo_logs_enabled = False."
+        0,
+        alias="disabled",
+        description="Count of Protected Databases with is_redo_logs_enabled = False.",
     )
     total: int = Field(
         0, alias="total", description="Total counted (enabled + disabled)."
@@ -102,22 +131,13 @@ class ProtectedDatabaseRedoCounts(OCIBaseModel):
 
 class ProtectedDatabaseBackupSpaceSum(OCIBaseModel):
     """
-    Sum of backup space used (GBs) across Protected Databases in a compartment/region scope.
+    Simplified summary of backup space used across Protected Databases.
     """
-    compartment_id: Optional[str] = Field(
-        None, alias="compartmentId", description="The OCID of the compartment summarized."
-    )
-    region: Optional[str] = Field(
-        None, alias="region", description="The OCI region used for the query (if specified)."
-    )
-    total_databases_scanned: int = Field(
-        0, alias="totalDatabasesScanned", description="Number of Protected Databases scanned."
-    )
-    sum_backup_space_used_in_gbs: float = Field(
-        0.0,
-        alias="sumBackupSpaceUsedInGBs",
-        description="Sum of metrics.backup_space_used_in_gbs across all scanned Protected Databases.",
-    )
+
+    compartment_id: Optional[str] = Field(None, alias="compartmentId")
+    region: Optional[str] = Field(None, alias="region")
+    total_databases_scanned: int = Field(0, alias="totalDatabasesScanned")
+    sum_backup_space_used_in_gbs: float = Field(0.0, alias="sumBackupSpaceUsedInGBs")
 
 
 # region ProtectedDatabase and nested types (oci.recovery.models)
@@ -158,7 +178,8 @@ class ProtectedDatabase(OCIBaseModel):
 
     id: Optional[str] = Field(None, description="The OCID of the Protected Database.")
     compartment_id: Optional[str] = Field(
-        None, description="The OCID of the compartment containing this Protected Database."
+        None,
+        description="The OCID of the compartment containing this Protected Database.",
     )
     display_name: Optional[str] = Field(
         None, description="A user-friendly name for the Protected Database."
@@ -168,8 +189,16 @@ class ProtectedDatabase(OCIBaseModel):
     protection_policy_id: Optional[str] = Field(
         None, description="The OCID of the attached Protection Policy."
     )
-    recovery_service_subnet_id: Optional[str] = Field(
-        None, description="The OCID of the Recovery Service Subnet associated with this database."
+    policy_locked_date_time: Optional[str] = Field(
+        None,
+        description=(
+            "When the protection policy retention lock is scheduled to take effect "
+            "(RFC3339 string)."
+        ),
+    )
+    recovery_service_subnets: Optional[List["RecoveryServiceSubnetDetails"]] = Field(
+        None,
+        description="List of Recovery Service Subnet resources associated with this protected database.",
     )
 
     # DB identification (may not always be present for all database types)
@@ -180,39 +209,77 @@ class ProtectedDatabase(OCIBaseModel):
         None, description="The DB_UNIQUE_NAME of the protected database, if available."
     )
     vpc_user_name: Optional[str] = Field(
-        None, description="The VPC user name associated with the protected database, if available."
+        None,
+        description="The VPC user name associated with the protected database, if available.",
     )
     database_size: Optional[
         Literal["XS", "S", "M", "L", "XL", "XXL", "AUTO", "UNKNOWN_ENUM_VALUE"]
     ] = Field(
-        None, description="Configured database size category for the protected database."
+        None,
+        description="Configured database size category for the protected database.",
     )
-    db_name: Optional[str] = Field(
-        None, description="The database name, if available."
+    database_size_in_gbs: Optional[int] = Field(
+        None,
+        description="The size of the database in gigabytes, if reported by the service.",
+    )
+    change_rate: Optional[float] = Field(
+        None,
+        description="Percentage of data change between successive incremental backups.",
+    )
+    compression_ratio: Optional[float] = Field(
+        None, description="Compression ratio (compressed size to expanded size)."
     )
 
     # Status and health
     lifecycle_state: Optional[
-        Literal["CREATING", "ACTIVE", "UPDATING", "DELETE_SCHEDULED", "DELETING", "DELETED", "FAILED"]
-    ] = Field(None, description="The current lifecycle state of the Protected Database.")
+        Literal[
+            "CREATING",
+            "ACTIVE",
+            "UPDATING",
+            "DELETE_SCHEDULED",
+            "DELETING",
+            "DELETED",
+            "FAILED",
+            "UNKNOWN_ENUM_VALUE",
+        ]
+    ] = Field(
+        None, description="The current lifecycle state of the Protected Database."
+    )
     lifecycle_details: Optional[str] = Field(
         None, description="Additional details about the current lifecycle state."
     )
-    health: Optional[
-        Literal["PROTECTED", "WARNING", "ALERT"]
-    ] = Field(
+    health_details: Optional[str] = Field(
+        None,
+        description="A message describing the current health of the protected database.",
+    )
+    is_read_only_resource: Optional[bool] = Field(
+        None,
+        description=(
+            "Indicates whether the protected database is created by Recovery Service "
+            "(TRUE) or manually (FALSE)."
+        ),
+    )
+    health: Optional[HealthStatus] = Field(
         None,
         description="Service-evaluated health status: PROTECTED, WARNING, or ALERT.",
     )
 
     # Redo transport (for zero data loss RPO)
-    is_redo_logs_enabled: Optional[bool] = Field(
-        None, description="Whether redo transport is enabled for this Protected Database."
+    is_redo_logs_shipped: Optional[bool] = Field(
+        None,
+        description=(
+            "Whether real-time redo shipping to Recovery Service is enabled "
+            "(SDK: is_redo_logs_shipped)."
+        ),
     )
 
     # Metrics
-    metrics: Optional[ProtectedDatabaseMetrics] = Field(
+    metrics: Optional["Metrics"] = Field(
         None, description="Metrics associated with this Protected Database."
+    )
+    subscription_id: Optional[str] = Field(
+        None,
+        description="The OCID of the cloud service subscription linked to the protected database.",
     )
 
     # Timestamps
@@ -280,31 +347,73 @@ def map_protected_database(
 
     return ProtectedDatabase(
         id=getattr(pd, "id", None) or data.get("id"),
-        compartment_id=getattr(pd, "compartment_id", None) or data.get("compartment_id"),
-        display_name=getattr(pd, "display_name", None) or data.get("display_name"),
+        compartment_id=getattr(pd, "compartment_id", None)
+        or data.get("compartment_id")
+        or data.get("compartmentId"),
+        display_name=getattr(pd, "display_name", None)
+        or data.get("display_name")
+        or data.get("displayName"),
         protection_policy_id=getattr(pd, "protection_policy_id", None)
         or data.get("protection_policy_id")
         or data.get("protectionPolicyId"),
-        recovery_service_subnet_id=getattr(pd, "recovery_service_subnet_id", None)
-        or data.get("recovery_service_subnet_id")
-        or data.get("recoveryServiceSubnetId"),
-        database_id=getattr(pd, "database_id", None) or data.get("database_id"),
-        db_unique_name=getattr(pd, "db_unique_name", None) or data.get("db_unique_name"),
-        db_name=getattr(pd, "db_name", None) or data.get("db_name"),
-        lifecycle_state=getattr(pd, "lifecycle_state", None) or data.get("lifecycle_state"),
-        lifecycle_details=getattr(pd, "lifecycle_details", None) or data.get("lifecycle_details"),
-        health=getattr(pd, "health", None) or data.get("health"),
-        is_redo_logs_enabled=getattr(pd, "is_redo_logs_enabled", None)
-        or data.get("is_redo_logs_enabled")
-        or data.get("isRedoLogsEnabled"),
-        metrics=map_protected_database_metrics(
-            getattr(pd, "metrics", None) or data.get("metrics")
+        policy_locked_date_time=getattr(pd, "policy_locked_date_time", None)
+        or data.get("policy_locked_date_time")
+        or data.get("policyLockedDateTime"),
+        recovery_service_subnets=_map_list(
+            getattr(pd, "recovery_service_subnets", None)
+            or data.get("recovery_service_subnets")
+            or data.get("recoveryServiceSubnets"),
+            map_recovery_service_subnet_details,
         ),
-        time_created=getattr(pd, "time_created", None) or data.get("time_created"),
-        time_updated=getattr(pd, "time_updated", None) or data.get("time_updated"),
-        freeform_tags=getattr(pd, "freeform_tags", None) or data.get("freeform_tags"),
-        defined_tags=getattr(pd, "defined_tags", None) or data.get("defined_tags"),
-        system_tags=getattr(pd, "system_tags", None) or data.get("system_tags"),
+        database_id=getattr(pd, "database_id", None)
+        or data.get("database_id")
+        or data.get("databaseId"),
+        database_size_in_gbs=getattr(pd, "database_size_in_gbs", None)
+        or data.get("database_size_in_gbs")
+        or data.get("databaseSizeInGBs")
+        or data.get("databaseSizeInGbs"),
+        change_rate=getattr(pd, "change_rate", None)
+        or data.get("change_rate")
+        or data.get("changeRate"),
+        compression_ratio=getattr(pd, "compression_ratio", None)
+        or data.get("compression_ratio")
+        or data.get("compressionRatio"),
+        db_unique_name=getattr(pd, "db_unique_name", None)
+        or data.get("db_unique_name"),
+        lifecycle_state=getattr(pd, "lifecycle_state", None)
+        or data.get("lifecycle_state"),
+        lifecycle_details=getattr(pd, "lifecycle_details", None)
+        or data.get("lifecycle_details")
+        or data.get("lifecycleDetails"),
+        health_details=getattr(pd, "health_details", None)
+        or data.get("health_details")
+        or data.get("healthDetails"),
+        is_read_only_resource=getattr(pd, "is_read_only_resource", None)
+        or data.get("is_read_only_resource")
+        or data.get("isReadOnlyResource"),
+        health=getattr(pd, "health", None) or data.get("health"),
+        is_redo_logs_shipped=getattr(pd, "is_redo_logs_shipped", None)
+        or data.get("is_redo_logs_shipped")
+        or data.get("isRedoLogsShipped"),
+        metrics=map_metrics(getattr(pd, "metrics", None) or data.get("metrics")),
+        subscription_id=getattr(pd, "subscription_id", None)
+        or data.get("subscription_id")
+        or data.get("subscriptionId"),
+        time_created=getattr(pd, "time_created", None)
+        or data.get("time_created")
+        or data.get("timeCreated"),
+        time_updated=getattr(pd, "time_updated", None)
+        or data.get("time_updated")
+        or data.get("timeUpdated"),
+        freeform_tags=getattr(pd, "freeform_tags", None)
+        or data.get("freeform_tags")
+        or data.get("freeformTags"),
+        defined_tags=getattr(pd, "defined_tags", None)
+        or data.get("defined_tags")
+        or data.get("definedTags"),
+        system_tags=getattr(pd, "system_tags", None)
+        or data.get("system_tags")
+        or data.get("systemTags"),
     )
 
 
@@ -331,7 +440,15 @@ class RecoveryServiceSubnet(OCIBaseModel):
         None, description="List of Network Security Group OCIDs attached to the RSS."
     )
     lifecycle_state: Optional[
-        Literal["CREATING", "ACTIVE", "UPDATING", "DELETE_SCHEDULED", "DELETING", "DELETED", "FAILED"]
+        Literal[
+            "CREATING",
+            "ACTIVE",
+            "UPDATING",
+            "DELETE_SCHEDULED",
+            "DELETING",
+            "DELETED",
+            "FAILED",
+        ]
     ] = Field(None, description="The current lifecycle state of the RSS.")
     lifecycle_details: Optional[str] = Field(
         None, description="Additional details about the RSS lifecycle."
@@ -455,7 +572,8 @@ class ProtectedDatabaseSummary(OCIBaseModel):
 
     id: Optional[str] = Field(None, description="The OCID of the Protected Database.")
     compartment_id: Optional[str] = Field(
-        None, description="The OCID of the compartment containing the Protected Database."
+        None,
+        description="The OCID of the compartment containing the Protected Database.",
     )
     display_name: Optional[str] = Field(
         None, description="A user-friendly name for the Protected Database."
@@ -463,14 +581,16 @@ class ProtectedDatabaseSummary(OCIBaseModel):
     protection_policy_id: Optional[str] = Field(
         None, description="The OCID of the attached Protection Policy."
     )
-    recovery_service_subnet_id: Optional[str] = Field(
-        None, description="The OCID of the Recovery Service Subnet associated with this database."
-    )
     policy_locked_date_time: Optional[str] = Field(
-        None, description="Timestamp when the protection policy was locked (RFC3339 string)."
+        None,
+        description="Timestamp when the protection policy was locked (RFC3339 string).",
     )
     recovery_service_subnets: Optional[List["RecoveryServiceSubnetDetails"]] = Field(
-        None, description="List of Recovery Service Subnet details associated with this protected database."
+        None,
+        description=(
+            "List of Recovery Service Subnet details associated with this "
+            "protected database."
+        ),
     )
     database_id: Optional[str] = Field(
         None, description="The OCID of the backing database, where applicable."
@@ -479,37 +599,47 @@ class ProtectedDatabaseSummary(OCIBaseModel):
         None, description="The DB_UNIQUE_NAME of the protected database, if available."
     )
     vpc_user_name: Optional[str] = Field(
-        None, description="The VPC user name associated with the protected database, if available."
+        None,
+        description="The VPC user name associated with the protected database, if available.",
     )
     database_size: Optional[
         Literal["XS", "S", "M", "L", "XL", "XXL", "AUTO", "UNKNOWN_ENUM_VALUE"]
     ] = Field(
-        None, description="Configured database size category."
+        None,
+        description="Configured database size category for the protected database.",
     )
-    db_name: Optional[str] = Field(None, description="The database name, if available.")
     lifecycle_state: Optional[
-        Literal["CREATING", "ACTIVE", "UPDATING", "DELETE_SCHEDULED", "DELETING", "DELETED", "FAILED"]
+        Literal[
+            "CREATING",
+            "ACTIVE",
+            "UPDATING",
+            "DELETE_SCHEDULED",
+            "DELETING",
+            "DELETED",
+            "FAILED",
+            "UNKNOWN_ENUM_VALUE",
+        ]
     ] = Field(None, description="The current lifecycle state.")
-    health: Optional[
-        Literal["PROTECTED", "WARNING", "ALERT"]
-    ] = Field(None, description="Health status.")
+    health: Optional[HealthStatus] = Field(None, description="Health status.")
     lifecycle_details: Optional[str] = Field(
-        None, description="Detailed description about the current lifecycle state of the protected database."
+        None,
+        description="Detailed description about the current lifecycle state of the protected database.",
     )
     health_details: Optional[str] = Field(
-        None, description="A message describing the current health of the protected database."
+        None,
+        description="A message describing the current health of the protected database.",
     )
     is_read_only_resource: Optional[bool] = Field(
-        None, description="Indicates whether the protected database is created by the service (TRUE) or manually (FALSE)."
+        None,
+        description="Indicates whether the protected database is created by the service (TRUE) "
+        "or manually (FALSE).",
     )
     metrics: Optional["MetricsSummary"] = Field(
         None, description="Metrics summary associated with this protected database."
     )
     subscription_id: Optional[str] = Field(
-        None, description="The OCID of the cloud service subscription linked to the protected database."
-    )
-    is_redo_logs_enabled: Optional[bool] = Field(
-        None, description="Whether redo transport is enabled."
+        None,
+        description="The OCID of the cloud service subscription linked to the protected database.",
     )
     time_created: Optional[datetime] = Field(
         None, description="The time the Protected Database was created (RFC3339)."
@@ -517,9 +647,7 @@ class ProtectedDatabaseSummary(OCIBaseModel):
     time_updated: Optional[datetime] = Field(
         None, description="The time the Protected Database was last updated (RFC3339)."
     )
-    freeform_tags: Optional[Dict[str, str]] = Field(
-        None, description="Free-form tags."
-    )
+    freeform_tags: Optional[Dict[str, str]] = Field(None, description="Free-form tags.")
     defined_tags: Optional[Dict[str, Dict[str, Any]]] = Field(
         None, description="Defined tags."
     )
@@ -534,7 +662,11 @@ def map_protected_database_summary(
     if pds is None:
         return None
     data = _oci_to_dict(pds) or {}
-    rss_in = getattr(pds, "recovery_service_subnets", None) or data.get("recovery_service_subnets") or data.get("recoveryServiceSubnets")
+    rss_in = (
+        getattr(pds, "recovery_service_subnets", None)
+        or data.get("recovery_service_subnets")
+        or data.get("recoveryServiceSubnets")
+    )
     return ProtectedDatabaseSummary(
         id=getattr(pds, "id", None) or data.get("id"),
         compartment_id=getattr(pds, "compartment_id", None)
@@ -550,9 +682,6 @@ def map_protected_database_summary(
         or data.get("policy_locked_date_time")
         or data.get("policyLockedDateTime"),
         recovery_service_subnets=_map_list(rss_in, map_recovery_service_subnet_details),
-        recovery_service_subnet_id=getattr(pds, "recovery_service_subnet_id", None)
-        or data.get("recovery_service_subnet_id")
-        or data.get("recoveryServiceSubnetId"),
         database_id=getattr(pds, "database_id", None)
         or data.get("database_id")
         or data.get("databaseId"),
@@ -565,7 +694,6 @@ def map_protected_database_summary(
         database_size=getattr(pds, "database_size", None)
         or data.get("database_size")
         or data.get("databaseSize"),
-        db_name=getattr(pds, "db_name", None) or data.get("db_name"),
         lifecycle_state=getattr(pds, "lifecycle_state", None)
         or data.get("lifecycle_state")
         or data.get("lifecycleState"),
@@ -579,10 +707,9 @@ def map_protected_database_summary(
         is_read_only_resource=getattr(pds, "is_read_only_resource", None)
         or data.get("is_read_only_resource")
         or data.get("isReadOnlyResource"),
-        is_redo_logs_enabled=getattr(pds, "is_redo_logs_enabled", None)
-        or data.get("is_redo_logs_enabled")
-        or data.get("isRedoLogsEnabled"),
-        metrics=map_metrics_summary(getattr(pds, "metrics", None) or data.get("metrics")),
+        metrics=map_metrics_summary(
+            getattr(pds, "metrics", None) or data.get("metrics")
+        ),
         subscription_id=getattr(pds, "subscription_id", None)
         or data.get("subscription_id")
         or data.get("subscriptionId"),
@@ -909,9 +1036,7 @@ def map_metrics(m) -> Metrics | None:
         database_size_in_gbs=getattr(m, "database_size_in_gbs", None)
         or data.get("database_size_in_gbs")
         or data.get("databaseSizeInGbs"),
-        recoverable_window_start_time=getattr(
-            m, "recoverable_window_start_time", None
-        )
+        recoverable_window_start_time=getattr(m, "recoverable_window_start_time", None)
         or data.get("recoverable_window_start_time")
         or data.get("recoverableWindowStartTime"),
         recoverable_window_end_time=getattr(m, "recoverable_window_end_time", None)
@@ -963,9 +1088,7 @@ def map_metrics_summary(ms) -> MetricsSummary | None:
         database_size_in_gbs=getattr(ms, "database_size_in_gbs", None)
         or data.get("database_size_in_gbs")
         or data.get("databaseSizeInGbs"),
-        recoverable_window_start_time=getattr(
-            ms, "recoverable_window_start_time", None
-        )
+        recoverable_window_start_time=getattr(ms, "recoverable_window_start_time", None)
         or data.get("recoverable_window_start_time")
         or data.get("recoverableWindowStartTime"),
         recoverable_window_end_time=getattr(ms, "recoverable_window_end_time", None)
@@ -988,17 +1111,17 @@ class ProtectionPolicy(OCIBaseModel):
     Named ProtectionPolicy here as requested.
     """
 
-    id: Optional[str] = Field(
-        None, description="The OCID of the protection policy."
-    )
+    id: Optional[str] = Field(None, description="The OCID of the protection policy.")
     display_name: Optional[str] = Field(
         None, description="A user-friendly name for the protection policy."
     )
     compartment_id: Optional[str] = Field(
-        None, description="The OCID of the compartment containing the protection policy."
+        None,
+        description="The OCID of the compartment containing the protection policy.",
     )
     backup_retention_period_in_days: Optional[int] = Field(
-        None, description="Exact number of days to retain backups created by Recovery Service."
+        None,
+        description="Exact number of days to retain backups created by Recovery Service.",
     )
     is_predefined_policy: Optional[bool] = Field(
         None, description="Whether this is an Oracle-defined predefined policy."
@@ -1007,7 +1130,8 @@ class ProtectionPolicy(OCIBaseModel):
         None, description="When the protection policy was locked (RFC3339 string)."
     )
     must_enforce_cloud_locality: Optional[bool] = Field(
-        None, description="Whether backup storage must stay in the same cloud locality as the database."
+        None,
+        description="Whether backup storage must stay in the same cloud locality as the database.",
     )
     time_created: Optional[datetime] = Field(
         None, description="The time the protection policy was created (RFC3339)."
@@ -1072,9 +1196,7 @@ def map_protection_policy(
         policy_locked_date_time=getattr(pp, "policy_locked_date_time", None)
         or data.get("policy_locked_date_time")
         or data.get("policyLockedDateTime"),
-        must_enforce_cloud_locality=getattr(
-            pp, "must_enforce_cloud_locality", None
-        )
+        must_enforce_cloud_locality=getattr(pp, "must_enforce_cloud_locality", None)
         or data.get("must_enforce_cloud_locality")
         or data.get("mustEnforceCloudLocality"),
         time_created=getattr(pp, "time_created", None)
@@ -1109,17 +1231,17 @@ class ProtectionPolicySummary(OCIBaseModel):
     Pydantic model mirroring oci.recovery.models.ProtectionPolicySummary.
     """
 
-    id: Optional[str] = Field(
-        None, description="The OCID of the protection policy."
-    )
+    id: Optional[str] = Field(None, description="The OCID of the protection policy.")
     display_name: Optional[str] = Field(
         None, description="A user-friendly name for the protection policy."
     )
     compartment_id: Optional[str] = Field(
-        None, description="The OCID of the compartment containing the protection policy."
+        None,
+        description="The OCID of the compartment containing the protection policy.",
     )
     backup_retention_period_in_days: Optional[int] = Field(
-        None, description="Exact number of days to retain backups created by Recovery Service."
+        None,
+        description="Exact number of days to retain backups created by Recovery Service.",
     )
     is_predefined_policy: Optional[bool] = Field(
         None, description="Whether this is an Oracle-defined predefined policy."
@@ -1128,7 +1250,8 @@ class ProtectionPolicySummary(OCIBaseModel):
         None, description="When the protection policy was locked (RFC3339 string)."
     )
     must_enforce_cloud_locality: Optional[bool] = Field(
-        None, description="Whether backup storage must stay in the same cloud locality as the database."
+        None,
+        description="Whether backup storage must stay in the same cloud locality as the database.",
     )
     time_created: Optional[datetime] = Field(
         None, description="The time the protection policy was created (RFC3339)."
@@ -1193,9 +1316,7 @@ def map_protection_policy_summary(
         policy_locked_date_time=getattr(pps, "policy_locked_date_time", None)
         or data.get("policy_locked_date_time")
         or data.get("policyLockedDateTime"),
-        must_enforce_cloud_locality=getattr(
-            pps, "must_enforce_cloud_locality", None
-        )
+        must_enforce_cloud_locality=getattr(pps, "must_enforce_cloud_locality", None)
         or data.get("must_enforce_cloud_locality")
         or data.get("mustEnforceCloudLocality"),
         time_created=getattr(pps, "time_created", None)
@@ -1219,6 +1340,737 @@ def map_protection_policy_summary(
         system_tags=getattr(pps, "system_tags", None)
         or data.get("system_tags")
         or data.get("systemTags"),
+    )
+
+
+# endregion
+
+# region Database Service (oci.database.models)
+
+
+class BackupDestinationDetails(OCIBaseModel):
+    """
+    Pydantic model for backup destination details within DbBackupConfig.
+    Covers common fields across destination types; unmodeled keys are preserved in 'extras'.
+    """
+
+    type: Optional[str] = Field(
+        None, description="Destination type, e.g., DBRS, OBJECT_STORE, NFS."
+    )
+    destination_type: Optional[str] = Field(
+        None, description="Original destination type value if provided."
+    )
+    id: Optional[str] = Field(
+        None, description="Destination OCID/identifier when applicable."
+    )
+    backup_destination_id: Optional[str] = Field(
+        None, description="Backup destination OCID if provided by SDK."
+    )
+    bucket_name: Optional[str] = Field(
+        None, description="Object Storage bucket name (OBJECT_STORE only)."
+    )
+    namespace: Optional[str] = Field(
+        None, description="Object Storage namespace (OBJECT_STORE only)."
+    )
+    region: Optional[str] = Field(
+        None, description="Region for Object Storage destination."
+    )
+    local_mount_point: Optional[str] = Field(
+        None, description="Local mount point path (NFS)."
+    )
+    nfs_server: Optional[str] = Field(None, description="NFS server address (NFS).")
+    path: Optional[str] = Field(None, description="Destination path if provided.")
+    vault_id: Optional[str] = Field(
+        None, description="Vault OCID for encryption (if applicable)."
+    )
+    encryption_key_id: Optional[str] = Field(
+        None, description="KMS key OCID (if applicable)."
+    )
+    compartment_id: Optional[str] = Field(
+        None, description="Compartment OCID of the destination (if applicable)."
+    )
+    tenancy_id: Optional[str] = Field(None, description="Tenancy OCID (if applicable).")
+    extras: Optional[Dict[str, Any]] = Field(
+        None, description="Any provider-specific fields not modeled above."
+    )
+
+
+def map_backup_destination_details(det) -> BackupDestinationDetails | None:
+    if not det:
+        return None
+    data = _oci_to_dict(det) or {}
+
+    def pick(*names: str):
+        for n in names:
+            v = getattr(det, n, None)
+            if v is not None:
+                return v
+            if data.get(n) is not None:
+                return data.get(n)
+        return None
+
+    type_val = pick("type", "destination_type", "destinationType")
+    id_val = pick("id", "backup_destination_id", "backupDestinationId", "destinationId")
+    bucket = pick("bucket_name", "bucketName")
+    namespace = pick("namespace")
+    region = pick("region")
+    local_mount = pick("local_mount_point", "localMountPoint", "mountPoint")
+    nfs_server = pick("nfs_server", "nfsServer", "nfsServerIp", "nfs_server_ip")
+    path = pick("path")
+    vault_id = pick("vault_id", "vaultId")
+    key_id = pick("encryption_key_id", "encryptionKeyId", "kmsKeyId")
+    compartment_id = pick("compartment_id", "compartmentId")
+    tenancy_id = pick("tenancy_id", "tenancyId")
+
+    consumed = {
+        "type",
+        "destination_type",
+        "destinationType",
+        "id",
+        "backup_destination_id",
+        "backupDestinationId",
+        "destinationId",
+        "bucket_name",
+        "bucketName",
+        "namespace",
+        "region",
+        "local_mount_point",
+        "localMountPoint",
+        "mountPoint",
+        "nfs_server",
+        "nfsServer",
+        "nfsServerIp",
+        "nfs_server_ip",
+        "path",
+        "vault_id",
+        "vaultId",
+        "encryption_key_id",
+        "encryptionKeyId",
+        "kmsKeyId",
+        "compartment_id",
+        "compartmentId",
+        "tenancy_id",
+        "tenancyId",
+    }
+    extras = None
+    try:
+        extras = {k: v for k, v in data.items() if k not in consumed}
+    except Exception:
+        extras = None
+
+    return BackupDestinationDetails(
+        type=type_val,
+        destination_type=(
+            pick("destination_type", "destinationType")
+            if type_val is not None
+            else pick("destination_type", "destinationType")
+        ),
+        id=id_val,
+        backup_destination_id=pick("backup_destination_id", "backupDestinationId"),
+        bucket_name=bucket,
+        namespace=namespace,
+        region=region,
+        local_mount_point=local_mount,
+        nfs_server=nfs_server,
+        path=path,
+        vault_id=vault_id,
+        encryption_key_id=key_id,
+        compartment_id=compartment_id,
+        tenancy_id=tenancy_id,
+        extras=extras,
+    )
+
+
+class DbBackupConfig(OCIBaseModel):
+    """
+    Pydantic model mirroring oci.database.models.DbBackupConfig.
+    Nested under Database/DatabaseSummary as db_backup_config.
+    """
+
+    is_auto_backup_enabled: Optional[bool] = Field(
+        None, description="Whether auto backup is enabled."
+    )
+    auto_backup_window: Optional[str] = Field(
+        None, description="Preferred start time window for auto backups."
+    )
+    recovery_window_in_days: Optional[int] = Field(
+        None, description="Recovery window in days (Recovery Service)."
+    )
+    vpcu_user: Optional[str] = Field(
+        None, description="Virtual Private Catalog user (VPC user) if configured."
+    )
+    backup_deletion_policy: Optional[str] = Field(
+        None, description="Deletion policy for backups."
+    )
+    backup_destination_details: Optional[List[BackupDestinationDetails]] = Field(
+        None, description="Backup destination details."
+    )
+    extras: Optional[Dict[str, Any]] = Field(
+        None, description="Any provider-specific fields not modeled above."
+    )
+
+
+def map_db_backup_config(cfg) -> DbBackupConfig | None:
+    if not cfg:
+        return None
+    data = _oci_to_dict(cfg) or {}
+
+    def pick(*names: str):
+        for n in names:
+            v = getattr(cfg, n, None)
+            if v is not None:
+                return v
+            if data.get(n) is not None:
+                return data.get(n)
+        return None
+
+    is_auto = pick(
+        "is_auto_backup_enabled",
+        "isAutoBackupEnabled",
+        "auto_backup_enabled",
+        "autoBackupEnabled",
+    )
+    window = pick(
+        "auto_backup_window",
+        "autoBackupWindow",
+        "preferred_backup_window",
+        "preferredBackupWindow",
+    )
+    recovery_days = pick(
+        "recovery_window_in_days", "recoveryWindowInDays", "recovery_window"
+    )
+    vpcu = pick(
+        "vpcu_user",
+        "vpc_user",
+        "vpcUser",
+        "vpcUserName",
+        "vpc_user_name",
+        "vpcUsername",
+    )
+    deletion_policy = pick("backup_deletion_policy", "backupDeletionPolicy")
+    dests = (
+        pick("backup_destination_details", "backupDestinationDetails")
+        or data.get("backupDestinationDetails")
+        or data.get("backup_destination_details")
+    )
+    mapped_dests = _map_list(dests, map_backup_destination_details)
+
+    consumed = {
+        "is_auto_backup_enabled",
+        "isAutoBackupEnabled",
+        "auto_backup_enabled",
+        "autoBackupEnabled",
+        "auto_backup_window",
+        "autoBackupWindow",
+        "preferred_backup_window",
+        "preferredBackupWindow",
+        "recovery_window_in_days",
+        "recoveryWindowInDays",
+        "recovery_window",
+        "vpcu_user",
+        "vpc_user",
+        "vpcUser",
+        "vpcUserName",
+        "vpc_user_name",
+        "vpcUsername",
+        "backup_deletion_policy",
+        "backupDeletionPolicy",
+        "backup_destination_details",
+        "backupDestinationDetails",
+    }
+    extras = None
+    try:
+        extras = {k: v for k, v in data.items() if k not in consumed}
+    except Exception:
+        extras = None
+
+    return DbBackupConfig(
+        is_auto_backup_enabled=is_auto,
+        auto_backup_window=window,
+        recovery_window_in_days=recovery_days,
+        vpcu_user=vpcu,
+        backup_deletion_policy=deletion_policy,
+        backup_destination_details=mapped_dests,
+        extras=extras,
+    )
+
+
+class Database(OCIBaseModel):
+    """
+    Pydantic model mirroring oci.database.models.Database.
+    """
+
+    id: Optional[str] = Field(None, description="The OCID of the Database.")
+    compartment_id: Optional[str] = Field(
+        None, description="The OCID of the compartment containing the Database."
+    )
+    lifecycle_state: Optional[str] = Field(
+        None, description="The current lifecycle state of the Database."
+    )
+    db_name: Optional[str] = Field(None, description="The database name.")
+    db_unique_name: Optional[str] = Field(
+        None, description="The DB_UNIQUE_NAME of the database."
+    )
+    db_home_id: Optional[str] = Field(None, description="The OCID of the DB Home.")
+    db_system_id: Optional[str] = Field(
+        None, description="The OCID of the DB System (if applicable)."
+    )
+    db_backup_config: Optional["DbBackupConfig"] = Field(
+        None, description="Database backup configuration."
+    )
+    protection_policy_id: Optional[str] = Field(
+        None,
+        description="Recovery Service Protection Policy OCID linked via Protected Database, if any.",
+    )
+    time_created: Optional[datetime] = Field(
+        None, description="Creation time (RFC3339)."
+    )
+
+
+def map_database(db) -> Database | None:
+    if db is None:
+        return None
+    data = _oci_to_dict(db) or {}
+    return Database(
+        id=getattr(db, "id", None) or data.get("id"),
+        compartment_id=getattr(db, "compartment_id", None)
+        or data.get("compartment_id")
+        or data.get("compartmentId"),
+        lifecycle_state=getattr(db, "lifecycle_state", None)
+        or data.get("lifecycle_state")
+        or data.get("lifecycleState"),
+        db_name=getattr(db, "db_name", None)
+        or data.get("db_name")
+        or data.get("dbName"),
+        db_unique_name=getattr(db, "db_unique_name", None)
+        or data.get("db_unique_name")
+        or data.get("dbUniqueName"),
+        db_home_id=getattr(db, "db_home_id", None)
+        or data.get("db_home_id")
+        or data.get("dbHomeId"),
+        db_system_id=getattr(db, "db_system_id", None)
+        or data.get("db_system_id")
+        or data.get("dbSystemId"),
+        db_backup_config=map_db_backup_config(
+            getattr(db, "db_backup_config", None)
+            or data.get("db_backup_config")
+            or data.get("dbBackupConfig")
+            or data.get("databaseBackupConfig")
+        ),
+        time_created=getattr(db, "time_created", None)
+        or data.get("time_created")
+        or data.get("timeCreated"),
+    )
+
+
+class DatabaseSummary(OCIBaseModel):
+    """
+    Pydantic model mirroring oci.database.models.DatabaseSummary.
+    """
+
+    id: Optional[str] = Field(None, description="The OCID of the Database.")
+    compartment_id: Optional[str] = Field(
+        None, description="The OCID of the compartment containing the Database."
+    )
+    lifecycle_state: Optional[str] = Field(
+        None, description="The current lifecycle state of the Database."
+    )
+    db_name: Optional[str] = Field(None, description="The database name.")
+    db_unique_name: Optional[str] = Field(
+        None, description="The DB_UNIQUE_NAME of the database."
+    )
+    db_home_id: Optional[str] = Field(None, description="The OCID of the DB Home.")
+    db_system_id: Optional[str] = Field(
+        None, description="The OCID of the DB System (if applicable)."
+    )
+    db_backup_config: Optional["DbBackupConfig"] = Field(
+        None, description="Database backup configuration."
+    )
+    protection_policy_id: Optional[str] = Field(
+        None,
+        description="Recovery Service Protection Policy OCID linked via Protected Database, if any.",
+    )
+    time_created: Optional[datetime] = Field(
+        None, description="Creation time (RFC3339)."
+    )
+
+
+def map_database_summary(db) -> DatabaseSummary | None:
+    if db is None:
+        return None
+    data = _oci_to_dict(db) or {}
+    return DatabaseSummary(
+        id=getattr(db, "id", None) or data.get("id"),
+        compartment_id=getattr(db, "compartment_id", None)
+        or data.get("compartment_id")
+        or data.get("compartmentId"),
+        lifecycle_state=getattr(db, "lifecycle_state", None)
+        or data.get("lifecycle_state")
+        or data.get("lifecycleState"),
+        db_name=getattr(db, "db_name", None)
+        or data.get("db_name")
+        or data.get("dbName"),
+        db_unique_name=getattr(db, "db_unique_name", None)
+        or data.get("db_unique_name")
+        or data.get("dbUniqueName"),
+        db_home_id=getattr(db, "db_home_id", None)
+        or data.get("db_home_id")
+        or data.get("dbHomeId"),
+        db_system_id=getattr(db, "db_system_id", None)
+        or data.get("db_system_id")
+        or data.get("dbSystemId"),
+        db_backup_config=map_db_backup_config(
+            getattr(db, "db_backup_config", None)
+            or data.get("db_backup_config")
+            or data.get("dbBackupConfig")
+            or data.get("databaseBackupConfig")
+        ),
+        time_created=getattr(db, "time_created", None)
+        or data.get("time_created")
+        or data.get("timeCreated"),
+    )
+
+
+class BackupSummary(OCIBaseModel):
+    """
+    Pydantic model mirroring oci.database.models.BackupSummary.
+    """
+
+    id: Optional[str] = Field(None, description="The OCID of the backup.")
+    display_name: Optional[str] = Field(None, description="Display name.")
+    compartment_id: Optional[str] = Field(None, description="Compartment OCID.")
+    database_id: Optional[str] = Field(None, description="Database OCID.")
+    lifecycle_state: Optional[str] = Field(None, description="Lifecycle state.")
+    type: Optional[str] = Field(None, description="Backup type.")
+    time_started: Optional[datetime] = Field(None, description="Start time (RFC3339).")
+    time_ended: Optional[datetime] = Field(None, description="End time (RFC3339).")
+    time_created: Optional[datetime] = Field(
+        None, description="Creation time (RFC3339)."
+    )
+    size_in_gbs: Optional[float] = Field(None, description="Backup size in GBs.")
+
+
+def map_backup_summary(b) -> BackupSummary | None:
+    if b is None:
+        return None
+    data = _oci_to_dict(b) or {}
+    return BackupSummary(
+        id=getattr(b, "id", None) or data.get("id"),
+        display_name=getattr(b, "display_name", None)
+        or data.get("display_name")
+        or data.get("displayName"),
+        compartment_id=getattr(b, "compartment_id", None)
+        or data.get("compartment_id")
+        or data.get("compartmentId"),
+        database_id=getattr(b, "database_id", None)
+        or data.get("database_id")
+        or data.get("databaseId"),
+        lifecycle_state=getattr(b, "lifecycle_state", None)
+        or data.get("lifecycle_state")
+        or data.get("lifecycleState"),
+        type=getattr(b, "type", None) or data.get("type"),
+        time_started=getattr(b, "time_started", None)
+        or data.get("time_started")
+        or data.get("timeStarted"),
+        time_ended=getattr(b, "time_ended", None)
+        or data.get("time_ended")
+        or data.get("timeEnded"),
+        time_created=getattr(b, "time_created", None)
+        or data.get("time_created")
+        or data.get("timeCreated"),
+        size_in_gbs=getattr(b, "size_in_gbs", None)
+        or data.get("size_in_gbs")
+        or data.get("sizeInGBs")
+        or data.get("sizeInGbs"),
+    )
+
+
+class Backup(OCIBaseModel):
+    """
+    Pydantic model mirroring oci.database.models.Backup.
+    """
+
+    id: Optional[str] = Field(None, description="The OCID of the backup.")
+    display_name: Optional[str] = Field(None, description="Display name.")
+    compartment_id: Optional[str] = Field(None, description="Compartment OCID.")
+    database_id: Optional[str] = Field(None, description="Database OCID.")
+    lifecycle_state: Optional[str] = Field(None, description="Lifecycle state.")
+    type: Optional[str] = Field(None, description="Backup type.")
+    time_started: Optional[datetime] = Field(None, description="Start time (RFC3339).")
+    time_ended: Optional[datetime] = Field(None, description="End time (RFC3339).")
+    time_created: Optional[datetime] = Field(
+        None, description="Creation time (RFC3339)."
+    )
+    size_in_gbs: Optional[float] = Field(None, description="Backup size in GBs.")
+    database_version: Optional[str] = Field(
+        None, description="Database version at backup time."
+    )
+
+
+def map_backup(b) -> Backup | None:
+    if b is None:
+        return None
+    data = _oci_to_dict(b) or {}
+    return Backup(
+        id=getattr(b, "id", None) or data.get("id"),
+        display_name=getattr(b, "display_name", None)
+        or data.get("display_name")
+        or data.get("displayName"),
+        compartment_id=getattr(b, "compartment_id", None)
+        or data.get("compartment_id")
+        or data.get("compartmentId"),
+        database_id=getattr(b, "database_id", None)
+        or data.get("database_id")
+        or data.get("databaseId"),
+        lifecycle_state=getattr(b, "lifecycle_state", None)
+        or data.get("lifecycle_state")
+        or data.get("lifecycleState"),
+        type=getattr(b, "type", None) or data.get("type"),
+        time_started=getattr(b, "time_started", None)
+        or data.get("time_started")
+        or data.get("timeStarted"),
+        time_ended=getattr(b, "time_ended", None)
+        or data.get("time_ended")
+        or data.get("timeEnded"),
+        time_created=getattr(b, "time_created", None)
+        or data.get("time_created")
+        or data.get("timeCreated"),
+        size_in_gbs=getattr(b, "size_in_gbs", None)
+        or data.get("size_in_gbs")
+        or data.get("sizeInGBs")
+        or data.get("sizeInGbs"),
+        database_version=getattr(b, "database_version", None)
+        or data.get("database_version")
+        or data.get("databaseVersion"),
+    )
+
+
+class DatabaseHomeSummary(OCIBaseModel):
+    """
+    Pydantic model mirroring oci.database.models.DbHomeSummary.
+    """
+
+    id: Optional[str] = Field(None, description="The OCID of the DB Home.")
+    display_name: Optional[str] = Field(None, description="Display name.")
+    compartment_id: Optional[str] = Field(None, description="Compartment OCID.")
+    db_system_id: Optional[str] = Field(None, description="DB System OCID.")
+    lifecycle_state: Optional[str] = Field(None, description="Lifecycle state.")
+    db_version: Optional[str] = Field(None, description="DB version.")
+    time_created: Optional[datetime] = Field(
+        None, description="Creation time (RFC3339)."
+    )
+
+
+def map_database_home_summary(h) -> DatabaseHomeSummary | None:
+    if h is None:
+        return None
+    data = _oci_to_dict(h) or {}
+    return DatabaseHomeSummary(
+        id=getattr(h, "id", None) or data.get("id"),
+        display_name=getattr(h, "display_name", None)
+        or data.get("display_name")
+        or data.get("displayName"),
+        compartment_id=getattr(h, "compartment_id", None)
+        or data.get("compartment_id")
+        or data.get("compartmentId"),
+        db_system_id=getattr(h, "db_system_id", None)
+        or data.get("db_system_id")
+        or data.get("dbSystemId"),
+        lifecycle_state=getattr(h, "lifecycle_state", None)
+        or data.get("lifecycle_state")
+        or data.get("lifecycleState"),
+        db_version=getattr(h, "db_version", None)
+        or data.get("db_version")
+        or data.get("dbVersion"),
+        time_created=getattr(h, "time_created", None)
+        or data.get("time_created")
+        or data.get("timeCreated"),
+    )
+
+
+class DatabaseHome(OCIBaseModel):
+    """
+    Pydantic model mirroring oci.database.models.DbHome.
+    """
+
+    id: Optional[str] = Field(None, description="The OCID of the DB Home.")
+    display_name: Optional[str] = Field(None, description="Display name.")
+    compartment_id: Optional[str] = Field(None, description="Compartment OCID.")
+    db_system_id: Optional[str] = Field(None, description="DB System OCID.")
+    lifecycle_state: Optional[str] = Field(None, description="Lifecycle state.")
+    db_version: Optional[str] = Field(None, description="DB version.")
+    time_created: Optional[datetime] = Field(
+        None, description="Creation time (RFC3339)."
+    )
+
+
+def map_database_home(h) -> DatabaseHome | None:
+    if h is None:
+        return None
+    data = _oci_to_dict(h) or {}
+    return DatabaseHome(
+        id=getattr(h, "id", None) or data.get("id"),
+        display_name=getattr(h, "display_name", None)
+        or data.get("display_name")
+        or data.get("displayName"),
+        compartment_id=getattr(h, "compartment_id", None)
+        or data.get("compartment_id")
+        or data.get("compartmentId"),
+        db_system_id=getattr(h, "db_system_id", None)
+        or data.get("db_system_id")
+        or data.get("dbSystemId"),
+        lifecycle_state=getattr(h, "lifecycle_state", None)
+        or data.get("lifecycle_state")
+        or data.get("lifecycleState"),
+        db_version=getattr(h, "db_version", None)
+        or data.get("db_version")
+        or data.get("dbVersion"),
+        time_created=getattr(h, "time_created", None)
+        or data.get("time_created")
+        or data.get("timeCreated"),
+    )
+
+
+class DbSystemSummary(OCIBaseModel):
+    """
+    Pydantic model mirroring oci.database.models.DbSystemSummary.
+    """
+
+    id: Optional[str] = Field(None, description="DB System OCID.")
+    display_name: Optional[str] = Field(None, description="Display name.")
+    compartment_id: Optional[str] = Field(None, description="Compartment OCID.")
+    lifecycle_state: Optional[str] = Field(None, description="Lifecycle state.")
+    shape: Optional[str] = Field(None, description="Shape.")
+    cpu_core_count: Optional[int] = Field(None, description="CPU core count.")
+    node_count: Optional[int] = Field(None, description="Node count.")
+    time_created: Optional[datetime] = Field(
+        None, description="Creation time (RFC3339)."
+    )
+
+
+def map_db_system_summary(s) -> DbSystemSummary | None:
+    if s is None:
+        return None
+    data = _oci_to_dict(s) or {}
+    return DbSystemSummary(
+        id=getattr(s, "id", None) or data.get("id"),
+        display_name=getattr(s, "display_name", None)
+        or data.get("display_name")
+        or data.get("displayName"),
+        compartment_id=getattr(s, "compartment_id", None)
+        or data.get("compartment_id")
+        or data.get("compartmentId"),
+        lifecycle_state=getattr(s, "lifecycle_state", None)
+        or data.get("lifecycle_state")
+        or data.get("lifecycleState"),
+        shape=getattr(s, "shape", None) or data.get("shape"),
+        cpu_core_count=getattr(s, "cpu_core_count", None)
+        or data.get("cpu_core_count")
+        or data.get("cpuCoreCount"),
+        node_count=getattr(s, "node_count", None)
+        or data.get("node_count")
+        or data.get("nodeCount"),
+        time_created=getattr(s, "time_created", None)
+        or data.get("time_created")
+        or data.get("timeCreated"),
+    )
+
+
+class DbSystem(OCIBaseModel):
+    """
+    Pydantic model mirroring oci.database.models.DbSystem.
+    """
+
+    id: Optional[str] = Field(None, description="DB System OCID.")
+    display_name: Optional[str] = Field(None, description="Display name.")
+    compartment_id: Optional[str] = Field(None, description="Compartment OCID.")
+    lifecycle_state: Optional[str] = Field(None, description="Lifecycle state.")
+    shape: Optional[str] = Field(None, description="Shape.")
+    cpu_core_count: Optional[int] = Field(None, description="CPU core count.")
+    node_count: Optional[int] = Field(None, description="Node count.")
+    license_model: Optional[str] = Field(None, description="License model.")
+    availability_domain: Optional[str] = Field(None, description="Availability domain.")
+    time_created: Optional[datetime] = Field(
+        None, description="Creation time (RFC3339)."
+    )
+
+
+def map_db_system(s) -> DbSystem | None:
+    if s is None:
+        return None
+    data = _oci_to_dict(s) or {}
+    return DbSystem(
+        id=getattr(s, "id", None) or data.get("id"),
+        display_name=getattr(s, "display_name", None)
+        or data.get("display_name")
+        or data.get("displayName"),
+        compartment_id=getattr(s, "compartment_id", None)
+        or data.get("compartment_id")
+        or data.get("compartmentId"),
+        lifecycle_state=getattr(s, "lifecycle_state", None)
+        or data.get("lifecycle_state")
+        or data.get("lifecycleState"),
+        shape=getattr(s, "shape", None) or data.get("shape"),
+        cpu_core_count=getattr(s, "cpu_core_count", None)
+        or data.get("cpu_core_count")
+        or data.get("cpuCoreCount"),
+        node_count=getattr(s, "node_count", None)
+        or data.get("node_count")
+        or data.get("nodeCount"),
+        license_model=getattr(s, "license_model", None)
+        or data.get("license_model")
+        or data.get("licenseModel"),
+        availability_domain=getattr(s, "availability_domain", None)
+        or data.get("availability_domain")
+        or data.get("availabilityDomain"),
+        time_created=getattr(s, "time_created", None)
+        or data.get("time_created")
+        or data.get("timeCreated"),
+    )
+
+
+# Database Protection Summary (constructed by server, no direct SDK mapping)
+
+
+class ProtectedDatabaseBackupDestinationItem(OCIBaseModel):
+    database_id: str = Field(..., description="Database OCID.")
+    db_name: Optional[str] = Field(None, description="Database name.")
+    status: Optional[str] = Field(
+        None, description="CONFIGURED | HAS_BACKUPS | UNCONFIGURED"
+    )
+    destination_types: List[str] = Field(
+        default_factory=list,
+        description="Backup destination type(s) (e.g., DBRS, OSS, NFS).",
+    )
+    destination_ids: List[str] = Field(
+        default_factory=list, description="Backup destination OCIDs."
+    )
+    last_backup_time: Optional[datetime] = Field(
+        None, description="Most recent backup time, if computed."
+    )
+
+
+class ProtectedDatabaseBackupDestinationSummary(OCIBaseModel):
+    compartment_id: Optional[str] = Field(None, description="Compartment OCID.")
+    region: Optional[str] = Field(None, description="Region.")
+    total_databases: int = Field(0, description="Total databases scanned.")
+    unconfigured_count: int = Field(
+        0, description="Count of databases without configured automatic backups."
+    )
+    counts_by_destination_type: Dict[str, int] = Field(
+        default_factory=dict, description="Counts by destination type."
+    )
+    db_names_by_destination_type: Dict[str, List[str]] = Field(
+        default_factory=dict, description="DB names grouped by destination type."
+    )
+    unconfigured_db_names: List[str] = Field(
+        default_factory=list, description="DBs not configured for auto backup."
+    )
+    has_backups_db_names: List[str] = Field(
+        default_factory=list, description="DBs with backups but not configured."
+    )
+    items: List[ProtectedDatabaseBackupDestinationItem] = Field(
+        default_factory=list, description="Per-database details."
     )
 
 

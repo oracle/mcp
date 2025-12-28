@@ -410,10 +410,8 @@ class TestServer:
     @patch("os.getenv")
     def test_main_without_host_and_port(self, mock_getenv, mock_mcp_run):
         # Return None for host/port keys, otherwise pass through default (for log dir/file)
-        mock_getenv.side_effect = (
-            lambda k, d=None: None
-            if k in ("ORACLE_MCP_HOST", "ORACLE_MCP_PORT")
-            else d
+        mock_getenv.side_effect = lambda k, d=None: (
+            None if k in ("ORACLE_MCP_HOST", "ORACLE_MCP_PORT") else d
         )
 
         import oracle.oci_recovery_mcp_server.server as server

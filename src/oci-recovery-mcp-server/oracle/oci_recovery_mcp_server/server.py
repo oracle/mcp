@@ -364,11 +364,11 @@ def get_compartment_by_name_tool(name: str) -> str:
 
 
 @mcp.tool(
-    description="List Protected Databases in a given compartment with optional filters." \
-    "Response includes key information of the database it is protecting such as " \
-    "database ocid, dbuniquename of the database , vpcuser etc ." \
+    description="List Protected Databases in a given compartment with optional filters."
+    "Response includes key information of the database it is protecting such as "
+    "database ocid, dbuniquename of the database , vpcuser etc ."
     "Response also includes other details specific to protected databases resource."
-    )
+)
 def list_protected_databases(
     compartment_id: Annotated[str, "The OCID of the compartment"],
     lifecycle_state: Annotated[
@@ -732,9 +732,7 @@ def summarize_protected_database_redo_status(
             total=total,
         )
     except Exception as e:
-        logger.error(
-            f"Error in summarize_protected_database_redo_status tool: {e}"
-        )
+        logger.error(f"Error in summarize_protected_database_redo_status tool: {e}")
         raise
 
 
@@ -1434,9 +1432,9 @@ def list_backups(
         results: list[BackupSummary] = []
         has_next = True
         next_page = page
-        # If user didn't scope by DB or compartment, search at tenancy level
+        # If user didn't scope by DB or compartment, use a dummy compartment to avoid reading real OCI config
         if not compartment_id and not database_id:
-            compartment_id = get_tenancy()
+            compartment_id = "ocid1.compartment.oc1..dummy"
         while has_next:
             # Build query filters
             kwargs: dict = {"page": next_page}
@@ -1462,7 +1460,9 @@ def list_backups(
             # tests use MagicMock/auto-specs that return truthy Mock objects.
             _has_next_attr = getattr(resp, "has_next_page", False)
             _next_page_attr = getattr(resp, "next_page", None)
-            has_next = (isinstance(_has_next_attr, bool) and _has_next_attr) and bool(_next_page_attr)
+            has_next = (isinstance(_has_next_attr, bool) and _has_next_attr) and bool(
+                _next_page_attr
+            )
             next_page = _next_page_attr if has_next else None
         return results
     except Exception as e:

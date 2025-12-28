@@ -4,6 +4,33 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
+# Module overview:
+# This file defines the FastMCP server for Oracle Recovery Service related tools.
+# It wires up:
+# - Logging (file + optional console with rotation)
+# - OCI client factories (Recovery, Identity, Database, Monitoring)
+# - Helper utilities (tenancy/compartment discovery, DB Home discovery)
+# - A set of MCP tools (decorated functions) that call OCI SDKs, paginate responses,
+#   and map SDK models into server-specific dataclasses found in models.py.
+#
+# The general flow for most tools:
+# 1) Resolve region/config/signer and create an OCI client (get_*_client).
+# 2) Build an argument set from the tool parameters (including optional filters).
+# 3) Call the appropriate OCI API, handling pagination where required.
+# 4) Map SDK responses to the server's typed models (map_* functions).
+# 5) Return typed results (summaries/objects) or computed aggregations.
+#
+# Main() chooses the transport:
+# - If ORACLE_MCP_HOST and ORACLE_MCP_PORT are set: run HTTP transport.
+# - Otherwise run stdio transport (default for MCP).
+#
+# Important robustness choices:
+# - We add an "additional_user_agent" string to all OCI client configs for traceability.
+# - We sign requests with a SecurityTokenSigner using the configured security token file.
+# - We try to be resilient to SDK shape differences by using getattr/__dict__/to_dict
+#   wherever possible, especially for pagination and nested model fields.
+# - We log key milestones and counts for better operability and diagnostics.
+
 import json
 import logging
 import os
@@ -79,9 +106,11 @@ from . import __project__, __version__
 
 # Logging setup
 def setup_logging():
+    # Resolve log level from env, default to INFO
     level_name = os.getenv("ORACLE_MCP_LOG_LEVEL", "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
 
+    # Compute default log dir relative to project root; allow env override
     base_dir = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "..", "..", "..")
     )
@@ -91,6 +120,7 @@ def setup_logging():
         "ORACLE_MCP_LOG_FILE", os.path.join(log_dir, "oci_recovery_mcp_server.log")
     )
 
+    # Configure root logger once
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
 
@@ -139,6 +169,7 @@ def setup_logging():
 
 setup_logging()
 logger = logging.getLogger(__name__)
+# Create the FastMCP app that exposes the functions decorated with @mcp.tool
 mcp = FastMCP(name=__project__)
 
 
@@ -150,18 +181,21 @@ def get_recovery_client(
     Adds a custom user agent derived from the package name and version.
     Optionally overrides the region.
     """
+    # Load config (profile or DEFAULT) and tag requests with additional user agent
     config = oci.config.from_file(
         profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
     )
     user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
     config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
 
+    # Build SecurityTokenSigner from configured key + token
     private_key = oci.signer.load_private_key_from_file(config["key_file"])
     token_file = config["security_token_file"]
     with open(token_file, "r") as f:
         token = f.read()
     signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
 
+    # Region-aware client construction
     if region is None:
         return oci.recovery.DatabaseRecoveryClient(config, signer=signer)
 
@@ -171,6 +205,7 @@ def get_recovery_client(
 
 
 def get_identity_client():
+    # Create Identity client (for compartment/tenancy queries) with same UA and signer setup
     config = oci.config.from_file(
         profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
     )
@@ -185,6 +220,7 @@ def get_identity_client():
 
 
 def get_database_client(region: str = None):
+    # Create Database Service client (DB Home/DB/Backup APIs)
     config = oci.config.from_file(
         profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
     )
@@ -203,6 +239,7 @@ def get_database_client(region: str = None):
 
 
 def get_monitoring_client(region: str | None = None):
+    # Create Monitoring Service client (for Recovery metrics via Monitoring namespace)
     logger.info("entering get_monitoring_client")
     config = oci.config.from_file(
         profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
@@ -223,6 +260,7 @@ def get_monitoring_client(region: str | None = None):
 
 
 def get_tenancy():
+    # Return the tenancy OCID from config unless overridden by TENANCY_ID_OVERRIDE
     config = oci.config.from_file(
         profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
     )
@@ -231,6 +269,7 @@ def get_tenancy():
 
 def list_all_compartments_internal(only_one_page: bool, limit=100):
     """Internal function to get List all compartments in a tenancy"""
+    # Use IdentityClient to list all accessible ACTIVE compartments and include the root tenancy
     identity_client = get_identity_client()
     response = identity_client.list_compartments(
         compartment_id=get_tenancy(),
@@ -240,11 +279,13 @@ def list_all_compartments_internal(only_one_page: bool, limit=100):
         limit=limit,
     )
     compartments = response.data
+    # Also include the tenancy itself
     compartments.append(
         identity_client.get_compartment(compartment_id=get_tenancy()).data
     )
     if only_one_page:  # limiting the number of items returned
         return compartments
+    # Manual pagination loop
     while response.has_next_page:
         response = identity_client.list_compartments(
             compartment_id=get_tenancy(),
@@ -270,6 +311,7 @@ def _fetch_db_home_ids_for_compartment(
         client = get_database_client(region)
         resp = client.list_db_homes(compartment_id=compartment_id)
         data = resp.data
+        # Normalize list shape (SDK may use .items or a raw list)
         raw_list = getattr(data, "items", data)
         raw_list = (
             raw_list
@@ -278,8 +320,10 @@ def _fetch_db_home_ids_for_compartment(
         )
         ids: list[str] = []
         for h in raw_list:
+            # Try attribute access first
             hid = getattr(h, "id", None)
             if not hid:
+                # Fall back to dict conversion if needed
                 try:
                     d = (
                         getattr(oci.util, "to_dict")(h)
@@ -370,6 +414,7 @@ def list_protected_databases(
         next_page: Optional[str] = page
 
         while has_next_page:
+            # Build request kwargs from provided filters
             kwargs = {
                 "compartment_id": compartment_id,
                 "page": next_page,
@@ -393,10 +438,12 @@ def list_protected_databases(
             if opc_request_id is not None:
                 kwargs["opc_request_id"] = opc_request_id
 
+            # Invoke list API and handle pagination
             response: oci.response.Response = client.list_protected_databases(**kwargs)
             has_next_page = response.has_next_page
             next_page = response.next_page if hasattr(response, "next_page") else None
 
+            # Normalize list and map into our summaries
             data = response.data
             items = getattr(data, "items", data)  # collection.items or raw list
             for d in items:
@@ -429,6 +476,7 @@ def get_protected_database(
     try:
         client = get_recovery_client(region)
 
+        # Optional request ID passthrough
         kwargs = {}
         if opc_request_id is not None:
             kwargs["opc_request_id"] = opc_request_id
@@ -484,6 +532,7 @@ def summarize_protected_database_health(
         next_page: Optional[str] = None
 
         while has_next_page:
+            # Fetch ACTIVE PDs page by page
             list_kwargs = {
                 "compartment_id": comp_id,
                 "page": next_page,
@@ -498,7 +547,7 @@ def summarize_protected_database_health(
             data = response.data
             items = getattr(data, "items", data)
             for item in items or []:
-                # Read health from summary first
+                # Try to read health from list summary; shape can vary by SDK versions
                 health = getattr(item, "health", None)
                 if not health and hasattr(item, "__dict__"):
                     try:
@@ -506,6 +555,7 @@ def summarize_protected_database_health(
                     except Exception:
                         health = None
 
+                # Robustly extract PD OCID to allow follow-up GET if required
                 pd_id = getattr(item, "id", None) or (
                     getattr(item, "data", None) and getattr(item.data, "id", None)
                 )
@@ -522,7 +572,7 @@ def summarize_protected_database_health(
 
                 scanned += 1
 
-                # If summary lacked health, fetch full PD
+                # If health is not on the summary, fetch the full resource
                 if not health:
                     try:
                         pd_resp: oci.response.Response = client.get_protected_database(
@@ -535,6 +585,7 @@ def summarize_protected_database_health(
                     except Exception:
                         health = None
 
+                # Increment appropriate counters
                 if health == "PROTECTED":
                     protected += 1
                 elif health == "WARNING":
@@ -603,6 +654,7 @@ def summarize_protected_database_redo_status(
         next_page: Optional[str] = None
 
         while has_next_page:
+            # List ACTIVE PDs to assess redo status via GET per PD
             list_kwargs = {
                 "compartment_id": comp_id,
                 "page": next_page,
@@ -681,7 +733,7 @@ def summarize_protected_database_redo_status(
         )
     except Exception as e:
         logger.error(
-            f"Error in summarize_protected_database_redo_status tool: {str(e)}"
+            f"Error in summarize_protected_database_redo_status tool: {e}"
         )
         raise
 
@@ -791,6 +843,7 @@ def summarize_backup_space_used(
                 if gb_val is None:
                     missing_metrics += 1
 
+                # Ensure numeric value; treat missing/non-numeric as 0.0
                 try:
                     gb = float(gb_val) if gb_val is not None else 0.0
                 except Exception:
@@ -859,6 +912,7 @@ def list_protection_policies(
         next_page: Optional[str] = page
 
         while has_next_page:
+            # Collect filters/controls into kwargs
             kwargs = {
                 "compartment_id": compartment_id,
                 "page": next_page,
@@ -1078,13 +1132,16 @@ def get_recovery_service_metrics(
         "(maps to resourceId dimension)",
     ] = None,
 ) -> list[dict]:
+    # Build Monitoring query against Recovery metrics namespace
     monitoring_client = get_monitoring_client()
     namespace = "oci_recovery_service"
     filter_clause = (
         f'{{resourceId="{protected_database_id}"}}' if protected_database_id else ""
     )
+    # Query format: MetricName[resolution]{filters}.aggregation()
     query = f"{metricName}[{resolution}]{filter_clause}.{aggregation}()"
 
+    # Fetch time series data for the metric and time window
     series_list = monitoring_client.summarize_metrics_data(
         compartment_id=compartment_id,
         summarize_metrics_data_details=SummarizeMetricsDataDetails(
@@ -1096,6 +1153,7 @@ def get_recovery_service_metrics(
         ),
     ).data
 
+    # Convert SDK series into a simple dict of dimensions + aggregated datapoints
     result: list[dict] = []
     for series in series_list:
         dims = getattr(series, "dimensions", None)
@@ -1156,7 +1214,9 @@ def list_databases(
     try:
         client = get_database_client(region)
 
-        # Determine DB Home scope
+        # Determine DB Home scope:
+        # - If db_home_id not provided, discover all DB Homes in the compartment.
+        # - If provided, just use that one.
         if db_home_id is None:
             if not compartment_id:
                 raise ValueError(
@@ -1170,6 +1230,7 @@ def list_databases(
         if not home_ids:
             return []
 
+        # Try to correlate database_id -> protection_policy_id via Recovery PDs (best-effort)
         pd_policy_by_dbid: dict[str, str] = {}
         if compartment_id:
             try:
@@ -1202,6 +1263,7 @@ def list_databases(
                 pd_policy_by_dbid = {}
 
         results: list[DatabaseSummary] = []
+        # Common list_databases filters shared across DB Homes
         common_kwargs: dict = {}
         if compartment_id is not None:
             common_kwargs["compartment_id"] = compartment_id
@@ -1220,6 +1282,7 @@ def list_databases(
         if db_name is not None:
             common_kwargs["db_name"] = db_name
 
+        # For each DB Home, list databases and map summaries
         for hid in home_ids:
             kwargs = dict(common_kwargs)
             kwargs["db_home_id"] = hid
@@ -1228,7 +1291,7 @@ def list_databases(
             for item in raw or []:
                 mapped = map_database_summary(item)
                 if mapped is not None:
-                    # Enrich db_backup_config for summaries by fetching full Database only if missing
+                    # Enrich db_backup_config lazily by fetching full Database only if missing
                     try:
                         if getattr(mapped, "db_backup_config", None) is None:
                             db_id = getattr(item, "id", None) or (
@@ -1263,6 +1326,7 @@ def list_databases(
                     except Exception:
                         # Best-effort enrichment; ignore failures and still return the summary
                         pass
+                    # Enrich with protection policy id if we correlated via Recovery PDs earlier
                     try:
                         if compartment_id is not None:
                             mapped.protection_policy_id = pd_policy_by_dbid.get(
@@ -1292,6 +1356,7 @@ def get_database(
         # Enrich protection_policy_id by correlating with Recovery Service
         # Protected Databases in the same compartment
         try:
+            # Extract compartment from response (SDK shape may differ)
             comp_id = getattr(resp.data, "compartment_id", None)
             if comp_id is None:
                 try:
@@ -1308,6 +1373,7 @@ def get_database(
                 has_next = True
                 next_page = None
                 found_ppid = None
+                # Scan PDs in compartment until we find a match by databaseId
                 while has_next and not found_ppid:
                     lp = rec_client.list_protected_databases(
                         compartment_id=comp_id, page=next_page
@@ -1332,6 +1398,7 @@ def get_database(
                 if mapped is not None:
                     mapped.protection_policy_id = found_ppid
         except Exception:
+            # Non-fatal enrichment failure
             pass
         return mapped
     except Exception as e:
@@ -1367,9 +1434,11 @@ def list_backups(
         results: list[BackupSummary] = []
         has_next = True
         next_page = page
+        # If user didn't scope by DB or compartment, search at tenancy level
         if not compartment_id and not database_id:
             compartment_id = get_tenancy()
         while has_next:
+            # Build query filters
             kwargs: dict = {"page": next_page}
             if database_id:
                 kwargs["database_id"] = database_id
@@ -1381,6 +1450,7 @@ def list_backups(
                 kwargs["type"] = type
             if limit is not None:
                 kwargs["limit"] = limit
+            # Call list_backups and map summaries
             resp = client.list_backups(**kwargs)
             data = getattr(resp.data, "items", resp.data)
             for it in data or []:
@@ -1455,7 +1525,7 @@ def summarise_protected_database_backup_destination(
             else _fetch_db_home_ids_for_compartment(compartment_id, region=region)
         )
 
-        # Collect database summaries
+        # Collect database summaries for those DB Homes (AVAILABLE only)
         db_summaries: list[Any] = []
         if home_ids:
             for hid in home_ids:
@@ -1471,6 +1541,8 @@ def summarise_protected_database_backup_destination(
                     db_summaries.append(data)
 
         # Build a map of database_id -> list of Protected Databases (from Recovery Service)
+        # This allows us to infer DBRS (Recovery Service) as a destination type even if DB backup config
+        # does not explicitly list it as a destination, by virtue of PD linkage.
         pd_by_dbid: dict[str, list[dict]] = {}
         try:
             has_next = True
@@ -1498,6 +1570,7 @@ def summarise_protected_database_backup_destination(
         except Exception:
             pd_by_dbid = {}
 
+        # Helper routines to normalize SDK objects and read fields across variants
         def _to_dict(o: Any) -> dict:
             try:
                 if hasattr(oci, "util") and hasattr(oci.util, "to_dict"):
@@ -1509,6 +1582,7 @@ def summarise_protected_database_backup_destination(
             return getattr(o, "__dict__", {}) if hasattr(o, "__dict__") else {}
 
         def _get(o: Any, *names: str):
+            # Try attribute names first, then dict conversion
             for n in names:
                 if hasattr(o, n):
                     v = getattr(o, n)
@@ -1521,6 +1595,7 @@ def summarise_protected_database_backup_destination(
             return None
 
         def _extract_backup_destination_details(db_dict: dict) -> list[dict]:
+            # Discover backup destination details from known key variants
             cfg = None
             for k in (
                 "dbBackupConfig",
@@ -1546,6 +1621,7 @@ def summarise_protected_database_backup_destination(
             return details if isinstance(details, list) else [details]
 
         def _normalize_dest_type(t: Optional[str]) -> str:
+            # Canonicalize destination types to a small set for reporting
             if not t:
                 return "UNKNOWN"
             u = str(t).upper()
@@ -1563,6 +1639,7 @@ def summarise_protected_database_backup_destination(
             return u
 
         def _is_auto_backup_enabled(db_dict: dict) -> bool:
+            # Determine if auto-backup is enabled from known config keys
             cfg = None
             for k in (
                 "dbBackupConfig",
@@ -1596,6 +1673,7 @@ def summarise_protected_database_backup_destination(
             return False
 
         def _read_backup_times_from_obj(o: Any) -> list[Any]:
+            # Collect possible time fields from a backup object (SDK shapes differ)
             times = []
             for attr in (
                 "time_ended",
@@ -1615,6 +1693,7 @@ def summarise_protected_database_backup_destination(
                         times.append(d[k])
             return times
 
+        # Aggregation structures for summary + per-DB details
         items: list[ProtectedDatabaseBackupDestinationItem] = []
         counts_by_type: dict[str, int] = {}
         db_names_by_type: dict[str, list[str]] = {}
@@ -1625,6 +1704,7 @@ def summarise_protected_database_backup_destination(
         get_db = db_client.get_database
         list_bk = db_client.list_backups
 
+        # Iterate each DB summary, fetch full DB to inspect backup config and infer destinations
         for s in db_summaries:
             try:
                 sid = _get(s, "id")
@@ -1636,6 +1716,7 @@ def summarise_protected_database_backup_destination(
                 d_obj = getattr(dresp, "data", None)
                 d_dict = _to_dict(d_obj)
 
+                # Extract configured destination details (normalize to a list of dicts)
                 dest_details = _extract_backup_destination_details(d_dict)
                 dest_types: list[str] = []
                 dest_ids: list[str] = []
@@ -1664,7 +1745,7 @@ def summarise_protected_database_backup_destination(
                     except Exception:
                         pass
 
-                # Deduplicate
+                # Deduplicate destinations and IDs
                 dest_types = list(dict.fromkeys([t for t in dest_types if t]))
                 # Enforce exclusivity between DBRS and OSS:
                 # prefer DBRS (no dual classification)
@@ -1679,6 +1760,7 @@ def summarise_protected_database_backup_destination(
                 status = "CONFIGURED" if configured else "UNCONFIGURED"
                 last_backup_time = None
 
+                # Optionally compute last backup time (more API calls)
                 if include_last_backup_time:
                     try:
                         b_resp = list_bk(database_id=sid)
@@ -1700,6 +1782,7 @@ def summarise_protected_database_backup_destination(
                     except Exception:
                         pass
                 else:
+                    # Lightweight existence check for backups
                     try:
                         b_resp = list_bk(database_id=sid, limit=1)
                         b_data = getattr(b_resp.data, "items", b_resp.data)
@@ -1713,6 +1796,7 @@ def summarise_protected_database_backup_destination(
                     except Exception:
                         pass
 
+                # Aggregate summary counters and name lists by status/destination
                 name_for_lists = db_name or sid
                 if status == "CONFIGURED":
                     for ut in set(dest_types):
@@ -1725,6 +1809,7 @@ def summarise_protected_database_backup_destination(
                     unconfigured += 1
                     unconfigured_names.append(name_for_lists)
 
+                # Append per-DB detail record
                 items.append(
                     ProtectedDatabaseBackupDestinationItem(
                         database_id=sid,
@@ -1736,8 +1821,10 @@ def summarise_protected_database_backup_destination(
                     )
                 )
             except Exception:
+                # Continue on per-DB errors to maximize overall coverage
                 continue
 
+        # Sorting helpers: prioritize DBRS over OSS/NFS, then by status, then by name
         def _dest_rank(types: list[str]) -> int:
             if not types:
                 return 99
@@ -1758,6 +1845,7 @@ def summarise_protected_database_backup_destination(
             ),
         )
 
+        # Name list post-processing
         def _uniq_sorted(xs: list[str]) -> list[str]:
             return sorted(dict.fromkeys([x for x in xs if x]))
 
@@ -1800,6 +1888,7 @@ def list_db_homes(
         Optional[str], "Canonical OCI region (e.g., us-ashburn-1)."
     ] = None,
 ) -> list[DatabaseHomeSummary]:
+    # Note: This helper is not exposed as an MCP tool; other tools use it internally.
     try:
         client = get_database_client(region)
         if not compartment_id and not db_system_id:
@@ -1908,6 +1997,7 @@ def get_db_system(
 
 
 def main():
+    # Entrypoint: choose transport based on env; always log startup meta and log file location
     host = os.getenv("ORACLE_MCP_HOST")
     port = os.getenv("ORACLE_MCP_PORT")
 

@@ -13,6 +13,8 @@ from fastmcp import FastMCP
 from oracle.oci_support_mcp_server.models import (
     IncidentSummary,
     map_incident_summary,
+    Incident,
+    map_incident,
 )
 from pydantic import Field
 
@@ -132,20 +134,6 @@ def list_incidents(
             results = getattr(response, "data", [])
             # 'items' property if present (SDK style), else treat as a simple list
             items = getattr(results, "items", results)
-            # DEBUG: Write first raw item ticket to a file for inspection
-            # import json
-            # if items and len(items) > 0:
-            #     raw_ticket = None
-            #     first_item = items[0]
-            #     if isinstance(first_item, dict):
-            #         raw_ticket = first_item.get("ticket")
-            #     elif hasattr(first_item, "ticket"):
-            #         raw_ticket = getattr(first_item, "ticket")
-            #     try:
-            #         with open("/tmp/mcp_incident_ticket_debug.json", "w") as f:
-            #             json.dump(raw_ticket, f, default=str, indent=2)
-            #     except Exception as debug_exc:
-            #         logger.error(f"Failed to write ticket debug info: {debug_exc}")
             mapped = [map_incident_summary(i) for i in items]
             # Sanity/sanitize the ticket field for every mapped incident
             for inc in mapped:
@@ -181,6 +169,74 @@ def list_incidents(
         logger.error(f"Error in list_incidents tool: {str(e)}")
         raise e
 
+
+@mcp.tool(
+    description="Get a support incident from OCI CIMS by key. Returns mapped Incident Pydantic model."
+)
+def get_incident(
+    csi: str = Field(
+        ...,
+        description="The Oracle Cloud Identifier (CSI) associated with the support account used to interact with Oracle Support.",
+        min_length=1,
+    ),
+    compartment_id: str = Field(
+        ...,
+        description="The OCID of the tenancy. Use the tenancy OCID here.",
+        min_length=1,
+    ),
+    ocid: str = Field(
+        ...,
+        description="User OCID for Oracle Identity Cloud Service (IDCS) users who also have a federated Oracle Cloud Infrastructure account. Required for OCI users.",
+        min_length=1,
+    ),
+    incident_key: str = Field(
+        ...,
+        description="The unique key or ticket number identifying the incident.",
+        min_length=1,
+    ),
+    problemtype: Optional[str] = Field(
+        None,
+        description="A filter to return only resources that match the specified problem type. Accepts values such as 'LIMIT', 'TECH', or 'ACCOUNT'."
+    ),
+    opc_request_id: Optional[str] = Field(
+        None,
+        description="The OPC request ID for tracing from the client. Optional."
+    )
+) -> Incident:
+    """
+    Retrieves a specific support incident from OCI CIMS using the incident key, mapped to the Incident Pydantic model.
+    Optionally filter by problem_type (e.g., 'LIMIT', 'TECH', or 'ACCOUNT').
+    """
+    logger.info(f"Calling OCI CIMS IncidentClient.get_incident for key {incident_key}")
+    try:
+        client = get_cims_client()
+        kwargs = {
+            "csi": csi,
+            "compartment_id": compartment_id,
+            "ocid": ocid,
+            "incident_key": incident_key,
+        }
+        if problemtype:
+            kwargs["problemtype"] = problemtype
+        if opc_request_id:
+            kwargs["opc_request_id"] = opc_request_id
+
+        response = client.get_incident(**kwargs)
+        incident_data = getattr(response, "data", None)
+        mapped = map_incident(incident_data)
+        if mapped is None:
+            return None
+        val = mapped.model_dump() if hasattr(mapped, "model_dump") else dict(mapped)
+        ticket_val = val.get("ticket")
+        if ticket_val is not None and not isinstance(ticket_val, str):
+            if isinstance(ticket_val, dict):
+                val["ticket"] = ticket_val.get("key") or ticket_val.get("summary") or str(ticket_val)
+            else:
+                val["ticket"] = str(ticket_val)
+        return val
+    except Exception as e:
+        logger.error(f"Error in get_incident tool: {str(e)}")
+        raise e
 
 def main():
     host = os.getenv("ORACLE_MCP_HOST")

@@ -11,21 +11,28 @@ from pydantic import BaseModel, Field
 # --- OCI Support CIMS Pydantic Models ---
 
 class Contact(BaseModel):
+    contact_name: Optional[str] = Field(None)
+    contact_email: Optional[str] = Field(None)
     email: Optional[str] = Field(None)
-    name: Optional[str] = Field(None)
-    phone: Optional[str] = Field(None)
-    timezone: Optional[str] = Field(None)
-    country: Optional[str] = Field(None)
+    contact_phone: Optional[str] = Field(None)
+    contact_type: Optional[str] = Field(None)
 
+class ContactList(BaseModel):
+    contact_list: List[Contact]
+
+
+class IssueType(BaseModel):
+    issue_type_key: Optional[str] = Field(None)
+    label: Optional[str] = Field(None)
+    name: Optional[str] = Field(None)
 
 class Category(BaseModel):
+    category_key: Optional[str] = Field(None)
     name: Optional[str] = Field(None)
-    label: Optional[str] = Field(None)
-
 
 class SubCategory(BaseModel):
+    sub_category_key: Optional[str] = Field(None)
     name: Optional[str] = Field(None)
-    label: Optional[str] = Field(None)
 
 
 class IncidentType(BaseModel):
@@ -35,19 +42,29 @@ class IncidentType(BaseModel):
     sub_category: Optional[SubCategory] = Field(None)
 
 
+class Item(BaseModel):
+    item_key: Optional[str] = Field(None)
+    name: Optional[str] = Field(None)
+    type: Optional[str] = Field(None)
+    category: Optional[Category] = Field(None)
+    sub_category: Optional[SubCategory] = Field(None)
+    issue_type: Optional[IssueType] = Field(None)
+
 class Resource(BaseModel):
-    item: Optional[str] = Field(None)
+    item: Optional[Item] = Field(None)
     region: Optional[str] = Field(None)
-    availability_domain: Optional[str] = Field(None)
-    compartment_id: Optional[str] = Field(None)
 
 
 class Ticket(BaseModel):
-    key: Optional[str] = Field(None)
-    summary: Optional[str] = Field(None)
-    status: Optional[str] = Field(None)
-    time_created: Optional[datetime] = Field(None)
-    time_updated: Optional[datetime] = Field(None)
+    ticket_number: Optional[str] = Field(None)
+    severity: Optional[str] = Field(None)
+    resource_list: Optional[List[Resource]] = Field(None)
+    title: Optional[str] = Field(None)
+    description: Optional[str] = Field(None)
+    time_created: Optional[int] = Field(None)
+    time_updated: Optional[int] = Field(None)
+    lifecycle_state: Optional[str] = Field(None)
+    lifecycle_details: Optional[str] = Field(None)
 
 
 class Impact(BaseModel):
@@ -88,21 +105,61 @@ class Incident(BaseModel):
     department: Optional[str] = Field(None)
     problem_type: Optional[str] = Field(None)
 
+class TenancyInformation(BaseModel):
+    customer_support_key: Optional[str] = Field(None)
+    tenancy_id: Optional[str] = Field(None)
+
+class ServiceCategory(BaseModel):
+    key: Optional[str] = Field(None)
+    name: Optional[str] = Field(None)
+    label: Optional[str] = Field(None)
+    description: Optional[str] = Field(None)
+    issue_type_list: Optional[List[IssueType]] = Field(None)
+    supported_subscriptions: Optional[List[str]] = Field(None)
+    scope: Optional[str] = Field(None)
+    unit: Optional[str] = Field(None)
+    limit_id: Optional[str] = Field(None)
+
+class SubComponents(BaseModel):
+    sub_category: Optional[Dict[str, str]] = Field(None)
+    schema: Optional[str] = Field(None)
+
+class SubCategories(BaseModel):
+    service_category: Optional[Dict[str, str]] = Field(None)
+    schema: Optional[str] = Field(None)
+    has_sub_category: Optional[str] = Field(None)
+    sub_categories: Optional[List[SubComponents]] = Field(None)
+
+class Services(BaseModel):
+    service: Optional[Dict[str, str]] = Field(None)
+    schema: Optional[str] = Field(None)
+    service_categories: Optional[List[SubCategories]] = Field(None)
+
+class IncidentResourceType(BaseModel):
+    resource_type_key: Optional[str] = Field(None)
+    name: Optional[str] = Field(None)
+    label: Optional[str] = Field(None)
+    description: Optional[str] = Field(None)
+    is_subscriptions_supported: Optional[bool] = Field(None)
+    service_category_list: Optional[List[ServiceCategory]] = Field(None)
+    service: Optional[Dict[str, str]] = Field(None)
+    services: Optional[List[Services]] = Field(None)
+
 class IncidentSummary(BaseModel):
     key: Optional[str] = Field(None)
     compartment_id: Optional[str] = Field(None)
-    ticket_number: Optional[str] = Field(None)
-    incident_type: Optional[IncidentType] = Field(None)
-    severity: Optional[str] = Field(None)
-    resource: Optional[Resource] = Field(None)
-    status: Optional[str] = Field(None)
-    time_created: Optional[datetime] = Field(None)
-    time_updated: Optional[datetime] = Field(None)
-    referrer: Optional[str] = Field(None)
-    tenancy_id: Optional[str] = Field(None)
-    contact_list: Optional[List[Contact]] = Field(None)
-    lifecycle_state: Optional[str] = Field(None)
-    ticket: Optional[str] = Field(None)
+    contact_list: Optional[ContactList] = Field(None)
+    tenancy_information: Optional[TenancyInformation] = Field(None)
+    ticket: Optional[Ticket] = Field(None)
+    incident_type: Optional[IncidentResourceType] = Field(None)
+    migrated_sr_number: Optional[str] = Field(None)
+    user_group_id: Optional[str] = Field(None)
+    user_group_name: Optional[str] = Field(None)
+    primary_contact_party_id: Optional[str] = Field(None)
+    primary_contact_party_name: Optional[str] = Field(None)
+    is_write_permitted: Optional[bool] = Field(None)
+    warn_message: Optional[str] = Field(None)
+    problem_type: Optional[str] = Field(None)
 # --- Mapping Utilities ---
 
 def map_impact(oci_impact) -> Impact | None:
@@ -168,28 +225,50 @@ def map_incident(oci_incident) -> Incident | None:
 def map_contact(oci_contact) -> Contact | None:
     if not oci_contact:
         return None
+    def get(field, default=None):
+        if isinstance(oci_contact, dict):
+            return oci_contact.get(field, default)
+        return getattr(oci_contact, field, default)
     return Contact(
-        email=getattr(oci_contact, "email", None),
-        name=getattr(oci_contact, "name", None),
-        phone=getattr(oci_contact, "phone", None),
-        timezone=getattr(oci_contact, "timezone", None),
-        country=getattr(oci_contact, "country", None),
+        contact_name=get("contact_name"),
+        contact_email=get("contact_email"),
+        email=get("email"),
+        contact_phone=get("contact_phone"),
+        contact_type=get("contact_type"),
     )
+
+def map_contact_list(oci_contact_list) -> ContactList | None:
+    if not oci_contact_list:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_contact_list, dict):
+            return oci_contact_list.get(field, default)
+        return getattr(oci_contact_list, field, default)
+    cl = get("contact_list")
+    return ContactList(contact_list=[map_contact(c) for c in (cl or [])])
 
 def map_category(oci_category) -> Category | None:
     if not oci_category:
         return None
+    def get(field, default=None):
+        if isinstance(oci_category, dict):
+            return oci_category.get(field, default)
+        return getattr(oci_category, field, default)
     return Category(
-        name=getattr(oci_category, "name", None),
-        label=getattr(oci_category, "label", None),
+        category_key=get("category_key"),
+        name=get("name"),
     )
 
 def map_sub_category(oci_sub_category) -> SubCategory | None:
     if not oci_sub_category:
         return None
+    def get(field, default=None):
+        if isinstance(oci_sub_category, dict):
+            return oci_sub_category.get(field, default)
+        return getattr(oci_sub_category, field, default)
     return SubCategory(
-        name=getattr(oci_sub_category, "name", None),
-        label=getattr(oci_sub_category, "label", None),
+        sub_category_key=get("sub_category_key"),
+        name=get("name"),
     )
 
 def map_incident_type(oci_incident_type) -> IncidentType | None:
@@ -223,6 +302,78 @@ def map_ticket(oci_ticket) -> Optional[str]:
     # Try attribute access (object with .key or .summary), else fallback to str(obj)
     return getattr(oci_ticket, "key", None) or getattr(oci_ticket, "summary", None) or str(oci_ticket)
 
+def map_tenancy_information(oci_ti) -> TenancyInformation | None:
+    if not oci_ti:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_ti, dict):
+            return oci_ti.get(field, default)
+        return getattr(oci_ti, field, default)
+    return TenancyInformation(
+        customer_support_key=get("customer_support_key"),
+        tenancy_id=get("tenancy_id")
+    )
+
+def map_issue_type(oci_issue_type) -> IssueType | None:
+    if not oci_issue_type:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_issue_type, dict):
+            return oci_issue_type.get(field, default)
+        return getattr(oci_issue_type, field, default)
+    return IssueType(
+        issue_type_key=get("issue_type_key"),
+        label=get("label"),
+        name=get("name"),
+    )
+
+def map_item(oci_item) -> Item | None:
+    if not oci_item:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_item, dict):
+            return oci_item.get(field, default)
+        return getattr(oci_item, field, default)
+    return Item(
+        item_key=get("item_key"),
+        name=get("name"),
+        type=get("type"),
+        category=map_category(get("category")),
+        sub_category=map_sub_category(get("sub_category")),
+        issue_type=map_issue_type(get("issue_type")),
+    )
+
+def map_resource(oci_resource) -> Resource | None:
+    if not oci_resource:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_resource, dict):
+            return oci_resource.get(field, default)
+        return getattr(oci_resource, field, default)
+    return Resource(
+        item=map_item(get("item")),
+        region=get("region"),
+    )
+
+def map_ticket(oci_ticket) -> Ticket | None:
+    if not oci_ticket:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_ticket, dict):
+            return oci_ticket.get(field, default)
+        return getattr(oci_ticket, field, default)
+    return Ticket(
+        ticket_number=get("ticket_number"),
+        severity=get("severity"),
+        resource_list=[map_resource(r) for r in (get("resource_list") or [])],
+        title=get("title"),
+        description=get("description"),
+        time_created=get("time_created"),
+        time_updated=get("time_updated"),
+        lifecycle_state=get("lifecycle_state"),
+        lifecycle_details=get("lifecycle_details"),
+    )
+
 def map_incident_summary(oci_incident_summary) -> IncidentSummary | None:
     if not oci_incident_summary:
         return None
@@ -235,18 +386,16 @@ def map_incident_summary(oci_incident_summary) -> IncidentSummary | None:
     return IncidentSummary(
         key=get("key"),
         compartment_id=get("compartment_id"),
-        ticket_number=get("ticket_number"),
-        incident_type=map_incident_type(get("incident_type")),
-        severity=get("severity"),
-        resource=map_resource(get("resource")),
-        status=get("status"),
-        time_created=get("time_created"),
-        time_updated=get("time_updated"),
-        referrer=get("referrer"),
-        tenancy_id=get("tenancy_id"),
-        contact_list=[
-            map_contact(c) for c in (get("contact_list") or [])
-        ],
-        lifecycle_state=get("lifecycle_state"),
+        contact_list=map_contact_list(get("contact_list")),
+        tenancy_information=map_tenancy_information(get("tenancy_information")),
         ticket=map_ticket(get("ticket")),
+        incident_type=get("incident_type"),  # for now, adjust if explicit mapping is required
+        migrated_sr_number=get("migrated_sr_number"),
+        user_group_id=get("user_group_id"),
+        user_group_name=get("user_group_name"),
+        primary_contact_party_id=get("primary_contact_party_id"),
+        primary_contact_party_name=get("primary_contact_party_name"),
+        is_write_permitted=get("is_write_permitted"),
+        warn_message=get("warn_message"),
+        problem_type=get("problem_type"),
     )

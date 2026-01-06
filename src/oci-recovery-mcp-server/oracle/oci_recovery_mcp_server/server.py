@@ -97,7 +97,7 @@ from . import __project__, __version__
 - get_database
 - list_backups
 - get_backup
-- summarise_protected_database_backup_destination
+- summarize_protected_database_backup_destination
 - get_db_home
 - list_db_systems
 - get_db_system
@@ -1496,7 +1496,7 @@ def get_backup(
         "in the compartment and aggregates per-home."
     )
 )
-def summarise_protected_database_backup_destination(
+def summarize_protected_database_backup_destination(
     compartment_id: Annotated[
         Optional[str],
         "OCID of the compartment. If omitted, defaults to the tenancy/DEFAULT profile.",
@@ -1870,7 +1870,7 @@ def summarise_protected_database_backup_destination(
         )
     except Exception as e:
         logger.error(
-            f"Error in summarise_protected_database_backup_destination tool: {e}"
+            f"Error in summarize_protected_database_backup_destination tool: {e}"
         )
         raise
 

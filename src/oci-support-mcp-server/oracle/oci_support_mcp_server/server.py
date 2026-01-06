@@ -38,133 +38,157 @@ def get_cims_client():
     return oci.cims.IncidentClient(config)
 
 
+
 @mcp.tool(
     description="List support incidents for the tenancy using the OCI Support API (CIMS). Returns mapped IncidentSummary models."
 )
 def list_incidents(
-    csi: str = Field(
-        ...,
-        description="The Oracle Cloud Identifier (CSI) associated with the support account used to interact with Oracle Support.",
-        min_length=1,
-    ),
     compartment_id: str = Field(
         ...,
-        description="The OCID of the tenancy. Use the tenancy OCID here.",
-        min_length=1,
+        description="The OCID of the tenancy."
     ),
-    ocid: str = Field(
-        ...,
-        description="User OCID for Oracle Identity Cloud Service (IDCS) users who also have a federated Oracle Cloud Infrastructure account. Required for OCI users.",
-        min_length=1,
+    csi: Optional[str] = Field(
+        None,
+        description="The Customer Support Identifier (CSI) number associated with the support account. Optional for all request types."
+    ),
+    ocid: Optional[str] = Field(
+        None,
+        description="User OCID for Oracle Identity Cloud Service (IDCS) users who also have a federated Oracle Cloud Infrastructure account. Required for OCI users, optional for Multicloud users."
     ),
     limit: Optional[int] = Field(
         None,
-        description="The maximum number of items to return in a paginated call.",
-        ge=1
+        description="For list pagination. The maximum number of results per page, or items to return in a paginated List call."
+    ),
+    sort_by: Optional[str] = Field(
+        None,
+        description="The key to use to sort the returned items. Allowed values: 'dateUpdated', 'severity'."
+    ),
+    sort_order: Optional[str] = Field(
+        None,
+        description="The order to sort the results in. Allowed values: 'ASC', 'DESC'."
+    ),
+    lifecycle_state: Optional[str] = Field(
+        None,
+        description="The current state of the ticket. Allowed values: 'ACTIVE', 'CLOSED'."
     ),
     page: Optional[str] = Field(
         None,
-        description="The pagination token for retrieving the next batch of results."
+        description="For list pagination. The value of the 'opc-next-page' response header from the previous List call."
+    ),
+    opc_request_id: Optional[str] = Field(
+        None,
+        description="Unique Oracle-assigned identifier for the request. If you need to contact Oracle about a particular request, provide this ID."
+    ),
+    homeregion: Optional[str] = Field(
+        None,
+        description="The region of the tenancy."
     ),
     problem_type: Optional[str] = Field(
         None,
         description="A filter to return only resources that match the specified problem type. Accepts values such as 'LIMIT', 'TECH', or 'ACCOUNT'."
     ),
-    sort_by: Optional[str] = Field(
+    bearertokentype: Optional[str] = Field(
         None,
-        description="The field by which to sort results. Values: 'dateUpdated', 'severity', 'resourceType', 'status'."
+        description="Token type that determines which cloud provider the request comes from."
     ),
-    sort_order: Optional[str] = Field(
+    bearertoken: Optional[str] = Field(
         None,
-        description="The sort order to use. Either 'ASC' (ascending) or 'DESC' (descending)."
+        description="Token provided by multi cloud provider, which helps to validate the email."
     ),
-    severity: Optional[str] = Field(
+    idtoken: Optional[str] = Field(
         None,
-        description="A filter to return only incidents matching the specified severity."
+        description="IdToken provided by multi cloud provider, which helps to validate the email."
     ),
-    status: Optional[str] = Field(
+    domainid: Optional[str] = Field(
         None,
-        description="A filter to return only incidents matching the specified status."
+        description="The OCID of identity domain. DomainID is mandatory if the user is part of Non Default Identity domain."
     ),
-    list_incident_resource_type: Optional[str] = Field(
+    allow_control_chars: Optional[bool] = Field(
         None,
-        description="A filter to return only incidents related to the specified resource type."
+        description="Set to True to allow control characters in the response object."
     ),
-    opc_request_id: Optional[str] = Field(
+    retry_strategy: Optional[str] = Field(
         None,
-        description="The OPC request ID for tracing from the client. Optional."
+        description="Retry strategy for this operation. Allowed values: 'default', 'none'. If not provided, uses SDK default. (Advanced/experimental.)"
     )
 ) -> List[IncidentSummary]:
     """
-    Lists the incidents for a tenancy from the OCI CIMS (Support) API, mapped to IncidentSummary Pydantic models.
+    Lists OCI support incidents using the OCI CIMS IncidentClient. Returns a list of mapped IncidentSummary models.
+    All available filter, pagination, and context parameters are supported as per Oracle SDK documentation.
     """
     logger.info("Calling OCI CIMS IncidentClient.list_incidents")
     try:
         client = get_cims_client()
-        has_next_page = True
-        next_page = page
-        incidents: List[IncidentSummary] = []
-        total_limit = limit if limit and limit > 0 else None
-        call_limit = min(limit, 1000) if limit else 1000  # CIMS API may cap at 1000
+        results = []
+        remaining = limit if limit is not None else None
+        next_page_token = page
 
-        while has_next_page and (total_limit is None or len(incidents) < total_limit):
+        while True:
             kwargs = {
-                "csi": csi,
                 "compartment_id": compartment_id,
-                "ocid": ocid,
-                "limit": call_limit,
-                "page": next_page
             }
-            if problem_type:
-                kwargs["problem_type"] = problem_type
-            if sort_by:
+            if csi is not None:
+                kwargs["csi"] = csi
+            if ocid is not None:
+                kwargs["ocid"] = ocid
+            if remaining is not None:
+                kwargs["limit"] = remaining
+            if sort_by is not None:
                 kwargs["sort_by"] = sort_by
-            if sort_order:
+            if sort_order is not None:
                 kwargs["sort_order"] = sort_order
-            if severity:
-                kwargs["severity"] = severity
-            if status:
-                kwargs["status"] = status
-            if list_incident_resource_type:
-                kwargs["list_incident_resource_type"] = list_incident_resource_type
-            if opc_request_id:
+            if lifecycle_state is not None:
+                kwargs["lifecycle_state"] = lifecycle_state
+            if next_page_token:
+                kwargs["page"] = next_page_token
+            if opc_request_id is not None:
                 kwargs["opc_request_id"] = opc_request_id
+            if homeregion is not None:
+                kwargs["homeregion"] = homeregion
+            if problem_type is not None:
+                kwargs["problem_type"] = problem_type
+            if bearertokentype is not None:
+                kwargs["bearertokentype"] = bearertokentype
+            if bearertoken is not None:
+                kwargs["bearertoken"] = bearertoken
+            if idtoken is not None:
+                kwargs["idtoken"] = idtoken
+            if domainid is not None:
+                kwargs["domainid"] = domainid
+            if allow_control_chars is not None:
+                kwargs["allow_control_chars"] = allow_control_chars
+
+            if retry_strategy is not None:
+                import oci.retry
+                if retry_strategy == "default":
+                    kwargs["retry_strategy"] = oci.retry.DEFAULT_RETRY_STRATEGY
+                elif retry_strategy == "none":
+                    kwargs["retry_strategy"] = oci.retry.NoneRetryStrategy
 
             response = client.list_incidents(**kwargs)
-            results = getattr(response, "data", [])
-            # 'items' property if present (SDK style), else treat as a simple list
-            items = getattr(results, "items", results)
-            mapped = [map_incident_summary(i) for i in items]
-            # Sanity/sanitize the ticket field for every mapped incident
-            for inc in mapped:
-                if hasattr(inc, "ticket") and not (inc.ticket is None or isinstance(inc.ticket, str)):
-                    t = inc.ticket
-                    if isinstance(t, dict):
-                        inc.ticket = t.get("key") or t.get("summary") or str(t)
-                    else:
-                        inc.ticket = str(t)
-            incidents.extend(mapped)
+            data = getattr(response, "data", []) or []
+            mapped = [map_incident_summary(x) for x in data if x is not None]
+            # Convert to dicts for serialization, using mode="json" to recursively dump submodels
+            mapped_dicts = [m.model_dump(exclude_none=True, mode="json") for m in mapped if m is not None]
+            results.extend(mapped_dicts)
+
             has_next_page = getattr(response, "has_next_page", False)
-            next_page = getattr(response, "next_page", None)
-            # Stop if we've hit user-supplied max
-            if total_limit is not None and len(incidents) >= total_limit:
-                incidents = incidents[:total_limit]
+            next_page_token = getattr(response, "next_page", None)
+
+            # If we respected a limit, trim the results and break if reached
+            if remaining is not None and len(results) >= limit:
+                results = results[:limit]
+                break
+            if not has_next_page or not next_page_token:
                 break
 
-        logger.info(f"Returning {len(incidents)} IncidentSummary records")
-        # Output as plain dicts, forcibly ensuring ticket is a string for serialization
-        output = []
-        for inc in incidents:
-            val = inc.model_dump() if hasattr(inc, "model_dump") else dict(inc)
-            ticket_val = val.get("ticket")
-            if ticket_val is not None and not isinstance(ticket_val, str):
-                if isinstance(ticket_val, dict):
-                    val["ticket"] = ticket_val.get("key") or ticket_val.get("summary") or str(ticket_val)
-                else:
-                    val["ticket"] = str(ticket_val)
-            output.append(val)
-        return output
+            if remaining is not None:
+                remaining = limit - len(results)
+                if remaining <= 0:
+                    break
 
+        logger.info(f"Found {len(results)} incident summaries")
+        return results
     except Exception as e:
         logger.error(f"Error in list_incidents tool: {str(e)}")
         raise e

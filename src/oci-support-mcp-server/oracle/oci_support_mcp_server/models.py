@@ -58,7 +58,7 @@ class Resource(BaseModel):
 class Ticket(BaseModel):
     ticket_number: Optional[str] = Field(None)
     severity: Optional[str] = Field(None)
-    resource_list: Optional[List[Resource]] = Field(None)
+    resource_list: Optional[List[dict]] = Field(None)  # dict instead of Resource for serialization safety
     title: Optional[str] = Field(None)
     description: Optional[str] = Field(None)
     time_created: Optional[int] = Field(None)
@@ -334,13 +334,22 @@ def map_item(oci_item) -> Item | None:
         if isinstance(oci_item, dict):
             return oci_item.get(field, default)
         return getattr(oci_item, field, default)
+    mapped_category = map_category(get("category"))
+    if mapped_category is not None and hasattr(mapped_category, "model_dump"):
+        mapped_category = mapped_category.model_dump(exclude_none=True)
+    mapped_sub_category = map_sub_category(get("sub_category"))
+    if mapped_sub_category is not None and hasattr(mapped_sub_category, "model_dump"):
+        mapped_sub_category = mapped_sub_category.model_dump(exclude_none=True)
+    mapped_issue_type = map_issue_type(get("issue_type"))
+    if mapped_issue_type is not None and hasattr(mapped_issue_type, "model_dump"):
+        mapped_issue_type = mapped_issue_type.model_dump(exclude_none=True)
     return Item(
         item_key=get("item_key"),
         name=get("name"),
         type=get("type"),
-        category=map_category(get("category")),
-        sub_category=map_sub_category(get("sub_category")),
-        issue_type=map_issue_type(get("issue_type")),
+        category=mapped_category,
+        sub_category=mapped_sub_category,
+        issue_type=mapped_issue_type,
     )
 
 def map_resource(oci_resource) -> Resource | None:
@@ -350,8 +359,11 @@ def map_resource(oci_resource) -> Resource | None:
         if isinstance(oci_resource, dict):
             return oci_resource.get(field, default)
         return getattr(oci_resource, field, default)
+    mapped_item = map_item(get("item"))
+    if mapped_item is not None and hasattr(mapped_item, "model_dump"):
+        mapped_item = mapped_item.model_dump(exclude_none=True)
     return Resource(
-        item=map_item(get("item")),
+        item=mapped_item,
         region=get("region"),
     )
 
@@ -362,10 +374,18 @@ def map_ticket(oci_ticket) -> Ticket | None:
         if isinstance(oci_ticket, dict):
             return oci_ticket.get(field, default)
         return getattr(oci_ticket, field, default)
+    resource_list = []
+    for r in get("resource_list") or []:
+        mapped = map_resource(r)
+        if mapped is not None:
+            # Ensure mapped is dict for serialization
+            if hasattr(mapped, "model_dump"):
+                mapped = mapped.model_dump(exclude_none=True)
+        resource_list.append(mapped)
     return Ticket(
         ticket_number=get("ticket_number"),
         severity=get("severity"),
-        resource_list=[map_resource(r) for r in (get("resource_list") or [])],
+        resource_list=resource_list if resource_list else None,
         title=get("title"),
         description=get("description"),
         time_created=get("time_created"),

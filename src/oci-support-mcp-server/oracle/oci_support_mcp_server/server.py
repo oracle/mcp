@@ -195,72 +195,110 @@ def list_incidents(
 
 
 @mcp.tool(
-    description="Get a support incident from OCI CIMS by key. Returns mapped Incident Pydantic model."
+    description="Get the specified support incident from OCI CIMS. Returns mapped Incident Pydantic model."
 )
 def get_incident(
-    csi: str = Field(
+    incident_key: str = Field(
         ...,
-        description="The Oracle Cloud Identifier (CSI) associated with the support account used to interact with Oracle Support.",
-        min_length=1,
+        description="Unique identifier for the support request."
     ),
     compartment_id: str = Field(
         ...,
-        description="The OCID of the tenancy. Use the tenancy OCID here.",
-        min_length=1,
+        description="The OCID of the tenancy."
     ),
-    ocid: str = Field(
-        ...,
-        description="User OCID for Oracle Identity Cloud Service (IDCS) users who also have a federated Oracle Cloud Infrastructure account. Required for OCI users.",
-        min_length=1,
+    opc_request_id: Optional[str] = Field(
+        None,
+        description="Unique Oracle-assigned identifier for the request. Provide this if needing to contact Oracle about a particular request."
     ),
-    incident_key: str = Field(
-        ...,
-        description="The unique key or ticket number identifying the incident.",
-        min_length=1,
+    csi: Optional[str] = Field(
+        None,
+        description="The Customer Support Identifier (CSI) number associated with the support account."
+    ),
+    ocid: Optional[str] = Field(
+        None,
+        description="User OCID for Oracle Identity Cloud Service (IDCS) users who also have a federated OCI account. Required for OCI users, optional for Multicloud."
+    ),
+    homeregion: Optional[str] = Field(
+        None,
+        description="The region of the tenancy."
     ),
     problemtype: Optional[str] = Field(
         None,
         description="A filter to return only resources that match the specified problem type. Accepts values such as 'LIMIT', 'TECH', or 'ACCOUNT'."
     ),
-    opc_request_id: Optional[str] = Field(
+    bearertokentype: Optional[str] = Field(
         None,
-        description="The OPC request ID for tracing from the client. Optional."
+        description="Token type that determines which cloud provider the request comes from."
+    ),
+    bearertoken: Optional[str] = Field(
+        None,
+        description="Token provided by multi cloud provider, which helps to validate the email."
+    ),
+    idtoken: Optional[str] = Field(
+        None,
+        description="IdToken provided by multi cloud provider, which helps to validate the email."
+    ),
+    domainid: Optional[str] = Field(
+        None,
+        description="The OCID of identity domain. DomainID is mandatory if the user is part of Non Default Identity domain."
+    ),
+    allow_control_chars: Optional[bool] = Field(
+        None,
+        description="Set to True to allow control characters in the response object."
+    ),
+    retry_strategy: Optional[str] = Field(
+        None,
+        description="Retry strategy for this operation. Allowed values: 'default', 'none'. If not provided, uses SDK default. (Advanced/experimental.)"
     )
 ) -> Incident:
     """
-    Retrieves a specific support incident from OCI CIMS using the incident key, mapped to the Incident Pydantic model.
-    Optionally filter by problem_type (e.g., 'LIMIT', 'TECH', or 'ACCOUNT').
+    Gets a support request from OCI CIMS by incident_key. Returns mapped Incident Pydantic model.
     """
     logger.info(f"Calling OCI CIMS IncidentClient.get_incident for key {incident_key}")
     try:
         client = get_cims_client()
         kwargs = {
-            "csi": csi,
-            "compartment_id": compartment_id,
-            "ocid": ocid,
             "incident_key": incident_key,
+            "compartment_id": compartment_id,
         }
-        if problemtype:
-            kwargs["problemtype"] = problemtype
-        if opc_request_id:
+        if opc_request_id is not None:
             kwargs["opc_request_id"] = opc_request_id
+        if csi is not None:
+            kwargs["csi"] = csi
+        if ocid is not None:
+            kwargs["ocid"] = ocid
+        if homeregion is not None:
+            kwargs["homeregion"] = homeregion
+        if problemtype is not None:
+            kwargs["problemtype"] = problemtype
+        if bearertokentype is not None:
+            kwargs["bearertokentype"] = bearertokentype
+        if bearertoken is not None:
+            kwargs["bearertoken"] = bearertoken
+        if idtoken is not None:
+            kwargs["idtoken"] = idtoken
+        if domainid is not None:
+            kwargs["domainid"] = domainid
+        if allow_control_chars is not None:
+            kwargs["allow_control_chars"] = allow_control_chars
+
+        if retry_strategy is not None:
+            import oci.retry
+            if retry_strategy == "default":
+                kwargs["retry_strategy"] = oci.retry.DEFAULT_RETRY_STRATEGY
+            elif retry_strategy == "none":
+                kwargs["retry_strategy"] = oci.retry.NoneRetryStrategy
 
         response = client.get_incident(**kwargs)
         incident_data = getattr(response, "data", None)
         mapped = map_incident(incident_data)
         if mapped is None:
-            return None
-        val = mapped.model_dump() if hasattr(mapped, "model_dump") else dict(mapped)
-        ticket_val = val.get("ticket")
-        if ticket_val is not None and not isinstance(ticket_val, str):
-            if isinstance(ticket_val, dict):
-                val["ticket"] = ticket_val.get("key") or ticket_val.get("summary") or str(ticket_val)
-            else:
-                val["ticket"] = str(ticket_val)
-        return val
+            return Incident()
+        return mapped
     except Exception as e:
         logger.error(f"Error in get_incident tool: {str(e)}")
         raise e
+
 
 def main():
     host = os.getenv("ORACLE_MCP_HOST")

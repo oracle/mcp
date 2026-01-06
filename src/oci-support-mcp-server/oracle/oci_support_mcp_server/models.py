@@ -67,10 +67,6 @@ class Ticket(BaseModel):
     lifecycle_details: Optional[str] = Field(None)
 
 
-class Impact(BaseModel):
-    type: Optional[str] = Field(None)
-    description: Optional[str] = Field(None)
-
 class User(BaseModel):
     name: Optional[str] = Field(None)
     email: Optional[str] = Field(None)
@@ -82,28 +78,6 @@ class Context(BaseModel):
     description: Optional[str] = Field(None)
     additional_details: Optional[dict] = Field(None)
 
-class Incident(BaseModel):
-    key: Optional[str] = Field(None)
-    compartment_id: Optional[str] = Field(None)
-    ticket_number: Optional[str] = Field(None)
-    incident_type: Optional[IncidentType] = Field(None)
-    severity: Optional[str] = Field(None)
-    status: Optional[str] = Field(None)
-    lifecycle_state: Optional[str] = Field(None)
-    resource: Optional[Resource] = Field(None)
-    resources: Optional[List[Resource]] = Field(None)
-    time_created: Optional[datetime] = Field(None)
-    time_updated: Optional[datetime] = Field(None)
-    referrer: Optional[str] = Field(None)
-    tenancy_id: Optional[str] = Field(None)
-    contact_list: Optional[List[Contact]] = Field(None)
-    ticket: Optional[str] = Field(None)
-    description: Optional[str] = Field(None)
-    impact: Optional[Impact] = Field(None)
-    context: Optional[Context] = Field(None)
-    user: Optional[User] = Field(None)
-    department: Optional[str] = Field(None)
-    problem_type: Optional[str] = Field(None)
 
 class TenancyInformation(BaseModel):
     customer_support_key: Optional[str] = Field(None)
@@ -160,15 +134,26 @@ class IncidentSummary(BaseModel):
     is_write_permitted: Optional[bool] = Field(None)
     warn_message: Optional[str] = Field(None)
     problem_type: Optional[str] = Field(None)
+
+class Incident(BaseModel):
+    key: Optional[str] = Field(None)
+    compartment_id: Optional[str] = Field(None)
+    contact_list: Optional[ContactList] = Field(None)
+    tenancy_information: Optional[TenancyInformation] = Field(None)
+    ticket: Optional[Ticket] = Field(None)
+    incident_type: Optional[IncidentType] = Field(None)
+    migrated_sr_number: Optional[str] = Field(None)
+    user_group_id: Optional[str] = Field(None)
+    user_group_name: Optional[str] = Field(None)
+    primary_contact_party_id: Optional[str] = Field(None)
+    primary_contact_party_name: Optional[str] = Field(None)
+    is_write_permitted: Optional[bool] = Field(None)
+    warn_message: Optional[str] = Field(None)
+    problem_type: Optional[str] = Field(None)
+    referrer: Optional[str] = Field(None)
+
 # --- Mapping Utilities ---
 
-def map_impact(oci_impact) -> Impact | None:
-    if not oci_impact:
-        return None
-    return Impact(
-        type=getattr(oci_impact, "type", None),
-        description=getattr(oci_impact, "description", None),
-    )
 
 def map_user(oci_user) -> User | None:
     if not oci_user:
@@ -187,39 +172,6 @@ def map_context(oci_context) -> Context | None:
         context_type=getattr(oci_context, "context_type", None),
         description=getattr(oci_context, "description", None),
         additional_details=getattr(oci_context, "additional_details", None),
-    )
-
-def map_incident(oci_incident) -> Incident | None:
-    if not oci_incident:
-        return None
-
-    def get(field, default=None):
-        if isinstance(oci_incident, dict):
-            return oci_incident.get(field, default)
-        return getattr(oci_incident, field, default)
-
-    return Incident(
-        key=get("key"),
-        compartment_id=get("compartment_id"),
-        ticket_number=get("ticket_number"),
-        incident_type=map_incident_type(get("incident_type")),
-        severity=get("severity"),
-        status=get("status"),
-        lifecycle_state=get("lifecycle_state"),
-        resource=map_resource(get("resource")),
-        resources=[map_resource(r) for r in (get("resources") or [])] if get("resources") else None,
-        time_created=get("time_created"),
-        time_updated=get("time_updated"),
-        referrer=get("referrer"),
-        tenancy_id=get("tenancy_id"),
-        contact_list=[map_contact(c) for c in (get("contact_list") or [])] if get("contact_list") else None,
-        ticket=map_ticket(get("ticket")),
-        description=get("description"),
-        impact=map_impact(get("impact")),
-        context=map_context(get("context")),
-        user=map_user(get("user")),
-        department=get("department"),
-        problem_type=get("problem_type"),
     )
 
 def map_contact(oci_contact) -> Contact | None:
@@ -418,4 +370,31 @@ def map_incident_summary(oci_incident_summary) -> IncidentSummary | None:
         is_write_permitted=get("is_write_permitted"),
         warn_message=get("warn_message"),
         problem_type=get("problem_type"),
+    )
+
+def map_incident(oci_incident) -> Incident | None:
+    if not oci_incident:
+        return None
+
+    def get(field, default=None):
+        if isinstance(oci_incident, dict):
+            return oci_incident.get(field, default)
+        return getattr(oci_incident, field, default)
+
+    return Incident(
+        key=get("key"),
+        compartment_id=get("compartment_id"),
+        contact_list=map_contact_list(get("contact_list")),
+        tenancy_information=map_tenancy_information(get("tenancy_information")),
+        ticket=map_ticket(get("ticket")),
+        incident_type=map_incident_type(get("incident_type")),
+        migrated_sr_number=get("migrated_sr_number"),
+        user_group_id=get("user_group_id"),
+        user_group_name=get("user_group_name"),
+        primary_contact_party_id=get("primary_contact_party_id"),
+        primary_contact_party_name=get("primary_contact_party_name"),
+        is_write_permitted=get("is_write_permitted"),
+        warn_message=get("warn_message"),
+        problem_type=get("problem_type"),
+        referrer=get("referrer"),
     )

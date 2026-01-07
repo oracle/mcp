@@ -152,9 +152,135 @@ class Incident(BaseModel):
     problem_type: Optional[str] = Field(None)
     referrer: Optional[str] = Field(None)
 
+class ContextualData(BaseModel):
+    client_id: Optional[str] = Field(None)
+    schema_name: Optional[str] = Field(None)
+    schema_version: Optional[str] = Field(None)
+    payload: Optional[str] = Field(None)
+
+class CreateCategoryDetails(BaseModel):
+    category_key: Optional[str] = Field(None)
+
+class CreateSubCategoryDetails(BaseModel):
+    sub_category_key: Optional[str] = Field(None)
+
+class CreateIssueTypeDetails(BaseModel):
+    issue_type_key: Optional[str] = Field(None)
+
+class CreateItemDetails(BaseModel):
+    type: Optional[str] = Field(None)
+    category: Optional[CreateCategoryDetails] = Field(None)
+    sub_category: Optional[CreateSubCategoryDetails] = Field(None)
+    issue_type: Optional[CreateIssueTypeDetails] = Field(None)
+    name: Optional[str] = Field(None)
+
+class CreateResourceDetails(BaseModel):
+    item: Optional[CreateItemDetails] = Field(None)
+    region: Optional[str] = Field(None)
+
+class CreateTicketDetails(BaseModel):
+    severity: Optional[str] = Field(None)
+    resource_list: Optional[List[CreateResourceDetails]] = Field(None)
+    title: Optional[str] = Field(None)
+    description: Optional[str] = Field(None)
+    contextual_data: Optional[ContextualData] = Field(None)
+
+class CreateIncident(BaseModel):
+    compartment_id: Optional[str] = Field(None)
+    ticket: Optional[CreateTicketDetails] = Field(None)
+    csi: Optional[str] = Field(None)
+    user_group_id: Optional[str] = Field(None)
+    problem_type: Optional[str] = Field(None)
+    contacts: Optional[List[Contact]] = Field(None)
+    referrer: Optional[str] = Field(None)
+
+
+
+# --- Conversion to OCI SDK Model Utilities ---
+
+def to_oci_create_category_details(p):
+    if p is None:
+        return None
+    import oci.cims.models
+    return oci.cims.models.CreateCategoryDetails(category_key=p.category_key)
+
+def to_oci_create_sub_category_details(p):
+    if p is None:
+        return None
+    import oci.cims.models
+    return oci.cims.models.CreateSubCategoryDetails(sub_category_key=p.sub_category_key)
+
+def to_oci_create_issue_type_details(p):
+    if p is None:
+        return None
+    import oci.cims.models
+    return oci.cims.models.CreateIssueTypeDetails(issue_type_key=p.issue_type_key)
+
+def to_oci_create_item_details(p):
+    if p is None:
+        return None
+    import oci.cims.models
+    return oci.cims.models.CreateItemDetails(
+        type=p.type,
+        category=to_oci_create_category_details(p.category) if hasattr(p, "category") else None,
+        sub_category=to_oci_create_sub_category_details(p.sub_category) if hasattr(p, "sub_category") else None,
+        issue_type=to_oci_create_issue_type_details(p.issue_type) if hasattr(p, "issue_type") else None,
+        name=p.name
+    )
+
+def to_oci_create_resource_details(p):
+    if p is None:
+        return None
+    import oci.cims.models
+    return oci.cims.models.CreateResourceDetails(
+        item=to_oci_create_item_details(p.item) if hasattr(p, "item") else None,
+        region=p.region
+    )
+
+def to_oci_contextual_data(p):
+    if p is None:
+        return None
+    import oci.cims.models
+    return oci.cims.models.ContextualData(
+        client_id=p.client_id,
+        schema_name=p.schema_name,
+        schema_version=p.schema_version,
+        payload=p.payload
+    )
+
+def to_oci_create_ticket_details(p):
+    if p is None:
+        return None
+    import oci.cims.models
+    resource_list = [
+        to_oci_create_resource_details(r)
+        for r in (p.resource_list or [])
+    ] if p.resource_list else None
+    contextual_data = to_oci_contextual_data(p.contextual_data) if p.contextual_data else None
+    return oci.cims.models.CreateTicketDetails(
+        severity=p.severity,
+        resource_list=resource_list,
+        title=p.title,
+        description=p.description,
+        contextual_data=contextual_data
+    )
+
+def to_oci_create_incident(p):
+    if p is None:
+        return None
+    import oci.cims.models
+    ticket = to_oci_create_ticket_details(p.ticket) if p.ticket else None
+    return oci.cims.models.CreateIncident(
+        compartment_id=p.compartment_id,
+        ticket=ticket,
+        csi=p.csi,
+        user_group_id=p.user_group_id,
+        problem_type=p.problem_type,
+        contacts=[c.model_dump(exclude_none=True) for c in (p.contacts or [])] if getattr(p, "contacts", None) else None,
+        referrer=p.referrer
+    )
+
 # --- Mapping Utilities ---
-
-
 def map_user(oci_user) -> User | None:
     if not oci_user:
         return None
@@ -370,6 +496,113 @@ def map_incident_summary(oci_incident_summary) -> IncidentSummary | None:
         is_write_permitted=get("is_write_permitted"),
         warn_message=get("warn_message"),
         problem_type=get("problem_type"),
+    )
+def map_contextual_data(oci_ctx) -> ContextualData | None:
+    if not oci_ctx:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_ctx, dict):
+            return oci_ctx.get(field, default)
+        return getattr(oci_ctx, field, default)
+    return ContextualData(
+        client_id=get("client_id"),
+        schema_name=get("schema_name"),
+        schema_version=get("schema_version"),
+        payload=get("payload"),
+    )
+
+def map_create_category_details(oci_cat) -> CreateCategoryDetails | None:
+    if not oci_cat:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_cat, dict):
+            return oci_cat.get(field, default)
+        return getattr(oci_cat, field, default)
+    return CreateCategoryDetails(
+        category_key=get("category_key"),
+    )
+
+def map_create_sub_category_details(oci_subcat) -> CreateSubCategoryDetails | None:
+    if not oci_subcat:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_subcat, dict):
+            return oci_subcat.get(field, default)
+        return getattr(oci_subcat, field, default)
+    return CreateSubCategoryDetails(
+        sub_category_key=get("sub_category_key"),
+    )
+
+def map_create_issue_type_details(oci_iss) -> CreateIssueTypeDetails | None:
+    if not oci_iss:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_iss, dict):
+            return oci_iss.get(field, default)
+        return getattr(oci_iss, field, default)
+    return CreateIssueTypeDetails(
+        issue_type_key=get("issue_type_key"),
+    )
+
+def map_create_item_details(oci_item) -> CreateItemDetails | None:
+    if not oci_item:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_item, dict):
+            return oci_item.get(field, default)
+        return getattr(oci_item, field, default)
+    return CreateItemDetails(
+        type=get("type"),
+        category=map_create_category_details(get("category")),
+        sub_category=map_create_sub_category_details(get("sub_category")),
+        issue_type=map_create_issue_type_details(get("issue_type")),
+        name=get("name"),
+    )
+
+def map_create_resource_details(oci_crd) -> CreateResourceDetails | None:
+    if not oci_crd:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_crd, dict):
+            return oci_crd.get(field, default)
+        return getattr(oci_crd, field, default)
+    return CreateResourceDetails(
+        item=map_create_item_details(get("item")),
+        region=get("region"),
+    )
+
+def map_create_ticket_details(oci_ticket) -> CreateTicketDetails | None:
+    if not oci_ticket:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_ticket, dict):
+            return oci_ticket.get(field, default)
+        return getattr(oci_ticket, field, default)
+    return CreateTicketDetails(
+        severity=get("severity"),
+        resource_list=[
+            map_create_resource_details(r) for r in (get("resource_list") or [])
+        ] if get("resource_list") else None,
+        title=get("title"),
+        description=get("description"),
+        contextual_data=map_contextual_data(get("contextual_data")),
+    )
+
+def map_create_incident(oci_incident) -> CreateIncident | None:
+    if not oci_incident:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_incident, dict):
+            return oci_incident.get(field, default)
+        return getattr(oci_incident, field, default)
+    return CreateIncident(
+        compartment_id=get("compartment_id"),
+        ticket=map_create_ticket_details(get("ticket")),
+        csi=get("csi"),
+        user_group_id=get("user_group_id"),
+        problem_type=get("problem_type"),
+        contacts=[map_contact(c) for c in get("contacts") or []] if get("contacts") else None,
+        referrer=get("referrer"),
     )
 
 def map_incident(oci_incident) -> Incident | None:

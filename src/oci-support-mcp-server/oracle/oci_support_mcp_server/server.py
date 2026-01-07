@@ -15,6 +15,7 @@ from oracle.oci_support_mcp_server.models import (
     map_incident_summary,
     Incident,
     map_incident,
+    CreateIncident,
 )
 from pydantic import Field
 
@@ -299,6 +300,95 @@ def get_incident(
         logger.error(f"Error in get_incident tool: {str(e)}")
         raise e
 
+
+@mcp.tool(
+    description="Create a support incident (OCI CIMS) with given incident details. Returns mapped Incident Pydantic model."
+)
+def create_incident(
+    create_incident_details: CreateIncident = Field(
+        ...,
+        description="Incident information to create request. Pydantic model matching oci.cims.models.CreateIncident."
+    ),
+    opc_request_id: Optional[str] = Field(
+        None,
+        description="Unique Oracle-assigned identifier for the request."
+    ),
+    ocid: Optional[str] = Field(
+        None,
+        description="User OCID for Oracle Identity Cloud Service (IDCS) users who also have a federated Oracle Cloud Infrastructure account. Mandatory for OCI users, optional for Multicloud users."
+    ),
+    homeregion: Optional[str] = Field(
+        None,
+        description="The region of the tenancy."
+    ),
+    bearertokentype: Optional[str] = Field(
+        None,
+        description="Token type that determines which cloud provider the request comes from."
+    ),
+    bearertoken: Optional[str] = Field(
+        None,
+        description="Token provided by multi cloud provider, which helps to validate the email."
+    ),
+    idtoken: Optional[str] = Field(
+        None,
+        description="IdToken provided by multi cloud provider, which helps to validate the email."
+    ),
+    domainid: Optional[str] = Field(
+        None,
+        description="The OCID of identity domain. Mandatory if the user is part of Non Default Identity domain."
+    ),
+    allow_control_chars: Optional[bool] = Field(
+        None,
+        description="Set to True to allow control characters in the response object."
+    ),
+    retry_strategy: Optional[str] = Field(
+        None,
+        description="Retry strategy for this operation. Allowed values: 'default', 'none'. If not provided, uses SDK default. (Advanced/experimental.)"
+    )
+) -> Incident:
+    """
+    Create a support incident in OCI CIMS. Receives a CreateIncident Pydantic model, converts to OCI SDK model, and maps the Incident SDK response to API Pydantic.
+    """
+    logger.info("Calling OCI CIMS IncidentClient.create_incident")
+    try:
+        client = get_cims_client()
+        # Use recursive converter for SDK CreateIncident object
+        from oracle.oci_support_mcp_server.models import to_oci_create_incident
+        sdk_create_incident = to_oci_create_incident(create_incident_details)
+        kwargs = {"create_incident_details": sdk_create_incident}
+        if opc_request_id is not None:
+            kwargs["opc_request_id"] = opc_request_id
+        if ocid is not None:
+            kwargs["ocid"] = ocid
+        if homeregion is not None:
+            kwargs["homeregion"] = homeregion
+        if bearertokentype is not None:
+            kwargs["bearertokentype"] = bearertokentype
+        if bearertoken is not None:
+            kwargs["bearertoken"] = bearertoken
+        if idtoken is not None:
+            kwargs["idtoken"] = idtoken
+        if domainid is not None:
+            kwargs["domainid"] = domainid
+        if allow_control_chars is not None:
+            kwargs["allow_control_chars"] = allow_control_chars
+
+        if retry_strategy is not None:
+            import oci.retry
+            if retry_strategy == "default":
+                kwargs["retry_strategy"] = oci.retry.DEFAULT_RETRY_STRATEGY
+            elif retry_strategy == "none":
+                kwargs["retry_strategy"] = oci.retry.NoneRetryStrategy
+
+        response = client.create_incident(**kwargs)
+        incident_data = getattr(response, "data", None)
+        mapped = map_incident(incident_data)
+        if mapped is None:
+            return Incident()
+        return mapped
+    except Exception as e:
+        logger.error(f"Error in create_incident tool: {str(e)}")
+        raise e
 
 def main():
     host = os.getenv("ORACLE_MCP_HOST")

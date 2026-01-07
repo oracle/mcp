@@ -631,3 +631,79 @@ def map_incident(oci_incident) -> Incident | None:
         problem_type=get("problem_type"),
         referrer=get("referrer"),
     )
+
+def map_incident_resource_type(oci_resource_type) -> IncidentResourceType | None:
+    if not oci_resource_type:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_resource_type, dict):
+            return oci_resource_type.get(field, default)
+        return getattr(oci_resource_type, field, default)
+    return IncidentResourceType(
+        resource_type_key=get("resource_type_key"),
+        name=get("name"),
+        label=get("label"),
+        description=get("description"),
+        is_subscriptions_supported=get("is_subscriptions_supported"),
+        service_category_list=[map_service_category(sc) for sc in (get("service_category_list") or [])] if get("service_category_list") else None,
+        service=get("service"),
+        services=[map_services(s) for s in (get("services") or [])] if get("services") else None,
+    )
+
+def map_service_category(oci_service_category) -> ServiceCategory | None:
+    if not oci_service_category:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_service_category, dict):
+            return oci_service_category.get(field, default)
+        return getattr(oci_service_category, field, default)
+    return ServiceCategory(
+        key=get("key"),
+        name=get("name"),
+        label=get("label"),
+        description=get("description"),
+        issue_type_list=[map_issue_type(it) for it in (get("issue_type_list") or [])] if get("issue_type_list") else None,
+        supported_subscriptions=get("supported_subscriptions"),
+        scope=get("scope"),
+        unit=get("unit"),
+        limit_id=get("limit_id"),
+    )
+
+def map_services(oci_services) -> Services | None:
+    if not oci_services:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_services, dict):
+            return oci_services.get(field, default)
+        return getattr(oci_services, field, default)
+    return Services(
+        service=get("service"),
+        schema=get("schema"),
+        service_categories=[map_sub_categories(sc) for sc in (get("service_categories") or [])] if get("service_categories") else None
+    )
+
+def map_sub_categories(oci_sub_categories) -> SubCategories | None:
+    if not oci_sub_categories:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_sub_categories, dict):
+            return oci_sub_categories.get(field, default)
+        return getattr(oci_sub_categories, field, default)
+    return SubCategories(
+        service_category=get("service_category"),
+        schema=get("schema"),
+        has_sub_category=get("has_sub_category"),
+        sub_categories=[map_sub_components(sc) for sc in (get("sub_categories") or [])] if get("sub_categories") else None
+    )
+
+def map_sub_components(oci_sub_components) -> SubComponents | None:
+    if not oci_sub_components:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_sub_components, dict):
+            return oci_sub_components.get(field, default)
+        return getattr(oci_sub_components, field, default)
+    return SubComponents(
+        sub_category=get("sub_category"),
+        schema=get("schema"),
+    )

@@ -16,6 +16,8 @@ from oracle.oci_support_mcp_server.models import (
     Incident,
     map_incident,
     CreateIncident,
+    IncidentResourceType,
+    map_incident_resource_type,
 )
 from pydantic import Field
 
@@ -397,6 +399,117 @@ def main():
         mcp.run(transport="http", host=host, port=int(port))
     else:
         mcp.run()
+
+
+@mcp.tool(
+    description="Lists available incident resource types (products/services/service-categories) for OCI support requests using the OCI CIMS API. Returns mapped IncidentResourceType models."
+)
+def list_incident_resource_types(
+    problem_type: str = Field(
+        ...,
+        description="The kind of support request."
+    ),
+    compartment_id: str = Field(
+        ...,
+        description="The OCID of the tenancy."
+    ),
+    opc_request_id: Optional[str] = Field(
+        None,
+        description="Unique Oracle-assigned identifier for the request. If you need to contact Oracle about a particular request, provide this ID."
+    ),
+    limit: Optional[int] = Field(
+        None,
+        description="For list pagination. The maximum number of results per page, or items to return in a paginated List call."
+    ),
+    page: Optional[str] = Field(
+        None,
+        description="For list pagination. The value of the 'opc-next-page' response header from the previous List call."
+    ),
+    sort_by: Optional[str] = Field(
+        None,
+        description="The key to use to sort the returned items. Allowed values: 'dateUpdated', 'severity'."
+    ),
+    sort_order: Optional[str] = Field(
+        None,
+        description="The order to sort the results in. Allowed values: 'ASC', 'DESC'."
+    ),
+    name: Optional[str] = Field(
+        None,
+        description="The user-friendly name of the support request type."
+    ),
+    csi: Optional[str] = Field(
+        None,
+        description="The Customer Support Identifier (CSI) number associated with the support account."
+    ),
+    ocid: Optional[str] = Field(
+        None,
+        description="User OCID for Oracle Identity Cloud Service (IDCS) users who also have a federated Oracle Cloud Infrastructure account."
+    ),
+    homeregion: Optional[str] = Field(
+        None,
+        description="The region of the tenancy."
+    ),
+    domainid: Optional[str] = Field(
+        None,
+        description="The OCID of identity domain. DomainID is mandatory if the user is part of Non Default Identity domain."
+    ),
+    allow_control_chars: Optional[bool] = Field(
+        None,
+        description="Set to True to allow control characters in the response object."
+    ),
+    retry_strategy: Optional[str] = Field(
+        None,
+        description="Retry strategy for this operation. Allowed values: 'default', 'none'. If not provided, uses SDK default."
+    )
+) -> List[IncidentResourceType]:
+    """
+    Lists available incident resource types (products/services/service-categories) for OCI support requests.
+    Returns a list of mapped IncidentResourceType Pydantic models.
+    """
+    logger.info("Calling OCI CIMS IncidentClient.list_incident_resource_types")
+    try:
+        client = get_cims_client()
+        kwargs = {
+            "problem_type": problem_type,
+            "compartment_id": compartment_id,
+        }
+        if opc_request_id is not None:
+            kwargs["opc_request_id"] = opc_request_id
+        if limit is not None:
+            kwargs["limit"] = limit
+        if page is not None:
+            kwargs["page"] = page
+        if sort_by is not None:
+            kwargs["sort_by"] = sort_by
+        if sort_order is not None:
+            kwargs["sort_order"] = sort_order
+        if name is not None:
+            kwargs["name"] = name
+        if csi is not None:
+            kwargs["csi"] = csi
+        if ocid is not None:
+            kwargs["ocid"] = ocid
+        if homeregion is not None:
+            kwargs["homeregion"] = homeregion
+        if domainid is not None:
+            kwargs["domainid"] = domainid
+        if allow_control_chars is not None:
+            kwargs["allow_control_chars"] = allow_control_chars
+        if retry_strategy is not None:
+            import oci.retry
+            if retry_strategy == "default":
+                kwargs["retry_strategy"] = oci.retry.DEFAULT_RETRY_STRATEGY
+            elif retry_strategy == "none":
+                kwargs["retry_strategy"] = oci.retry.NoneRetryStrategy
+
+        response = client.list_incident_resource_types(**kwargs)
+        data = getattr(response, "data", []) or []
+        mapped = [map_incident_resource_type(x) for x in data if x is not None]
+        logger.info(f"Found {len(mapped)} incident resource types")
+        return mapped
+    except Exception as e:
+        logger.error(f"Error in list_incident_resource_types tool: {str(e)}")
+        raise e
 
 
 if __name__ == "__main__":

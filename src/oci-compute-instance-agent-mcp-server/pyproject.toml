@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-compute-instance-agent-mcp-server"
-version = "2.1.0"
+version = "2.1.1"
 description = "OCI Compute Instance Agent MCP Server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -11,7 +11,7 @@ authors = [
 ]
 dependencies = [
     "oci==2.160.0",
-    "fastmcp==2.13.0",
+    "fastmcp==2.14.2",
 ]
 
 classifiers = [

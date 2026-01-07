@@ -1,3 +1,3 @@
 pydantic
-fastmcp
+fastmcp==2.14.2
 oci

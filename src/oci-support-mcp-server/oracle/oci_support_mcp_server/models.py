@@ -194,6 +194,14 @@ class CreateIncident(BaseModel):
     contacts: Optional[List[Contact]] = Field(None)
     referrer: Optional[str] = Field(None)
 
+class CmosUserGroupInfo(BaseModel):
+    user_group_id: Optional[str] = Field(None)
+    user_group_name: Optional[str] = Field(None)
+
+class ValidationResponse(BaseModel):
+    is_valid_user: Optional[bool] = Field(None)
+    write_permitted_user_group_infos: Optional[List[CmosUserGroupInfo]] = Field(None)
+
 
 
 # --- Conversion to OCI SDK Model Utilities ---
@@ -706,4 +714,30 @@ def map_sub_components(oci_sub_components) -> SubComponents | None:
     return SubComponents(
         sub_category=get("sub_category"),
         schema=get("schema"),
+    )
+
+def map_cmos_user_group_info(oci_user_group_info) -> CmosUserGroupInfo | None:
+    if not oci_user_group_info:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_user_group_info, dict):
+            return oci_user_group_info.get(field, default)
+        return getattr(oci_user_group_info, field, default)
+    return CmosUserGroupInfo(
+        user_group_id=get("user_group_id"),
+        user_group_name=get("user_group_name"),
+    )
+
+def map_validation_response(oci_validation_response) -> ValidationResponse | None:
+    if not oci_validation_response:
+        return None
+    def get(field, default=None):
+        if isinstance(oci_validation_response, dict):
+            return oci_validation_response.get(field, default)
+        return getattr(oci_validation_response, field, default)
+    user_groups = get("write_permitted_user_group_infos")
+    mapped_groups = [map_cmos_user_group_info(g) for g in (user_groups or [])] if user_groups else None
+    return ValidationResponse(
+        is_valid_user=get("is_valid_user"),
+        write_permitted_user_group_infos=mapped_groups
     )

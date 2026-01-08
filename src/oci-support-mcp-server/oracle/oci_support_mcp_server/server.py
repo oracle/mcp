@@ -5,11 +5,11 @@ https://oss.oracle.com/licenses/upl.
 """
 
 import os
-from logging import Logger
-from typing import Annotated, List, Optional
-
 import oci
+from logging import Logger
+from typing import List, Optional
 from fastmcp import FastMCP
+from pydantic import Field
 from oracle.oci_support_mcp_server.models import (
     IncidentSummary,
     map_incident_summary,
@@ -18,14 +18,14 @@ from oracle.oci_support_mcp_server.models import (
     CreateIncident,
     IncidentResourceType,
     map_incident_resource_type,
+    ValidationResponse,
+    map_validation_response, 
+
 )
-from pydantic import Field
 
 __project__ = "oracle.oci_support_mcp_server"
 __version__ = "0.1.0"
-
 logger = Logger(__name__, level="INFO")
-
 mcp = FastMCP(name=__project__)
 
 
@@ -392,15 +392,6 @@ def create_incident(
         logger.error(f"Error in create_incident tool: {str(e)}")
         raise e
 
-def main():
-    host = os.getenv("ORACLE_MCP_HOST")
-    port = os.getenv("ORACLE_MCP_PORT")
-    if host and port:
-        mcp.run(transport="http", host=host, port=int(port))
-    else:
-        mcp.run()
-
-
 @mcp.tool(
     description="Lists available incident resource types (products/services/service-categories) for OCI support requests using the OCI CIMS API. Returns mapped IncidentResourceType models."
 )
@@ -510,6 +501,98 @@ def list_incident_resource_types(
     except Exception as e:
         logger.error(f"Error in list_incident_resource_types tool: {str(e)}")
         raise e
+
+
+@mcp.tool(
+    description="Check whether the requested user is valid with OCI Support API (CIMS). Returns mapped ValidationResponse model."
+)
+def validate_user(
+    csi: Optional[str] = Field(
+        None, description="The Customer Support Identifier (CSI) number associated with the support account."
+    ),
+    opc_request_id: Optional[str] = Field(
+        None, description="Unique Oracle-assigned identifier for the request. If you need to contact Oracle about a particular request, please provide the request ID."
+    ),
+    problem_type: Optional[str] = Field(
+        None, description="The kind of support request. Allowed: LIMIT, LEGACY_LIMIT, TECH, ACCOUNT, TAXONOMY"
+    ),
+    ocid: Optional[str] = Field(
+        None, description="User OCID for Oracle Identity Cloud Service (IDCS) users who also have a federated Oracle Cloud Infrastructure account."
+    ),
+    homeregion: Optional[str] = Field(
+        None, description="The region of the tenancy."
+    ),
+    bearertokentype: Optional[str] = Field(
+        None, description="Token type that determines which cloud provider the request comes from."
+    ),
+    bearertoken: Optional[str] = Field(
+        None, description="Token provided by multi cloud provider, which helps to validate the email."
+    ),
+    idtoken: Optional[str] = Field(
+        None, description="IdToken provided by multi cloud provider, which helps to validate the email."
+    ),
+    domainid: Optional[str] = Field(
+        None, description="The OCID of identity domain. DomainID is mandatory if the user is part of Non Default Identity domain."
+    ),
+    allow_control_chars: Optional[bool] = Field(
+        None, description="Set to True to allow control characters in the response object."
+    ),
+    retry_strategy: Optional[str] = Field(
+        None, description="Retry strategy for this operation. Allowed values: 'default', 'none'. If not provided, uses SDK default."
+    )
+) -> ValidationResponse:
+    """
+    Checks whether the requested user is valid via OCI CIMS. Returns mapped ValidationResponse Pydantic model.
+    """
+    logger.info("Calling OCI CIMS IncidentClient.validate_user")
+    try:
+        client = get_cims_client()
+        kwargs = {}
+        if csi is not None:
+            kwargs["csi"] = csi
+        if opc_request_id is not None:
+            kwargs["opc_request_id"] = opc_request_id
+        if problem_type is not None:
+            kwargs["problem_type"] = problem_type
+        if ocid is not None:
+            kwargs["ocid"] = ocid
+        if homeregion is not None:
+            kwargs["homeregion"] = homeregion
+        if bearertokentype is not None:
+            kwargs["bearertokentype"] = bearertokentype
+        if bearertoken is not None:
+            kwargs["bearertoken"] = bearertoken
+        if idtoken is not None:
+            kwargs["idtoken"] = idtoken
+        if domainid is not None:
+            kwargs["domainid"] = domainid
+        if allow_control_chars is not None:
+            kwargs["allow_control_chars"] = allow_control_chars
+        if retry_strategy is not None:
+            import oci.retry
+            if retry_strategy == "default":
+                kwargs["retry_strategy"] = oci.retry.DEFAULT_RETRY_STRATEGY
+            elif retry_strategy == "none":
+                kwargs["retry_strategy"] = oci.retry.NoneRetryStrategy
+
+        response = client.validate_user(**kwargs)
+        data = getattr(response, "data", None)
+        mapped = map_validation_response(data)
+        if mapped is None:
+            return ValidationResponse()
+        return mapped
+    except Exception as e:
+        logger.error(f"Error in validate_user tool: {str(e)}")
+        raise e
+
+def main():
+    host = os.getenv("ORACLE_MCP_HOST")
+    port = os.getenv("ORACLE_MCP_PORT")
+    if host and port:
+        mcp.run(transport="http", host=host, port=int(port))
+    else:
+        mcp.run()
+
 
 
 if __name__ == "__main__":

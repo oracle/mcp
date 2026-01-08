@@ -1,7 +1,7 @@
 [project]
-name = "oracle.oci-identity-mcp-server"
-version = "2.1.1"
-description = "OCI Identity Service MCP server"
+name = "oracle.oci-database-mcp-server"
+version = "1.0.2"
+description = "OCI Database Service MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
 license = "UPL-1.0"
@@ -10,8 +10,10 @@ authors = [
     {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
 ]
 dependencies = [
-    "fastmcp==2.13.0",
+    "fastmcp==2.12.2",
     "oci==2.160.0",
+    "mcp>=1.0.0",
+    "pytest-cov>=7.0.0",
 ]
 
 classifiers = [
@@ -22,7 +24,7 @@ classifiers = [
 ]
 
 [project.scripts]
-"oracle.oci-identity-mcp-server" = "oracle.oci_identity_mcp_server.server:main"
+"oracle.oci-database-mcp-server" = "oracle.oci_database_mcp_server.server:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -35,17 +37,4 @@ packages = ["oracle"]
 dev = [
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
-    "pytest-cov>=7.0.0",
 ]
-
-[tool.coverage.run]
-omit = [
-    "**/__init__.py",
-    "**/tests/*",
-    "dist/*",
-    ".venv/*",
-]
-
-[tool.coverage.report]
-precision = 2
-fail_under = 58

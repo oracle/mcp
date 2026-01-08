@@ -111,7 +111,7 @@ class TestRecoveryDatabaseTools:
     @patch("oracle.oci_recovery_mcp_server.server._fetch_db_home_ids_for_compartment")
     @patch("oracle.oci_recovery_mcp_server.server.get_recovery_client")
     @patch("oracle.oci_recovery_mcp_server.server.get_database_client")
-    async def test_summarise_protected_database_backup_destination_dbrs_configured(
+    async def test_summarize_protected_database_backup_destination_dbrs_configured(
         self, mock_get_db_client, mock_get_rec_client, mock_fetch_homes
     ):
         mock_fetch_homes.return_value = ["home1"]
@@ -145,7 +145,7 @@ class TestRecoveryDatabaseTools:
 
         async with Client(mcp) as client:
             call = await client.call_tool(
-                "summarise_protected_database_backup_destination",
+                "summarize_protected_database_backup_destination",
                 {"compartment_id": "ocid1.compartment.oc1..comp"},
             )
             result = call.structured_content

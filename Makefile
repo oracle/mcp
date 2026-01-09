@@ -68,7 +68,7 @@ test:
 combine-coverage:
 	uv run coverage combine
 	uv run coverage html
-	uv run coverage report --fail-under=69
+	uv run coverage report --fail-under=77
 
 test-publish:
 	@for dir in $(SUBDIRS); do \
@@ -89,3 +89,7 @@ format:
 
 e2e-tests: build install
 	behave tests/e2e/features && cd ..
+
+generate-denylist:
+	cd scripts && python oci-api-denylist-generator.py
+	cp scripts/denylist src/oci-api-mcp-server/oracle/oci_api_mcp_server/denylist

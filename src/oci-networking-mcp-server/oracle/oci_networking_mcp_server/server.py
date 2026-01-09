@@ -92,7 +92,16 @@ def get_vcn(vcn_id: str) -> Vcn:
         raise
 
 
-@mcp.tool
+@mcp.tool(
+    description=(
+        "Deletes the specified VCN. WARNING: This action is destructive and cannot be undone. It will "
+        "permanently delete the VCN and all associated resources, including subnets, gateways, and network "
+        "attachments. The AI client must inform the user of this destructive nature and ask for explicit "
+        "confirmation before executing this tool. Do not attempt this operation without getting a "
+        "confirmation from the user."
+    ),
+    annotations={"destructiveHint": True},
+)
 def delete_vcn(vcn_id: str) -> Response:
     try:
         client = get_networking_client()

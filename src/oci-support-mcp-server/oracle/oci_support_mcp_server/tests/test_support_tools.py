@@ -5,17 +5,17 @@ https://oss.oracle.com/licenses/upl.
 """
 
 from unittest.mock import MagicMock, patch
+
 import pytest
 from fastmcp import Client
-from oracle.oci_support_mcp_server.server import mcp
-
 from oracle.oci_support_mcp_server.models import (
-    Incident,
-    IncidentSummary,
-    IncidentResourceType,
-    ValidationResponse,
     CreateIncident,
+    Incident,
+    IncidentResourceType,
+    IncidentSummary,
+    ValidationResponse,
 )
+from oracle.oci_support_mcp_server.server import mcp
 
 
 class TestSupportTools:

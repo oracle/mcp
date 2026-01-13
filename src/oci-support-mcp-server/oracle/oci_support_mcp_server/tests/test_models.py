@@ -3,8 +3,6 @@ Unit tests for oracle.oci_support_mcp_server.models mapping utilities and Pydant
 Designed to increase coverage of models.py (mappings and edge cases).
 """
 
-import pytest
-
 from oracle.oci_support_mcp_server import models
 
 

@@ -146,6 +146,37 @@ class TestFaaasTools:
             assert result["fusion_environment_id"] == "env1"
             assert result["status"] == "ACTIVE"
 
+    @pytest.mark.asyncio
+    @patch("oracle.oci_faaas_mcp_server.server.get_faaas_client")
+    async def test_list_service_attachments(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_list_response = create_autospec(oci.response.Response)
+        mock_list_response.data = [
+            {
+                "id": "integration1",
+                "display_name": "Oracle Digital Assistant",
+                "lifecycle_state": "ACTIVE",
+                "service_instance_type": "DIGITAL_ASSISTANT",
+            }
+        ]
+        mock_list_response.has_next_page = False
+        mock_list_response.next_page = None
+        mock_client.list_service_attachments.return_value = mock_list_response
+
+        async with Client(mcp) as client:
+            call_tool_result = await client.call_tool(
+                "list_service_attachments",
+                {
+                    "fusion_environment_id": "ocid123",
+                },
+            )
+            result = call_tool_result.structured_content["result"]
+
+            assert len(result) == 1
+            assert result[0]["id"] == "integration1"
+
     def test_get_faaas_client_initializes_client(self, tmp_path):
         # Prepare temp token file
         token_file = tmp_path / "token"

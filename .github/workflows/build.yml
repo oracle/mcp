@@ -75,7 +75,7 @@ jobs:
       - name: Get directories
         id: get-directories
         run: |
-          directories=$(ls src | grep -v dbtools-mcp-server | grep -v mysql-mcp-server | grep -v oci-pricing-mcp-server | grep -v oracle-db-doc-mcp-server | jq -R -s -c 'split("\n")[:-1]')
+          directories=$(ls src | grep -v dbtools-mcp-server | grep -v mysql-mcp-server | grep -v oci-pricing-mcp-server | grep -v oracle-db-doc-mcp-server | grep -v oracle-db-mcp-java-toolkit | jq -R -s -c 'split("\n")[:-1]')
           echo "directories=$directories" >> $GITHUB_OUTPUT
 
   combined-coverage:

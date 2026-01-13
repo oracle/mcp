@@ -15,7 +15,56 @@ from oracle.oci_identity_mcp_server.server import mcp
 class TestIdentityTools:
     @pytest.mark.asyncio
     @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
-    async def test_list_compartments(self, mock_get_client):
+    @patch("oracle.oci_identity_mcp_server.server.oci.config.from_file")
+    async def test_list_compartments(self, mock_config_from_file, mock_get_client):
+        mock_config_from_file.return_value = {"tenancy": "test_tenancy"}
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_list_response = create_autospec(oci.response.Response)
+        mock_get_response = create_autospec(oci.response.Response)
+        mock_list_response.data = [
+            oci.identity.models.Compartment(
+                id="compartment1",
+                compartment_id="compartment1",
+                name="Compartment 1",
+                description="Test compartment",
+                lifecycle_state="ACTIVE",
+                time_created="1970-01-01T00:00:00",
+            )
+        ]
+
+        mock_get_response.data = oci.identity.models.Compartment(
+            id="tenancy1",
+            compartment_id=None,
+            name="Root Compartment",
+            description="Test compartment (root)",
+            lifecycle_state="ACTIVE",
+            time_created="1970-01-01T00:00:00",
+        )
+        mock_list_response.has_next_page = False
+        mock_list_response.next_page = None
+        mock_client.list_compartments.return_value = mock_list_response
+        mock_client.get_compartment.return_value = mock_get_response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_compartments",
+                    {
+                        "compartment_id": "test_tenancy",
+                        "compartment_id_in_subtree": True,
+                    },
+                )
+            ).structured_content["result"]
+
+            assert len(result) == 2
+            assert result[0]["id"] == "compartment1"
+            assert result[1]["id"] == "tenancy1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
+    async def test_list_compartments_without_root(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -40,6 +89,8 @@ class TestIdentityTools:
                     "list_compartments",
                     {
                         "compartment_id": "test_tenancy",
+                        "compartment_id_in_subtree": True,
+                        "include_root": False,
                     },
                 )
             ).structured_content["result"]

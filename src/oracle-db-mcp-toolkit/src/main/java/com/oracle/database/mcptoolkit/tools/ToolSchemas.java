@@ -156,4 +156,45 @@ public class ToolSchemas {
       },
       "required": ["sql"]
     }""";
+
+  /**
+   * JSON schema for admin tools that take no input.
+   */
+  static final String NO_INPUT_SCHEMA = """
+      {
+        "type": "object",
+        "properties": {}
+      }
+      """;
+
+  /**
+   * JSON schema for editing or adding a dynamic tool in the YAML config.
+   * The operation is an upsert keyed by the tool name. Only provided fields are updated.
+   */
+  static final String EDIT_TOOL_SCHEMA = """
+      {
+        "type": "object",
+        "properties": {
+          "name":        { "type": "string", "description": "Tool name (YAML key). Required for upsert." },
+          "description": { "type": "string", "description": "Human-friendly description of the tool" },
+          "dataSource":  { "type": "string", "description": "Reference key from dataSources to use for this tool" },
+          "statement":   { "type": "string", "description": "SQL statement to execute (SELECT or DML)" },
+          "parameters":  {
+            "type": "array",
+            "description": "Optional parameter list for the tool",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name":        { "type": "string",  "description": "Parameter name" },
+                "type":        { "type": "string",  "description": "JSON schema type (e.g., string, number, integer, boolean)" },
+                "description": { "type": "string",  "description": "Parameter description" },
+                "required":    { "type": "boolean", "description": "Whether this parameter is required" }
+              },
+              "required": ["name", "type"]
+            }
+          }
+        },
+        "required": ["name"]
+      }
+      """;
 }

@@ -12,10 +12,7 @@ from typing import Annotated, List, Optional, Tuple
 import oci
 from fastmcp import Context, FastMCP
 from oci import Response
-from oci.monitoring.models import (
-    ListMetricsDetails,
-    SummarizeMetricsDataDetails,
-)
+from oci.monitoring.models import ListMetricsDetails, SummarizeMetricsDataDetails
 from oracle.oci_monitoring_mcp_server.alarm_models import (
     AlarmSummary,
     map_alarm_summary,

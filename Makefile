@@ -3,14 +3,15 @@ SUBDIRS := $(filter-out src/dbtools-mcp-server src/mysql-mcp-server src/oci-pric
 .PHONY: test format
 
 build:
-	@for dir in $(SUBDIRS); do \
+	@set -e -o pipefail; \
+	for dir in $(SUBDIRS); do \
 		if [ -f $$dir/pyproject.toml ]; then \
 			echo "Building $$dir"; \
-			name=$$(uv run tomlq -r '.project.name' $$dir/pyproject.toml); \
-			version=$$(uv run tomlq -r '.project.version' $$dir/pyproject.toml); \
+			name=$$(python -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['name'])"); \
+			version=$$(python -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['version'])"); \
 			if [ -d $$dir/oracle/*_mcp_server ]; then \
 				init_py_file=$$(echo $$dir/oracle/*_mcp_server/__init__.py); \
-				echo "\"\"\"\nCopyright (c) 2025, Oracle and/or its affiliates.\nLicensed under the Universal Permissive License v1.0 as shown at\nhttps://oss.oracle.com/licenses/upl.\n\"\"\"\n" > $$init_py_file; \
+				printf '"""\nCopyright (c) 2025, Oracle and/or its affiliates.\nLicensed under the Universal Permissive License v1.0 as shown at\nhttps://oss.oracle.com/licenses/upl.\n"""\n\n' > $$init_py_file; \
 				echo "__project__ = \"$$name\"" >> $$init_py_file; \
 				echo "__version__ = \"$$version\"" >> $$init_py_file; \
 			fi; \
@@ -54,7 +55,8 @@ lint:
 	uv tool run --from 'tox==4.30.2' tox -e lint
 
 test:
-	@for dir in $(SUBDIRS); do \
+	@set -e -o pipefail; \
+	for dir in $(SUBDIRS); do \
 		if [ -f $$dir/pyproject.toml ]; then \
 			echo "Testing $$dir"; \
 			cd $$dir && \
@@ -71,14 +73,16 @@ combine-coverage:
 	uv run coverage report --fail-under=69
 
 test-publish:
-	@for dir in $(SUBDIRS); do \
+	@set -e -o pipefail; \
+	for dir in $(SUBDIRS); do \
 		cd $$dir && \
 		uv publish --publish-url https://test.pypi.org/legacy/ --check-url=https://test.pypi.org/simple/ && \
 		cd ../..; \
 	done
 
 publish:
-	@for dir in $(SUBDIRS); do \
+	@set -e -o pipefail; \
+	for dir in $(SUBDIRS); do \
 		cd $$dir && \
 		uv publish --check-url=https://pypi.org/simple/ && \
 		cd ../..; \

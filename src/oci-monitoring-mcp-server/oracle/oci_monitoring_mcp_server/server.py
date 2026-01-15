@@ -37,7 +37,7 @@ def get_monitoring_client():
 
 
 @mcp.tool
-def get_compute_metrics(
+def get_monitoring_metrics(
     compartment_id: str,
     start_time: str,
     end_time: str,

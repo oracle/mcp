@@ -4,3 +4,11 @@
 # redundant but for clarity owner of this file
 CODEOWNERS @krisrice
 
+.github/ @krisrice @AlaaShaker @gebhardtr
+scripts/ @krisrice @AlaaShaker @gebhardtr
+src/oci-* @AlaaShaker @gebhardtr
+tests/ @krisrice @AlaaShaker @gebhardtr
+Makefile @krisrice @AlaaShaker @gebhardtr
+*.md @krisrice @AlaaShaker @gebhardtr
+*.txt @krisrice @AlaaShaker @gebhardtr
+*.ini @krisrice @AlaaShaker @gebhardtr

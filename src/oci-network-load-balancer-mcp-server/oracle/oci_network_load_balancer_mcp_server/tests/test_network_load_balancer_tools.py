@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, create_autospec, patch
 import oci
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 from oracle.oci_network_load_balancer_mcp_server.server import mcp
 
 
@@ -56,6 +57,53 @@ class TestNlbTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_list_nlbs_pagination(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        first = create_autospec(oci.response.Response)
+        first.data = oci.network_load_balancer.models.NetworkLoadBalancerCollection(
+            items=[
+                oci.network_load_balancer.models.NetworkLoadBalancerSummary(id="n1"),
+                oci.network_load_balancer.models.NetworkLoadBalancerSummary(id="n2"),
+            ]
+        )
+        first.has_next_page = True
+        first.next_page = "np1"
+
+        second = create_autospec(oci.response.Response)
+        second.data = oci.network_load_balancer.models.NetworkLoadBalancerCollection(
+            items=[oci.network_load_balancer.models.NetworkLoadBalancerSummary(id="n3")]
+        )
+        second.has_next_page = False
+        second.next_page = None
+
+        mock_client.list_network_load_balancers.side_effect = [first, second]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_network_load_balancers", {"compartment_id": "c1"}
+                )
+            ).structured_content["result"]
+
+        assert [n["id"] for n in result] == ["n1", "n2", "n3"]
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_list_nlbs_error(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_client.list_network_load_balancers.side_effect = Exception("boom")
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool(
+                    "list_network_load_balancers", {"compartment_id": "c1"}
+                )
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
     async def test_list_listeners(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -89,6 +137,59 @@ class TestNlbTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_list_listeners_pagination(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        first = create_autospec(oci.response.Response)
+        first.data = oci.network_load_balancer.models.ListenerCollection(
+            items=[
+                oci.network_load_balancer.models.ListenerSummary(name="listener1"),
+                oci.network_load_balancer.models.ListenerSummary(name="listener2"),
+            ]
+        )
+        first.has_next_page = True
+        first.next_page = "np1"
+
+        second = create_autospec(oci.response.Response)
+        second.data = oci.network_load_balancer.models.ListenerCollection(
+            items=[oci.network_load_balancer.models.ListenerSummary(name="listener3")]
+        )
+        second.has_next_page = False
+        second.next_page = None
+
+        mock_client.list_listeners.side_effect = [first, second]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_network_load_balancer_listeners",
+                    {"network_load_balancer_id": "nlb1"},
+                )
+            ).structured_content["result"]
+
+        assert [listener["name"] for listener in result] == [
+            "listener1",
+            "listener2",
+            "listener3",
+        ]
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_list_listeners_error(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_client.list_listeners.side_effect = Exception("fail list")
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool(
+                    "list_network_load_balancer_listeners",
+                    {"network_load_balancer_id": "n1"},
+                )
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
     async def test_list_backend_sets(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -119,6 +220,55 @@ class TestNlbTools:
 
             assert len(result) == 1
             assert result[0]["name"] == "Backend Set 1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_list_backend_sets_pagination(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        first = create_autospec(oci.response.Response)
+        first.data = oci.network_load_balancer.models.BackendSetCollection(
+            items=[
+                oci.network_load_balancer.models.BackendSetSummary(name="bs1"),
+                oci.network_load_balancer.models.BackendSetSummary(name="bs2"),
+            ]
+        )
+        first.has_next_page = True
+        first.next_page = "np1"
+
+        second = create_autospec(oci.response.Response)
+        second.data = oci.network_load_balancer.models.BackendSetCollection(
+            items=[oci.network_load_balancer.models.BackendSetSummary(name="bs3")]
+        )
+        second.has_next_page = False
+        second.next_page = None
+
+        mock_client.list_backend_sets.side_effect = [first, second]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_network_load_balancer_backend_sets",
+                    {"network_load_balancer_id": "nlb1"},
+                )
+            ).structured_content["result"]
+
+        assert [b["name"] for b in result] == ["bs1", "bs2", "bs3"]
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_list_backend_sets_error(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_client.list_backend_sets.side_effect = Exception("fail bs")
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool(
+                    "list_network_load_balancer_backend_sets",
+                    {"network_load_balancer_id": "nlb1"},
+                )
 
     @pytest.mark.asyncio
     @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
@@ -158,6 +308,204 @@ class TestNlbTools:
 
             assert len(result) == 1
             assert result[0]["name"] == "Backend 1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_list_backends_pagination(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        first = create_autospec(oci.response.Response)
+        first.data = oci.network_load_balancer.models.BackendCollection(
+            items=[
+                oci.network_load_balancer.models.BackendSummary(name="b1"),
+                oci.network_load_balancer.models.BackendSummary(name="b2"),
+            ]
+        )
+        first.has_next_page = True
+        first.next_page = "np1"
+
+        second = create_autospec(oci.response.Response)
+        second.data = oci.network_load_balancer.models.BackendCollection(
+            items=[oci.network_load_balancer.models.BackendSummary(name="b3")]
+        )
+        second.has_next_page = False
+        second.next_page = None
+
+        mock_client.list_backends.side_effect = [first, second]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_network_load_balancer_backends",
+                    {
+                        "network_load_balancer_id": "nlb1",
+                        "backend_set_name": "bs1",
+                    },
+                )
+            ).structured_content["result"]
+
+        assert [b["name"] for b in result] == ["b1", "b2", "b3"]
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_list_backends_error(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_client.list_backends.side_effect = Exception("fail backends")
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool(
+                    "list_network_load_balancer_backends",
+                    {
+                        "network_load_balancer_id": "nlb1",
+                        "backend_set_name": "bs1",
+                    },
+                )
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_get_network_load_balancer(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_resp = create_autospec(oci.response.Response)
+        mock_resp.data = oci.network_load_balancer.models.NetworkLoadBalancer(
+            id="nlb1", display_name="nlb"
+        )
+        mock_client.get_network_load_balancer.return_value = mock_resp
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "get_network_load_balancer", {"network_load_balancer_id": "nlb1"}
+                )
+            ).structured_content
+        assert res["id"] == "nlb1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_get_network_load_balancer_error(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get_network_load_balancer.side_effect = Exception("bad nlb")
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool(
+                    "get_network_load_balancer", {"network_load_balancer_id": "x"}
+                )
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_get_listener(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_resp = create_autospec(oci.response.Response)
+        mock_resp.data = oci.network_load_balancer.models.Listener(name="l1")
+        mock_client.get_listener.return_value = mock_resp
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "get_network_load_balancer_listener",
+                    {"network_load_balancer_id": "nlb1", "listener_name": "l1"},
+                )
+            ).structured_content
+        assert res["name"] == "l1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_get_listener_error(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get_listener.side_effect = Exception("bad listener")
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool(
+                    "get_network_load_balancer_listener",
+                    {"network_load_balancer_id": "nlb1", "listener_name": "l1"},
+                )
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_get_backend_set(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_resp = create_autospec(oci.response.Response)
+        mock_resp.data = oci.network_load_balancer.models.BackendSet(name="bs1")
+        mock_client.get_backend_set.return_value = mock_resp
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "get_network_load_balancer_backend_set",
+                    {
+                        "network_load_balancer_id": "nlb1",
+                        "backend_set_name": "bs1",
+                    },
+                )
+            ).structured_content
+        assert res["name"] == "bs1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_get_backend_set_error(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get_backend_set.side_effect = Exception("bad bs")
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool(
+                    "get_network_load_balancer_backend_set",
+                    {"network_load_balancer_id": "nlb1", "backend_set_name": "bs1"},
+                )
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_get_backend(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_resp = create_autospec(oci.response.Response)
+        mock_resp.data = oci.network_load_balancer.models.Backend(name="b1")
+        mock_client.get_backend.return_value = mock_resp
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "get_network_load_balancer_backend",
+                    {
+                        "network_load_balancer_id": "nlb1",
+                        "backend_set_name": "bs1",
+                        "backend_name": "b1",
+                    },
+                )
+            ).structured_content
+        assert res["name"] == "b1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_get_backend_error(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_client.get_backend.side_effect = Exception("bad backend")
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool(
+                    "get_network_load_balancer_backend",
+                    {
+                        "network_load_balancer_id": "nlb1",
+                        "backend_set_name": "bs1",
+                        "backend_name": "b1",
+                    },
+                )
 
 
 class TestServer:

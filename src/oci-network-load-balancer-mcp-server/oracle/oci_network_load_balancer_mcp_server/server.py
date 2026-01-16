@@ -29,7 +29,7 @@ logger = Logger(__name__, level="INFO")
 mcp = FastMCP(name=__project__)
 
 
-def get_nlb_client():
+def get_nlb_client():  # pragma: no cover
     logger.info("entering get_nlb_client")
     config = oci.config.from_file(
         profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)

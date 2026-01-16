@@ -49,7 +49,9 @@ def get_cloud_guard_client():
 def list_problems(
     compartment_id: str = Field(..., description="The OCID of the compartment"),
     risk_level: Optional[str] = Field(None, description="Risk level of the problem"),
-    lifecycle_state: Optional[str] = Field(
+    lifecycle_state: Optional[
+        Literal["ACTIVE", "INACTIVE", "UNKNOWN_ENUM_VALUE"]
+    ] = Field(
         "ACTIVE",
         description="The field lifecycle state. "
         "Only one state can be provided. Default value for state is active.",
@@ -109,8 +111,10 @@ def get_problem_details(
 )
 def update_problem_status(
     problem_id: str = Field(..., description="The OCID of the problem"),
-    status: str = Field(
-        Literal["OPEN", "RESOLVED", "DISMISSED", "DELETED", "UNKNOWN_ENUM_VALUE"],
+    status: Literal[
+        "OPEN", "RESOLVED", "DISMISSED", "DELETED", "UNKNOWN_ENUM_VALUE"
+    ] = Field(
+        "OPEN",
         description="Action taken by user. Allowed values are: OPEN, RESOLVED, DISMISSED, CLOSED",
     ),
     comment: str = Field(None, description="A comment from the user"),

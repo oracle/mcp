@@ -7,6 +7,7 @@ https://oss.oracle.com/licenses/upl.
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+import oci
 from pydantic import BaseModel, Field
 
 
@@ -137,6 +138,58 @@ class FusionEnvironmentStatus(BaseModel):
     )
 
 
+class ServiceAttachmentSummary(BaseModel):
+    """Pydantic model respresenting a Service Attachment."""
+
+    id: Optional[str] = Field(
+        None, description="Unique identifier that is immutable on creation."
+    )
+    display_name: Optional[str] = Field(
+        None, description="ServiceInstance identifier; can be renamed."
+    )
+    service_instance_type: Optional[str] = Field(
+        None, description="Type of the service."
+    )
+    service_instance_id: Optional[str] = Field(
+        None,
+        description=(
+            "ID of the service instance that can be used to identify this on the service control plane."
+        ),
+    )
+    service_url: Optional[str] = Field(None, description="Service URL of the instance.")
+    time_created: Optional[datetime] = Field(
+        None, description="The time the service instance was created (RFC3339)."
+    )
+    time_updated: Optional[datetime] = Field(
+        None, description="The time the service instance was updated (RFC3339)."
+    )
+    lifecycle_state: Optional[str] = Field(
+        None, description="The current state of the ServiceInstance."
+    )
+    lifecycle_details: Optional[str] = Field(
+        None,
+        description=(
+            "Detailed message describing the current state. Useful for actionable information when Failed."
+        ),
+    )
+    is_sku_based: Optional[bool] = Field(
+        None,
+        description=(
+            "Whether this service is provisioned due to subscription to a specific SKU."
+        ),
+    )
+    freeform_tags: Optional[Dict[str, str]] = Field(
+        None,
+        description="Free-form tags for this resource as simple key/value pairs.",
+    )
+    defined_tags: Optional[Dict[str, Dict[str, Any]]] = Field(
+        None,
+        description=(
+            "Defined tags for this resource. Each key is predefined and scoped to a namespace."
+        ),
+    )
+
+
 def _get(data: Any, key: str) -> Any:
     """Safe getter to support both dicts and SDK objects."""
     if isinstance(data, dict):
@@ -212,4 +265,24 @@ def map_fusion_environment_status(data: Any) -> FusionEnvironmentStatus:
         time_updated=_get(data, "time_updated"),
         time_created=_get(data, "time_created"),
         details=details or None,
+    )
+
+
+def map_service_attachment_summary(
+    data: oci.fusion_apps.models.ServiceAttachmentSummary,
+) -> ServiceAttachmentSummary:
+    """Map SDK model or dict to ServiceAttachmentSummary."""
+    return ServiceAttachmentSummary(
+        id=_get(data, "id"),
+        display_name=_get(data, "display_name"),
+        service_instance_type=_get(data, "service_instance_type"),
+        service_instance_id=_get(data, "service_instance_id"),
+        service_url=_get(data, "service_url"),
+        time_created=_get(data, "time_created"),
+        time_updated=_get(data, "time_updated"),
+        lifecycle_state=_get(data, "lifecycle_state"),
+        lifecycle_details=_get(data, "lifecycle_details"),
+        is_sku_based=_get(data, "is_sku_based"),
+        freeform_tags=_get(data, "freeform_tags"),
+        defined_tags=_get(data, "defined_tags"),
     )

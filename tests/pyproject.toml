@@ -9,7 +9,10 @@ license-files = ["LICENSE.txt"]
 dependencies = [
     "behave>=1.2.6",
     "fastmcp==2.14.2",
-    "oci==2.160.0"
+    "oci==2.160.0",
+    "flask>=3.1.2",
+    "cryptography>=44.0.3",
+    "ollama-mcp-bridge>=0.9.1",
 ]
 
 [dependency-groups]

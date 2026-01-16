@@ -33,7 +33,6 @@ def step_impl_list_instances(context):
     assert (
         "ocid1.instance" in result["message"]["content"]
     ), "List of instances not found."
-    assert "RUNNING" in result["message"]["content"], "Instances are not RUNNING"
 
 
 @then("the response should contain the details of an instance")

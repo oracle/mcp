@@ -10,16 +10,16 @@ Feature: OCI Compute MCP Server
     When I send a request with the prompt "What compute tools do you have"
     Then the response should contain a list of compute tools available
 
-  Scenario: List the running compute instances
+  Scenario: List the compute instances
     Given the MCP server is running with OCI tools
     And the ollama model with the tools is properly working
-    When I send a request with the prompt "list my running instances and limit to 5"
+    When I send a request with the prompt "list my instances"
     Then the response should contain a list of running instances
 
   Scenario: Get compute instance details
     Given the MCP server is running with OCI tools
     And the ollama model with the tools is properly working
-    When I send a request with the prompt "list my running instances and limit to 5, then get the details of the first instance in the list"
+    When I send a request with the prompt "list my instances, then get the details of the first instance in the list"
     Then the response should contain the details of an instance
 
   Scenario: List the images

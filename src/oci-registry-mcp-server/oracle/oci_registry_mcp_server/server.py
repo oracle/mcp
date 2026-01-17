@@ -33,7 +33,7 @@ def get_ocir_client():
     config["additional_user_agent"] = f"{__project__}/{__version__}"
 
     private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = config["security_token_file"]
+    token_file = os.path.expanduser(config["security_token_file"])
     token = None
     with open(token_file, "r") as f:
         token = f.read()

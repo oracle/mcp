@@ -23,7 +23,7 @@ venv.bak/
 
 # test environments
 .env
-
+mcphost.json
 .coverage*
 htmlcov/
 

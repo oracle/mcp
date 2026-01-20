@@ -10,6 +10,7 @@ package com.oracle.database.mcptoolkit.tools;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oracle.database.mcptoolkit.LoadedConstants;
 import com.oracle.database.mcptoolkit.ServerConfig;
+import com.oracle.database.mcptoolkit.Utils;
 import com.oracle.database.mcptoolkit.OracleDatabaseMCPToolkit;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -169,6 +170,42 @@ public final class AdminTools {
             // Ensure 'tools' map exists
             Map<String, Object> tools = getOrCreateMap(root, "tools");
 
+            // Remove if requested
+            Object removeFlag = callReq.arguments().get("remove");
+            boolean remove = (removeFlag instanceof Boolean b && b) ||
+                (removeFlag != null && "true".equalsIgnoreCase(String.valueOf(removeFlag)));
+            if (remove) {
+              if (tools.remove(name) != null) {
+                root.put("tools", tools);
+                try (Writer w = Files.newBufferedWriter(path)) {
+                  yaml.dump(root, w);
+                }
+                // Try to remove the tool from the running server as well
+                try {
+                  OracleDatabaseMCPToolkit.getServer().removeTool(name);
+                  Utils.unregisterCustomToolLocally(name);
+                } catch (Exception ignored) {}
+
+                return McpSchema.CallToolResult.builder()
+                    .structuredContent(Map.of(
+                        "status", "ok",
+                        "message", "Tool '" + name + "' removed from YAML. Reload will occur shortly.",
+                        "configFile", cfgPath
+                    ))
+                    .addTextContent("{\"status\":\"ok\",\"removed\":\"" + name + "\"}")
+                    .build();
+              } else {
+                return McpSchema.CallToolResult.builder()
+                    .structuredContent(Map.of(
+                        "status", "noop",
+                        "message", "Tool '" + name + "' not found; nothing to remove.",
+                        "configFile", cfgPath
+                    ))
+                    .addTextContent("{\"status\":\"noop\",\"missing\":\"" + name + "\"}")
+                    .build();
+              }
+            }
+
             // Upsert tool entry
             Map<String, Object> t = getOrCreateMap(tools, name);
 
@@ -202,6 +239,13 @@ public final class AdminTools {
               yaml.dump(root, w);
             }
 
+            // Try to remove stale instance at runtime (best-effort hot update); server will re-add on reload
+            try {
+              var srv = OracleDatabaseMCPToolkit.getServer();
+              if (srv != null) srv.removeTool(name);
+            } catch (Exception ignored) {}
+
+
             // The config poller will pick up the change and hot-reload within ~2 seconds.
             return McpSchema.CallToolResult.builder()
                 .structuredContent(Map.of(
@@ -212,6 +256,7 @@ public final class AdminTools {
                 .addTextContent("{\"status\":\"ok\",\"name\":\"" + name + "\"}")
                 .build();
           } catch (Exception e) {
+
             return McpSchema.CallToolResult.builder()
                 .addTextContent("Unexpected: " + e.getMessage())
                 .isError(true)

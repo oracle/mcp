@@ -7,6 +7,7 @@ Oracle Database MCP Toolkit is a Model Context Protocol (MCP) server that lets y
 * Use built-in tools:
   * Analyze Oracle JDBC thin client logs and RDBMS/SQLNet trace files.
   * **database-powered tools**, including **vector similarity search** and **SQL execution plan analysis**.
+  * **admin tools** for runtime discovery and configuration: list available tools and live-edit YAML-defined tools with hot reload.
 * Deploy locally or remotely - optionally as a container - with support for TLS and OAuth2
 
 ![MCP Toolkit Architecture Diagram](./images/MCPToolkitArchitectureDiagram.svg)
@@ -146,6 +147,44 @@ These tools operate on RDBMS/SQLNet trace files:
   * `planText`: DBMS_XPLAN output.
   * `llmPrompt`: A structured prompt for an LLM to explain + tune the plan.
 
+### 3.5. Admin and Runtime Configuration Tools
+
+These tools help you discover what's enabled and manage YAML-defined tools at runtime. They are part of the `admin` toolset (enable via `-Dtools=admin` or include `list-tools,edit-tools`).
+
+- `list-tools`: List all available tools with their descriptions.
+  - Inputs: none
+  - Returns: `tools` array with `{ name, title, description }` for built-ins (honoring `-Dtools` filter) and any YAML-defined tools.
+
+- `edit-tools`: Create, update, or remove a YAML-defined tool. Changes are auto-reloaded by the server.
+  - Inputs (subset; see schema in code):
+    - `name` (string, required): Tool name/YAML key
+    - `remove` (boolean, optional): If true, delete the tool
+    - `description` (string, optional)
+    - `dataSource` (string, optional): Key from `dataSources:`
+    - `statement` (string, optional): SQL (SELECT or DML)
+    - `parameters` (array, optional): Items of `{ name, type, description, required }`
+  - Requirements and behavior:
+    - Requires `-DconfigFile` to be set to a writable YAML file; otherwise the tool will return an error.
+    - On upsert/remove, the YAML is written and the server hot-reloads the configuration shortly after.
+
+  Example (upsert a tool):
+  ```jsonc
+  {
+    "name": "hotels-by-rating",
+    "description": "List hotels with a minimum rating",
+    "dataSource": "prod-db",
+    "statement": "SELECT * FROM hotels WHERE rating >= :minRating ORDER BY rating DESC",
+    "parameters": [
+      { "name": "minRating", "type": "number", "description": "Minimum rating", "required": true }
+    ]
+  }
+  ```
+
+  Example (remove a tool):
+  ```jsonc
+  { "name": "hotels-by-rating", "remove": true }
+  ```
+  
 ---
 
 ## 4. Installation
@@ -184,7 +223,7 @@ This is the mode used by tools like Claude Desktop, where the client directly la
       "args": [
         "-Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service",
         "-Ddb.user=your_user",
-        "-Ddb.password=your_password"
+        "-Ddb.password=your_password",
         "-Dtools=get-jdbc-stats,get-jdbc-queries",
         "-Dojdbc.ext.dir=/path/to/extra-jars",
         "-jar",
@@ -195,6 +234,8 @@ This is the mode used by tools like Claude Desktop, where the client directly la
 }
 ```
 If you don’t set `-Dtransport`, the server runs in stdio mode by default.
+
+To enable admin tools in this mode, include them in `-Dtools` (e.g., `-Dtools=admin,explain`).
 
 #### 4.3.2. HTTP mode
 
@@ -213,6 +254,8 @@ java \
   -jar <path-to-jar>/oracle-db-mcp-toolkit-1.0.0.jar
 ```
 This exposes the MCP endpoint at: `http://localhost:45450/mcp`.
+
+If you plan to use `edit-tools`, ensure `-DconfigFile` points to a writable YAML file on the server.
 
 ### 4.4. Enabling HTTPS (SSL/TLS)
 To enable HTTPS (SSL/TLS), specify your certificate keystore path and password using the `-DcertificatePath` and `-DcertificatePassword` options.  
@@ -439,7 +482,7 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
     <tr>
       <td><code>configFile</code></td>
       <td>No</td>
-      <td>Path to a YAML file defining <code>datasources</code> and <code>tools</code>.</td>
+      <td>Path to a YAML file defining <code>datasources</code> and <code>tools</code>. Required if you intend to use the <code>edit-tools</code> admin tool to persist changes.</td>
       <td>/opt/mcp/config.yaml</td>
     </tr>
     <tr>
@@ -530,6 +573,10 @@ podman run --rm \
   oracle-db-mcp-toolkit:1.0.0
 ```
 This exposes the MCP endpoint at: http://[your-ip-address]:45450/mcp or https://[your-ip-address]:45451/mcp
+
+If you plan to use the `edit-tools` admin tool inside the container, mount a writable config file and set `-DconfigFile` accordingly, for example:
+- Mount: `-v /absolute/path/config.yaml:/config/config.yaml:Z`
+- Set: `-DconfigFile=/config/config.yaml`
 
 You can then configure Cline or Claude Desktop as described in the Using HTTP from Cline / Claude Desktop sections above.
 

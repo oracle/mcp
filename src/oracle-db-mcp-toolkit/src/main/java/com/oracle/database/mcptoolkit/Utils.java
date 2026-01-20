@@ -50,6 +50,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
+import java.lang.reflect.Field;
 
 /**
  * Utility class for managing Oracle database connections and
@@ -112,6 +113,7 @@ public class Utils {
     if (config.tools != null) {
       for (Map.Entry<String, ToolConfig> entry : config.tools.entrySet()) {
         ToolConfig tc = entry.getValue();
+        if (!isToolEnabled(config, tc.name)) continue;
         server.addTool(makeSyncToolSpecification(tc, config));
         String sig = computeSignature(tc);
         synchronized (customToolNames) {
@@ -141,6 +143,25 @@ public class Utils {
   }
 
   private static String nullToEmpty(String s) { return s == null ? "" : s; }
+
+  /**
+   * Unregister a custom tool from local in-memory registries so runtime removal stays consistent.
+   */
+  public static void unregisterCustomToolLocally(String name) {
+    if (name == null) return;
+    synchronized (customToolNames) {
+      customToolNames.remove(name);
+      try {
+        // Remove signature if present; safe even if missing
+        Field f = Utils.class.getDeclaredField("customToolSignatures");
+        f.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, String> sigs = (java.util.Map<String, String>) f.get(null);
+        sigs.remove(name);
+      } catch (Throwable ignored) {}
+    }
+  }
+
 
   private static McpServerFeatures.SyncToolSpecification makeSyncToolSpecification(ToolConfig tc, ServerConfig config) {
     return McpServerFeatures.SyncToolSpecification.builder()
@@ -185,16 +206,17 @@ public class Utils {
    * that are not present in the new config.
    */
   public static void reloadCustomTools(McpSyncServer server, ServerConfig config) {
-    LOG.info(() -> "[DEBUG] serverInstance identity: " + System.identityHashCode(server));
     synchronized (customToolNames) {
       if (config.tools != null) {
         for (Map.Entry<String, ToolConfig> entry : config.tools.entrySet()) {
           String name = entry.getKey();
           ToolConfig tc = entry.getValue();
+          if (!isToolEnabled(config, name)) {
+            continue;
+          }
           String newSig = computeSignature(tc);
 
           if (!customToolNames.contains(name)) {
-            LOG.info(() -> "[DEBUG] Adding new tool: " + name);
             server.addTool(makeSyncToolSpecification(tc, config));
             customToolNames.add(name);
             customToolSignatures.put(name, newSig);
@@ -202,15 +224,14 @@ public class Utils {
             String oldSig = customToolSignatures.get(name);
             if (oldSig == null || !oldSig.equals(newSig)) {
               try {
-                LOG.info(() -> "[DEBUG] Updating changed tool: " + name);
                 server.removeTool(name);
               } catch (Exception ex) {
-                LOG.info(() -> "[DEBUG] Failed to remove tool for update: " + name + ". Exception: " + ex);
+                LOG.info(() -> "Failed to remove tool for update: " + name + ". Exception: " + ex);
               }
               server.addTool(makeSyncToolSpecification(tc, config));
               customToolSignatures.put(name, newSig);
             } else {
-              LOG.info(() -> "[DEBUG] Tool unchanged (skipped): " + name);
+              LOG.info(() -> "Tool unchanged (skipped): " + name);
             }
           }
         }

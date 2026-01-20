@@ -217,6 +217,14 @@ public class OracleDatabaseMCPToolkit {
     return config;
   }
 
+  /**
+   * Exposes the running McpSyncServer instance for admin operations (e.g., removing tools at runtime).
+   */
+  public static McpSyncServer getServer() {
+    return serverInstance;
+  }
+
+
   private static void watchConfigFile(String filePath) {
     Path configPath = Paths.get(filePath);
     try (WatchService watcher = FileSystems.getDefault().newWatchService()) {

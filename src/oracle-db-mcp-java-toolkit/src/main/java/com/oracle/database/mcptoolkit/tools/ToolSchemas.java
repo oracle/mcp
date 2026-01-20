@@ -34,6 +34,33 @@ public class ToolSchemas {
       }""";
 
   /**
+   * JSON schema for DROP/DESCRIBE table operations.
+   */
+  static final String DROP_OR_DESCRIBE_TABLE = """
+      {
+        "type":"object",
+        "properties":
+          {
+            "table":
+              {
+              "type":"string"
+              }},
+          "required":["table"]
+     }""";
+
+  /**
+   * JSON schema for transaction ID operations.
+   */
+  static final String TX_ID = """
+      {
+        "type":"object",
+        "properties":
+          {"txId":
+            {"type":"string"}},
+            "required":["txId"]
+      }""";
+
+  /**
    * JSON schema for file path operations.
    * <p>
    * This schema requires a "filePath" property, which should be an absolute path or a URL to an Oracle JDBC log file.

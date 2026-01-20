@@ -24,8 +24,7 @@ import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static com.oracle.database.mcptoolkit.Utils.openConnection;
-import static com.oracle.database.mcptoolkit.Utils.tryCall;
+import static com.oracle.database.mcptoolkit.Utils.*;
 
 /**
  * Provides functionality for explaining and executing Oracle SQL plans.
@@ -34,18 +33,18 @@ import static com.oracle.database.mcptoolkit.Utils.tryCall;
  */
 public class ExplainAndExecutePlanTool {
   /**
-   * Returns a tool specification for the "explain_plan" tool.
+   * Returns a tool specification for the "explain-plan" tool.
    * This tool generates an Oracle execution plan for the provided SQL and
    * produces an accompanying LLM prompt to explain and tune the plan.
    *
    * @param config Server configuration
-   * @return Tool specification for the "explain_plan" tool
+   * @return Tool specification for the "explain-plan" tool
    */
   public static McpServerFeatures.SyncToolSpecification getExplainAndExecutePlanTool(ServerConfig config) {
     return
         McpServerFeatures.SyncToolSpecification.builder()
             .tool(McpSchema.Tool.builder()
-                .name("explain_plan")
+                .name("explain-plan")
                 .title("Explain Plan (static or dynamic)")
                 .description("""
           Returns an Oracle execution plan for the provided SQL.
@@ -214,16 +213,6 @@ public class ExplainAndExecutePlanTool {
     return sb.toString().trim();
   }
 
-  /**
-   * Checks if the provided SQL looks like a SELECT.
-   *
-   * @param sql the SQL string
-   * @return true if it begins with "SELECT" (case-insensitive)
-   */
-  static boolean looksSelect(String sql) {
-    return sql != null && sql.trim().regionMatches(true, 0, "SELECT", 0, 6);
-  }
-
   private static final Pattern DML_VERB =
       Pattern.compile("^\\s*(?:--.*?$|/\\*.*?\\*/\\s*)*(UPDATE|DELETE|INSERT|MERGE)\\b",
           Pattern.CASE_INSENSITIVE | Pattern.DOTALL | Pattern.MULTILINE);
@@ -245,23 +234,6 @@ public class ExplainAndExecutePlanTool {
   }
 
   static final Pattern FIRST_WORD = Pattern.compile("^\\s*([A-Za-z0-9_]+)");
-
-  /**
-   * DDL detector (CREATE/ALTER/DROP/TRUNCATE/RENAME/COMMENT/GRANT/REVOKE).
-   * Used to block DDL inside user-managed transactions.
-   */
-  static boolean isDdl(String sql) {
-    if (sql == null) return false;
-    String s = sql.trim().toUpperCase();
-    return s.startsWith("CREATE ")
-        || s.startsWith("ALTER ")
-        || s.startsWith("DROP ")
-        || s.startsWith("TRUNCATE ")
-        || s.startsWith("RENAME ")
-        || s.startsWith("COMMENT ")
-        || s.startsWith("GRANT ")
-        || s.startsWith("REVOKE ");
-  }
 
   record ExplainResult(String planText) {}
 

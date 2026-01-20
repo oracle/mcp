@@ -11,12 +11,7 @@ import com.oracle.database.mcptoolkit.config.ConfigRoot;
 import com.oracle.database.mcptoolkit.config.DataSourceConfig;
 import com.oracle.database.mcptoolkit.config.ToolConfig;
 
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Immutable server configuration loaded from system properties.
@@ -30,7 +25,9 @@ import java.util.Set;
  * <ul>
  *   <li>{@code db.user}</li>
  *   <li>{@code db.password}</li>
- *   <li>{@code tools} — comma-separated allow-list of tool names; {@code *} or {@code all} enables all.</li>
+ *   <li>{@code tools} — comma-separated allow-list of tool names or toolset
+ *   names; (e.g., {@code log_analyzer}, {@code admin}, {@code explain}, {@code similarity});
+ *   {@code *} or {@code all} enables all.</li>
  * </ul>
  *
  * <p>Use {@link #fromSystemProperties()} to create an instance with validation and defaults.</p>
@@ -61,7 +58,10 @@ public final class ServerConfig {
   }
 
   private static final Set<String> DB_TOOLS = Set.of(
-    "similarity_search", "explain_plan"
+    "similarity_search", "explain_plan",
+    "read-query", "write-query", "create-table", "delete-table",
+    "list-tables", "describe-table", "start-transaction", "resume-transaction",
+    "commit-transaction", "rollback-transaction", "db-ping", "db-metrics-range"
   );
 
   /** Built-in toolsets covering predefined tools. Lowercase keys and members. */
@@ -76,9 +76,14 @@ public final class ServerConfig {
           "get-rdbms-errors",
           "get-rdbms-packet-dumps"
       ),
-      "explain", Set.of("explain_plan"),
-      "similarity", Set.of("similarity_search"),
-      "admin", Set.of("list-tools", "edit-tools")
+      "explain", Set.of("explain-plan"),
+      "similarity", Set.of("similarity-search"),
+      "admin", Set.of(
+              "list-tools", "edit-tools",
+              "read-query", "write-query", "create-table", "delete-table",
+              "list-tables", "describe-table", "start-transaction", "resume-transaction",
+              "commit-transaction", "rollback-transaction", "db-ping", "db-metrics-range"
+      )
   );
 
 

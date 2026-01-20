@@ -19,34 +19,23 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 
-import static com.oracle.database.mcptoolkit.Utils.openConnection;
-import static com.oracle.database.mcptoolkit.Utils.tryCall;
-import static com.oracle.database.mcptoolkit.Utils.getOrDefault;
+import static com.oracle.database.mcptoolkit.Utils.*;
+import static com.oracle.database.mcptoolkit.tools.ToolSchemas.SIMILARITY_SEARCH;
 
 /**
  * Provides a tool for performing similarity searches using vector embeddings.
  * <p>
- * This class is responsible for handling the "similarity_search" tool, which allows users to
- * search for similar text based on a given query.
+ * This class is responsible for handling the "similarity-search" tool, which
+ * allows users to search for similar text based on a given query.
  */
 public class SimilaritySearchTool {
-
-  private static final Pattern SAFE_IDENT = Pattern.compile("[A-Za-z0-9_$.#]+");
 
   private static final String DEFAULT_VECTOR_TABLE            = "profile_oracle";
   private static final String DEFAULT_VECTOR_DATA_COLUMN      = "text";
   private static final String DEFAULT_VECTOR_EMBEDDING_COLUMN = "embedding";
   private static final String DEFAULT_VECTOR_MODEL_NAME       = "doc_model";
   private static final int    DEFAULT_VECTOR_TEXT_FETCH_LIMIT = 4000;
-  private static final String SIMILARITY_SEARCH = """
-    SELECT dbms_lob.substr(%s, %s, 1) AS text
-    FROM %s
-    ORDER BY VECTOR_DISTANCE(%s,
-             TO_VECTOR(VECTOR_EMBEDDING(%s USING ? AS data)))
-    FETCH FIRST ? ROWS ONLY
-  """;
 
   /**
    * Returns a tool specification for the "similarity_search" tool.
@@ -60,10 +49,10 @@ public class SimilaritySearchTool {
 
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(McpSchema.Tool.builder()
-                .name("similarity_search")
+                .name("similarity-search")
                 .title("Similarity Search")
                 .description("Semantic vector similarity over a table with (text, embedding) columns")
-                .inputSchema(ToolSchemas.SIMILARITY_SEARCH)
+                .inputSchema(SIMILARITY_SEARCH)
                 .build())
             .callHandler((exchange, callReq) -> tryCall(() -> {
               try (Connection c = openConnection(config, null)) {
@@ -133,7 +122,7 @@ public class SimilaritySearchTool {
                                                   String question,
                                                   int topK) throws SQLException {
     String sql = String.format(
-        SIMILARITY_SEARCH,
+        SqlQueries.SIMILARITY_SEARCH_QUERY,
         quoteIdent(dataColumn), textFetchLimit, quoteIdent(table), embeddingColumn, modelName
     );
 
@@ -148,22 +137,6 @@ public class SimilaritySearchTool {
       }
     }
     return result;
-  }
-
-
-  /**
-   * Escapes and quotes a potentially unsafe identifier for SQL use.
-   *
-   * @param ident identifier to quote
-   * @return a quoted or validated identifier
-   */
-  static String quoteIdent(String ident) {
-    if (ident == null) throw new IllegalArgumentException("identifier is null");
-    String s = ident.trim();
-    if (!SAFE_IDENT.matcher(s).matches()) {
-      return "\"" + s.replace("\"", "\"\"") + "\"";
-    }
-    return s;
   }
 
 }

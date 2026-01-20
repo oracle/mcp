@@ -7,6 +7,7 @@ Oracle Database MCP Toolkit is a Model Context Protocol (MCP) server that lets y
 * Define your own custom tools via a simple YAML configuration file.
 * Use built-in tools:
   * Analyze Oracle JDBC thin client logs and RDBMS/SQLNet trace files.
+  * Database tools for SQL execution, table management, transactions, and performance monitoring.
   * Database-powered tools, including vector similarity search and SQL execution plan analysis.
   * Admin tools for runtime discovery and configuration: list available tools and live-edit YAML-defined tools with hot reload.
 * Deploy locally or remotely - optionally as a container - with support for TLS and OAuth2
@@ -98,13 +99,41 @@ Toolsets can be enabled from `-Dtools` alongside individual tools. For example:
 - `-Dtools=reporting,explain` enables your `reporting` set plus the built-in `explain` toolset (see below)
 - `-Dtools=*` or omit `-Dtools` to enable everything
 
-> Tip: You can also manage YAML-defined tools at runtime using the `edit-tools` admin tool; see section 3.5.
+> Tip: You can also manage YAML-defined tools at runtime using the `edit-tools` admin tool; see section 3.9.
 
 ---
 
 ## 3. Built-in Tools
 
-### 3.1. Oracle JDBC Log Analysis
+### 3.1. Database Operations
+These tools provide direct SQL execution capabilities:
+
+- **`read-query`**: Execute SELECT-only queries and return results as JSON.
+- **`write-query`**: Execute DML/DDL operations (INSERT, UPDATE, DELETE, CREATE, etc.) with autocommit.
+
+### 3.2. Table Management
+These tools help you manage database tables:
+
+- **`create-table`**: Create a table using full CREATE TABLE statements
+- **`delete-table`**: Drop an existing table by name
+- **`list-tables`**: List all tables and synonyms in the current schema
+- **`describe-table`**: Get detailed column information for any table
+
+### 3.3. Transaction Management
+These tools provide fine-grained control over database transactions:
+
+- **`start-transaction`**: Begin a new JDBC transaction and get a transaction ID
+- **`resume-transaction`**: Verify if a transaction ID is still active
+- **`commit-transaction`**: Commit and close a transaction
+- **`rollback-transaction`**: Rollback and close a transaction
+
+### 3.4. Database Monitoring
+These tools help monitor database health and performance:
+
+- **`db-ping`**: Connectivity + timings (connect/round-trip) + Database metadata
+- **`db-metrics-range`**: Retrieve Oracle performance metrics from V$SYSSTAT
+
+### 3.5. Oracle JDBC Log Analysis
 
 These tools operate on Oracle JDBC thin client logs:
 
@@ -115,16 +144,16 @@ These tools operate on Oracle JDBC thin client logs:
 * **`list-log-files-from-directory`**: List all visible files from a specified directory, which helps the user analyze multiple files with one prompt.
 * **`jdbc-log-comparison`**: Compares two log files for performance metrics, errors, and network information.
 
-### 3.2. RDBMS/SQLNet Trace Analysis:
+### 3.6. RDBMS/SQLNet Trace Analysis:
 
 These tools operate on RDBMS/SQLNet trace files:
 
 * **`get-rdbms-errors`**: Extracts errors from RDBMS/SQLNet trace files.
 * **`get-rdbms-packet-dumps`**: Extracts packet dumps for a specific connection ID.
 
-### 3.3. Vector Similarity Search
+### 3.7. Vector Similarity Search
 
-* **`similarity_search`**: Perform semantic similarity search using Oracle’s vector features (`VECTOR_EMBEDDING`, `VECTOR_DISTANCE`).
+* **`similarity-search`**: Perform semantic similarity search using Oracle’s vector features (`VECTOR_EMBEDDING`, `VECTOR_DISTANCE`).
 
   **Inputs:**
 
@@ -140,9 +169,9 @@ These tools operate on RDBMS/SQLNet trace files:
 
   * JSON array of similar rows with scores and truncated snippets.
 
-### 3.4. SQL Execution Plan Analysis
+### 3.8. SQL Execution Plan Analysis
 
-* **`explain_plan`**: Generate Oracle execution plans and receive a pre-formatted LLM prompt for tuning and explanation.
+* **`explain-plan`**: Generate Oracle execution plans and receive a pre-formatted LLM prompt for tuning and explanation.
 
   **Modes:**
 
@@ -165,9 +194,15 @@ These tools operate on RDBMS/SQLNet trace files:
   * `planText`: DBMS_XPLAN output.
   * `llmPrompt`: A structured prompt for an LLM to explain + tune the plan.
 
-### 3.5. Admin and Runtime Configuration Tools
+### 3.9. Admin, Runtime Configuration and Database Tools
 
-These tools help you discover what's enabled and manage YAML-defined tools at runtime. They are part of the `admin` toolset (enable via `-Dtools=admin` or include `list-tools,edit-tools`).
+These tools help you discover what's enabled and manage YAML-defined tools at runtime, and perform core database operations.
+They are part of the `admin` toolset (enable via `-Dtools=admin` or include individual tool names).
+
+_Note: The admin toolset includes both the admin tools listed below AND all database operation tools described in 
+sections 3.1-3.4 (Database Operations, Table Management, Transaction Management, and Database Monitoring)._
+
+#### Admin Tools:
 
 - `list-tools`: List all available tools with their descriptions.
   - Inputs: none
@@ -451,17 +486,17 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
       <td>No</td>
       <td>
         Comma-separated allow-list of tool or toolset names to enable (case-insensitive).<br/>
-        You can pass individual tools (e.g. <code>get-jdbc-stats</code>) or any of the following built-in toolsets:
+        You can pass individual tools (e.g. <code>get-jdbc-stats</code>, <code>read-query</code>) or any of the following built-in toolsets:
         <ul>
-          <li><code>log_analyzer</code> — all JDBC log and RDBMS/SQLNet analysis tools</li>
-          <li><code>explain</code> — <code>explain_plan</code></li>
-          <li><code>similarity</code> — <code>similarity_search</code></li>
-          <li><code>admin</code> — server admin tools (<code>list-tools</code>, <code>edit-tools</code>)</li>
+          <li><code>log_analyzer</code> — all JDBC log and RDBMS/SQLNet analysis tools (get-jdbc-stats, get-jdbc-queries, get-jdbc-errors, list-log-files-from-directory, jdbc-log-comparison, get-jdbc-connection-events, get-rdbms-errors, get-rdbms-packet-dumps)</li>
+          <li><code>explain</code> — <code>explain-plan</code></li>
+          <li><code>similarity</code> — <code>similarity-search</code></li>
+          <li><code>admin</code> — server admin and database tools (list-tools, edit-tools, read-query, write-query, create-table, delete-table, list-tables, describe-table, start-transaction, resume-transaction, commit-transaction, rollback-transaction, db-ping, db-metrics-range)</li>
         </ul>
         You can also define your own YAML <code>toolsets:</code> and reference them here.  
         Use <code>*</code> or <code>all</code> to enable everything. If omitted, all tools are enabled by default.
       </td>
-      <td><code>log_analyzer</code> or <code>reporting,explain</code></td>
+      <td><code>admin,log_analyzer</code> or <code>reporting,explain</code></td>
     </tr>
     <tr>
       <td><code>ojdbc.ext.dir</code></td>

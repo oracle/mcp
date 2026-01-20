@@ -49,6 +49,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import java.lang.reflect.Field;
 
@@ -64,6 +65,7 @@ import java.lang.reflect.Field;
  */
 public class Utils {
   private static final Logger LOG = Logger.getLogger(Utils.class.getName());
+  private static final Pattern SAFE_IDENT = Pattern.compile("[A-Za-z0-9_$.#]+");
 
   private static final Map<String, DataSource> dataSources = new ConcurrentHashMap<>();
   private static volatile DataSource defaultDataSource;
@@ -91,22 +93,23 @@ public class Utils {
       }
     }
 
-    // similarity_search
-    if (isToolEnabled(config, "similarity_search")) {
+    // similarity-search
+    if (isToolEnabled(config, "similarity-search")) {
       server.addTool(SimilaritySearchTool.getSymilaritySearchTool(config));
     }
 
-    // explain_plan
-    if (isToolEnabled(config, "explain_plan")) {
+    // explain-plan
+    if (isToolEnabled(config, "explain-plan")) {
       server.addTool(ExplainAndExecutePlanTool.getExplainAndExecutePlanTool(config));
     }
 
     // admin tools
-    if (isToolEnabled(config, "list-tools")) {
-      server.addTool(AdminTools.getListToolsTool(config));
-    }
-    if (isToolEnabled(config, "edit-tools")) {
-      server.addTool(AdminTools.getEditToolsTool(config));
+    List<McpServerFeatures.SyncToolSpecification> adminSpecs = AdminTools.getTools(config);
+    for (McpServerFeatures.SyncToolSpecification spec : adminSpecs) {
+      String toolName = spec.tool().name();
+      if (isToolEnabled(config, toolName)) {
+        server.addTool(spec);
+      }
     }
 
     // ---------- Dynamically Added Tools ----------
@@ -439,7 +442,7 @@ public class Utils {
    * @return list of rows with column:value mapping
    * @throws SQLException if reading from ResultSet fails
    */
-  static List<Map<String, Object>> rsToList(ResultSet rs) throws SQLException {
+  public static List<Map<String, Object>> rsToList(ResultSet rs) throws SQLException {
     List<Map<String, Object>> out = new ArrayList<>();
     ResultSetMetaData md = rs.getMetaData();
     int cols = md.getColumnCount();
@@ -486,4 +489,50 @@ public class Utils {
     String key = toolName.toLowerCase(Locale.ROOT);
     return config.toolsFilter.contains(key);
   }
+
+  /**
+   * Checks if the provided SQL looks like a SELECT.
+   *
+   * @param sql the SQL string
+   * @return true if it begins with "SELECT" (case-insensitive)
+   */
+  public static boolean looksSelect(String sql) {
+    return sql != null && sql.trim().regionMatches(true, 0, "SELECT", 0, 6);
+  }
+
+  /**
+   * DDL detector (CREATE/ALTER/DROP/TRUNCATE/RENAME/COMMENT/GRANT/REVOKE).
+   * Used to block DDL inside user-managed transactions.
+   */
+  public static boolean isDdl(String sql) {
+    if (sql == null) return false;
+    String s = sql.trim().toUpperCase();
+    return s.startsWith("CREATE ")
+            || s.startsWith("ALTER ")
+            || s.startsWith("DROP ")
+            || s.startsWith("TRUNCATE ")
+            || s.startsWith("RENAME ")
+            || s.startsWith("COMMENT ")
+            || s.startsWith("GRANT ")
+            || s.startsWith("REVOKE ");
+  }
+
+  /**
+   * Escapes and quotes a potentially unsafe identifier for SQL use.
+   *
+   * @param ident identifier to quote
+   * @return a quoted or validated identifier
+   */
+  public static String quoteIdent(String ident) {
+    if (ident == null) throw new IllegalArgumentException("identifier is null");
+    String s = ident.trim();
+    if (!SAFE_IDENT.matcher(s).matches()) {
+      return "\"" + s.replace("\"", "\"\"") + "\"";
+    }
+    return s;
+  }
+
+
+
+
 }

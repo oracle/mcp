@@ -39,7 +39,7 @@ Below is an example MCP client configuration for a typical python server
 *(For Node.js/Java/other servers, follow respective instructions in that server’s README)*
 
 For macOS/Linux:
-```
+```json
 {
   "mcpServers": {
     "oracle-oci-api-mcp-server": {
@@ -73,6 +73,38 @@ transport value while others (like Cline) expect `streamableHttp`.
     }
   }
 }
+```
+
+## Running with podman
+
+Some MCP servers in this repository support running via podman.
+
+### Installing podman
+Use the following instructions to install and run podman
+
+https://podman.io/docs/installation
+
+### Building the Container Image
+
+You can build the container image using the following command. The command shows building the container image for the oci-api-mcp-server.
+
+```sh
+SUBDIRS=src/oci-api-mcp-server make containerize
+```
+The above command builds the container image tagged as `oracle.oci-api-mcp-server:latest`.
+
+### MCP Client Configuration
+
+For examples of configuring MCP clients to run the server using podman, see the client-specific sections below. Configurations typically involve using `podman run` as the command, with appropriate flags and volume mounts for credentials if needed (e.g., mounting `~/.oci` for OCI servers).
+
+Alternatively, if you want to use HTTP transport using the podman container, then start the MCP server using the following command and configure your client as mentioned in Quickstart section above.
+```bash
+podman run -v "/path/to/your/.oci:/app/.oci" -e ORACLE_MCP_HOST=0.0.0.0 -e ORACLE_MCP_PORT=8888 -p 8888:8888 oracle.oci-api-mcp-server:latest
+```
+⚠️ **NOTE**: Ensure that all the fields that are paths to files in `/path/to/your/.oci/config` uses the **~** character so that the path resolves both inside and outside the container; for example: 
+```bash
+key_file=~/.oci/sessions/DEFAULT/oci_api_key.pem
+security_token_file=~/.oci/sessions/DEFAULT/token
 ```
 
 ## Authentication
@@ -138,6 +170,32 @@ For macOS/Linux:
 }
 ```
 
+Alternatively, to run using podman (example for oracle.oci-api-mcp-server):
+
+```json
+{
+  "mcpServers": {
+    "oracle-oci-api-mcp-server": {
+      "autoApprove": [],
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "podman",
+      "args": ["run", "-i", "--rm", "-v", "/path/to/your/.oci:/app/.oci", "oracle.oci-api-mcp-server:latest"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+Replace `"/path/to/your/.oci"` with the actual path to your OCI configuration directory.
+
+⚠️ **NOTE**: Ensure that the _key_file_ field in /path/to/your/.oci/config uses the ~ character so that the path resolves both inside and outside the container; for example: `key_file=~/.oci/oci_api_key.pem`.
+
+For servers not requiring OCI credentials, omit the `-v` volume mount.
+
 For Windows - **TODO**
 
 7. Once installed, you should see a list of your **MCP Servers** under the **Installed** tab. They will have a green toggle that shows that they are enabled.
@@ -179,6 +237,27 @@ For macOS/Linux:
 }
 ```
 
+Alternatively, to run using podman (example for oracle-oci-api-mcp-server):
+
+```json
+{
+  "mcpServers": {
+    "oracle-oci-api-mcp-server": {
+      "type": "stdio",
+      "command": "podman",
+      "args": ["run", "-i", "--rm", "-v", "/path/to/your/.oci:/app/.oci", "oracle.oci-api-mcp-server:latest"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+Replace `"/path/to/your/.oci"` with the actual path to your OCI configuration directory.
+
+For servers not requiring OCI credentials, omit the `-v` volume mount.
+
 `<profile_name>` is the profile that you set up during the [authentication](#authentication) steps.
 
 For Windows - **TODO**
@@ -204,7 +283,7 @@ For Windows: If installed via the official installer, the server is typically co
 For Linux: `sudo systemctl start ollama`
 
 3. Verify the ollama server has started with `curl http://localhost:11434`. A successful response will typically be "Ollama is running".
-4. Fetch the large language model, where `<model>` is the name of your desired model (e.g. `qwen2.5`), with `ollama pull <model>`. For more options, check Ollama's list of [models that support tool calling](https://ollama.com/search?c=tools).
+4. Fetch the large language model, where `<model>` is the name of your desired model (e.g. `llama3.2`), with `ollama pull <model>`. For more options, check Ollama's list of [models that support tool calling](https://ollama.com/search?c=tools).
 5. Install `go` from [here](https://go.dev/doc/install)
 6. Install `mcphost` with `go install github.com/mark3labs/mcphost@latest`
 7. Add go's bin to your PATH with `export PATH=$PATH:~/go/bin`
@@ -229,6 +308,27 @@ For macOS/Linux:
   }
 }
 ```
+
+Alternatively, to run using podman (example for oracle-oci-api-mcp-server):
+
+```json
+{
+  "mcpServers": {
+    "oracle-oci-api-mcp-server": {
+      "type": "stdio",
+      "command": "podman",
+      "args": ["run", "-i", "--rm", "-v", "/path/to/your/.oci:/app/.oci", "oracle.oci-api-mcp-server:latest"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+Replace `"/path/to/your/.oci"` with the actual path to your OCI configuration directory.
+
+For servers not requiring OCI credentials, omit the `-v` volume mount.
 
 `<profile_name>` is the profile that you set up during the [authentication](#authentication) steps.
 
@@ -265,7 +365,7 @@ Below is an example MCP client configuration for a typical python server using t
 *(For Node.js/Java/other servers, follow respective instructions in that server’s README)*
 
 For macOS/Linux:
-```
+```json
 {
   "mcpServers": {
     "oracle-oci-api-mcp-server": {
@@ -350,7 +450,7 @@ the [documentation](https://modelcontextprotocol.io/docs/tools/inspector).
 The Inspector runs directly through npx without requiring installation. For instance, to inspect your locally developed
 server, you can run:
 
-```
+```sh
 npx @modelcontextprotocol/inspector \
   uv \
   --directory <absolute path to your server code> \

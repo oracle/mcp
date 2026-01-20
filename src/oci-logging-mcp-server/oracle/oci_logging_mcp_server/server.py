@@ -40,7 +40,8 @@ mcp = FastMCP(name=__project__)
 def get_logging_client():
     logger.info("entering get_logging_client")
     config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
 
     private_key = oci.signer.load_private_key_from_file(config["key_file"])
@@ -55,7 +56,8 @@ def get_logging_client():
 def get_logging_search_client():
     logger.info("entering get_logging_client")
     config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
 
     private_key = oci.signer.load_private_key_from_file(config["key_file"])

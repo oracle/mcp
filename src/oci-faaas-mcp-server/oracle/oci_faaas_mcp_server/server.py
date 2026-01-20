@@ -17,9 +17,11 @@ from .models import (
     FusionEnvironment,
     FusionEnvironmentFamily,
     FusionEnvironmentStatus,
+    ServiceAttachmentSummary,
     map_fusion_environment,
     map_fusion_environment_family,
     map_fusion_environment_status,
+    map_service_attachment_summary,
 )
 
 logger = Logger(__name__, level="INFO")
@@ -214,6 +216,85 @@ def get_fusion_environment_status(
         fusion_environment_id
     )
     return map_fusion_environment_status(response.data)
+
+
+@mcp.tool(
+    description=(
+        "Returns a list of Service attachments present under the specified Fusion environment "
+    )
+)
+def list_service_attachments(
+    fusion_environment_id: str = Field(..., description="Fusion environment OCID"),
+    display_name: Optional[str] = Field(
+        None, description="Filter to match entire display name."
+    ),
+    lifecycle_state: Optional[
+        Literal["CREATING", "UPDATING", "ACTIVE", "DELETING", "DELETED", "FAILED"]
+    ] = Field(
+        None,
+        description=(
+            "Filter by lifecycle state. Allowed: CREATING, UPDATING, ACTIVE, "
+            "DELETING, DELETED, FAILED"
+        ),
+    ),
+    service_instance_type: Optional[
+        Literal[
+            "DIGITAL_ASSISTANT",
+            "INTEGRATION_CLOUD",
+            "ANALYTICS_WAREHOUSE",
+            "VBCS",
+            "VISUAL_BUILDER_STUDIO",
+        ]
+    ] = Field(
+        None,
+        description=(
+            "Filter by service instance type. Allowed: "
+            "DIGITAL_ASSISTANT, INTEGRATION_CLOUD, ANALYTICS_WAREHOUSE, VBCS, VISUAL_BUILDER_STUDIO"
+        ),
+    ),
+) -> list[ServiceAttachmentSummary]:
+    client = get_faaas_client()
+
+    service_attachments: list[ServiceAttachmentSummary] = []
+    next_page: Optional[str] = None
+    has_next_page = True
+
+    while has_next_page:
+        kwargs: dict[str, Any] = {"fusion_environment_id": fusion_environment_id}
+        if next_page is not None:
+            kwargs["page"] = next_page
+        if display_name is not None:
+            kwargs["display_name"] = display_name
+        if lifecycle_state is not None:
+            kwargs["lifecycle_state"] = lifecycle_state
+        if service_instance_type is not None:
+            kwargs["service_instance_type"] = service_instance_type
+
+        response: oci.response.Response = client.list_service_attachments(**kwargs)
+
+        # Normalize response data to an iterable without using helpers
+        data_obj = response.data or []
+        items = getattr(data_obj, "items", None)
+        iterable = (
+            items
+            if items is not None
+            else (data_obj if isinstance(data_obj, list) else [data_obj])
+        )
+        for d in iterable:
+            service_attachments.append(map_service_attachment_summary(d))
+
+        # Robust pagination handling with header fallback
+        headers = getattr(response, "headers", None)
+        next_page = getattr(response, "next_page", None)
+        if next_page is None and headers:
+            try:
+                next_page = dict(headers).get("opc-next-page")
+            except Exception:
+                next_page = None
+        has_next_page = next_page is not None
+
+    logger.info(f"Found {len(service_attachments)} Service attachements")
+    return service_attachments
 
 
 def main():

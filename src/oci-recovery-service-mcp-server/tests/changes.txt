@@ -1,0 +1,43 @@
+Oracle#71 Add MCP server for Recovery service
+
+# Description
+
+This is a new MCP server that can be used to retrieve information on Protected databases.
+- List of databases in a compartment (compartment OCID is required)
+- List of recovery service subnets in a compartment (compartment OCID is required)
+- Space usage for protected databases.
+
+Fixes # 71 (issue)
+
+## Type of change
+
+
+- [ ] New feature (non-breaking change which adds functionality)
+
+
+# How Has This Been Tested?
+
+Please describe the tests that you ran to verify your changes. Provide instructions so we can reproduce. Please also list any relevant details for your test configuration
+
+- [ ] Test A - List compartments
+- [ ] Test B - List protected databases (lists none because you must enter a relevant compartment OCID)
+- [ ] Test C - List usage and cost for a range of dates
+- [ ] Test D - List recovery service subnets (lists none because you must enter a relevant compartment OCID)
+
+
+**Test Configuration**:
+* Firmware version:
+* Hardware:
+* Toolchain:
+* SDK:
+
+# Checklist:
+
+- [ ] My code follows the style guidelines of this project
+- [ ] I have performed a self-review of my own code
+- [ ] I have commented my code, particularly in hard-to-understand areas
+- [ ] I have made corresponding changes to the documentation
+- [ ] My changes generate no new warnings
+- [ ] I have added tests that prove my fix is effective or that my feature works
+- [ ] New and existing unit tests pass locally with my changes
+- [ ] Any dependent changes have been merged and published in downstream modules

@@ -64,6 +64,23 @@ public final class ServerConfig {
     "similarity_search", "explain_plan"
   );
 
+  /** Built-in toolsets covering predefined tools. Lowercase keys and members. */
+  private static final Map<String, Set<String>> BUILTIN_TOOLSETS = Map.of(
+      "log_analyzer", Set.of(
+          "get-jdbc-stats",
+          "get-jdbc-queries",
+          "get-jdbc-errors",
+          "list-log-files-from-directory",
+          "jdbc-log-comparison",
+          "get-jdbc-connection-events",
+          "get-rdbms-errors",
+          "get-rdbms-packet-dumps"
+      ),
+      "explain", Set.of("explain_plan"),
+      "similarity", Set.of("similarity_search"),
+      "admin", Set.of("list-tools", "edit-tools")
+  );
+
 
   /**
    * Builds a {@link ServerConfig} from JVM system properties (i.e., {@code -Dkey=value}),
@@ -83,8 +100,7 @@ public final class ServerConfig {
    * @throws IllegalStateException if required properties are missing from both system properties and YAML config
    */
   public static ServerConfig fromSystemPropertiesAndYaml(ConfigRoot configRoot, String defaultSourceKey) {
-    Set<String> tools = parseToolsProp(LoadedConstants.TOOLS);
-    boolean needDb = wantsAnyDbTools(tools);
+    Set<String> rawTools = parseToolsProp(LoadedConstants.TOOLS);
 
     String dbUrl = LoadedConstants.DB_URL;
     String dbUser = LoadedConstants.DB_USER;
@@ -98,7 +114,10 @@ public final class ServerConfig {
         entry.getValue().name = entry.getKey();
       }
     }
-    configRoot.substituteEnvVars();
+    if (configRoot != null) configRoot.substituteEnvVars();
+
+    Set<String> expandedTools = expandToolsFilter(rawTools, configRoot);
+
     boolean allLoadedConstantsPresent =
         dbUrl != null && !dbUrl.isBlank()
         && dbUser != null && !dbUser.isBlank()
@@ -112,6 +131,8 @@ public final class ServerConfig {
       defaultSourceName = defaultSourceKey;
     }
 
+    boolean needDb = wantsAnyDbToolsExpanded(expandedTools);
+
     if (needDb && (dbUrl == null || dbUrl.isBlank())) {
       throw new IllegalStateException("Missing required db.url in both system properties and YAML config");
     }
@@ -121,7 +142,7 @@ public final class ServerConfig {
     if (needDb && (dbPass == null || dbPass.length == 0)) {
       throw new IllegalStateException("Missing required db.password in both system properties and YAML config");
     }
-    return new ServerConfig(dbUrl, dbUser, dbPass, tools, sources, toolsMap);
+    return new ServerConfig(dbUrl, dbUser, dbPass, expandedTools, sources, toolsMap);
   }
 
   /**
@@ -132,8 +153,9 @@ public final class ServerConfig {
    * @throws IllegalStateException if {@code db.url} is missing or blank
    */
   static ServerConfig fromSystemProperties() {
-    Set<String> tools = parseToolsProp(LoadedConstants.TOOLS);
-    boolean needDb = wantsAnyDbTools(tools);
+    Set<String> raw = parseToolsProp(LoadedConstants.TOOLS);
+    Set<String> expanded = expandToolsFilter(raw, null);
+    boolean needDb = wantsAnyDbToolsExpanded(expanded);
 
     String dbUrl = LoadedConstants.DB_URL;
     if (needDb && (dbUrl == null || dbUrl.isBlank())) {
@@ -144,7 +166,7 @@ public final class ServerConfig {
             dbUrl,
             LoadedConstants.DB_USER,
             LoadedConstants.DB_PASSWORD,
-            tools,
+            expanded,
             new HashMap<>(),
             new HashMap<>()
     );
@@ -174,9 +196,49 @@ public final class ServerConfig {
     return s;
   }
 
-  private static boolean wantsAnyDbTools(Set<String> toolsFilter) {
-    if (toolsFilter == null) return true; // null == all tools enabled
-    for (String t : toolsFilter) {
+  /**
+   * Expands the raw -Dtools filter to concrete tool names by resolving YAML and built-in toolsets.
+   * Returns null to mean "all tools" if the input is null.
+   */
+  private static Set<String> expandToolsFilter(Set<String> raw, ConfigRoot configRoot) {
+    if (raw == null) return null; // all tools enabled
+    Map<String, List<String>> yamlSets = (configRoot != null) ? configRoot.toolsets : null;
+
+    Set<String> out = new LinkedHashSet<>();
+    for (String name : raw) {
+      String k = name == null ? null : name.trim().toLowerCase(Locale.ROOT);
+      if (k == null || k.isEmpty()) continue;
+
+      // YAML toolset match
+      if (yamlSets != null && yamlSets.containsKey(k)) {
+        List<String> members = yamlSets.get(k);
+        if (members != null) {
+          for (String m : members) {
+            if (m != null) {
+              String mm = m.trim().toLowerCase(Locale.ROOT);
+              if (!mm.isEmpty()) out.add(mm);
+            }
+          }
+        }
+        continue;
+      }
+
+      // Built-in toolset match
+      Set<String> builtin = BUILTIN_TOOLSETS.get(k);
+      if (builtin != null) {
+        out.addAll(builtin);
+        continue;
+      }
+
+      // Fallback to explicit tool name
+      out.add(k);
+    }
+    return out;
+  }
+
+  private static boolean wantsAnyDbToolsExpanded(Set<String> expandedFilter) {
+    if (expandedFilter == null) return true; // all enabled
+    for (String t : expandedFilter) {
       if (DB_TOOLS.contains(t)) return true;
     }
     return false;

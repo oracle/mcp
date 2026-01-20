@@ -76,11 +76,22 @@ tools:
         description: Hotel name to search for.
         required: false
     statement: SELECT * FROM hotels WHERE name LIKE '%' || :name || '%'
+
+# Optional toolsets combining custom tools
+toolsets:
+  reporting: [hotels-by-name]
 ```
 To enable YAML configuration, launch the server with:
 ```bash
 java -DconfigFile=/path/to/config.yaml -jar <mcp-server>.jar
 ```
+
+Toolsets can be enabled from `-Dtools` alongside individual tools. For example:
+- `-Dtools=reporting` enables all tools in the `reporting` toolset
+- `-Dtools=reporting,explain` enables your `reporting` set plus the built-in `explain` toolset (see below)
+- `-Dtools=*` or omit `-Dtools` to enable everything
+
+> Tip: You can also manage YAML-defined tools at runtime using the `edit-tools` admin tool; see section 3.5.
 
 ---
 
@@ -424,12 +435,20 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
       <td><code>tools</code> (aka <code>-Dtools</code>)</td>
       <td>No</td>
       <td>
-        Comma-separated allow-list of tool names to enable.  
-        Use <code>*</code> or <code>all</code> to enable everything.  
-        If omitted, all tools are enabled by default.
+        Comma-separated allow-list of tool or toolset names to enable (case-insensitive).<br/>
+        You can pass individual tools (e.g. <code>get-jdbc-stats</code>) or any of the following built-in toolsets:
+        <ul>
+          <li><code>log_analyzer</code> — all JDBC log and RDBMS/SQLNet analysis tools</li>
+          <li><code>explain</code> — <code>explain_plan</code></li>
+          <li><code>similarity</code> — <code>similarity_search</code></li>
+          <li><code>admin</code> — server admin tools (<code>list-tools</code>, <code>edit-tools</code>)</li>
+        </ul>
+        You can also define your own YAML <code>toolsets:</code> and reference them here.  
+        Use <code>*</code> or <code>all</code> to enable everything. If omitted, all tools are enabled by default.
       </td>
-      <td><code>get-jdbc-stats,get-jdbc-queries</code></td>
+      <td><code>log_analyzer</code> or <code>reporting,explain</code></td>
     </tr>
+
     <tr>
       <td><code>ojdbc.ext.dir</code></td>
       <td>No</td>

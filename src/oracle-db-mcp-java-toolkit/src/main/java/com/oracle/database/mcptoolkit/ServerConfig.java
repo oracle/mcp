@@ -66,7 +66,7 @@ public final class ServerConfig {
 
   /** Built-in toolsets covering predefined tools. Lowercase keys and members. */
   private static final Map<String, Set<String>> BUILTIN_TOOLSETS = Map.of(
-      "log_analyzer", Set.of(
+      "log-analyzer", Set.of(
           "get-jdbc-stats",
           "get-jdbc-queries",
           "get-jdbc-errors",

@@ -128,7 +128,7 @@ The server provides four built-in toolsets that can be enabled via `-Dtools`:
       </td>
     </tr>
     <tr>
-      <td><code>log_analyzer</code></td>
+      <td><code>log-analyzer</code></td>
       <td>JDBC and RDBMS log analysis</td>
       <td>
         get-jdbc-stats, get-jdbc-queries, get-jdbc-errors,
@@ -151,8 +151,8 @@ The server provides four built-in toolsets that can be enabled via `-Dtools`:
 
 **Common Configurations:**
 - `-Dtools=admin` - Database operations only
-- `-Dtools=log_analyzer` - Log analysis only (no database required)
-- `-Dtools=admin,log_analyzer` - Database + log analysis
+- `-Dtools=log-analyzer` - Log analysis only (no database required)
+- `-Dtools=admin,log-analyzer` - Database + log analysis
 - `-Dtools=*` - All tools (default if omitted)
 
 ### 3.1. Database Operations
@@ -538,7 +538,7 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
         Comma-separated allow-list of tool or toolset names to enable (case-insensitive).<br/>
         You can pass individual tools (e.g. <code>get-jdbc-stats</code>, <code>read-query</code>) or any of the following built-in toolsets:
         <ul>
-          <li><code>log_analyzer</code> — all JDBC log and RDBMS/SQLNet analysis tools (get-jdbc-stats, get-jdbc-queries, get-jdbc-errors, list-log-files-from-directory, jdbc-log-comparison, get-jdbc-connection-events, get-rdbms-errors, get-rdbms-packet-dumps)</li>
+          <li><code>log-analyzer</code> — all JDBC log and RDBMS/SQLNet analysis tools (get-jdbc-stats, get-jdbc-queries, get-jdbc-errors, list-log-files-from-directory, jdbc-log-comparison, get-jdbc-connection-events, get-rdbms-errors, get-rdbms-packet-dumps)</li>
           <li><code>explain</code> — <code>explain-plan</code></li>
           <li><code>similarity</code> — <code>similarity-search</code></li>
           <li><code>admin</code> — server admin and database tools (list-tools, edit-tools, read-query, write-query, create-table, delete-table, list-tables, describe-table, start-transaction, resume-transaction, commit-transaction, rollback-transaction, db-ping, db-metrics-range)</li>
@@ -546,7 +546,7 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
         You can also define your own YAML <code>toolsets:</code> and reference them here.  
         Use <code>*</code> or <code>all</code> to enable everything. If omitted, all tools are enabled by default.
       </td>
-      <td><code>admin,log_analyzer</code> or <code>reporting,explain</code></td>
+      <td><code>admin,log-analyzer</code> or <code>reporting,explain</code></td>
     </tr>
     <tr>
       <td><code>ojdbc.ext.dir</code></td>

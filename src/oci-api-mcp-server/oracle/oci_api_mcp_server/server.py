@@ -22,7 +22,7 @@ mcp = FastMCP(name=__project__)
 
 # setup user agent
 user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-USER_AGENT = f"{user_agent_name}/{__version__}"
+USER_AGENT = f"Oracle-{user_agent_name}/{__version__}"
 
 # Initialize the rotating audit logger. It will store logs at /tmp/audit.log
 initAuditLogger(logger)

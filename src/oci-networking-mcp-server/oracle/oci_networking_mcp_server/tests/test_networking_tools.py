@@ -604,7 +604,7 @@ class TestGetClient:
         args, _ = mock_client.call_args
         passed_config = args[0]
         assert passed_config is config
-        expected_user_agent = f"{server.__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{server.__version__}"  # noqa
+        expected_user_agent = f"Oracle-{server.__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{server.__version__}"  # noqa
         assert passed_config.get("additional_user_agent") == expected_user_agent
         # And we returned the client instance
         assert result == mock_client.return_value

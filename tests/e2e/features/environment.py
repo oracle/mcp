@@ -28,7 +28,7 @@ try:
 except FileNotFoundError:
     raise EnvironmentError(
         print(
-            f"{config["MCP_HOST_FILE"]} could not be found. Provide one to configure the MCP servers"
+            f"{config['MCP_HOST_FILE']} could not be found. Provide one to configure the MCP servers"
         )
     )
 
@@ -46,7 +46,7 @@ def set_mcp_servers(context):
         print("Configured servers: ", ", ".join(sorted(context.mcp_servers)))
     except FileNotFoundError:
         raise EnvironmentError(
-            f"{config["MCP_HOST_FILE"]} could not be found. Provide one to configure the MCP servers"
+            f"{config['MCP_HOST_FILE']} could not be found. Provide one to configure the MCP servers"
         )
 
 

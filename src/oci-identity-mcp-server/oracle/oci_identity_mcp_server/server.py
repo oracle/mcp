@@ -40,7 +40,8 @@ def get_identity_client():
         profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
     )
     user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
+    config["additional_user_agent"] = f"Oracle-{user_agent_name}/{__version__}"
+
     private_key = oci.signer.load_private_key_from_file(config["key_file"])
     token_file = os.path.expanduser(config["security_token_file"])
     with open(token_file, "r") as f:

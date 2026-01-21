@@ -16,7 +16,7 @@ from oracle.oci_api_mcp_server.server import mcp
 
 __version__ = importlib.metadata.version(__project__)
 user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-USER_AGENT = f"{user_agent_name}/{__version__}"
+USER_AGENT = f"Oracle-{user_agent_name}/{__version__}"
 
 
 class TestOCITools:

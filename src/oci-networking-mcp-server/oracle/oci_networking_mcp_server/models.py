@@ -847,7 +847,7 @@ class Vnic(BaseModel):
         None,
         description=(
             "Defined tags for this resource. Each key is predefined and scoped to a "
-            'namespace. Example: `{"Operations": {"CostCenter": "42"}}`',
+            'namespace. Example: `{"Operations": {"CostCenter": "42"}}`'
         ),
     )
     display_name: Optional[str] = Field(
@@ -864,7 +864,7 @@ class Vnic(BaseModel):
         None,
         description=(
             "Free-form tags for this resource. Each tag is a simple key-value pair with no "
-            'predefined name, type, or namespace. Example: `{"Department": "Finance"}`',
+            'predefined name, type, or namespace. Example: `{"Department": "Finance"}`'
         ),
     )
     hostname_label: Optional[str] = Field(
@@ -874,7 +874,7 @@ class Vnic(BaseModel):
             "hostname portion of the primary private IP's fully qualified domain name (FQDN) "
             "(for example, `bminstance1` in FQDN `bminstance1.subnet123.vcn1.oraclevcn.com`). "
             "Must be unique across all VNICs in the subnet and comply with RFC 952 and RFC 1123. "
-            "Example: `bminstance1`",
+            "Example: `bminstance1`"
         ),
     )
     id: Optional[str] = Field(None, description="The OCID of the VNIC.")
@@ -897,7 +897,7 @@ class Vnic(BaseModel):
         description=(
             "The MAC address of the VNIC. If the VNIC belongs to a VLAN as part of the Oracle "
             "Cloud VMware Solution, the MAC address is learned. If the VNIC belongs to a subnet, "
-            "the MAC address is a static, Oracle-provided value. Example: `00:00:00:00:00:01`",
+            "the MAC address is a static, Oracle-provided value. Example: `00:00:00:00:00:01`"
         ),
     )
     nsg_ids: Optional[List[str]] = Field(
@@ -933,7 +933,7 @@ class Vnic(BaseModel):
             "If the VNIC belongs to a VLAN as part of the Oracle Cloud VMware Solution "
             "(instead of belonging to a subnet), the `skipSourceDestCheck` attribute is `true`. "
             "This is because the source/destination check is always disabled for VNICs in a VLAN. "
-            "Example: `true`",
+            "Example: `true`"
         ),
     )
     subnet_id: Optional[str] = Field(
@@ -943,7 +943,7 @@ class Vnic(BaseModel):
         None,
         description=(
             "The date and time the VNIC was created, in the format defined by RFC3339. "
-            "Example: `2016-08-25T21:10:29.600Z`",
+            "Example: `2016-08-25T21:10:29.600Z`"
         ),
     )
     ipv6_addresses: Optional[List[str]] = Field(

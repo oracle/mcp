@@ -48,6 +48,6 @@ omit = [
 
 [tool.coverage.report]
 precision = 2
-fail_under = 65.05
+fail_under = 90
 
 

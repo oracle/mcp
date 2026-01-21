@@ -105,6 +105,56 @@ Toolsets can be enabled from `-Dtools` alongside individual tools. For example:
 
 ## 3. Built-in Tools
 
+### Built-in Toolsets Overview
+The server provides four built-in toolsets that can be enabled via `-Dtools`:
+
+<table>
+  <thead>
+    <tr>
+      <th>Toolset</th>
+      <th>Description</th>
+      <th>Tools Included</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>admin</code></td>
+      <td>Database operations and server admin</td>
+      <td>
+        read-query, write-query, create-table, delete-table, list-tables,
+        describe-table, start-transaction, resume-transaction,
+        commit-transaction, rollback-transaction, db-ping,
+        db-metrics-range, list-tools, edit-tools
+      </td>
+    </tr>
+    <tr>
+      <td><code>log_analyzer</code></td>
+      <td>JDBC and RDBMS log analysis</td>
+      <td>
+        get-jdbc-stats, get-jdbc-queries, get-jdbc-errors,
+        get-jdbc-connection-events, list-log-files-from-directory,
+        jdbc-log-comparison, get-rdbms-errors, get-rdbms-packet-dumps
+      </td>
+    </tr>
+    <tr>
+      <td><code>similarity</code></td>
+      <td>Vector similarity search</td>
+      <td>similarity-search</td>
+    </tr>
+    <tr>
+      <td><code>explain</code></td>
+      <td>SQL execution plan analysis</td>
+      <td>explain-plan</td>
+    </tr>
+  </tbody>
+</table>
+
+**Common Configurations:**
+- `-Dtools=admin` - Database operations only
+- `-Dtools=log_analyzer` - Log analysis only (no database required)
+- `-Dtools=admin,log_analyzer` - Database + log analysis
+- `-Dtools=*` - All tools (default if omitted)
+
 ### 3.1. Database Operations
 These tools provide direct SQL execution capabilities:
 

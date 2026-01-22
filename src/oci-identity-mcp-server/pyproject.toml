@@ -47,5 +47,9 @@ omit = [
 ]
 
 [tool.coverage.report]
+omit = [
+    "**/__init__.py",
+    "**/tests/*",
+]
 precision = 2
-fail_under = 58
+fail_under = 90

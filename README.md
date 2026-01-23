@@ -349,7 +349,7 @@ This section will help you set up your environment to prepare it for local devel
     ```sh
     uv venv --python 3.13 --seed
     source .venv/bin/activate        # On Windows: .venv\Scripts\activate
-    pip install -r requirements-dev.txt
+    uv pip install -r requirements-dev.txt
     ```
 
 2.  Locally build and install servers within the virtual environment

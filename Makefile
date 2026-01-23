@@ -52,7 +52,7 @@ lock-check:
 	done
 
 lint:
-	uv tool run --from 'tox==4.30.2' tox -e lint
+	uv run tox -e lint
 
 test:
 	@set -e -o pipefail; \

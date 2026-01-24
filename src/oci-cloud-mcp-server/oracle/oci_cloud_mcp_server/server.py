@@ -238,9 +238,10 @@ def list_client_operations(
             try:
                 doc = (inspect.getdoc(member) or "").strip()
                 first_line = doc.splitlines()[0] if doc else ""
+                params = inspect.signature(member)
             except Exception:
                 first_line = ""
-            ops.append({"name": name, "summary": first_line})
+            ops.append({"name": name, "summary": first_line, "params": str(params)})
 
         logger.info(f"Found {len(ops)} operations on {client_fqn}")
         return ops

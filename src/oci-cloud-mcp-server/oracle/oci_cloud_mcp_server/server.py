@@ -105,6 +105,176 @@ def _import_client(client_fqn: str) -> Any:
     return instance
 
 
+def _snake_to_camel(name: str) -> str:
+    parts = name.split("_")
+    return "".join(p.capitalize() for p in parts if p)
+
+
+def _import_models_module_from_client_fqn(client_fqn: str):
+    try:
+        pkg = client_fqn.rsplit(".", 1)[0]
+        return import_module(f"{pkg}.models")
+    except Exception:
+        return None
+
+
+def _resolve_model_class(models_module: Any, class_name: str):
+    try:
+        return getattr(models_module, class_name)
+    except Exception:
+        return None
+
+
+def _coerce_mapping_values(mapping: Dict[str, Any], models_module: Any) -> Dict[str, Any]:
+    """
+    Recursively coerce nested dict/list values inside a mapping into OCI model instances
+    when appropriate, using the same heuristics as at the top level.
+    """
+    suffixes = ("_details", "_config", "_configuration", "_source_details")
+    out: Dict[str, Any] = {}
+    for key, val in mapping.items():
+        if isinstance(val, dict):
+            candidates: List[str] = []
+            for s in suffixes:
+                if key.endswith(s):
+                    candidates.append(_snake_to_camel(key))
+                    break
+            out[key] = _construct_model_from_mapping(val, models_module, candidates)
+        elif isinstance(val, list):
+            new_list: List[Any] = []
+            for item in val:
+                if isinstance(item, dict):
+                    new_list.append(_construct_model_from_mapping(item, models_module, []))
+                else:
+                    new_list.append(item)
+            out[key] = new_list
+        else:
+            out[key] = val
+    return out
+
+
+def _construct_model_from_mapping(mapping: Dict[str, Any], models_module: Any, candidate_classnames: List[str]):
+    # explicit override via magic keys
+    fqn = mapping.get("__model_fqn") or mapping.get("__class_fqn")
+    class_name = mapping.get("__model") or mapping.get("__class")
+    clean = {k: v for k, v in mapping.items() if not k.startswith("__")}
+    # recursively coerce nested mappings/lists before attempting construction
+    clean = _coerce_mapping_values(clean, models_module)
+    # try explicit FQN first
+    if isinstance(fqn, str):
+        try:
+            mod_name, cls_name = fqn.rsplit(".", 1)
+            mod = import_module(mod_name)
+            cls = getattr(mod, cls_name)
+            if inspect.isclass(cls):
+                return cls(**clean)
+        except Exception:
+            pass
+    # try explicit simple class name within models module
+    if models_module and isinstance(class_name, str):
+        cls = _resolve_model_class(models_module, class_name)
+        if inspect.isclass(cls):
+            try:
+                return cls(**clean)
+            except Exception:
+                pass
+    # try candidates derived from param name
+    if models_module:
+        for cand in candidate_classnames:
+            cls = _resolve_model_class(models_module, cand)
+            if inspect.isclass(cls):
+                try:
+                    return cls(**clean)
+                except Exception:
+                    continue
+    # fall back to original mapping
+    return mapping
+
+
+def _coerce_params_to_oci_models(client_fqn: str, operation: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert plain dict/list params to OCI model instances when appropriate.
+    Heuristics:
+      - If a dict contains '__model_fqn' or '__model'/'__class', build that model.
+      - If a param name ends with typical model suffixes (e.g., *_details), attempt to
+        construct the corresponding CamelCase model class from the client's models module.
+    """
+    if not params:
+        return {}
+    models_module = _import_models_module_from_client_fqn(client_fqn)
+    suffixes = ("_details", "_config", "_configuration", "_source_details")
+    out: Dict[str, Any] = {}
+    for key, val in params.items():
+        if isinstance(val, dict):
+            candidates: List[str] = []
+            dest_key = key
+            for s in suffixes:
+                if key.endswith(s):
+                    candidates.append(_snake_to_camel(key))
+                    if s == "_details":
+                        base = _snake_to_camel(key[: -len(s)])
+                        # Try verb-specific model classes if this is a create_/update_ op
+                        if operation.startswith("create_"):
+                            candidates.append(f"Create{base}Details")
+                        elif operation.startswith("update_"):
+                            candidates.append(f"Update{base}Details")
+                        # Rename "<resource>_details" to the SDK's expected "create_<resource>_details"/"update_<resource>_details"
+                        if operation.startswith("create_") or operation.startswith("update_"):
+                            _, _, op_rest = operation.partition("_")
+                            if key == f"{op_rest}_details":
+                                dest_key = f"{operation}_details"
+                    break
+            out[dest_key] = _construct_model_from_mapping(val, models_module, candidates)
+        elif isinstance(val, list):
+            new_list: List[Any] = []
+            for item in val:
+                if isinstance(item, dict):
+                    # only construct list items if explicit model hint is present
+                    if any(hint in item for hint in ("__model_fqn", "__model", "__class_fqn", "__class")):
+                        new_list.append(
+                            _construct_model_from_mapping(item, models_module, [])
+                        )
+                    else:
+                        new_list.append(item)
+                else:
+                    new_list.append(item)
+            out[key] = new_list
+        else:
+            out[key] = val
+    # Final aliasing: if caller used "<resource>_details" and op is create_/update_,
+    # rename to the SDK-expected "create_<resource>_details"/"update_<resource>_details".
+    if operation.startswith("create_") or operation.startswith("update_"):
+        _, _, op_rest = operation.partition("_")
+        src = f"{op_rest}_details"
+        dst = f"{operation}_details"
+        if src in out and dst not in out:
+            out[dst] = out.pop(src)
+    return out
+
+
+def _align_params_to_signature(method: Callable[..., Any], operation_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Align incoming params to the method's expected signature names.
+    Specifically, for create_/update_ operations remap '<resource>_details' to
+    'create_<resource>_details'/'update_<resource>_details' when the latter exists
+    in the target method signature.
+    """
+    try:
+        sig = inspect.signature(method)
+        param_names = set(sig.parameters.keys())
+    except Exception:
+        return params
+
+    aligned = dict(params)
+    if operation_name.startswith("create_") or operation_name.startswith("update_"):
+        _, _, op_rest = operation_name.partition("_")
+        src = f"{op_rest}_details"
+        dst = f"{operation_name}_details"
+        if src in aligned and dst not in aligned and dst in param_names:
+            aligned[dst] = aligned.pop(src)
+    return aligned
+
+
 def _serialize_oci_data(data: Any) -> Any:
     """
     Convert OCI SDK model objects or collections into JSON-serializable structures.
@@ -144,8 +314,41 @@ def _call_with_pagination_if_applicable(
             opc_request_id = None
         return response.data, opc_request_id
 
-    # non-list operation; invoke directly
-    response = method(**params)
+    # non-list operation; pre-alias known kwarg patterns and invoke, with fallback aliasing
+    call_params = dict(params)
+    if operation_name.startswith("create_") or operation_name.startswith("update_"):
+        _, _, op_rest = operation_name.partition("_")
+        src = f"{op_rest}_details"
+        dst = f"{operation_name}_details"
+        if src in call_params and dst not in call_params:
+            call_params[dst] = call_params.pop(src)
+
+    try:
+        print("DEBUG _call_with_pagination_if_applicable call_params keys:", list(call_params.keys()), "op:", operation_name)
+        response = method(**call_params)
+    except TypeError as e:
+        # Fallback: if user passed "<resource>_details" for a create_/update_ op,
+        # retry with "create_<resource>_details"/"update_<resource>_details"
+        msg = str(e)
+        if "unexpected keyword argument" in msg and (
+            operation_name.startswith("create_") or operation_name.startswith("update_")
+        ):
+            try:
+                bad_kw = msg.split("'")[1]
+                _, _, op_rest = operation_name.partition("_")
+                expected_src = f"{op_rest}_details"
+                if bad_kw == expected_src and expected_src in call_params:
+                    alt_key = f"{operation_name}_details"
+                    new_params = dict(call_params)
+                    new_params[alt_key] = new_params.pop(expected_src)
+                    response = method(**new_params)
+                else:
+                    raise
+            except Exception:
+                raise
+        else:
+            raise
+
     # most OCI SDK methods return oci.response.Response with .data and .headers
     if hasattr(response, "data"):
         data = response.data
@@ -192,9 +395,45 @@ def invoke_oci_api(
             )
 
         params = params or {}
-        data, opc_request_id = _call_with_pagination_if_applicable(
-            method, params, operation
-        )
+        # Pre-normalize parameter key to the SDK-expected kw for create_/update_ ops,
+        # so downstream coercion and invocation consistently use the correct key.
+        normalized_params = dict(params)
+        if operation.startswith("create_") or operation.startswith("update_"):
+            _, _, op_rest = operation.partition("_")
+            src = f"{op_rest}_details"
+            dst = f"{operation}_details"
+            if src in normalized_params and dst not in normalized_params:
+                normalized_params[dst] = normalized_params.pop(src)
+
+        coerced_params = _coerce_params_to_oci_models(client_fqn, operation, normalized_params)
+        # Final kwarg aliasing at the top-level prior to invocation to ensure correct SDK kw
+        final_params = dict(coerced_params)
+
+        final_params = _align_params_to_signature(method, operation, final_params)
+        print("DEBUG invoke_oci_api final_params keys:", list(final_params.keys()), "op:", operation)
+        try:
+            data, opc_request_id = _call_with_pagination_if_applicable(
+                method, final_params, operation
+            )
+        except TypeError as e:
+            msg = str(e)
+            if "unexpected keyword argument" in msg and (
+                operation.startswith("create_") or operation.startswith("update_")
+            ):
+                # Last-chance aliasing retry at top level
+                _, _, op_rest = operation.partition("_")
+                src = f"{op_rest}_details"
+                dst = f"{operation}_details"
+                if src in final_params and dst not in final_params:
+                    alt_params = dict(final_params)
+                    alt_params[dst] = alt_params.pop(src)
+                    data, opc_request_id = _call_with_pagination_if_applicable(
+                        method, alt_params, operation
+                    )
+                else:
+                    raise
+            else:
+                raise
 
         result = {
             "client": client_fqn,

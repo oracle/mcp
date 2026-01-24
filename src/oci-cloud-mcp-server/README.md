@@ -61,6 +61,66 @@ Response (shape):
 
 Returns a list of operations with a short summary extracted from docstrings when available.
 
+## Passing complex model parameters
+
+Many OCI SDK operations expect complex model instances (e.g., CreateVcnDetails) rather than raw dictionaries.
+This server now automatically constructs SDK model objects from JSON parameters using heuristics:
+
+- If a parameter name ends with "_details", "_config", "_configuration", or "_source_details", the value will be
+  coerced into the appropriate model class from the client's models module.
+  - Example: For VirtualNetworkClient.create_vcn, either of these will work:
+    {
+      "client_fqn": "oci.core.VirtualNetworkClient",
+      "operation": "create_vcn",
+      "params": {
+        "create_vcn_details": {
+          "cidr_block": "10.0.0.0/16",
+          "compartment_id": "ocid1.compartment.oc1..exampleuniqueID",
+          "display_name": "my-vcn"
+        }
+      }
+    }
+    {
+      "client_fqn": "oci.core.VirtualNetworkClient",
+      "operation": "create_vcn",
+      "params": {
+        "vcn_details": {
+          "cidr_block": "10.0.0.0/16",
+          "compartment_id": "ocid1.compartment.oc1..exampleuniqueID",
+          "display_name": "my-vcn"
+        }
+      }
+    }
+  In both cases, the server will construct an instance of oci.core.models.CreateVcnDetails.
+
+- For "create_*" and "update_*" operations, if the parameter is named like "vcn_details" (missing the verb),
+  the server will also try CreateVcnDetails/UpdateVcnDetails automatically.
+
+- Nested dictionaries and lists inside such parameters are recursively coerced. For lists that do not obviously
+  map to a model type, you can provide explicit hints.
+
+Explicit model hints (optional):
+- __model: Simple class name in the client's models module (e.g., "CreateVcnDetails")
+- __model_fqn: Fully-qualified class name (e.g., "oci.core.models.CreateVcnDetails")
+
+Example with explicit hint:
+{
+  "client_fqn": "oci.core.VirtualNetworkClient",
+  "operation": "create_vcn",
+  "params": {
+    "create_vcn_details": {
+      "__model": "CreateVcnDetails",
+      "cidr_block": "10.0.0.0/16",
+      "compartment_id": "ocid1.compartment.oc1..exampleuniqueID",
+      "display_name": "my-vcn"
+    }
+  }
+}
+
+Note:
+- Parameter names must match the SDK's expected kwargs. For example, the SDK expects "create_vcn_details" for create_vcn.
+  The heuristic also accepts "vcn_details" and will resolve it to the correct model class, but the keyword name still needs to be correct for other methods without such ambiguity.
+
 ## Authentication and configuration
 
 This server uses the same configuration as the OCI CLI:

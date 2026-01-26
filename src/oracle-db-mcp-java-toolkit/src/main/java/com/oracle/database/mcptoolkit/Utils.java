@@ -12,10 +12,7 @@ import com.oracle.database.mcptoolkit.config.ConfigRoot;
 import com.oracle.database.mcptoolkit.config.DataSourceConfig;
 import com.oracle.database.mcptoolkit.config.ToolConfig;
 import com.oracle.database.mcptoolkit.config.ToolParameterConfig;
-import com.oracle.database.mcptoolkit.tools.AdminTools;
-import com.oracle.database.mcptoolkit.tools.ExplainAndExecutePlanTool;
-import com.oracle.database.mcptoolkit.tools.LogAnalyzerTools;
-import com.oracle.database.mcptoolkit.tools.SimilaritySearchTool;
+import com.oracle.database.mcptoolkit.tools.*;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -93,19 +90,27 @@ public class Utils {
       }
     }
 
-    // similarity-search
-    if (isToolEnabled(config, "similarity-search")) {
-      server.addTool(SimilaritySearchTool.getSymilaritySearchTool(config));
+    // RAG tools
+    List<McpServerFeatures.SyncToolSpecification> ragSpecs = RagTools.getTools(config);
+    for (McpServerFeatures.SyncToolSpecification spec : ragSpecs) {
+      String toolName = spec.tool().name();
+      if (isToolEnabled(config, toolName)) {
+        server.addTool(spec);
+      }
     }
 
-    // explain-plan
-    if (isToolEnabled(config, "explain-plan")) {
-      server.addTool(ExplainAndExecutePlanTool.getExplainAndExecutePlanTool(config));
+    // Database Operator tools
+    List<McpServerFeatures.SyncToolSpecification> dbOperatorSpecs = DatabaseOperatorTools.getTools(config);
+    for (McpServerFeatures.SyncToolSpecification spec : dbOperatorSpecs) {
+      String toolName = spec.tool().name();
+      if (isToolEnabled(config, toolName)) {
+        server.addTool(spec);
+      }
     }
 
-    // admin tools
-    List<McpServerFeatures.SyncToolSpecification> adminSpecs = AdminTools.getTools(config);
-    for (McpServerFeatures.SyncToolSpecification spec : adminSpecs) {
+    // MCP Admin tools
+    List<McpServerFeatures.SyncToolSpecification> mcpAdminSpecs = McpAdminTools.getTools(config);
+    for (McpServerFeatures.SyncToolSpecification spec : mcpAdminSpecs) {
       String toolName = spec.tool().name();
       if (isToolEnabled(config, toolName)) {
         server.addTool(spec);

@@ -24,18 +24,29 @@ import static com.oracle.database.mcptoolkit.Utils.*;
 import static com.oracle.database.mcptoolkit.tools.ToolSchemas.SIMILARITY_SEARCH;
 
 /**
- * Provides a tool for performing similarity searches using vector embeddings.
+ * RAG (Retrieval-Augmented Generation) tools.
  * <p>
- * This class is responsible for handling the "similarity-search" tool, which
- * allows users to search for similar text based on a given query.
+ * This class provides tools for RAG applications, including similarity search
+ * using vector embeddings.
  */
-public class SimilaritySearchTool {
+public class RagTools {
 
   private static final String DEFAULT_VECTOR_TABLE            = "profile_oracle";
   private static final String DEFAULT_VECTOR_DATA_COLUMN      = "text";
   private static final String DEFAULT_VECTOR_EMBEDDING_COLUMN = "embedding";
   private static final String DEFAULT_VECTOR_MODEL_NAME       = "doc_model";
   private static final int    DEFAULT_VECTOR_TEXT_FETCH_LIMIT = 4000;
+
+  private RagTools() {}
+
+  /**
+   * Returns all RAG tool specifications.
+   */
+  public static List<McpServerFeatures.SyncToolSpecification> getTools(ServerConfig config) {
+    List<McpServerFeatures.SyncToolSpecification> tools = new ArrayList<>();
+    tools.add(getSymilaritySearchTool(config));
+    return tools;
+  }
 
   /**
    * Returns a tool specification for the "similarity_search" tool.
@@ -46,53 +57,52 @@ public class SimilaritySearchTool {
    * @return tool specification
    */
   public static McpServerFeatures.SyncToolSpecification getSymilaritySearchTool(ServerConfig config) {
+    return McpServerFeatures.SyncToolSpecification.builder()
+      .tool(McpSchema.Tool.builder()
+         .name("similarity-search")
+         .title("Similarity Search")
+         .description("Semantic vector similarity over a table with (text, embedding) columns")
+         .inputSchema(SIMILARITY_SEARCH)
+         .build())
+      .callHandler((exchange, callReq) -> tryCall(() -> {
+        try (Connection c = openConnection(config, null)) {
+          Map<String, Object> arguments = callReq.arguments();
+          String question = String.valueOf(arguments.get("question"));
+          if (question == null || question.isBlank()) {
+            return new McpSchema.CallToolResult("Question must be non-blank", true);
+          }
+          int topK;
+          try {
+            topK = Integer.parseInt(String.valueOf(arguments.getOrDefault("topK", 5)));
+          } catch (NumberFormatException e) {
+            topK = 5;
+          }
+          topK = Math.max(1, Math.min(100, topK));
 
-        return McpServerFeatures.SyncToolSpecification.builder()
-            .tool(McpSchema.Tool.builder()
-                .name("similarity-search")
-                .title("Similarity Search")
-                .description("Semantic vector similarity over a table with (text, embedding) columns")
-                .inputSchema(SIMILARITY_SEARCH)
-                .build())
-            .callHandler((exchange, callReq) -> tryCall(() -> {
-              try (Connection c = openConnection(config, null)) {
-                Map<String, Object> arguments = callReq.arguments();
-                String question = String.valueOf(arguments.get("question"));
-                if (question == null || question.isBlank()) {
-                  return new McpSchema.CallToolResult("Question must be non-blank", true);
-                }
-                int topK;
-                try {
-                  topK = Integer.parseInt(String.valueOf(arguments.getOrDefault("topK", 5)));
-                } catch (NumberFormatException e) {
-                  topK = 5;
-                }
-                topK = Math.max(1, Math.min(100, topK));
+          String table = getOrDefault(arguments.get("table"), DEFAULT_VECTOR_TABLE);
+          String dataColumn = getOrDefault(arguments.get("dataColumn"), DEFAULT_VECTOR_DATA_COLUMN);
+          String embeddingColumn = getOrDefault(arguments.get("embeddingColumn"), DEFAULT_VECTOR_EMBEDDING_COLUMN);
+          String modelName = getOrDefault(arguments.get("modelName"), DEFAULT_VECTOR_MODEL_NAME);
 
-                String table = getOrDefault(arguments.get("table"), DEFAULT_VECTOR_TABLE);
-                String dataColumn = getOrDefault(arguments.get("dataColumn"), DEFAULT_VECTOR_DATA_COLUMN);
-                String embeddingColumn = getOrDefault(arguments.get("embeddingColumn"), DEFAULT_VECTOR_EMBEDDING_COLUMN);
-                String modelName = getOrDefault(arguments.get("modelName"), DEFAULT_VECTOR_MODEL_NAME);
+          int textFetchLimit = DEFAULT_VECTOR_TEXT_FETCH_LIMIT;
+          Object limitArg = arguments.get("textFetchLimit");
+          if (limitArg != null) {
+            try {
+              textFetchLimit = Math.max(1, Integer.parseInt(String.valueOf(limitArg)));
+            }
+            catch (NumberFormatException ignored) {}
+          }
 
-                int textFetchLimit = DEFAULT_VECTOR_TEXT_FETCH_LIMIT;
-                Object limitArg = arguments.get("textFetchLimit");
-                if (limitArg != null) {
-                  try {
-                    textFetchLimit = Math.max(1, Integer.parseInt(String.valueOf(limitArg)));
-                  }
-                  catch (NumberFormatException ignored) {}
-                }
+          List<String> results = runSimilaritySearch(
+                  c, table, dataColumn, embeddingColumn, modelName, textFetchLimit, question, topK);
 
-                List<String> results = runSimilaritySearch(
-                    c, table, dataColumn, embeddingColumn, modelName, textFetchLimit, question, topK);
-
-                return McpSchema.CallToolResult.builder()
-                    .structuredContent(Map.of("rows", results))
-                    .addTextContent(new JsonMapper().writeValueAsString(results))
-                    .build();
-              }
-            }))
-            .build();
+          return McpSchema.CallToolResult.builder()
+                  .structuredContent(Map.of("rows", results))
+                  .addTextContent(new JsonMapper().writeValueAsString(results))
+                  .build();
+        }
+      }))
+    .build();
   }
 
 

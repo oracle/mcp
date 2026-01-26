@@ -7,8 +7,8 @@ Oracle Database MCP Toolkit is a Model Context Protocol (MCP) server that lets y
 * Define your own custom tools via a simple YAML configuration file.
 * Use built-in tools:
   * Analyze Oracle JDBC thin client logs and RDBMS/SQLNet trace files.
-  * Database tools for SQL execution, table management, transactions, and performance monitoring.
-  * Database-powered tools, including vector similarity search and SQL execution plan analysis.
+  * Database tools for SQL execution, table management, transactions, performance monitoring and execution plan analysis.
+  * Database-powered tools, including vector similarity search (RAG).
   * Admin tools for runtime discovery and configuration: list available tools and live-edit YAML-defined tools with hot reload.
 * Deploy locally or remotely - optionally as a container - with support for TLS and OAuth2
 
@@ -27,7 +27,7 @@ This provides a flexible and declarative way to extend the server without modify
 A YAML file may define:
 
 * **datasources:** — Database configuration info:
-  * `url`: This the JDBC URL used by the MCP server to connect to the database using the JDBC driver.
+  * `url`: This is the JDBC URL used by the MCP server to connect to the database using the JDBC driver.
   * `user`: The username to use for the database connection.
   * `password`: The password to use for the database connection.
   * `host` (optional): The hostname or IP address of the database server.
@@ -118,13 +118,10 @@ The server provides four built-in toolsets that can be enabled via `-Dtools`:
   </thead>
   <tbody>
     <tr>
-      <td><code>admin</code></td>
-      <td>Database operations and server admin</td>
+      <td><code>mcp-admin</code></td>
+      <td>Server discovery and runtime configuration</td>
       <td>
-        read-query, write-query, create-table, delete-table, list-tables,
-        describe-table, start-transaction, resume-transaction,
-        commit-transaction, rollback-transaction, db-ping,
-        db-metrics-range, list-tools, edit-tools
+        list-tools, edit-tools
       </td>
     </tr>
     <tr>
@@ -137,22 +134,31 @@ The server provides four built-in toolsets that can be enabled via `-Dtools`:
       </td>
     </tr>
     <tr>
-      <td><code>similarity</code></td>
-      <td>Vector similarity search</td>
-      <td>similarity-search</td>
+      <td><code>database-operator</code></td>
+      <td>Database operations, transactions, monitoring, and execution plans</td>
+      <td>
+        read-query, write-query, create-table, delete-table,
+        list-tables, describe-table, start-transaction, resume-transaction,
+        commit-transaction, rollback-transaction, db-ping,
+        db-metrics-range, explain-plan
+      </td>
     </tr>
     <tr>
-      <td><code>explain</code></td>
-      <td>SQL execution plan analysis</td>
-      <td>explain-plan</td>
+      <td><code>rag</code></td>
+      <td>Vector similarity search</td>
+      <td>similarity-search</td>
     </tr>
   </tbody>
 </table>
 
+_Note: Each tool belongs to exactly one built-in toolset. Enabling a toolset enables all tools listed for that toolset._
+
 **Common Configurations:**
-- `-Dtools=admin` - Database operations only
+- `-Dtools=mcp-admin` - Admin and runtime configuration tools
 - `-Dtools=log-analyzer` - Log analysis only (no database required)
-- `-Dtools=admin,log-analyzer` - Database + log analysis
+- `-Dtools=database-operator` - Database operations and SQL execution
+- `-Dtools=rag` – Vector similarity search
+- `-Dtools=mcp-admin,log-analyzer` - Admin + log analysis
 - `-Dtools=*` - All tools (default if omitted)
 
 ### 3.1. Database Operations
@@ -201,7 +207,7 @@ These tools operate on RDBMS/SQLNet trace files:
 * **`get-rdbms-errors`**: Extracts errors from RDBMS/SQLNet trace files.
 * **`get-rdbms-packet-dumps`**: Extracts packet dumps for a specific connection ID.
 
-### 3.7. Vector Similarity Search
+### 3.7. Vector Similarity Search (RAG)
 
 * **`similarity-search`**: Perform semantic similarity search using Oracle’s vector features (`VECTOR_EMBEDDING`, `VECTOR_DISTANCE`).
 
@@ -244,15 +250,14 @@ These tools operate on RDBMS/SQLNet trace files:
   * `planText`: DBMS_XPLAN output.
   * `llmPrompt`: A structured prompt for an LLM to explain + tune the plan.
 
-### 3.9. Admin, Runtime Configuration and Database Tools
+### 3.9. Admin and Runtime Configuration Tools
 
-These tools help you discover what's enabled and manage YAML-defined tools at runtime, and perform core database operations.
-They are part of the `admin` toolset (enable via `-Dtools=admin` or include individual tool names).
+These tools help you discover what's enabled and manage YAML-defined tools at runtime.
+They are part of the `mcp-admin` toolset (enable via `-Dtools=mcp-admin` or include individual tool names).
 
-_Note: The admin toolset includes both the admin tools listed below AND all database operation tools described in 
-sections 3.1-3.4 (Database Operations, Table Management, Transaction Management, and Database Monitoring)._
+_Note: The `mcp-admin` toolset is focused on server discovery and runtime configuration only._
 
-#### Admin Tools:
+#### MCP Admin Tools:
 
 - `list-tools`: List all available tools with their descriptions.
   - Inputs: none
@@ -538,15 +543,15 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
         Comma-separated allow-list of tool or toolset names to enable (case-insensitive).<br/>
         You can pass individual tools (e.g. <code>get-jdbc-stats</code>, <code>read-query</code>) or any of the following built-in toolsets:
         <ul>
+          <li><code>mcp-admin</code> — server discovery and runtime configuration tools (list-tools, edit-tools)</li>
+          <li><code>database-operator</code> — database operations, transactions, monitoring, and execution plans (read-query, write-query, create-table, delete-table, list-tables, describe-table, start-transaction, resume-transaction, commit-transaction, rollback-transaction, db-ping, db-metrics-range, explain-plan).</li>
           <li><code>log-analyzer</code> — all JDBC log and RDBMS/SQLNet analysis tools (get-jdbc-stats, get-jdbc-queries, get-jdbc-errors, list-log-files-from-directory, jdbc-log-comparison, get-jdbc-connection-events, get-rdbms-errors, get-rdbms-packet-dumps)</li>
-          <li><code>explain</code> — <code>explain-plan</code></li>
-          <li><code>similarity</code> — <code>similarity-search</code></li>
-          <li><code>admin</code> — server admin and database tools (list-tools, edit-tools, read-query, write-query, create-table, delete-table, list-tables, describe-table, start-transaction, resume-transaction, commit-transaction, rollback-transaction, db-ping, db-metrics-range)</li>
+          <li><code>rag</code> — similarity-search</li>
         </ul>
         You can also define your own YAML <code>toolsets:</code> and reference them here.  
         Use <code>*</code> or <code>all</code> to enable everything. If omitted, all tools are enabled by default.
       </td>
-      <td><code>admin,log-analyzer</code> or <code>reporting,explain</code></td>
+      <td><code>mcp-admin,log-analyzer</code> or <code>reporting</code></td>
     </tr>
     <tr>
       <td><code>ojdbc.ext.dir</code></td>

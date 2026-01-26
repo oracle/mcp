@@ -26,8 +26,8 @@ import java.util.*;
  *   <li>{@code db.user}</li>
  *   <li>{@code db.password}</li>
  *   <li>{@code tools} — comma-separated allow-list of tool names or toolset
- *   names; (e.g., {@code log_analyzer}, {@code admin}, {@code explain}, {@code similarity});
- *   {@code *} or {@code all} enables all.</li>
+ *   names; (e.g., {@code log_analyzer}, {@code admin}, {@code explain},
+ *   {@code rag}); {@code *} or {@code all} enables all.</li>
  * </ul>
  *
  * <p>Use {@link #fromSystemProperties()} to create an instance with validation and defaults.</p>
@@ -58,7 +58,7 @@ public final class ServerConfig {
   }
 
   private static final Set<String> DB_TOOLS = Set.of(
-    "similarity_search", "explain_plan",
+    "similarity-search", "explain-plan",
     "read-query", "write-query", "create-table", "delete-table",
     "list-tables", "describe-table", "start-transaction", "resume-transaction",
     "commit-transaction", "rollback-transaction", "db-ping", "db-metrics-range"
@@ -76,14 +76,14 @@ public final class ServerConfig {
           "get-rdbms-errors",
           "get-rdbms-packet-dumps"
       ),
-      "explain", Set.of("explain-plan"),
-      "similarity", Set.of("similarity-search"),
-      "admin", Set.of(
-              "list-tools", "edit-tools",
+      "rag", Set.of("similarity-search"),
+      "database-operator", Set.of(
               "read-query", "write-query", "create-table", "delete-table",
               "list-tables", "describe-table", "start-transaction", "resume-transaction",
-              "commit-transaction", "rollback-transaction", "db-ping", "db-metrics-range"
-      )
+              "commit-transaction", "rollback-transaction", "db-ping", "db-metrics-range",
+              "explain-plan"
+      ),
+      "mcp-admin", Set.of("list-tools", "edit-tools")
   );
 
 
@@ -184,7 +184,7 @@ public final class ServerConfig {
    * “enable every tool” and returns {@code null}.
    *
    * Examples:
-   *   "similarity_search,explain_plan"  -> ["similarity_search","explain_plan"]
+   *   "similarity-search,explain-plan"  -> ["similarity-search","explain-plan"]
    *   "*" or "all" or ""        -> null (treat as all tools enabled)
    *
    * @param prop comma-separated tool names

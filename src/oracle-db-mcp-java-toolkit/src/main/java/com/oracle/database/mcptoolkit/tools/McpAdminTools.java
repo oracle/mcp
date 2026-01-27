@@ -107,20 +107,15 @@ public class McpAdminTools {
             }
           }
 
-          // 4) Admin tools themselves if enabled
-          if (isEnabled(current, "list-tools")) {
-            tools.add(Map.of(
-                    "name", "list-tools",
-                    "title", "List Tools",
-                    "description", "List all available tools with their descriptions."
-            ));
-          }
-          if (isEnabled(current, "edit-tools")) {
-            tools.add(Map.of(
-                    "name", "edit-tools",
-                    "title", "Edit/Add Tools",
-                    "description", "Create or update YAML-defined tools and trigger live reload."
-            ));
+          for (McpServerFeatures.SyncToolSpecification spec : McpAdminTools.getTools(current)) {
+            String name = spec.tool().name();
+            if (isEnabled(current, name)) {
+              tools.add(Map.of(
+                      "name", name,
+                      "title", spec.tool().title(),
+                      "description", spec.tool().description()
+              ));
+            }
           }
 
           return McpSchema.CallToolResult.builder()

@@ -28,6 +28,7 @@ import org.apache.tomcat.util.net.SSLHostConfig;
 import org.apache.tomcat.util.net.SSLHostConfigCertificate;
 
 import java.io.File;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 import static com.oracle.database.mcptoolkit.Utils.installExternalExtensionsFromDir;
@@ -97,15 +98,6 @@ public class OracleDatabaseMCPToolkit {
         .build();
 
       Tomcat tomcat = new Tomcat();
-      if(LoadedConstants.HTTP_PORT!=null){
-        tomcat.setPort(Integer.parseInt(LoadedConstants.HTTP_PORT));
-        tomcat.getConnector();
-      } else {
-        tomcat.setPort(-1);
-        LOG.warning("Http setup is skipped: http port is not specified");
-      }
-
-
       String ctxPath = "";
       String docBase = new File(".").getAbsolutePath();
       Context ctx = tomcat.addContext(ctxPath, docBase);
@@ -133,15 +125,14 @@ public class OracleDatabaseMCPToolkit {
       filterMap.addURLPattern("/mcp/*");
       ctx.addFilterMap(filterMap);
 
-      if(LoadedConstants.HTTPS_PORT!=null && LoadedConstants.KEYSTORE_PATH!=null && LoadedConstants.KEYSTORE_PASSWORD != null) {
-        enableHttps(tomcat, LoadedConstants.KEYSTORE_PATH, LoadedConstants.KEYSTORE_PASSWORD);
-      }
-      else LOG.warning("SSL setup is skipped: Https port or Keystore path or password not specified");
+      if (LoadedConstants.HTTPS_PORT == null || LoadedConstants.KEYSTORE_PATH == null || LoadedConstants.KEYSTORE_PASSWORD == null)
+        throw new RuntimeException("SSL setup failed: HTTPS port, Keystore path or password not specified");
+
+    enableHttps(tomcat, LoadedConstants.KEYSTORE_PATH, LoadedConstants.KEYSTORE_PASSWORD);
 
       tomcat.start();
 
-      LOG.info(() -> "[oracle-db-mcp-toolkit] HTTP transport started on " + LoadedConstants.HTTP_PORT + " (endpoint: /mcp)");
-
+      LOG.info("[oracle-db-mcp-toolkit] HTTP transport started on " + LoadedConstants.HTTPS_PORT + " (endpoint: /mcp)");
       return server;
     } catch (Exception e) {
       throw new RuntimeException("Failed to start HTTP/streamable server", e);
@@ -164,6 +155,8 @@ public class OracleDatabaseMCPToolkit {
       https.setSecure(true);
       https.setScheme("https");
       https.setProperty("SSLEnabled", "true");
+      //
+
 
       // Create SSL config
       SSLHostConfig sslHostConfig = new SSLHostConfig();

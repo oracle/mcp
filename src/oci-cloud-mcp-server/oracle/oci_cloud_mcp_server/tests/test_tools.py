@@ -21,7 +21,7 @@ USER_AGENT = f"{user_agent_name}/{__version__}"
 class TestCloudSdkTools:
     @pytest.mark.asyncio
     async def test_list_client_operations_with_fake_client(self):
-        # Build a fake client class with a couple of methods
+        # build a fake client class with a couple of methods
         class FakeClient:
             def __init__(self, config, signer):
                 self.config = config
@@ -39,21 +39,30 @@ class TestCloudSdkTools:
             mock_import.return_value = fake_module
 
             async with Client(mcp) as client:
-                ops = (
+                result = (
                     await client.call_tool(
                         "list_client_operations",
                         {"client_fqn": "x.y.FakeClient"},
                     )
                 ).data
+                ops = (
+                    result.get("operations", result)
+                    if isinstance(result, dict)
+                    else result or []
+                )
 
-                # Only public callable functions should be listed
-                names = [op["name"] for op in ops]
+                # only public callable functions should be listed
+                names = [
+                    op["name"] if isinstance(op, dict) else getattr(op, "name", None)
+                    for op in ops
+                ]
+                names = [n for n in names if n]
                 assert "get_thing" in names
                 assert "_hidden" not in names
 
     @pytest.mark.asyncio
     async def test_invoke_oci_api_non_list_success(self):
-        # Fake OCI-like response
+        # fake OCI-like response
         class FakeResponse:
             def __init__(self, data):
                 self.data = data
@@ -107,7 +116,7 @@ class TestCloudSdkTools:
                 self.config = config
                 self.signer = signer
 
-            # Existence of a list_* method is enough; paginator will be patched
+            # existence of a list_* method is enough; paginator will be patched
             def list_things(self, compartment_id):
                 return FakeResponse([{"name": "x"}])
 

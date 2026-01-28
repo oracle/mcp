@@ -1,35 +1,35 @@
 """Tests for coercing complex OCI model params and kwarg renaming."""
+
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import asyncio
 from fastmcp import Client
-
 from oracle.oci_cloud_mcp_server.server import mcp
 
 
 class TestModelCoercion:
     def test_create_operation_coerces_model_and_renames_key(self):
-        # Fake OCI-like response
+        # fake OCI-like response
         class FakeResponse:
             def __init__(self, data):
                 self.data = data
                 self.headers = {"opc-request-id": "req-789"}
 
-        # Models module with a Create*Details class
+        # models module with a Create*Details class
         class CreateVcnDetails:
             def __init__(self, **kwargs):
                 # emulate SDK model storing provided fields
                 self._data = dict(kwargs)
 
-        # Fake client whose method expects create_vcn_details specifically
+        # fake client whose method expects create_vcn_details specifically
         class FakeClient:
             def __init__(self, config, signer):
                 self.config = config
                 self.signer = signer
 
             def create_vcn(self, create_vcn_details):
-                # Ensure type is the constructed model
+                # ensure type is the constructed model
                 assert isinstance(create_vcn_details, CreateVcnDetails)
                 return FakeResponse(
                     {
@@ -43,7 +43,7 @@ class TestModelCoercion:
         fake_models_module = SimpleNamespace(CreateVcnDetails=CreateVcnDetails)
 
         def import_side_effect(name):
-            # Return appropriate fake module depending on requested import
+            # return appropriate fake module depending on requested import
             if name == "x.y":
                 return fake_client_module
             if name == "x.y.models":
@@ -51,14 +51,15 @@ class TestModelCoercion:
             raise ImportError(name)
 
         with patch(
-            "oracle.oci_cloud_mcp_server.server.import_module", side_effect=import_side_effect
-        ) as _mock_import, patch(
+            "oracle.oci_cloud_mcp_server.server.import_module",
+            side_effect=import_side_effect,
+        ), patch(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
         ) as mock_cfg:
             mock_cfg.return_value = ({}, object())
 
-            # Note: We intentionally pass "vcn_details" (missing the "create_")
-            # The server should rename it to "create_vcn_details" and coerce dict to model.
+            # note: We intentionally pass "vcn_details" (missing the "create_")
+            # the server should rename it to "create_vcn_details" and coerce dict to model.
             payload = {
                 "client_fqn": "x.y.FakeClient",
                 "operation": "create_vcn",

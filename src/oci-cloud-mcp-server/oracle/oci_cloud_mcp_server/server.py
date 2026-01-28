@@ -125,7 +125,9 @@ def _resolve_model_class(models_module: Any, class_name: str):
         return None
 
 
-def _coerce_mapping_values(mapping: Dict[str, Any], models_module: Any, parent_prefix: Optional[str] = None) -> Dict[str, Any]:
+def _coerce_mapping_values(
+    mapping: Dict[str, Any], models_module: Any, parent_prefix: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Recursively coerce nested dict/list values inside a mapping into OCI SDK model instances.
     Additionally, when a parent model prefix is known (e.g., 'LaunchInstance' for
@@ -142,7 +144,7 @@ def _coerce_mapping_values(mapping: Dict[str, Any], models_module: Any, parent_p
                 if key.endswith(s):
                     base_camel = _snake_to_camel(key)
                     candidates.append(base_camel)
-                    # Also try parent-prefixed variants like 'LaunchInstanceShapeConfigDetails'
+                    # also try parent-prefixed variants like 'LaunchInstanceShapeConfigDetails'
                     if parent_prefix:
                         candidates.append(f"{parent_prefix}{base_camel}Details")
                         candidates.append(f"{parent_prefix}{base_camel}")
@@ -152,7 +154,9 @@ def _coerce_mapping_values(mapping: Dict[str, Any], models_module: Any, parent_p
             new_list: List[Any] = []
             for item in val:
                 if isinstance(item, dict):
-                    new_list.append(_construct_model_from_mapping(item, models_module, []))
+                    new_list.append(
+                        _construct_model_from_mapping(item, models_module, [])
+                    )
                 else:
                     new_list.append(item)
             out[key] = new_list
@@ -161,12 +165,15 @@ def _coerce_mapping_values(mapping: Dict[str, Any], models_module: Any, parent_p
     return out
 
 
-def _construct_model_from_mapping(mapping: Dict[str, Any], models_module: Any, candidate_classnames: List[str]):
+def _construct_model_from_mapping(
+    mapping: Dict[str, Any], models_module: Any, candidate_classnames: List[str]
+):
     # explicit override via magic keys
     fqn = mapping.get("__model_fqn") or mapping.get("__class_fqn")
     class_name = mapping.get("__model") or mapping.get("__class")
     clean = {k: v for k, v in mapping.items() if not k.startswith("__")}
-    # derive a parent model prefix hint from candidate classnames (e.g., 'LaunchInstance' from 'LaunchInstanceDetails')
+    # derive a parent model prefix hint from candidate classnames
+    # (e.g., 'LaunchInstance' from 'LaunchInstanceDetails')
     parent_prefix_hint: Optional[str] = None
     for cand in candidate_classnames:
         if isinstance(cand, str) and cand:
@@ -177,7 +184,9 @@ def _construct_model_from_mapping(mapping: Dict[str, Any], models_module: Any, c
             if parent_prefix_hint is None:
                 parent_prefix_hint = cand
     # recursively coerce nested mappings/lists before attempting construction
-    clean = _coerce_mapping_values(clean, models_module, parent_prefix=parent_prefix_hint)
+    clean = _coerce_mapping_values(
+        clean, models_module, parent_prefix=parent_prefix_hint
+    )
     # try explicit FQN first
     if isinstance(fqn, str):
         try:
@@ -195,22 +204,21 @@ def _construct_model_from_mapping(mapping: Dict[str, Any], models_module: Any, c
     if models_module and isinstance(class_name, str):
         cls = _resolve_model_class(models_module, class_name)
         if inspect.isclass(cls):
+            # filter unknown keys via swagger_types (when available) before constructing
+            filtered_clean = clean
             try:
-                return oci.util.from_dict(cls, clean)
+                swagger_types = getattr(cls, "swagger_types", None)
+                if isinstance(swagger_types, dict):
+                    filtered_clean = {
+                        k: v for k, v in clean.items() if k in swagger_types
+                    }
             except Exception:
-                # Retry with unknown keys filtered using model's swagger_types
+                filtered_clean = clean
+            try:
+                return oci.util.from_dict(cls, filtered_clean)
+            except Exception:
                 try:
-                    filtered_clean = clean
-                    try:
-                        swagger_types = getattr(cls, "swagger_types", None)
-                        if isinstance(swagger_types, dict):
-                            filtered_clean = {k: v for k, v in clean.items() if k in swagger_types}
-                    except Exception:
-                        filtered_clean = clean
-                    try:
-                        return oci.util.from_dict(cls, filtered_clean)
-                    except Exception:
-                        return cls(**filtered_clean)
+                    return cls(**filtered_clean)
                 except Exception:
                     pass
     # try candidates derived from param name
@@ -218,29 +226,30 @@ def _construct_model_from_mapping(mapping: Dict[str, Any], models_module: Any, c
         for cand in candidate_classnames:
             cls = _resolve_model_class(models_module, cand)
             if inspect.isclass(cls):
+                # filter unknown keys before constructing (honor swagger_types when present)
+                filtered_clean = clean
                 try:
-                    return oci.util.from_dict(cls, clean)
+                    swagger_types = getattr(cls, "swagger_types", None)
+                    if isinstance(swagger_types, dict):
+                        filtered_clean = {
+                            k: v for k, v in clean.items() if k in swagger_types
+                        }
                 except Exception:
-                    # retry with unknown keys filtered using model's swagger_types
+                    filtered_clean = clean
+                try:
+                    return oci.util.from_dict(cls, filtered_clean)
+                except Exception:
                     try:
-                        filtered_clean = clean
-                        try:
-                            swagger_types = getattr(cls, "swagger_types", None)
-                            if isinstance(swagger_types, dict):
-                                filtered_clean = {k: v for k, v in clean.items() if k in swagger_types}
-                        except Exception:
-                            filtered_clean = clean
-                        try:
-                            return oci.util.from_dict(cls, filtered_clean)
-                        except Exception:
-                            return cls(**filtered_clean)
+                        return cls(**filtered_clean)
                     except Exception:
                         continue
     # fall back to original mapping
     return mapping
 
 
-def _coerce_params_to_oci_models(client_fqn: str, operation: str, params: Dict[str, Any]) -> Dict[str, Any]:
+def _coerce_params_to_oci_models(
+    client_fqn: str, operation: str, params: Dict[str, Any]
+) -> Dict[str, Any]:
     """
     Convert plain dict/list params to OCI model instances when appropriate.
     Heuristics:
@@ -267,19 +276,31 @@ def _coerce_params_to_oci_models(client_fqn: str, operation: str, params: Dict[s
                             candidates.append(f"Create{base}Details")
                         elif operation.startswith("update_"):
                             candidates.append(f"Update{base}Details")
-                        # rename "<resource>_details" to the SDK's expected "create_<resource>_details"/"update_<resource>_details"
-                        if operation.startswith("create_") or operation.startswith("update_"):
+                        # rename "<resource>_details" to the SDK's expected
+                        # "create_<resource>_details"/"update_<resource>_details"
+                        if operation.startswith("create_") or operation.startswith(
+                            "update_"
+                        ):
                             _, _, op_rest = operation.partition("_")
                             if key == f"{op_rest}_details":
-                                dest_key = f"{operation}_details"
+                                # only rename to SDK-expected key when destination not already
+                                # provided by caller
+                                alt_key = f"{operation}_details"
+                                if alt_key not in params:
+                                    dest_key = alt_key
                     break
-            out[dest_key] = _construct_model_from_mapping(val, models_module, candidates)
+            out[dest_key] = _construct_model_from_mapping(
+                val, models_module, candidates
+            )
         elif isinstance(val, list):
             new_list: List[Any] = []
             for item in val:
                 if isinstance(item, dict):
                     # only construct list items if explicit model hint is present
-                    if any(hint in item for hint in ("__model_fqn", "__model", "__class_fqn", "__class")):
+                    if any(
+                        hint in item
+                        for hint in ("__model_fqn", "__model", "__class_fqn", "__class")
+                    ):
                         new_list.append(
                             _construct_model_from_mapping(item, models_module, [])
                         )
@@ -290,7 +311,7 @@ def _coerce_params_to_oci_models(client_fqn: str, operation: str, params: Dict[s
             out[key] = new_list
         else:
             out[key] = val
-    # Final aliasing: if caller used "<resource>_details" and op is create_/update_,
+    # final aliasing: if caller used "<resource>_details" and op is create_/update_,
     # rename to the SDK-expected "create_<resource>_details"/"update_<resource>_details".
     if operation.startswith("create_") or operation.startswith("update_"):
         _, _, op_rest = operation.partition("_")
@@ -301,7 +322,9 @@ def _coerce_params_to_oci_models(client_fqn: str, operation: str, params: Dict[s
     return out
 
 
-def _align_params_to_signature(method: Callable[..., Any], operation_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
+def _align_params_to_signature(
+    method: Callable[..., Any], operation_name: str, params: Dict[str, Any]
+) -> Dict[str, Any]:
     """
     Align incoming params to the method's expected signature names.
     Specifically, for create_/update_ operations remap '<resource>_details' to
@@ -327,21 +350,27 @@ def _align_params_to_signature(method: Callable[..., Any], operation_name: str, 
 def _serialize_oci_data(data: Any) -> Any:
     """
     Convert OCI SDK model objects or collections into JSON-serializable structures.
+    Ensures the final result is JSON-serializable even if oci.util.to_dict returns the original object.
     """
-    try:
-        # oci.util.to_dict handles models and nested data structures
-        return oci.util.to_dict(data)
-    except Exception:
-        # fall back to best-effort for non-OCI types
-        if isinstance(data, (list, tuple)):
-            return [_serialize_oci_data(x) for x in data]
-        if isinstance(data, dict):
-            return {k: _serialize_oci_data(v) for k, v in data.items()}
+
+    def ensure_jsonable(obj: Any) -> Any:
+        if obj is None or isinstance(obj, (str, int, float, bool)):
+            return obj
+        if isinstance(obj, (list, tuple)):
+            return [ensure_jsonable(x) for x in obj]
+        if isinstance(obj, dict):
+            return {k: ensure_jsonable(v) for k, v in obj.items()}
         try:
-            json.dumps(data)
-            return data
+            json.dumps(obj)
+            return obj
         except Exception:
-            return str(data)
+            return str(obj)
+
+    try:
+        converted = oci.util.to_dict(data)
+    except Exception:
+        converted = data
+    return ensure_jsonable(converted)
 
 
 def _call_with_pagination_if_applicable(
@@ -373,7 +402,12 @@ def _call_with_pagination_if_applicable(
             call_params[dst] = call_params.pop(src)
 
     try:
-        print("DEBUG _call_with_pagination_if_applicable call_params keys:", list(call_params.keys()), "op:", operation_name)
+        print(
+            "DEBUG _call_with_pagination_if_applicable call_params keys:",
+            list(call_params.keys()),
+            "op:",
+            operation_name,
+        )
         response = method(**call_params)
     except TypeError as e:
         # fallback: if user passed "<resource>_details" for a create_/update_ op,
@@ -454,12 +488,19 @@ def invoke_oci_api(
             if src in normalized_params and dst not in normalized_params:
                 normalized_params[dst] = normalized_params.pop(src)
 
-        coerced_params = _coerce_params_to_oci_models(client_fqn, operation, normalized_params)
+        coerced_params = _coerce_params_to_oci_models(
+            client_fqn, operation, normalized_params
+        )
         # final kwarg aliasing at the top-level prior to invocation to ensure correct SDK kw
         final_params = dict(coerced_params)
 
         final_params = _align_params_to_signature(method, operation, final_params)
-        print("DEBUG invoke_oci_api final_params keys:", list(final_params.keys()), "op:", operation)
+        print(
+            "DEBUG invoke_oci_api final_params keys:",
+            list(final_params.keys()),
+            "op:",
+            operation,
+        )
         try:
             data, opc_request_id = _call_with_pagination_if_applicable(
                 method, final_params, operation
@@ -511,7 +552,7 @@ def list_client_operations(
     client_fqn: Annotated[
         str, "Fully-qualified client class, e.g. 'oci.core.ComputeClient'"
     ],
-) -> List[dict]:
+) -> dict:
     try:
         module_name, class_name = client_fqn.rsplit(".", 1)
         module = import_module(module_name)
@@ -529,10 +570,12 @@ def list_client_operations(
                 params = inspect.signature(member)
             except Exception:
                 first_line = ""
+                params = ""
             ops.append({"name": name, "summary": first_line, "params": str(params)})
 
         logger.info(f"Found {len(ops)} operations on {client_fqn}")
-        return ops
+        # return a mapping to avoid Pydantic RootModel list-wrapping
+        return {"operations": ops}
     except Exception as e:
         logger.error(f"Error listing operations for {client_fqn}: {e}")
         raise

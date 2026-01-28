@@ -2,8 +2,9 @@
 
 ## 1.Overview
 
-To test the capabilities of the Oracle Database MCP Toolkit, a demo instance of the MCP server is made available via
-<https://mcptoolkit.orcl.dev:45453/mcp> with the following tools activated:
+This document demonstrates how to try the Oracle Database MCP Toolkit by running your own instance of the MCP server.
+
+The demo focuses on the following tools:
 
 JDBC log analysis tools:
 
@@ -14,12 +15,12 @@ JDBC log analysis tools:
 - **`list-log-files-from-directory`**: List all visible files from a specified directory, which helps the user analyze multiple files with one prompt.
 - **`jdbc-log-comparison`**: Compares two log files for performance metrics, errors, and network information.
 
-RDBMS/SQLNet trace analysis Tools:
+RDBMS/SQLNet trace analysis tools:
 
 - **`get-rdbms-errors`**: Extracts errors from RDBMS/SQLNet trace files.
 - **`get-rdbms-packet-dumps`**: Extracts packet dumps for a specific connection ID.
 
-Custom tools (created using YAML configuration file):
+Custom tools (via YAML configuration):
 
 - **`hotels-by-name`**: Return the details of a hotel given its name. The details include the capacity, rating and address.
 This tool is created using the following YAML configuration file: 
@@ -42,33 +43,54 @@ tools:
     statement: SELECT * FROM hotels WHERE name LIKE '%' || :name || '%'
 ```
 
-Where `${db_url}`, `${user}` and `${password}`are environment variables.
+Where `${db_url}`, `${user}` and `${password}` are environment variables.
 
 ## 2. Requirements
 
-An MCP Client that support Streamable HTTP transport mode is needed, such as MCP Inspector, Cline or Claude Desktop.
+- An MCP client that supports the Streamable HTTP transport (e.g., MCP Inspector, Cline, Claude Desktop). Stdio is also
+  supported by the server; see the README for details.
+- A running MCP Toolkit server.
 
 **Note**: If you're using Claude Desktop, you also need [mcp-remote](https://www.npmjs.com/package/mcp-remote).
 
-## 3. Setup
+## 3. Start a local MCP Toolkit server (HTTP example)
 
-The deployed instance uses `streamableHttp` transport protocol and a runtime generated `Authorization` token.
+You can run the server over HTTPS with authentication enabled. The token can be supplied via the
+`ORACLE_DB_TOOLKIT_AUTH_TOKEN` environment variable or, if not set, it will be generated and printed to the logs (see README §4.4).
 
-Use the following token `3e297077-f01e-4045-a9d0-2a71e97e6dfa`.
+Example:
+
+```bash
+java \
+  -Dtransport=http \
+  -Dhttps.port=45450 \
+  -DcertificatePath=/path/to/your-certificate.p12 \
+  -DcertificatePassword=yourPassword \
+  -DenableAuthentication=true \
+  -Dtools=get-jdbc-stats,get-jdbc-queries,get-jdbc-errors,jdbc-log-comparison,get-rdbms-errors,get-rdbms-packet-dumps \
+  -jar <path-to-jar>/oracle-db-mcp-toolkit-1.0.0.jar
+```
+
+This exposes the MCP endpoint at: `https://localhost:45450/mcp`.
+
+When connecting from a client, include the token in the `Authorization` header as `Bearer YOUR_TOKEN`.
+
+For additional deployment modes (including stdio and Docker/Podman) and OAuth2 configuration, see the project README.
+
+## 4. Connect your MCP client
 
 ### MCP Inspector
 
-To use MCP Inspector as an MCP client, specify `streamableHttp`as transport type,  `https://mcptoolkit.orcl.dev:45453/mcp` as the URL, _Via Proxy_ as Connection Type,
-for Authentication, add a `Authorization` custom header with `Bearer 3e297077-f01e-4045-a9d0-2a71e97e6dfa` as value.
-the final configuration should look as shown below:
+Configure MCP Inspector with:
 
-<img src="https://objectstorage.eu-amsterdam-1.oraclecloud.com/n/axumz0amlzwj/b/oracle-db-toolkit-mcp-demo/o/mcp-Inspector-1.png" height="500px" width="auto" alt="MCP Inspector config screenshot">
+- Transport: `streamableHttp`
+- URL: `https://localhost:45450/mcp`
+- Connection Type: Via Proxy
+- Authentication: Add a custom header `Authorization: Bearer YOUR_TOKEN`
 
-After checking the configuration, click the *Connect* button, and the available tools will be shown in the main section:
+After saving, click Connect and the available tools will be listed.
 
-<img src="https://objectstorage.eu-amsterdam-1.oraclecloud.com/n/axumz0amlzwj/b/oracle-db-toolkit-mcp-demo/o/mcp-Inspector-2.png" height="500px" width="auto" alt="MCP Inspector tools screenshot">
-
-_Note :_ The filePath should be provided as a URL.
+_Note:_ For log analysis tools, provide `filePath` values as URLs where applicable.
 
 ### Cline
 
@@ -82,22 +104,14 @@ Add or merge this configuration into `cline_mcp_settings.json`:
       "disabled": false,
       "timeout": 60,
       "type": "streamableHttp",
-      "url": "https://mcptoolkit.orcl.dev:45453/mcp",
-      "headers": {
-        "Authorization": "Bearer 3e297077-f01e-4045-a9d0-2a71e97e6dfa"
-      }
+      "url": "https://localhost:45450/mcp",
+      "headers": { "Authorization": "Bearer YOUR_TOKEN" }
     }
   }
 }
 ```
 
-After saving the configuration file, the available tools will be shown in the *Configure* Tab of *MCP Servers* settings:
-
-<img src="https://objectstorage.eu-amsterdam-1.oraclecloud.com/n/axumz0amlzwj/b/oracle-db-toolkit-mcp-demo/o/cline-1.png" height="500px" width="auto" alt="Cline tools screenshot">
-
-Here's an example of a prompt that trigger the `get-jdbc-queries` tool:
-
-<img src="https://objectstorage.eu-amsterdam-1.oraclecloud.com/n/axumz0amlzwj/b/oracle-db-toolkit-mcp-demo/o/cline-2.png" height="500px" width="auto" alt="Cline prompt example screenshot">
+After saving, the tools will appear in the MCP Servers settings. You can then invoke tools like `get-jdbc-queries` by prompt.
 
 ### Claude Desktop
 
@@ -112,22 +126,14 @@ Below is an example of `claude_desktop_config.json` file:
       "args": [
         "-y",
         "mcp-remote",
-        "https://mcptoolkit.orcl.dev:45453/mcp",
+        "https://localhost:45450/mcp",
         "--header",
         "Authorization:${DEMO_TOKEN}"
       ],
-      "env": {
-        "DEMO_TOKEN": "Bearer 3e297077-f01e-4045-a9d0-2a71e97e6dfa"
-      }
+      "env": { "DEMO_TOKEN": "Bearer YOUR_TOKEN" }
     }
   }
 }
 ```
 
-Upon saving the configuration file an opening Claude Desktop, you'll be to see the tools in the *Connectors* section:
-
-<img src="https://objectstorage.eu-amsterdam-1.oraclecloud.com/n/axumz0amlzwj/b/oracle-db-toolkit-mcp-demo/o/claude-1.png" height="500px" width="auto" alt="Claude Desktop tools screenshot">
-
-Here's the result of the same prompt used to know what queries were executed :
-
-<img src="https://objectstorage.eu-amsterdam-1.oraclecloud.com/n/axumz0amlzwj/b/oracle-db-toolkit-mcp-demo/o/claude-2.png" height="500px" width="auto" alt="Claude Desktop prompt example screenshot">
+Upon saving, open Claude Desktop and you should see the tools in the Connectors section.

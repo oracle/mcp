@@ -75,6 +75,37 @@ When connecting from a client, include the token in the `Authorization` header a
 
 For additional deployment modes (including stdio and Docker/Podman) and OAuth2 configuration, see the project README.
 
+### Run in a container (Podman)
+
+The repository contains a Dockerfile you can use to build and run the server in a container.
+
+1) Build the image (from the repo root):
+
+```bash
+podman build -t oracle-db-mcp-toolkit:1.0.0 .
+```
+
+2) Run the container with HTTPS and token auth (adjust paths and secrets for your environment):
+
+```bash
+podman run --name with_token_auth -d \
+  -p 45453:45453 \
+  -v /home/opc/jetty.p12:/app/jetty.p12:ro,z \
+  -v /home/opc/custom_tools/custom_tools.yaml:/app/custom_tools.yaml:ro,z \
+  -e JAVA_TOOL_OPTIONS="-Dtransport=http -Dhttps.port=45453 -DcertificatePath=/app/jetty.p12 -DcertificatePassword=CERTIF_PASSWORD -DenableAuthentication=true -Dtools=mcp-admin,log-analyzer,rag -DconfigFile=/app/custom_tools.yaml" \
+  -e ORACLE_DB_TOOLKIT_AUTH_TOKEN="3e297077-f01e-4045-a9d0-2a71e97e6dfa" \
+  oracle-db-mcp-toolkit:1.0.0
+```
+
+After the container starts, the MCP endpoint is available at:
+
+  https://localhost:45453/mcp
+
+Notes:
+
+- The :z volume flag is commonly required on SELinux-enabled hosts (Podman). It is harmless elsewhere.
+- For Docker, you can use the same command but omit :z on volume mounts.
+
 ## 4. Connect your MCP client
 
 ### MCP Inspector

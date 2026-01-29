@@ -373,18 +373,47 @@ def _serialize_oci_data(data: Any) -> Any:
     return ensure_jsonable(converted)
 
 
+def _supports_pagination(method: Callable[..., Any], operation_name: str) -> bool:
+    """
+    Determine if an operation is paginated and should use the OCI paginator.
+    Heuristics:
+      - Operation name starts with 'list_' (standard OCI pattern).
+      - Method signature includes 'page' or 'limit' kwargs (used by several services like DNS).
+      - Operation name starts with 'summarize_' (many summarize ops are paginated).
+      - Explicit allowlist for known paginated non-list ops in services like DNS.
+    """
+    try:
+        if operation_name.startswith("list_"):
+            return True
+        if operation_name.startswith("summarize_"):
+            return True
+        sig = inspect.signature(method)
+        param_names = set(sig.parameters.keys())
+        if "page" in param_names or "limit" in param_names:
+            return True
+    except Exception:
+        # If we cannot introspect, fall through to explicit allowlist
+        pass
+
+    # Known paginated non-list operations (e.g., DNS)
+    known_paginated = {
+        "get_zone_records",
+        "get_domain_records",
+        "get_rrset",
+    }
+    return operation_name in known_paginated
+
+
 def _call_with_pagination_if_applicable(
     method: Callable[..., Any], params: Dict[str, Any], operation_name: str
 ) -> Tuple[Any, Optional[str]]:
     """
-    If the operation appears to be a list operation, use the OCI paginator to get all results.
+    If the operation appears to be paginated, use the OCI paginator to get all results.
     Returns (data, opc_request_id).
     """
-    # heuristic: use paginator for "list_*" operations
-    if operation_name.startswith("list_"):
+    if _supports_pagination(method, operation_name):
         logger.info(f"Using paginator for operation {operation_name}")
         response = oci.pagination.list_call_get_all_results(method, **params)
-        # response is an oci.response.Response; .data usually list[Model]
         opc_request_id = None
         try:
             opc_request_id = response.headers.get("opc-request-id")

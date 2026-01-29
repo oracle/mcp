@@ -10,6 +10,7 @@ from oracle.oci_cloud_mcp_server.server import (
     _import_client,
     _resolve_model_class,
     _serialize_oci_data,
+    _supports_pagination,
     mcp,
 )
 
@@ -886,3 +887,29 @@ class TestListClientOperationsScanError:
                 await client.call_tool(
                     "list_client_operations", {"client_fqn": "x.y.Klass"}
                 )
+
+
+class TestSupportsPaginationHeuristics:
+    def test_supports_pagination_list_prefix_true(self):
+        def list_things():
+            pass
+
+        assert _supports_pagination(list_things, "list_things") is True
+
+    def test_supports_pagination_summarize_prefix_true(self):
+        def summarize_metrics():
+            pass
+
+        assert _supports_pagination(summarize_metrics, "summarize_metrics") is True
+
+    def test_supports_pagination_signature_page_limit_true(self):
+        def get_zone_records(zone_name, page=None, limit=None):  # noqa: ARG001
+            pass
+
+        assert _supports_pagination(get_zone_records, "get_zone_records") is True
+
+    def test_supports_pagination_default_false(self):
+        def get_config(id):  # noqa: ARG001
+            pass
+
+        assert _supports_pagination(get_config, "get_config") is False

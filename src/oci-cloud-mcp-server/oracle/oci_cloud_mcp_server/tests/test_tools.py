@@ -151,3 +151,195 @@ class TestCloudSdkTools:
                 assert result["operation"] == "list_things"
                 assert isinstance(result["data"], list)
                 assert len(result["data"]) == 3
+
+    @pytest.mark.asyncio
+    async def test_invoke_oci_api_dns_get_zone_records_uses_paginator(self):
+        class FakeResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = {"opc-request-id": "req-789"}
+
+        class FakeClient:
+            def __init__(self, config, signer):
+                self.config = config
+                self.signer = signer
+
+            # Non-list operation name but supports pagination via page/limit params (DNS style)
+            def get_zone_records(self, zone_name, page=None, limit=None):
+                return FakeResponse([{"name": "first"}])
+
+        fake_module = SimpleNamespace(FakeClient=FakeClient)
+
+        with patch(
+            "oracle.oci_cloud_mcp_server.server.import_module"
+        ) as mock_import, patch(
+            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
+        ) as mock_cfg, patch(
+            "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
+        ) as mock_pager:
+            mock_import.return_value = fake_module
+            mock_cfg.return_value = ({}, object())
+            mock_pager.return_value = FakeResponse(
+                [{"name": "a"}, {"name": "b"}, {"name": "c"}, {"name": "d"}]
+            )
+
+            async with Client(mcp) as client:
+                result = (
+                    await client.call_tool(
+                        "invoke_oci_api",
+                        {
+                            "client_fqn": "x.y.FakeClient",
+                            "operation": "get_zone_records",
+                            "params": {
+                                "zone_name": "do-not-delete-me-testing-zone.example"
+                            },
+                        },
+                    )
+                ).data
+
+                assert result["client"] == "x.y.FakeClient"
+                assert result["operation"] == "get_zone_records"
+                assert isinstance(result["data"], list)
+                assert len(result["data"]) == 4
+
+    @pytest.mark.asyncio
+    async def test_invoke_oci_api_summarize_prefix_uses_paginator(self):
+        class FakeResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = {"opc-request-id": "req-101"}
+
+        class FakeClient:
+            def __init__(self, config, signer):
+                self.config = config
+                self.signer = signer
+
+            # summarize_* should trigger pagination even without page/limit
+            def summarize_metrics(self, compartment_id):
+                return FakeResponse([{"sum": 1}])
+
+        fake_module = SimpleNamespace(FakeClient=FakeClient)
+
+        with patch(
+            "oracle.oci_cloud_mcp_server.server.import_module"
+        ) as mock_import, patch(
+            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
+        ) as mock_cfg, patch(
+            "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
+        ) as mock_pager:
+            mock_import.return_value = fake_module
+            mock_cfg.return_value = ({}, object())
+            mock_pager.return_value = FakeResponse([{"sum": 10}, {"sum": 20}])
+
+            async with Client(mcp) as client:
+                result = (
+                    await client.call_tool(
+                        "invoke_oci_api",
+                        {
+                            "client_fqn": "x.y.FakeClient",
+                            "operation": "summarize_metrics",
+                            "params": {"compartment_id": "ocid1.compartment..abc"},
+                        },
+                    )
+                ).data
+
+                assert result["client"] == "x.y.FakeClient"
+                assert result["operation"] == "summarize_metrics"
+                assert isinstance(result["data"], list)
+                assert len(result["data"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_invoke_oci_api_dns_get_rrset_allowlist_uses_paginator(self):
+        class FakeResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = {"opc-request-id": "req-102"}
+
+        class FakeClient:
+            def __init__(self, config, signer):
+                self.config = config
+                self.signer = signer
+
+            # Known allowlisted non-list op name
+            def get_rrset(self, zone_name_or_id, domain, rtype):
+                return FakeResponse([{"rr": "first"}])
+
+        fake_module = SimpleNamespace(FakeClient=FakeClient)
+
+        with patch(
+            "oracle.oci_cloud_mcp_server.server.import_module"
+        ) as mock_import, patch(
+            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
+        ) as mock_cfg, patch(
+            "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
+        ) as mock_pager:
+            mock_import.return_value = fake_module
+            mock_cfg.return_value = ({}, object())
+            mock_pager.return_value = FakeResponse([{"rr": 1}, {"rr": 2}, {"rr": 3}])
+
+            async with Client(mcp) as client:
+                result = (
+                    await client.call_tool(
+                        "invoke_oci_api",
+                        {
+                            "client_fqn": "x.y.FakeClient",
+                            "operation": "get_rrset",
+                            "params": {
+                                "zone_name_or_id": "do-not-delete-me-testing-zone.example",
+                                "domain": "www.do-not-delete-me-testing-zone.example",
+                                "rtype": "A",
+                            },
+                        },
+                    )
+                ).data
+
+                assert result["client"] == "x.y.FakeClient"
+                assert result["operation"] == "get_rrset"
+                assert isinstance(result["data"], list)
+                assert len(result["data"]) == 3
+
+    @pytest.mark.asyncio
+    async def test_invoke_oci_api_non_paginated_does_not_use_paginator(self):
+        class FakeResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = {"opc-request-id": "req-103"}
+
+        class FakeClient:
+            def __init__(self, config, signer):
+                self.config = config
+                self.signer = signer
+
+            # Non-list op, no page/limit params; should not paginate
+            def get_config(self, id):
+                return FakeResponse({"ok": True, "id": id})
+
+        fake_module = SimpleNamespace(FakeClient=FakeClient)
+
+        with patch(
+            "oracle.oci_cloud_mcp_server.server.import_module"
+        ) as mock_import, patch(
+            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
+        ) as mock_cfg, patch(
+            "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
+        ) as mock_pager:
+            mock_import.return_value = fake_module
+            mock_cfg.return_value = ({}, object())
+
+            async with Client(mcp) as client:
+                result = (
+                    await client.call_tool(
+                        "invoke_oci_api",
+                        {
+                            "client_fqn": "x.y.FakeClient",
+                            "operation": "get_config",
+                            "params": {"id": "abc"},
+                        },
+                    )
+                ).data
+
+                # Ensure paginator was not invoked
+                mock_pager.assert_not_called()
+                assert result["client"] == "x.y.FakeClient"
+                assert result["operation"] == "get_config"
+                assert result["data"] == {"ok": True, "id": "abc"}

@@ -1,5 +1,5 @@
 """
-Copyright (c) 2025, Oracle and/or its affiliates.
+Copyright (c) 2026, Oracle and/or its affiliates.
 Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
@@ -399,7 +399,7 @@ def _supports_pagination(method: Callable[..., Any], operation_name: str) -> boo
     known_paginated = {
         "get_zone_records",
         "get_domain_records",
-        "get_rrset",
+        "get_rr_set",
     }
     return operation_name in known_paginated
 
@@ -431,12 +431,10 @@ def _call_with_pagination_if_applicable(
             call_params[dst] = call_params.pop(src)
 
     try:
-        print(
-            "DEBUG _call_with_pagination_if_applicable call_params keys:",
-            list(call_params.keys()),
-            "op:",
-            operation_name,
+        logger.debug(
+            f"_call_with_pagination_if_applicable call_params keys: {list(call_params.keys())}"
         )
+        logger.debug(f"op: {operation_name}")
         response = method(**call_params)
     except TypeError as e:
         # fallback: if user passed "<resource>_details" for a create_/update_ op,
@@ -524,12 +522,8 @@ def invoke_oci_api(
         final_params = dict(coerced_params)
 
         final_params = _align_params_to_signature(method, operation, final_params)
-        print(
-            "DEBUG invoke_oci_api final_params keys:",
-            list(final_params.keys()),
-            "op:",
-            operation,
-        )
+        logger.debug(f"invoke_oci_api final_params keys: {list(final_params.keys())}")
+        logger.debug(f"op: {operation}")
         try:
             data, opc_request_id = _call_with_pagination_if_applicable(
                 method, final_params, operation

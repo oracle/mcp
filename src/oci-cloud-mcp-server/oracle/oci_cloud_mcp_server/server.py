@@ -424,7 +424,7 @@ def _supports_pagination(method: Callable[..., Any], operation_name: str) -> boo
         "get_zone_records",
         "get_domain_records",
         "get_rr_set",
-        "get_rrset",
+        "get_rr_set",
     }
     try:
         if operation_name.startswith("list_"):

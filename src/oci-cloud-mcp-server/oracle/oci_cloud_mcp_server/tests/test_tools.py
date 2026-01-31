@@ -249,7 +249,7 @@ class TestCloudSdkTools:
                 assert len(result["data"]) == 2
 
     @pytest.mark.asyncio
-    async def test_invoke_oci_api_dns_get_rrset_allowlist_uses_paginator(self):
+    async def test_invoke_oci_api_dns_get_rr_set_allowlist_uses_paginator(self):
         class FakeResponse:
             def __init__(self, data):
                 self.data = data
@@ -261,7 +261,7 @@ class TestCloudSdkTools:
                 self.signer = signer
 
             # known allowlisted non-list op name
-            def get_rrset(self, zone_name_or_id, domain, rtype):
+            def get_rr_set(self, zone_name_or_id, domain, rtype):
                 return FakeResponse([{"rr": "first"}])
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
@@ -283,7 +283,7 @@ class TestCloudSdkTools:
                         "invoke_oci_api",
                         {
                             "client_fqn": "x.y.FakeClient",
-                            "operation": "get_rrset",
+                            "operation": "get_rr_set",
                             "params": {
                                 "zone_name_or_id": "do-not-delete-me-testing-zone.example",
                                 "domain": "www.do-not-delete-me-testing-zone.example",
@@ -294,7 +294,7 @@ class TestCloudSdkTools:
                 ).data
 
                 assert result["client"] == "x.y.FakeClient"
-                assert result["operation"] == "get_rrset"
+                assert result["operation"] == "get_rr_set"
                 assert isinstance(result["data"], list)
                 assert len(result["data"]) == 3
 

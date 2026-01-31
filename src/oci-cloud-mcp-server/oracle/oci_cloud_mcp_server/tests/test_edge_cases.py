@@ -484,6 +484,7 @@ class TestDunderMainExecution:
     def test_running_module_as_main_calls_mcp_run(self, monkeypatch):
         # patch FastMCP.run to a no-op to safely execute __main__ guard
         import runpy
+        import sys
 
         from fastmcp import FastMCP
 
@@ -498,7 +499,14 @@ class TestDunderMainExecution:
         monkeypatch.delenv("ORACLE_MCP_HOST", raising=False)
         monkeypatch.delenv("ORACLE_MCP_PORT", raising=False)
 
-        runpy.run_module("oracle.oci_cloud_mcp_server.server", run_name="__main__")
+        # remove pre-imported module to avoid runpy RuntimeWarning
+        monkeypatch.delitem(
+            sys.modules, "oracle.oci_cloud_mcp_server.server", raising=False
+        )
+
+        runpy.run_module(
+            "oracle.oci_cloud_mcp_server.server", run_name="__main__", alter_sys=True
+        )
         assert called["args"] == ()
         assert called["kwargs"] == {}
 

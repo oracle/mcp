@@ -164,7 +164,7 @@ class TestCloudSdkTools:
                 self.config = config
                 self.signer = signer
 
-            # Non-list operation name but supports pagination via page/limit params (DNS style)
+            # non-list operation name but supports pagination via page/limit params (DNS style)
             def get_zone_records(self, zone_name, page=None, limit=None):
                 return FakeResponse([{"name": "first"}])
 
@@ -260,7 +260,7 @@ class TestCloudSdkTools:
                 self.config = config
                 self.signer = signer
 
-            # Known allowlisted non-list op name
+            # known allowlisted non-list op name
             def get_rrset(self, zone_name_or_id, domain, rtype):
                 return FakeResponse([{"rr": "first"}])
 
@@ -310,7 +310,7 @@ class TestCloudSdkTools:
                 self.config = config
                 self.signer = signer
 
-            # Non-list op, no page/limit params; should not paginate
+            # non-list op, no page/limit params; should not paginate
             def get_config(self, id):
                 return FakeResponse({"ok": True, "id": id})
 
@@ -338,8 +338,103 @@ class TestCloudSdkTools:
                     )
                 ).data
 
-                # Ensure paginator was not invoked
+                # ensure paginator was not invoked
                 mock_pager.assert_not_called()
                 assert result["client"] == "x.y.FakeClient"
                 assert result["operation"] == "get_config"
                 assert result["data"] == {"ok": True, "id": "abc"}
+
+    @pytest.mark.asyncio
+    async def test_invoke_oci_api_dns_kwargs_records_uses_paginator(self):
+        class FakeResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = {"opc-request-id": "req-104"}
+
+        class FakeClient:
+            def __init__(self, config, signer):
+                self.config = config
+                self.signer = signer
+
+            # simulate DNS client where page/limit come via **kwargs only
+            def get_zone_records(self, zone_name, **kwargs):  # noqa: ARG002
+                return FakeResponse([{"name": "first"}])
+
+        fake_module = SimpleNamespace(FakeClient=FakeClient)
+
+        with patch(
+            "oracle.oci_cloud_mcp_server.server.import_module"
+        ) as mock_import, patch(
+            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
+        ) as mock_cfg, patch(
+            "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
+        ) as mock_pager:
+            mock_import.return_value = fake_module
+            mock_cfg.return_value = ({}, object())
+            mock_pager.return_value = FakeResponse(
+                [{"name": "a"}, {"name": "b"}, {"name": "c"}]
+            )
+
+            async with Client(mcp) as client:
+                result = (
+                    await client.call_tool(
+                        "invoke_oci_api",
+                        {
+                            "client_fqn": "x.y.FakeClient",
+                            "operation": "get_zone_records",
+                            "params": {"zone_name": "example.com."},
+                        },
+                    )
+                ).data
+
+                # should have used paginator due to **kwargs + 'records' name pattern
+                assert result["client"] == "x.y.FakeClient"
+                assert result["operation"] == "get_zone_records"
+                assert isinstance(result["data"], list)
+                assert len(result["data"]) == 3
+
+    @pytest.mark.asyncio
+    async def test_invoke_oci_api_var_kw_non_dns_does_not_use_paginator(self):
+        class FakeResponse:
+            def __init__(self, data):
+                self.data = data
+                self.headers = {"opc-request-id": "req-105"}
+
+        class FakeClient:
+            def __init__(self, config, signer):
+                self.config = config
+                self.signer = signer
+
+            # accepts **kwargs but operation name doesn't indicate records/rrset
+            def get_widget(self, widget_id, **kwargs):  # noqa: ARG002
+                return FakeResponse({"id": widget_id, "ok": True})
+
+        fake_module = SimpleNamespace(FakeClient=FakeClient)
+
+        with patch(
+            "oracle.oci_cloud_mcp_server.server.import_module"
+        ) as mock_import, patch(
+            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
+        ) as mock_cfg, patch(
+            "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
+        ) as mock_pager:
+            mock_import.return_value = fake_module
+            mock_cfg.return_value = ({}, object())
+
+            async with Client(mcp) as client:
+                result = (
+                    await client.call_tool(
+                        "invoke_oci_api",
+                        {
+                            "client_fqn": "x.y.FakeClient",
+                            "operation": "get_widget",
+                            "params": {"widget_id": "w1"},
+                        },
+                    )
+                ).data
+
+                # ensure paginator was not invoked for **kwargs-only non-DNS-like method
+                mock_pager.assert_not_called()
+                assert result["client"] == "x.y.FakeClient"
+                assert result["operation"] == "get_widget"
+                assert result["data"] == {"id": "w1", "ok": True}

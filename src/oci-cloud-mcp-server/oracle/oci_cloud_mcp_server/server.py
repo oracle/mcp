@@ -7,6 +7,7 @@ https://oss.oracle.com/licenses/upl.
 import inspect
 import json
 import os
+import re
 from importlib import import_module
 from logging import Logger
 from typing import Annotated, Any, Callable, Dict, List, Optional, Tuple
@@ -373,34 +374,95 @@ def _serialize_oci_data(data: Any) -> Any:
     return ensure_jsonable(converted)
 
 
+def _extract_expected_kwargs_from_source(method: Callable[..., Any]) -> Optional[set]:
+    """
+    Best-effort extraction of the SDK generator's 'expected_kwargs' list from the method source.
+    Returns a set of kwarg names if found, None if source cannot be retrieved, or empty set if
+    the pattern isn't present.
+    """
+    try:
+        src = inspect.getsource(method)
+    except Exception:
+        return None
+    try:
+        m = re.search(r"expected_kwargs\s*=\s*\[\s*(.*?)\s*\]", src, re.DOTALL)
+        if not m:
+            return set()
+        body = m.group(1)
+        kws = set(re.findall(r"['\"]([a-zA-Z0-9_]+)['\"]", body))
+        return kws
+    except Exception:
+        return None
+
+
+def _docstring_mentions_pagination(method: Callable[..., Any]) -> bool:
+    """
+    Inspect a method's docstring to detect pagination-related parameters
+    that may be documented even if only accepted via **kwargs, such as
+    ':param int limit:' or ':param str page:'.
+    """
+    try:
+        doc = inspect.getdoc(method) or ""
+    except Exception:
+        return False
+    # look for common Sphinx/ReST patterns or plain mentions of parameter names
+    return bool(re.search(r"\b(page|limit)\b", doc))
+
+
 def _supports_pagination(method: Callable[..., Any], operation_name: str) -> bool:
     """
     Determine if an operation is paginated and should use the OCI paginator.
     Heuristics:
       - Operation name starts with 'list_' (standard OCI pattern).
-      - Method signature includes 'page' or 'limit' kwargs (used by several services like DNS).
       - Operation name starts with 'summarize_' (many summarize ops are paginated).
+      - Method signature includes 'page' or 'limit' kwargs (explicit params).
+      - Method accepts **kwargs and operation name indicates record/rrset style (DNS-like).
       - Explicit allowlist for known paginated non-list ops in services like DNS.
     """
+    # known paginated non-list operations (e.g., DNS)
+    known_paginated = {
+        "get_zone_records",
+        "get_domain_records",
+        "get_rr_set",
+        "get_rrset",
+    }
     try:
         if operation_name.startswith("list_"):
             return True
         if operation_name.startswith("summarize_"):
             return True
+
+        # detect SDK-generated kwargs list that includes pagination tokens even when only exposed via **kwargs
+        ek = _extract_expected_kwargs_from_source(method)
+        if ek and (("page" in ek) or ("limit" in ek)):
+            return True
+
+        # inspect docstring for pagination-related params exposed in docs
+        # (e.g., ':param int limit:' or ':param str page:')
+        try:
+            if _docstring_mentions_pagination(method):
+                return True
+        except Exception:
+            pass
+
         sig = inspect.signature(method)
         param_names = set(sig.parameters.keys())
         if "page" in param_names or "limit" in param_names:
             return True
+        # some SDKs (e.g., DNS) expose 'page'/'limit' via **kwargs; detect via VAR_KEYWORD and name pattern
+        has_var_kw = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
+        if has_var_kw:
+            if operation_name in known_paginated:
+                return True
+            # generic DNS-like pattern: operations dealing with records/rrsets tend to paginate
+            if re.search(r"(records|rrset)s?$", operation_name):
+                return True
     except Exception:
-        # If we cannot introspect, fall through to explicit allowlist
+        # if we cannot introspect, fall through to explicit allowlist
         pass
 
-    # Known paginated non-list operations (e.g., DNS)
-    known_paginated = {
-        "get_zone_records",
-        "get_domain_records",
-        "get_rr_set",
-    }
     return operation_name in known_paginated
 
 

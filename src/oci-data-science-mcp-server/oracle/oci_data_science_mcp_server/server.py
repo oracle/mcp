@@ -9,7 +9,8 @@ from fastmcp import FastMCP
 import ads
 from ads.catalog.project import ProjectCatalog
 from ads.catalog.model import ModelCatalog
-import logging 
+import logging
+import sys
 from starlette.responses import JSONResponse
 from typing import Any, Dict, List
 import pandas as pd
@@ -37,25 +38,31 @@ import requests
 from ads.jobs import Job, DataScienceJob, ScriptRuntime,ContainerRuntime
 from ads.catalog import notebook
 
+LOG_LEVEL = os.getenv("FASTMCP_LOG_LEVEL", "ERROR").upper()
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    level=getattr(logging, LOG_LEVEL, logging.ERROR),
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    stream=sys.stderr,
+    force=True,
 )
 logger = logging.getLogger(__name__)
+for noisy in ("fastmcp", "mcp", "uvicorn", "ads", "oci", "urllib3"):
+    logging.getLogger(noisy).setLevel(getattr(logging, LOG_LEVEL, logging.ERROR))
+    logging.getLogger(noisy).propagate = False
 
 mcp = FastMCP(name=__project__)
 
 ads.set_auth("api_key") # this assumes users have setup API key via OCI SDK.
 
 def log_request(tool_name: str, **kwargs):
-    logger.info(f"[REQUEST RECEIVED] Tool: {tool_name}, Args: {kwargs}")
+    logger.debug(f"[REQUEST RECEIVED] Tool: {tool_name}, Args: {kwargs}")
 
 def log_response(tool_name: str, result):
-    logger.info(f"[RESPONSE SENT] Tool: {tool_name}, Result: {result}")
+    logger.debug(f"[RESPONSE SENT] Tool: {tool_name}, Result: {result}")
 
 
 @mcp.tool()
-def get_compartment_id() -> Any:
+def get_datascience_compartment_id() -> Any:
     """ Get a list of Compartment OCID by Compartment name for use with other tools. Important - use this tool to initialise the compartment_id variable. 
     
     Returns:
@@ -85,7 +92,7 @@ def get_compartment_id() -> Any:
 
 
     except Exception as e:
-        print(f"Error getting project count: {e}")
+        logger.exception("Error getting project count")
         raise
 
 
@@ -100,7 +107,7 @@ def project_count(compartment_id) -> int:
         Number of projects in the compartment
     """
     
-    logger.info("calling project_count tool successfully")
+    logger.debug("calling project_count tool successfully")
     
     try:
         project_catalog = ProjectCatalog(compartment_id=compartment_id)
@@ -108,7 +115,7 @@ def project_count(compartment_id) -> int:
         num_projects = len(project_catalog)
         return num_projects
     except Exception as e:
-        print(f"Error getting project count: {e}")
+        logger.exception("Error getting project count")
         raise
 
 
@@ -130,7 +137,7 @@ def create_project(project_name,project_description,compartment_id) -> Dict:
         return res.to_dataframe().to_dict()
 
     except Exception as e:
-        print(f"Error getting project count: {e}")
+        logger.exception("Error getting project count")
         raise
 
 @mcp.tool()
@@ -150,7 +157,7 @@ def model_count(compartment_id) -> int:
         num_models = len(models)
         return num_models
     except Exception as e:
-        print(f"Error getting model count: {e}")
+        logger.exception("Error getting model count")
         raise
 
 @mcp.tool()
@@ -178,7 +185,7 @@ def list_projects(compartment_id) -> Dict:
         projects_df = pd.DataFrame({'project_id':project_id,'project_name':project_name,'project_description':project_desc}).to_dict('records')
         return projects_df
     except Exception as e:
-        print(f"Error getting project list: {e}")
+        logger.exception("Error getting project list")
         raise
 
 @mcp.tool()
@@ -241,7 +248,7 @@ def create_notebook_session(project_id=None,compartment_id=None,display_name=Non
         #notebook_dict['session_details']=create_notebook_session_response.data.notebook_session_config_details
         return notebook_dict
     except Exception as e:
-        print(f"Error creating notebook session: {e}")
+        logger.exception("Error creating notebook session")
         raise
 
 
@@ -260,7 +267,7 @@ def list_model_version_set_attributes(compartment_id, model_version_set_id) -> D
         mvs = ModelVersionSet.from_id(model_version_set_id)
         return mvs.to_dict()
     except Exception as e:
-        print(f"Error listing model version set attributes: {e}")
+        logger.exception("Error listing model version set attributes")
         raise
 
 @mcp.tool()
@@ -279,7 +286,7 @@ def list_model_version_sets(compartment_id) -> List[Dict]:
         mvss = ds_client.list_model_version_sets(compartment_id=compartment_id).data
         return [{"id": mvs.id, "name": mvs.name} for mvs in mvss]
     except Exception as e:
-        print(f"Error listing model version sets: {e}")
+        logger.exception("Error listing model version sets")
         raise
 
 
@@ -302,7 +309,7 @@ def download_model_artefact(model_id, target_dir) -> str:
 
         return model._to_yaml()
     except Exception as e:
-        print(f"Error downloading model artefact: {e}")
+        logger.exception("Error downloading model artefact")
         raise
 
 @mcp.tool()
@@ -352,7 +359,7 @@ def create_job_from_script(compartment_id, project_id, script_path, display_name
         job.create()
         return job.to_dict()
     except Exception as e:
-        print(f"Error creating job from script: {e}")
+        logger.exception("Error creating job from script")
         raise
 
 @mcp.tool()
@@ -370,7 +377,7 @@ def list_models(compartment_id) -> Dict:
         models = mc.list_models()
         return [model._to_dict() for model in models]
     except Exception as e:
-        print(f"Error listing models: {e}")
+        logger.exception("Error listing models")
         raise
 
 @mcp.tool()
@@ -390,7 +397,7 @@ def list_jobs(compartment_id) -> List[Dict]:
             jobs_list.append({'job_id':jobs[i].job_id,'job_name':jobs[i].name})
         return jobs_list
     except Exception as e:
-        print(f"Error listing jobs: {e}")
+        logger.exception("Error listing jobs")
         raise
 
 @mcp.tool()
@@ -408,7 +415,7 @@ def job_details_by_id(compartment_id, job_id) -> Dict:
         job = Job.from_datascience_job(job_id)
         return job.to_dict()
     except Exception as e:
-        print(f"Error listing jobs by id: {e}")
+        logger.exception("Error listing jobs by id")
         raise
 
 @mcp.tool()
@@ -427,7 +434,7 @@ def list_pipelines(compartment_id) -> List[Dict]:
         pipelines = ds_client.list_pipelines(compartment_id=compartment_id).data
         return [{"id": pipeline.id, "name": pipeline.display_name} for pipeline in pipelines]
     except Exception as e:
-        print(f"Error listing pipelines: {e}")
+        logger.exception("Error listing pipelines")
         raise
 
 @mcp.tool()
@@ -445,7 +452,7 @@ def pipelines_details_by_id(compartment_id, pipeline_id) -> Dict:
         pipeline = Pipeline.from_id(pipeline_id)
         return pipeline.to_dict()
     except Exception as e:
-        print(f"Error listing pipelines by id: {e}")
+        logger.exception("Error listing pipelines by id")
         raise
 
 @mcp.tool()
@@ -474,7 +481,7 @@ def start_job_run(job_id,compartment_id,project_id,display_name) -> Dict:
         return create_job_run_response.data.__dict__
 
     except Exception as e:
-        print(f"Error starting job run: {e}")
+        logger.exception("Error starting job run")
         raise
 
 @mcp.tool()
@@ -509,7 +516,7 @@ def start_pipeline_run(compartment_id,pipeline_id,display_name=None) -> str:
         return response.data.lifecycle_state
 
     except Exception as e:
-        print(f"Error starting pipeline run: {e}")
+        logger.exception("Error starting pipeline run")
         raise
 
 @mcp.tool()
@@ -534,7 +541,7 @@ def create_job_from_container_image(compartment_id, project_id, image, display_n
         job.create()
         return job.to_dict()
     except Exception as e:
-        print(f"Error creating job from container image: {e}")
+        logger.exception("Error creating job from container image")
         raise
 
 @mcp.tool()
@@ -553,7 +560,7 @@ def delete_project(compartment_id,project_id) -> str:
         pc.delete_project(project_id)
         return f"Project {project_id} deleted successfully."
     except Exception as e:
-        print(f"Error deleting project: {e}")
+        logger.exception("Error deleting project")
         raise
 
 @mcp.tool()
@@ -578,7 +585,7 @@ def activate_notebook_session(compartment_id,notebook_session_id) -> str:
         return "Notebook session activating. The URL for Notebook Session is: {}".format(nb_url)
 
     except Exception as e:
-        print(f"Error deleting notebook session: {e}")
+        logger.exception("Error deleting notebook session")
         raise
 
 @mcp.tool()
@@ -597,7 +604,7 @@ def delete_notebook_session(notebook_session_id) -> str:
         ds_client.delete_notebook_session(notebook_session_id)
         return f"Notebook session {notebook_session_id} deleted successfully."
     except Exception as e:
-        print(f"Error deleting notebook session: {e}")
+        logger.exception("Error deleting notebook session")
         raise
 
 @mcp.tool()
@@ -616,7 +623,7 @@ def stop_notebook_session(notebook_session_id) -> str:
         ds_client.deactivate_notebook_session(notebook_session_id)
         return f"Notebook session {notebook_session_id} stopped successfully."
     except Exception as e:
-        print(f"Error stopping notebook session: {e}")
+        logger.exception("Error stopping notebook session")
         raise
 
 @mcp.tool()
@@ -634,7 +641,7 @@ def delete_job(job_id) -> str:
         job.delete()
         return f"Job {job_id} deleted successfully."
     except Exception as e:
-        print(f"Error deleting job: {e}")
+        logger.exception("Error deleting job")
         raise
 
 @mcp.tool()
@@ -652,7 +659,7 @@ def delete_pipeline(pipeline_id) -> str:
         pipeline.delete()
         return f"Pipeline {pipeline_id} deleted successfully."
     except Exception as e:
-        print(f"Error deleting pipeline: {e}")
+        logger.exception("Error deleting pipeline")
         raise
 
 @mcp.tool()
@@ -706,7 +713,7 @@ def deploy_model(model_id, compartment_id, project_id, display_name,subnet_id=No
 
         return deployment.model_deployment.url
     except Exception as e:
-        print(f"Error deploying model: {e}")
+        logger.exception("Error deploying model")
         raise
 
 @mcp.tool()
@@ -724,7 +731,7 @@ def activate_model_deployment(deployment_id) -> str:
         deployment.activate()
         return 'Activating Model Deployment'
     except Exception as e:
-        print(f"Error activating model deployment: {e}")
+        logger.exception("Error activating model deployment")
         raise
 
 @mcp.tool()
@@ -742,7 +749,7 @@ def deactivate_model_deployment(deployment_id) -> str:
         deployment.deactivate()
         return 'Deactivating Model Deployment'
     except Exception as e:
-        print(f"Error deactivating model deployment: {e}")
+        logger.exception("Error deactivating model deployment")
         raise
 
 @mcp.tool()
@@ -761,7 +768,7 @@ def list_notebook_sessions(compartment_id) -> List[Dict]:
         sessions = ds_client.list_notebook_sessions(compartment_id=compartment_id).data
         return [{"id": session.id, "name": session.display_name, "lifecycle_state": session.lifecycle_state} for session in sessions]
     except Exception as e:
-        print(f"Error listing notebook sessions: {e}")
+        logger.exception("Error listing notebook sessions")
         raise
 
 @mcp.tool()
@@ -789,7 +796,7 @@ def update_project(compartment_id,project_id, new_name=None, new_description=Non
         updated_project = pc.update_project(project_id=project_id,**project_kwargs)
         return 'Project updated successfully'
     except Exception as e:
-        print(f"Error updating project: {e}")
+        logger.exception("Error updating project")
         raise
 
 @mcp.tool()
@@ -808,7 +815,7 @@ def list_model_deployments(compartment_id) -> Dict[str, List[Dict]]:
         deployments = ds_client.list_model_deployments(compartment_id=compartment_id).data
         return {"deployments": [{"id": dep.id, "name": dep.display_name, "lifecycle_state": dep.lifecycle_state} for dep in deployments]}
     except Exception as e:
-        print(f"Error listing model deployments: {e}")
+        logger.exception("Error listing model deployments")
         raise
 
 
@@ -842,7 +849,7 @@ def get_pipeline_run_status(pipeline_id, compartment_id) -> Dict:
             return {}
         return pipeline_runs[0].__dict__
     except Exception as e:
-        print(f"Error getting pipeline run status: {e}")
+        logger.exception("Error getting pipeline run status")
         raise
 
 
@@ -875,7 +882,7 @@ def get_job_run_status(job_id,compartment_id) -> Dict:
             return {}
         return job_runs[0].__dict__
     except Exception as e:
-        print(f"Error getting job run status: {e}")
+        logger.exception("Error getting job run status")
         raise
 
 
@@ -902,7 +909,7 @@ def list_job_runs(compartment_id,job_id=None) -> List[Dict]:
 
         return [oci.util.to_dict(run) for run in response.data]
     except Exception as e:
-        print(f"Error listing job runs: {e}")
+        logger.exception("Error listing job runs")
         raise
 
 @mcp.tool()
@@ -923,7 +930,7 @@ def cancel_job_run(job_id) -> str:
         job_run.cancel()
         return f"Job run {job_run_id} cancelled successfully. Current status: {job_run.lifecycle_state}"
     except Exception as e:
-        print(f"Error cancelling job run: {e}")
+        logger.exception("Error cancelling job run")
         raise
 
 
@@ -948,7 +955,7 @@ def list_pipeline_runs(compartment_id,pipeline_id) -> List[Dict]:
 
         return [run.__dict__ for run in response.data]
     except Exception as e:
-        print(f"Error listing pipeline runs: {e}")
+        logger.exception("Error listing pipeline runs")
         raise
 
 @mcp.tool()
@@ -966,7 +973,7 @@ def delete_model_deployment(deployment_id) -> str:
         deployment.delete()
         return f"Model deployment {deployment_id} deleted successfully."
     except Exception as e:
-        print(f"Error deleting model deployment: {e}")
+        logger.exception("Error deleting model deployment")
         raise
 
 

@@ -2,7 +2,7 @@
 FROM container-registry.oracle.com/java/openjdk:17 AS builder
 
 ARG MAVEN_VERSION=3.9.11
-ARG MAVEN_BASE_URL=https://dlcdn.apache.org/maven/maven-3
+ARG MAVEN_BASE_URL=https://archive.apache.org/dist/maven/maven-3
 
 RUN curl -fsSL \
       ${MAVEN_BASE_URL}/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz \

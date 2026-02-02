@@ -8,7 +8,7 @@ import base64
 import json
 import os
 from logging import Logger
-from typing import Optional
+from typing import Literal, Optional
 
 import oci
 from fastmcp import FastMCP
@@ -49,11 +49,30 @@ def get_identity_client():
     return oci.identity.IdentityClient(config, signer=signer)
 
 
-@mcp.tool(description="List compartments in a given compartment")
+@mcp.tool(description="List compartments in a given compartment or tenancy.")
 def list_compartments(
     compartment_id: str = Field(
         ...,
         description="The OCID of the compartment (remember that the tenancy is simply the root compartment)",
+    ),
+    compartment_id_in_subtree: Optional[bool] = Field(
+        False,
+        description="Can only be set to true when performing ListCompartments on the tenancy "
+        "(root compartment). When set to true, the hierarchy of compartments is "
+        "traversed and all compartments and subcompartments in the tenancy are returned "
+        "depending on the the setting of accessLevel",
+    ),
+    access_level: Optional[Literal["ANY", "ACCESSIBLE"]] = Field(
+        "ANY",
+        description="Setting this to ACCESSIBLE returns only those compartments for which the user has "
+        "INSPECT permissions directly or indirectly (permissions can be on a resource in a subcompartment). "
+        "For the compartments on which the user indirectly has INSPECT permissions, a restricted set of "
+        "fields is returned. When set to ANY permissions are not checked.",
+    ),
+    include_root: Optional[bool] = Field(
+        True,
+        description="Whether to include the root compartment in the response. "
+        "Always include the root compartment in the response unless the user asks for it to not be included.",
     ),
     limit: Optional[int] = Field(
         None,
@@ -75,6 +94,8 @@ def list_compartments(
                 "compartment_id": compartment_id,
                 "page": next_page,
                 "limit": limit,
+                "compartment_id_in_subtree": compartment_id_in_subtree,
+                "access_level": access_level,
             }
 
             response = client.list_compartments(**kwargs)
@@ -85,6 +106,16 @@ def list_compartments(
             for d in data:
                 compartments.append(map_compartment(d))
 
+        if include_root:
+            config = oci.config.from_file(
+                profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+            )
+            tenancy_id = os.getenv("TENANCY_ID_OVERRIDE", config["tenancy"])
+            tenancy_response: oci.response.Response = client.get_compartment(
+                compartment_id=tenancy_id,
+            )
+            root_compartment: Compartment = tenancy_response.data
+            compartments.append(map_compartment(root_compartment))
         logger.info(f"Found {len(compartments)} Compartments")
         return compartments
 

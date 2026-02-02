@@ -20,7 +20,56 @@ from oracle.oci_identity_mcp_server.server import mcp
 class TestIdentityTools:
     @pytest.mark.asyncio
     @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
-    async def test_list_compartments(self, mock_get_client):
+    @patch("oracle.oci_identity_mcp_server.server.oci.config.from_file")
+    async def test_list_compartments(self, mock_config_from_file, mock_get_client):
+        mock_config_from_file.return_value = {"tenancy": "test_tenancy"}
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_list_response = create_autospec(oci.response.Response)
+        mock_get_response = create_autospec(oci.response.Response)
+        mock_list_response.data = [
+            oci.identity.models.Compartment(
+                id="compartment1",
+                compartment_id="compartment1",
+                name="Compartment 1",
+                description="Test compartment",
+                lifecycle_state="ACTIVE",
+                time_created="1970-01-01T00:00:00",
+            )
+        ]
+
+        mock_get_response.data = oci.identity.models.Compartment(
+            id="tenancy1",
+            compartment_id=None,
+            name="Root Compartment",
+            description="Test compartment (root)",
+            lifecycle_state="ACTIVE",
+            time_created="1970-01-01T00:00:00",
+        )
+        mock_list_response.has_next_page = False
+        mock_list_response.next_page = None
+        mock_client.list_compartments.return_value = mock_list_response
+        mock_client.get_compartment.return_value = mock_get_response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_compartments",
+                    {
+                        "compartment_id": "test_tenancy",
+                        "compartment_id_in_subtree": True,
+                    },
+                )
+            ).structured_content["result"]
+
+            assert len(result) == 2
+            assert result[0]["id"] == "compartment1"
+            assert result[1]["id"] == "tenancy1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
+    async def test_list_compartments_without_root(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -45,6 +94,8 @@ class TestIdentityTools:
                     "list_compartments",
                     {
                         "compartment_id": "test_tenancy",
+                        "compartment_id_in_subtree": True,
+                        "include_root": False,
                     },
                 )
             ).structured_content["result"]
@@ -53,16 +104,42 @@ class TestIdentityTools:
             assert result[0]["id"] == "compartment1"
 
     @pytest.mark.asyncio
+    @patch("oracle.oci_identity_mcp_server.server.oci.config.from_file")
     @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
-    async def test_list_compartments_pagination_without_limit(self, mock_get_client):
+    async def test_list_compartments_pagination_without_limit(
+        self, mock_get_client, mock_config_from_file
+    ):
+        mock_config_from_file.return_value = {"tenancy": "test_tenancy"}
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
+
+        mock_get_response = create_autospec(oci.response.Response)
+        mock_get_response.data = oci.identity.models.Compartment(
+            id="tenancy1",
+            compartment_id=None,
+            name="Root Compartment",
+            description="Test compartment (root)",
+            lifecycle_state="ACTIVE",
+            time_created="1970-01-01T00:00:00",
+        )
 
         # Page 1
         resp1 = create_autospec(oci.response.Response)
         resp1.data = [
-            oci.identity.models.Compartment(id="c1", name="C1"),
-            oci.identity.models.Compartment(id="c2", name="C2"),
+            oci.identity.models.Compartment(
+                id="c1",
+                name="C1",
+                description="Test compartment",
+                lifecycle_state="ACTIVE",
+                time_created="1970-01-01T00:00:00",
+            ),
+            oci.identity.models.Compartment(
+                id="c2",
+                name="C2",
+                description="Test compartment",
+                lifecycle_state="ACTIVE",
+                time_created="1970-01-01T00:00:00",
+            ),
         ]
         resp1.has_next_page = True
         resp1.next_page = "p2"
@@ -70,12 +147,19 @@ class TestIdentityTools:
         # Page 2
         resp2 = create_autospec(oci.response.Response)
         resp2.data = [
-            oci.identity.models.Compartment(id="c3", name="C3"),
+            oci.identity.models.Compartment(
+                id="c3",
+                name="C3",
+                description="Test compartment",
+                lifecycle_state="ACTIVE",
+                time_created="1970-01-01T00:00:00",
+            ),
         ]
         resp2.has_next_page = False
         resp2.next_page = None
 
         mock_client.list_compartments.side_effect = [resp1, resp2]
+        mock_client.get_compartment.return_value = mock_get_response
 
         async with Client(mcp) as client:
             result = (
@@ -87,8 +171,8 @@ class TestIdentityTools:
                 )
             ).structured_content["result"]
 
-        assert len(result) == 3
-        assert [r["id"] for r in result] == ["c1", "c2", "c3"]
+        assert len(result) == 4
+        assert [r["id"] for r in result] == ["c1", "c2", "c3", "tenancy1"]
 
         # Verify pagination call args across pages
         first_kwargs = mock_client.list_compartments.call_args_list[0].kwargs
@@ -99,16 +183,42 @@ class TestIdentityTools:
         assert second_kwargs["limit"] is None
 
     @pytest.mark.asyncio
+    @patch("oracle.oci_identity_mcp_server.server.oci.config.from_file")
     @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
-    async def test_list_compartments_limit_stops_pagination(self, mock_get_client):
+    async def test_list_compartments_limit_stops_pagination(
+        self, mock_get_client, mock_config_from_file
+    ):
+        mock_config_from_file.return_value = {"tenancy": "test_tenancy"}
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
+
+        mock_get_response = create_autospec(oci.response.Response)
+        mock_get_response.data = oci.identity.models.Compartment(
+            id="tenancy1",
+            compartment_id=None,
+            name="Root Compartment",
+            description="Test compartment (root)",
+            lifecycle_state="ACTIVE",
+            time_created="1970-01-01T00:00:00",
+        )
 
         # Page 1
         resp1 = create_autospec(oci.response.Response)
         resp1.data = [
-            oci.identity.models.Compartment(id="c1", name="C1"),
-            oci.identity.models.Compartment(id="c2", name="C2"),
+            oci.identity.models.Compartment(
+                id="c1",
+                name="C1",
+                description="Test compartment",
+                lifecycle_state="ACTIVE",
+                time_created="1970-01-01T00:00:00",
+            ),
+            oci.identity.models.Compartment(
+                id="c2",
+                name="C2",
+                description="Test compartment",
+                lifecycle_state="ACTIVE",
+                time_created="1970-01-01T00:00:00",
+            ),
         ]
         resp1.has_next_page = True
         resp1.next_page = "p2"
@@ -116,12 +226,19 @@ class TestIdentityTools:
         # Page 2 (would exist, but should not be called due to limit)
         resp2 = create_autospec(oci.response.Response)
         resp2.data = [
-            oci.identity.models.Compartment(id="c3", name="C3"),
+            oci.identity.models.Compartment(
+                id="c3",
+                name="C3",
+                description="Test compartment",
+                lifecycle_state="ACTIVE",
+                time_created="1970-01-01T00:00:00",
+            ),
         ]
         resp2.has_next_page = False
         resp2.next_page = None
 
         mock_client.list_compartments.side_effect = [resp1, resp2]
+        mock_client.get_compartment.return_value = mock_get_response
 
         limit = 2
         async with Client(mcp) as client:
@@ -135,8 +252,8 @@ class TestIdentityTools:
                 )
             ).structured_content["result"]
 
-        assert len(result) == 2
-        assert [r["id"] for r in result] == ["c1", "c2"]
+        assert len(result) == 3
+        assert [r["id"] for r in result] == ["c1", "c2", "tenancy1"]
         # With limit, only first page should be fetched
         assert mock_client.list_compartments.call_count == 1
         first_kwargs = mock_client.list_compartments.call_args_list[0].kwargs

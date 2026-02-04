@@ -28,6 +28,7 @@ import org.apache.tomcat.util.net.SSLHostConfig;
 import org.apache.tomcat.util.net.SSLHostConfigCertificate;
 
 import java.io.File;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
@@ -103,10 +104,11 @@ public class OracleDatabaseMCPToolkit {
   private static McpSyncServer startHttpServer() {
     try {
       HttpServletStreamableServerTransportProvider transport =
-              HttpServletStreamableServerTransportProvider.builder()
-                      .objectMapper(new ObjectMapper())
-                      .mcpEndpoint("/mcp")
-                      .build();
+        HttpServletStreamableServerTransportProvider.builder()
+          .objectMapper(new ObjectMapper())
+          .keepAliveInterval(Duration.ofSeconds(60))
+          .mcpEndpoint("/mcp")
+          .build();
 
       McpSyncServer server = McpServer
         .sync(transport)

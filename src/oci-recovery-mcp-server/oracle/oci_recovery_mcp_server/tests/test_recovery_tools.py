@@ -280,16 +280,19 @@ class TestRecoveryTools:
         mock_get_client.return_value = mock_client
 
         mock_list_response = create_autospec(oci.response.Response)
-        mock_list_response.data = [
-            oci.recovery.models.ProtectedDatabaseSummary(id="pd1"),
-            oci.recovery.models.ProtectedDatabaseSummary(id="pd2"),
-        ]
+        pd1_summary = oci.recovery.models.ProtectedDatabaseSummary(
+            id="pd1", lifecycle_state="ACTIVE"
+        )
+        pd2_summary = oci.recovery.models.ProtectedDatabaseSummary(
+            id="pd2", lifecycle_state="ACTIVE"
+        )
+        mock_list_response.data = [pd1_summary, pd2_summary]
         mock_list_response.has_next_page = False
         mock_list_response.next_page = None
         mock_client.list_protected_databases.return_value = mock_list_response
         # Fallback path for metrics at summary level
-        mock_list_response.data[0].metrics = {"backup_space_used_in_gbs": 10.5}
-        mock_list_response.data[1].metrics = {"backup_space_used_in_gbs": 4.5}
+        pd1_summary.metrics = {"backup_space_used_in_gbs": 10.5}
+        pd2_summary.metrics = {"backup_space_used_in_gbs": 4.5}
 
         # PD1 metrics 10.5 GB, PD2 metrics 4.5 GB
         pd1 = oci.recovery.models.ProtectedDatabase(id="pd1")
@@ -309,18 +312,21 @@ class TestRecoveryTools:
         async with Client(mcp) as client:
             call_tool_result = await client.call_tool(
                 "summarize_backup_space_used",
-                {"compartment_id": "ocid1.compartment.oc1..test"},
+                {
+                    "compartment_id": "ocid1.compartment.oc1..test",
+                    "region": "us-ashburn-1",
+                },
             )
             result = call_tool_result.structured_content
 
-            total_scanned = result.get("total_databases_scanned") or result.get(
-                "totalDatabasesScanned"
-            )
-            sum_gb = result.get("sum_backup_space_used_in_gbs") or result.get(
-                "sumBackupSpaceUsedInGBs"
-            )
-            assert abs(sum_gb - 15.0) < 1e-9
-            assert total_scanned is None or total_scanned >= 0
+        total_scanned = result.get("total_databases_scanned") or result.get(
+            "totalDatabasesScanned"
+        )
+        sum_gb = result.get("sum_backup_space_used_in_gbs") or result.get(
+            "sumBackupSpaceUsedInGBs"
+        )
+        assert abs(sum_gb - 15.0) < 1e-9
+        assert total_scanned == 2
 
     @pytest.mark.asyncio
     @patch("oracle.oci_recovery_mcp_server.server.get_monitoring_client")

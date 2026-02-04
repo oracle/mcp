@@ -384,21 +384,28 @@ def map_protected_database(
         database_id=getattr(pd, "database_id", None)
         or data.get("database_id")
         or data.get("databaseId"),
+        db_unique_name=getattr(pd, "db_unique_name", None)
+        or data.get("db_unique_name"),
+        vpc_user_name=getattr(pd, "vpc_user_name", None) or data.get("vpc_user_name"),
         database_size=getattr(pd, "database_size", None)
         or data.get("database_size")
         or data.get("databaseSize"),
-        database_size_in_gbs=getattr(pd, "database_size_in_gbs", None)
-        or data.get("database_size_in_gbs")
-        or data.get("databaseSizeInGBs")
-        or data.get("databaseSizeInGbs"),
-        change_rate=getattr(pd, "change_rate", None)
-        or data.get("change_rate")
-        or data.get("changeRate"),
-        compression_ratio=getattr(pd, "compression_ratio", None)
-        or data.get("compression_ratio")
-        or data.get("compressionRatio"),
-        db_unique_name=getattr(pd, "db_unique_name", None)
-        or data.get("db_unique_name"),
+        database_size_in_gbs=(
+            getattr(pd, "database_size_in_gbs", None)
+            or data.get("database_size_in_gbs")
+            or data.get("databaseSizeInGBs")
+            or data.get("databaseSizeInGbs")
+        ),
+        change_rate=(
+            getattr(pd, "change_rate", None)
+            or data.get("change_rate")
+            or data.get("changeRate")
+        ),
+        compression_ratio=(
+            getattr(pd, "compression_ratio", None)
+            or data.get("compression_ratio")
+            or data.get("compressionRatio")
+        ),
         lifecycle_state=getattr(pd, "lifecycle_state", None)
         or data.get("lifecycle_state"),
         lifecycle_details=getattr(pd, "lifecycle_details", None)
@@ -411,9 +418,11 @@ def map_protected_database(
         or data.get("is_read_only_resource")
         or data.get("isReadOnlyResource"),
         health=getattr(pd, "health", None) or data.get("health"),
-        is_redo_logs_shipped=getattr(pd, "is_redo_logs_shipped", None)
-        or data.get("is_redo_logs_shipped")
-        or data.get("isRedoLogsShipped"),
+        is_redo_logs_shipped=(
+            getattr(pd, "is_redo_logs_shipped", None)
+            or data.get("is_redo_logs_shipped")
+            or data.get("isRedoLogsShipped")
+        ),
         metrics=map_metrics(getattr(pd, "metrics", None) or data.get("metrics")),
         subscription_id=getattr(pd, "subscription_id", None)
         or data.get("subscription_id")
@@ -433,8 +442,6 @@ def map_protected_database(
         system_tags=getattr(pd, "system_tags", None)
         or data.get("system_tags")
         or data.get("systemTags"),
-        vpc_user_name=getattr(pd, "vpc_user_name", None)
-        or data.get("vpc_user_name"),
     )
 
 
@@ -526,7 +533,12 @@ def map_recovery_service_subnet(
                 if isinstance(it, str):
                     out.append(it)
                 elif isinstance(it, dict):
-                    ocid = it.get("id") or it.get("ocid") or it.get("subnetId") or it.get("subnet_id")
+                    ocid = (
+                        it.get("id")
+                        or it.get("ocid")
+                        or it.get("subnetId")
+                        or it.get("subnet_id")
+                    )
                     if ocid:
                         out.append(ocid)
         except Exception:
@@ -535,8 +547,12 @@ def map_recovery_service_subnet(
 
     # Normalize primary identifiers for VCN/subnet and ensure 'subnets' includes subnet_id when list is absent
     vcn_id_val = getattr(rss, "vcn_id", None) or data.get("vcn_id") or data.get("vcnId")
-    subnet_id_val = getattr(rss, "subnet_id", None) or data.get("subnet_id") or data.get("subnetId")
-    subnets_val = _normalize_subnets(data.get("subnets")) or ([subnet_id_val] if subnet_id_val else None)
+    subnet_id_val = (
+        getattr(rss, "subnet_id", None) or data.get("subnet_id") or data.get("subnetId")
+    )
+    subnets_val = _normalize_subnets(data.get("subnets")) or (
+        [subnet_id_val] if subnet_id_val else None
+    )
 
     return RecoveryServiceSubnet(
         id=getattr(rss, "id", None) or data.get("id"),
@@ -731,9 +747,11 @@ def map_protected_database_summary(
         database_id=getattr(pds, "database_id", None)
         or data.get("database_id")
         or data.get("databaseId"),
-        db_unique_name=getattr(pds, "db_unique_name", None)
-        or data.get("db_unique_name")
-        or data.get("dbUniqueName"),
+        db_unique_name=(
+            getattr(pds, "db_unique_name", None)
+            or data.get("db_unique_name")
+            or data.get("dbUniqueName")
+        ),
         vpc_user_name=getattr(pds, "vpc_user_name", None)
         or data.get("vpc_user_name")
         or data.get("vpcUserName"),
@@ -1140,9 +1158,7 @@ def map_metrics(m) -> Metrics | None:
         retention_period_in_days=getattr(m, "retention_period_in_days", None)
         or data.get("retention_period_in_days")
         or data.get("retentionPeriodInDays"),
-        unprotected_window_in_seconds=getattr(
-            m, "unprotected_window_in_seconds", None
-        )
+        unprotected_window_in_seconds=getattr(m, "unprotected_window_in_seconds", None)
         or data.get("unprotected_window_in_seconds")
         or data.get("unprotectedWindowInSeconds"),
     )
@@ -1854,22 +1870,28 @@ class BackupSummary(OCIBaseModel):
     retention_period_in_days: Optional[float] = Field(
         None,
         alias="retention-period-in-days",
-        description="Retention period (days) inferred from Recovery protection policy, when available."
+        description="Retention period (days) inferred from Recovery protection policy, when available.",
     )
     retention_period_in_years: Optional[float] = Field(
         None,
         alias="retention-period-in-years",
-        description="Retention period (years), derived from days when available."
+        description="Retention period (years), derived from days when available.",
     )
     database_size_in_gbs: Optional[float] = Field(
         None,
         alias="database-size-in-gbs",
-        description="Database size in GBs (from Recovery metrics) for the database that this backup belongs to."
+        description=(
+            "Database size in GBs (from Recovery metrics) for the database "
+            "that this backup belongs to."
+        ),
     )
     backup_destination_type: Optional[str] = Field(
         None,
         alias="backup-destination-type",
-        description="Primary backup destination type for the database (e.g., DBRS, OBJECT_STORE, NFS, UNKNOWN)."
+        description=(
+            "Primary backup destination type for the database "
+            "(e.g., DBRS, OBJECT_STORE, NFS, UNKNOWN)."
+        ),
     )
 
 
@@ -1950,12 +1972,18 @@ class Backup(OCIBaseModel):
     database_size_in_gbs: Optional[float] = Field(
         None,
         alias="database-size-in-gbs",
-        description="Database size in GBs (from Recovery metrics) for the database that this backup belongs to.",
+        description=(
+            "Database size in GBs (from Recovery metrics) for the database "
+            "that this backup belongs to."
+        ),
     )
     backup_destination_type: Optional[str] = Field(
         None,
         alias="backup-destination-type",
-        description="Primary backup destination type for the database (e.g., DBRS, OBJECT_STORE, NFS, UNKNOWN).",
+        description=(
+            "Primary backup destination type for the database "
+            "(e.g., DBRS, OBJECT_STORE, NFS, UNKNOWN)."
+        ),
     )
 
 

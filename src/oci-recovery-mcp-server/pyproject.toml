@@ -36,6 +36,7 @@ packages = ["oracle"]
 
 [dependency-groups]
 dev = [
+    "black>=26.1.0",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
 ]

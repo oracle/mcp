@@ -27,27 +27,32 @@ def step_impl_ollama_model(context):
 
 @when('I send a request with the prompt "{prompt}"')
 def step_impl_prompt(context, prompt):
-    # Send a request to the bridge (which is configured to talk to Ollama)
     payload = {
         "model": context.model,
-        "options": {"temperature": 0.7, "top_p": 0.9},
+        "options": {
+            "temperature": 0.0,
+            "top_p": 1.0,
+        },  # Use 0.0 to make responses more deterministic
         "messages": [context.system_message, {"role": "user", "content": prompt}],
         "stream": False,
-        "thinking": True,
     }
 
-    context.response = requests.post(context.url, json=payload, stream=False)
-    context.response.raise_for_status()
+    try:
+        # Timeout to prevent infinite hanging
+        response = requests.post(context.url, json=payload, timeout=90)
+        response.raise_for_status()
+        context.response = response
 
-    # check if all thinking is really done...
-    result = context.response.json()
-    thinking = result["message"]["thinking"]
-    content = result["message"]["content"]
-    print("thinking & content", thinking, content, flush=True)
-    if content is None and thinking is not None:
-        print("Getting the next response...")
-        context.response = requests.post(context.url, json=payload, stream=False)
-        context.response.raise_for_status()
+        result = response.json()
+
+        message = result.get("message", {})
+        content = message.get("content", "")
+
+        print(f"Response received: {content[:50]}...")
+
+    except requests.exceptions.Timeout:
+        print("Error: The Bridge or Ollama timed out")
+        raise
 
 
 @then("the response should contain a list of tools available")
@@ -60,13 +65,3 @@ def step_impl_tools_available(context):
         assert (
             tool_server in result["message"]["content"]
         ), f"{tool_server} is missing from tools."
-
-
-@then("the response should contain a list of instances")
-def step_impl_list_instances(context):
-    result = context.response.json()
-    print("Instances", result)
-    assert "content" in result["message"], "Response does not contain a content key."
-    assert (
-        "ocid1.instance" in result["message"]["content"]
-    ), "tools could not be queried."

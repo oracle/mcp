@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-object-storage-mcp-server"
-version = "1.1.0"
+version = "1.1.2"
 description = "OCI Object Storage Service MCP server"
 readme = "README.md"
 authors = [
@@ -8,7 +8,7 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "fastmcp==2.13.0",
+    "fastmcp==2.14.2",
     "oci==2.160.0",
 ]
 
@@ -46,4 +46,4 @@ omit = [
 
 [tool.coverage.report]
 precision = 2
-fail_under = 85.78
+fail_under = 90

@@ -1,12 +1,12 @@
 [project]
 name = "oracle-db-doc-mcp-server"
-version = "1.0.0"
+version = "1.0.1"
 description = "The Oracle Database Documentation MCP Server"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "beautifulsoup4>=4.9.0",
-    "fastmcp>=2.11.3",
+    "fastmcp==2.14.2",
     "markdownify>=1.2.0",
     "pocketsearch>=0.40.0",
     "pydantic>=2.12.3"

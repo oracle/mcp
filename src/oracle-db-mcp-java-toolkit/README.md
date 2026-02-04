@@ -7,7 +7,9 @@ Oracle Database MCP Toolkit is a Model Context Protocol (MCP) server that lets y
 * Define your own custom tools via a simple YAML configuration file.
 * Use built-in tools:
   * Analyze Oracle JDBC thin client logs and RDBMS/SQLNet trace files.
-  * Database-powered tools, including vector similarity search and SQL execution plan analysis.
+  * Database tools for SQL execution, table management, transactions, performance monitoring and execution plan analysis.
+  * Database-powered tools, including vector similarity search (RAG).
+  * Admin tools for runtime discovery and configuration: list available tools and live-edit YAML-defined tools with hot reload.
 * Deploy locally or remotely - optionally as a container - with support for TLS and OAuth2
 
 ![MCP Toolkit Architecture Diagram](./images/MCPToolkitArchitectureDiagram.svg)
@@ -25,7 +27,7 @@ This provides a flexible and declarative way to extend the server without modify
 A YAML file may define:
 
 * **datasources:** — Database configuration info:
-  * `url`: This the JDBC URL used by the MCP server to connect to the database using the JDBC driver.
+  * `url`: This is the JDBC URL used by the MCP server to connect to the database using the JDBC driver.
   * `user`: The username to use for the database connection.
   * `password`: The password to use for the database connection.
   * `host` (optional): The hostname or IP address of the database server.
@@ -80,6 +82,10 @@ tools:
         description: Hotel name to search for.
         required: false
     statement: SELECT * FROM hotels WHERE name LIKE '%' || :name || '%'
+
+# Optional toolsets combining custom tools
+toolsets:
+  reporting: [hotels-by-name]
 ```
 
 To enable YAML configuration, launch the server with:
@@ -88,11 +94,102 @@ To enable YAML configuration, launch the server with:
 java -DconfigFile=/path/to/config.yaml -jar <mcp-server>.jar
 ```
 
+Toolsets can be enabled from `-Dtools` alongside individual tools. For example:
+- `-Dtools=reporting` enables all tools in the `reporting` toolset
+- `-Dtools=reporting,explain` enables your `reporting` set plus the built-in `explain` toolset (see below)
+- `-Dtools=*` or omit `-Dtools` to enable everything
+
+> Tip: You can also manage YAML-defined tools at runtime using the `edit-tools` admin tool; see section 3.9.
+
 ---
 
 ## 3. Built-in Tools
 
-### 3.1. Oracle JDBC Log Analysis
+### Built-in Toolsets Overview
+The server provides four built-in toolsets that can be enabled via `-Dtools`:
+
+<table>
+  <thead>
+    <tr>
+      <th>Toolset</th>
+      <th>Description</th>
+      <th>Tools Included</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>mcp-admin</code></td>
+      <td>Server discovery and runtime configuration</td>
+      <td>
+        list-tools, edit-tools
+      </td>
+    </tr>
+    <tr>
+      <td><code>log-analyzer</code></td>
+      <td>JDBC and RDBMS log analysis</td>
+      <td>
+        get-jdbc-stats, get-jdbc-queries, get-jdbc-errors,
+        get-jdbc-connection-events, list-log-files-from-directory,
+        jdbc-log-comparison, get-rdbms-errors, get-rdbms-packet-dumps
+      </td>
+    </tr>
+    <tr>
+      <td><code>database-operator</code></td>
+      <td>Database operations, transactions, monitoring, and execution plans</td>
+      <td>
+        read-query, write-query, create-table, delete-table,
+        list-tables, describe-table, start-transaction, resume-transaction,
+        commit-transaction, rollback-transaction, db-ping,
+        db-metrics-range, explain-plan
+      </td>
+    </tr>
+    <tr>
+      <td><code>rag</code></td>
+      <td>Vector similarity search</td>
+      <td>similarity-search</td>
+    </tr>
+  </tbody>
+</table>
+
+_Note: Each tool belongs to exactly one built-in toolset. Enabling a toolset enables all tools listed for that toolset._
+
+**Common Configurations:**
+- `-Dtools=mcp-admin` - Admin and runtime configuration tools
+- `-Dtools=log-analyzer` - Log analysis only (no database required)
+- `-Dtools=database-operator` - Database operations and SQL execution
+- `-Dtools=rag` – Vector similarity search
+- `-Dtools=mcp-admin,log-analyzer` - Admin + log analysis
+- `-Dtools=*` - All tools (default if omitted)
+
+### 3.1. Database Operations
+These tools provide direct SQL execution capabilities:
+
+- **`read-query`**: Execute SELECT-only queries and return results as JSON.
+- **`write-query`**: Execute DML/DDL operations (INSERT, UPDATE, DELETE, CREATE, etc.) with autocommit.
+
+### 3.2. Table Management
+These tools help you manage database tables:
+
+- **`create-table`**: Create a table using full CREATE TABLE statements
+- **`delete-table`**: Drop an existing table by name
+- **`list-tables`**: List all tables and synonyms in the current schema
+- **`describe-table`**: Get detailed column information for any table
+
+### 3.3. Transaction Management
+These tools provide fine-grained control over database transactions:
+
+- **`start-transaction`**: Begin a new JDBC transaction and get a transaction ID
+- **`resume-transaction`**: Verify if a transaction ID is still active
+- **`commit-transaction`**: Commit and close a transaction
+- **`rollback-transaction`**: Rollback and close a transaction
+
+### 3.4. Database Monitoring
+These tools help monitor database health and performance:
+
+- **`db-ping`**: Connectivity + timings (connect/round-trip) + Database metadata
+- **`db-metrics-range`**: Retrieve Oracle performance metrics from V$SYSSTAT
+
+### 3.5. Oracle JDBC Log Analysis
 
 These tools operate on Oracle JDBC thin client logs:
 
@@ -103,16 +200,16 @@ These tools operate on Oracle JDBC thin client logs:
 * **`list-log-files-from-directory`**: List all visible files from a specified directory, which helps the user analyze multiple files with one prompt.
 * **`jdbc-log-comparison`**: Compares two log files for performance metrics, errors, and network information.
 
-### 3.2. RDBMS/SQLNet Trace Analysis:
+### 3.6. RDBMS/SQLNet Trace Analysis:
 
 These tools operate on RDBMS/SQLNet trace files:
 
 * **`get-rdbms-errors`**: Extracts errors from RDBMS/SQLNet trace files.
 * **`get-rdbms-packet-dumps`**: Extracts packet dumps for a specific connection ID.
 
-### 3.3. Vector Similarity Search
+### 3.7. Vector Similarity Search (RAG)
 
-* **`similarity_search`**: Perform semantic similarity search using Oracle’s vector features (`VECTOR_EMBEDDING`, `VECTOR_DISTANCE`).
+* **`similarity-search`**: Perform semantic similarity search using Oracle’s vector features (`VECTOR_EMBEDDING`, `VECTOR_DISTANCE`).
 
   **Inputs:**
 
@@ -128,9 +225,9 @@ These tools operate on RDBMS/SQLNet trace files:
 
   * JSON array of similar rows with scores and truncated snippets.
 
-### 3.4. SQL Execution Plan Analysis
+### 3.8. SQL Execution Plan Analysis
 
-* **`explain_plan`**: Generate Oracle execution plans and receive a pre-formatted LLM prompt for tuning and explanation.
+* **`explain-plan`**: Generate Oracle execution plans and receive a pre-formatted LLM prompt for tuning and explanation.
 
   **Modes:**
 
@@ -153,6 +250,49 @@ These tools operate on RDBMS/SQLNet trace files:
   * `planText`: DBMS_XPLAN output.
   * `llmPrompt`: A structured prompt for an LLM to explain + tune the plan.
 
+### 3.9. Admin and Runtime Configuration Tools
+
+These tools help you discover what's enabled and manage YAML-defined tools at runtime.
+They are part of the `mcp-admin` toolset (enable via `-Dtools=mcp-admin` or include individual tool names).
+
+_Note: The `mcp-admin` toolset is focused on server discovery and runtime configuration only._
+
+#### MCP Admin Tools:
+
+- `list-tools`: List all available tools with their descriptions.
+  - Inputs: none
+  - Returns: `tools` array with `{ name, title, description }` for built-ins (honoring `-Dtools` filter) and any YAML-defined tools.
+
+- `edit-tools`: Create, update, or remove a YAML-defined tool. Changes are auto-reloaded by the server.
+  - Inputs (subset; see schema in code):
+    - `name` (string, required): Tool name/YAML key
+    - `remove` (boolean, optional): If true, delete the tool
+    - `description` (string, optional)
+    - `dataSource` (string, optional): Key from `dataSources:`
+    - `statement` (string, optional): SQL (SELECT or DML)
+    - `parameters` (array, optional): Items of `{ name, type, description, required }`
+  - Requirements and behavior:
+    - Requires `-DconfigFile` to be set to a writable YAML file; otherwise the tool will return an error.
+    - On upsert/remove, the YAML is written and the server hot-reloads the configuration shortly after.
+
+  Example (upsert a tool):
+  ```jsonc
+  {
+    "name": "hotels-by-rating",
+    "description": "List hotels with a minimum rating",
+    "dataSource": "prod-db",
+    "statement": "SELECT * FROM hotels WHERE rating >= :minRating ORDER BY rating DESC",
+    "parameters": [
+      { "name": "minRating", "type": "number", "description": "Minimum rating", "required": true }
+    ]
+  }
+  ```
+
+  Example (remove a tool):
+  ```jsonc
+  { "name": "hotels-by-rating", "remove": true }
+  ```
+  
 ---
 
 ## 4. Installation
@@ -400,11 +540,18 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
       <td><code>tools</code> (aka <code>-Dtools</code>)</td>
       <td>No</td>
       <td>
-        Comma-separated allow-list of tool names to enable.  
-        Use <code>*</code> or <code>all</code> to enable everything.  
-        If omitted, all tools are enabled by default.
+        Comma-separated allow-list of tool or toolset names to enable (case-insensitive).<br/>
+        You can pass individual tools (e.g. <code>get-jdbc-stats</code>, <code>read-query</code>) or any of the following built-in toolsets:
+        <ul>
+          <li><code>mcp-admin</code> — server discovery and runtime configuration tools (list-tools, edit-tools)</li>
+          <li><code>database-operator</code> — database operations, transactions, monitoring, and execution plans (read-query, write-query, create-table, delete-table, list-tables, describe-table, start-transaction, resume-transaction, commit-transaction, rollback-transaction, db-ping, db-metrics-range, explain-plan).</li>
+          <li><code>log-analyzer</code> — all JDBC log and RDBMS/SQLNet analysis tools (get-jdbc-stats, get-jdbc-queries, get-jdbc-errors, list-log-files-from-directory, jdbc-log-comparison, get-jdbc-connection-events, get-rdbms-errors, get-rdbms-packet-dumps)</li>
+          <li><code>rag</code> — similarity-search</li>
+        </ul>
+        You can also define your own YAML <code>toolsets:</code> and reference them here.  
+        Use <code>*</code> or <code>all</code> to enable everything. If omitted, all tools are enabled by default.
       </td>
-      <td><code>get-jdbc-stats,get-jdbc-queries</code></td>
+      <td><code>mcp-admin,log-analyzer</code> or <code>reporting</code></td>
     </tr>
     <tr>
       <td><code>ojdbc.ext.dir</code></td>
@@ -450,7 +597,7 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
     <tr>
       <td><code>configFile</code></td>
       <td>No</td>
-      <td>Path to a YAML file defining <code>datasources</code> and <code>tools</code>.</td>
+      <td>Path to a YAML file defining <code>datasources</code> and <code>tools</code>. Required if you intend to use the <code>edit-tools</code> admin tool to persist changes.</td>
       <td>/opt/mcp/config.yaml</td>
     </tr>
     <tr>
@@ -544,6 +691,10 @@ podman run --rm \
 ```
 
 This exposes the MCP endpoint at: https://[your-ip-address]:45451/mcp
+
+If you plan to use the `edit-tools` admin tool inside the container, mount a writable config file and set `-DconfigFile` accordingly, for example:
+- Mount: `-v /absolute/path/config.yaml:/config/config.yaml:Z`
+- Set: `-DconfigFile=/config/config.yaml`
 
 You can then configure Cline or Claude Desktop as described in the Using HTTP from Cline / Claude Desktop sections above.
 

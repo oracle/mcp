@@ -34,6 +34,33 @@ public class ToolSchemas {
       }""";
 
   /**
+   * JSON schema for DROP/DESCRIBE table operations.
+   */
+  static final String DROP_OR_DESCRIBE_TABLE = """
+      {
+        "type":"object",
+        "properties":
+          {
+            "table":
+              {
+              "type":"string"
+              }},
+          "required":["table"]
+     }""";
+
+  /**
+   * JSON schema for transaction ID operations.
+   */
+  static final String TX_ID = """
+      {
+        "type":"object",
+        "properties":
+          {"txId":
+            {"type":"string"}},
+            "required":["txId"]
+      }""";
+
+  /**
    * JSON schema for file path operations.
    * <p>
    * This schema requires a "filePath" property, which should be an absolute path or a URL to an Oracle JDBC log file.
@@ -156,4 +183,47 @@ public class ToolSchemas {
       },
       "required": ["sql"]
     }""";
+
+  /**
+   * JSON schema for admin tools that take no input.
+   */
+  static final String NO_INPUT_SCHEMA = """
+      {
+        "type": "object",
+        "properties": {}
+      }
+      """;
+
+  /**
+   * JSON schema for editing or adding a dynamic tool in the YAML config.
+   * The operation is an upsert keyed by the tool name. Only provided fields are updated.
+   */
+  static final String EDIT_TOOL_SCHEMA = """
+      {
+        "type": "object",
+        "properties": {
+          "name":        { "type": "string", "description": "Tool name (YAML key). Required for upsert or delete." },
+          "remove":      { "type": "boolean", "description": "If true, remove this tool from the YAML config. Other fields are ignored." },
+          "description": { "type": "string", "description": "Human-friendly description of the tool" },
+          "dataSource":  { "type": "string", "description": "Reference key from dataSources to use for this tool" },
+          "statement":   { "type": "string", "description": "SQL statement to execute (SELECT or DML)" },
+          "parameters":  {
+            "type": "array",
+            "description": "Optional parameter list for the tool",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name":        { "type": "string",  "description": "Parameter name" },
+                "type":        { "type": "string",  "description": "JSON schema type (e.g., string, number, integer, boolean)" },
+                "description": { "type": "string",  "description": "Parameter description" },
+                "required":    { "type": "boolean", "description": "Whether this parameter is required" }
+              },
+              "required": ["name", "type"]
+            }
+          }
+        },
+        "required": ["name"]
+      }
+      """;
+
 }

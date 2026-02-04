@@ -29,6 +29,13 @@ import org.apache.tomcat.util.net.SSLHostConfigCertificate;
 
 import java.io.File;
 import java.util.concurrent.TimeUnit;
+import java.nio.file.FileSystems;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardWatchEventKinds;
+import java.nio.file.WatchEvent;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
 import java.util.logging.Logger;
 
 import static com.oracle.database.mcptoolkit.Utils.installExternalExtensionsFromDir;
@@ -41,6 +48,8 @@ public class OracleDatabaseMCPToolkit {
   private static final Logger LOG = Logger.getLogger(OracleDatabaseMCPToolkit.class.getName());
 
   static ServerConfig config;
+  private static volatile McpSyncServer serverInstance;
+
 
   static {
     config = Utils.loadConfig();
@@ -53,10 +62,10 @@ public class OracleDatabaseMCPToolkit {
 
     switch (LoadedConstants.TRANSPORT_KIND) {
       case "http" -> {
-        server = startHttpServer();
+        serverInstance = startHttpServer();
       }
       case "stdio" -> {
-        server = McpServer
+        serverInstance = McpServer
           .sync(new StdioServerTransportProvider(new ObjectMapper()))
           .serverInfo("oracle-db-mcp-toolkit", "1.0.0")
           .capabilities(McpSchema.ServerCapabilities.builder()
@@ -69,7 +78,19 @@ public class OracleDatabaseMCPToolkit {
       default -> throw new IllegalArgumentException(
               "Unsupported transport: " + LoadedConstants.TRANSPORT_KIND + " (expected 'stdio' or 'http')");
     }
-    Utils.addSyncToolSpecifications(server, config);
+    Utils.addSyncToolSpecifications(serverInstance, config);
+
+//    if (LoadedConstants.CONFIG_FILE != null) {
+//      Thread watcher = new Thread(() -> {
+//        watchConfigFile(LoadedConstants.CONFIG_FILE);
+//      }, "config-file-watcher");
+//      watcher.setDaemon(true);
+//      watcher.start();
+//    }
+
+    Thread pollingThread = new Thread(() -> pollConfigFile(LoadedConstants.CONFIG_FILE), "config-file-poller");
+    pollingThread.setDaemon(true);
+    pollingThread.start();
   }
 
   private OracleDatabaseMCPToolkit() {
@@ -128,7 +149,7 @@ public class OracleDatabaseMCPToolkit {
       if (LoadedConstants.HTTPS_PORT == null || LoadedConstants.KEYSTORE_PATH == null || LoadedConstants.KEYSTORE_PASSWORD == null)
         throw new RuntimeException("SSL setup failed: HTTPS port, Keystore path or password not specified");
 
-    enableHttps(tomcat, LoadedConstants.KEYSTORE_PATH, LoadedConstants.KEYSTORE_PASSWORD);
+      enableHttps(tomcat, LoadedConstants.KEYSTORE_PATH, LoadedConstants.KEYSTORE_PASSWORD);
 
       tomcat.start();
 
@@ -155,8 +176,6 @@ public class OracleDatabaseMCPToolkit {
       https.setSecure(true);
       https.setScheme("https");
       https.setProperty("SSLEnabled", "true");
-      //
-
 
       // Create SSL config
       SSLHostConfig sslHostConfig = new SSLHostConfig();
@@ -185,5 +204,73 @@ public class OracleDatabaseMCPToolkit {
     }
   }
 
+  public static ServerConfig getConfig() {
+    return config;
+  }
 
+  /**
+   * Exposes the running McpSyncServer instance for admin operations (e.g., removing tools at runtime).
+   */
+  public static McpSyncServer getServer() {
+    return serverInstance;
+  }
+
+
+  private static void watchConfigFile(String filePath) {
+    Path configPath = Paths.get(filePath);
+    try (WatchService watcher = FileSystems.getDefault().newWatchService()) {
+      Path dir = configPath.getParent();
+      if (dir == null) dir = Paths.get(".");
+      dir.register(watcher, StandardWatchEventKinds.ENTRY_MODIFY);
+
+      while (true) {
+        WatchKey key = watcher.take();  // block until events
+        for (WatchEvent<?> event : key.pollEvents()) {
+          Path changed = ((WatchEvent<Path>)event).context();
+          LOG.info(()->"[DEBUG] Watch event: " + event.kind() + ", file: " + changed);
+          LOG.info(()->"[DEBUG] Looking for file: " + configPath.getFileName());
+          if (changed.endsWith(configPath.getFileName())) {
+            LOG.info(()->"[DEBUG] Detected relevant config file event: " + event.kind());
+            reloadConfigAndResetTools();
+          }
+        }
+        key.reset();
+      }
+    } catch (Exception e) {
+      System.err.println("[oracle-db-mcp-toolkit] Config file watcher failed: " + e);
+    }
+  }
+
+  private static void reloadConfigAndResetTools() {
+    try {
+      LOG.info(()->"[DEBUG] Reloading config...");
+      ServerConfig newConfig = Utils.loadConfig();
+      LOG.info(()->"[DEBUG] Old custom tool names: " + Utils.customToolNames);
+      LOG.info(()->"[DEBUG] New config tool names: " + newConfig.tools.keySet());
+      config = newConfig;      // update reference
+      Utils.reloadCustomTools(serverInstance, newConfig);
+      LOG.info(()->"[DEBUG] Reloaded config and refreshed tools.");
+    } catch (Exception e) {
+      System.err.println("[oracle-db-mcp-toolkit] Failed to reload config: " + e);
+    }
+  }
+
+  // For now, we rely on this instead of the nio watcher logic (for container sake)
+  private static void pollConfigFile(String filePath) {
+    File configFile = new File(filePath);
+    long lastModified = configFile.lastModified();
+    while (true) {
+      long nowModified = configFile.lastModified();
+      if (nowModified != lastModified && nowModified != 0) {
+        lastModified = nowModified;
+        reloadConfigAndResetTools();
+      }
+      try {
+        Thread.sleep(2000); // Check every 2 seconds
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        break;
+      }
+    }
+  }
 }

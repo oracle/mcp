@@ -22,7 +22,9 @@ def get_compartment(compartment_id):
     compartments = COMPARTMENTS + [TENANCY]
     compartment = next((i for i in compartments if i["id"] == compartment_id), None)
     return (
-        oci_res(compartment) if compartment else (jsonify({"code": "NotAuthorizedOrNotFound"}), 404)
+        oci_res(compartment)
+        if compartment
+        else (jsonify({"code": "NotAuthorizedOrNotFound"}), 404)
     )
 
 

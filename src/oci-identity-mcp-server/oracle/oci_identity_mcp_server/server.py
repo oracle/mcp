@@ -110,7 +110,9 @@ def list_compartments(
         if include_root:
             config = oci.config.from_file(
                 file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
-                profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+                profile_name=os.getenv(
+                    "OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE
+                ),
             )
             tenancy_id = os.getenv("TENANCY_ID_OVERRIDE", config["tenancy"])
             tenancy_response: oci.response.Response = client.get_compartment(

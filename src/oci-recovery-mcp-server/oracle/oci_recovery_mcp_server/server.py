@@ -75,6 +75,7 @@ from oracle.oci_recovery_mcp_server.models import (
     map_protected_database_summary,
     map_protection_policy,
     map_protection_policy_summary,
+    map_recovery_service_subnet_details,
     map_recovery_service_subnet,
     map_recovery_service_subnet_summary,
 )
@@ -97,7 +98,7 @@ from . import __project__, __version__
 - get_database
 - list_backups
 - get_backup
-- summarize_protected_database_backup_destination
+- summarise_protected_database_backup_destination
 - get_db_home
 - list_db_systems
 - get_db_system
@@ -309,6 +310,7 @@ def _fetch_db_home_ids_for_compartment(
     """
     try:
         client = get_database_client(region)
+        rec_client = get_recovery_client(region)
         resp = client.list_db_homes(compartment_id=compartment_id)
         data = resp.data
         # Normalize list shape (SDK may use .items or a raw list)
@@ -353,7 +355,9 @@ def get_compartment_by_name(compartment_name: str):
     return None
 
 
-@mcp.tool()
+@mcp.tool(description=(
+    "Finds a compartment by name. It searches all accessible compartments in your tenancy (including the root) without worrying about letter case, and returns the match as JSON or a clear error if none is found."
+))
 def get_compartment_by_name_tool(name: str) -> str:
     """Return a compartment matching the provided name"""
     compartment = get_compartment_by_name(name)
@@ -364,10 +368,9 @@ def get_compartment_by_name_tool(name: str) -> str:
 
 
 @mcp.tool(
-    description="List Protected Databases in a given compartment with optional filters."
-    "Response includes key information of the database it is protecting such as "
-    "database ocid, dbuniquename of the database , vpcuser etc ."
-    "Response also includes other details specific to protected databases resource."
+    description=(
+        "Lists protected databases in a compartment with optional filters. For each database it also includes Recovery Service Subnet details, removes noisy fields, and adds basic per‑database metrics. The result is a list of simple dictionaries, each with cleaned subnet information and a small metrics map."
+    )
 )
 def list_protected_databases(
     compartment_id: Annotated[str, "The OCID of the compartment"],
@@ -448,8 +451,117 @@ def list_protected_databases(
             items = getattr(data, "items", data)  # collection.items or raw list
             for d in items:
                 pd_summary = map_protected_database_summary(d)
-                if pd_summary is not None:
-                    results.append(pd_summary)
+                if pd_summary is None:
+                    continue
+
+                # Start with a dict view of the Pydantic summary (exclude Nones)
+                try:
+                    pd_dict = pd_summary.model_dump(exclude_none=True)
+                except Exception:
+                    try:
+                        pd_dict = pd_summary.dict(exclude_none=True)
+                    except Exception:
+                        pd_dict = dict(getattr(pd_summary, "__dict__", {}))
+
+                # Enrich/clean Recovery Service Subnet details similarly to get_protected_database
+                try:
+                    rss_list = getattr(pd_summary, "recovery_service_subnets", None)
+                    if rss_list:
+                        enriched = []
+                        for det in rss_list:
+                            if det is None:
+                                continue
+                            rss_id = getattr(det, "id", None)
+                            needs_enrich = bool(
+                                rss_id
+                                and (
+                                    getattr(det, "vcn_id", None) is None
+                                    or getattr(det, "subnet_id", None) is None
+                                    or getattr(det, "display_name", None) is None
+                                    or getattr(det, "compartment_id", None) is None
+                                )
+                            )
+                            if needs_enrich:
+                                try:
+                                    rss_resp: oci.response.Response = client.get_recovery_service_subnet(
+                                        recovery_service_subnet_id=rss_id
+                                    )
+                                    full_rss = rss_resp.data
+                                    mapped_det = map_recovery_service_subnet_details(full_rss)
+                                    enriched.append(mapped_det or det)
+                                except Exception:
+                                    enriched.append(det)
+                            else:
+                                enriched.append(det)
+                        # Clean and serialize RSS list, dropping noisy fields to match get_protected_database
+                        cleaned_rss = []
+                        for ed in enriched:
+                            if isinstance(ed, dict):
+                                rd = dict(ed)
+                            else:
+                                try:
+                                    rd = ed.model_dump(exclude_none=True)
+                                except Exception:
+                                    try:
+                                        rd = ed.dict(exclude_none=True)
+                                    except Exception:
+                                        rd = dict(getattr(ed, "__dict__", {}))
+                            for _rm in (
+                                "lifecycle_details",
+                                "time_created",
+                                "time_updated",
+                                "freeform_tags",
+                                "defined_tags",
+                                "system_tags",
+                            ):
+                                rd.pop(_rm, None)
+                            cleaned_rss.append(rd)
+                        pd_dict["recovery_service_subnets"] = cleaned_rss
+                except Exception:
+                    # best-effort enrichment
+                    pass
+
+                # Populate metrics from full GET to align with CLI list output (no derivations/fallbacks)
+                try:
+                    pdid = pd_dict.get("id") or getattr(pd_summary, "id", None)
+                    if pdid:
+                        try:
+                            g = client.get_protected_database(protected_database_id=pdid)
+                            full_pd = map_protected_database(getattr(g, "data", None))
+                            mobj = getattr(full_pd, "metrics", None)
+                            md = None
+                            if mobj is not None:
+                                try:
+                                    md = mobj.model_dump(exclude_none=False)
+                                except Exception:
+                                    try:
+                                        md = mobj.dict(exclude_none=False)
+                                    except Exception:
+                                        md = None
+
+                            def _pick(d: dict | None, key: str):
+                                if not isinstance(d, dict):
+                                    return None
+                                return d.get(key)
+
+                            metrics_out = {
+                                "backup-space-estimate-in-gbs": _pick(md, "backup_space_estimate_in_gbs"),
+                                "backup-space-used-in-gbs": _pick(md, "backup_space_used_in_gbs"),
+                                "current-retention-period-in-seconds": _pick(md, "current_retention_period_in_seconds"),
+                                "db-size-in-gbs": _pick(md, "database_size_in_gbs"),
+                                "is-redo-logs-enabled": _pick(md, "is_redo_logs_enabled"),
+                                "minimum-recovery-needed-in-days": _pick(md, "minimum_recovery_needed_in_days"),
+                                "retention-period-in-days": _pick(md, "retention_period_in_days"),
+                                "unprotected-window-in-seconds": _pick(md, "unprotected_window_in_seconds"),
+                            }
+                            pd_dict["metrics"] = metrics_out
+                        except Exception:
+                            # If GET fails, do not set metrics (avoid misleading partials)
+                            pass
+                except Exception:
+                    pass
+
+                results.append(pd_dict)
 
         logger.info(f"Found {len(results)} Protected Databases")
         return results
@@ -459,7 +571,11 @@ def list_protected_databases(
         raise
 
 
-@mcp.tool(description="Get a Protected Database by OCID.")
+@mcp.tool(
+    description=(
+        "Gets a protected database by OCID and presents a clean, easy‑to‑read view. It includes Recovery Service Subnet details, hides noisy fields, and adds core metrics. The result is one protected database as a plain dictionary with subnet info and a simple metrics section."
+    )
+)
 def get_protected_database(
     protected_database_id: Annotated[str, "Protected Database OCID"],
     opc_request_id: Annotated[
@@ -487,8 +603,118 @@ def get_protected_database(
 
         data = response.data
         pd = map_protected_database(data)
+
+        # Enrich Recovery Service Subnet details if only IDs are present in PD payload
+        try:
+            rss_list = getattr(pd, "recovery_service_subnets", None)
+            if rss_list:
+                enriched: list = []
+                for det in rss_list:
+                    # det is a RecoveryServiceSubnetDetails model
+                    if det is None:
+                        continue
+                    rss_id = getattr(det, "id", None)
+                    # If we have an id but missing core fields, fetch full RSS object
+                    needs_enrich = bool(
+                        rss_id
+                        and (
+                            getattr(det, "vcn_id", None) is None
+                            or getattr(det, "subnet_id", None) is None
+                            or getattr(det, "display_name", None) is None
+                            or getattr(det, "compartment_id", None) is None
+                        )
+                    )
+                    if needs_enrich:
+                        try:
+                            rss_resp: oci.response.Response = client.get_recovery_service_subnet(
+                                recovery_service_subnet_id=rss_id
+                            )
+                            full_rss = rss_resp.data
+                            mapped_det = map_recovery_service_subnet_details(full_rss)
+                            enriched.append(mapped_det or det)
+                        except Exception:
+                            # On failure, preserve original partial details
+                            enriched.append(det)
+                    else:
+                        enriched.append(det)
+                if enriched:
+                    pd.recovery_service_subnets = enriched
+        except Exception:
+            # Best-effort enrichment; ignore errors and return mapped PD
+            pass
+
         logger.info(f"Fetched Protected Database {protected_database_id}")
-        return pd
+
+        # Build sanitized response dict (exclude None to avoid noisy nulls)
+        try:
+            pd_dict = pd.model_dump(exclude_none=True)
+        except Exception:
+            try:
+                pd_dict = pd.dict(exclude_none=True)  # pydantic v1 fallback
+            except Exception:
+                pd_dict = dict(getattr(pd, "__dict__", {}))
+
+        # Remove top-level fields not desired in response
+        for _k in ("change_rate", "compression_ratio"):
+            pd_dict.pop(_k, None)
+
+        # Clean nested Recovery Service Subnet details
+        _rss = pd_dict.get("recovery_service_subnets")
+        if isinstance(_rss, list):
+            cleaned_rss = []
+            for _det in _rss:
+                if isinstance(_det, dict):
+                    d = dict(_det)
+                else:
+                    try:
+                        d = _det.model_dump(exclude_none=True)
+                    except Exception:
+                        try:
+                            d = _det.dict(exclude_none=True)
+                        except Exception:
+                            d = dict(getattr(_det, "__dict__", {}))
+                for _rm in (
+                    "lifecycle_details",
+                    "time_created",
+                    "time_updated",
+                    "freeform_tags",
+                    "defined_tags",
+                    "system_tags",
+                ):
+                    d.pop(_rm, None)
+                cleaned_rss.append(d)
+            pd_dict["recovery_service_subnets"] = cleaned_rss
+
+        # Normalize metrics to OCI CLI style keys using only values present on PD.metrics (no derivations/fallbacks)
+        metrics_obj = getattr(pd, "metrics", None)
+        metrics_dict = None
+        if metrics_obj is not None:
+            try:
+                metrics_dict = metrics_obj.model_dump(exclude_none=False)
+            except Exception:
+                try:
+                    metrics_dict = metrics_obj.dict(exclude_none=False)
+                except Exception:
+                    metrics_dict = None
+
+        def _pick(d: dict | None, key: str):
+            if not isinstance(d, dict):
+                return None
+            return d.get(key)
+
+        metrics_out = {
+            "backup-space-estimate-in-gbs": _pick(metrics_dict, "backup_space_estimate_in_gbs"),
+            "backup-space-used-in-gbs": _pick(metrics_dict, "backup_space_used_in_gbs"),
+            "current-retention-period-in-seconds": _pick(metrics_dict, "current_retention_period_in_seconds"),
+            "db-size-in-gbs": _pick(metrics_dict, "database_size_in_gbs"),
+            "is-redo-logs-enabled": _pick(metrics_dict, "is_redo_logs_enabled"),
+            "minimum-recovery-needed-in-days": _pick(metrics_dict, "minimum_recovery_needed_in_days"),
+            "retention-period-in-days": _pick(metrics_dict, "retention_period_in_days"),
+            "unprotected-window-in-seconds": _pick(metrics_dict, "unprotected_window_in_seconds"),
+        }
+        pd_dict["metrics"] = metrics_out
+
+        return pd_dict
 
     except Exception as e:
         logger.error(f"Error in get_protected_database tool: {str(e)}")
@@ -497,10 +723,7 @@ def get_protected_database(
 
 @mcp.tool(
     description=(
-        "Summarizes Protected Database health status counts (PROTECTED, WARNING, ALERT, UNKNOWN) "
-        "in a compartment. "
-        "Lists protected databases then fetches each to read its health field; returns counts including "
-        "UNKNOWN for missing/None health."
+        "Shows how many protected databases are healthy, warning, alert, or unknown in a compartment. If a quick list doesn’t include health, it checks each database to fill it in. The result is a small JSON with the counts, the compartmentId, and the region."
     )
 )
 def summarize_protected_database_health(
@@ -608,7 +831,7 @@ def summarize_protected_database_health(
             unknown,
             total,
         )
-        return ProtectedDatabaseHealthCounts(
+        result = ProtectedDatabaseHealthCounts(
             compartment_id=comp_id,
             region=region,
             protected=protected,
@@ -617,6 +840,21 @@ def summarize_protected_database_health(
             unknown=unknown,
             total=total,
         )
+        try:
+            return result.model_dump(exclude_none=False, by_alias=True)
+        except Exception:
+            try:
+                return result.dict(exclude_none=False, by_alias=True)
+            except Exception:
+                return {
+                    "compartmentId": comp_id,
+                    "region": region,
+                    "protected": protected,
+                    "warning": warning,
+                    "alert": alert,
+                    "unknown": unknown,
+                    "total": total,
+                }
     except Exception as e:
         logger.error(f"Error in summarize_protected_database_health tool: {str(e)}")
         raise
@@ -624,9 +862,7 @@ def summarize_protected_database_health(
 
 @mcp.tool(
     description=(
-        "Summarizes redo transport enablement for Protected Databases in a compartment. "
-        "Lists protected databases then fetches each to inspect "
-        "is_redo_logs_shipped (true=enabled, false=disabled)."
+        "Shows how many protected databases have redo transport turned on or off in a compartment. It reads the main setting and uses a fallback when needed. The result is a simple JSON with enabled, disabled, total, the compartmentId, and the region."
     )
 )
 def summarize_protected_database_redo_status(
@@ -724,13 +960,26 @@ def summarize_protected_database_redo_status(
             disabled,
             total,
         )
-        return ProtectedDatabaseRedoCounts(
+        result = ProtectedDatabaseRedoCounts(
             compartment_id=comp_id,
             region=region,
             enabled=enabled,
             disabled=disabled,
             total=total,
         )
+        try:
+            return result.model_dump(exclude_none=False, by_alias=True)
+        except Exception:
+            try:
+                return result.dict(exclude_none=False, by_alias=True)
+            except Exception:
+                return {
+                    "compartmentId": comp_id,
+                    "region": region,
+                    "enabled": enabled,
+                    "disabled": disabled,
+                    "total": total,
+                }
     except Exception as e:
         logger.error(f"Error in summarize_protected_database_redo_status tool: {e}")
         raise
@@ -738,9 +987,7 @@ def summarize_protected_database_redo_status(
 
 @mcp.tool(
     description=(
-        "Sums backup space used (GB) by Protected Databases in a compartment by "
-        "reading backup_space_used_in_gbs from metrics. "
-        "Returns compartmentId, region, totalDatabasesScanned, sumBackupSpaceUsedInGBs."
+        "Adds up the backup space (in GB) used by protected databases in a compartment, including only those with lifecycle state ACTIVE or DELETE_SCHEDULED (excluding DELETED). It reads each database’s metrics and also tells you how many databases were checked. The result is a small JSON with the compartmentId, region, totalDatabasesScanned, and the total space in GB."
     )
 )
 def summarize_backup_space_used(
@@ -755,7 +1002,8 @@ def summarize_backup_space_used(
 ) -> dict:
     """
     Sums backup space used (GB) by Protected Databases in a compartment.
-    For each PD: scans, increments total, and reads backup_space_used_in_gbs from metrics.
+    Only includes PDs with lifecycle_state in {'ACTIVE', 'DELETE_SCHEDULED'} (excludes 'DELETED').
+    For each included PD: scans, increments total, and reads backup_space_used_in_gbs from metrics.
     Important: metrics are not reliably exposed on list summaries; fetch the full PD to read metrics.
     Returns: compartmentId, region, totalDatabasesScanned, sumBackupSpaceUsedInGBs.
     """
@@ -783,6 +1031,17 @@ def summarize_backup_space_used(
             items = getattr(data, "items", data)
 
             for item in items or []:
+                # Filter by lifecycle state: include only ACTIVE or DELETE_SCHEDULED (exclude DELETED and others)
+                try:
+                    lifecycle_state = getattr(item, "lifecycle_state", None)
+                    if not lifecycle_state and hasattr(item, "__dict__"):
+                        lifecycle_state = (getattr(item, "__dict__", {}) or {}).get("lifecycle_state") or (getattr(item, "__dict__", {}) or {}).get("lifecycleState")
+                except Exception:
+                    lifecycle_state = None
+                if lifecycle_state not in ("ACTIVE", "DELETE_SCHEDULED"):
+                    # Skip PDs that are not ACTIVE or DELETE_SCHEDULED (e.g., DELETED, CREATING, etc.)
+                    continue
+
                 # Robustly get the PD OCID from summary item (same as redo status tool)
                 pd_id = getattr(item, "id", None) or (
                     getattr(item, "data", None) and getattr(item.data, "id", None)
@@ -872,7 +1131,9 @@ def summarize_backup_space_used(
 
 
 @mcp.tool(
-    description="List Protection Policies in a given compartment with optional filters."
+    description=(
+        "Lists protection policies in a compartment with handy filters and automatic paging. The result is a straightforward list of protection policies."
+    )
 )
 def list_protection_policies(
     compartment_id: Annotated[str, "The OCID of the compartment"],
@@ -897,15 +1158,15 @@ def list_protection_policies(
     region: Annotated[
         Optional[str], "OCI region to execute the request in (e.g., us-ashburn-1)"
     ] = None,
-) -> list[ProtectionPolicySummary]:
+) -> list[ProtectionPolicy]:
     """
     Paginates through Recovery Service to list Protection Policies and returns
-    a list of ProtectionPolicySummary models mapped from the OCI SDK response.
+    a list of ProtectionPolicy models mapped from the OCI SDK response.
     """
     try:
         client = get_recovery_client(region)
 
-        results: list[ProtectionPolicySummary] = []
+        results: list[ProtectionPolicy] = []
         has_next_page = True
         next_page: Optional[str] = page
 
@@ -937,9 +1198,9 @@ def list_protection_policies(
             data = response.data
             items = getattr(data, "items", data)  # collection.items or raw list
             for d in items:
-                s = map_protection_policy_summary(d)
-                if s is not None:
-                    results.append(s)
+                pp = map_protection_policy(d)
+                if pp is not None:
+                    results.append(pp)
 
         logger.info(f"Found {len(results)} Protection Policies")
         return results
@@ -949,7 +1210,9 @@ def list_protection_policies(
         raise
 
 
-@mcp.tool(description="Get a Protection Policy by OCID.")
+@mcp.tool(description=(
+    "Gets a protection policy by OCID and returns it as a simple object."
+))
 def get_protection_policy(
     protection_policy_id: Annotated[str, "Protection Policy OCID"],
     opc_request_id: Annotated[
@@ -985,7 +1248,9 @@ def get_protection_policy(
 
 
 @mcp.tool(
-    description="List Recovery Service Subnets in a given compartment with optional filters."
+    description=(
+        "Lists recovery service subnets in a compartment with helpful filters. When needed, it fills in the list of associated subnets or uses the subnet_id as a fallback. The result is a simple list of subnets with the subnets list included when available."
+    )
 )
 def list_recovery_service_subnets(
     compartment_id: Annotated[str, "The OCID of the compartment"],
@@ -1014,15 +1279,15 @@ def list_recovery_service_subnets(
     region: Annotated[
         Optional[str], "OCI region to execute the request in (e.g., us-ashburn-1)"
     ] = None,
-) -> list[RecoveryServiceSubnetSummary]:
+) -> list[RecoveryServiceSubnet]:
     """
     Paginates through Recovery Service to list Recovery Service Subnets and returns
-    a list of RecoveryServiceSubnetSummary models mapped from the OCI SDK response.
+    a list of RecoveryServiceSubnet models mapped from the OCI SDK response.
     """
     try:
         client = get_recovery_client(region)
 
-        results: list[RecoveryServiceSubnetSummary] = []
+        results: list[RecoveryServiceSubnet] = []
         has_next_page = True
         next_page: Optional[str] = page
 
@@ -1057,9 +1322,32 @@ def list_recovery_service_subnets(
             data = response.data
             items = getattr(data, "items", data)  # collection.items or raw list
             for d in items:
-                s = map_recovery_service_subnet_summary(d)
-                if s is not None:
-                    results.append(s)
+                rss = map_recovery_service_subnet(d)
+                if rss is None:
+                    continue
+                # Enrich with subnets list if missing by fetching the full resource
+                try:
+                    missing_subnets = getattr(rss, "subnets", None) is None
+                    rss_id = getattr(rss, "id", None)
+                    if missing_subnets and rss_id:
+                        try:
+                            g = client.get_recovery_service_subnet(recovery_service_subnet_id=rss_id)
+                            full = map_recovery_service_subnet(getattr(g, "data", None))
+                            if full and getattr(full, "subnets", None):
+                                rss.subnets = full.subnets
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                # Final fallback: if still missing, derive from subnet_id when available
+                try:
+                    if getattr(rss, "subnets", None) is None:
+                        sid = getattr(rss, "subnet_id", None)
+                        if sid:
+                            rss.subnets = [sid]
+                except Exception:
+                    pass
+                results.append(rss)
 
         logger.info(f"Found {len(results)} Recovery Service Subnets")
         return results
@@ -1069,7 +1357,9 @@ def list_recovery_service_subnets(
         raise
 
 
-@mcp.tool(description="Get a Recovery Service Subnet by OCID.")
+@mcp.tool(description=(
+    "Gets a recovery service subnet by OCID and makes sure the subnets list is present, using subnet_id if necessary. The result is one recovery service subnet."
+))
 def get_recovery_service_subnet(
     recovery_service_subnet_id: Annotated[str, "Recovery Service Subnet OCID"],
     opc_request_id: Annotated[
@@ -1096,6 +1386,14 @@ def get_recovery_service_subnet(
 
         data = response.data
         rss = map_recovery_service_subnet(data)
+        # Ensure subnets is populated even if service omits the array
+        try:
+            if getattr(rss, "subnets", None) is None:
+                sid = getattr(rss, "subnet_id", None)
+                if sid:
+                    rss.subnets = [sid]
+        except Exception:
+            pass
         logger.info(f"Fetched Recovery Service Subnet {recovery_service_subnet_id}")
         return rss
 
@@ -1104,7 +1402,9 @@ def get_recovery_service_subnet(
         raise
 
 
-@mcp.tool
+@mcp.tool(description=(
+    "Fetches Recovery Service metrics for a time range. You choose the metric, time step, and how to combine values, and you can limit it to one protected database. The result is a simple time series where each item has dimensions and a list of {timestamp, value} points."
+))
 def get_recovery_service_metrics(
     compartment_id: str,
     start_time: str,
@@ -1177,9 +1477,7 @@ def get_recovery_service_metrics(
 
 @mcp.tool(
     description=(
-        "Gets a list of the databases in the specified Database Home. "
-        "If db_home_id is omitted, the tool will automatically look up all DB Homes in the given compartment "
-        "and aggregate results per DB Home."
+        "Lists databases in a DB Home or, if none is given, across all DB Homes in a compartment. It can find DB Homes for you, fills in backup settings only when needed, and, where possible, links each database to its protection policy. The result is a list of database summaries with optional backup settings and protection policy ID."
     )
 )
 def list_databases(
@@ -1340,7 +1638,9 @@ def list_databases(
         raise
 
 
-@mcp.tool(description="Retrieves full details for a Database by OCID.")
+@mcp.tool(description=(
+    "Gets a database by OCID and returns an easy object. Where possible, it also links the database to its protection policy. The result is one database."
+))
 def get_database(
     database_id: Annotated[str, "OCID of the Database to retrieve."],
     region: Annotated[
@@ -1406,8 +1706,7 @@ def get_database(
 
 @mcp.tool(
     description=(
-        "Lists Database Backups with optional filters. "
-        "If neither database_id nor compartment_id is provided, defaults to tenancy compartment."
+        "Lists database backups with flexible filters and optional auto-paging.  If database_id is provided, lists all backups for that database. If compartment_id is provided, finds AVAILABLE databases with auto-backup enabled and lists their backups. It includes manual backups, automatic backups and LTR backups as well. It adds helpful fields like backup destination, database's unique name. The result is a list of easy-to-read backup summaries."
     )
 )
 def list_backups(
@@ -1421,82 +1720,330 @@ def list_backups(
     type: Annotated[
         Optional[str], "Backup type filter (e.g., INCREMENTAL, FULL)."
     ] = None,
-    limit: Annotated[Optional[int], "Maximum number of items per page."] = None,
-    page: Annotated[Optional[str], "Pagination token (opc-next-page)."] = None,
+    limit: Annotated[Optional[int], "Maximum number of items per backend page (when aggregate_pages=false)."] = None,
+    page: Annotated[Optional[str], "Pagination token (opc-next-page) when aggregate_pages=false."] = None,
     region: Annotated[
         Optional[str], "Canonical OCI region (e.g., us-ashburn-1)."
     ] = None,
+    aggregate_pages: Annotated[bool, "When true (default), retrieves all pages."] = True,
 ) -> list[BackupSummary]:
     try:
         client = get_database_client(region)
-        results: list[BackupSummary] = []
-        has_next = True
-        next_page = page
-        # If user didn't scope by DB or compartment, use a dummy compartment to avoid reading real OCI config
-        if not compartment_id and not database_id:
-            compartment_id = "ocid1.compartment.oc1..dummy"
-        while has_next:
-            # Build query filters
-            kwargs: dict = {"page": next_page}
-            if database_id:
-                kwargs["database_id"] = database_id
-            if compartment_id:
-                kwargs["compartment_id"] = compartment_id
-            if lifecycle_state:
-                kwargs["lifecycle_state"] = lifecycle_state
-            if type:
-                kwargs["type"] = type
-            if limit is not None:
-                kwargs["limit"] = limit
-            # Call list_backups and map summaries
-            resp = client.list_backups(**kwargs)
-            data = getattr(resp.data, "items", resp.data)
-            for it in data or []:
-                m = map_backup_summary(it)
-                if m is not None:
-                    results.append(m)
-            # Robust pagination guard: only continue if has_next_page is explicitly True
-            # and a concrete next_page token is present. This avoids infinite loops when
-            # tests use MagicMock/auto-specs that return truthy Mock objects.
-            _has_next_attr = getattr(resp, "has_next_page", False)
-            _next_page_attr = getattr(resp, "next_page", None)
-            has_next = (isinstance(_has_next_attr, bool) and _has_next_attr) and bool(
-                _next_page_attr
-            )
-            next_page = _next_page_attr if has_next else None
-        return results
+
+        def _to_dict(o):
+            try:
+                if hasattr(oci, "util") and hasattr(oci.util, "to_dict"):
+                    d = oci.util.to_dict(o)
+                    if isinstance(d, dict):
+                        return d
+            except Exception:
+                pass
+            return getattr(o, "__dict__", {}) if hasattr(o, "__dict__") else {}
+
+        def _is_auto_backup_enabled_from_dict(d: dict) -> bool:
+            cfg = None
+            for k in ("dbBackupConfig","db_backup_config","backupConfig","backup_config","databaseBackupConfig","database_backup_config"):
+                v = d.get(k)
+                if isinstance(v, dict):
+                    cfg = v
+                    break
+            src = cfg if isinstance(cfg, dict) else d
+            for key in ("isAutoBackupEnabled","is_auto_backup_enabled","autoBackupEnabled","auto_backup_enabled"):
+                if key in src and src[key] is not None:
+                    return bool(src[key])
+            return False
+
+        def _list_all_backups_for_db(dbid: str) -> list[dict]:
+            out: list[dict] = []
+            next_token = None
+            while True:
+                call_kwargs = {"database_id": dbid}
+                if lifecycle_state:
+                    call_kwargs["lifecycle_state"] = lifecycle_state
+                if type:
+                    call_kwargs["type"] = type
+                if not aggregate_pages:
+                    if limit is not None:
+                        call_kwargs["limit"] = limit
+                    if page is not None and next_token is None:
+                        call_kwargs["page"] = page
+                if next_token is not None:
+                    call_kwargs["page"] = next_token
+                if "limit" not in call_kwargs or call_kwargs.get("limit") is None:
+                    call_kwargs["limit"] = 1000
+                resp = client.list_backups(**call_kwargs)
+                items = getattr(resp.data, "items", resp.data) or []
+                raw_list = items if isinstance(items, list) else [items]
+                for obj in raw_list:
+                    mapped = map_backup_summary(obj)
+                    if mapped is None:
+                        continue
+                    try:
+                        out_dict = mapped.model_dump(exclude_none=False, by_alias=True)
+                    except Exception:
+                        try:
+                            out_dict = mapped.dict(exclude_none=False, by_alias=True)
+                        except Exception:
+                            out_dict = _to_dict(mapped)
+
+                    # Augment with raw SDK values for missing fields
+                    try:
+                        rawd = _to_dict(obj)
+                    except Exception:
+                        rawd = getattr(obj, "__dict__", {}) or {}
+
+                    def _pick(d: dict, *keys: str):
+                        for k in keys:
+                            if k in d and d[k] is not None:
+                                return d[k]
+                        return None
+
+                    if out_dict.get("database-size-in-gbs") is None:
+                        ds = _pick(rawd, "database_size_in_gbs", "databaseSizeInGBs", "databaseSizeInGbs")
+                        if ds is not None:
+                            out_dict["database-size-in-gbs"] = ds
+                    if out_dict.get("backup-destination-type") is None:
+                        bdt = _pick(rawd, "backup_destination_type", "backupDestinationType")
+                        if bdt is not None:
+                            out_dict["backup-destination-type"] = bdt
+                    if out_dict.get("retention-period-in-days") is None:
+                        rpd = _pick(rawd, "retention_period_in_days", "retentionPeriodInDays")
+                        if rpd is not None:
+                            out_dict["retention-period-in-days"] = rpd
+                    if out_dict.get("retention-period-in-years") is None:
+                        rpy = _pick(rawd, "retention_period_in_years", "retentionPeriodInYears")
+                        if rpy is not None:
+                            out_dict["retention-period-in-years"] = rpy
+
+                    # Ensure CLI-style keys are present even when values are still null
+                    for _k in (
+                        "database-size-in-gbs",
+                        "backup-destination-type",
+                        "retention-period-in-days",
+                        "retention-period-in-years",
+                    ):
+                        if _k not in out_dict:
+                            out_dict[_k] = None
+
+                    out.append(out_dict)
+                has_next = bool(getattr(resp, "has_next_page", False))
+                next_token = getattr(resp, "next_page", None) if has_next else None
+                if not (aggregate_pages and has_next and next_token):
+                    break
+            return out
+
+        # Branch 1: database_id provided
+        if database_id:
+            backups = _list_all_backups_for_db(database_id)
+            # Fetch and set db_unique_name for this database
+            try:
+                gdb = client.get_database(database_id=database_id)
+                gdd = _to_dict(getattr(gdb, "data", None))
+                dun = gdd.get("dbUniqueName") or gdd.get("db_unique_name")
+            except Exception:
+                dun = None
+            for bk in backups:
+                if "db_unique_name" not in bk or bk["db_unique_name"] is None:
+                    bk["db_unique_name"] = dun
+            return backups
+
+        # Branch 2: compartment_id and region provided
+        if compartment_id:
+            # find DB Homes then list AVAILABLE databases
+            home_ids = _fetch_db_home_ids_for_compartment(compartment_id, region=region)
+            eligible_db_ids: list[str] = []
+            db_unique_cache: dict[str, Optional[str]] = {}
+            for hid in home_ids or []:
+                next_db_page = None
+                while True:
+                    kwargs_db = {
+                        "compartment_id": compartment_id,
+                        "db_home_id": hid,
+                        "lifecycle_state": "AVAILABLE",
+                        "limit": 1000,
+                    }
+                    if next_db_page:
+                        kwargs_db["page"] = next_db_page
+                    dresp = client.list_databases(**kwargs_db)
+                    ditems = getattr(dresp.data, "items", dresp.data) or []
+                    for d in ditems:
+                        d_dict = _to_dict(d)
+                        dbid = d_dict.get("id") or getattr(d, "id", None)
+                        dun = d_dict.get("dbUniqueName") or d_dict.get("db_unique_name") or getattr(d, "db_unique_name", None)
+                        is_auto = _is_auto_backup_enabled_from_dict(d_dict)
+                        if is_auto is False and dbid:
+                            # fallback to GET for authoritative value and db_unique_name
+                            try:
+                                g = client.get_database(database_id=dbid)
+                                gdd = _to_dict(getattr(g, "data", None))
+                                is_auto = _is_auto_backup_enabled_from_dict(gdd)
+                                if dun is None:
+                                    dun = gdd.get("dbUniqueName") or gdd.get("db_unique_name")
+                            except Exception:
+                                is_auto = False
+                        if dbid:
+                            if dun is not None:
+                                db_unique_cache[dbid] = dun
+                            if is_auto:
+                                eligible_db_ids.append(dbid)
+                    has_next = bool(getattr(dresp, "has_next_page", False))
+                    next_db_page = getattr(dresp, "next_page", None) if has_next else None
+                    if not has_next:
+                        break
+            # Aggregate backups for eligible DBs
+            all_results: list[dict] = []
+            for dbid in eligible_db_ids:
+                backups = _list_all_backups_for_db(dbid)
+                # Set db_unique_name from cache
+                for bk in backups:
+                    if "db_unique_name" not in bk or bk["db_unique_name"] is None:
+                        bk["db_unique_name"] = db_unique_cache.get(dbid)
+                all_results.extend(backups)
+            return all_results
+
+        # Neither database_id nor (compartment_id and region) provided
+        raise ValueError("Provide database_id, or compartment_id and region.")
+
     except Exception as e:
-        logger.error(f"Error in list_backups tool: {e}")
+        logger.error("Error in list_backups tool: %s", e)
         raise
 
 
-@mcp.tool(description="Retrieves a Database Backup by OCID.")
+@mcp.tool(description=(
+    "Gets a database backup by OCID and returns a clean dictionary. It includes common fields like database size, backup destination, and the database's unique name. The result is one backup with those helpful fields included."
+))
 def get_backup(
     backup_id: Annotated[str, "OCID of the Backup to retrieve."],
     region: Annotated[
         Optional[str], "Canonical OCI region (e.g., us-ashburn-1)."
     ] = None,
 ) -> Backup:
+    """
+    Retrieves a Database Backup by OCID and maps it to the server model.
+    Mirrors the simpler logic used in rcv_mcp_server/fast_server.py without additional enrichment.
+    """
     try:
         client = get_database_client(region)
         resp = client.get_backup(backup_id=backup_id)
-        return map_backup(resp.data)
+        mapped = map_backup(resp.data)
+        try:
+            out = mapped.model_dump(exclude_none=False, by_alias=True)
+        except Exception:
+            try:
+                out = mapped.dict(exclude_none=False, by_alias=True)
+            except Exception:
+                out = getattr(mapped, "__dict__", {}) or {}
+        # Try to augment from raw SDK object dict if mapping missed fields
+        try:
+            rawd = (
+                oci.util.to_dict(resp.data)
+                if hasattr(oci, "util") and hasattr(oci.util, "to_dict")
+                else (getattr(resp.data, "__dict__", {}) or {})
+            )
+        except Exception:
+            rawd = getattr(resp.data, "__dict__", {}) or {}
+
+        def _pick(d: dict, *keys: str):
+            for k in keys:
+                if k in d and d[k] is not None:
+                    return d[k]
+            return None
+
+        if out.get("database-size-in-gbs") is None:
+            ds = _pick(rawd, "database_size_in_gbs", "databaseSizeInGBs", "databaseSizeInGbs")
+            if ds is not None:
+                out["database-size-in-gbs"] = ds
+        if out.get("backup-destination-type") is None:
+            bdt = _pick(rawd, "backup_destination_type", "backupDestinationType")
+            if bdt is not None:
+                out["backup-destination-type"] = bdt
+        if out.get("retention-period-in-days") is None:
+            rpd = _pick(rawd, "retention_period_in_days", "retentionPeriodInDays")
+            if rpd is not None:
+                out["retention-period-in-days"] = rpd
+        if out.get("retention-period-in-years") is None:
+            rpy = _pick(rawd, "retention_period_in_years", "retentionPeriodInYears")
+            if rpy is not None:
+                out["retention-period-in-years"] = rpy
+
+        # Infer destination from DB backup config if still missing (no Recovery Service calls)
+        try:
+            dbid = out.get("database_id") or rawd.get("databaseId")
+            if (out.get("backup-destination-type") is None) and dbid:
+                gdb = client.get_database(database_id=dbid)
+                gdd = oci.util.to_dict(getattr(gdb, "data", None)) if hasattr(oci, "util") and hasattr(oci.util, "to_dict") else (getattr(getattr(gdb, "data", None), "__dict__", {}) or {})
+                cfg = gdd.get("dbBackupConfig") or gdd.get("db_backup_config") or gdd.get("databaseBackupConfig")
+                details = None
+                if isinstance(cfg, dict):
+                    details = cfg.get("backupDestinationDetails") or cfg.get("backup_destination_details")
+                if not details:
+                    details = gdd.get("backupDestinationDetails") or gdd.get("backup_destination_details")
+                det_list = details if isinstance(details, list) else ([details] if details else [])
+                types = []
+                for det in det_list:
+                    dd = det if isinstance(det, dict) else (oci.util.to_dict(det) if hasattr(oci, "util") and hasattr(oci.util, "to_dict") else det.__dict__ if hasattr(det, "__dict__") else {})
+                    t = (dd or {}).get("type") or (dd or {}).get("destinationType")
+                    tnorm = (str(t).upper() if t else None)
+                    if tnorm in ("RECOVERY_SERVICE", "RECOVERY-SERVICE", "DBRS", "RECOVERY_SERVICE_BACKUP_DESTINATION"):
+                        types.append("DBRS")
+                    elif tnorm in ("OBJECT_STORE", "OBJECTSTORE", "OBJECT_STORAGE"):
+                        types.append("OBJECT_STORE")
+                    elif tnorm in ("NFS",):
+                        types.append("NFS")
+                if "DBRS" in types:
+                    out["backup-destination-type"] = "DBRS"
+                elif "OBJECT_STORE" in types:
+                    out["backup-destination-type"] = "OBJECT_STORE"
+                elif "NFS" in types:
+                    out["backup-destination-type"] = "NFS"
+        except Exception:
+            pass
+
+        # Ensure db_unique_name on model and output
+        try:
+            dbid = out.get("database_id") or rawd.get("databaseId") or rawd.get("database_id")
+            if dbid:
+                try:
+                    gdb = client.get_database(database_id=dbid)
+                    gdd = (
+                        oci.util.to_dict(getattr(gdb, "data", None))
+                        if hasattr(oci, "util") and hasattr(oci.util, "to_dict")
+                        else (getattr(getattr(gdb, "data", None), "__dict__", {}) or {})
+                    )
+                    dun = gdd.get("dbUniqueName") or gdd.get("db_unique_name")
+                    try:
+                        if getattr(mapped, "db_unique_name", None) is None:
+                            mapped.db_unique_name = dun
+                    except Exception:
+                        pass
+                    if dun is not None:
+                        out["db_unique_name"] = dun
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Ensure CLI-style keys are present even when values are still null
+        for _k in (
+            "database-size-in-gbs",
+            "backup-destination-type",
+            "retention-period-in-days",
+            "retention-period-in-years",
+        ):
+            if _k not in out:
+                out[_k] = None
+        return out
     except Exception as e:
-        logger.error(f"Error in get_backup tool: {e}")
+        logger.error("Error in get_backup tool: %s", e)
         raise
 
 
 @mcp.tool(
     description=(
-        "Summarizes Database backup configuration and destinations "
-        "for databases in a compartment or DB Home. "
-        "Reports counts by destination type (e.g., DBRS, OBJECT_STORE, NFS), "
-        "number unconfigured, and per-DB details. "
-        "If db_home_id is omitted, the tool automatically discovers all DB Homes "
-        "in the compartment and aggregates per-home."
+        "Summarizes how databases in a compartment or DB Home are backed up. It can find DB Homes, looks at each database’s backup settings, can include the time of the most recent backup, and groups results by destination type while calling out databases that aren’t configured. The result is one summary object with counts, name lists, and per‑database details."
     )
 )
-def summarize_protected_database_backup_destination(
+def summarise_protected_database_backup_destination(
     compartment_id: Annotated[
         Optional[str],
         "OCID of the compartment. If omitted, defaults to the tenancy/DEFAULT profile.",
@@ -1511,64 +2058,69 @@ def summarize_protected_database_backup_destination(
     include_last_backup_time: Annotated[
         bool, "If true, compute last backup time per DB (extra API calls)."
     ] = False,
+    db_name: Annotated[
+        Optional[str], "Exact database name filter (case-insensitive)."
+    ] = None,
+    limit_per_home: Annotated[
+        Optional[int], "Max databases to fetch per DB Home."
+    ] = None,
+    max_db_homes: Annotated[
+        Optional[int], "Max number of DB Homes to scan."
+    ] = None,
+    max_total_databases: Annotated[
+        Optional[int], "Global cap on databases to scan."
+    ] = None,
 ) -> ProtectedDatabaseBackupDestinationSummary:
     try:
         db_client = get_database_client(region)
-        rec_client = get_recovery_client(region)
         if not compartment_id:
             compartment_id = get_tenancy()
 
-        # Discover DB Homes if not specified
+        # Discover DB Homes if not specified, then list databases with lifecycle_state=AVAILABLE
         home_ids: list[str] = (
             [db_home_id]
             if db_home_id
             else _fetch_db_home_ids_for_compartment(compartment_id, region=region)
         )
 
-        # Collect database summaries for those DB Homes (AVAILABLE only)
+        # Explicitly bind the SDK method to avoid any accidental reference to the MCP tool
+        list_dbs_method = getattr(db_client, "list_databases")
         db_summaries: list[Any] = []
         if home_ids:
-            for hid in home_ids:
-                resp = db_client.list_databases(
-                    compartment_id=compartment_id,
-                    db_home_id=hid,
-                    lifecycle_state="AVAILABLE",
-                )
-                data = getattr(resp.data, "items", resp.data)
-                if isinstance(data, list):
-                    db_summaries.extend(data)
-                elif data is not None:
-                    db_summaries.append(data)
+            for hid in (home_ids[:max_db_homes] if (max_db_homes is not None) else home_ids):
+                call_kwargs = {
+                    "compartment_id": compartment_id,
+                    "db_home_id": hid,
+                    "lifecycle_state": "AVAILABLE",
+                }
+                if db_name is not None:
+                    call_kwargs["db_name"] = db_name
+                if limit_per_home is not None:
+                    call_kwargs["limit"] = limit_per_home
+                next_page = None
+                while True:
+                    local_kwargs = dict(call_kwargs)
+                    if next_page:
+                        local_kwargs["page"] = next_page
+                    resp = list_dbs_method(**local_kwargs)
+                    data = getattr(resp.data, "items", resp.data)
+                    if isinstance(data, list):
+                        db_summaries.extend(data)
+                    elif data is not None:
+                        db_summaries.append(data)
+                    if max_total_databases is not None and len(db_summaries) >= max_total_databases:
+                        db_summaries = db_summaries[:max_total_databases]
+                        break
+                    has_next = bool(getattr(resp, "has_next_page", False))
+                    next_page = getattr(resp, "next_page", None) if has_next else None
+                    if not has_next:
+                        break
 
         # Build a map of database_id -> list of Protected Databases (from Recovery Service)
         # This allows us to infer DBRS (Recovery Service) as a destination type even if DB backup config
         # does not explicitly list it as a destination, by virtue of PD linkage.
+        # Simplified: do not correlate via Recovery Protected Databases
         pd_by_dbid: dict[str, list[dict]] = {}
-        try:
-            has_next = True
-            next_page = None
-            while has_next:
-                lp = rec_client.list_protected_databases(
-                    compartment_id=compartment_id, page=next_page
-                )
-                has_next = lp.has_next_page
-                next_page = getattr(lp, "next_page", None)
-                pdata = lp.data
-                pitems = getattr(pdata, "items", pdata)
-                for it in pitems or []:
-                    # convert to dict for easy field access
-                    try:
-                        if hasattr(oci, "util") and hasattr(oci.util, "to_dict"):
-                            d = oci.util.to_dict(it)
-                        else:
-                            d = getattr(it, "__dict__", {}) or {}
-                    except Exception:
-                        d = getattr(it, "__dict__", {}) or {}
-                    dbid = d.get("databaseId") or d.get("database_id")
-                    if dbid:
-                        pd_by_dbid.setdefault(dbid, []).append(d)
-        except Exception:
-            pd_by_dbid = {}
 
         # Helper routines to normalize SDK objects and read fields across variants
         def _to_dict(o: Any) -> dict:
@@ -1633,7 +2185,7 @@ def summarize_protected_database_backup_destination(
             ):
                 return "DBRS"
             if u in ("OBJECT_STORE", "OBJECTSTORE", "OBJECT_STORAGE"):
-                return "OSS"
+                return "OBJECT_STORE"
             if u in ("NFS",):
                 return "NFS"
             return u
@@ -1712,9 +2264,28 @@ def summarize_protected_database_backup_destination(
                     continue
                 db_name = _get(s, "db_name", "dbName")
 
-                dresp = get_db(database_id=sid)
-                d_obj = getattr(dresp, "data", None)
-                d_dict = _to_dict(d_obj)
+                # Prefer backup config from summary item to avoid per-DB GET when possible
+                d_obj = None
+                d_dict = _to_dict(s)
+                cfg_present = False
+                try:
+                    cfg_present = any(
+                        isinstance(d_dict.get(k), dict)
+                        for k in (
+                            "dbBackupConfig",
+                            "db_backup_config",
+                            "databaseBackupConfig",
+                            "database_backup_config",
+                            "backupConfig",
+                            "backup_config",
+                        )
+                    )
+                except Exception:
+                    cfg_present = False
+                if not cfg_present:
+                    dresp = get_db(database_id=sid)
+                    d_obj = getattr(dresp, "data", None)
+                    d_dict = _to_dict(d_obj)
 
                 # Extract configured destination details (normalize to a list of dicts)
                 dest_details = _extract_backup_destination_details(d_dict)
@@ -1737,26 +2308,17 @@ def summarize_protected_database_backup_destination(
 
                 # Augment with Recovery Service protected database linkage
                 pds_for_db = pd_by_dbid.get(sid, [])
-                if pds_for_db:
-                    dest_types.append("DBRS")
-                    try:
-                        # Use PD OCID for reference if present
-                        dest_ids.append(pds_for_db[0].get("id"))
-                    except Exception:
-                        pass
+                # Simplified: do not infer DBRS from Protected Database linkage
 
-                # Deduplicate destinations and IDs
-                dest_types = list(dict.fromkeys([t for t in dest_types if t]))
-                # Enforce exclusivity between DBRS and OSS:
-                # prefer DBRS (no dual classification)
-                if "DBRS" in dest_types and "OSS" in dest_types:
+                # Deduplicate and restrict to DBRS/OBJECT_STORE; prefer DBRS if both
+                dest_types = list(dict.fromkeys([t for t in dest_types if t in ("DBRS", "OBJECT_STORE")]))
+                if "DBRS" in dest_types and "OBJECT_STORE" in dest_types:
                     dest_types = ["DBRS"]
                 dest_ids = list(dict.fromkeys([d for d in dest_ids if d]))
 
                 auto_enabled = _is_auto_backup_enabled(d_dict)
-                # Consider configured if auto-backup enabled OR any destination types
-                # detected (incl. DBRS via Recovery Service)
-                configured = bool(auto_enabled or len(dest_types) > 0)
+                # Configured strictly when auto-backup is enabled
+                configured = bool(auto_enabled)
                 status = "CONFIGURED" if configured else "UNCONFIGURED"
                 last_backup_time = None
 
@@ -1777,34 +2339,19 @@ def summarize_protected_database_backup_destination(
                                     best = t
                         if best is not None:
                             last_backup_time = best
-                            if status != "CONFIGURED":
-                                status = "HAS_BACKUPS"
                     except Exception:
                         pass
                 else:
-                    # Lightweight existence check for backups
-                    try:
-                        b_resp = list_bk(database_id=sid, limit=1)
-                        b_data = getattr(b_resp.data, "items", b_resp.data)
-                        has_any = (
-                            (len(b_data) > 0)
-                            if isinstance(b_data, list)
-                            else (b_data is not None)
-                        )
-                        if status != "CONFIGURED" and has_any:
-                            status = "HAS_BACKUPS"
-                    except Exception:
-                        pass
+                    pass
 
                 # Aggregate summary counters and name lists by status/destination
                 name_for_lists = db_name or sid
                 if status == "CONFIGURED":
-                    for ut in set(dest_types):
-                        if ut != "UNKNOWN":
-                            counts_by_type[ut] = counts_by_type.get(ut, 0) + 1
-                            db_names_by_type.setdefault(ut, []).append(name_for_lists)
-                elif status == "HAS_BACKUPS":
-                    has_backups_names.append(name_for_lists)
+                    # Select a single effective destination type: DBRS preferred over OBJECT_STORE
+                    eff_type = "DBRS" if "DBRS" in dest_types else ("OBJECT_STORE" if "OBJECT_STORE" in dest_types else "UNKNOWN")
+                    if eff_type in ("DBRS", "OBJECT_STORE"):
+                        counts_by_type[eff_type] = counts_by_type.get(eff_type, 0) + 1
+                        db_names_by_type.setdefault(eff_type, []).append(name_for_lists)
                 else:
                     unconfigured += 1
                     unconfigured_names.append(name_for_lists)
@@ -1824,23 +2371,17 @@ def summarize_protected_database_backup_destination(
                 # Continue on per-DB errors to maximize overall coverage
                 continue
 
-        # Sorting helpers: prioritize DBRS over OSS/NFS, then by status, then by name
+        # Sorting helpers: prioritize DBRS over OBJECT_STORE and then by name
         def _dest_rank(types: list[str]) -> int:
             if not types:
                 return 99
-            order = {"DBRS": 0, "OSS": 1, "NFS": 2, "UNKNOWN": 3}
+            order = {"DBRS": 0, "OBJECT_STORE": 1, "NFS": 2, "UNKNOWN": 3}
             return min(order.get(t, 3) for t in types)
-
-        def _status_rank(st: Optional[str]) -> int:
-            return {"CONFIGURED": 0, "HAS_BACKUPS": 1, "UNCONFIGURED": 2}.get(
-                (st or "").upper(), 3
-            )
 
         items = sorted(
             items,
             key=lambda it: (
                 _dest_rank(it.destination_types),
-                _status_rank(it.status),
                 (it.db_name or ""),
             ),
         )
@@ -1870,11 +2411,15 @@ def summarize_protected_database_backup_destination(
         )
     except Exception as e:
         logger.error(
-            f"Error in summarize_protected_database_backup_destination tool: {e}"
+            f"Error in summarise_protected_database_backup_destination tool: {e}"
         )
         raise
 
-
+@mcp.tool(
+    description=(
+        "Lists database homes in a compartment with optional lifecycle filters, defaulting to your tenancy when no compartment is given, and handles paging for you. The result is a list of database home summaries."
+    )
+)
 def list_db_homes(
     compartment_id: Annotated[
         Optional[str], "OCID of the compartment to scope the search."
@@ -1918,7 +2463,9 @@ def list_db_homes(
         raise
 
 
-@mcp.tool(description="Retrieves a single Database Home by OCID.")
+@mcp.tool(description=(
+    "Gets a database home by OCID and returns it as a simple object. The result is one database home."
+))
 def get_db_home(
     db_home_id: Annotated[str, "OCID of the DB Home to retrieve."],
     region: Annotated[
@@ -1936,8 +2483,7 @@ def get_db_home(
 
 @mcp.tool(
     description=(
-        "Lists Database Systems in the specified compartment with optional lifecycle filters. "
-        "If compartment_id is omitted, defaults to tenancy compartment."
+        "Lists database systems in a compartment with optional lifecycle filters, defaulting to your tenancy when no compartment is given, and handles paging for you. The result is a list of database system summaries."
     )
 )
 def list_db_systems(
@@ -1980,7 +2526,9 @@ def list_db_systems(
         raise
 
 
-@mcp.tool(description="Retrieves a single Database System by OCID.")
+@mcp.tool(description=(
+    "Gets a database system by OCID and returns it as a convenient object. The result is one database system."
+))
 def get_db_system(
     db_system_id: Annotated[str, "OCID of the DB System to retrieve."],
     region: Annotated[

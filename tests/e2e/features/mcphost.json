@@ -1,15 +1,5 @@
 {
   "mcpServers": {
-    "oracle-datetime-helper-mcp-server": {
-      "disabled": false,
-      "timeout": 60,
-      "type": "stdio",
-      "command": "uv",
-      "args": [
-        "run",
-        "oracle.datetime-helper-mcp-server"
-      ]
-    },
     "oracle-oci-api-mcp-server": {
       "disabled": false,
       "timeout": 60,
@@ -18,7 +8,16 @@
       "args": [
         "run",
         "oracle.oci-api-mcp-server"
-      ]
+      ],
+      "env": {
+          "HTTP_PROXY": "http://127.0.0.1:5000",
+          "HTTPS_PROXY": "http://127.0.0.1:5000",
+          "OCI_SDK_CERT_BUNDLE": "False",
+          "PYTHONHTTPSVERIFY": "0",
+          "OCI_SKIP_SSL_VERIFICATION": "True",
+          "REQUESTS_CA_BUNDLE": "",
+          "CURL_CA_BUNDLE": ""
+      }
     },
     "oracle-oci-compute-instance-agent-mcp-server": {
       "disabled": false,
@@ -28,7 +27,16 @@
       "args": [
         "run",
         "oracle.oci-compute-instance-agent-mcp-server"
-      ]
+      ],
+      "env": {
+          "HTTP_PROXY": "http://127.0.0.1:5000",
+          "HTTPS_PROXY": "http://127.0.0.1:5000",
+          "OCI_SDK_CERT_BUNDLE": "False",
+          "PYTHONHTTPSVERIFY": "0",
+          "OCI_SKIP_SSL_VERIFICATION": "True",
+          "REQUESTS_CA_BUNDLE": "",
+          "CURL_CA_BUNDLE": ""
+      }
     },
     "oracle-oci-compute-mcp-server": {
       "disabled": false,
@@ -38,7 +46,16 @@
       "args": [
         "run",
         "oracle.oci-compute-mcp-server"
-      ]
+      ],
+      "env": {
+          "HTTP_PROXY": "http://127.0.0.1:5000",
+          "HTTPS_PROXY": "http://127.0.0.1:5000",
+          "OCI_SDK_CERT_BUNDLE": "False",
+          "PYTHONHTTPSVERIFY": "0",
+          "OCI_SKIP_SSL_VERIFICATION": "True",
+          "REQUESTS_CA_BUNDLE": "",
+          "CURL_CA_BUNDLE": ""
+      }
     },
     "oracle-oci-identity-mcp-server": {
       "disabled": false,
@@ -48,7 +65,16 @@
       "args": [
         "run",
         "oracle.oci-identity-mcp-server"
-      ]
+      ],
+      "env": {
+          "HTTP_PROXY": "http://127.0.0.1:5000",
+          "HTTPS_PROXY": "http://127.0.0.1:5000",
+          "OCI_SDK_CERT_BUNDLE": "False",
+          "PYTHONHTTPSVERIFY": "0",
+          "OCI_SKIP_SSL_VERIFICATION": "True",
+          "REQUESTS_CA_BUNDLE": "",
+          "CURL_CA_BUNDLE": ""
+      }
     },
     "oracle-oci-migration-mcp-server": {
       "disabled": false,
@@ -58,7 +84,16 @@
       "args": [
         "run",
         "oracle.oci-migration-mcp-server"
-      ]
+      ],
+      "env": {
+          "HTTP_PROXY": "http://127.0.0.1:5000",
+          "HTTPS_PROXY": "http://127.0.0.1:5000",
+          "OCI_SDK_CERT_BUNDLE": "False",
+          "PYTHONHTTPSVERIFY": "0",
+          "OCI_SKIP_SSL_VERIFICATION": "True",
+          "REQUESTS_CA_BUNDLE": "",
+          "CURL_CA_BUNDLE": ""
+      }
     },
     "oracle-oci-monitoring-mcp-server": {
       "disabled": false,
@@ -68,7 +103,16 @@
       "args": [
         "run",
         "oracle.oci-monitoring-mcp-server"
-      ]
+      ],
+      "env": {
+          "HTTP_PROXY": "http://127.0.0.1:5000",
+          "HTTPS_PROXY": "http://127.0.0.1:5000",
+          "OCI_SDK_CERT_BUNDLE": "False",
+          "PYTHONHTTPSVERIFY": "0",
+          "OCI_SKIP_SSL_VERIFICATION": "True",
+          "REQUESTS_CA_BUNDLE": "",
+          "CURL_CA_BUNDLE": ""
+      }
     },
     "oracle-oci-network-load-balancer-mcp-server": {
       "disabled": false,
@@ -78,7 +122,16 @@
       "args": [
         "run",
         "oracle.oci-network-load-balancer-mcp-server"
-      ]
+      ],
+      "env": {
+          "HTTP_PROXY": "http://127.0.0.1:5000",
+          "HTTPS_PROXY": "http://127.0.0.1:5000",
+          "OCI_SDK_CERT_BUNDLE": "False",
+          "PYTHONHTTPSVERIFY": "0",
+          "OCI_SKIP_SSL_VERIFICATION": "True",
+          "REQUESTS_CA_BUNDLE": "",
+          "CURL_CA_BUNDLE": ""
+      }
     },
     "oracle-oci-networking-mcp-server": {
       "disabled": false,
@@ -88,7 +141,16 @@
       "args": [
         "run",
         "oracle.oci-networking-mcp-server"
-      ]
+      ],
+      "env": {
+          "HTTP_PROXY": "http://127.0.0.1:5000",
+          "HTTPS_PROXY": "http://127.0.0.1:5000",
+          "OCI_SDK_CERT_BUNDLE": "False",
+          "PYTHONHTTPSVERIFY": "0",
+          "OCI_SKIP_SSL_VERIFICATION": "True",
+          "REQUESTS_CA_BUNDLE": "",
+          "CURL_CA_BUNDLE": ""
+      }
     },
     "oracle-oci-object-storage-mcp-server": {
       "disabled": false,
@@ -98,7 +160,16 @@
       "args": [
         "run",
         "oracle.oci-object-storage-mcp-server"
-      ]
+      ],
+      "env": {
+          "HTTP_PROXY": "http://127.0.0.1:5000",
+          "HTTPS_PROXY": "http://127.0.0.1:5000",
+          "OCI_SDK_CERT_BUNDLE": "False",
+          "PYTHONHTTPSVERIFY": "0",
+          "OCI_SKIP_SSL_VERIFICATION": "True",
+          "REQUESTS_CA_BUNDLE": "",
+          "CURL_CA_BUNDLE": ""
+      }
     },
     "oracle-oci-registry-mcp-server": {
       "disabled": false,
@@ -108,7 +179,16 @@
       "args": [
         "run",
         "oracle.oci-registry-mcp-server"
-      ]
+      ],
+      "env": {
+          "HTTP_PROXY": "http://127.0.0.1:5000",
+          "HTTPS_PROXY": "http://127.0.0.1:5000",
+          "OCI_SDK_CERT_BUNDLE": "False",
+          "PYTHONHTTPSVERIFY": "0",
+          "OCI_SKIP_SSL_VERIFICATION": "True",
+          "REQUESTS_CA_BUNDLE": "",
+          "CURL_CA_BUNDLE": ""
+      }
     },
     "oracle-oci-resource-search-mcp-server": {
       "disabled": false,
@@ -118,7 +198,16 @@
       "args": [
         "run",
         "oracle.oci-resource-search-mcp-server"
-      ]
+      ],
+      "env": {
+          "HTTP_PROXY": "http://127.0.0.1:5000",
+          "HTTPS_PROXY": "http://127.0.0.1:5000",
+          "OCI_SDK_CERT_BUNDLE": "False",
+          "PYTHONHTTPSVERIFY": "0",
+          "OCI_SKIP_SSL_VERIFICATION": "True",
+          "REQUESTS_CA_BUNDLE": "",
+          "CURL_CA_BUNDLE": ""
+      }
     }
   }
 }

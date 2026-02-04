@@ -12,6 +12,8 @@ import com.oracle.database.mcptoolkit.config.DataSourceConfig;
 import com.oracle.database.mcptoolkit.config.ToolConfig;
 
 import java.util.*;
+import java.util.logging.Logger;
+import java.util.logging.Level;
 
 /**
  * Immutable server configuration loaded from system properties.
@@ -33,6 +35,7 @@ import java.util.*;
  * <p>Use {@link #fromSystemProperties()} to create an instance with validation and defaults.</p>
  */
 public final class ServerConfig {
+  private static final Logger LOG = Logger.getLogger(ServerConfig.class.getName());
   public final String dbUrl;
   public final String dbUser;
   public final char[] dbPassword;
@@ -214,7 +217,17 @@ public final class ServerConfig {
       String k = name == null ? null : name.trim().toLowerCase(Locale.ROOT);
       if (k == null || k.isEmpty()) continue;
 
-      // YAML toolset match
+      // Built-in toolset match first. If a YAML toolset has the same name, prefer built-in and log an error.
+      Set<String> builtin = BUILTIN_TOOLSETS.get(k);
+      if (builtin != null) {
+        if (yamlSets != null && yamlSets.containsKey(k)) {
+          LOG.log(Level.SEVERE, () -> "Custom toolset '" + k + "' conflicts with built-in toolset; ignoring custom definition and using built-in.");
+        }
+        out.addAll(builtin);
+        continue;
+      }
+
+      // YAML toolset match (only if not a built-in name)
       if (yamlSets != null && yamlSets.containsKey(k)) {
         List<String> members = yamlSets.get(k);
         if (members != null) {
@@ -225,13 +238,6 @@ public final class ServerConfig {
             }
           }
         }
-        continue;
-      }
-
-      // Built-in toolset match
-      Set<String> builtin = BUILTIN_TOOLSETS.get(k);
-      if (builtin != null) {
-        out.addAll(builtin);
         continue;
       }
 

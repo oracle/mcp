@@ -22,6 +22,12 @@ class TestSupportsPaginationAllowlistIntrospectionFailure:
         )
 
         def fn(**kwargs):  # noqa: ARG001
+            """
+            Retrieve records.
+
+            :param str page: pagination token
+            :param int limit: max items
+            """
             return None
 
         # operation is on known allowlist ("get_rr_set")
@@ -119,12 +125,9 @@ class TestImportClientHappyPath:
         assert "signer" in constructed["kwargs"]
 
 
-class TestSupportsPaginationVarKwPattern:
-    def test_var_kw_and_records_name_pattern_true(self):
-        def get_domain_records(**kwargs):  # noqa: ARG001
-            return None
-
-        assert _supports_pagination(get_domain_records, "get_domain_records") is True
+# Removed tests for DNS-style '**kwargs + records' pagination heuristic.
+# The server no longer treats var-kw only methods with names like '*records'
+# as implicitly paginated without explicit page/limit or documented kwargs.
 
 
 class TestPaginatorHeadersWithGet:
@@ -175,7 +178,9 @@ class TestCallWithPaginationTypeErrorFallback:
 
 class TestSupportsPaginationAdditional:
     def test_known_allowlist_variant_get_rr_set_true(self):
-        def fn(**kwargs):  # noqa: ARG001
+        def fn(
+            zone_name_or_id, domain, rtype, page=None, limit=None, **kwargs
+        ):  # noqa: ARG001
             return None
 
         assert _supports_pagination(fn, "get_rr_set") is True

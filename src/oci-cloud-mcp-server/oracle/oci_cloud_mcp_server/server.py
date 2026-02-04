@@ -35,6 +35,11 @@ mcp = FastMCP(
 _user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
 _ADDITIONAL_UA = f"{_user_agent_name}/{__version__}"
 
+# Backwards-compat pagination allowlist placeholder.
+# Heuristic detection handles most cases; keep an empty set to avoid NameError
+# in any residual fallback checks.
+known_paginated: set = set()
+
 
 def _get_config_and_signer() -> Tuple[Dict[str, Any], Any]:
     """
@@ -417,15 +422,7 @@ def _supports_pagination(method: Callable[..., Any], operation_name: str) -> boo
       - Operation name starts with 'summarize_' (many summarize ops are paginated).
       - Method signature includes 'page' or 'limit' kwargs (explicit params).
       - Method accepts **kwargs and operation name indicates record/rrset style (DNS-like).
-      - Explicit allowlist for known paginated non-list ops in services like DNS.
     """
-    # known paginated non-list operations (e.g., DNS)
-    known_paginated = {
-        "get_zone_records",
-        "get_domain_records",
-        "get_rr_set",
-        "get_rr_set",
-    }
     try:
         if operation_name.startswith("list_"):
             return True
@@ -449,16 +446,6 @@ def _supports_pagination(method: Callable[..., Any], operation_name: str) -> boo
         param_names = set(sig.parameters.keys())
         if "page" in param_names or "limit" in param_names:
             return True
-        # some SDKs (e.g., DNS) expose 'page'/'limit' via **kwargs; detect via VAR_KEYWORD and name pattern
-        has_var_kw = any(
-            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
-        )
-        if has_var_kw:
-            if operation_name in known_paginated:
-                return True
-            # generic DNS-like pattern: operations dealing with records/rrsets tend to paginate
-            if re.search(r"(records|rrset)s?$", operation_name):
-                return True
     except Exception:
         # if we cannot introspect, fall through to explicit allowlist
         pass

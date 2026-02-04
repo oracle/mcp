@@ -1,7 +1,7 @@
 # ---------- 1) Build stage ----------
 FROM container-registry.oracle.com/java/openjdk:17 AS builder
 
-ARG MAVEN_VERSION=3.9.11
+ARG MAVEN_VERSION=3.9.12
 ARG MAVEN_BASE_URL=https://dlcdn.apache.org/maven/maven-3
 
 RUN curl -fsSL \

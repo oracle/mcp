@@ -1,6 +1,6 @@
 [project]
 name = "oracle.mysql-mcp-server"
-version = "1.0.3"
+version = "1.0.4"
 description = "MySql Service MCP server"
 readme = "README.md"
 requires-python = ">=3.12"

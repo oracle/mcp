@@ -55,7 +55,7 @@ public class RagTools {
   }
 
   /**
-   * Returns a tool specification for the "similarity_search" tool.
+   * Returns a tool specification for the {@code similarity-search} tool.
    * <p>
    * This tool allows users to perform similarity searches using vector embeddings.
    * The tool's behavior is configured based on the provided server configuration.
@@ -74,7 +74,7 @@ public class RagTools {
    * The tool returns a list of text snippets ranked by similarity, along with a structured content map containing the results.
    *
    * @param config the server configuration to use for determining the tool's behavior
-   * @return a tool specification for the "similarity_search" tool
+   * @return a tool specification for the {@code similarity-search} tool
    */
   public static McpServerFeatures.SyncToolSpecification getSimilaritySearchTool(ServerConfig config) {
     return McpServerFeatures.SyncToolSpecification.builder()

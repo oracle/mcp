@@ -40,11 +40,17 @@ public class RagTools {
   private RagTools() {}
 
   /**
-   * Returns all RAG tool specifications.
+   * Returns a list of all RAG tool specifications based on the provided server configuration.
+   * <p>
+   * The returned list includes tool specifications for RAG applications, such as similarity search
+   * using vector embeddings. The tools are filtered based on the configuration settings.
+   *
+   * @param config the server configuration to use for determining which tools to include
+   * @return a list of tool specifications for RAG tools
    */
   public static List<McpServerFeatures.SyncToolSpecification> getTools(ServerConfig config) {
     List<McpServerFeatures.SyncToolSpecification> tools = new ArrayList<>();
-    tools.add(getSymilaritySearchTool(config));
+    tools.add(getSimilaritySearchTool(config));
     return tools;
   }
 
@@ -52,11 +58,25 @@ public class RagTools {
    * Returns a tool specification for the "similarity_search" tool.
    * <p>
    * This tool allows users to perform similarity searches using vector embeddings.
+   * The tool's behavior is configured based on the provided server configuration.
+   * <p>
+   * The tool accepts the following input arguments:
+   * <ul>
+   *   <li>{@code question}: the natural-language query text (required, non-blank)</li>
+   *   <li>{@code topK}: the maximum number of rows to return (optional, default=5, clamped to [1, 100])</li>
+   *   <li>{@code table}: the table name containing text + embedding columns (optional, default="profile_oracle")</li>
+   *   <li>{@code dataColumn}: the column holding the text/CLOB to return (optional, default="text")</li>
+   *   <li>{@code embeddingColumn}: the vector column used by the similarity function (optional, default="embedding")</li>
+   *   <li>{@code modelName}: the database vector model used to embed the question (optional, default="doc_model")</li>
+   *   <li>{@code textFetchLimit}: the substring length to return from the text column (optional, default=4000)</li>
+   * </ul>
+   * <p>
+   * The tool returns a list of text snippets ranked by similarity, along with a structured content map containing the results.
    *
-   * @param config server configuration
-   * @return tool specification
+   * @param config the server configuration to use for determining the tool's behavior
+   * @return a tool specification for the "similarity_search" tool
    */
-  public static McpServerFeatures.SyncToolSpecification getSymilaritySearchTool(ServerConfig config) {
+  public static McpServerFeatures.SyncToolSpecification getSimilaritySearchTool(ServerConfig config) {
     return McpServerFeatures.SyncToolSpecification.builder()
       .tool(McpSchema.Tool.builder()
          .name("similarity-search")

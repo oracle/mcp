@@ -21,20 +21,24 @@ import java.util.regex.Pattern;
 import static com.oracle.database.mcptoolkit.Utils.*;
 
 /**
- * Database operator tools:
- * - read-query: execute SELECT queries and return JSON results
- * - write-query: execute DML/DDL statements
- * - create-table: create table.
- * - delete-table: drop table by name
- * - list-tables: list all tables and synonyms in the current schema
- * - describe-table: get column details for a specific table
- * - start-transaction: begin a new JDBC transaction
- * - resume-transaction: verify a transaction ID is active
- * - commit-transaction: commit and close a transaction
- * - rollback-transaction: rollback and close a transaction
- * - db-ping: check database connectivity and latency
- * - db-metrics-range: retrieve Oracle performance metrics from V$SYSSTAT
- * - explain-plan: generate and explain Oracle SQL execution plans (static or dynamic)
+ * Provides a set of database operator tools for various database operations.
+ *
+ * <p>The available tools are:</p>
+ * <ul>
+ *   <li><strong>read-query</strong>: Execute SELECT queries and return JSON results.</li>
+ *   <li><strong>write-query</strong>: Execute DML/DDL statements.</li>
+ *   <li><strong>create-table</strong>: Create table.</li>
+ *   <li><strong>delete-table</strong>: Drop table by name.</li>
+ *   <li><strong>list-tables</strong>: List all tables and synonyms in the current schema.</li>
+ *   <li><strong>describe-table</strong>: Get column details for a specific table.</li>
+ *   <li><strong>start-transaction</strong>: Begin a new JDBC transaction.</li>
+ *   <li><strong>resume-transaction</strong>: Verify a transaction ID is active.</li>
+ *   <li><strong>commit-transaction</strong>: Commit and close a transaction.</li>
+ *   <li><strong>rollback-transaction</strong>: Rollback and close a transaction.</li>
+ *   <li><strong>db-ping</strong>: Check database connectivity and latency.</li>
+ *   <li><strong>db-metrics-range</strong>: Retrieve Oracle performance metrics from V$SYSSTAT.</li>
+ *   <li><strong>explain-plan</strong>: Generate and explain Oracle SQL execution plans (static or dynamic).</li>
+ * </ul>
  */
 public final class DatabaseOperatorTools {
 
@@ -44,7 +48,31 @@ public final class DatabaseOperatorTools {
   private DatabaseOperatorTools() {}
 
   /**
-   * Returns all database operator tool specifications.
+   * Returns a list of database operator tool specifications based on the provided server configuration.
+   * The returned tools are used for various database operations such as executing queries, managing transactions,
+   * and retrieving database metrics.
+   *
+   * <p>The tools returned include:</p>
+   * <ul>
+   *   <li><strong>read-query</strong>: Execute SELECT queries and return JSON results.</li>
+   *   <li><strong>write-query</strong>: Execute DML/DDL statements.</li>
+   *   <li><strong>create-table</strong>: Create table.</li>
+   *   <li><strong>delete-table</strong>: Drop table by name.</li>
+   *   <li><strong>list-tables</strong>: List all tables and synonyms in the current schema.</li>
+   *   <li><strong>describe-table</strong>: Get column details for a specific table.</li>
+   *   <li><strong>start-transaction</strong>: Begin a new JDBC transaction.</li>
+   *   <li><strong>resume-transaction</strong>: Verify a transaction ID is active.</li>
+   *   <li><strong>commit-transaction</strong>: Commit and close a transaction.</li>
+   *   <li><strong>rollback-transaction</strong>: Rollback and close a transaction.</li>
+   *   <li><strong>db-ping</strong>: Check database connectivity and latency.</li>
+   *   <li><strong>db-metrics-range</strong>: Retrieve Oracle performance metrics from V$SYSSTAT.</li>
+   *   <li><strong>explain-plan</strong>: Generate and explain Oracle SQL execution plans (static or dynamic).</li>
+   * </ul>
+   *
+   * <p>A shutdown hook is added to clean up any active transactions when the JVM shuts down.</p>
+   *
+   * @param config the server configuration to use for database connections
+   * @return a list of tool specifications for database operations
    */
   public static List<McpServerFeatures.SyncToolSpecification> getTools(ServerConfig config) {
     List<McpServerFeatures.SyncToolSpecification> tools = new ArrayList<>();

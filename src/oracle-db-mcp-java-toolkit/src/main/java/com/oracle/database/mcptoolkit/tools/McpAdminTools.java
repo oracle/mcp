@@ -24,26 +24,52 @@ import java.nio.file.Paths;
 import java.util.*;
 
 /**
- * Admin/maintenance tools:
- * - list-tools: list all available tools with descriptions
- * - edit-tools: upsert a YAML-defined tool in the config file and rely on runtime reload
+ * Provides a set of admin/maintenance tools for various operations.
+ *
+ * <p>The available tools are:</p>
+ * <ul>
+ *   <li><strong>list-tools</strong>: List all available tools with descriptions.</li>
+ *   <li><strong>edit-tools</strong>: Upsert a YAML-defined tool in the config file and rely on runtime reload.</li>
+ * </ul>
  */
 public class McpAdminTools {
 
   private McpAdminTools() {}
 
   /**
-   * Returns all MCP admin tool specifications.
+   * Returns a list of all MCP admin tool specifications, including "list-tools" and "edit-tools".
+   * The returned tools are filtered based on the configuration provided.
+   *
+   * @param config the server configuration used to filter the tools
+   * @return a list of MCP admin tool specifications
    */
   public static List<McpServerFeatures.SyncToolSpecification> getTools(ServerConfig config) {
     List<McpServerFeatures.SyncToolSpecification> tools = new ArrayList<>();
 
     tools.add(getListToolsTool(config));
-    tools.add(getEditToolsTool(config));
+    tools.add(getEditToolsTool());
 
     return tools;
   }
 
+  /**
+   * Returns a tool specification for the "list-tools" tool, which lists all available tools
+   * with their descriptions. The tool respects the tools filter configuration.
+   *
+   * <p>The tool returns a list of tools, including:</p>
+   * <ul>
+   *   <li>Built-in log analyzer tools</li>
+   *   <li>RAG tools</li>
+   *   <li>Database operator tools</li>
+   *   <li>Custom YAML tools</li>
+   *   <li>MCP admin tools</li>
+   * </ul>
+   *
+   * <p>The tool's output is filtered based on the {@link ServerConfig#toolsFilter} configuration.</p>
+   *
+   * @param config the server configuration used to filter the tools
+   * @return a tool specification for the "list-tools" tool
+   */
   public static McpServerFeatures.SyncToolSpecification getListToolsTool(ServerConfig config) {
     return McpServerFeatures.SyncToolSpecification.builder()
       .tool(McpSchema.Tool.builder()
@@ -132,7 +158,38 @@ public class McpAdminTools {
     .build();
   }
 
-  public static McpServerFeatures.SyncToolSpecification getEditToolsTool(ServerConfig config) {
+  /**
+   * Returns a tool specification for the "edit-tools" tool, which creates or updates
+   * YAML-defined tools in the configuration file. The changes are auto-reloaded.
+   *
+   * <p>The tool accepts the following input parameters:</p>
+   * <ul>
+   *   <li><strong>name</strong>: The name of the tool to create or update (required).</li>
+   *   <li><strong>remove</strong>: A boolean flag indicating whether to remove the tool (optional).</li>
+   *   <li><strong>description</strong>: A description of the tool (optional).</li>
+   *   <li><strong>dataSource</strong>: The data source for the tool (optional).</li>
+   *   <li><strong>statement</strong>: The SQL statement for the tool (optional).</li>
+   *   <li><strong>parameters</strong>: A list of parameter objects for the tool (optional).
+   *     Each parameter object can have the following properties:
+   *     <ul>
+   *       <li><strong>name</strong>: The name of the parameter.</li>
+   *       <li><strong>type</strong>: The data type of the parameter.</li>
+   *       <li><strong>description</strong>: A description of the parameter.</li>
+   *       <li><strong>required</strong>: A boolean indicating whether the parameter is required.</li>
+   *     </ul>
+   *   </li>
+   * </ul>
+   *
+   * <p>The tool returns a result with the following properties:</p>
+   * <ul>
+   *   <li><strong>status</strong>: The status of the operation (e.g., "ok", "noop", "error").</li>
+   *   <li><strong>message</strong>: A human-readable message describing the result.</li>
+   *   <li><strong>configFile</strong>: The path to the configuration file.</li>
+   * </ul>
+   *
+   * @return a tool specification for the "edit-tools" tool
+   */
+  public static McpServerFeatures.SyncToolSpecification getEditToolsTool() {
     return McpServerFeatures.SyncToolSpecification.builder()
       .tool(McpSchema.Tool.builder()
          .name("edit-tools")

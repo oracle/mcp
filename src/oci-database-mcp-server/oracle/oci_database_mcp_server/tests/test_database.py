@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, create_autospec, patch
+from unittest.mock import MagicMock, create_autospec, mock_open, patch
 
 import oci
 import pytest
@@ -3206,3 +3206,60 @@ async def test_get_vm_cluster_update_history_entry(mock_get_client):
         result = response.structured_content
         assert isinstance(result, dict)
         mock_client.get_vm_cluster_update_history_entry.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("oracle.oci_database_mcp_server.server.get_database_client")
+@patch("oci.core.VirtualNetworkClient")
+@patch("oci.config.from_file")
+@patch("oci.signer.load_private_key_from_file")
+@patch("builtins.open", new_callable=mock_open, read_data="dummy_token")
+async def test_get_public_ip_for_database(
+    mock_file, mock_load_key, mock_config, mock_vcn_client_cls, mock_get_db_client
+):
+    mock_db_client = MagicMock()
+    mock_get_db_client.return_value = mock_db_client
+
+    mock_db_response = create_autospec(oci.response.Response)
+    mock_database = MagicMock()
+    mock_database.db_system_id = "ocid1.dbsystem.oc1..sample"
+    mock_database.vm_cluster_id = None
+    mock_database.compartment_id = "ocid1.compartment.oc1..sample"
+    mock_db_response.data = mock_database
+    mock_db_client.get_database.return_value = mock_db_response
+
+    mock_nodes_response = create_autospec(oci.response.Response)
+    mock_node = MagicMock()
+    mock_node.vnic_id = "ocid1.vnic.oc1..sample"
+    mock_nodes_response.data = [mock_node]
+    mock_db_client.list_db_nodes.return_value = mock_nodes_response
+
+    mock_vcn_client = MagicMock()
+    mock_vcn_client_cls.return_value = mock_vcn_client
+
+    mock_vnic_response = create_autospec(oci.response.Response)
+    mock_vnic = MagicMock()
+    mock_vnic.public_ip = "203.0.113.10"
+    mock_vnic_response.data = mock_vnic
+    mock_vcn_client.get_vnic.return_value = mock_vnic_response
+
+    mock_config.return_value = {
+        "key_file": "/dummy/path/key.pem",
+        "security_token_file": "/dummy/path/token",
+    }
+
+    async with Client(mcp) as client:
+        response = await client.call_tool(
+            "get_public_ip_for_database",
+            {"database_id": "ocid1.database.oc1..sampleId"},
+        )
+
+        mock_db_client.get_database.assert_called_with(
+            database_id="ocid1.database.oc1..sampleId"
+        )
+        mock_db_client.list_db_nodes.assert_called_once()
+
+        mock_vcn_client.get_vnic.assert_called_with("ocid1.vnic.oc1..sample")
+
+        result_text = response.content[0].text
+        assert result_text == "203.0.113.10"

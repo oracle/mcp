@@ -5,6 +5,7 @@ https://oss.oracle.com/licenses/upl.
 """
 
 import os
+import re
 from logging import Logger
 from typing import Annotated, Any, Optional
 
@@ -311,6 +312,102 @@ def call_create_pdb(client, details, opc_retry_token=None, opc_request_id=None):
     return map_pluggabledatabase(response.data)
 
 
+@mcp.tool(
+    description="Fetches the public IP address for a specified Database. For a Pluggable Databse, use it's container database id as input"
+)
+def get_public_ip_for_database(
+    database_id: Annotated[
+        str,
+        "The database `OCID`__. __ https://docs.cloud.oracle.com/Content/General/Concepts/identifiers.htm",
+    ],
+    region: Annotated[
+        str,
+        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+    ] = None,
+) -> Optional[str]:
+    try:
+        logger.info(f"Fetching public IP for Database: {database_id}")
+        client = get_database_client(region)
+
+        get_database_response = client.get_database(database_id=database_id)
+        database = get_database_response.data
+
+        db_system_id = database.db_system_id
+        vm_cluster_id = getattr(database, "vm_cluster_id", None)
+        compartment_id = database.compartment_id
+
+        # Prepare arguments for list_db_nodes
+        kwargs = {"compartment_id": compartment_id}
+
+        if db_system_id:
+            kwargs["db_system_id"] = db_system_id
+        elif vm_cluster_id:
+            kwargs["vm_cluster_id"] = vm_cluster_id
+        else:
+            logger.error(
+                f"Database {database_id} is not associated with a DB System or VM Cluster."
+            )
+            return None
+
+        # Get all DB nodes
+        try:
+            list_db_nodes_response = client.list_db_nodes(**kwargs)
+            db_nodes = list_db_nodes_response.data
+        except oci.exceptions.ServiceError as e:
+            logger.error(f"Service error while listing DB nodes: {e}")
+            return None
+
+        if not db_nodes:
+            return None
+
+        # Initialize Virtual Network Client
+        config = oci.config.from_file(
+            profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+        )
+        private_key = oci.signer.load_private_key_from_file(config["key_file"])
+        token_file = config["security_token_file"]
+        with open(token_file, "r") as f:
+            token = f.read()
+        signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
+
+        virtual_network_client = oci.core.VirtualNetworkClient(config, signer=signer)
+        if region:
+            virtual_network_client.base_client.set_region(region)
+
+        # Iterate through nodes to find one with a valid VNIC and Public IP
+        found_public_ip = None
+
+        for node in db_nodes:
+            # Safety Check: Skip nodes with no VNIC ID
+            if not node.vnic_id:
+                continue
+
+            try:
+                # Fetch VNIC details
+                get_vnic_response = virtual_network_client.get_vnic(node.vnic_id)
+                vnic = get_vnic_response.data
+
+                # Check for Public IP
+                if vnic.public_ip:
+                    found_public_ip = vnic.public_ip
+                    break  # Stop once we find a valid IP
+
+            except Exception:
+                continue
+
+        if found_public_ip:
+            return found_public_ip
+
+        logger.warning(
+            f"No public IP found for any active VNIC in the Database cluster."
+        )
+        return None
+
+    except Exception as e:
+        logger.error(f"Error in get_public_ip_for_db tool: {e}")
+        raise
+
+
 @mcp.tool(description="Deletes the specified pluggable database.")
 def delete_pluggable_database(
     pluggable_database_id: Annotated[
@@ -361,6 +458,7 @@ def get_pluggable_database(
         kwargs["pluggable_database_id"] = pluggable_database_id
         response: oci.response.Response = client.get_pluggable_database(**kwargs)
         return map_pluggabledatabase(response.data)
+
     except Exception as e:
         logger.error(f"Error in get_pluggable_database tool: {e}")
         raise

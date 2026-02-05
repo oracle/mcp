@@ -37,7 +37,8 @@ mcp = FastMCP(name=__project__)
 
 def get_identity_client():
     config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
     user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
     config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
@@ -108,7 +109,10 @@ def list_compartments(
 
         if include_root:
             config = oci.config.from_file(
-                profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+                file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+                profile_name=os.getenv(
+                    "OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE
+                ),
             )
             tenancy_id = os.getenv("TENANCY_ID_OVERRIDE", config["tenancy"])
             tenancy_response: oci.response.Response = client.get_compartment(
@@ -173,7 +177,8 @@ def get_current_tenancy() -> Tenancy:
         client = get_identity_client()
 
         config = oci.config.from_file(
-            profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+            file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+            profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
         )
         tenancy_id = os.getenv("TENANCY_ID_OVERRIDE", config["tenancy"])
         response: oci.response.Response = client.get_tenancy(tenancy_id)
@@ -218,7 +223,8 @@ def get_current_user() -> User:
     try:
         client = get_identity_client()
         config = oci.config.from_file(
-            profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+            file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+            profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
         )
 
         # Prefer explicit user from config if present

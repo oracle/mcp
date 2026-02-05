@@ -32,7 +32,8 @@ def get_faaas_client():
     logger.info("entering get_faaas_client")
 
     config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
 
     user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]

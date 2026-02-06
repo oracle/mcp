@@ -907,7 +907,7 @@ class Vnic(BaseModel):
             "If the VNIC belongs to a VLAN as part of the Oracle Cloud VMware Solution "
             "(instead of belonging to a subnet), the value of the `nsgIds` attribute is ignored. "
             "Instead, the VNIC belongs to the NSGs that are associated with the VLAN itself. "
-            "See Vlan.",
+            "See Vlan."
         ),
     )
     vlan_id: Optional[str] = Field(

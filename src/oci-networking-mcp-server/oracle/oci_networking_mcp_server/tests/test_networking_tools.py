@@ -497,13 +497,9 @@ class TestNetworkingTools:
         mock_client.get_vnic.return_value = mock_get_response
 
         async with Client(mcp) as client:
-            # Expect ToolError due to schema validation issue in installed package
-            with pytest.raises(ToolError):
-                call_tool_result = await client.call_tool(
-                    "get_vnic", {"vnic_id": "vnic1"}
-                )
-                result = call_tool_result.structured_content
-                assert result["id"] == "vnic1"
+            call_tool_result = await client.call_tool("get_vnic", {"vnic_id": "vnic1"})
+            result = call_tool_result.structured_content
+            assert result["id"] == "vnic1"
 
 
 class TestServer:

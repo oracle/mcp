@@ -12,8 +12,12 @@ import oci
 from fastmcp import FastMCP
 from oracle.oci_migration_mcp_server.models import (
     Migration,
+    MigrationPlan,
+    MigrationPlanSummary,
     MigrationSummary,
     map_migration,
+    map_migration_plan,
+    map_migration_plan_summary,
     map_migration_summary,
 )
 from pydantic import Field
@@ -81,7 +85,7 @@ def list_migrations(
         ]
     ] = Field(None, description="The lifecycle state of the migration to filter on"),
 ) -> list[MigrationSummary]:
-    migrations: list[Migration] = []
+    migrations: list[MigrationSummary] = []
 
     try:
         client = get_migration_client()
@@ -115,6 +119,91 @@ def list_migrations(
 
     except Exception as e:
         logger.error(f"Error in list_migrations tool: {str(e)}")
+        raise e
+
+
+@mcp.tool(
+    description="List Migration Plans for a compartment,"
+    "optionally filtered by lifecycle state or migration id",
+)
+def list_migration_plans(
+    compartment_id: str = Field(..., description="The OCID of the compartment"),
+    migration_id: Optional[str] = Field(
+        None, description="Filter by the OCID of the associated migration"
+    ),
+    limit: Optional[int] = Field(
+        None,
+        description="The maximum amount of migration plans to return. If None, there is no limit.",
+        ge=1,
+    ),
+    lifecycle_state: Optional[
+        Literal[
+            "CREATING",
+            "UPDATING",
+            "NEEDS_ATTENTION",
+            "ACTIVE",
+            "DELETING",
+            "DELETED",
+            "FAILED",
+        ]
+    ] = Field(
+        None, description="The lifecycle state of the migration plan to filter on"
+    ),
+) -> list[MigrationPlanSummary]:
+    plans: list[MigrationPlanSummary] = []
+
+    try:
+        client = get_migration_client()
+
+        response: oci.response.Response = None  # type: ignore[assignment]
+        has_next_page = True
+        next_page: Optional[str] = None
+
+        while has_next_page and (limit is None or len(plans) < limit):
+            kwargs = {
+                "compartment_id": compartment_id,
+                "page": next_page,
+                "limit": limit,
+            }
+            if lifecycle_state is not None:
+                kwargs["lifecycle_state"] = lifecycle_state
+            if migration_id is not None:
+                kwargs["migration_id"] = migration_id
+
+            response = client.list_migration_plans(**kwargs)
+            has_next_page = response.has_next_page
+            next_page = response.next_page if hasattr(response, "next_page") else None
+
+            data: list[oci.cloud_migrations.models.MigrationPlanSummary] = (
+                response.data.items
+            )
+            for d in data:
+                plans.append(map_migration_plan_summary(d))
+                if limit is not None and len(plans) >= limit:
+                    break
+
+        logger.info(f"Found {len(plans)} Migration Plans")
+        return plans
+
+    except Exception as e:
+        logger.error(f"Error in list_migration_plans tool: {str(e)}")
+        raise e
+
+
+@mcp.tool(description="Get details for a specific Migration Plan by OCID")
+def get_migration_plan(
+    migration_plan_id: str = Field(..., description="OCID of the migration plan")
+) -> MigrationPlan:
+    try:
+        client = get_migration_client()
+
+        response: oci.response.Response = client.get_migration_plan(migration_plan_id)
+        data: oci.cloud_migrations.models.MigrationPlan = response.data
+        logger.info("Found Migration Plan")
+        return map_migration_plan(data)
+
+    except Exception as e:
+        logger.error(f"Error in get_migration_plan tool: {str(e)}")
         raise e
 
 

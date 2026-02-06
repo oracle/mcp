@@ -113,8 +113,6 @@ def search_resources(
     try:
         client = get_search_client()
 
-        oci.identity.models.Compartment
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None

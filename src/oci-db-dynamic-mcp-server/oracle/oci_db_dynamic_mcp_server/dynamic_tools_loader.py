@@ -269,21 +269,17 @@ def build_registry(api_spec: Dict[str, Any]) -> Dict[str, OperationMeta]:
     return registry
 
 
-def build_tools_from_latest_spec(
-    allowed_resources: List[str] = None,
-) -> List[Dict[str, Any]]:
+def build_tools_from_latest_spec() -> List[Dict[str, Any]]:
+    """
+    Loads ALL available tools from the OCI spec.
+    """
     api_spec = load_yaml_from_public_docs()
     if not api_spec:
         return []
     registry = build_registry(api_spec)
     exposed_tools = []
 
-    allowed_set = {r.lower() for r in allowed_resources} if allowed_resources else None
-
     for op_id, meta in registry.items():
-
-        if allowed_set and meta.relatedResource.lower() not in allowed_set:
-            continue
         if meta.description.startswith("**Deprecated"):
             continue
 

@@ -1,25 +1,33 @@
-"""
-Copyright (c) 2025, Oracle and/or its affiliates.
-Licensed under the Universal Permissive License v1.0.
-"""
-
-import argparse
 import os
+import sys
 import re
-from typing import Annotated, Any, Dict, List, Optional
+import json
+import asyncio
+import logging
+import requests
+from typing import Any, Dict, List, Annotated, Optional, Tuple
+from collections import defaultdict
+from pydantic import Field
+from pathlib import Path
+
+from mcp.server.lowlevel import Server
+import mcp.types as types
+from mcp.server.stdio import stdio_server
 
 import oci
-import requests
-from fastmcp import FastMCP
 from oci.auth.signers import security_token_signer
-from pydantic import Field
 
-from . import __project__
 from .dynamic_tools_loader import build_tools_from_latest_spec
 
-mcp = FastMCP(name=__project__)
+# ---------------- LOGGING SETUP ----------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(levelname)s] %(message)s",
+    stream=sys.stderr
+)
+logger = logging.getLogger("oci-server")
 
-# ---------------- TYPE MAPPING ----------------
+# ---------------- CONFIGURATION ----------------
 TYPE_MAP = {
     "integer": "int",
     "boolean": "bool",
@@ -29,63 +37,29 @@ TYPE_MAP = {
     "string": "str",
 }
 
+CONFIG_PATH = Path.home() / ".oci_mcp_config.json"
 
-# ---------------- OCI API INVOKER ----------------
-def invoke_oci_api(method, path, params=None, payload=None, headers=None):
-    config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
-    )
+# ---------------- HELPERS ----------------
+def clean_description_text(text: str) -> str:
+    if not text: return ""
+    text = re.sub(r"(?i)^Parameters\s*$", "", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"(?m)^\s*`[^`]+`.*$", "", text)
+    return text.strip().replace('"', "'")
 
-    # Load security token
-    with open(config["security_token_file"], "r") as f:
-        security_token = f.read().strip()
+def escape_string(s: str) -> str:
+    if not s: return ""
+    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
-    # Create signer
-    signer = security_token_signer.SecurityTokenSigner(
-        token=security_token,
-        private_key=oci.signer.load_private_key_from_file(
-            config["key_file"], pass_phrase=config.get("pass_phrase")
-        ),
-    )
-
-    endpoint = f"https://database.{config['region']}.oraclecloud.com/20160918/"
-    url = endpoint.rstrip("/") + "/" + path.lstrip("/")
-
-    headers = headers or {"Content-Type": "application/json"}
-    headers["authorization"] = f"Bearer {security_token}"
-    headers["x-oci-secondary-auth"] = "true"
-    headers["User-Agent"] = "oci-database-mcp-server"
-
-    with requests.Session() as session:
-
-        req = requests.Request(
-            method=method.upper(),
-            url=url,
-            headers=headers,
-            json=payload,
-            params=params or {},
-            auth=signer,
-        )
-
-        prepared = req.prepare()
-
-        response = session.send(prepared)
-        return response.text
-
-
-# ---------------- UNFLATTENER ----------------
 def unflatten_payload(flat_input: dict, flat_schema: dict):
     root = {}
     for flat_key, meta in flat_schema.items():
-        if flat_key not in flat_input:
-            continue
-
+        if flat_key not in flat_input: continue
         value = flat_input[flat_key]
         path = meta.get("path", [])
         if not path:
             root[flat_key] = value
             continue
-
         cursor = root
         for p in path[:-1]:
             if p not in cursor or not isinstance(cursor[p], dict):
@@ -94,177 +68,181 @@ def unflatten_payload(flat_input: dict, flat_schema: dict):
         cursor[path[-1]] = value
     return root
 
+# Synchronous worker function for OCI calls
+def _invoke_oci_sync(method, path, params=None, payload=None):
+    try:
+        config = oci.config.from_file(
+            profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+        )
 
-# ---------------- Utilities ----------------
-def escape_string(s: str) -> str:
-    if not s:
-        return ""
-    return (
-        s.replace("\\", "\\\\")
-        .replace('"', '\\"')
-        .replace("\n", "\\n")
-        .replace("\r", "\\r")
-    )
+        if "security_token_file" in config:
+            with open(config["security_token_file"], "r") as f:
+                security_token = f.read().strip()
 
+            signer = security_token_signer.SecurityTokenSigner(
+                token=security_token,
+                private_key=oci.signer.load_private_key_from_file(
+                    config["key_file"], pass_phrase=config.get("pass_phrase")
+                ),
+            )
+            endpoint = f"https://database.{config['region']}.oraclecloud.com/20160918/"
 
-def clean_description_text(text: str) -> str:
-    if not text:
-        return ""
-    text = text.strip()
-    text = re.sub(r"(?i)^Parameters\s*$", "", text)
-    text = re.sub(r"<[^>]+>", "", text)
-    text = re.sub(r"(?m)^\s*`[^`]+`.*$", "", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
+            headers = {
+                "Content-Type": "application/json",
+                "authorization": f"Bearer {security_token}",
+                "User-Agent": "oci-database-mcp-server"
+            }
 
+            url = endpoint.rstrip("/") + "/" + path.lstrip("/")
 
-def build_collapsed_parent_notes(resolved_schema: dict, flat_schema: dict) -> str:
-    """
-    Identify top-level objects that were 'collapsed' during flattening
-    and append their descriptions to the tool context.
-    These usually contain high-level logic (e.g., which subtype to use).
-    """
-    if not resolved_schema or "properties" not in resolved_schema:
-        return ""
+            response = requests.request(
+                method=method.upper(), url=url, headers=headers, json=payload, params=params, auth=signer
+            )
+        else:
+            signer = oci.signer.Signer(
+                tenancy=config["tenancy"],
+                user=config["user"],
+                fingerprint=config["fingerprint"],
+                private_key_file_location=config.get("key_file"),
+                pass_phrase=config.get("pass_phrase")
+            )
+            endpoint = f"https://database.{config['region']}.oraclecloud.com/20160918/"
+            url = endpoint.rstrip("/") + "/" + path.lstrip("/")
 
-    lines = []
-    # Iterate over the ORIGINAL schema properties
-    for name, prop in resolved_schema["properties"].items():
+            response = requests.request(
+                method=method.upper(), url=url, json=payload, params=params, auth=signer
+            )
 
-        # If this top-level name is NOT in the flattened list, it means it was
-        # a container object that got flattened away.
-        if name not in flat_schema:
-            desc_raw = prop.get("description", "").strip()
-            if desc_raw:
-                desc_clean = " ".join(desc_raw.splitlines()).strip()
-                # Add it as a context note
-                lines.append(f"\n* **{name} (Context)**: {desc_clean}")
+        if response.status_code >= 400:
+            return {"error": True, "status": response.status_code, "body": response.text}
 
-    if not lines:
-        return ""
+        try:
+            return response.json()
+        except:
+            return response.text
 
-    return "\n\n### Important Context" + "".join(lines)
+    except Exception as e:
+        logger.error(f"OCI API Error: {e}")
+        return {"error": True, "system": str(e)}
 
+# Async wrapper
+async def invoke_oci_api(method, path, params=None, payload=None):
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _invoke_oci_sync, method, path, params, payload)
 
-def register_tools(allowed_resources: Optional[List[str]] = None):
+# ---------------- TOOL MANAGER ----------------
+class ToolManager:
+    def __init__(self):
+        self.registry = defaultdict(list)
+        self.compiled_functions = {}
+        self.active_resources = self._load_state()
+        self._load_and_compile()
 
-    if allowed_resources is None:
-        env_resources = os.getenv("OCI_ALLOWED_RESOURCES")
-        if env_resources:
-            allowed_resources = [r.strip() for r in env_resources.split(",")]
+    def _load_state(self) -> set:
+        if CONFIG_PATH.exists():
+            try:
+                with open(CONFIG_PATH, "r") as f:
+                    data = json.load(f)
+                    logger.info(f"Loaded config from {CONFIG_PATH}")
+                    return set(data.get("enabled", []))
+            except Exception as e:
+                logger.error(f"Failed to load config: {e}")
+                return set()
+        return set()
 
-    print(f"Loading OCI Specs (Filter: {allowed_resources})...")
-    tools = build_tools_from_latest_spec(allowed_resources=allowed_resources)
-    print(f"Loaded {len(tools)} tools.")
+    def _save_state(self):
+        try:
+            with open(CONFIG_PATH, "w") as f:
+                json.dump({"enabled": list(self.active_resources)}, f)
+            logger.info(f"Saved state to {CONFIG_PATH}")
+        except Exception as e:
+            logger.error(f"Failed to save config: {e}")
 
-    for t in tools:
-        tool_name = t.get("name")
+    def _load_and_compile(self):
+        logger.info("Fetching OCI specs...")
+        try:
+            raw_tools = build_tools_from_latest_spec()
+        except Exception as e:
+            logger.error(f"Failed to build tools: {e}")
+            return
+
+        for t in raw_tools:
+            tool_name = t["name"]
+            resource = t.get("resource", "Unknown")
+            self.registry[resource].append(t)
+
+            if resource in self.active_resources:
+                func = self._generate_function_code(t)
+                if func:
+                    self.compiled_functions[tool_name] = func
+
+        logger.info(f"Compiled {len(self.compiled_functions)} tools across {len(self.registry)} resources.")
+
+    def _generate_function_code(self, t: Dict[str, Any]):
         flat_schema = t.get("flatSchema", {})
-        resolved_schema = t.get("schema", {})
-
         param_map = {}
         required_args = []
         optional_args = []
 
-        # --- A. Process Query/Path Params ---
-        flat_top_names = {k.split("_", 1)[0] for k in flat_schema.keys()}
-
+        # 1. Params
         for p in t.get("parameters", []):
             pname = p.get("name")
-            if not pname:
-                continue
-            if p.get("in") == "body":
-                continue
-            if pname in flat_top_names:
-                continue
-            if pname in flat_schema:
-                continue
-
             sanitized = pname.replace("-", "_")
-            desc = escape_string(p.get("description", "No description").strip())
+            desc = escape_string(p.get("description", "").strip())
+            py_type = TYPE_MAP.get(p.get("type"), "str")
+            param_map[sanitized] = {"orig_name": pname, "location": p.get("in", "query")}
 
-            raw_type = p.get("type") or p.get("schema", {}).get("type", "string")
-            py_type = TYPE_MAP.get(raw_type, "str")
-
-            param_map[sanitized] = {
-                "orig_name": pname,
-                "location": p.get("in", "query"),
-                "type": py_type,
-            }
-
+            field_def = f'Annotated[{py_type}, Field(description="{desc}")]'
             if p.get("required"):
-                required_args.append(
-                    f'{sanitized}: Annotated[{py_type}, Field(description="{desc}")]'
-                )
+                required_args.append(f"{sanitized}: {field_def}")
             else:
-                optional_args.append(
-                    f'{sanitized}: Annotated[{py_type}, Field(description="{desc}")] = None'
-                )
+                optional_args.append(f"{sanitized}: {field_def} = None")
 
-        # --- B. Process Flattened Body Fields ---
+        # 2. Body
         for flat_key, meta in flat_schema.items():
             sanitized = flat_key.replace("-", "_")
-            desc_raw = (
-                meta.get("description")
-                or (meta.get("raw_schema") or {}).get("description")
-                or "Body field"
-            )
-            desc = escape_string(desc_raw.strip())
+            desc = escape_string((meta.get("description") or "Body field").strip())
+            py_type = TYPE_MAP.get(meta.get("type"), "str")
+            param_map[sanitized] = {"orig_name": flat_key, "location": "body_flat"}
 
-            raw_type = meta.get("type") or (meta.get("raw_schema") or {}).get(
-                "type", "string"
-            )
-            py_type = TYPE_MAP.get(raw_type, "str")
-
-            param_map[sanitized] = {
-                "orig_name": flat_key,
-                "location": "body_flat",
-                "type": py_type,
-            }
-
+            field_def = f'Annotated[{py_type}, Field(description="{desc}")]'
             if meta.get("required"):
-                required_args.append(
-                    f'{sanitized}: Annotated[{py_type}, Field(description="{desc}")]'
-                )
+                required_args.append(f"{sanitized}: {field_def}")
             else:
-                optional_args.append(
-                    f'{sanitized}: Annotated[{py_type}, Field(description="{desc}")] = None'
-                )
+                optional_args.append(f"{sanitized}: {field_def} = None")
 
-        # --- C. Build Docstring ---
-        top_desc = clean_description_text(t.get("description", ""))
-        context_notes = build_collapsed_parent_notes(resolved_schema, flat_schema)
-        docstring = escape_string(top_desc + context_notes)
-
-        # --- D. Generate Function Code  ---
         args_sig = ", ".join(required_args + optional_args)
+        docstring = clean_description_text(t.get("description", ""))
 
+        # Function Template
         func_code = f'''
-async def {tool_name}({args_sig}):
+async def {t['name']}({args_sig}):
     """
     {docstring}
     """
-    from oracle.oci_db_dynamic_mcp_server.server import invoke_oci_api, unflatten_payload
     args = locals()
     params = {{}}
     flat_body = {{}}
     path = "{t.get('path', '')}"
+    
     for sanitized, info in param_map.items():
         val = args.get(sanitized)
         if val is None: continue
-        # Remove 'args' from locals if it exists to avoid polluting param map
         if sanitized == "args": continue
 
         if info["location"] == "body_flat":
             flat_body[info["orig_name"]] = val
         else:
-            placeholder = "{{" + info['orig_name'] + "}}"
-            if placeholder in path:
-                path = path.replace(placeholder, str(val))
+            placeholder = "{{{{{{{{ + info['orig_name'] + "}}}}}}}}" 
+            placeholder_search = "{{" + info['orig_name'] + "}}"
+            if placeholder_search in path:
+                path = path.replace(placeholder_search, str(val))
             else:
                 params[info['orig_name']] = val
+
     payload = unflatten_payload(flat_body, flat_schema)
-    return invoke_oci_api(
+    
+    return await invoke_oci_api(
         method="{t.get('method', 'GET')}", 
         path=path, 
         params=params, 
@@ -272,31 +250,194 @@ async def {tool_name}({args_sig}):
     )
 '''
         exec_globals = {
-            "Annotated": Annotated,
-            "Field": Field,
-            "List": List,
-            "Dict": Dict,
-            "Any": Any,
-            "Optional": Optional,
-            "param_map": param_map,
-            "flat_schema": flat_schema,
+            "Annotated": Annotated, "Field": Field,
+            "List": List, "Dict": Dict, "Optional": Optional,
+            "param_map": param_map, "flat_schema": flat_schema,
+            "invoke_oci_api": invoke_oci_api, "unflatten_payload": unflatten_payload
         }
 
         try:
             exec(func_code, exec_globals)
-            tool_func = exec_globals[tool_name]
-            mcp.tool(tool_func)
+            return exec_globals[t['name']]
         except Exception as e:
-            print(f"Failed to register tool {tool_name}: {e}")
+            logger.warning(f"Failed to compile {t['name']}: {e}")
+            return None
 
+    def tool_store_logic(self, enable: List[str] = None, disable: List[str] = None, clear: bool = False) -> Tuple[str, bool]:
+        enable = enable or []
+        disable = disable or []
+
+        resource_map = {k.lower(): k for k in self.registry.keys()}
+        status_msgs = []
+        state_changed = False
+
+        if clear:
+            if self.active_resources:
+                self.active_resources.clear()
+                self.compiled_functions.clear()
+                state_changed = True
+                status_msgs.append("Cleared all active resources.")
+
+        for r in disable:
+            k = resource_map.get(str(r).lower())
+            if k and k in self.active_resources:
+                self.active_resources.remove(k)
+                for t in self.registry[k]:
+                    if t["name"] in self.compiled_functions:
+                        del self.compiled_functions[t["name"]]
+                state_changed = True
+                status_msgs.append(f"Disabled: {k}")
+
+        for r in enable:
+            k = resource_map.get(str(r).lower())
+            if k and k not in self.active_resources:
+                self.active_resources.add(k)
+                for t in self.registry[k]:
+                    func = self._generate_function_code(t)
+                    if func:
+                        self.compiled_functions[t["name"]] = func
+                state_changed = True
+                status_msgs.append(f"Enabled: {k}")
+
+        if state_changed:
+            self._save_state()
+            status_msgs.append("Configuration saved.")
+        else:
+            status_msgs.append("No changes made.")
+
+        current_list = f"\nCurrent Active Resources: {sorted(list(self.active_resources))}"
+        return ( "\n".join(status_msgs) + current_list, state_changed )
+
+    def get_doc(self):
+        lines = []
+        for r, tools in sorted(self.registry.items()):
+            tool_names = ", ".join(t["name"] for t in tools)
+            lines.append(f"{{resourceName: \"{r}\", tools: \"{tool_names}\"}}")
+        return "\n".join(lines)
+
+# ---------------- SERVER IMPLEMENTATION ----------------
+
+manager = ToolManager()
+server = Server("oci-dynamic-server")
+
+@server.list_tools()
+async def handle_list_tools() -> list[types.Tool]:
+    tools = []
+
+    tools.append(types.Tool(
+        name="tool_store",
+        description=f"Manage OCI tools availability.\nUse this to Enable, Disable or Clear resources.\n\nAVAILABLE RESOURCES:\n\n{manager.get_doc()}",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "enable": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of EXACT resource names to ENABLE (e.g. ['dbSystems', 'vmClusters'])"
+                },
+                "disable": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of resource names to DISABLE"
+                },
+                "clear": {
+                    "type": "boolean",
+                    "description": "If true, removes ALL currently enabled resources before applying new changes."
+                }
+            }
+        }
+    ))
+
+    def to_json_type(py_type):
+        mapping = {
+            "str": "string", "int": "integer", "float": "number",
+            "bool": "boolean", "list": "array", "dict": "object"
+        }
+        return mapping.get(str(py_type).lower(), "string")
+
+    for resource in manager.active_resources:
+        for t in manager.registry.get(resource, []):
+            properties = {}
+            required_fields = []
+
+            for p in t.get("parameters", []):
+                sanitized = p.get("name", "").replace("-", "_")
+                if not sanitized: continue
+                properties[sanitized] = {
+                    "type": to_json_type(p.get("type")),
+                    "description": (p.get("description") or "")[:200]
+                }
+                if p.get("required"): required_fields.append(sanitized)
+
+            for flat_key, meta in t.get("flatSchema", {}).items():
+                sanitized = flat_key.replace("-", "_")
+                raw_type = meta.get("type")
+                if not raw_type and meta.get("raw_schema"):
+                    raw_type = meta["raw_schema"].get("type")
+
+                properties[sanitized] = {
+                    "type": to_json_type(raw_type),
+                    "description": (meta.get("description") or "Body param")[:200]
+                }
+                if meta.get("required"): required_fields.append(sanitized)
+
+            tools.append(types.Tool(
+                name=t["name"],
+                description=(t.get("description") or "")[:1024],
+                inputSchema={
+                    "type": "object",
+                    "properties": properties,
+                    "required": required_fields
+                }
+            ))
+
+    return tools
+
+@server.call_tool()
+async def handle_call_tool(name: str, arguments: dict | None) -> list[types.TextContent | types.ImageContent | types.EmbeddedResource]:
+    arguments = arguments or {}
+
+    try:
+        if name == "tool_store":
+            (result, isChanged) = manager.tool_store_logic(
+                enable=arguments.get("enable"),
+                disable=arguments.get("disable"),
+                clear=arguments.get("clear", False)
+            )
+
+            # NOTE: We still send this notification. Even if Cline ignores it,
+            # other clients might use it to auto-refresh.
+            if isChanged:
+                await server.request_context.session.send_tool_list_changed()
+                result += "\n\nChanges saved! Please manually REFRESH the tool list in your client to see the new tools."
+
+            return [types.TextContent(type="text", text=result)]
+
+        func = manager.compiled_functions.get(name)
+        if func:
+            res = await func(**arguments)
+            return [types.TextContent(type="text", text=json.dumps(res, indent=2))]
+
+        raise ValueError(f"Tool {name} not found")
+
+    except Exception as e:
+        logger.error(f"Error executing {name}: {e}")
+        return [types.TextContent(type="text", text=f"Error: {str(e)}")]
+
+# ---------------- ENTRY POINT ----------------
+
+async def run_server():
+    options = server.create_initialization_options()
+    options.capabilities.tools = types.ToolsCapability(listChanged=True)
+
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(read_stream, write_stream, options)
 
 def main():
-    register_tools()
-    print("Server running...")
-    mcp.run(transport="stdio")
-
+    try:
+        asyncio.run(run_server())
+    except KeyboardInterrupt:
+        pass
 
 if __name__ == "__main__":
     main()
-else:
-    register_tools()

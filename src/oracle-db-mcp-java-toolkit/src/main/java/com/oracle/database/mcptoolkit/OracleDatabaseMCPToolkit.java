@@ -59,8 +59,6 @@ public class OracleDatabaseMCPToolkit {
   public static void main(String[] args) {
     installExternalExtensionsFromDir();
 
-    McpSyncServer server;
-
     switch (LoadedConstants.TRANSPORT_KIND) {
       case "http" -> {
         serverInstance = startHttpServer();
@@ -81,15 +79,7 @@ public class OracleDatabaseMCPToolkit {
     }
     Utils.addSyncToolSpecifications(serverInstance, config);
 
-//    if (LoadedConstants.CONFIG_FILE != null) {
-//      Thread watcher = new Thread(() -> {
-//        watchConfigFile(LoadedConstants.CONFIG_FILE);
-//      }, "config-file-watcher");
-//      watcher.setDaemon(true);
-//      watcher.start();
-//    }
-
-    Thread pollingThread = new Thread(() -> pollConfigFile(LoadedConstants.CONFIG_FILE), "config-file-poller");
+    Thread pollingThread = new Thread(() -> pollConfigFile(), "config-file-poller");
     pollingThread.setDaemon(true);
     pollingThread.start();
   }
@@ -151,7 +141,7 @@ public class OracleDatabaseMCPToolkit {
       if (LoadedConstants.HTTPS_PORT == null || LoadedConstants.KEYSTORE_PATH == null || LoadedConstants.KEYSTORE_PASSWORD == null)
         throw new RuntimeException("SSL setup failed: HTTPS port, Keystore path or password not specified");
 
-      enableHttps(tomcat, LoadedConstants.KEYSTORE_PATH, LoadedConstants.KEYSTORE_PASSWORD);
+      enableHttps(tomcat);
 
       tomcat.start();
 
@@ -166,11 +156,9 @@ public class OracleDatabaseMCPToolkit {
    * Configures and enables HTTPS on the provided Tomcat server using the specified keystore.
    *
    * @param tomcat          the Tomcat server instance to configure
-   * @param keystorePath    the file path to the PKCS12 keystore containing the SSL certificate
-   * @param keystorePassword the password for the keystore
    * @throws RuntimeException if the HTTPS connector or SSL configuration fails
    */
-  private static void enableHttps(Tomcat tomcat, String keystorePath, String keystorePassword) {
+  private static void enableHttps(Tomcat tomcat) {
     try {
       // Create HTTPS connector
       Connector https = new Connector("org.apache.coyote.http11.Http11NioProtocol");
@@ -188,8 +176,8 @@ public class OracleDatabaseMCPToolkit {
           SSLHostConfigCertificate.Type.RSA
       );
 
-      cert.setCertificateKeystoreFile(keystorePath);
-      cert.setCertificateKeystorePassword(keystorePassword);
+      cert.setCertificateKeystoreFile(LoadedConstants.KEYSTORE_PATH);
+      cert.setCertificateKeystorePassword(LoadedConstants.KEYSTORE_PASSWORD);
       cert.setCertificateKeystoreType("PKCS12");
 
       // Attach certificate to SSL config
@@ -217,32 +205,6 @@ public class OracleDatabaseMCPToolkit {
     return serverInstance;
   }
 
-
-  private static void watchConfigFile(String filePath) {
-    Path configPath = Paths.get(filePath);
-    try (WatchService watcher = FileSystems.getDefault().newWatchService()) {
-      Path dir = configPath.getParent();
-      if (dir == null) dir = Paths.get(".");
-      dir.register(watcher, StandardWatchEventKinds.ENTRY_MODIFY);
-
-      while (true) {
-        WatchKey key = watcher.take();  // block until events
-        for (WatchEvent<?> event : key.pollEvents()) {
-          Path changed = ((WatchEvent<Path>)event).context();
-          LOG.info(()->"[DEBUG] Watch event: " + event.kind() + ", file: " + changed);
-          LOG.info(()->"[DEBUG] Looking for file: " + configPath.getFileName());
-          if (changed.endsWith(configPath.getFileName())) {
-            LOG.info(()->"[DEBUG] Detected relevant config file event: " + event.kind());
-            reloadConfigAndResetTools();
-          }
-        }
-        key.reset();
-      }
-    } catch (Exception e) {
-      System.err.println("[oracle-db-mcp-toolkit] Config file watcher failed: " + e);
-    }
-  }
-
   private static void reloadConfigAndResetTools() {
     try {
       LOG.info(()->"[DEBUG] Reloading config...");
@@ -257,9 +219,9 @@ public class OracleDatabaseMCPToolkit {
     }
   }
 
-  // For now, we rely on this instead of the nio watcher logic (for container sake)
-  private static void pollConfigFile(String filePath) {
-    File configFile = new File(filePath);
+  // For now, we rely on this instead of the nio watcher logic (for container’s sake)
+  private static void pollConfigFile() {
+    File configFile = new File(LoadedConstants.CONFIG_FILE);
     long lastModified = configFile.lastModified();
     while (true) {
       long nowModified = configFile.lastModified();

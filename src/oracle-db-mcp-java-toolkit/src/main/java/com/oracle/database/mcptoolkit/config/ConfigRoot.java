@@ -19,8 +19,10 @@ public class ConfigRoot {
   /**
    * Optional named toolsets allowing users to group custom tools and enable them with -Dtools.
    * Example YAML:
+   * <pre>
    * toolsets:
    *   reporting: [top_customers, sales_by_region]
+   * </pre>
    */
   public Map<String, List<String>> toolsets;
 

@@ -26,3 +26,6 @@ venv.bak/
 
 .coverage*
 htmlcov/
+
+# Maven
+**/target/

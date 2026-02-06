@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-usage-mcp-server"
-version = "1.1.0"
+version = "1.1.2"
 description = "OCI Usage MCP server"
 readme = "README.md"
 license = "UPL-1.0"
@@ -10,7 +10,7 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "fastmcp==2.13.0",
+    "fastmcp==2.14.2",
     "oci==2.160.0",
 ]
 
@@ -48,4 +48,4 @@ omit = [
 
 [tool.coverage.report]
 precision = 2
-fail_under = 58.81
+fail_under = 90

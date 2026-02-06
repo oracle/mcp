@@ -3,5 +3,4 @@ pytest
 pytest-asyncio
 pytest-cov
 tox
-tomlq
 uv

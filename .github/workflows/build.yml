@@ -28,8 +28,8 @@ jobs:
       - name: Update __init__.py
         working-directory: src/${{ matrix.directory }}
         run: |
-          name=$(uv run tomlq -r '.project.name' pyproject.toml)
-          version=$(uv run tomlq -r '.project.version' pyproject.toml)
+          name=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['name'])")
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
           if [ -d oracle/*_mcp_server ]; then
             init_py_file=oracle/*_mcp_server/__init__.py
             echo "\"\"\"\nCopyright (c) 2025, Oracle and/or its affiliates.\nLicensed under the Universal Permissive License v1.0 as shown at\nhttps://oss.oracle.com/licenses/upl.\n\"\"\"\n" > $$init_py_file; \
@@ -75,7 +75,7 @@ jobs:
       - name: Get directories
         id: get-directories
         run: |
-          directories=$(ls src | grep -v dbtools-mcp-server | grep -v mysql-mcp-server | grep -v oci-pricing-mcp-server | grep -v oracle-db-doc-mcp-server | jq -R -s -c 'split("\n")[:-1]')
+          directories=$(ls src | grep -v dbtools-mcp-server | grep -v mysql-mcp-server | grep -v oci-pricing-mcp-server | grep -v oracle-db-doc-mcp-server | grep -v oracle-db-mcp-java-toolkit | jq -R -s -c 'split("\n")[:-1]')
           echo "directories=$directories" >> $GITHUB_OUTPUT
 
   combined-coverage:

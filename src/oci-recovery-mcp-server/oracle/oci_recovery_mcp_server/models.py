@@ -1864,9 +1864,6 @@ class BackupSummary(OCIBaseModel):
     type: Optional[str] = Field(None, description="Backup type.")
     time_started: Optional[datetime] = Field(None, description="Start time (RFC3339).")
     time_ended: Optional[datetime] = Field(None, description="End time (RFC3339).")
-    time_created: Optional[datetime] = Field(
-        None, description="Creation time (RFC3339)."
-    )
     retention_period_in_days: Optional[float] = Field(
         None,
         alias="retention-period-in-days",
@@ -1920,9 +1917,6 @@ def map_backup_summary(b) -> BackupSummary | None:
         time_ended=getattr(b, "time_ended", None)
         or data.get("time_ended")
         or data.get("timeEnded"),
-        time_created=getattr(b, "time_created", None)
-        or data.get("time_created")
-        or data.get("timeCreated"),
         database_size_in_gbs=getattr(b, "database_size_in_gbs", None)
         or data.get("database_size_in_gbs")
         or data.get("databaseSizeInGBs")
@@ -1952,9 +1946,6 @@ class Backup(OCIBaseModel):
     type: Optional[str] = Field(None, description="Backup type.")
     time_started: Optional[datetime] = Field(None, description="Start time (RFC3339).")
     time_ended: Optional[datetime] = Field(None, description="End time (RFC3339).")
-    time_created: Optional[datetime] = Field(
-        None, description="Creation time (RFC3339)."
-    )
     database_version: Optional[str] = Field(
         None, description="Database version at backup time."
     )
@@ -2012,9 +2003,6 @@ def map_backup(b) -> Backup | None:
         time_ended=getattr(b, "time_ended", None)
         or data.get("time_ended")
         or data.get("timeEnded"),
-        time_created=getattr(b, "time_created", None)
-        or data.get("time_created")
-        or data.get("timeCreated"),
         database_size_in_gbs=getattr(b, "database_size_in_gbs", None)
         or data.get("database_size_in_gbs")
         or data.get("databaseSizeInGBs")

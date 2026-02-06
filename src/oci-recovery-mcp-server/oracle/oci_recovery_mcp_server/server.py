@@ -357,7 +357,13 @@ def get_compartment_by_name(compartment_name: str):
         "the match as JSON or a clear error if none is found."
     )
 )
-def get_compartment_by_name_tool(name: str) -> str:
+def get_compartment_by_name_tool(
+    name: Annotated[
+        str,
+        "Compartment display name to search for (case-insensitive). Searches all "
+        "accessible ACTIVE compartments in the tenancy, including the root tenancy."
+    ]
+) -> str:
     """Return a compartment matching the provided name"""
     compartment = get_compartment_by_name(name)
     if compartment:
@@ -1470,9 +1476,15 @@ def get_recovery_service_subnet(
     )
 )
 def get_recovery_service_metrics(
-    compartment_id: str,
-    start_time: str,
-    end_time: str,
+    compartment_id: Annotated[str, "The OCID of the compartment to query metrics for."],
+    start_time: Annotated[
+        str,
+        "Start time for the metric query. Provide a RFC3339/ISO-8601 timestamp."
+    ],
+    end_time: Annotated[
+        str,
+        "End time for the metric query. Provide a RFC3339/ISO-8601 timestamp."
+    ],
     metricName: Annotated[
         str,
         "The metric that the user wants to fetch. Currently we only support:"

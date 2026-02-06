@@ -771,7 +771,10 @@ class TestGetClient:
         result = server.get_identity_client()
 
         # Assert calls
-        mock_from_file.assert_called_once_with(profile_name="MYPROFILE")
+        mock_from_file.assert_called_once_with(
+            file_location=oci.config.DEFAULT_LOCATION,
+            profile_name="MYPROFILE",
+        )
         mock_open_file.assert_called_once_with("/abs/path/to/token", "r")
         mock_security_token_signer.assert_called_once_with(
             "SECURITY_TOKEN", private_key_obj
@@ -817,7 +820,10 @@ class TestGetClient:
         srv_client = server.get_identity_client()
 
         # Assert: profile defaulted
-        mock_from_file.assert_called_once_with(profile_name=oci.config.DEFAULT_PROFILE)
+        mock_from_file.assert_called_once_with(
+            file_location=oci.config.DEFAULT_LOCATION,
+            profile_name=oci.config.DEFAULT_PROFILE,
+        )
         # Token file opened and read
         mock_open_file.assert_called_once_with("/tkn", "r")
         mock_security_token_signer.assert_called_once()

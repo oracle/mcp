@@ -1,0 +1,13 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/rest/v1/metadata-catalog/companies"
+  },
+  "response": {
+    "status": 200,
+    "bodyFileName": "company-department-swagger.json",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  }
+}

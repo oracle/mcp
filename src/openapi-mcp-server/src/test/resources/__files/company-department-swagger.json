@@ -1,0 +1,232 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Company API",
+    "description": "A simple API to manage companies, departments, and users.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080",
+      "description": "Mock server"
+    }
+  ],
+  "paths": {
+    "/rest/v1/companies": {
+      "get": {
+        "summary": "Get all companies",
+        "description": "Retrieves a list of all companies.",
+        "operationId": "getCompanies",
+        "responses": {
+          "200": {
+            "description": "A list of companies.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CompanySummary"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new company",
+        "description": "Creates a new company and returns the created company object.",
+        "operationId": "createCompany",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanyCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Company created successfully.",
+            "headers": {
+              "Location": {
+                "description": "The URL of the newly created company.",
+                "schema": {
+                  "type": "string",
+                  "example": "/rest/v1/companies/123"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Company"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request payload."
+          }
+        }
+      }
+    },
+    "/rest/v1/companies/{companyId}": {
+      "get": {
+        "summary": "Get a company by ID",
+        "description": "Retrieves a single company by its ID.",
+        "operationId": "getCompanyById",
+        "parameters": [
+          {
+            "name": "companyId",
+            "in": "path",
+            "required": true,
+            "description": "The ID of the company to retrieve.",
+            "schema": {
+              "type": "integer",
+              "example": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The company object.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Company"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Company not found."
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update a company",
+        "description": "Partially updates an existing company. Only the fields provided in the request body will be updated.",
+        "operationId": "updateCompany",
+        "parameters": [
+          {
+            "name": "companyId",
+            "in": "path",
+            "required": true,
+            "description": "The ID of the company to update.",
+            "schema": {
+              "type": "integer",
+              "example": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompanyUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Company updated successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Company"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request payload."
+          },
+          "404": {
+            "description": "Company not found."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CompanySummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "Acme Corp"
+          }
+        }
+      },
+      "Company": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 123
+          },
+          "name": {
+            "type": "string",
+            "example": "New Company"
+          },
+          "industry": {
+            "type": "string",
+            "example": "Technology"
+          },
+          "address": {
+            "type": "string",
+            "example": "123 Test Street"
+          }
+        }
+      },
+      "CompanyCreateRequest": {
+        "type": "object",
+        "required": [
+          "name",
+          "industry"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "New Company"
+          },
+          "industry": {
+            "type": "string",
+            "example": "Finance"
+          },
+          "address": {
+            "type": "string",
+            "example": "123 Test Street"
+          }
+        }
+      },
+      "CompanyUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Updated Company Name"
+          },
+          "industry": {
+            "type": "string",
+            "example": "Manufacturing"
+          },
+          "address": {
+            "type": "string",
+            "example": "456 New Avenue"
+          }
+        }
+      }
+    }
+  }
+}

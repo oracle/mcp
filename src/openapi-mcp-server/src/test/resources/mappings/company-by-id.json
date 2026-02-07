@@ -1,0 +1,18 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPattern": "/rest/v1/companies/1",
+    "headers": {
+      "Authorization": {
+        "equalTo": "Bearer test-token"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "bodyFileName": "company-1-response.json",
+    "headers": {
+      "Content-Type": "application/json"
+    }
+  }
+}

@@ -1,25 +1,5 @@
 {
   "mcpServers": {
-    "oracle-oci-api-mcp-server": {
-      "disabled": false,
-      "timeout": 60,
-      "type": "stdio",
-      "command": "uv",
-      "args": [
-        "run",
-        "oracle.oci-api-mcp-server"
-      ],
-      "env": {
-        "OCI_CONFIG_FILE": "${env:OCI_CONFIG_FILE}",
-        "HTTP_PROXY": "http://127.0.0.1:5000",
-        "HTTPS_PROXY": "http://127.0.0.1:5000",
-        "OCI_SDK_CERT_BUNDLE": "False",
-        "PYTHONHTTPSVERIFY": "0",
-        "OCI_SKIP_SSL_VERIFICATION": "True",
-        "REQUESTS_CA_BUNDLE": "",
-        "CURL_CA_BUNDLE": ""
-      }
-    },
     "oracle-oci-cloud-guard-mcp-server": {
       "disabled": false,
       "timeout": 60,
@@ -48,6 +28,26 @@
       "args": [
         "run",
         "oracle.oci-compute-mcp-server"
+      ],
+      "env": {
+        "OCI_CONFIG_FILE": "${env:OCI_CONFIG_FILE}",
+        "HTTP_PROXY": "http://127.0.0.1:5000",
+        "HTTPS_PROXY": "http://127.0.0.1:5000",
+        "OCI_SDK_CERT_BUNDLE": "False",
+        "PYTHONHTTPSVERIFY": "0",
+        "OCI_SKIP_SSL_VERIFICATION": "True",
+        "REQUESTS_CA_BUNDLE": "",
+        "CURL_CA_BUNDLE": ""
+      }
+    },
+    "oracle-oci-compute-instance-agent-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "oracle.oci-compute-instance-agent-mcp-server"
       ],
       "env": {
         "OCI_CONFIG_FILE": "${env:OCI_CONFIG_FILE}",
@@ -142,6 +142,70 @@
         "CURL_CA_BUNDLE": ""
       }
     },
+    "oracle-oci-monitoring-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "oracle.oci-monitoring-mcp-server"
+      ],
+      "env": {
+        "OCI_CONFIG_FILE": "${env:OCI_CONFIG_FILE}",
+        "HTTP_PROXY": "http://127.0.0.1:5000",
+        "HTTPS_PROXY": "http://127.0.0.1:5000",
+        "OCI_SDK_CERT_BUNDLE": "False",
+        "PYTHONHTTPSVERIFY": "0",
+        "OCI_SKIP_SSL_VERIFICATION": "True",
+        "REQUESTS_CA_BUNDLE": "",
+        "CURL_CA_BUNDLE": ""
+      }
+    },
+    "oracle-oci-networking-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "oracle.oci-networking-mcp-server"
+      ],
+      "env": {
+        "OCI_CONFIG_FILE": "${env:OCI_CONFIG_FILE}",
+        "HTTP_PROXY": "http://127.0.0.1:5000",
+        "HTTPS_PROXY": "http://127.0.0.1:5000",
+        "OCI_SDK_CERT_BUNDLE": "False",
+        "PYTHONHTTPSVERIFY": "0",
+        "OCI_SKIP_SSL_VERIFICATION": "True",
+        "REQUESTS_CA_BUNDLE": "",
+        "CURL_CA_BUNDLE": ""
+      }
+    },
+    "oracle-oci-network-load-balancer-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "-c",
+        "import sys; sys.path.insert(0, 'mocks'); import sitecustomize; from oracle.oci_network_load_balancer_mcp_server.server import main; main()"
+      ],
+      "env": {
+        "PYTHONPATH": "../../../src/oci-network-load-balancer-mcp-server:mocks",
+        "PYTHONNOUSERSITE": "0",
+        "OCI_CONFIG_FILE": "${env:OCI_CONFIG_FILE}",
+        "HTTP_PROXY": "http://127.0.0.1:5000",
+        "HTTPS_PROXY": "http://127.0.0.1:5000",
+        "OCI_SDK_CERT_BUNDLE": "False",
+        "PYTHONHTTPSVERIFY": "0",
+        "OCI_SKIP_SSL_VERIFICATION": "True",
+        "REQUESTS_CA_BUNDLE": "",
+        "CURL_CA_BUNDLE": ""
+      }
+    },
     "oracle-oci-object-storage-mcp-server": {
       "disabled": false,
       "timeout": 60,
@@ -149,9 +213,81 @@
       "command": "uv",
       "args": [
         "run",
-        "oracle.oci-object-storage-mcp-server"
+        "python",
+        "-c",
+        "import sys; sys.path.insert(0, 'mocks'); import sitecustomize; from oracle.oci_object_storage_mcp_server.server import main; main()"
       ],
       "env": {
+        "PYTHONPATH": "../../../src/oci-object-storage-mcp-server:mocks",
+        "PYTHONNOUSERSITE": "0",
+        "OCI_CONFIG_FILE": "${env:OCI_CONFIG_FILE}",
+        "HTTP_PROXY": "http://127.0.0.1:5000",
+        "HTTPS_PROXY": "http://127.0.0.1:5000",
+        "OCI_SDK_CERT_BUNDLE": "False",
+        "PYTHONHTTPSVERIFY": "0",
+        "OCI_SKIP_SSL_VERIFICATION": "True",
+        "REQUESTS_CA_BUNDLE": "",
+        "CURL_CA_BUNDLE": ""
+      }
+    },
+    "oracle-oci-registry-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "oracle.oci-registry-mcp-server"
+      ],
+      "env": {
+        "OCI_CONFIG_FILE": "${env:OCI_CONFIG_FILE}",
+        "HTTP_PROXY": "http://127.0.0.1:5000",
+        "HTTPS_PROXY": "http://127.0.0.1:5000",
+        "OCI_SDK_CERT_BUNDLE": "False",
+        "PYTHONHTTPSVERIFY": "0",
+        "OCI_SKIP_SSL_VERIFICATION": "True",
+        "REQUESTS_CA_BUNDLE": "",
+        "CURL_CA_BUNDLE": ""
+      }
+    },
+    "oracle-oci-resource-search-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "-c",
+        "import sys; sys.path.insert(0, 'mocks'); import sitecustomize; from oracle.oci_resource_search_mcp_server.server import main; main()"
+      ],
+      "env": {
+        "PYTHONPATH": "../../../src/oci-resource-search-mcp-server:mocks",
+        "PYTHONNOUSERSITE": "0",
+        "OCI_CONFIG_FILE": "${env:OCI_CONFIG_FILE}",
+        "HTTP_PROXY": "http://127.0.0.1:5000",
+        "HTTPS_PROXY": "http://127.0.0.1:5000",
+        "OCI_SDK_CERT_BUNDLE": "False",
+        "PYTHONHTTPSVERIFY": "0",
+        "OCI_SKIP_SSL_VERIFICATION": "True",
+        "REQUESTS_CA_BUNDLE": "",
+        "CURL_CA_BUNDLE": ""
+      }
+    },
+    "oracle-oci-usage-mcp-server": {
+      "disabled": false,
+      "timeout": 60,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "-c",
+        "import sys; sys.path.insert(0, 'mocks'); import sitecustomize; from oracle.oci_usage_mcp_server.server import main; main()"
+      ],
+      "env": {
+        "PYTHONPATH": "../../../src/oci-usage-mcp-server:mocks",
+        "PYTHONNOUSERSITE": "0",
         "OCI_CONFIG_FILE": "${env:OCI_CONFIG_FILE}",
         "HTTP_PROXY": "http://127.0.0.1:5000",
         "HTTPS_PROXY": "http://127.0.0.1:5000",

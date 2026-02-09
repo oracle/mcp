@@ -7,6 +7,7 @@
 
 package com.oracle.database.mcptoolkit.config;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -15,6 +16,15 @@ import java.util.Map;
 public class ConfigRoot {
   public Map<String, DataSourceConfig> dataSources;
   public Map<String, ToolConfig> tools;
+  /**
+   * Optional named toolsets allowing users to group custom tools and enable them with -Dtools.
+   * Example YAML:
+   * <pre>
+   * toolsets:
+   *   reporting: [top_customers, sales_by_region]
+   * </pre>
+   */
+  public Map<String, List<String>> toolsets;
 
   /**
    * Substitutes environment variables in the source and tool configurations.

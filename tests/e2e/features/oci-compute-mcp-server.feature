@@ -7,7 +7,7 @@ Feature: OCI Compute MCP Server
   Scenario: List the compute tools available in the agent
     Given the MCP server is running with OCI tools
     And the ollama model with the tools is properly working
-    When I send a request with the prompt "What compute tools do you have"
+    When I send a request with the prompt "What compute mcp tools do you have"
     Then the response should contain a list of compute tools available
 
   Scenario: List the compute instances

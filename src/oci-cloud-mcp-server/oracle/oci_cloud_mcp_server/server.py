@@ -11,6 +11,9 @@ import re
 from importlib import import_module
 from logging import Logger
 from typing import Annotated, Any, Callable, Dict, List, Optional, Tuple
+import inspect
+import re
+import importlib
 
 import oci
 from fastmcp import FastMCP
@@ -27,6 +30,7 @@ mcp = FastMCP(
     instructions="""
         This server provides tools to interact directly with the OCI Python SDK,
         invoking API clients and operations in-process (no CLI).
+        - get_oci_api_payload_schema: This MUST be called prior to each invoke_oci_api call. Do NOT assume that you already know the payload structure for invoke_oci_api.
         - invoke_oci_api: Call any OCI SDK client operation by FQN and method.
         - list_client_operations: Discover available operations on a client.
     """,
@@ -521,7 +525,188 @@ def _call_with_pagination_if_applicable(
     return data, opc_request_id
 
 
-@mcp.tool(description="Invoke an OCI Python SDK API via client and operation name.")
+def _model_to_jsonschema(model_class, seen=None, models_module=None):
+    """Recursively convert an OCI SDK model (class) into a full JSON Schema object, with recursion tracking and required/optional detection."""
+    model_instance = model_class()
+    if seen is None:
+        seen = {}
+
+    key = f"{getattr(model_instance, '__module__', '')}.{getattr(model_instance, '__name__', str(model_instance))}"
+
+    # Return already-built schema if we've seen this model before (cycle handling)
+    if key in seen:
+        return seen[key]
+
+    # Start building the schema and immediately add to seen to break recursion
+    out = {"type": "object", "properties": {}}
+    seen[key] = out
+
+    props = {}
+    required = []
+    types = getattr(model_instance, "swagger_types", {})
+    attrs = getattr(model_instance, "attribute_map", {})
+
+    for attr, type in types.items():
+        prop_name = attrs.get(attr, attr)
+        sch = _type_to_jsonschema(type, seen, models_module)
+        props[prop_name] = sch
+
+        # Check for required-ness by parsing the property docstring
+        prop_obj = getattr(model_class, attr, None)
+        doc = inspect.getdoc(prop_obj) if prop_obj is not None else ""
+        first_line = doc.splitlines()[0] if doc else ""
+        if "**[Required]**" in first_line:
+            required.append(prop_name)
+
+    out.update({
+        "properties": props,
+        "title": model_class.__name__,
+        "description": (getattr(model_instance, "__doc__", "") or "").strip()
+    })
+    if required:
+        out["required"] = required
+
+    # At this point, seen[key] refers to the fully expanded schema for this type
+    return out
+
+
+def _type_to_jsonschema(type, seen=None, module=None):
+    """Convert a type name (str) into a proper JSON schema recursively"""
+    type = str(type)
+    primitives = {
+        "str": {"type": "string"},
+        "int": {"type": "integer"},
+        "bool": {"type": "boolean"},
+        "float": {"type": "number"},
+        "obj": {"type": "object"},
+        "object": {"type": "object"},
+        "dict": {"type": "object"},
+    }
+    if type in primitives:
+        return primitives[type]
+    if type.startswith("list["):
+        item_type = type[5:-1]
+        return {"type": "array", "items": _type_to_jsonschema(item_type, seen, module)}
+    if type.startswith("dict(str,"):
+        # We account for dicts only with string keys here because they are the only
+        # kinds of dicts accepted through JSON
+        item_type = type[len("dict(str,"):-1].strip()
+        return {"type": "object", "additionalProperties": _type_to_jsonschema(item_type, seen, module)}
+
+    try:
+        if "." in type:
+            mod_name, cls_name = type.rsplit(".", 1)
+            models_modules = importlib.import_module(mod_name)
+        else:
+            cls_name = type
+            models_modules = module
+
+        model_class = getattr(models_modules, cls_name)
+        if not model_class:
+            raise ImportError(f"Cannot resolve class {type} in provided models_modules")
+        
+        model_instance = model_class()
+        if hasattr(model_instance, "swagger_types"):
+            return _model_to_jsonschema(model_class, seen, models_modules)
+    except Exception as e:
+        pass
+
+    return {"type": "object", "description": type}
+
+
+@mcp.tool(
+    description="Gets the parameter schema for an OCI API operation (recursively expands models)"
+)
+def get_oci_api_payload_schema(
+    client_fqn: Annotated[
+        str, "Fully-qualified client class, e.g. 'oci.core.ComputeClient'"
+    ],
+    operation: Annotated[
+        str, "Client method/operation name, e.g. 'list_instances' or 'get_instance'"
+    ],
+) -> dict:
+    """
+    MCP resource to introspect and provide a JSON Schema Draft 7 describing the input parameters of an OCI SDK operation, fully recursively expanding any model references.
+    """
+    # Import client and get method
+    try:
+        module_name, class_name = client_fqn.rsplit(".", 1)
+        module = importlib.import_module(module_name)
+        client_class = getattr(module, class_name)
+        method = getattr(client_class, operation)
+    except Exception as e:
+        return {"error": f"Could not import {client_fqn}.{operation}: {e}"}
+
+    # Get signature and build schema recursively
+    try:
+        sig = inspect.signature(method)
+    except Exception as e:
+        return {"error": f"Could not inspect method signature: {e}"}
+
+    input_props = {}
+    input_required = []
+    doc = inspect.getdoc(method) or ""
+    sig_param_names = [p for p in sig.parameters.keys() if p != "self"]
+
+    # Gather docstring param names/types
+    doc_param_matches = re.findall(r":param\s+([A-Za-z0-9_\[\],\.]+)\s+([A-Za-z0-9_]+)\s*:", doc)
+    doc_params = {name: dtype for dtype, name in doc_param_matches}
+
+    # Recursively grab all parameter types that aren't "self" or "kwargs"
+    for pname, param in sig.parameters.items():
+        if pname == "self" or pname == "kwargs":
+            continue
+
+        annotation = param.annotation
+        if annotation is inspect._empty:
+            # If annotations are empty, e.g.
+            #   def foo(x):
+            #     pass
+            param_type = None
+        elif isinstance(annotation, type):
+            # If annotations have types, e.g.
+            #   def bar(x: int, y: str):
+            #     pass
+            param_type = annotation.__name__
+        else:
+            # If annotations are complex, e.g.
+            #   def baz(x: List[int], y: "MyClass", z: Optional[str] = None):
+            #     pass
+            param_type = str(annotation)
+
+        # Try docstring for param type
+        if pname in doc_params and doc_params[pname]:
+            param_type = doc_params[pname]
+
+        json_type = _type_to_jsonschema(param_type)
+        input_props[pname] = json_type
+
+        if param.default is inspect._empty:
+            input_required.append(pname)
+        
+    # Recursively grab all parameter types for "kwargs"
+    doc_kwargs = {}
+    for dname, dtype in doc_params.items():
+        if dname not in sig_param_names:
+            doc_kwargs[dname] = _type_to_jsonschema(dtype)
+        
+    if doc_kwargs:
+        input_props["kwargs"] = {"type": "object", "properties": doc_kwargs}
+
+    schema = {
+        "title": f"{client_fqn}.{operation} input",
+        "type": "object",
+        "properties": input_props,
+        "required": input_required,
+        "description": f"Parameters for {client_fqn}.{operation} (recursively expanded)"
+    }
+    return schema
+
+
+@mcp.tool(
+    description="Invoke an OCI Python SDK API via client and operation name. "
+    "For detailed payload instruction, you MUST access get_oci_api_payload_schema prior to making this call. "
+)
 def invoke_oci_api(
     client_fqn: Annotated[
         str, "Fully-qualified client class, e.g. 'oci.core.ComputeClient'"

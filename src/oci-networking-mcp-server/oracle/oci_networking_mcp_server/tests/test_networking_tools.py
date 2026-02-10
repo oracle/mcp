@@ -64,9 +64,9 @@ class TestNetworkingTools:
         mock_client.list_vcns.side_effect = [first, second]
 
         async with Client(mcp) as client:
-            result = (
-                await client.call_tool("list_vcns", {"compartment_id": "c1"})
-            ).structured_content["result"]
+            result = (await client.call_tool("list_vcns", {"compartment_id": "c1"})).structured_content[
+                "result"
+            ]
 
         assert [v["id"] for v in result] == ["v1", "v2", "v3"]
 
@@ -231,9 +231,7 @@ class TestNetworkingTools:
 
         async with Client(mcp) as client:
             result = (
-                await client.call_tool(
-                    "list_subnets", {"compartment_id": "c1", "vcn_id": "v1"}
-                )
+                await client.call_tool("list_subnets", {"compartment_id": "c1", "vcn_id": "v1"})
             ).structured_content["result"]
 
         assert [s["id"] for s in result] == ["s1", "s2", "s3"]
@@ -437,9 +435,7 @@ class TestNetworkingTools:
     async def test_list_network_security_groups_error(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
-        mock_client.list_network_security_groups.side_effect = Exception(
-            "nsg list fail"
-        )
+        mock_client.list_network_security_groups.side_effect = Exception("nsg list fail")
 
         async with Client(mcp) as client:
             with pytest.raises(ToolError):
@@ -499,9 +495,7 @@ class TestNetworkingTools:
         async with Client(mcp) as client:
             # Expect ToolError due to schema validation issue in installed package
             with pytest.raises(ToolError):
-                call_tool_result = await client.call_tool(
-                    "get_vnic", {"vnic_id": "vnic1"}
-                )
+                call_tool_result = await client.call_tool("get_vnic", {"vnic_id": "vnic1"})
                 result = call_tool_result.structured_content
                 assert result["id"] == "vnic1"
 
@@ -557,12 +551,8 @@ class TestServer:
 
 class TestGetClient:
     @patch("oracle.oci_networking_mcp_server.server.oci.core.VirtualNetworkClient")
-    @patch(
-        "oracle.oci_networking_mcp_server.server.oci.auth.signers.SecurityTokenSigner"
-    )
-    @patch(
-        "oracle.oci_networking_mcp_server.server.oci.signer.load_private_key_from_file"
-    )
+    @patch("oracle.oci_networking_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
+    @patch("oracle.oci_networking_mcp_server.server.oci.signer.load_private_key_from_file")
     @patch(
         "oracle.oci_networking_mcp_server.server.open",
         new_callable=mock_open,
@@ -600,25 +590,21 @@ class TestGetClient:
             profile_name="MYPROFILE",
         )
         mock_open_file.assert_called_once_with("/abs/path/to/token", "r")
-        mock_security_token_signer.assert_called_once_with(
-            "SECURITY_TOKEN", private_key_obj
-        )
+        mock_security_token_signer.assert_called_once_with("SECURITY_TOKEN", private_key_obj)
         # Ensure user agent was set on the same config dict passed into client
         args, _ = mock_client.call_args
         passed_config = args[0]
         assert passed_config is config
-        expected_user_agent = f"{server.__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{server.__version__}"  # noqa
+        expected_user_agent = (
+            f"{server.__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{server.__version__}"  # noqa
+        )
         assert passed_config.get("additional_user_agent") == expected_user_agent
         # And we returned the client instance
         assert result == mock_client.return_value
 
     @patch("oracle.oci_networking_mcp_server.server.oci.core.VirtualNetworkClient")
-    @patch(
-        "oracle.oci_networking_mcp_server.server.oci.auth.signers.SecurityTokenSigner"
-    )
-    @patch(
-        "oracle.oci_networking_mcp_server.server.oci.signer.load_private_key_from_file"
-    )
+    @patch("oracle.oci_networking_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
+    @patch("oracle.oci_networking_mcp_server.server.oci.signer.load_private_key_from_file")
     @patch(
         "oracle.oci_networking_mcp_server.server.open",
         new_callable=mock_open,
@@ -660,9 +646,6 @@ class TestGetClient:
         cc_args, _ = mock_client.call_args
         assert cc_args[0] is config
         assert "additional_user_agent" in config
-        assert (
-            isinstance(config["additional_user_agent"], str)
-            and "/" in config["additional_user_agent"]
-        )
+        assert isinstance(config["additional_user_agent"], str) and "/" in config["additional_user_agent"]
         # Returned object is client instance
         assert srv_client is mock_client.return_value

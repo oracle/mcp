@@ -201,9 +201,7 @@ class TestOciToDict:
         data = {"a": 1}
         assert _oci_to_dict(data) == {"a": 1}
 
-    def test_oci_to_dict_fallback_filters_private(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_oci_to_dict_fallback_filters_private(self, monkeypatch: pytest.MonkeyPatch) -> None:
         class Dummy:
             def __init__(self) -> None:
                 self.a = 1

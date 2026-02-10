@@ -45,17 +45,10 @@ class TestCloudSdkTools:
                         {"client_fqn": "x.y.FakeClient"},
                     )
                 ).data
-                ops = (
-                    result.get("operations", result)
-                    if isinstance(result, dict)
-                    else result or []
-                )
+                ops = result.get("operations", result) if isinstance(result, dict) else result or []
 
                 # only public callable functions should be listed
-                names = [
-                    op["name"] if isinstance(op, dict) else getattr(op, "name", None)
-                    for op in ops
-                ]
+                names = [op["name"] if isinstance(op, dict) else getattr(op, "name", None) for op in ops]
                 names = [n for n in names if n]
                 assert "get_thing" in names
                 assert "_hidden" not in names
@@ -78,11 +71,10 @@ class TestCloudSdkTools:
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.import_module"
-        ) as mock_import, patch(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
-        ) as mock_cfg:
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
+        ):
             mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
 
@@ -122,18 +114,16 @@ class TestCloudSdkTools:
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.import_module"
-        ) as mock_import, patch(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
-        ) as mock_cfg, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
-        ) as mock_pager:
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
+            patch(
+                "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
+            ) as mock_pager,
+        ):
             mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
-            mock_pager.return_value = FakeResponse(
-                [{"name": "a"}, {"name": "b"}, {"name": "c"}]
-            )
+            mock_pager.return_value = FakeResponse([{"name": "a"}, {"name": "b"}, {"name": "c"}])
 
             async with Client(mcp) as client:
                 result = (
@@ -170,13 +160,13 @@ class TestCloudSdkTools:
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.import_module"
-        ) as mock_import, patch(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
-        ) as mock_cfg, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
-        ) as mock_pager:
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
+            patch(
+                "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
+            ) as mock_pager,
+        ):
             mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
             mock_pager.return_value = FakeResponse(
@@ -190,9 +180,7 @@ class TestCloudSdkTools:
                         {
                             "client_fqn": "x.y.FakeClient",
                             "operation": "get_zone_records",
-                            "params": {
-                                "zone_name": "do-not-delete-me-testing-zone.example"
-                            },
+                            "params": {"zone_name": "do-not-delete-me-testing-zone.example"},
                         },
                     )
                 ).data
@@ -220,13 +208,13 @@ class TestCloudSdkTools:
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.import_module"
-        ) as mock_import, patch(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
-        ) as mock_cfg, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
-        ) as mock_pager:
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
+            patch(
+                "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
+            ) as mock_pager,
+        ):
             mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
             mock_pager.return_value = FakeResponse([{"sum": 10}, {"sum": 20}])
@@ -266,13 +254,13 @@ class TestCloudSdkTools:
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.import_module"
-        ) as mock_import, patch(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
-        ) as mock_cfg, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
-        ) as mock_pager:
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
+            patch(
+                "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
+            ) as mock_pager,
+        ):
             mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
             mock_pager.return_value = FakeResponse([{"rr": 1}, {"rr": 2}, {"rr": 3}])
@@ -316,13 +304,13 @@ class TestCloudSdkTools:
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.import_module"
-        ) as mock_import, patch(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
-        ) as mock_cfg, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
-        ) as mock_pager:
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
+            patch(
+                "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
+            ) as mock_pager,
+        ):
             mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
 
@@ -367,13 +355,13 @@ class TestCloudSdkTools:
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.import_module"
-        ) as mock_import, patch(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
-        ) as mock_cfg, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
-        ) as mock_pager:
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
+            patch(
+                "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
+            ) as mock_pager,
+        ):
             mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
 

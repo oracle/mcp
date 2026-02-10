@@ -1,0 +1,37 @@
+# Exclude a variety of commonly ignored directories plus some external
+exclude = [
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "build",
+    "dist",
+    "venv",
+    "src/dbtools-mcp-server",
+    "src/mysql-mcp-server",
+    "src/oci-pricing-mcp-server",
+    "src/oracle-db-doc-mcp-server",
+    "src/oci-database-mcp-server"
+]
+
+# Same as Black.
+line-length = 110
+
+[lint]
+# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`) codes by default.
+# Unlike Flake8, Ruff doesn't enable pycodestyle warnings (`W`) or
+# McCabe complexity (`C901`) by default.
+select = ["E701"]
+ignore = []
+
+# Allow fix for all enabled rules (when `--fix`) is provided.
+fixable = ["ALL"]
+unfixable = []
+
+[format]

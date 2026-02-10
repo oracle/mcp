@@ -35,40 +35,28 @@ def _oci_to_dict(obj):
 class ReservedIP(BaseModel):
     """Reserved IP details."""
 
-    id: Optional[str] = Field(
-        None, description="The OCID of the reserved public IP address."
-    )
+    id: Optional[str] = Field(None, description="The OCID of the reserved public IP address.")
 
 
 class IpAddress(BaseModel):
     """IP address details."""
 
     ip_address: Optional[str] = Field(None, description="The IP address.")
-    is_public: Optional[bool] = Field(
-        None, description="Whether the IP address is public."
-    )
-    ip_version: Optional[Literal["IPV4", "IPV6"]] = Field(
-        None, description="IP version."
-    )
-    reserved_ip: Optional[ReservedIP] = Field(
-        None, description="Reserved IP information."
-    )
+    is_public: Optional[bool] = Field(None, description="Whether the IP address is public.")
+    ip_version: Optional[Literal["IPV4", "IPV6"]] = Field(None, description="IP version.")
+    reserved_ip: Optional[ReservedIP] = Field(None, description="Reserved IP information.")
 
 
 class Backend(BaseModel):
     """Backend server details."""
 
     name: Optional[str] = Field(None, description="The name of the backend.")
-    ip_address: Optional[str] = Field(
-        None, description="The IP address of the backend server."
-    )
+    ip_address: Optional[str] = Field(None, description="The IP address of the backend server.")
     target_id: Optional[str] = Field(
         None,
         description="The IP OCID/Instance OCID associated with the backend server.",
     )
-    port: Optional[int] = Field(
-        None, description="The communication port for the backend server."
-    )
+    port: Optional[int] = Field(None, description="The communication port for the backend server.")
     weight: Optional[int] = Field(
         None,
         description="The network load balancing policy weight assigned to the server.",
@@ -89,9 +77,7 @@ class Backend(BaseModel):
 class DnsHealthCheckerDetails(BaseModel):
     """DNS health checker details."""
 
-    transport_protocol: Optional[Literal["UDP", "TCP"]] = Field(
-        None, description="DNS transport protocol."
-    )
+    transport_protocol: Optional[Literal["UDP", "TCP"]] = Field(None, description="DNS transport protocol.")
     domain_name: Optional[str] = Field(
         None,
         description="The absolute fully-qualified domain name to perform periodic DNS queries.",
@@ -102,9 +88,7 @@ class DnsHealthCheckerDetails(BaseModel):
     query_type: Optional[Literal["A", "TXT", "AAAA"]] = Field(
         None, description="The type of the DNS health check query."
     )
-    rcodes: Optional[List[str]] = Field(
-        None, description="Acceptable RCODE values for DNS query response."
-    )
+    rcodes: Optional[List[str]] = Field(None, description="Acceptable RCODE values for DNS query response.")
 
 
 class HealthChecker(BaseModel):
@@ -128,9 +112,7 @@ class HealthChecker(BaseModel):
     interval_in_millis: Optional[int] = Field(
         None, description="The interval between health checks, in milliseconds."
     )
-    url_path: Optional[str] = Field(
-        None, description="The path against which to run the health check."
-    )
+    url_path: Optional[str] = Field(None, description="The path against which to run the health check.")
     response_body_regex: Optional[str] = Field(
         None,
         description="A regular expression for parsing the response body from the backend server.",
@@ -146,9 +128,7 @@ class HealthChecker(BaseModel):
         None,
         description="Base64 encoded pattern to be validated as UDP or TCP health check probe response.",
     )
-    dns: Optional[DnsHealthCheckerDetails] = Field(
-        None, description="DNS health checker details."
-    )
+    dns: Optional[DnsHealthCheckerDetails] = Field(None, description="DNS health checker details.")
 
 
 class Listener(BaseModel):
@@ -158,9 +138,7 @@ class Listener(BaseModel):
     default_backend_set_name: Optional[str] = Field(
         None, description="The name of the associated backend set."
     )
-    port: Optional[int] = Field(
-        None, description="The communication port for the listener."
-    )
+    port: Optional[int] = Field(None, description="The communication port for the listener.")
     protocol: Optional[Literal["ANY", "TCP", "UDP", "TCP_AND_UDP", "L3IP"]] = Field(
         None,
         description="The protocol on which the listener accepts connection requests.",
@@ -171,12 +149,8 @@ class Listener(BaseModel):
     is_ppv2_enabled: Optional[bool] = Field(
         None, description="Property to enable/disable PPv2 feature for this listener."
     )
-    tcp_idle_timeout: Optional[int] = Field(
-        None, description="The duration for TCP idle timeout in seconds."
-    )
-    udp_idle_timeout: Optional[int] = Field(
-        None, description="The duration for UDP idle timeout in seconds."
-    )
+    tcp_idle_timeout: Optional[int] = Field(None, description="The duration for TCP idle timeout in seconds.")
+    udp_idle_timeout: Optional[int] = Field(None, description="The duration for UDP idle timeout in seconds.")
     l3_ip_idle_timeout: Optional[int] = Field(
         None, description="The duration for L3IP idle timeout in seconds."
     )
@@ -185,9 +159,7 @@ class Listener(BaseModel):
 class BackendSet(BaseModel):
     """Backend set configuration."""
 
-    name: Optional[str] = Field(
-        None, description="A user-friendly name for the backend set."
-    )
+    name: Optional[str] = Field(None, description="A user-friendly name for the backend set.")
     policy: Optional[Literal["TWO_TUPLE", "THREE_TUPLE", "FIVE_TUPLE"]] = Field(
         None, description="The network load balancer policy for the backend set."
     )
@@ -225,17 +197,15 @@ class BackendSet(BaseModel):
 class NetworkLoadBalancer(BaseModel):
     """Network load balancer."""
 
-    id: Optional[str] = Field(
-        None, description="The OCID of the network load balancer."
-    )
+    id: Optional[str] = Field(None, description="The OCID of the network load balancer.")
     compartment_id: Optional[str] = Field(
         None,
         description="The OCID of the compartment containing the network load balancer.",
     )
     display_name: Optional[str] = Field(None, description="A user-friendly name.")
-    lifecycle_state: Optional[
-        Literal["CREATING", "UPDATING", "ACTIVE", "DELETING", "DELETED", "FAILED"]
-    ] = Field(None, description="The current state of the network load balancer.")
+    lifecycle_state: Optional[Literal["CREATING", "UPDATING", "ACTIVE", "DELETING", "DELETED", "FAILED"]] = (
+        Field(None, description="The current state of the network load balancer.")
+    )
     lifecycle_details: Optional[str] = Field(
         None, description="A message describing the current state in more detail."
     )
@@ -248,9 +218,7 @@ class NetworkLoadBalancer(BaseModel):
     time_updated: Optional[datetime] = Field(
         None, description="The time the network load balancer was updated."
     )
-    ip_addresses: Optional[List[IpAddress]] = Field(
-        None, description="An array of IP addresses."
-    )
+    ip_addresses: Optional[List[IpAddress]] = Field(None, description="An array of IP addresses.")
     is_private: Optional[bool] = Field(
         None,
         description="Whether the network load balancer has a "
@@ -279,9 +247,7 @@ class NetworkLoadBalancer(BaseModel):
     backend_sets: Optional[Dict[str, BackendSet]] = Field(
         None, description="Backend sets associated with the network load balancer."
     )
-    freeform_tags: Optional[Dict[str, str]] = Field(
-        None, description="Free-form tags for this resource."
-    )
+    freeform_tags: Optional[Dict[str, str]] = Field(None, description="Free-form tags for this resource.")
     security_attributes: Optional[Dict[str, Dict[str, Any]]] = Field(
         None, description="ZPR tags for this resource."
     )
@@ -379,9 +345,7 @@ def map_backend_set(obj) -> BackendSet | None:
     if not obj:
         return None
     backends = (
-        [map_backend(b) for b in getattr(obj, "backends", [])]
-        if getattr(obj, "backends", None)
-        else None
+        [map_backend(b) for b in getattr(obj, "backends", [])] if getattr(obj, "backends", None) else None
     )
     return BackendSet(
         name=getattr(obj, "name", None),
@@ -389,9 +353,7 @@ def map_backend_set(obj) -> BackendSet | None:
         is_preserve_source=getattr(obj, "is_preserve_source", None),
         is_fail_open=getattr(obj, "is_fail_open", None),
         is_instant_failover_enabled=getattr(obj, "is_instant_failover_enabled", None),
-        is_instant_failover_tcp_reset_enabled=getattr(
-            obj, "is_instant_failover_tcp_reset_enabled", None
-        ),
+        is_instant_failover_tcp_reset_enabled=getattr(obj, "is_instant_failover_tcp_reset_enabled", None),
         are_operationally_active_backends_preferred=getattr(
             obj, "are_operationally_active_backends_preferred", None
         ),
@@ -431,9 +393,7 @@ def map_network_load_balancer(
         time_updated=getattr(obj, "time_updated", None),
         ip_addresses=ip_addresses,
         is_private=getattr(obj, "is_private", None),
-        is_preserve_source_destination=getattr(
-            obj, "is_preserve_source_destination", None
-        ),
+        is_preserve_source_destination=getattr(obj, "is_preserve_source_destination", None),
         is_symmetric_hash_enabled=getattr(obj, "is_symmetric_hash_enabled", None),
         subnet_id=getattr(obj, "subnet_id", None),
         network_security_group_ids=getattr(obj, "network_security_group_ids", None),

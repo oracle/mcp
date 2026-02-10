@@ -140,9 +140,7 @@ def list_subnets(compartment_id: str, vcn_id: str = None) -> list[Subnet]:
         next_page: str = None
 
         while has_next_page:
-            response = client.list_subnets(
-                compartment_id=compartment_id, vcn_id=vcn_id, page=next_page
-            )
+            response = client.list_subnets(compartment_id=compartment_id, vcn_id=vcn_id, page=next_page)
             has_next_page = response.has_next_page
             next_page = response.next_page if hasattr(response, "next_page") else None
 
@@ -175,9 +173,7 @@ def get_subnet(subnet_id: str) -> Subnet:
 
 
 @mcp.tool
-def create_subnet(
-    vcn_id: str, compartment_id: str, cidr_block: str, display_name: str
-) -> Subnet:
+def create_subnet(vcn_id: str, compartment_id: str, cidr_block: str, display_name: str) -> Subnet:
     try:
         client = get_networking_client()
 
@@ -304,9 +300,7 @@ def get_network_security_group(
     try:
         client = get_networking_client()
 
-        response: oci.response.Response = client.get_network_security_group(
-            network_security_group_id
-        )
+        response: oci.response.Response = client.get_network_security_group(network_security_group_id)
         data: oci.core.models.Subnet = response.data
         logger.info("Found Network Security Group")
         return map_network_security_group(data)

@@ -49,9 +49,7 @@ def _get_config_and_signer() -> Tuple[Dict[str, Any], Any]:
     - If a security_token_file exists, use SecurityTokenSigner (session auth).
     - Otherwise, fall back to API key Signer from config.
     """
-    config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
-    )
+    config = oci.config.from_file(profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE))
     config["additional_user_agent"] = _ADDITIONAL_UA
 
     # try security token
@@ -98,9 +96,7 @@ def _import_client(client_fqn: str) -> Any:
     Example: 'oci.core.ComputeClient'
     """
     if "." not in client_fqn:
-        raise ValueError(
-            "client_fqn must be a fully-qualified class name like 'oci.core.ComputeClient'"
-        )
+        raise ValueError("client_fqn must be a fully-qualified class name like 'oci.core.ComputeClient'")
     module_name, class_name = client_fqn.rsplit(".", 1)
     module = import_module(module_name)
     cls = getattr(module, class_name)
@@ -160,9 +156,7 @@ def _coerce_mapping_values(
             new_list: List[Any] = []
             for item in val:
                 if isinstance(item, dict):
-                    new_list.append(
-                        _construct_model_from_mapping(item, models_module, [])
-                    )
+                    new_list.append(_construct_model_from_mapping(item, models_module, []))
                 else:
                     new_list.append(item)
             out[key] = new_list
@@ -190,9 +184,7 @@ def _construct_model_from_mapping(
             if parent_prefix_hint is None:
                 parent_prefix_hint = cand
     # recursively coerce nested mappings/lists before attempting construction
-    clean = _coerce_mapping_values(
-        clean, models_module, parent_prefix=parent_prefix_hint
-    )
+    clean = _coerce_mapping_values(clean, models_module, parent_prefix=parent_prefix_hint)
     # try explicit FQN first
     if isinstance(fqn, str):
         try:
@@ -215,9 +207,7 @@ def _construct_model_from_mapping(
             try:
                 swagger_types = getattr(cls, "swagger_types", None)
                 if isinstance(swagger_types, dict):
-                    filtered_clean = {
-                        k: v for k, v in clean.items() if k in swagger_types
-                    }
+                    filtered_clean = {k: v for k, v in clean.items() if k in swagger_types}
             except Exception:
                 filtered_clean = clean
             try:
@@ -237,9 +227,7 @@ def _construct_model_from_mapping(
                 try:
                     swagger_types = getattr(cls, "swagger_types", None)
                     if isinstance(swagger_types, dict):
-                        filtered_clean = {
-                            k: v for k, v in clean.items() if k in swagger_types
-                        }
+                        filtered_clean = {k: v for k, v in clean.items() if k in swagger_types}
                 except Exception:
                     filtered_clean = clean
                 try:
@@ -253,9 +241,7 @@ def _construct_model_from_mapping(
     return mapping
 
 
-def _coerce_params_to_oci_models(
-    client_fqn: str, operation: str, params: Dict[str, Any]
-) -> Dict[str, Any]:
+def _coerce_params_to_oci_models(client_fqn: str, operation: str, params: Dict[str, Any]) -> Dict[str, Any]:
     """
     Convert plain dict/list params to OCI model instances when appropriate.
     Heuristics:
@@ -284,9 +270,7 @@ def _coerce_params_to_oci_models(
                             candidates.append(f"Update{base}Details")
                         # rename "<resource>_details" to the SDK's expected
                         # "create_<resource>_details"/"update_<resource>_details"
-                        if operation.startswith("create_") or operation.startswith(
-                            "update_"
-                        ):
+                        if operation.startswith("create_") or operation.startswith("update_"):
                             _, _, op_rest = operation.partition("_")
                             if key == f"{op_rest}_details":
                                 # only rename to SDK-expected key when destination not already
@@ -295,21 +279,14 @@ def _coerce_params_to_oci_models(
                                 if alt_key not in params:
                                     dest_key = alt_key
                     break
-            out[dest_key] = _construct_model_from_mapping(
-                val, models_module, candidates
-            )
+            out[dest_key] = _construct_model_from_mapping(val, models_module, candidates)
         elif isinstance(val, list):
             new_list: List[Any] = []
             for item in val:
                 if isinstance(item, dict):
                     # only construct list items if explicit model hint is present
-                    if any(
-                        hint in item
-                        for hint in ("__model_fqn", "__model", "__class_fqn", "__class")
-                    ):
-                        new_list.append(
-                            _construct_model_from_mapping(item, models_module, [])
-                        )
+                    if any(hint in item for hint in ("__model_fqn", "__model", "__class_fqn", "__class")):
+                        new_list.append(_construct_model_from_mapping(item, models_module, []))
                     else:
                         new_list.append(item)
                 else:
@@ -480,9 +457,7 @@ def _call_with_pagination_if_applicable(
             call_params[dst] = call_params.pop(src)
 
     try:
-        logger.debug(
-            f"_call_with_pagination_if_applicable call_params keys: {list(call_params.keys())}"
-        )
+        logger.debug(f"_call_with_pagination_if_applicable call_params keys: {list(call_params.keys())}")
         logger.debug(f"op: {operation_name}")
         response = method(**call_params)
     except TypeError as e:
@@ -523,12 +498,8 @@ def _call_with_pagination_if_applicable(
 
 @mcp.tool(description="Invoke an OCI Python SDK API via client and operation name.")
 def invoke_oci_api(
-    client_fqn: Annotated[
-        str, "Fully-qualified client class, e.g. 'oci.core.ComputeClient'"
-    ],
-    operation: Annotated[
-        str, "Client method/operation name, e.g. 'list_instances' or 'get_instance'"
-    ],
+    client_fqn: Annotated[str, "Fully-qualified client class, e.g. 'oci.core.ComputeClient'"],
+    operation: Annotated[str, "Client method/operation name, e.g. 'list_instances' or 'get_instance'"],
     params: Annotated[
         Dict[str, Any],
         "Keyword arguments for the operation (JSON object). Use snake_case keys as in SDK.",
@@ -543,15 +514,11 @@ def invoke_oci_api(
     try:
         client = _import_client(client_fqn)
         if not hasattr(client, operation):
-            raise AttributeError(
-                f"Operation '{operation}' not found on client '{client_fqn}'"
-            )
+            raise AttributeError(f"Operation '{operation}' not found on client '{client_fqn}'")
 
         method = getattr(client, operation)
         if not callable(method):
-            raise AttributeError(
-                f"Attribute '{operation}' on client '{client_fqn}' is not callable"
-            )
+            raise AttributeError(f"Attribute '{operation}' on client '{client_fqn}' is not callable")
 
         params = params or {}
         # pre-normalize parameter key to the SDK-expected kw for create_/update_ ops,
@@ -564,9 +531,7 @@ def invoke_oci_api(
             if src in normalized_params and dst not in normalized_params:
                 normalized_params[dst] = normalized_params.pop(src)
 
-        coerced_params = _coerce_params_to_oci_models(
-            client_fqn, operation, normalized_params
-        )
+        coerced_params = _coerce_params_to_oci_models(client_fqn, operation, normalized_params)
         # final kwarg aliasing at the top-level prior to invocation to ensure correct SDK kw
         final_params = dict(coerced_params)
 
@@ -574,9 +539,7 @@ def invoke_oci_api(
         logger.debug(f"invoke_oci_api final_params keys: {list(final_params.keys())}")
         logger.debug(f"op: {operation}")
         try:
-            data, opc_request_id = _call_with_pagination_if_applicable(
-                method, final_params, operation
-            )
+            data, opc_request_id = _call_with_pagination_if_applicable(method, final_params, operation)
         except TypeError as e:
             msg = str(e)
             if "unexpected keyword argument" in msg and (
@@ -589,9 +552,7 @@ def invoke_oci_api(
                 if src in final_params and dst not in final_params:
                     alt_params = dict(final_params)
                     alt_params[dst] = alt_params.pop(src)
-                    data, opc_request_id = _call_with_pagination_if_applicable(
-                        method, alt_params, operation
-                    )
+                    data, opc_request_id = _call_with_pagination_if_applicable(method, alt_params, operation)
                 else:
                     raise
             else:
@@ -621,9 +582,7 @@ def invoke_oci_api(
 
 @mcp.tool(description="List public callable operations for a given OCI client class.")
 def list_client_operations(
-    client_fqn: Annotated[
-        str, "Fully-qualified client class, e.g. 'oci.core.ComputeClient'"
-    ],
+    client_fqn: Annotated[str, "Fully-qualified client class, e.g. 'oci.core.ComputeClient'"],
 ) -> dict:
     try:
         module_name, class_name = client_fqn.rsplit(".", 1)

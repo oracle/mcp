@@ -11,10 +11,7 @@ from oracle.oci_cloud_mcp_server.server import (
 class TestSnakeToCamel:
     def test_basic_conversion(self):
         assert _snake_to_camel("create_vcn_details") == "CreateVcnDetails"
-        assert (
-            _snake_to_camel("update_instance_configuration")
-            == "UpdateInstanceConfiguration"
-        )
+        assert _snake_to_camel("update_instance_configuration") == "UpdateInstanceConfiguration"
 
     def test_ignores_empty_segments(self):
         # leading/trailing/multiple underscores produce empty parts which should be skipped
@@ -30,9 +27,7 @@ class TestImportModelsModuleFromClientFqn:
                 return SimpleNamespace()
             raise ImportError("nope")
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module", fake_import
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", fake_import)
         mod = _import_models_module_from_client_fqn("x.y.ClientClass")
         assert mod is not None
 
@@ -60,9 +55,7 @@ class TestSerializeOciData:
         assert out["c"] == ["x", "y"]
         assert out["a"][1] == {"b": 2}
 
-    def test_when_to_dict_raises_uses_fallback_and_str_for_non_jsonable(
-        self, monkeypatch
-    ):
+    def test_when_to_dict_raises_uses_fallback_and_str_for_non_jsonable(self, monkeypatch):
         # force oci.util.to_dict to raise to hit exception path
         from oracle.oci_cloud_mcp_server.server import oci as _oci
 

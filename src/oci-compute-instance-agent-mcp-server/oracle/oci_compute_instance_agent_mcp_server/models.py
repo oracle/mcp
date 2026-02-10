@@ -36,9 +36,7 @@ def _oci_to_dict(obj):
 class InstanceAgentCommandExecutionOutputViaTextDetails(BaseModel):
     """The execution output from a command when returned in plain text."""
 
-    output_type: Literal["TEXT"] = Field(
-        "TEXT", description="The output destination type for the command."
-    )
+    output_type: Literal["TEXT"] = Field("TEXT", description="The output destination type for the command.")
     exit_code: int = Field(
         ...,
         description="The exit code for the command. Exit code `0` indicates success.",
@@ -49,9 +47,7 @@ class InstanceAgentCommandExecutionOutputViaTextDetails(BaseModel):
         "can populate for additional troubleshooting.",
     )
     text: Optional[str] = Field(None, description="The command output.")
-    text_sha256: Optional[str] = Field(
-        None, description="SHA-256 checksum value of the text content."
-    )
+    text_sha256: Optional[str] = Field(None, description="SHA-256 checksum value of the text content.")
 
 
 class InstanceAgentCommandExecutionOutputViaObjectStorageUriDetails(BaseModel):
@@ -91,15 +87,9 @@ class InstanceAgentCommandExecutionOutputViaObjectStorageTupleDetails(BaseModel)
         description="An optional status message that Oracle Cloud Agent "
         "can populate for additional troubleshooting.",
     )
-    bucket_name: str = Field(
-        ..., description="The Object Storage bucket for the command output."
-    )
-    namespace_name: str = Field(
-        ..., description="The Object Storage namespace for the command output."
-    )
-    object_name: str = Field(
-        ..., description="The Object Storage object name for the command output."
-    )
+    bucket_name: str = Field(..., description="The Object Storage bucket for the command output.")
+    namespace_name: str = Field(..., description="The Object Storage namespace for the command output.")
+    object_name: str = Field(..., description="The Object Storage object name for the command output.")
 
 
 OutputContent = Union[
@@ -118,9 +108,7 @@ class InstanceAgentCommandExecution(BaseModel):
 
     instance_agent_command_id: str = Field(..., description="The OCID of the command.")
     instance_id: str = Field(..., description="The OCID of the instance.")
-    delivery_state: Literal[
-        "VISIBLE", "PENDING", "ACKED", "ACKED_CANCELED", "EXPIRED"
-    ] = Field(
+    delivery_state: Literal["VISIBLE", "PENDING", "ACKED", "ACKED_CANCELED", "EXPIRED"] = Field(
         ...,
         description=(
             "Specifies the command delivery state. "
@@ -133,19 +121,19 @@ class InstanceAgentCommandExecution(BaseModel):
             "its delivery has expired."
         ),
     )
-    lifecycle_state: Literal[
-        "ACCEPTED", "IN_PROGRESS", "SUCCEEDED", "FAILED", "TIMED_OUT", "CANCELED"
-    ] = Field(
-        ...,
-        description=(
-            "Command execution life cycle state. "
-            "* `ACCEPTED` - The command execution has been accepted to run. "
-            "* `IN_PROGRESS` - The command execution is in progress. "
-            "* `SUCCEEDED` - The command execution is successful. "
-            "* `FAILED` - The command execution has failed. "
-            "* `TIMED_OUT` - The command execution has timedout. "
-            "* `CANCELED` - The command execution has canceled."
-        ),
+    lifecycle_state: Literal["ACCEPTED", "IN_PROGRESS", "SUCCEEDED", "FAILED", "TIMED_OUT", "CANCELED"] = (
+        Field(
+            ...,
+            description=(
+                "Command execution life cycle state. "
+                "* `ACCEPTED` - The command execution has been accepted to run. "
+                "* `IN_PROGRESS` - The command execution is in progress. "
+                "* `SUCCEEDED` - The command execution is successful. "
+                "* `FAILED` - The command execution has failed. "
+                "* `TIMED_OUT` - The command execution has timedout. "
+                "* `CANCELED` - The command execution has canceled."
+            ),
+        )
     )
     time_created: datetime = Field(..., description="The command creation date.")
     time_updated: datetime = Field(..., description="The command last updated at date.")
@@ -154,9 +142,7 @@ class InstanceAgentCommandExecution(BaseModel):
         description="The large non-consecutive number that Run Command Service "
         "assigns to each created command.",
     )
-    display_name: Optional[str] = Field(
-        None, description="The user friendly display name of the command."
-    )
+    display_name: Optional[str] = Field(None, description="The user friendly display name of the command.")
     content: OutputContent = Field(..., description="The command output details.")
 
 
@@ -197,9 +183,7 @@ def map_tuple_output(
         exit_code=data.get("exit_code", getattr(content, "exit_code", None)),
         message=data.get("message", getattr(content, "message", None)),
         bucket_name=data.get("bucket_name", getattr(content, "bucket_name", None)),
-        namespace_name=data.get(
-            "namespace_name", getattr(content, "namespace_name", None)
-        ),
+        namespace_name=data.get("namespace_name", getattr(content, "namespace_name", None)),
         object_name=data.get("object_name", getattr(content, "object_name", None)),
     )
 
@@ -228,9 +212,7 @@ def map_instance_agent_command_execution(
     including all nested types.
     """
     return InstanceAgentCommandExecution(
-        instance_agent_command_id=getattr(
-            command_execution, "instance_agent_command_id", None
-        ),
+        instance_agent_command_id=getattr(command_execution, "instance_agent_command_id", None),
         instance_id=getattr(command_execution, "instance_id", None),
         delivery_state=getattr(command_execution, "delivery_state", None),
         lifecycle_state=getattr(command_execution, "lifecycle_state", None),
@@ -253,15 +235,9 @@ class InstanceAgentCommandSummary(BaseModel):
     """
 
     instance_agent_command_id: str = Field(..., description="The OCID of the command.")
-    display_name: Optional[str] = Field(
-        None, description="A user-friendly name. Does not have to be unique."
-    )
-    compartment_id: str = Field(
-        ..., description="The OCID of the compartment containing the command."
-    )
-    time_created: datetime = Field(
-        ..., description="The date and time the command was created (RFC3339)."
-    )
+    display_name: Optional[str] = Field(None, description="A user-friendly name. Does not have to be unique.")
+    compartment_id: str = Field(..., description="The OCID of the compartment containing the command.")
+    time_created: datetime = Field(..., description="The date and time the command was created (RFC3339).")
     time_updated: datetime = Field(
         ..., description="The date and time the command was last updated (RFC3339)."
     )
@@ -280,9 +256,7 @@ def map_instance_agent_command_summary(
     oracle.oci_compute_instance_agent_mcp_server.models.InstanceAgentCommandSummary.
     """
     return InstanceAgentCommandSummary(
-        instance_agent_command_id=getattr(
-            command_summary, "instance_agent_command_id", None
-        ),
+        instance_agent_command_id=getattr(command_summary, "instance_agent_command_id", None),
         display_name=getattr(command_summary, "display_name", None),
         compartment_id=getattr(command_summary, "compartment_id", None),
         time_created=getattr(command_summary, "time_created", None),
@@ -305,9 +279,7 @@ class InstanceAgentCommandExecutionSummary(BaseModel):
 
     instance_agent_command_id: str = Field(..., description="The OCID of the command.")
     instance_id: str = Field(..., description="The OCID of the instance.")
-    delivery_state: Literal[
-        "VISIBLE", "PENDING", "ACKED", "ACKED_CANCELED", "EXPIRED"
-    ] = Field(
+    delivery_state: Literal["VISIBLE", "PENDING", "ACKED", "ACKED_CANCELED", "EXPIRED"] = Field(
         ...,
         description="The command delivery state. "
         "* `VISIBLE` - The command is visible to the instance. "
@@ -316,21 +288,19 @@ class InstanceAgentCommandExecutionSummary(BaseModel):
         "* `ACKED_CANCELED` - The canceled command has been received and acknowledged by the instance. "
         "* `EXPIRED` - The instance has not requested for commands and the command's delivery has expired.",
     )
-    lifecycle_state: Literal[
-        "ACCEPTED", "IN_PROGRESS", "SUCCEEDED", "FAILED", "TIMED_OUT", "CANCELED"
-    ] = Field(
-        ...,
-        description="The command execution lifecycle state. "
-        "* `ACCEPTED` - The command has been accepted to run. "
-        "* `IN_PROGRESS` - The command is in progress. "
-        "* `SUCCEEDED` - The command was successfully executed. "
-        "* `FAILED` - The command failed to execute. "
-        "* `TIMED_OUT` - The command execution timed out. "
-        "* `CANCELED` - The command execution was canceled.",
+    lifecycle_state: Literal["ACCEPTED", "IN_PROGRESS", "SUCCEEDED", "FAILED", "TIMED_OUT", "CANCELED"] = (
+        Field(
+            ...,
+            description="The command execution lifecycle state. "
+            "* `ACCEPTED` - The command has been accepted to run. "
+            "* `IN_PROGRESS` - The command is in progress. "
+            "* `SUCCEEDED` - The command was successfully executed. "
+            "* `FAILED` - The command failed to execute. "
+            "* `TIMED_OUT` - The command execution timed out. "
+            "* `CANCELED` - The command execution was canceled.",
+        )
     )
-    time_created: datetime = Field(
-        ..., description="The date and time the command was created (RFC3339)."
-    )
+    time_created: datetime = Field(..., description="The date and time the command was created (RFC3339).")
     time_updated: datetime = Field(
         ..., description="The date and time the command was last updated (RFC3339)."
     )
@@ -339,12 +309,8 @@ class InstanceAgentCommandExecutionSummary(BaseModel):
         description="A large, non-consecutive number that Oracle Cloud Agent "
         "assigns to each created command.",
     )
-    display_name: Optional[str] = Field(
-        None, description="A user-friendly name. Does not have to be unique."
-    )
-    content: Optional[OutputContent] = Field(
-        None, description="The execution output from a command."
-    )
+    display_name: Optional[str] = Field(None, description="A user-friendly name. Does not have to be unique.")
+    content: Optional[OutputContent] = Field(None, description="The execution output from a command.")
 
 
 def map_instance_agent_command_execution_summary(
@@ -356,9 +322,7 @@ def map_instance_agent_command_execution_summary(
     including all nested types.
     """
     return InstanceAgentCommandExecutionSummary(
-        instance_agent_command_id=getattr(
-            command_execution_summary, "instance_agent_command_id", None
-        ),
+        instance_agent_command_id=getattr(command_execution_summary, "instance_agent_command_id", None),
         instance_id=getattr(command_execution_summary, "instance_id", None),
         delivery_state=getattr(command_execution_summary, "delivery_state", None),
         lifecycle_state=getattr(command_execution_summary, "lifecycle_state", None),

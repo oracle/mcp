@@ -10,9 +10,7 @@ from behave import then
 @then("the response should contain a list of identity tools available")
 def step_impl_identity_tools_available(context):
     response_json = context.response.json()
-    assert (
-        "content" in response_json["message"]
-    ), "Response does not contain a content key."
+    assert "content" in response_json["message"], "Response does not contain a content key."
     content = response_json["message"]["content"].lower()
     # Tools from Identity server we expect the model to list
     assert any(
@@ -31,9 +29,7 @@ def step_impl_identity_tools_available(context):
 def step_impl_list_compartments(context):
     result = context.response.json()
     assert "content" in result["message"], "Response does not contain a content key."
-    assert (
-        "ocid1.compartment" in result["message"]["content"]
-    ), "Compartments not found."
+    assert "ocid1.compartment" in result["message"]["content"], "Compartments not found."
 
 
 @then("the response should contain the details of a tenancy")
@@ -66,6 +62,6 @@ def step_impl_list_regions(context):
     result = context.response.json()
     assert "content" in result["message"], "Response does not contain a content key."
     content = result["message"]["content"].lower()
-    assert any(
-        kw in content for kw in ["region", "us-mock-1", "home region", "phx", "iad"]
-    ), "Subscribed regions not found."
+    assert any(kw in content for kw in ["region", "us-mock-1", "home region", "phx", "iad"]), (
+        "Subscribed regions not found."
+    )

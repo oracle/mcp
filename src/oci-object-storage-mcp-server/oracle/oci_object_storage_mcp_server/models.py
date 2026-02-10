@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 class Bucket(BaseModel):
     namespace: Optional[str] = Field(
         None,
-        description=("The Object Storage namespace in which the bucket " "resides."),
+        description=("The Object Storage namespace in which the bucket resides."),
     )
     name: Optional[str] = Field(
         None,
@@ -22,11 +22,11 @@ class Bucket(BaseModel):
     )
     compartment_id: Optional[str] = Field(
         None,
-        description=("The compartment ID in which the bucket is " "authorized."),
+        description=("The compartment ID in which the bucket is authorized."),
     )
     metadata: Optional[Dict[str, str]] = Field(
         None,
-        description=("Arbitrary string keys and values for user-defined " "metadata."),
+        description=("Arbitrary string keys and values for user-defined metadata."),
     )
     created_by: Optional[str] = Field(
         None,
@@ -50,10 +50,7 @@ class Bucket(BaseModel):
     )
     object_events_enabled: Optional[bool] = Field(
         None,
-        description=(
-            "Whether or not events are emitted for object state "
-            "changes in this bucket."
-        ),
+        description=("Whether or not events are emitted for object state changes in this bucket."),
     )
     freeform_tags: Optional[Dict[str, str]] = Field(
         None,
@@ -65,17 +62,11 @@ class Bucket(BaseModel):
     )
     kms_key_id: Optional[str] = Field(
         None,
-        description=(
-            "The OCID of a master encryption key used to call "
-            "the Key Management service."
-        ),
+        description=("The OCID of a master encryption key used to call the Key Management service."),
     )
     object_lifecycle_policy_etag: Optional[str] = Field(
         None,
-        description=(
-            "The entity tag (ETag) for the live object lifecycle "
-            "policy on the bucket."
-        ),
+        description=("The entity tag (ETag) for the live object lifecycle policy on the bucket."),
     )
     approximate_count: Optional[int] = Field(
         None,
@@ -83,9 +74,7 @@ class Bucket(BaseModel):
     )
     approximate_size: Optional[int] = Field(
         None,
-        description=(
-            "The approximate total size in bytes of all objects " "in the bucket."
-        ),
+        description=("The approximate total size in bytes of all objects in the bucket."),
     )
     replication_enabled: Optional[bool] = Field(
         None,
@@ -123,20 +112,17 @@ class NamespaceMetadata(BaseModel):
 
     namespace: str = Field(
         ...,
-        description=("The Object Storage namespace to which the metadata " "belongs."),
+        description=("The Object Storage namespace to which the metadata belongs."),
     )
     default_s3_compartment_id: Optional[str] = Field(
         None,
         description=(
-            "If set, specifies the default compartment assignment "
-            "for the Amazon S3 Compatibility API."
+            "If set, specifies the default compartment assignment for the Amazon S3 Compatibility API."
         ),
     )
     default_swift_compartment_id: Optional[str] = Field(
         None,
-        description=(
-            "If set, specifies the default compartment assignment " "for the Swift API."
-        ),
+        description=("If set, specifies the default compartment assignment for the Swift API."),
     )
 
     class Config:
@@ -155,14 +141,11 @@ class CreateBucketDetails(BaseModel):
     )
     compartment_id: str = Field(
         ...,
-        description=("The ID of the compartment in which to create the " "bucket."),
+        description=("The ID of the compartment in which to create the bucket."),
     )
     metadata: Optional[Dict[str, str]] = Field(
         None,
-        description=(
-            "Arbitrary string, up to 4KB, of keys and values for "
-            "user-defined metadata."
-        ),
+        description=("Arbitrary string, up to 4KB, of keys and values for user-defined metadata."),
     )
     public_access_type: Optional[str] = Field(
         None,
@@ -174,10 +157,7 @@ class CreateBucketDetails(BaseModel):
     )
     object_events_enabled: Optional[bool] = Field(
         None,
-        description=(
-            "Whether or not events are emitted for object state "
-            "changes in this bucket."
-        ),
+        description=("Whether or not events are emitted for object state changes in this bucket."),
     )
     freeform_tags: Optional[Dict[str, str]] = Field(
         None,
@@ -189,10 +169,7 @@ class CreateBucketDetails(BaseModel):
     )
     kms_key_id: Optional[str] = Field(
         None,
-        description=(
-            "The OCID of a master encryption key used to call "
-            "the Key Management service."
-        ),
+        description=("The OCID of a master encryption key used to call the Key Management service."),
     )
     versioning: Optional[str] = Field(
         None,
@@ -210,7 +187,7 @@ class CreateBucketDetails(BaseModel):
 class BucketSummary(BaseModel):
     namespace: Optional[str] = Field(
         None,
-        description=("The Object Storage namespace in which the bucket " "lives."),
+        description=("The Object Storage namespace in which the bucket lives."),
     )
     name: Optional[str] = Field(
         None,
@@ -218,7 +195,7 @@ class BucketSummary(BaseModel):
     )
     compartment_id: Optional[str] = Field(
         None,
-        description=("The compartment ID in which the bucket is " "authorized."),
+        description=("The compartment ID in which the bucket is authorized."),
     )
     created_by: Optional[str] = Field(
         None,
@@ -372,9 +349,7 @@ class ObjectVersionCollection(BaseModel):
     Pydantic model mirroring the fields of oci.object_storage.models.ObjectVersionCollection.
     """
 
-    items: List[ObjectVersionSummary] = Field(
-        ..., description="An array of object version summaries."
-    )
+    items: List[ObjectVersionSummary] = Field(..., description="An array of object version summaries.")
     prefixes: Optional[List[str]] = Field(
         None,
         description=(
@@ -441,9 +416,7 @@ def map_bucket(bucket: oci.object_storage.models.Bucket) -> Bucket:
         freeform_tags=getattr(bucket, "freeform_tags", None),
         defined_tags=getattr(bucket, "defined_tags", None),
         kms_key_id=getattr(bucket, "kms_key_id", None),
-        object_lifecycle_policy_etag=getattr(
-            bucket, "object_lifecycle_policy_etag", None
-        ),
+        object_lifecycle_policy_etag=getattr(bucket, "object_lifecycle_policy_etag", None),
         approximate_count=getattr(bucket, "approximate_count", None),
         approximate_size=getattr(bucket, "approximate_size", None),
         replication_enabled=getattr(bucket, "replication_enabled", None),

@@ -10,9 +10,7 @@ from behave import then
 @then("the response should contain a list of faaas tools available")
 def step_impl_faaas_tools_available(context):
     response_json = context.response.json()
-    assert (
-        "content" in response_json["message"]
-    ), "Response does not contain a content key."
+    assert "content" in response_json["message"], "Response does not contain a content key."
     content = response_json["message"]["content"].lower()
     assert any(
         tool in content
@@ -31,9 +29,7 @@ def step_impl_list_families(context):
     assert "content" in result["message"], "Response does not contain a content key."
     content = result["message"]["content"].lower()
     # Look for family OCID prefix to be present
-    assert (
-        "ocid1.fusionenvironmentfamily" in content
-    ), "Fusion environment families not found."
+    assert "ocid1.fusionenvironmentfamily" in content, "Fusion environment families not found."
 
 
 @then("the response should contain a list of fusion environments")
@@ -58,6 +54,6 @@ def step_impl_get_environment_status(context):
     assert "content" in result["message"], "Response does not contain a content key."
     content = result["message"]["content"].lower()
     # Expect to mention status and/or environment OCID
-    assert any(
-        kw in content for kw in ["status", "available", "ocid1.fusionenvironment"]
-    ), "Fusion environment status not found."
+    assert any(kw in content for kw in ["status", "available", "ocid1.fusionenvironment"]), (
+        "Fusion environment status not found."
+    )

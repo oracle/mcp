@@ -384,9 +384,7 @@ async def test_map_response_derives_next_page_and_request_id_from_headers():
 async def test_map_response_data_instance_object_and_list():
     # Single instance object path
     inst = oci.core.models.Instance(id="ocid1.instance..single", display_name="one")
-    oci_resp_single = oci.response.Response(
-        status=200, headers={}, data=inst, request=None
-    )
+    oci_resp_single = oci.response.Response(status=200, headers={}, data=inst, request=None)
     mapped_single = map_response(oci_resp_single)
     assert isinstance(mapped_single, Response)
     assert isinstance(mapped_single.data, Instance)
@@ -395,9 +393,7 @@ async def test_map_response_data_instance_object_and_list():
 
     # List of instances path
     inst2 = oci.core.models.Instance(id="ocid1.instance..two", display_name="two")
-    oci_resp_list = oci.response.Response(
-        status=200, headers={}, data=[inst, inst2], request=None
-    )
+    oci_resp_list = oci.response.Response(status=200, headers={}, data=[inst, inst2], request=None)
     mapped_list = map_response(oci_resp_list)
     assert isinstance(mapped_list.data, list)
     assert all(isinstance(x, Instance) for x in mapped_list.data)

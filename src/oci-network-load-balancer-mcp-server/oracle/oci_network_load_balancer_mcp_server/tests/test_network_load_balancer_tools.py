@@ -22,24 +22,18 @@ class TestNlbTools:
         mock_get_client.return_value = mock_client
 
         mock_list_response = create_autospec(oci.response.Response)
-        mock_list_response.data = (
-            oci.network_load_balancer.models.NetworkLoadBalancerCollection(
-                items=[
-                    oci.network_load_balancer.models.NetworkLoadBalancerSummary(
-                        id="nlb1",
-                        display_name="NLB 1",
-                        lifecycle_state="ACTIVE",
-                        ip_addresses=[
-                            oci.network_load_balancer.models.IpAddress(
-                                ip_address="192.168.1.1", is_public=True
-                            ),
-                            oci.network_load_balancer.models.IpAddress(
-                                ip_address="10.0.0.0", is_public=False
-                            ),
-                        ],
-                    )
-                ]
-            )
+        mock_list_response.data = oci.network_load_balancer.models.NetworkLoadBalancerCollection(
+            items=[
+                oci.network_load_balancer.models.NetworkLoadBalancerSummary(
+                    id="nlb1",
+                    display_name="NLB 1",
+                    lifecycle_state="ACTIVE",
+                    ip_addresses=[
+                        oci.network_load_balancer.models.IpAddress(ip_address="192.168.1.1", is_public=True),
+                        oci.network_load_balancer.models.IpAddress(ip_address="10.0.0.0", is_public=False),
+                    ],
+                )
+            ]
         )
         mock_list_response.has_next_page = False
         mock_list_response.next_page = None
@@ -83,9 +77,7 @@ class TestNlbTools:
 
         async with Client(mcp) as client:
             result = (
-                await client.call_tool(
-                    "list_network_load_balancers", {"compartment_id": "c1"}
-                )
+                await client.call_tool("list_network_load_balancers", {"compartment_id": "c1"})
             ).structured_content["result"]
 
         assert [n["id"] for n in result] == ["n1", "n2", "n3"]
@@ -99,9 +91,7 @@ class TestNlbTools:
 
         async with Client(mcp) as client:
             with pytest.raises(ToolError):
-                await client.call_tool(
-                    "list_network_load_balancers", {"compartment_id": "c1"}
-                )
+                await client.call_tool("list_network_load_balancers", {"compartment_id": "c1"})
 
     @pytest.mark.asyncio
     @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
@@ -372,16 +362,12 @@ class TestNlbTools:
         mock_get_client.return_value = mock_client
 
         mock_resp = create_autospec(oci.response.Response)
-        mock_resp.data = oci.network_load_balancer.models.NetworkLoadBalancer(
-            id="nlb1", display_name="nlb"
-        )
+        mock_resp.data = oci.network_load_balancer.models.NetworkLoadBalancer(id="nlb1", display_name="nlb")
         mock_client.get_network_load_balancer.return_value = mock_resp
 
         async with Client(mcp) as client:
             res = (
-                await client.call_tool(
-                    "get_network_load_balancer", {"network_load_balancer_id": "nlb1"}
-                )
+                await client.call_tool("get_network_load_balancer", {"network_load_balancer_id": "nlb1"})
             ).structured_content
         assert res["id"] == "nlb1"
 
@@ -394,9 +380,7 @@ class TestNlbTools:
 
         async with Client(mcp) as client:
             with pytest.raises(ToolError):
-                await client.call_tool(
-                    "get_network_load_balancer", {"network_load_balancer_id": "x"}
-                )
+                await client.call_tool("get_network_load_balancer", {"network_load_balancer_id": "x"})
 
     @pytest.mark.asyncio
     @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
@@ -563,12 +547,8 @@ class TestGetClient:
         "oracle.oci_network_load_balancer_mcp_server.server.oci"
         ".network_load_balancer.NetworkLoadBalancerClient"
     )
-    @patch(
-        "oracle.oci_network_load_balancer_mcp_server.server.oci.auth.signers.SecurityTokenSigner"
-    )
-    @patch(
-        "oracle.oci_network_load_balancer_mcp_server.server.oci.signer.load_private_key_from_file"
-    )
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.oci.signer.load_private_key_from_file")
     @patch(
         "oracle.oci_network_load_balancer_mcp_server.server.open",
         new_callable=mock_open,
@@ -606,14 +586,14 @@ class TestGetClient:
             profile_name="MYPROFILE",
         )
         mock_open_file.assert_called_once_with("/abs/path/to/token", "r")
-        mock_security_token_signer.assert_called_once_with(
-            "SECURITY_TOKEN", private_key_obj
-        )
+        mock_security_token_signer.assert_called_once_with("SECURITY_TOKEN", private_key_obj)
         # Ensure user agent was set on the same config dict passed into client
         args, _ = mock_client.call_args
         passed_config = args[0]
         assert passed_config is config
-        expected_user_agent = f"{server.__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{server.__version__}"  # noqa
+        expected_user_agent = (
+            f"{server.__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{server.__version__}"  # noqa
+        )
         assert passed_config.get("additional_user_agent") == expected_user_agent
         # And we returned the client instance
         assert result == mock_client.return_value
@@ -622,12 +602,8 @@ class TestGetClient:
         "oracle.oci_network_load_balancer_mcp_server.server.oci"
         ".network_load_balancer.NetworkLoadBalancerClient"
     )
-    @patch(
-        "oracle.oci_network_load_balancer_mcp_server.server.oci.auth.signers.SecurityTokenSigner"
-    )
-    @patch(
-        "oracle.oci_network_load_balancer_mcp_server.server.oci.signer.load_private_key_from_file"
-    )
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.oci.signer.load_private_key_from_file")
     @patch(
         "oracle.oci_network_load_balancer_mcp_server.server.open",
         new_callable=mock_open,
@@ -669,9 +645,6 @@ class TestGetClient:
         cc_args, _ = mock_client.call_args
         assert cc_args[0] is config
         assert "additional_user_agent" in config
-        assert (
-            isinstance(config["additional_user_agent"], str)
-            and "/" in config["additional_user_agent"]
-        )
+        assert isinstance(config["additional_user_agent"], str) and "/" in config["additional_user_agent"]
         # Returned object is client instance
         assert srv_client is mock_client.return_value

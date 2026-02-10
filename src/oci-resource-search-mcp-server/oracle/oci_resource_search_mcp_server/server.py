@@ -50,9 +50,7 @@ def list_all_resources(
         description="The tenancy ID, which can be used to specify a different tenancy "
         "(for cross-tenancy authorization) when searching for resources in a different tenancy",
     ),
-    compartment_id: str = Field(
-        ..., description="The OCID of the compartment to list from"
-    ),
+    compartment_id: str = Field(..., description="The OCID of the compartment to list from"),
     limit: Optional[int] = Field(
         None,
         description="The maximum amount of resources to return. If None, there is no limit.",
@@ -102,12 +100,8 @@ def search_resources(
         description="The tenancy ID, which can be used to specify a different tenancy "
         "(for cross-tenancy authorization) when searching for resources in a different tenancy",
     ),
-    compartment_id: str = Field(
-        ..., description="The OCID of the compartment to list from"
-    ),
-    display_name: str = Field(
-        ..., description="The display name (full or substring) of the resource"
-    ),
+    compartment_id: str = Field(..., description="The OCID of the compartment to list from"),
+    display_name: str = Field(..., description="The display name (full or substring) of the resource"),
     limit: Optional[int] = Field(
         None,
         description="The maximum amount of resources to return. If None, there is no limit.",
@@ -155,9 +149,7 @@ def search_resources(
         raise e
 
 
-@mcp.tool(
-    description="Searches for the presence of the search string in all resource fields"
-)
+@mcp.tool(description="Searches for the presence of the search string in all resource fields")
 def search_resources_free_form(
     tenant_id: str = Field(
         ...,
@@ -214,9 +206,7 @@ def search_resources_by_type(
         description="The tenancy ID, which can be used to specify a different tenancy "
         "(for cross-tenancy authorization) when searching for resources in a different tenancy",
     ),
-    compartment_id: str = Field(
-        ..., description="The OCID of the compartment to list from"
-    ),
+    compartment_id: str = Field(..., description="The OCID of the compartment to list from"),
     resource_type: str = Field(
         ...,
         description="The source type to search by"
@@ -244,8 +234,7 @@ def search_resources_by_type(
                 "search_details": StructuredSearchDetails(
                     type="Structured",
                     query=(
-                        f"query {resource_type.lower()} "
-                        f"resources where compartmentId = '{compartment_id}'"
+                        f"query {resource_type.lower()} resources where compartmentId = '{compartment_id}'"
                     ),
                 ),
                 "page": next_page,

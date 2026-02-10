@@ -10,9 +10,7 @@ from behave import then
 @then("the response should contain a list of logging tools available")
 def step_impl_logging_tools_available(context):
     response_json = context.response.json()
-    assert (
-        "content" in response_json["message"]
-    ), "Response does not contain a content key."
+    assert "content" in response_json["message"], "Response does not contain a content key."
     content = response_json["message"]["content"].lower()
     assert any(
         tool in content
@@ -29,27 +27,21 @@ def step_impl_logging_tools_available(context):
 def step_impl_list_log_groups(context):
     result = context.response.json()
     assert "content" in result["message"], "Response does not contain a content key."
-    assert (
-        "ocid1.loggroup" in result["message"]["content"].lower()
-    ), "List of log groups not found."
+    assert "ocid1.loggroup" in result["message"]["content"].lower(), "List of log groups not found."
 
 
 @then("the response should contain the details of a log group")
 def step_impl_get_log_group(context):
     result = context.response.json()
     assert "content" in result["message"], "Response does not contain a content key."
-    assert (
-        "ocid1.loggroup" in result["message"]["content"].lower()
-    ), "Log group details not found."
+    assert "ocid1.loggroup" in result["message"]["content"].lower(), "Log group details not found."
 
 
 @then("the response should contain a list of logs")
 def step_impl_list_logs(context):
     result = context.response.json()
     assert "content" in result["message"], "Response does not contain a content key."
-    assert (
-        "ocid1.log" in result["message"]["content"].lower()
-    ), "List of logs not found."
+    assert "ocid1.log" in result["message"]["content"].lower(), "List of logs not found."
 
 
 @then("the response should contain the details of a log")

@@ -50,12 +50,13 @@ class TestModelCoercion:
                 return fake_models_module
             raise ImportError(name)
 
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            side_effect=import_side_effect,
-        ), patch(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
-        ) as mock_cfg:
+        with (
+            patch(
+                "oracle.oci_cloud_mcp_server.server.import_module",
+                side_effect=import_side_effect,
+            ),
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
+        ):
             mock_cfg.return_value = ({}, object())
 
             # note: We intentionally pass "vcn_details" (missing the "create_")

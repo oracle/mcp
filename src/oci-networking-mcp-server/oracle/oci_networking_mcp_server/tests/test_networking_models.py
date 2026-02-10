@@ -165,9 +165,7 @@ class TestModelsMapping:
                     source="0.0.0.0/0",
                     protocol="6",
                     tcp_options=oci.core.models.TcpOptions(
-                        destination_port_range=oci.core.models.PortRange(
-                            min=443, max=443
-                        )
+                        destination_port_range=oci.core.models.PortRange(min=443, max=443)
                     ),
                 )
             ],
@@ -177,9 +175,7 @@ class TestModelsMapping:
         assert isinstance(sl, SecurityList)
         assert sl.id == "sl1"
         assert sl.egress_security_rules and sl.ingress_security_rules
-        assert (
-            sl.ingress_security_rules[0].tcp_options.destination_port_range.min == 443
-        )
+        assert sl.ingress_security_rules[0].tcp_options.destination_port_range.min == 443
 
     def test_map_network_security_group(self):
         nsg_src = oci.core.models.NetworkSecurityGroup(

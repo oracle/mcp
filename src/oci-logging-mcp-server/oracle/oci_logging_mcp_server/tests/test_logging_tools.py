@@ -34,9 +34,7 @@ class TestLoggingTools:
         mock_client.list_log_groups.return_value = mock_summarize_response
 
         async with Client(mcp) as client:
-            call_tool_result = await client.call_tool(
-                "list_log_groups", {"compartment_id": "compartment1"}
-            )
+            call_tool_result = await client.call_tool("list_log_groups", {"compartment_id": "compartment1"})
             result = call_tool_result.structured_content["result"]
 
             assert len(result) == 1
@@ -136,9 +134,7 @@ class TestLoggingTools:
         mock_client.get_log_group.return_value = mock_get_response
 
         async with Client(mcp) as client:
-            call_tool_result = await client.call_tool(
-                "get_log_group", {"log_group_id": "logGroup1"}
-            )
+            call_tool_result = await client.call_tool("get_log_group", {"log_group_id": "logGroup1"})
             result = call_tool_result.structured_content
 
             assert result["id"] == "logGroup1"
@@ -165,9 +161,7 @@ class TestLoggingTools:
         mock_client.list_logs.return_value = mock_summarize_response
 
         async with Client(mcp) as client:
-            call_tool_result = await client.call_tool(
-                "list_logs", {"log_group_id": "logGroup1"}
-            )
+            call_tool_result = await client.call_tool("list_logs", {"log_group_id": "logGroup1"})
             result = call_tool_result.structured_content["result"]
 
             assert result[0]["id"] == "logid1"
@@ -327,9 +321,7 @@ class TestLoggingTools:
 
         mock_get_response = create_autospec(oci.response.Response)
         mock_get_response.data = oci.loggingsearch.models.SearchResponse(
-            results=[
-                oci.loggingsearch.models.SearchResult(data={"event": "testEvent"})
-            ],
+            results=[oci.loggingsearch.models.SearchResult(data={"event": "testEvent"})],
             fields=[],
             summary=[],
         )
@@ -351,9 +343,7 @@ class TestLoggingTools:
     @pytest.mark.asyncio
     @patch("oracle.oci_logging_mcp_server.server.map_search_response")
     @patch("oracle.oci_logging_mcp_server.server.get_logging_search_client")
-    async def test_search_logs_oversize_raises_toolerror(
-        self, mock_get_client, mock_map
-    ):
+    async def test_search_logs_oversize_raises_toolerror(self, mock_get_client, mock_map):
         class DummySearchResponse:
             def model_dump_json(self):
                 # Force the ValueError path by exceeding size threshold
@@ -386,9 +376,7 @@ class TestLoggingTools:
         mock_get_script.return_value = "GUIDE CONTENT"
 
         async with Client(mcp) as client:
-            content = (
-                await client.read_resource("resource://search-log-query-syntax-guide")
-            )[0].text
+            content = (await client.read_resource("resource://search-log-query-syntax-guide"))[0].text
         assert content == "GUIDE CONTENT"
         mock_get_script.assert_called_once()
 
@@ -410,9 +398,7 @@ class TestLoggingTools:
 
         async with Client(mcp) as client:
             raw = (
-                await client.call_tool(
-                    "get_paginated_event_types", {"page": 1, "page_size": 2}
-                )
+                await client.call_tool("get_paginated_event_types", {"page": 1, "page_size": 2})
             ).structured_content
 
         text = raw["result"] if isinstance(raw, dict) and "result" in raw else raw
@@ -436,9 +422,7 @@ class TestLoggingTools:
 
         async with Client(mcp) as client:
             raw = (
-                await client.call_tool(
-                    "get_paginated_event_types", {"page": 3, "page_size": 2}
-                )
+                await client.call_tool("get_paginated_event_types", {"page": 3, "page_size": 2})
             ).structured_content
 
         text = raw["result"] if isinstance(raw, dict) and "result" in raw else raw
@@ -449,9 +433,7 @@ class TestLoggingTools:
     async def test_get_paginated_event_types_table_not_found(self, mock_get_script):
         mock_get_script.return_value = "This is a guide without a table."
         async with Client(mcp) as client:
-            raw = (
-                await client.call_tool("get_paginated_event_types", {})
-            ).structured_content
+            raw = (await client.call_tool("get_paginated_event_types", {})).structured_content
         text = raw["result"] if isinstance(raw, dict) and "result" in raw else raw
         assert "Table not found in the guide." in text
 
@@ -546,9 +528,7 @@ class TestGetClient:
             profile_name="MYPROFILE",
         )
         mock_open_file.assert_called_once_with("/abs/path/to/token", "r")
-        mock_security_token_signer.assert_called_once_with(
-            "SECURITY_TOKEN", private_key_obj
-        )
+        mock_security_token_signer.assert_called_once_with("SECURITY_TOKEN", private_key_obj)
         # Ensure user agent was set on the same config dict passed into client
         args, _ = mock_client.call_args
         passed_config = args[0]
@@ -642,9 +622,7 @@ class TestGetClient:
             profile_name="MYPROFILE",
         )
         mock_open_file.assert_called_once_with("/abs/path/to/token", "r")
-        mock_security_token_signer.assert_called_once_with(
-            "SECURITY_TOKEN", private_key_obj
-        )
+        mock_security_token_signer.assert_called_once_with("SECURITY_TOKEN", private_key_obj)
         # Ensure user agent was set on the same config dict passed into client
         args, _ = mock_client.call_args
         passed_config = args[0]

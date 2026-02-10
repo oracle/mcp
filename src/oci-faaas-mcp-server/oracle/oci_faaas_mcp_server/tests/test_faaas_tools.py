@@ -29,9 +29,7 @@ except ModuleNotFoundError:  # pragma: no cover
     oci.auth = types.SimpleNamespace(
         signers=types.SimpleNamespace(SecurityTokenSigner=lambda token, key: object())
     )
-    oci.fusion_apps = types.SimpleNamespace(
-        FusionApplicationsClient=lambda config, signer=None: object()
-    )
+    oci.fusion_apps = types.SimpleNamespace(FusionApplicationsClient=lambda config, signer=None: object())
 
 
 class TestFaaasTools:
@@ -145,9 +143,7 @@ class TestFaaasTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_faaas_mcp_server.server.get_faaas_client")
-    async def test_list_fusion_environment_families_pagination_header_fallback(
-        self, mock_get_client
-    ):
+    async def test_list_fusion_environment_families_pagination_header_fallback(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -179,9 +175,7 @@ class TestFaaasTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_faaas_mcp_server.server.get_faaas_client")
-    async def test_list_fusion_environments_pagination_and_filters(
-        self, mock_get_client
-    ):
+    async def test_list_fusion_environments_pagination_and_filters(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -214,9 +208,7 @@ class TestFaaasTools:
 
             # First call includes filters (no 'page'), second call includes page
             first_kwargs = mock_client.list_fusion_environments.call_args_list[0].kwargs
-            second_kwargs = mock_client.list_fusion_environments.call_args_list[
-                1
-            ].kwargs
+            second_kwargs = mock_client.list_fusion_environments.call_args_list[1].kwargs
             assert first_kwargs["compartment_id"] == "comp"
             assert first_kwargs["fusion_environment_family_id"] == "fam"
             assert first_kwargs["display_name"] == "E"
@@ -228,23 +220,18 @@ class TestFaaasTools:
     @pytest.mark.asyncio
     async def test_main_runs_mcp_run(self):
         with patch("oracle.oci_faaas_mcp_server.server.mcp.run") as mock_run:
-
             main()
             mock_run.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("oracle.oci_faaas_mcp_server.server.get_faaas_client")
-    async def test_list_fusion_environment_families_handles_items_attr_and_filters(
-        self, mock_get_client
-    ):
+    async def test_list_fusion_environment_families_handles_items_attr_and_filters(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
         # Response has a 'data' object with an 'items' attribute
         resp = create_autospec(oci.response.Response)
-        resp.data = types.SimpleNamespace(
-            items=[{"id": "famX", "display_name": "Family X"}]
-        )
+        resp.data = types.SimpleNamespace(items=[{"id": "famX", "display_name": "Family X"}])
         resp.next_page = None
         resp.headers = {}
 
@@ -270,9 +257,7 @@ class TestFaaasTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_faaas_mcp_server.server.get_faaas_client")
-    async def test_list_fusion_environment_families_headers_exception_fallback(
-        self, mock_get_client
-    ):
+    async def test_list_fusion_environment_families_headers_exception_fallback(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -320,9 +305,7 @@ class TestFaaasTools:
 
 
 class TestGetClient:
-    @patch(
-        "oracle.oci_faaas_mcp_server.server.oci.fusion_apps.FusionApplicationsClient"
-    )
+    @patch("oracle.oci_faaas_mcp_server.server.oci.fusion_apps.FusionApplicationsClient")
     @patch("oracle.oci_faaas_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
     @patch("oracle.oci_faaas_mcp_server.server.oci.signer.load_private_key_from_file")
     @patch(
@@ -362,21 +345,19 @@ class TestGetClient:
             profile_name="MYPROFILE",
         )
         mock_open_file.assert_called_once_with("/abs/path/to/token", "r")
-        mock_security_token_signer.assert_called_once_with(
-            "SECURITY_TOKEN", private_key_obj
-        )
+        mock_security_token_signer.assert_called_once_with("SECURITY_TOKEN", private_key_obj)
         # Ensure user agent was set on the same config dict passed into client
         args, _ = mock_client.call_args
         passed_config = args[0]
         assert passed_config is config
-        expected_user_agent = f"{server.__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{server.__version__}"  # noqa
+        expected_user_agent = (
+            f"{server.__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{server.__version__}"  # noqa
+        )
         assert passed_config.get("additional_user_agent") == expected_user_agent
         # And we returned the client instance
         assert result == mock_client.return_value
 
-    @patch(
-        "oracle.oci_faaas_mcp_server.server.oci.fusion_apps.FusionApplicationsClient"
-    )
+    @patch("oracle.oci_faaas_mcp_server.server.oci.fusion_apps.FusionApplicationsClient")
     @patch("oracle.oci_faaas_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
     @patch("oracle.oci_faaas_mcp_server.server.oci.signer.load_private_key_from_file")
     @patch(
@@ -420,9 +401,6 @@ class TestGetClient:
         cc_args, _ = mock_client.call_args
         assert cc_args[0] is config
         assert "additional_user_agent" in config
-        assert (
-            isinstance(config["additional_user_agent"], str)
-            and "/" in config["additional_user_agent"]
-        )
+        assert isinstance(config["additional_user_agent"], str) and "/" in config["additional_user_agent"]
         # Returned object is client instance
         assert srv_client is mock_client.return_value

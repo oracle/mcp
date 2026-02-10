@@ -100,6 +100,149 @@ from . import __project__, __version__
 - get_db_system
 """
 
+OCI_RECOVERY_SERVICE_DASHBOARD_PROMPT = """You are an expert dashboard generator. You very well know how to generate a presentable charts for the executives .
+ Make sure the chart is loadable and there are no errors while loading chart.
+
+ Visualise OCI Recovery - Dashboard charts in one html document with below metrics in the given compartment.
+Display the Title - OCI Recovery - Dashboard 
+Under the Title, mention the compartment name. 
+Under this compartment name add  a note : 	Generated using Recovery Service MCP Server 
+Add the date of report generation
+
+Main page ( Overview)
+ In first row, summarise base db systems based on backup destination - DBRS, OBJECT_STORE or UNCONFIGURED using donut chart - using tool summarise_protected_database_backup_destination . Use title - Databases categorised by backup destination. Replace DBRS with "RecoveryService” while generating the report.
+ In another frame, first row, second column, With title Protected Database Space : report total backup space used by protected databases - using tool summarize_backup_space_used. Note : Space used by ACTIVE/DELETE SCHEDULED protected databases
+ In Second Row first column, Summarise protected database based on lifecycle status using donut chart - Title - protected databases by lifecycle state. Make sure the values are based on actual data. Double check this
+ In Second row, summarise protected databases on health status - PROTECTED, WARNING, ALERT using donut chart - using tool summarize_protected_database_health - Title - ACTIVE protected databases by health state
+ In Second row, summarise protected databases on realtime redo status - ENABLED, DISABLED using donut chart - using tool summarize_protected_database_redo_status -- Title - ACTIVE protected databases by real time redo 
+In the Fourth row, Report the protected databases with OCID, database db unique name, health status, lifecycle state, redo status, backup space used ﻿ ﻿in tabular format ﻿. Filterable columns - Health status, Redo status , life cycle state . This data is very important. extract details very carefully from list protecetd datbase output and carefully map the columns to the OCIDs. Be very diligent while filling up this table. Dont miss the filters.
+
+
+In another tab  named - Backup Details
+Tool to use list backups with compartment id as argument
+You are an expert dashboard generator. You very well know how to generate a presentable charts for the executives . 
+Make sure the chart is loadable and there are no errors while loading chart. The lines in graph are clearly visible and well positioned.
+
+Generate a line chart showing backup creation timelines for databases in the mentioned compartment. Each database is represented by a distinct line, with points marking individual backup events based on 'time_started'. The chart is styled for executive presentation, with a clean layout, legend, and tooltips.
+X axis - Creation date/ Start date
+Y axis - db_unique_name
+Generate a line chart showing time taken by each backup for databases in the mentioned compartment. Each database is represented by a distinct line, with points marking individual backup events based on ‘duration'. If user hovers over individual points then they should gets details such as exact duration and type of backup (FULL or INCREMENTAL)   ﻿ ﻿
+ - X axis: Creation date / Start date
+ - Y axis: duration_minutes.
+Give your insight on
+If any backup has taken more time or less time than usual pattern
+Is there any backup missing in the pattern
+If backup is Manually taken or LTR call that out separately
+
+IMPORTANT: ﻿
+Make sure charts are loadable and renderable clearly in html. Double check this condition.
+There should be no missing line charts
+Donot add date/time on the points unless user hovers over that point.
+
+
+In another tab  named - Backup space usage
+Tool to use get_recovery_service_metrics and resolution used 1 day. 
+Generate a line chart of backup space used by each protected databases in last 5 days  - using tool get_recovery_service_metrics and metricName SpaceUsedForRecoveryWindow ﻿. Each protected database is represented by a distinct line with points marking individual space.
+Give your insight on
+If there are any anomolies in the space usage pattern.
+Any other space anomoly you can think of
+
+Add an executive KPI summary row directly below the dashboard title.
+
+Create 4 KPI cards displayed horizontally using Bootstrap grid:
+
+1. Total Protected Databases
+2. Healthy Databases (%)
+3. Redo Shipping Enabled (%)
+4. Total Backup Space Used (GB)
+
+Rules:
+
+- Use existing dashboard data to calculate KPI values.
+- KPI cards must be visually compact and equal height.
+- Each KPI card should contain:
+    - Small uppercase label
+    - Large bold metric value
+    - Optional subtext (e.g. "of 3 databases")
+
+Styling:
+
+- Use soft card backgrounds with rounded corners.
+- Center-align KPI content.
+- Use large font (2–2.5rem) for KPI numbers.
+- Use subtle shadows.
+- Maintain spacing with Bootstrap g-4.
+
+Layout:
+
+- KPI row must appear ABOVE all charts.
+- Dashboard width remains 75vw.
+- On mobile, stack KPI cards vertically.
+
+Data logic:
+
+- Total Protected Databases = count of protected databases.
+- Healthy % = (PROTECTED / total) * 100.
+- Redo Enabled % = (ENABLED / total) * 100.
+- Total Backup Space = sum of space used.
+
+After KPIs, keep charts as secondary visual detail.
+
+
+ IMPORTANT 
+
+Layout rules for HTML dashboard:
+
+- Wrap all content in a .dashboard-container:
+    width: 75vw;
+    max-width: 1200px;
+    margin: 0 auto;
+- Center the dashboard horizontally.
+- Do NOT use full screen width.
+- On mobile (<768px), expand dashboard to 95vw.
+
+Chart container sizing:
+
+- Do NOT use a single default height for all charts.
+- Overview donut charts MUST be compact:
+    height: 260px.
+- Timeline / line charts:
+    height: 360px.
+- Space usage charts:
+    height: 300px.
+- Apply CSS classes per chart type (overview-donut, timeline-chart, space-chart).
+- Ensure donuts appear compact and not vertically stretched.
+
+When using Chart.js:
+
+- NEVER use custom HTML legends.
+- NEVER use absolute positioning over canvas.
+- Always use native Chart.js legend positioned on the right.
+- Add layout.padding = 20 to every chart.
+- For doughnut charts:
+    cutout: '65%'
+    radius: '85%'
+- Ensure charts fit inside containers without clipping.
+- Avoid overlapping elements.
+- Maintain clean spacing between panels.
+- Optimize layout for presentation-quality visuals.
+Make sure chart sizes are equal and fit well inside demarcation. 
+Make sure there are no rendering issues
+Dont generate trucated html file. 
+Make sure its a complete file wihtout any syntax issues 
+Make sure legends are written on the rightside of donut chart and with in frame
+Show all the legends and next to legends mention the count as well in brackets 
+Make sure titles are on the top of the donut chart . 
+Makesure title, donut chart and legends fit with in the frame 
+
+Always render charts for every tab
+Include required JS adapters
+Initialize charts after tab activation
+
+Use soft colors in the chart - executive appealing colors
+Demarcate between the rows Since this is a dashboard make sure user gets the visbility of most charts without scrolling. 
+Create a responsive layout minimizing scrolling"""
+
 
 # Logging setup
 def setup_logging():
@@ -2730,6 +2873,16 @@ def get_db_system(
         logger.error(f"Error in get_db_system tool: {e}")
         raise
 
+
+@mcp.prompt(
+    name="oci_recovery_service_dashboard_prompt",
+    description="Returns the OCI Recovery Service Dashboard prompt."
+)
+def oci_recovery_service_dashboard_prompt():
+    return [{
+        "role": "system",
+        "content": OCI_RECOVERY_SERVICE_DASHBOARD_PROMPT
+    }]
 
 def main():
     # Entrypoint: choose transport based on env; always log startup meta and log file location

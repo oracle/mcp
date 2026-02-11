@@ -145,8 +145,11 @@ The server provides four built-in toolsets that can be enabled via `-Dtools`:
     </tr>
     <tr>
       <td><code>rag</code></td>
-      <td>Vector similarity search</td>
-      <td>similarity-search</td>
+      <td>Vector store management and semantic similarity search</td>
+      <td>
+        list-vector-models, list-vector-stores, create-vector-store,
+        insert-file-with-embedding, similarity-search
+      </td>
     </tr>
   </tbody>
 </table>
@@ -157,7 +160,7 @@ _Note: Each tool belongs to exactly one built-in toolset. Enabling a toolset ena
 - `-Dtools=mcp-admin` - Admin and runtime configuration tools
 - `-Dtools=log-analyzer` - Log analysis only (no database required)
 - `-Dtools=database-operator` - Database operations and SQL execution
-- `-Dtools=rag` – Vector similarity search
+- `-Dtools=rag` – Vector store management and semantic similarity search
 - `-Dtools=mcp-admin,log-analyzer` - Admin + log analysis
 - `-Dtools=*` - All tools (default if omitted)
 
@@ -207,7 +210,54 @@ These tools operate on RDBMS/SQLNet trace files:
 * **`get-rdbms-errors`**: Extracts errors from RDBMS/SQLNet trace files.
 * **`get-rdbms-packet-dumps`**: Extracts packet dumps for a specific connection ID.
 
-### 3.7. Vector Similarity Search (RAG)
+### 3.7. Vector Store Management and Semantic Search (RAG)
+
+These tools provide a full RAG pipeline: model discovery, vector store creation, document ingestion, and semantic search
+
+* **`list-vector-models`**: Lists all loaded ONNX embedding models with their names, algorithms, creation dates, and sizes.
+
+* **`list-vector-stores`**: Lists all tables in the current schema that contain at least one VECTOR column, along with their approximate row counts.
+
+* **`create-vector-store`**: Build a new vector store table optimized for AI-powered search.
+Every table gets an `ID` primary key and a `CREATED_AT` timestamp automatically. When you enable metadata tracking (on by default),
+the table also includes:
+  * A `METADATA` column to store document information as JSON.
+  * An intelligent index that makes duplicate detection instant, even with millions of rows
+
+  **Inputs:**
+
+   * `tableName` (required) — Name of your new vector store
+   * `textColumn` (default: `TEXT`) — Where to store your text chunks
+   * `embeddingColumn` (default: `EMBEDDING`) — Where to store the AI-generated vectors
+   * `dimensions` (optional) — Lock vector size to a specific dimension, or leave flexible to accept any model
+   * `includeMetadata` (default: `true`) — Track document sources and enable smart deduplication
+
+* **`insert-file-with-embedding`**: Drop in any document — PDF, Word, text, you name it — and watch it transform into searchable knowledge.
+  Oracle handles the heavy lifting: extracting text, splitting into smart chunks, generating embeddings, and organizing everything for instant retrieval. 
+If you've already inserted this exact file, it quietly skips the duplicate — no wasted storage, no cleanup needed.
+
+  **Inputs:**
+
+    * `table` (required) — Which vector store to populate
+    * `filePath` (required) — Full path to your document
+    * `textColumn`  (default: `text) — Column for text storage
+    * `embeddingColumn` (default: `EMBEDDING`) — Column for vectors
+    * `modelName` (default: `doc_model`) — Which AI model to use for embeddings
+    * `chunkParams` (default: `{"max": 500, "overlap": 50}) — How to split your document (max tokens per chunk, overlap between chunks)
+
+  **Returns:** `{table, sourceFile, chunksCreated, status} where status is "success" or "skipped".
+
+  **Deduplication:** If the table has a `METADATA` column and the file has already been inserted (matched by absolute path),
+the entire insert is skipped. No duplicate chunks are created. Returns status: `skipped` with `chunksCreated: 0`.
+
+  **Metadata written per chunk:**
+
+    * `document_id` UUID shared by all chunks of the same file.
+    * `source_file` Absolute file path.
+    * `chunk_index` 0-based chunk position within the document.
+    * `total_chunks` Total number of chunks for this file.
+
+  **Note:** Tables created without `includeMetadata` accept inserts but have no deduplication — the same file can be inserted multiple times.
 
 * **`similarity-search`**: Perform semantic similarity search using Oracle’s vector features (`VECTOR_EMBEDDING`, `VECTOR_DISTANCE`).
 
@@ -546,8 +596,7 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
           <li><code>mcp-admin</code> — server discovery and runtime configuration tools (list-tools, edit-tools)</li>
           <li><code>database-operator</code> — database operations, transactions, monitoring, and execution plans (read-query, write-query, create-table, delete-table, list-tables, describe-table, start-transaction, resume-transaction, commit-transaction, rollback-transaction, db-ping, db-metrics-range, explain-plan).</li>
           <li><code>log-analyzer</code> — all JDBC log and RDBMS/SQLNet analysis tools (get-jdbc-stats, get-jdbc-queries, get-jdbc-errors, list-log-files-from-directory, jdbc-log-comparison, get-jdbc-connection-events, get-rdbms-errors, get-rdbms-packet-dumps)</li>
-          <li><code>rag</code> — similarity-search</li>
-        </ul>
+          <li><code>rag</code> — vector store management and semantic similarity search (list-vector-models, list-vector-stores, create-vector-store, insert-file-with-embedding, similarity-search)</li>         </ul>
         You can also define your own YAML <code>toolsets:</code> and reference them here.  
         Use <code>*</code> or <code>all</code> to enable everything. If omitted, all tools are enabled by default.
       </td>

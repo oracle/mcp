@@ -44,6 +44,108 @@ final class SqlQueries {
     )
   """;
 
+  /**
+   * Query to list all vector stores (tables that have at least one VECTOR column).
+   */
+  public static final String LIST_VECTOR_STORES_QUERY = """
+    SELECT tc.table_name, tc.column_name, t.num_rows
+    FROM user_tab_columns tc
+    JOIN user_tables t ON tc.table_name = t.table_name
+    WHERE tc.data_type = 'VECTOR'
+    ORDER BY tc.table_name, tc.column_name
+  """;
+
+  /**
+   * Query to list all vector embedding models available in the schema.
+   */
+  public static final String LIST_VECTOR_MODELS_QUERY = """
+    SELECT model_name, mining_function, algorithm, creation_date, model_size
+    FROM user_mining_models
+    WHERE mining_function = 'EMBEDDING'
+    ORDER BY creation_date DESC
+  """;
+
+  /**
+   * Query to check whether a table has a METADATA column.
+   * <p>
+   * Returns : COUNT(*) — 1 if column exists, 0 if not
+   */
+  public static final String CHECK_METADATA_COLUMN_QUERY = """
+    SELECT COUNT(*)
+    FROM user_tab_columns
+    WHERE table_name = ? AND column_name = 'METADATA'
+  """;
+
+  /**
+   * Atomic INSERT: BLOB → extract → chunk → embed → metadata, with NOT EXISTS deduplication on source_file.
+  */
+   public static final String INSERT_FILE_WITH_EMBEDDING_QUERY = """
+    INSERT INTO %s (ID, CREATED_AT, METADATA, %s, %s)
+    SELECT
+      SYS_GUID(),
+      SYSTIMESTAMP,
+      JSON_OBJECT(
+        'document_id' VALUE ?,
+        'source_file' VALUE ?,
+        'chunk_index' VALUE (ROW_NUMBER() OVER (ORDER BY ROWNUM) - 1),
+        'total_chunks' VALUE COUNT(*) OVER ()
+      ),
+      jt.EMBED_DATA,
+      TO_VECTOR(jt.EMBED_VECTOR)
+    FROM TABLE(
+      DBMS_VECTOR.UTL_TO_EMBEDDINGS(
+        DBMS_VECTOR.UTL_TO_CHUNKS(
+          DBMS_VECTOR_CHAIN.UTL_TO_TEXT(
+            ?,
+            JSON('{"plaintext": true, "charset": "UTF8", "format": "BINARY"}')
+          ),
+          JSON(?)
+        ),
+        JSON(?)
+      )
+    ) t,
+    JSON_TABLE(t.COLUMN_VALUE, '$'
+      COLUMNS (
+        EMBED_DATA   CLOB PATH '$.embed_data',
+        EMBED_VECTOR CLOB PATH '$.embed_vector'
+      )
+    ) jt
+    WHERE NOT EXISTS (
+      SELECT 1 FROM %s
+      WHERE JSON_VALUE(METADATA, '$.source_file') = ?
+    )
+  """;
+
+  /**
+   * Same pipeline as {@link #INSERT_FILE_WITH_EMBEDDING_QUERY} but without METADATA or deduplication.
+   */
+  public static final String INSERT_FILE_WITHOUT_METADATA_QUERY = """
+    INSERT INTO %s (ID, CREATED_AT, %s, %s)
+    SELECT
+      SYS_GUID(),
+      SYSTIMESTAMP,
+      jt.EMBED_DATA,
+      TO_VECTOR(jt.EMBED_VECTOR)
+    FROM TABLE(
+      DBMS_VECTOR.UTL_TO_EMBEDDINGS(
+        DBMS_VECTOR.UTL_TO_CHUNKS(
+          DBMS_VECTOR_CHAIN.UTL_TO_TEXT(
+            ?,
+            JSON('{"plaintext": true, "charset": "UTF8", "format": "BINARY"}')
+          ),
+          JSON(?)
+        ),
+        JSON(?)
+      )
+    ) t,
+    JSON_TABLE(t.COLUMN_VALUE, '$'
+      COLUMNS (
+        EMBED_DATA   CLOB PATH '$.embed_data',
+        EMBED_VECTOR CLOB PATH '$.embed_vector'
+      )
+    ) jt
+  """;
+
   private SqlQueries() {
     // Utility class
   }

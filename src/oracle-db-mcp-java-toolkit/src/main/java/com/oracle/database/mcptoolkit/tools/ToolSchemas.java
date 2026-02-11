@@ -226,4 +226,95 @@ public class ToolSchemas {
       }
       """;
 
+  /**
+   * JSON schema for listing vector stores.
+   */
+  static final String LIST_VECTOR_STORES = """
+    {
+      "type": "object",
+      "properties": {}
+    }""";
+
+  /**
+   * JSON schema for listing vector models.
+   */
+  static final String LIST_VECTOR_MODELS = """
+    {
+      "type": "object",
+      "properties": {}
+    }""";
+
+  /**
+   * JSON schema for Creating Vector Store.
+   * <p>
+   * This schema requires a "tableName" property and optionally accepts column names,
+   * vector dimensions, and a flag to include metadata tracking.
+   */
+  static final String CREATE_VECTOR_STORE = """
+  {
+    "type": "object",
+    "properties": {
+      "tableName": {
+        "type": "string",
+        "description": "Name of the vector store table to create"
+      },
+      "textColumn": {
+        "type": "string",
+        "description": "Name for text/CLOB column (default: text)"
+      },
+      "embeddingColumn": {
+        "type": "string",
+        "description": "Name for vector embedding column (default: EMBEDDING)"
+      },
+      "dimensions": {
+        "type": "integer",
+        "description": "Vector dimensions (optional). If not specified, allows flexible dimensions"
+      },
+      "includeMetadata": {
+        "type": "boolean",
+        "description": "Include ID and metadata columns (default: true)"
+      }
+    },
+    "required": ["tableName"]
+  }""";
+
+  /**
+   * JSON schema for inserting file with embedding.
+   */
+  static final String INSERT_FILE_WITH_EMBEDDING = """
+    {
+      "type": "object",
+      "properties": {
+        "table": {
+          "type": "string",
+          "description": "Target vector store table name"
+        },
+        "filePath": {
+          "type": "string",
+          "description": "Path to file (PDF, DOC, JSON, etc.)"
+        },
+        "textColumn": {
+          "type": "string",
+          "description": "Text column name (default: text)"
+        },
+        "embeddingColumn": {
+          "type": "string",
+          "description": "Embedding column name (default: EMBEDDING)"
+        },
+        "modelName": {
+          "type": "string",
+          "description": "Vector model name (default: doc_model)"
+        },
+        "metadata": {
+          "type": "string",
+          "description": "Optional JSON metadata"
+        },
+        "chunkParams": {
+          "type": "string",
+          "description": "JSON chunking params (default: {\\\"max\\\": 500, \\\"overlap\\\": 50})"
+        }
+      },
+      "required": ["table", "filePath"]
+    }""";
+
 }

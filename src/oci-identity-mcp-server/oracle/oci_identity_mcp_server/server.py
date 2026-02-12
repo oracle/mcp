@@ -12,6 +12,7 @@ from typing import Literal, Optional
 
 import oci
 from fastmcp import FastMCP
+from oracle.mcp_common import with_oci_client
 from oracle.oci_identity_mcp_server.models import (
     AuthToken,
     AvailabilityDomain,
@@ -28,29 +29,15 @@ from oracle.oci_identity_mcp_server.models import (
 )
 from pydantic import Field
 
-from . import __project__, __version__
+from . import __project__
 
 logger = Logger(__name__, level="INFO")
 
 mcp = FastMCP(name=__project__)
 
 
-def get_identity_client():
-    config = oci.config.from_file(
-        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
-    )
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = os.path.expanduser(config["security_token_file"])
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    return oci.identity.IdentityClient(config, signer=signer)
-
-
 @mcp.tool(description="List compartments in a given compartment or tenancy.")
+@with_oci_client(oci.identity.IdentityClient)
 def list_compartments(
     compartment_id: str = Field(
         ...,
@@ -80,12 +67,12 @@ def list_compartments(
         description="The maximum amount of compartments to return. If None, there is no limit.",
         ge=1,
     ),
+    *,
+    client: oci.identity.IdentityClient,
 ) -> list[Compartment]:
     compartments: list[Compartment] = []
 
     try:
-        client = get_identity_client()
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None
@@ -129,12 +116,13 @@ def list_compartments(
 
 
 @mcp.tool(description="Get tenancy with a given OCID")
+@with_oci_client(oci.identity.IdentityClient)
 def get_tenancy(
-    tenancy_id: str = Field(..., description="The OCID of the tenancy")
+    tenancy_id: str = Field(..., description="The OCID of the tenancy"),
+    *,
+    client: oci.identity.IdentityClient,
 ) -> Tenancy:
     try:
-        client = get_identity_client()
-
         response: oci.response.Response = client.get_tenancy(tenancy_id)
         data: oci.identity.models.Tenancy = response.data
         logger.info("Found Tenancy")
@@ -146,17 +134,18 @@ def get_tenancy(
 
 
 @mcp.tool(description="Lists all of the availability domains in a given tenancy")
+@with_oci_client(oci.identity.IdentityClient)
 def list_availability_domains(
     compartment_id: str = Field(
         ...,
         description="The OCID of the compartment (remember that the tenancy is simply the root compartment)",
     ),
+    *,
+    client: oci.identity.IdentityClient,
 ) -> list[AvailabilityDomain]:
     ads: list[AvailabilityDomain] = []
 
     try:
-        client = get_identity_client()
-
         response = client.list_availability_domains(compartment_id)
 
         data: list[oci.identity.models.AvailabilityDomain] = response.data
@@ -172,10 +161,9 @@ def list_availability_domains(
 
 
 @mcp.tool
-def get_current_tenancy() -> Tenancy:
+@with_oci_client(oci.identity.IdentityClient)
+def get_current_tenancy(*, client: oci.identity.IdentityClient) -> Tenancy:
     try:
-        client = get_identity_client()
-
         config = oci.config.from_file(
             file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
             profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
@@ -192,15 +180,16 @@ def get_current_tenancy() -> Tenancy:
 
 
 @mcp.tool
+@with_oci_client(oci.identity.IdentityClient)
 def create_auth_token(
     user_id: str = Field(..., description="The OCID of the user"),
     description: Optional[str] = Field(
         "", description="The description of the auth token"
     ),
+    *,
+    client: oci.identity.IdentityClient,
 ) -> AuthToken:
     try:
-        client = get_identity_client()
-
         create_auth_token_details = oci.identity.models.CreateAuthTokenDetails(
             description=description
         )
@@ -219,9 +208,9 @@ def create_auth_token(
 
 
 @mcp.tool
-def get_current_user() -> User:
+@with_oci_client(oci.identity.IdentityClient)
+def get_current_user(*, client: oci.identity.IdentityClient) -> User:
     try:
-        client = get_identity_client()
         config = oci.config.from_file(
             file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
             profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
@@ -270,19 +259,20 @@ def get_current_user() -> User:
 @mcp.tool(
     description="Get a specific compartment by its name within a parent compartment."
 )
+@with_oci_client(oci.identity.IdentityClient)
 def get_compartment_by_name(
     name: str = Field(description="The name of the compartment to find."),
     parent_compartment_id: str = Field(
         description="The OCID of the parent compartment to search within (or tenancy OCID).",
     ),
+    *,
+    client: oci.identity.IdentityClient,
 ) -> Optional[Compartment]:
     """
     Searches for a compartment by name within a specific parent compartment.
     Note: This is not a recursive search; it only looks at direct children.
     """
     try:
-        client = get_identity_client()
-
         has_next_page = True
         next_page: str = None
 
@@ -313,13 +303,15 @@ def get_compartment_by_name(
 
 
 @mcp.tool(description="List the regions a tenancy is subscribed to.")
+@with_oci_client(oci.identity.IdentityClient)
 def list_subscribed_regions(
-    tenancy_id: str = Field(..., description="The OCID of the tenancy.")
+    tenancy_id: str = Field(..., description="The OCID of the tenancy."),
+    *,
+    client: oci.identity.IdentityClient,
 ) -> list[RegionSubscription]:
     regions: list[RegionSubscription] = []
 
     try:
-        client = get_identity_client()
         response = client.list_region_subscriptions(tenancy_id=tenancy_id)
 
         data: list[oci.identity.models.RegionSubscription] = response.data

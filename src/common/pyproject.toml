@@ -1,28 +1,17 @@
 [project]
-name = "oracle.oci-identity-mcp-server"
-version = "2.1.3"
-description = "OCI Identity Service MCP server"
+name = "mcp-common"
+version = "0.1.0"
+description = "Shared utilities for Oracle MCP servers"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 license = "UPL-1.0"
 license-files = ["LICENSE.txt"]
 authors = [
     {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
 ]
 dependencies = [
-    "fastmcp==2.14.2",
     "oci==2.160.0",
 ]
-
-classifiers = [
-    "License :: OSI Approved :: Universal Permissive License (UPL)",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python",
-    "Programming Language :: Python :: 3.13",
-]
-
-[project.scripts]
-"oracle.oci-identity-mcp-server" = "oracle.oci_identity_mcp_server.server:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -53,9 +42,3 @@ omit = [
 ]
 precision = 2
 fail_under = 90
-
-[tool.pytest.ini_options]
-pythonpath = [
-    "..",
-    "../common",
-]

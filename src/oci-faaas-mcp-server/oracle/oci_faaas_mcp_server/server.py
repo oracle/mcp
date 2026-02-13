@@ -4,15 +4,15 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
-import os
 from logging import Logger
 from typing import Any, Literal, Optional
 
 import oci
 from fastmcp import FastMCP
+from oracle.mcp_common import with_oci_client
 from pydantic import Field
 
-from . import __project__, __version__
+from . import __project__
 from .models import (
     FusionEnvironment,
     FusionEnvironmentFamily,
@@ -27,31 +27,10 @@ logger = Logger(__name__, level="INFO")
 mcp = FastMCP(name=__project__)
 
 
-def get_faaas_client():
-    """Initialize and return an OCI Fusion Applications client using security token auth."""
-    logger.info("entering get_faaas_client")
-
-    config = oci.config.from_file(
-        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
-    )
-
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = config["security_token_file"]
-    token = None
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-
-    return oci.fusion_apps.FusionApplicationsClient(config, signer=signer)
-
-
 @mcp.tool(
     description="Returns a list of Fusion Environment Families in the specified compartment."
 )
+@with_oci_client(oci.fusion_apps.FusionApplicationsClient)
 def list_fusion_environment_families(
     compartment_id: str = Field(
         ..., description="The ID of the compartment in which to list resources."
@@ -68,8 +47,9 @@ def list_fusion_environment_families(
             "DELETING, DELETED, FAILED"
         ),
     ),
+    *,
+    client: oci.fusion_apps.FusionApplicationsClient,
 ) -> list[FusionEnvironmentFamily]:
-    client = get_faaas_client()
 
     families: list[FusionEnvironmentFamily] = []
     next_page: Optional[str] = None
@@ -119,6 +99,7 @@ def list_fusion_environment_families(
         "(optionally filtered by family)."
     )
 )
+@with_oci_client(oci.fusion_apps.FusionApplicationsClient)
 def list_fusion_environments(
     compartment_id: str = Field(
         ..., description="The ID of the compartment in which to list resources."
@@ -146,8 +127,9 @@ def list_fusion_environments(
             "INACTIVE, DELETING, DELETED, FAILED"
         ),
     ),
+    *,
+    client: oci.fusion_apps.FusionApplicationsClient,
 ) -> list[FusionEnvironment]:
-    client = get_faaas_client()
 
     environments: list[FusionEnvironment] = []
     next_page: Optional[str] = None
@@ -192,12 +174,14 @@ def list_fusion_environments(
 
 
 @mcp.tool(description="Gets a Fusion Environment by OCID.")
+@with_oci_client(oci.fusion_apps.FusionApplicationsClient)
 def get_fusion_environment(
     fusion_environment_id: str = Field(
         ..., description="Unique FusionEnvironment identifier (OCID)"
     ),
+    *,
+    client: oci.fusion_apps.FusionApplicationsClient,
 ) -> FusionEnvironment:
-    client = get_faaas_client()
     response: oci.response.Response = client.get_fusion_environment(
         fusion_environment_id
     )
@@ -205,12 +189,14 @@ def get_fusion_environment(
 
 
 @mcp.tool(description="Gets the status of a Fusion Environment by OCID.")
+@with_oci_client(oci.fusion_apps.FusionApplicationsClient)
 def get_fusion_environment_status(
     fusion_environment_id: str = Field(
         ..., description="Unique FusionEnvironment identifier (OCID)"
     ),
+    *,
+    client: oci.fusion_apps.FusionApplicationsClient,
 ) -> FusionEnvironmentStatus:
-    client = get_faaas_client()
     response: oci.response.Response = client.get_fusion_environment_status(
         fusion_environment_id
     )

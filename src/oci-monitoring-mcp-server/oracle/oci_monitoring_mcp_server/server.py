@@ -13,6 +13,7 @@ import oci
 from fastmcp import Context, FastMCP
 from oci import Response
 from oci.monitoring.models import ListMetricsDetails, SummarizeMetricsDataDetails
+from oracle.mcp_common import with_oci_client
 from oracle.oci_monitoring_mcp_server.alarm_models import (
     AlarmSummary,
     map_alarm_summary,
@@ -30,7 +31,7 @@ from oracle.oci_monitoring_mcp_server.metric_models import (
 from oracle.oci_monitoring_mcp_server.scripts import MQL_QUERY_DOC, get_script_content
 from pydantic import Field
 
-from . import __project__, __version__
+from . import __project__
 
 logger = Logger(__name__, level="INFO")
 
@@ -41,36 +42,18 @@ mcp = FastMCP(
 )
 
 
-def get_monitoring_client():
-    logger.info("entering get_monitoring_client")
-    config = oci.config.from_file(
-        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
-    )
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = os.path.expanduser(config["security_token_file"])
-    token = None
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    return oci.monitoring.MonitoringClient(config, signer=signer)
-
-
 @mcp.tool(name="list_alarms", description="Lists all alarms in a given compartment")
+@with_oci_client(oci.monitoring.MonitoringClient)
 def list_alarms(
     compartment_id: Annotated[
         str,
         "The ID of the compartment containing the resources"
         "monitored by the metric that you are searching for.",
     ],
+    *,
+    client: oci.monitoring.MonitoringClient,
 ) -> list[AlarmSummary] | str:
-    monitoring_client = get_monitoring_client()
-    response: Response | None = monitoring_client.list_alarms(
-        compartment_id=compartment_id
-    )
+    response: Response | None = client.list_alarms(compartment_id=compartment_id)
     if response is None:
         logger.error("Received None response from list_metrics")
         return "There was no response returned from the Monitoring API"
@@ -86,6 +69,7 @@ def list_alarms(
     "or want to see all the available metric namespaces in a compartment. "
     "If there are no results found, remove the metric name or namespace fields. ",
 )
+@with_oci_client(oci.monitoring.MonitoringClient)
 async def list_metric_definitions(
     context: Context,
     compartment_id: str = CompartmentField,
@@ -120,18 +104,17 @@ async def list_metric_definitions(
         examples=["frontend-fleet"],
     ),
     compartment_id_in_subtree: bool = CompartmentIdInSubtreeField,
+    *,
+    client: oci.monitoring.MonitoringClient,
 ) -> List[Metric] | str:
     try:
-        # Create client
-        monitoring_client = get_monitoring_client()
-
         list_metrics_details = ListMetricsDetails(
             name=metric_name,
             namespace=namespace,
             resource_group=resource_group,
             group_by=group_by,
         )
-        response: Response | None = monitoring_client.list_metrics(
+        response: Response | None = client.list_metrics(
             compartment_id,
             list_metrics_details=list_metrics_details,
             compartment_id_in_subtree=compartment_id_in_subtree,
@@ -172,6 +155,7 @@ def _prepare_time_parameters(start_time, end_time) -> Tuple[datetime, datetime]:
     "suggest using another query or expanding the time range."
     "You MUST use the MQL Syntax Guide resource before using this tool to get the query.",
 )
+@with_oci_client(oci.monitoring.MonitoringClient)
 async def get_metrics_data(
     context: Context,
     compartment_id: str = CompartmentField,
@@ -228,6 +212,8 @@ async def get_metrics_data(
         examples=["1m", "5m", "1h", "1d"],
     ),
     compartment_id_in_subtree: Optional[bool] = CompartmentIdInSubtreeField,
+    *,
+    client: oci.monitoring.MonitoringClient,
 ) -> List[MetricData] | str:
     try:
         # Process time parameters and calculate period
@@ -236,9 +222,6 @@ async def get_metrics_data(
         end_time = end_time_obj.isoformat().replace("+00:00", "Z")
 
         logger.info(f"Calling get metrics data with these parameters: {query}")
-
-        # Create client
-        monitoring_client = get_monitoring_client()
 
         # Call Summarize metrics data api and process the results
         summarize_metrics_data_details = SummarizeMetricsDataDetails(
@@ -249,7 +232,7 @@ async def get_metrics_data(
             resource_group=resource_group,
             resolution=resolution,
         )
-        response: Response | None = monitoring_client.summarize_metrics_data(
+        response: Response | None = client.summarize_metrics_data(
             compartment_id,
             summarize_metrics_data_details=summarize_metrics_data_details,
             compartment_id_in_subtree=compartment_id_in_subtree,

@@ -11,6 +11,7 @@ from typing import Optional
 
 import oci
 from fastmcp import FastMCP
+from oracle.mcp_common import with_oci_client
 from oracle.oci_logging_mcp_server.models import (
     Log,
     LogGroup,
@@ -37,42 +38,11 @@ logger = Logger(__name__, level="INFO")
 mcp = FastMCP(name=__project__)
 
 
-def get_logging_client():
-    logger.info("entering get_logging_client")
-    config = oci.config.from_file(
-        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
-    )
-
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = os.path.expanduser(config["security_token_file"])
-    token = None
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    return oci.logging.LoggingManagementClient(config, signer=signer)
-
-
-def get_logging_search_client():
-    logger.info("entering get_logging_client")
-    config = oci.config.from_file(
-        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
-    )
-
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = os.path.expanduser(config["security_token_file"])
-    token = None
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    return oci.loggingsearch.LogSearchClient(config, signer=signer)
-
-
 @mcp.tool(
     description="List Log Groups in a given compartment."
     "Only use this tool if the user specifically mentions Log Groups"
 )
+@with_oci_client(oci.logging.LoggingManagementClient)
 def list_log_groups(
     compartment_id: str = Field(..., description="The OCID of the compartment"),
     limit: Optional[int] = Field(
@@ -80,12 +50,12 @@ def list_log_groups(
         description="The maximum amount of resources to return. If None, there is no limit.",
         ge=1,
     ),
+    *,
+    client: oci.logging.LoggingManagementClient,
 ) -> list[LogGroupSummary]:
     log_groups: list[LogGroupSummary] = []
 
     try:
-        client = get_logging_client()
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None
@@ -117,14 +87,15 @@ def list_log_groups(
     description="Fetch the details of a log group."
     "Only use this tool if the user specifically mentions Log Groups"
 )
+@with_oci_client(oci.logging.LoggingManagementClient)
 def get_log_group(
     log_group_id: str = Field(
         ..., description="The OCID of the log group that the log belongs to."
     ),
+    *,
+    client: oci.logging.LoggingManagementClient,
 ) -> LogGroup:
     try:
-        client = get_logging_client()
-
         response: oci.response.Response = client.get_log_group(
             log_group_id=log_group_id
         )
@@ -141,6 +112,7 @@ def get_log_group(
     description="List Log Groups in a given log group."
     "Only use this tool if the user explicitly supplies a Log Group OCID"
 )
+@with_oci_client(oci.logging.LoggingManagementClient)
 def list_logs(
     log_group_id: str = Field(
         ..., description="The OCID of the log group to list logs from."
@@ -150,12 +122,12 @@ def list_logs(
         description="The maximum amount of resources to return. If None, there is no limit.",
         ge=1,
     ),
+    *,
+    client: oci.logging.LoggingManagementClient,
 ) -> list[LogSummary]:
     logs: list[LogSummary] = []
 
     try:
-        client = get_logging_client()
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None
@@ -187,15 +159,16 @@ def list_logs(
     description="Fetch the details of a log. "
     "Only use this tool if the user explicitly supplies a Log Group OCID and a Log OCID"
 )
+@with_oci_client(oci.logging.LoggingManagementClient)
 def get_log(
     log_id: str = Field(..., description="The OCID of the log"),
     log_group_id: str = Field(
         ..., description="The OCID of the log group that the log belongs to."
     ),
+    *,
+    client: oci.logging.LoggingManagementClient,
 ) -> Log:
     try:
-        client = get_logging_client()
-
         response: oci.response.Response = client.get_log(
             log_group_id=log_group_id, log_id=log_id
         )
@@ -282,6 +255,7 @@ def get_paginated_event_types(
     "For a table full of all support event types, you MAY access get_paginated_event_types."
     "Always include a link to the logging plugin with the inputted query and time range in the response."
 )
+@with_oci_client(oci.loggingsearch.LogSearchClient)
 def search_logs(
     time_start: str = Field(
         ...,
@@ -305,10 +279,10 @@ def search_logs(
     page: Optional[str] = Field(
         None, description="The next page token for the search_logs API call. "
     ),
+    *,
+    client: oci.loggingsearch.LogSearchClient,
 ) -> SearchResponse:
     try:
-        client = get_logging_search_client()
-
         search_logs_details = oci.loggingsearch.models.SearchLogsDetails(
             time_start=time_start,
             time_end=time_end,

@@ -5,7 +5,9 @@ https://oss.oracle.com/licenses/upl.
 """
 
 # noinspection PyPackageRequirements
-from unittest.mock import MagicMock, create_autospec, mock_open, patch
+import os
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, create_autospec, patch
 
 import oci
 import oracle.oci_cloud_guard_mcp_server.server as server
@@ -15,7 +17,7 @@ from fastmcp import Client
 
 class TestResourceSearchTools:
     @pytest.mark.asyncio
-    @patch("oracle.oci_cloud_guard_mcp_server.server.get_cloud_guard_client")
+    @patch("oracle.mcp_common.helpers._create_oci_client")
     async def test_list_all_problems(self, mock_get_client):
         resource_id = "ocid.resource1"
         mock_client = MagicMock()
@@ -46,7 +48,79 @@ class TestResourceSearchTools:
             assert result[0]["id"] == resource_id
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_cloud_guard_mcp_server.server.get_cloud_guard_client")
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    @patch("oracle.oci_cloud_guard_mcp_server.server.datetime")
+    async def test_list_problems_applies_optional_filters(
+        self, mock_datetime, mock_get_client
+    ):
+        fake_now = datetime(2025, 1, 31, 12, 0, tzinfo=timezone.utc)
+        mock_datetime.now.return_value = fake_now
+
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_response = create_autospec(oci.response.Response)
+        mock_response.data = oci.cloud_guard.models.ProblemCollection(items=[])
+        mock_client.list_problems.return_value = mock_response
+
+        args = {
+            "compartment_id": "ocid.compartment",
+            "risk_level": "HIGH",
+            "lifecycle_state": "INACTIVE",
+            "detector_rule_ids": ["det-1", "det-2"],
+            "time_range_days": 5,
+            "limit": 5,
+        }
+
+        async with Client(server.mcp) as client:
+            result = (await client.call_tool("list_problems", args)).structured_content[
+                "result"
+            ]
+
+        assert result == []
+        kwargs = mock_client.list_problems.call_args.kwargs
+        expected_time = (fake_now - timedelta(days=5)).isoformat()
+        assert kwargs["time_last_detected_greater_than_or_equal_to"] == expected_time
+        assert kwargs["risk_level"] == "HIGH"
+        assert kwargs["lifecycle_state"] == "INACTIVE"
+        assert kwargs["detector_rule_id_list"] == ["det-1", "det-2"]
+        assert kwargs["limit"] == 5
+
+    @pytest.mark.asyncio
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    @patch("oracle.oci_cloud_guard_mcp_server.server.datetime")
+    async def test_list_problems_omits_filters_when_none(
+        self, mock_datetime, mock_get_client
+    ):
+        fake_now = datetime(2025, 2, 1, 12, 0, tzinfo=timezone.utc)
+        mock_datetime.now.return_value = fake_now
+
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_response = create_autospec(oci.response.Response)
+        mock_response.data = oci.cloud_guard.models.ProblemCollection(items=[])
+        mock_client.list_problems.return_value = mock_response
+
+        async with Client(server.mcp) as client:
+            await client.call_tool(
+                "list_problems",
+                {
+                    "compartment_id": "ocid.compartment",
+                    "risk_level": None,
+                    "lifecycle_state": None,
+                    "detector_rule_ids": None,
+                    "time_range_days": None,
+                },
+            )
+
+        kwargs = mock_client.list_problems.call_args.kwargs
+        expected_time = (fake_now - timedelta(days=30)).isoformat()
+        assert kwargs["time_last_detected_greater_than_or_equal_to"] == expected_time
+        assert "risk_level" not in kwargs
+        assert "lifecycle_state" not in kwargs
+        assert "detector_rule_id_list" not in kwargs
+
+    @pytest.mark.asyncio
+    @patch("oracle.mcp_common.helpers._create_oci_client")
     async def test_get_problem_details(self, mock_get_client):
         problem_id = "ocid.resource1"
         mock_client = MagicMock()
@@ -80,7 +154,54 @@ class TestResourceSearchTools:
             assert result["id"] == problem_id
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_cloud_guard_mcp_server.server.get_cloud_guard_client")
+    @patch(
+        "oracle.oci_cloud_guard_mcp_server.server.oci.cloud_guard.models.UpdateProblemStatusDetails"
+    )
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_update_problem_status_uses_sdk_model(
+        self, mock_get_client, mock_update_model
+    ):
+        problem_id = "ocid.resource1"
+        status = "RESOLVED"
+        comment = "handled"
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_update_model_instance = MagicMock()
+        mock_update_model.return_value = mock_update_model_instance
+
+        mock_update_problem_status_response = create_autospec(oci.response.Response)
+        mock_update_problem_status_response.data = oci.cloud_guard.models.Problem(
+            id=problem_id,
+            lifecycle_detail=status,
+            comment=comment,
+        )
+        mock_client.update_problem_status.return_value = (
+            mock_update_problem_status_response
+        )
+
+        async with Client(server.mcp) as client:
+            result = (
+                await client.call_tool(
+                    "update_problem_status",
+                    {
+                        "problem_id": problem_id,
+                        "status": status,
+                        "comment": comment,
+                    },
+                )
+            ).structured_content
+
+        mock_update_model.assert_called_once_with(status=status, comment=comment)
+        mock_client.update_problem_status.assert_called_once_with(
+            problem_id=problem_id,
+            update_problem_status_details=mock_update_model_instance,
+        )
+        assert result["lifecycle_detail"] == status
+        assert result["comment"] == comment
+
+    @pytest.mark.asyncio
+    @patch("oracle.mcp_common.helpers._create_oci_client")
     async def test_update_problem_status(self, mock_get_client):
         problem_id = "ocid.resource1"
         status = "OPEN"
@@ -114,164 +235,22 @@ class TestResourceSearchTools:
             assert result["lifecycle_detail"] == status
             assert result["comment"] == comment
 
+    @patch.object(server, "mcp")
+    def test_main_uses_http_transport_when_env_configured(self, mock_mcp):
+        with patch.dict(
+            os.environ,
+            {"ORACLE_MCP_HOST": "127.0.0.1", "ORACLE_MCP_PORT": "8080"},
+            clear=False,
+        ):
+            server.main()
 
-class TestServer:
-    @patch("oracle.oci_cloud_guard_mcp_server.server.mcp.run")
-    @patch("os.getenv")
-    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run):
-        mock_env = {
-            "ORACLE_MCP_HOST": "1.2.3.4",
-            "ORACLE_MCP_PORT": "8888",
-        }
-
-        mock_getenv.side_effect = lambda x: mock_env.get(x)
-
-        server.main()
-        mock_mcp_run.assert_called_once_with(
-            transport="http",
-            host=mock_env["ORACLE_MCP_HOST"],
-            port=int(mock_env["ORACLE_MCP_PORT"]),
+        mock_mcp.run.assert_called_once_with(
+            transport="http", host="127.0.0.1", port=8080
         )
 
-    @patch("oracle.oci_cloud_guard_mcp_server.server.mcp.run")
-    @patch("os.getenv")
-    def test_main_without_host_and_port(self, mock_getenv, mock_mcp_run):
-        mock_getenv.return_value = None
+    @patch.object(server, "mcp")
+    def test_main_uses_default_transport_without_env(self, mock_mcp):
+        with patch.dict(os.environ, {}, clear=True):
+            server.main()
 
-        server.main()
-        mock_mcp_run.assert_called_once_with()
-
-    @patch("oracle.oci_cloud_guard_mcp_server.server.mcp.run")
-    @patch("os.getenv")
-    def test_main_with_only_host(self, mock_getenv, mock_mcp_run):
-        mock_env = {
-            "ORACLE_MCP_HOST": "1.2.3.4",
-        }
-        mock_getenv.side_effect = lambda x: mock_env.get(x)
-
-        server.main()
-        mock_mcp_run.assert_called_once_with()
-
-    @patch("oracle.oci_cloud_guard_mcp_server.server.mcp.run")
-    @patch("os.getenv")
-    def test_main_with_only_port(self, mock_getenv, mock_mcp_run):
-        mock_env = {
-            "ORACLE_MCP_PORT": "8888",
-        }
-        mock_getenv.side_effect = lambda x: mock_env.get(x)
-
-        server.main()
-        mock_mcp_run.assert_called_once_with()
-
-
-class TestGetClient:
-    @patch("oracle.oci_cloud_guard_mcp_server.server.CloudGuardClient")
-    @patch(
-        "oracle.oci_cloud_guard_mcp_server.server.oci.auth.signers.SecurityTokenSigner"
-    )
-    @patch(
-        "oracle.oci_cloud_guard_mcp_server.server.oci.signer.load_private_key_from_file"
-    )
-    @patch(
-        "oracle.oci_cloud_guard_mcp_server.server.open",
-        new_callable=mock_open,
-        read_data="SECURITY_TOKEN",
-    )
-    @patch("oracle.oci_cloud_guard_mcp_server.server.oci.config.from_file")
-    @patch("oracle.oci_cloud_guard_mcp_server.server.os.getenv")
-    def test_get_cloud_guard_client_with_profile_env(
-        self,
-        mock_getenv,
-        mock_from_file,
-        mock_open_file,
-        mock_load_private_key,
-        mock_security_token_signer,
-        mock_client,
-    ):
-        # Arrange: provide profile via env var and minimal config dict
-        mock_getenv.side_effect = lambda k, default=None: (
-            "MYPROFILE" if k == "OCI_CONFIG_PROFILE" else default
-        )
-        config = {
-            "key_file": "/abs/path/to/key.pem",
-            "security_token_file": "/abs/path/to/token",
-        }
-        mock_from_file.return_value = config
-        private_key_obj = object()
-        mock_load_private_key.return_value = private_key_obj
-
-        # Act
-        result = server.get_cloud_guard_client()
-
-        # Assert calls
-        mock_from_file.assert_called_once_with(
-            file_location=oci.config.DEFAULT_LOCATION,
-            profile_name="MYPROFILE",
-        )
-        mock_open_file.assert_called_once_with("/abs/path/to/token", "r")
-        mock_security_token_signer.assert_called_once_with(
-            "SECURITY_TOKEN", private_key_obj
-        )
-        # Ensure user agent was set on the same config dict passed into client
-        args, _ = mock_client.call_args
-        passed_config = args[0]
-        assert passed_config is config
-        expected_user_agent = f"{server.__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{server.__version__}"  # noqa
-        assert passed_config.get("additional_user_agent") == expected_user_agent
-        # And we returned the client instance
-        assert result == mock_client.return_value
-
-    @patch("oracle.oci_cloud_guard_mcp_server.server.CloudGuardClient")
-    @patch(
-        "oracle.oci_cloud_guard_mcp_server.server.oci.auth.signers.SecurityTokenSigner"
-    )
-    @patch(
-        "oracle.oci_cloud_guard_mcp_server.server.oci.signer.load_private_key_from_file"
-    )
-    @patch(
-        "oracle.oci_cloud_guard_mcp_server.server.open",
-        new_callable=mock_open,
-        read_data="TOK",
-    )
-    @patch("oracle.oci_cloud_guard_mcp_server.server.oci.config.from_file")
-    @patch("oracle.oci_cloud_guard_mcp_server.server.os.getenv")
-    def test_get_cloud_guard_client_uses_default_profile_when_env_missing(
-        self,
-        mock_getenv,
-        mock_from_file,
-        mock_open_file,
-        mock_load_private_key,
-        mock_security_token_signer,
-        mock_client,
-    ):
-        # Arrange: no env var present; from_file should be called with DEFAULT_PROFILE
-        mock_getenv.side_effect = lambda k, default=None: default
-        config = {"key_file": "/k.pem", "security_token_file": "/tkn"}
-        mock_from_file.return_value = config
-        priv = object()
-        mock_load_private_key.return_value = priv
-
-        # Act
-        srv_client = server.get_cloud_guard_client()
-
-        # Assert: profile defaulted
-        mock_from_file.assert_called_once_with(
-            file_location=oci.config.DEFAULT_LOCATION,
-            profile_name=oci.config.DEFAULT_PROFILE,
-        )
-        # Token file opened and read
-        mock_open_file.assert_called_once_with("/tkn", "r")
-        mock_security_token_signer.assert_called_once()
-        signer_args, _ = mock_security_token_signer.call_args
-        assert signer_args[0] == "TOK"
-        assert signer_args[1] is priv
-        # additional_user_agent set on original config and passed through
-        cc_args, _ = mock_client.call_args
-        assert cc_args[0] is config
-        assert "additional_user_agent" in config
-        assert (
-            isinstance(config["additional_user_agent"], str)
-            and "/" in config["additional_user_agent"]
-        )
-        # Returned object is client instance
-        assert srv_client is mock_client.return_value
+        mock_mcp.run.assert_called_once_with()

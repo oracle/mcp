@@ -11,39 +11,22 @@ from typing import Optional
 import oci
 from fastmcp import FastMCP
 from oci.resource_search.models import FreeTextSearchDetails, StructuredSearchDetails
+from oracle.mcp_common import with_oci_client
 from oracle.oci_resource_search_mcp_server.models import (
     ResourceSummary,
     map_resource_summary,
 )
 from pydantic import Field
 
-from . import __project__, __version__
+from . import __project__
 
 logger = Logger(__name__, level="INFO")
 
 mcp = FastMCP(name=__project__)
 
 
-def get_search_client():
-    logger.info("entering get_search_client")
-    config = oci.config.from_file(
-        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
-    )
-
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = os.path.expanduser(config["security_token_file"])
-    token = None
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    return oci.resource_search.ResourceSearchClient(config, signer=signer)
-
-
 @mcp.tool(description="Returns all resources")
+@with_oci_client(oci.resource_search.ResourceSearchClient)
 def list_all_resources(
     tenant_id: str = Field(
         ...,
@@ -58,12 +41,12 @@ def list_all_resources(
         description="The maximum amount of resources to return. If None, there is no limit.",
         ge=1,
     ),
+    *,
+    client: oci.resource_search.ResourceSearchClient,
 ) -> list[ResourceSummary]:
     resources: list[ResourceSummary] = []
 
     try:
-        client = get_search_client()
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None
@@ -96,6 +79,7 @@ def list_all_resources(
 
 
 @mcp.tool(description="Searches for resources by display name")
+@with_oci_client(oci.resource_search.ResourceSearchClient)
 def search_resources(
     tenant_id: str = Field(
         ...,
@@ -113,14 +97,12 @@ def search_resources(
         description="The maximum amount of resources to return. If None, there is no limit.",
         ge=1,
     ),
+    *,
+    client: oci.resource_search.ResourceSearchClient,
 ) -> list[ResourceSummary]:
     resources: list[ResourceSummary] = []
 
     try:
-        client = get_search_client()
-
-        oci.identity.models.Compartment
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None
@@ -158,6 +140,7 @@ def search_resources(
 @mcp.tool(
     description="Searches for the presence of the search string in all resource fields"
 )
+@with_oci_client(oci.resource_search.ResourceSearchClient)
 def search_resources_free_form(
     tenant_id: str = Field(
         ...,
@@ -170,12 +153,12 @@ def search_resources_free_form(
         description="The maximum amount of resources to return. If None, there is no limit.",
         ge=1,
     ),
+    *,
+    client: oci.resource_search.ResourceSearchClient,
 ) -> list[ResourceSummary]:
     resources: list[ResourceSummary] = []
 
     try:
-        client = get_search_client()
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None
@@ -208,6 +191,7 @@ def search_resources_free_form(
 
 
 @mcp.tool(description="Search for resources by resource type")
+@with_oci_client(oci.resource_search.ResourceSearchClient)
 def search_resources_by_type(
     tenant_id: str = Field(
         ...,
@@ -228,12 +212,12 @@ def search_resources_by_type(
         description="The maximum amount of resources to return. If None, there is no limit.",
         ge=1,
     ),
+    *,
+    client: oci.resource_search.ResourceSearchClient,
 ) -> list[ResourceSummary]:
     resources: list[ResourceSummary] = []
 
     try:
-        client = get_search_client()
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None
@@ -269,18 +253,19 @@ def search_resources_by_type(
 
 
 @mcp.tool(description="Returns a list of all supported OCI resource types")
+@with_oci_client(oci.resource_search.ResourceSearchClient)
 def list_resource_types(
     limit: Optional[int] = Field(
         None,
         description="The maximum amount of resources to return. If None, there is no limit.",
         ge=1,
     ),
+    *,
+    client: oci.resource_search.ResourceSearchClient,
 ) -> list[str]:
     resource_types: list[str] = []
 
     try:
-        client = get_search_client()
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None

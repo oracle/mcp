@@ -47,3 +47,10 @@ fix = true
 [tool.ruff.lint]
 select = ["E","F","I","UP","B"]
 ignore = ["E501"]
+
+
+[tool.pytest.ini_options]
+pythonpath = [
+    "..",
+    "../common",
+]

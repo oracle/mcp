@@ -20,8 +20,11 @@ A Python-based MCP (Model Context Protocol) server that provides a suite of tool
   - `ml_generate`: Text generation with GenAI
   - `ragify_column`: Create/populate vector columns for embeddings
   - `ask_ml_rag`: Retrieval-augmented generation from vector stores
+  - `ask_ml_rag_vector_store`: Retrieve segments from the default vector store (skip_generate)
+  - `ask_ml_rag_innodb`: Retrieve segments from InnoDB tables using specified segment and embedding columns
   - `heatwave_ask_help`: Answers questions about how to use HeatWave ML
   - `ask_nl_sql`: Convert natural language questions into SQL queries and execute them automatically
+  - `retrieve_relevant_schema_information`: Retrieve relevant schemas and tables (DDL) for a natural language question
 
 - **Vector Store Management**
   - List files in `secure_file_priv` (local mode)

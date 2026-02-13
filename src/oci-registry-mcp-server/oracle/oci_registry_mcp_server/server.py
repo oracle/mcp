@@ -10,6 +10,7 @@ from typing import Optional
 
 import oci
 from fastmcp import FastMCP
+from oracle.mcp_common import with_oci_client
 from oracle.oci_registry_mcp_server.models import (
     ContainerRepository,
     Response,
@@ -18,32 +19,15 @@ from oracle.oci_registry_mcp_server.models import (
 )
 from pydantic import Field
 
-from . import __project__, __version__
+from . import __project__
 
 logger = Logger(__name__, level="INFO")
 
 mcp = FastMCP(name=__project__)
 
 
-def get_ocir_client():
-    config = oci.config.from_file(
-        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
-    )
-
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = os.path.expanduser(config["security_token_file"])
-    token = None
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    return oci.artifacts.ArtifactsClient(config, signer=signer)
-
-
 @mcp.tool(description="List container repositories in the given compartment")
+@with_oci_client(oci.artifacts.ArtifactsClient)
 def list_container_repositories(
     compartment_id: str = Field(..., description="The OCID of the compartment"),
     limit: Optional[int] = Field(
@@ -51,12 +35,12 @@ def list_container_repositories(
         description="The maximum amount of conatiner repositories to return. If None, there is no limit.",
         ge=1,
     ),
+    *,
+    client: oci.artifacts.ArtifactsClient,
 ) -> list[ContainerRepository]:
     container_repositories: list[ContainerRepository] = []
 
     try:
-        client = get_ocir_client()
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None
@@ -85,12 +69,13 @@ def list_container_repositories(
 
 
 @mcp.tool
+@with_oci_client(oci.artifacts.ArtifactsClient)
 def get_container_repository(
-    repository_id: str = Field(..., description="The OCID of the container repository")
+    repository_id: str = Field(..., description="The OCID of the container repository"),
+    *,
+    client: oci.artifacts.ArtifactsClient,
 ) -> ContainerRepository:
     try:
-        client = get_ocir_client()
-
         response: oci.response.Response = client.get_container_repository(repository_id)
         data: oci.artifacts.models.ContainerRepository = response.data
         logger.info("Found Container Repository")
@@ -102,6 +87,7 @@ def get_container_repository(
 
 
 @mcp.tool
+@with_oci_client(oci.artifacts.ArtifactsClient)
 def create_container_repository(
     compartment_id: str = Field(
         ...,
@@ -119,10 +105,10 @@ def create_container_repository(
     is_public: bool = Field(
         False, description="Whether or not the repository is public"
     ),
+    *,
+    client: oci.artifacts.ArtifactsClient,
 ) -> ContainerRepository:
     try:
-        client = get_ocir_client()
-
         create_repository_details = (
             oci.artifacts.models.CreateContainerRepositoryDetails(
                 compartment_id=compartment_id,
@@ -144,12 +130,13 @@ def create_container_repository(
 
 
 @mcp.tool
+@with_oci_client(oci.artifacts.ArtifactsClient)
 def delete_container_repository(
-    repository_id: str = Field(..., description="The OCID of the container repository")
+    repository_id: str = Field(..., description="The OCID of the container repository"),
+    *,
+    client: oci.artifacts.ArtifactsClient,
 ) -> Response:
     try:
-        client = get_ocir_client()
-
         response: oci.response.Response = client.delete_container_repository(
             repository_id
         )

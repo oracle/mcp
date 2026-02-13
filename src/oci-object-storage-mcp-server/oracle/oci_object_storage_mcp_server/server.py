@@ -10,6 +10,7 @@ from typing import Annotated, List
 
 import oci
 from fastmcp import FastMCP
+from oracle.mcp_common import with_oci_client
 from oracle.oci_object_storage_mcp_server.models import (
     Bucket,
     BucketSummary,
@@ -22,64 +23,55 @@ from oracle.oci_object_storage_mcp_server.models import (
     map_object_version_summary,
 )
 
-from . import __project__, __version__
+from . import __project__
 
 logger = Logger(__name__, level="INFO")
 
 mcp = FastMCP(name=__project__)
 
 
-def get_object_storage_client():
-    config = oci.config.from_file(
-        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
-    )
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = os.path.expanduser(config["security_token_file"])
-    token = None
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    return oci.object_storage.ObjectStorageClient(config, signer=signer)
-
-
 # Object storage namespace
-def get_object_storage_namespace(compartment_id: str):
-    object_storage_client = get_object_storage_client()
-    namespace = object_storage_client.get_namespace(compartment_id=compartment_id)
+@with_oci_client(oci.object_storage.ObjectStorageClient)
+def get_object_storage_namespace(
+    compartment_id: str, *, client: oci.object_storage.ObjectStorageClient
+):
+    namespace = client.get_namespace(compartment_id=compartment_id)
     return namespace.data
 
 
 @mcp.tool(description="Get the object storage namespace for the tenancy")
+@with_oci_client(oci.object_storage.ObjectStorageClient)
 def get_namespace(
     compartment_id: Annotated[
         str,
         "The OCID of the compartment."
         "If compartment id is not provided, use the root compartment id or the tenancy id",
     ],
+    *,
+    client: oci.object_storage.ObjectStorageClient,
 ):
-    return get_object_storage_namespace(compartment_id)
+    return get_object_storage_namespace(compartment_id, client=client)
 
 
 # Buckets
 @mcp.tool(description="List object storage buckets")
+@with_oci_client(oci.object_storage.ObjectStorageClient)
 def list_buckets(
     compartment_id: Annotated[
         str,
         "The OCID of the compartment."
         "If compartment id is not provided, use the root compartment id or the tenancy id",
     ],
+    *,
+    client: oci.object_storage.ObjectStorageClient,
 ) -> List[BucketSummary]:
-    object_storage_client = get_object_storage_client()
-    namespace_name = get_object_storage_namespace(compartment_id)
-    buckets = object_storage_client.list_buckets(namespace_name, compartment_id).data
+    namespace_name = get_object_storage_namespace(compartment_id, client=client)
+    buckets = client.list_buckets(namespace_name, compartment_id).data
     return [map_bucket_summary(bucket) for bucket in buckets]
 
 
 @mcp.tool(description="Get details for a specific object storage bucket")
+@with_oci_client(oci.object_storage.ObjectStorageClient)
 def get_bucket_details(
     bucket_name: Annotated[str, "The name of the bucket"],
     compartment_id: Annotated[
@@ -87,10 +79,11 @@ def get_bucket_details(
         "The OCID of the compartment."
         "If compartment id is not provided, use the root compartment id or the tenancy id",
     ],
+    *,
+    client: oci.object_storage.ObjectStorageClient,
 ) -> Bucket:
-    object_storage_client = get_object_storage_client()
-    namespace_name = get_object_storage_namespace(compartment_id)
-    bucket_details = object_storage_client.get_bucket(
+    namespace_name = get_object_storage_namespace(compartment_id, client=client)
+    bucket_details = client.get_bucket(
         namespace_name,
         bucket_name,
         fields=[
@@ -105,6 +98,7 @@ def get_bucket_details(
 
 # Objects
 @mcp.tool(description="List objects in a given object storage bucket")
+@with_oci_client(oci.object_storage.ObjectStorageClient)
 def list_objects(
     bucket_name: Annotated[str, "The name of the bucket"],
     compartment_id: Annotated[
@@ -113,10 +107,11 @@ def list_objects(
         "If compartment id is not provided, use the root compartment id or the tenancy id",
     ],
     prefix: Annotated[str, "Optional prefix to filter objects"] = "",
+    *,
+    client: oci.object_storage.ObjectStorageClient,
 ) -> ListObjects:
-    object_storage_client = get_object_storage_client()
-    namespace_name = get_object_storage_namespace(compartment_id)
-    list_objects = object_storage_client.list_objects(
+    namespace_name = get_object_storage_namespace(compartment_id, client=client)
+    list_objects = client.list_objects(
         namespace_name,
         bucket_name,
         prefix=prefix,
@@ -129,6 +124,7 @@ def list_objects(
 
 
 @mcp.tool(description="List object versions in a given object storage bucket")
+@with_oci_client(oci.object_storage.ObjectStorageClient)
 def list_object_versions(
     bucket_name: Annotated[str, "The name of the bucket"],
     compartment_id: Annotated[
@@ -137,10 +133,11 @@ def list_object_versions(
         "If compartment id is not provided, use the root compartment id or the tenancy id",
     ],
     prefix: Annotated[str, "Optional prefix to filter object versions"] = "",
+    *,
+    client: oci.object_storage.ObjectStorageClient,
 ) -> ObjectVersionCollection:
-    object_storage_client = get_object_storage_client()
-    namespace_name = get_object_storage_namespace(compartment_id)
-    list_object_versions = object_storage_client.list_object_versions(
+    namespace_name = get_object_storage_namespace(compartment_id, client=client)
+    list_object_versions = client.list_object_versions(
         namespace_name,
         bucket_name,
         prefix=prefix,
@@ -156,6 +153,7 @@ def list_object_versions(
 
 
 @mcp.tool(description="Get a specific object from an object storage bucket")
+@with_oci_client(oci.object_storage.ObjectStorageClient)
 def get_object(
     bucket_name: Annotated[str, "The name of the bucket"],
     compartment_id: Annotated[
@@ -165,10 +163,11 @@ def get_object(
     ],
     object_name: Annotated[str, "The name of the object"],
     version_id: Annotated[str, "Optional version ID of the object"] = "",
+    *,
+    client: oci.object_storage.ObjectStorageClient,
 ) -> ObjectSummary:
-    object_storage_client = get_object_storage_client()
-    namespace_name = get_object_storage_namespace(compartment_id)
-    obj = object_storage_client.get_object(
+    namespace_name = get_object_storage_namespace(compartment_id, client=client)
+    obj = client.get_object(
         namespace_name,
         bucket_name,
         object_name,
@@ -179,6 +178,7 @@ def get_object(
 
 
 @mcp.tool(description="Upload an object to an object storage bucket")
+@with_oci_client(oci.object_storage.ObjectStorageClient)
 def upload_object(
     bucket_name: Annotated[str, "The name of the bucket"],
     compartment_id: Annotated[
@@ -192,16 +192,15 @@ def upload_object(
         "Optional name of the object to upload"
         "If the object name is not provided, use the file name as the object name",
     ] = "",
+    *,
+    client: oci.object_storage.ObjectStorageClient,
 ):
-    object_storage_client = get_object_storage_client()
-    namespace_name = get_object_storage_namespace(compartment_id)
+    namespace_name = get_object_storage_namespace(compartment_id, client=client)
     logger.info("Got Namespace: %s", namespace_name)
     logger.info("Checking file at path: %s", file_path)
     try:
         with open(file_path, "rb") as file:
-            object_storage_client.put_object(
-                namespace_name, bucket_name, object_name, file
-            )
+            client.put_object(namespace_name, bucket_name, object_name, file)
         return {"message": "Object uploaded successfully"}
     except Exception as e:
         return {"error": str(e)}

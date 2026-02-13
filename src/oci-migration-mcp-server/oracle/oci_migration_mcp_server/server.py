@@ -10,6 +10,7 @@ from typing import Literal, Optional
 
 import oci
 from fastmcp import FastMCP
+from oracle.mcp_common import with_oci_client
 from oracle.oci_migration_mcp_server.models import (
     Migration,
     MigrationSummary,
@@ -18,37 +19,21 @@ from oracle.oci_migration_mcp_server.models import (
 )
 from pydantic import Field
 
-from . import __project__, __version__
+from . import __project__
 
 logger = Logger(__name__, level="INFO")
 
 mcp = FastMCP(name=__project__)
 
 
-def get_migration_client():
-    logger.info("entering get_migration_client")
-    config = oci.config.from_file(
-        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
-    )
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = os.path.expanduser(config["security_token_file"])
-    token = None
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    return oci.cloud_migrations.MigrationClient(config, signer=signer)
-
-
 @mcp.tool(description="Get details for a specific Migration Project by OCID")
+@with_oci_client(oci.cloud_migrations.MigrationClient)
 def get_migration(
-    migration_id: str = Field(..., description="OCID of the migration project")
+    migration_id: str = Field(..., description="OCID of the migration project"),
+    *,
+    client: oci.cloud_migrations.MigrationClient,
 ) -> Migration:
     try:
-        client = get_migration_client()
-
         response: oci.response.Response = client.get_migration(migration_id)
         data: oci.cloud_migrations.models.Migration = response.data
         logger.info("Found Migration")
@@ -62,6 +47,7 @@ def get_migration(
 @mcp.tool(
     description="List Migration Projects for a compartment, optionally filtered by lifecycle state"
 )
+@with_oci_client(oci.cloud_migrations.MigrationClient)
 def list_migrations(
     compartment_id: str = Field(..., description="The OCID of the compartment"),
     limit: Optional[int] = Field(
@@ -80,22 +66,26 @@ def list_migrations(
             "FAILED",
         ]
     ] = Field(None, description="The lifecycle state of the migration to filter on"),
+    *,
+    client: oci.cloud_migrations.MigrationClient,
 ) -> list[MigrationSummary]:
-    migrations: list[Migration] = []
+    migrations: list[MigrationSummary] = []
 
     try:
-        client = get_migration_client()
-
-        response: oci.response.Response = None
         has_next_page = True
-        next_page: str = None
+        next_page: Optional[str] = None
 
         while has_next_page and (limit is None or len(migrations) < limit):
             kwargs = {
                 "compartment_id": compartment_id,
                 "page": next_page,
-                "limit": limit,
             }
+
+            if limit is not None:
+                remaining = max(limit - len(migrations), 0)
+                if remaining == 0:
+                    break
+                kwargs["limit"] = remaining
 
             if lifecycle_state is not None:
                 kwargs["lifecycle_state"] = lifecycle_state

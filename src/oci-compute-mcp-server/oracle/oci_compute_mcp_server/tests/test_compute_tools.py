@@ -4,11 +4,10 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
-from unittest.mock import MagicMock, create_autospec, mock_open, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 import fastmcp.exceptions
 import oci
-import oracle.oci_compute_mcp_server.server as server
 import pytest
 from fastmcp import Client
 from oracle.oci_compute_mcp_server.server import mcp
@@ -16,10 +15,10 @@ from oracle.oci_compute_mcp_server.server import mcp
 
 class TestComputeTools:
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_list_instances(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_list_instances(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         mock_list_response = create_autospec(oci.response.Response)
         mock_list_response.data = [
@@ -45,10 +44,10 @@ class TestComputeTools:
             assert result[0]["id"] == "instance1"
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_list_instances_exception(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_list_instances_exception(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         # Mock the client to raise an exception
         mock_client.list_instances.side_effect = oci.exceptions.ServiceError(
@@ -72,10 +71,10 @@ class TestComputeTools:
             assert "'message': 'Internal server error'" in str(e.value)
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_get_instance(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_get_instance(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         mock_get_response = create_autospec(oci.response.Response)
         mock_get_response.data = oci.core.models.Instance(
@@ -92,10 +91,10 @@ class TestComputeTools:
             assert result["id"] == "instance1"
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_get_instance_exception(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_get_instance_exception(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         # Mock the client to raise an exception
         mock_client.get_instance.side_effect = oci.exceptions.ServiceError(
@@ -117,10 +116,10 @@ class TestComputeTools:
             assert "'message': 'Internal server error'" in str(e.value)
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_launch_instance(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_launch_instance(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         mock_launch_response = create_autospec(oci.response.Response)
         mock_launch_response.data = oci.core.models.Instance(
@@ -146,10 +145,10 @@ class TestComputeTools:
             assert result["lifecycle_state"] == "PROVISIONING"
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_launch_instance_exception(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_launch_instance_exception(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         # Mock the client to raise an exception
         mock_client.launch_instance.side_effect = oci.exceptions.ServiceError(
@@ -180,10 +179,10 @@ class TestComputeTools:
             assert "'message': 'Internal server error'" in str(e.value)
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_terminate_instance(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_terminate_instance(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         mock_delete_response = create_autospec(oci.response.Response)
         mock_delete_response.status = 204
@@ -201,10 +200,10 @@ class TestComputeTools:
             assert result["status"] == 204
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_terminate_instance_exception(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_terminate_instance_exception(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         # Mock the client to raise an exception
         mock_client.terminate_instance.side_effect = oci.exceptions.ServiceError(
@@ -231,13 +230,13 @@ class TestComputeTools:
             assert "'message': 'Internal server error'" in str(e.value)
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_update_instance(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_update_instance(self, mock_create_client):
         ocpus = 2
         memory_in_gbs = 16
 
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         mock_update_response = create_autospec(oci.response.Response)
         mock_update_response.data = oci.core.models.Instance(
@@ -263,10 +262,10 @@ class TestComputeTools:
             assert result["shape_config"]["memory_in_gbs"] == memory_in_gbs
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_update_instance_exception(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_update_instance_exception(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         # Mock the client to raise an exception
         mock_client.update_instance.side_effect = oci.exceptions.ServiceError(
@@ -295,10 +294,10 @@ class TestComputeTools:
             assert "'message': 'Internal server error'" in str(e.value)
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_list_images(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_list_images(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         mock_list_response = create_autospec(oci.response.Response)
         mock_list_response.data = [
@@ -327,10 +326,10 @@ class TestComputeTools:
             assert result[0]["id"] == "image1"
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_list_images_exception(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_list_images_exception(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         # Mock the client to raise an exception
         mock_client.list_images.side_effect = oci.exceptions.ServiceError(
@@ -357,10 +356,10 @@ class TestComputeTools:
             assert "'message': 'Internal server error'" in str(e.value)
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_get_image(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_get_image(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         mock_get_response = create_autospec(oci.response.Response)
         mock_get_response.data = oci.core.models.Image(
@@ -381,10 +380,10 @@ class TestComputeTools:
             assert result["id"] == "image1"
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_get_image_exception(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_get_image_exception(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         # Mock the client to raise an exception
         mock_client.get_image.side_effect = oci.exceptions.ServiceError(
@@ -411,10 +410,10 @@ class TestComputeTools:
             assert "'message': 'Internal server error'" in str(e.value)
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_instance_action(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_instance_action(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         mock_action_response = create_autospec(oci.response.Response)
         mock_action_response.data = oci.core.models.Instance(
@@ -439,10 +438,10 @@ class TestComputeTools:
             assert result["lifecycle_state"] == "STOPPING"
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_instance_action_exception(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_instance_action_exception(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         # Mock the client to raise an exception
         mock_client.instance_action.side_effect = oci.exceptions.ServiceError(
@@ -470,10 +469,10 @@ class TestComputeTools:
             assert "'message': 'Internal server error'" in str(e.value)
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_list_vnic_attachments(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_list_vnic_attachments(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         mock_list_response = create_autospec(oci.response.Response)
         mock_list_response.data = [
@@ -498,10 +497,10 @@ class TestComputeTools:
             assert result[0]["id"] == "vnicattachment1"
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_list_vnic_attachments_exception(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_list_vnic_attachments_exception(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         # Mock the client to raise an exception
         mock_client.list_vnic_attachments.side_effect = oci.exceptions.ServiceError(
@@ -528,10 +527,10 @@ class TestComputeTools:
             assert "'message': 'Internal server error'" in str(e.value)
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_get_vnic_attachment(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_get_vnic_attachment(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         mock_get_response = create_autospec(oci.response.Response)
         mock_get_response.data = oci.core.models.VnicAttachment(
@@ -550,10 +549,10 @@ class TestComputeTools:
             assert result["id"] == "vnicattachment1"
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_get_vnic_attachment_exception(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_get_vnic_attachment_exception(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         # Mock the client to raise an exception
         mock_client.get_vnic_attachment.side_effect = oci.exceptions.ServiceError(
@@ -630,10 +629,10 @@ class TestServer:
         mock_mcp_run.assert_called_once_with()
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
-    async def test_list_images_without_filter(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_list_images_without_filter(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         mock_list_response = create_autospec(oci.response.Response)
         mock_list_response.data = [
@@ -665,108 +664,3 @@ class TestServer:
 
             assert len(result) == 2
             assert {img["id"] for img in result} == {"image1", "image2"}
-
-
-class TestGetClient:
-    @patch("oracle.oci_compute_mcp_server.server.oci.core.ComputeClient")
-    @patch("oracle.oci_compute_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
-    @patch("oracle.oci_compute_mcp_server.server.oci.signer.load_private_key_from_file")
-    @patch(
-        "oracle.oci_compute_mcp_server.server.open",
-        new_callable=mock_open,
-        read_data="SECURITY_TOKEN",
-    )
-    @patch("oracle.oci_compute_mcp_server.server.oci.config.from_file")
-    @patch("oracle.oci_compute_mcp_server.server.os.getenv")
-    def test_get_compute_client_with_profile_env(
-        self,
-        mock_getenv,
-        mock_from_file,
-        mock_open_file,
-        mock_load_private_key,
-        mock_security_token_signer,
-        mock_client,
-    ):
-        # Arrange: provide profile via env var and minimal config dict
-        mock_getenv.side_effect = lambda k, default=None: (
-            "MYPROFILE" if k == "OCI_CONFIG_PROFILE" else default
-        )
-        config = {
-            "key_file": "/abs/path/to/key.pem",
-            "security_token_file": "/abs/path/to/token",
-        }
-        mock_from_file.return_value = config
-        private_key_obj = object()
-        mock_load_private_key.return_value = private_key_obj
-
-        # Act
-        result = server.get_compute_client()
-
-        # Assert calls
-        mock_from_file.assert_called_once_with(
-            file_location=oci.config.DEFAULT_LOCATION,
-            profile_name="MYPROFILE",
-        )
-        mock_open_file.assert_called_once_with("/abs/path/to/token", "r")
-        mock_security_token_signer.assert_called_once_with(
-            "SECURITY_TOKEN", private_key_obj
-        )
-        # Ensure user agent was set on the same config dict passed into client
-        args, _ = mock_client.call_args
-        passed_config = args[0]
-        assert passed_config is config
-        expected_user_agent = f"{server.__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{server.__version__}"  # noqa
-        assert passed_config.get("additional_user_agent") == expected_user_agent
-        # And we returned the client instance
-        assert result == mock_client.return_value
-
-    @patch("oracle.oci_compute_mcp_server.server.oci.core.ComputeClient")
-    @patch("oracle.oci_compute_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
-    @patch("oracle.oci_compute_mcp_server.server.oci.signer.load_private_key_from_file")
-    @patch(
-        "oracle.oci_compute_mcp_server.server.open",
-        new_callable=mock_open,
-        read_data="TOK",
-    )
-    @patch("oracle.oci_compute_mcp_server.server.oci.config.from_file")
-    @patch("oracle.oci_compute_mcp_server.server.os.getenv")
-    def test_get_compute_client_uses_default_profile_when_env_missing(
-        self,
-        mock_getenv,
-        mock_from_file,
-        mock_open_file,
-        mock_load_private_key,
-        mock_security_token_signer,
-        mock_client,
-    ):
-        # Arrange: no env var present; from_file should be called with DEFAULT_PROFILE
-        mock_getenv.side_effect = lambda k, default=None: default
-        config = {"key_file": "/k.pem", "security_token_file": "/tkn"}
-        mock_from_file.return_value = config
-        priv = object()
-        mock_load_private_key.return_value = priv
-
-        # Act
-        srv_client = server.get_compute_client()
-
-        # Assert: profile defaulted
-        mock_from_file.assert_called_once_with(
-            file_location=oci.config.DEFAULT_LOCATION,
-            profile_name=oci.config.DEFAULT_PROFILE,
-        )
-        # Token file opened and read
-        mock_open_file.assert_called_once_with("/tkn", "r")
-        mock_security_token_signer.assert_called_once()
-        signer_args, _ = mock_security_token_signer.call_args
-        assert signer_args[0] == "TOK"
-        assert signer_args[1] is priv
-        # additional_user_agent set on original config and passed through
-        cc_args, _ = mock_client.call_args
-        assert cc_args[0] is config
-        assert "additional_user_agent" in config
-        assert (
-            isinstance(config["additional_user_agent"], str)
-            and "/" in config["additional_user_agent"]
-        )
-        # Returned object is client instance
-        assert srv_client is mock_client.return_value

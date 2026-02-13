@@ -10,6 +10,7 @@ from typing import Literal, Optional
 
 import oci
 from fastmcp import FastMCP
+from oracle.mcp_common import with_oci_client
 from oracle.oci_compute_mcp_server.consts import (
     DEFAULT_MEMORY_IN_GBS,
     DEFAULT_OCPU_COUNT,
@@ -28,32 +29,15 @@ from oracle.oci_compute_mcp_server.models import (
 )
 from pydantic import Field
 
-from . import __project__, __version__
+from . import __project__
 
 logger = Logger(__name__, level="INFO")
 
 mcp = FastMCP(name=__project__)
 
 
-def get_compute_client():
-    logger.info("entering get_compute_client")
-    config = oci.config.from_file(
-        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
-    )
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = os.path.expanduser(config["security_token_file"])
-    token = None
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    return oci.core.ComputeClient(config, signer=signer)
-
-
 @mcp.tool(description="List Instances in a given compartment")
+@with_oci_client(oci.core.ComputeClient)
 def list_instances(
     compartment_id: str = Field(..., description="The OCID of the compartment"),
     limit: Optional[int] = Field(
@@ -74,12 +58,12 @@ def list_instances(
             "TERMINATED",
         ]
     ] = Field(None, description="The lifecycle state of the instance to filter on"),
+    *,
+    client: oci.core.ComputeClient,
 ) -> list[Instance]:
     instances: list[Instance] = []
 
     try:
-        client = get_compute_client()
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None
@@ -112,12 +96,13 @@ def list_instances(
 
 
 @mcp.tool(description="Get Instance with a given instance OCID")
+@with_oci_client(oci.core.ComputeClient)
 def get_instance(
-    instance_id: str = Field(..., description="The OCID of the instance")
+    instance_id: str = Field(..., description="The OCID of the instance"),
+    *,
+    client: oci.core.ComputeClient,
 ) -> Instance:
     try:
-        client = get_compute_client()
-
         response: oci.response.Response = client.get_instance(instance_id=instance_id)
         data: oci.core.models.Instance = response.data
         logger.info("Found Instance")
@@ -132,6 +117,7 @@ def get_instance(
     description="Create a new instance. "
     "Another word for instance could be compute, server, or virtual machine"
 )
+@with_oci_client(oci.core.ComputeClient)
 def launch_instance(
     compartment_id: str = Field(
         ...,
@@ -187,10 +173,10 @@ def launch_instance(
         DEFAULT_MEMORY_IN_GBS,
         description="The total amount of memory in gigabytes to assigned to the instance",
     ),
+    *,
+    client: oci.core.ComputeClient,
 ) -> Instance:
     try:
-        client = get_compute_client()
-
         launch_details = oci.core.models.LaunchInstanceDetails(
             compartment_id=compartment_id,
             display_name=display_name,
@@ -216,12 +202,13 @@ def launch_instance(
 
 
 @mcp.tool(description="Delete instance with given instance OCID")
+@with_oci_client(oci.core.ComputeClient)
 def terminate_instance(
-    instance_id: str = Field(..., description="The OCID of the instance")
+    instance_id: str = Field(..., description="The OCID of the instance"),
+    *,
+    client: oci.core.ComputeClient,
 ) -> Response:
     try:
-        client = get_compute_client()
-
         response: oci.response.Response = client.terminate_instance(instance_id)
         logger.info("Deleted Instance")
         return map_response(response)
@@ -234,6 +221,7 @@ def terminate_instance(
 @mcp.tool(
     description="Update instance. This may restart the instance, so warn the user"
 )
+@with_oci_client(oci.core.ComputeClient)
 def update_instance(
     instance_id: str = Field(..., description="The OCID of the instance"),
     ocpus: Optional[int] = Field(
@@ -244,10 +232,10 @@ def update_instance(
         None,
         description="The total amount of memory in gigabytes to assigned to the instance",
     ),
+    *,
+    client: oci.core.ComputeClient,
 ) -> Instance:
     try:
-        client = get_compute_client()
-
         update_instance_details = oci.core.models.UpdateInstanceDetails(
             shape_config=oci.core.models.UpdateInstanceShapeConfigDetails(
                 ocpus=ocpus, memory_in_gbs=memory_in_gbs
@@ -270,6 +258,7 @@ def update_instance(
     description="List images in a given compartment, "
     "optionally filtered by operating system"
 )
+@with_oci_client(oci.core.ComputeClient)
 def list_images(
     compartment_id: str = Field(..., description="The OCID of the compartment"),
     operating_system: Optional[str] = Field(
@@ -280,12 +269,12 @@ def list_images(
         description="The maximum amount of resources to return. If None, there is no limit.",
         ge=1,
     ),
+    *,
+    client: oci.core.ComputeClient,
 ) -> list[Image]:
     images: list[Image] = []
 
     try:
-        client = get_compute_client()
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None
@@ -318,10 +307,13 @@ def list_images(
 
 
 @mcp.tool(description="Get Image with a given image OCID")
-def get_image(image_id: str = Field(..., description="The OCID of the image")) -> Image:
+@with_oci_client(oci.core.ComputeClient)
+def get_image(
+    image_id: str = Field(..., description="The OCID of the image"),
+    *,
+    client: oci.core.ComputeClient,
+) -> Image:
     try:
-        client = get_compute_client()
-
         response: oci.response.Response = client.get_image(image_id=image_id)
         data: oci.core.models.Image = response.data
         logger.info("Found Image")
@@ -333,6 +325,7 @@ def get_image(image_id: str = Field(..., description="The OCID of the image")) -
 
 
 @mcp.tool(description="Perform the desired action on a given instance")
+@with_oci_client(oci.core.ComputeClient)
 def instance_action(
     instance_id: str = Field(..., description="The OCID of the instance"),
     action: Literal[
@@ -345,10 +338,10 @@ def instance_action(
         "DIAGNOSTICREBOOT",
         "REBOOTMIGRATE",
     ] = Field(..., description="The instance action to be performed"),
+    *,
+    client: oci.core.ComputeClient,
 ) -> Instance:
     try:
-        client = get_compute_client()
-
         response: oci.response.Response = client.instance_action(instance_id, action)
         data: oci.core.models.Instance = response.data
         logger.info("Performed instance action")
@@ -362,6 +355,7 @@ def instance_action(
 @mcp.tool(
     description="List vnic attachments in a given compartment and/or on a given instance. "
 )
+@with_oci_client(oci.core.ComputeClient)
 def list_vnic_attachments(
     compartment_id: str = Field(
         ...,
@@ -375,12 +369,12 @@ def list_vnic_attachments(
         description="The maximum amount of resources to return. If None, there is no limit.",
         ge=1,
     ),
+    *,
+    client: oci.core.ComputeClient,
 ) -> list[VnicAttachment]:
     vnic_attachments: list[VnicAttachment] = []
 
     try:
-        client = get_compute_client()
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None
@@ -413,12 +407,13 @@ def list_vnic_attachments(
 
 
 @mcp.tool(description="Get Vnic Attachment with a given OCID")
+@with_oci_client(oci.core.ComputeClient)
 def get_vnic_attachment(
-    vnic_attachment_id: str = Field(..., description="The OCID of the vnic attachment")
+    vnic_attachment_id: str = Field(..., description="The OCID of the vnic attachment"),
+    *,
+    client: oci.core.ComputeClient,
 ) -> VnicAttachment:
     try:
-        client = get_compute_client()
-
         response: oci.response.Response = client.get_vnic_attachment(
             vnic_attachment_id=vnic_attachment_id
         )

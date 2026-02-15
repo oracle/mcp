@@ -66,6 +66,15 @@ final class SqlQueries {
   """;
 
   /**
+   * Drops an ONNX vector embedding model from the database.
+   */
+  public static final String DROP_VECTOR_MODEL_QUERY = """
+    BEGIN
+      DBMS_VECTOR.DROP_ONNX_MODEL(MODEL_NAME => ?);
+    END;
+  """;
+
+  /**
    * Query to check whether a table has a METADATA column.
    * <p>
    * Returns : COUNT(*) — 1 if column exists, 0 if not

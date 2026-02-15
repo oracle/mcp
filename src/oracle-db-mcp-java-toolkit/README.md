@@ -216,6 +216,13 @@ These tools provide a full RAG pipeline: model discovery, vector store creation,
 
 * **`list-vector-models`**: Lists all loaded ONNX embedding models with their names, algorithms, creation dates, and sizes.
 
+* **`drop-vector-model`**: Remove an embedding model from your database when you no longer need it.
+
+  - **Inputs:**
+    - `modelName` (string, required) — Name of the model to remove
+
+  - **Returns:** `{ modelName, status: "dropped" }`
+
 * **`list-vector-stores`**: Lists all tables in the current schema that contain at least one VECTOR column, along with their approximate row counts.
 
 * **`create-vector-store`**: Build a new vector store table optimized for AI-powered search.
@@ -232,9 +239,10 @@ the table also includes:
    * `dimensions` (optional) — Lock vector size to a specific dimension, or leave flexible to accept any model
    * `includeMetadata` (default: `true`) — Track document sources and enable smart deduplication
 
-* **`insert-file-with-embedding`**: Drop in any document — PDF, Word, text, you name it — and watch it transform into searchable knowledge.
-  Oracle handles the heavy lifting: extracting text, splitting into smart chunks, generating embeddings, and organizing everything for instant retrieval. 
-If you've already inserted this exact file, it quietly skips the duplicate — no wasted storage, no cleanup needed.
+* **`insert-file-with-embedding`**: Drop in any document — PDF, Word, or text — and watch it transform into searchable knowledge.
+The MCP toolkit orchestrates Oracle's native capabilities: extracting text, splitting into smart chunks, generating embeddings,
+and organizing everything for instant retrieval. If you've already inserted this exact file,
+it quietly skips the duplicate — no wasted storage, no cleanup needed.
 
   **Inputs:**
 
@@ -245,7 +253,7 @@ If you've already inserted this exact file, it quietly skips the duplicate — n
     * `modelName` (default: `doc_model`) — Which AI model to use for embeddings
     * `chunkParams` (default: `{"max": 500, "overlap": 50}) — How to split your document (max tokens per chunk, overlap between chunks)
 
-  **Returns:** `{table, sourceFile, chunksCreated, status} where status is "success" or "skipped".
+  **Returns:** `{table, sourceFile, chunksCreated, status}` where status is "success" or "skipped".
 
   **Deduplication:** If the table has a `METADATA` column and the file has already been inserted (matched by absolute path),
 the entire insert is skipped. No duplicate chunks are created. Returns status: `skipped` with `chunksCreated: 0`.

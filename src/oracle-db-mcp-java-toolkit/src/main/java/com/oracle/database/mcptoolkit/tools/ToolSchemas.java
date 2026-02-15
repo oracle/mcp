@@ -245,7 +245,24 @@ public class ToolSchemas {
     }""";
 
   /**
-   * JSON schema for Creating Vector Store.
+   * JSON schema for drop-vector-model operations.
+   * <p>
+   * Requires the name of the model to delete.
+   */
+  static final String DROP_VECTOR_MODEL = """
+    {
+      "type": "object",
+      "properties": {
+        "modelName": {
+          "type": "string",
+          "description": "Name of the ONNX model to drop"
+        }
+      },
+      "required": ["modelName"]
+    }""";
+
+  /**
+   * Schema for creating a new vector store table.
    * <p>
    * This schema requires a "tableName" property and optionally accepts column names,
    * vector dimensions, and a flag to include metadata tracking.
@@ -279,7 +296,10 @@ public class ToolSchemas {
   }""";
 
   /**
-   * JSON schema for inserting file with embedding.
+   * Schema for uploading a document to a vector store.
+   * <p>
+   * Requires the table name and file path. Optionally accepts column names,
+   * model selection, and chunking configuration.
    */
   static final String INSERT_FILE_WITH_EMBEDDING = """
     {

@@ -55,6 +55,7 @@ public class RagTools {
     tools.add(getSimilaritySearchTool(config));
     tools.add(getListVectorStoresTool(config));
     tools.add(getListVectorModelsTool(config));
+    tools.add(getDropVectorModelTool(config));
     tools.add(getCreateVectorStoreTool(config));
     tools.add(getInsertFileWithEmbeddingTool(config));
     return tools;
@@ -132,12 +133,16 @@ public class RagTools {
   }
 
   /**
-   * List all vector stores (tables with VECTOR columns).
+   * Lists all tables configured for vector search.
+   *
+   * @param config server configuration
+   * @return tool specification for {@code list-vector-stores}
    */
   public static McpServerFeatures.SyncToolSpecification getListVectorStoresTool(ServerConfig config) {
     return McpServerFeatures.SyncToolSpecification.builder()
       .tool(McpSchema.Tool.builder()
          .name("list-vector-stores")
+         .title("List Vector Stores")
          .description("Lists all vector stores in a database.")
          .inputSchema(LIST_VECTOR_STORES)
          .build())
@@ -154,12 +159,16 @@ public class RagTools {
   }
 
   /**
-   * List all vector embedding models.
+   * Lists all AI embedding models available in the database.
+   *
+   * @param config server configuration
+   * @return tool specification for {@code list-vector-models}
    */
   public static McpServerFeatures.SyncToolSpecification getListVectorModelsTool(ServerConfig config) {
     return McpServerFeatures.SyncToolSpecification.builder()
       .tool(McpSchema.Tool.builder()
          .name("list-vector-models")
+         .title("List Vector Models")
          .description("Lists all AI vector embedding models available in the Oracle Database")
          .inputSchema(LIST_VECTOR_MODELS)
          .build())
@@ -176,12 +185,49 @@ public class RagTools {
   }
 
   /**
-   * Create a new vector store table.
+   * Drops an ONNX embedding model from the Oracle schema.
+   *
+   * @param config server configuration
+   * @return tool specification for {@code drop-vector-model}
+   */
+  public static McpServerFeatures.SyncToolSpecification getDropVectorModelTool(ServerConfig config) {
+    return McpServerFeatures.SyncToolSpecification.builder()
+      .tool(McpSchema.Tool.builder()
+         .name("drop-vector-model")
+         .title("Drop Vector Model")
+         .description("Drop an ONNX embedding model from the Oracle Database")
+         .inputSchema(DROP_VECTOR_MODEL)
+         .build())
+      .callHandler((exchange, callReq) -> tryCall(() -> {
+        try (Connection c = openConnection(config, null)) {
+          Map<String, Object> args = callReq.arguments();
+          String modelName = String.valueOf(args.get("modelName"));
+
+          dropVectorModel(c, modelName);
+
+          return McpSchema.CallToolResult.builder()
+                  .structuredContent(Map.of(
+                          "modelName", modelName,
+                          "status", "dropped"
+                  ))
+                  .addTextContent("Model '" + modelName + "' has been dropped successfully.")
+                  .build();
+        }
+      }))
+    .build();
+  }
+
+  /**
+   * Creates a new vector store table.
+   *
+   * @param config server configuration
+   * @return tool specification for {@code create-vector-store}
    */
   public static McpServerFeatures.SyncToolSpecification getCreateVectorStoreTool(ServerConfig config) {
     return McpServerFeatures.SyncToolSpecification.builder()
       .tool(McpSchema.Tool.builder()
          .name("create-vector-store")
+         .title("Create Vector Store")
          .description("Create a new vector store table with text and embedding columns")
          .inputSchema(CREATE_VECTOR_STORE)
          .build())
@@ -215,6 +261,9 @@ public class RagTools {
 
   /**
    * Insert file with automatic extraction, chunking, and embedding.
+   *
+   * @param config server configuration
+   * @return tool specification for {@code insert-file-with-embedding}
    */
   public static McpServerFeatures.SyncToolSpecification getInsertFileWithEmbeddingTool(ServerConfig config) {
     return McpServerFeatures.SyncToolSpecification.builder()
@@ -327,7 +376,11 @@ public class RagTools {
   }
 
   /**
-   * List all vector stores (tables with VECTOR columns).
+   * Retrieves all tables that contain vector embeddings.
+   *
+   * @param c database connection
+   * @return list of vector stores with their columns and row counts
+   * @throws SQLException if the query fails
    */
   private static List<Map<String, Object>> listVectorStores(Connection c) throws SQLException {
     Map<String, Map<String, Object>> storeMap = new java.util.LinkedHashMap<>();
@@ -358,7 +411,11 @@ public class RagTools {
   }
 
   /**
-   * List all vector embedding models.
+   * Retrieves all embedding models loaded in the database.
+   *
+   * @param c database connection
+   * @return list of models with names, types, and sizes
+   * @throws SQLException if the query fails
    */
   private static List<Map<String, Object>> listVectorModels(Connection c) throws SQLException {
     List<Map<String, Object>> results = new ArrayList<>();
@@ -379,12 +436,32 @@ public class RagTools {
   }
 
   /**
+   * Drops an ONNX embedding model from the database.
+   *
+   * @param c open JDBC connection
+   * @param modelName name of the model to drop
+   * @throws SQLException if the operation fails or the model doesn't exist
+   */
+  private static void dropVectorModel(Connection c, String modelName) throws SQLException {
+    try (CallableStatement cs = c.prepareCall(SqlQueries.DROP_VECTOR_MODEL_QUERY)) {
+      cs.setString(1, modelName);
+      cs.execute();
+    }
+  }
+
+  /**
    * Create a new vector store table.
    * <p>
-   * - ID and CREATED_AT are always present — every table needs a PK and insert timestamp.
-   * - EMBEDDING is NOT NULL — a row without a vector has no purpose.
-   * - When metadata is enabled, a functional index on source_file is created automatically
-   *   to make the NOT EXISTS deduplication check fast.
+   * Always includes an ID primary key and timestamp. When metadata is enabled,
+   * also creates an index to accelerate duplicate file detection.
+   *
+   * @param c database connection
+   * @param tableName name of the table to create
+   * @param textColumn column for storing text chunks
+   * @param embeddingColumn column for storing vectors
+   * @param dimensions fixed vector size, or null for flexible
+   * @param includeMetadata whether to enable document tracking and deduplication
+   * @throws SQLException if table creation fails
    */
   private static void createVectorStore(
           Connection c, String tableName, String textColumn, String embeddingColumn,
@@ -426,8 +503,21 @@ public class RagTools {
   }
 
   /**
-   * Insert a file using Oracle's native extraction pipeline in a single atomic SQL statement.
-   * Returns the number of chunks inserted (0 means file already existed — dedup fired).
+   * Processes and inserts a document into a vector store.
+   * <p>
+   * Automatically extracts text, splits into chunks, generates embeddings, and stores
+   * everything. For tables with metadata, prevents duplicate insertions of the same file.
+   *
+   * @param c database connection
+   * @param table target vector store
+   * @param textColumn where to store text
+   * @param embeddingColumn where to store vectors
+   * @param modelName which embedding model to use
+   * @param fileBytes raw file content
+   * @param fullPath file path (used for deduplication)
+   * @param chunkParams how to split the document
+   * @return number of chunks inserted (0 if file already exists)
+   * @throws SQLException if insertion fails
    */
   private static int insertFileWithNativeChunking(
           Connection c, String table, String textColumn, String embeddingColumn,

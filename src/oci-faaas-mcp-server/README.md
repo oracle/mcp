@@ -4,10 +4,57 @@
 
 This server provides tools for interacting with Oracle Cloud Infrastructure (OCI) Fusion Applications (FAaaS) via the OCI Python SDK `oci.fusion_apps.FusionApplicationsClient`.
 
-## Running the server
+## MCP client configuration (recommended)
 
-```sh
-uv run oracle.oci-faaas-mcp-server
+Most users should configure their MCP client to launch the server, rather than starting it manually.
+
+Add a stanza like this to your MCP client config (often called `mcp.json`; example shown is **stdio**):
+
+```json
+{
+  "mcpServers": {
+    "oci-faaas": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "oracle.oci-faaas-mcp-server"
+      ],
+      "env": {
+        "OCI_CONFIG_PROFILE": "DEFAULT"
+      }
+    }
+  }
+}
+```
+
+## Run the server locally (HTTP transport)
+
+Most MCP clients run this server for you over **stdio** (see above). If you want to run the server as a standalone
+service and connect to it over HTTP (**streamable HTTP**), you can.
+
+1) Start the server in HTTP mode (choose host/port):
+
+```bash
+ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8000 uvx oracle.oci-faaas-mcp-server
+```
+
+This will expose the MCP endpoint at:
+
+`http://127.0.0.1:8000/mcp`
+
+2) Configure your MCP client to connect via `streamableHttp`:
+
+> Note: MCP client configuration varies by client/tooling. Some clients refer to streamable HTTP as just `http`.
+
+```json
+{
+  "mcpServers": {
+    "oci-faaas": {
+      "type": "streamableHttp",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
 ```
 
 ## Tools

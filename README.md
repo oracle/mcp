@@ -42,10 +42,10 @@ For macOS/Linux:
 ```json
 {
   "mcpServers": {
-    "oracle-oci-api-mcp-server": {
+    "oracle-oci-cloud-mcp-server": {
       "command": "uvx",
       "args": [
-        "oracle.oci-api-mcp-server@latest"
+        "oracle.oci-cloud-mcp-server@latest"
       ],
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR"
@@ -58,7 +58,7 @@ For macOS/Linux:
 To connect to an MCP server running in HTTP streaming mode:
 Assuming you started the server by running:
 ```bash
-ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8888 uvx oracle.oci-api-mcp-server
+ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8888 uvx oracle.oci-cloud-mcp-server
 ```
 then place the following in your MCP client configuration:
 :warning: NOTE: the `type` attribute differs across MCP clients; some use `http` as the
@@ -67,7 +67,7 @@ transport value while others (like Cline) expect `streamableHttp`.
 ```json
 {
   "mcpServers": {
-    "oracle-oci-api-mcp-server": {
+    "oracle-oci-cloud-mcp-server": {
       "type": "streamableHttp",
       "url": "http://127.0.0.1:8888/mcp"
     }
@@ -86,12 +86,12 @@ https://podman.io/docs/installation
 
 ### Building the Container Image
 
-You can build the container image using the following command. The command shows building the container image for the oci-api-mcp-server.
+You can build the container image using the following command. The command shows building the container image for the oci-cloud-mcp-server.
 
 ```sh
-SUBDIRS=src/oci-api-mcp-server make containerize
+SUBDIRS=src/oci-cloud-mcp-server make containerize
 ```
-The above command builds the container image tagged as `oracle.oci-api-mcp-server:latest`.
+The above command builds the container image tagged as `oracle.oci-cloud-mcp-server:latest`.
 
 ### MCP Client Configuration
 
@@ -99,7 +99,7 @@ For examples of configuring MCP clients to run the server using podman, see the 
 
 Alternatively, if you want to use HTTP transport using the podman container, then start the MCP server using the following command and configure your client as mentioned in Quickstart section above.
 ```bash
-podman run -v "/path/to/your/.oci:/app/.oci" -e ORACLE_MCP_HOST=0.0.0.0 -e ORACLE_MCP_PORT=8888 -p 8888:8888 oracle.oci-api-mcp-server:latest
+podman run -v "/path/to/your/.oci:/app/.oci" -e ORACLE_MCP_HOST=0.0.0.0 -e ORACLE_MCP_PORT=8888 -p 8888:8888 oracle.oci-cloud-mcp-server:latest
 ```
 ⚠️ **NOTE**: Ensure that all the fields that are paths to files in `/path/to/your/.oci/config` uses the **~** character so that the path resolves both inside and outside the container; for example: 
 ```bash
@@ -155,11 +155,11 @@ For macOS/Linux:
 ```json
 {
   "mcpServers": {
-    "oracle-oci-api-mcp-server": {
+    "oracle-oci-cloud-mcp-server": {
       "type": "stdio",
       "command": "uvx",
       "args": [
-        "oracle.oci-api-mcp-server@latest"
+        "oracle.oci-cloud-mcp-server@latest"
       ],
       "env": {
         "OCI_CONFIG_PROFILE": "<profile_name>",
@@ -170,18 +170,18 @@ For macOS/Linux:
 }
 ```
 
-Alternatively, to run using podman (example for oracle.oci-api-mcp-server):
+Alternatively, to run using podman (example for oracle.oci-cloud-mcp-server):
 
 ```json
 {
   "mcpServers": {
-    "oracle-oci-api-mcp-server": {
+    "oracle-oci-cloud-mcp-server": {
       "autoApprove": [],
       "disabled": false,
       "timeout": 60,
       "type": "stdio",
       "command": "podman",
-      "args": ["run", "-i", "--rm", "-v", "/path/to/your/.oci:/app/.oci", "oracle.oci-api-mcp-server:latest"],
+      "args": ["run", "-i", "--rm", "-v", "/path/to/your/.oci:/app/.oci", "oracle.oci-cloud-mcp-server:latest"],
       "env": {
         "FASTMCP_LOG_LEVEL": "INFO"
       }
@@ -222,11 +222,11 @@ For macOS/Linux:
 ```json
 {
   "mcpServers": {
-    "oracle-oci-api-mcp-server": {
+    "oracle-oci-cloud-mcp-server": {
       "type": "stdio",
       "command": "uvx",
       "args": [
-        "oracle.oci-api-mcp-server"
+        "oracle.oci-cloud-mcp-server"
       ],
       "env": {
         "OCI_CONFIG_PROFILE": "<profile_name>",
@@ -237,15 +237,15 @@ For macOS/Linux:
 }
 ```
 
-Alternatively, to run using podman (example for oracle-oci-api-mcp-server):
+Alternatively, to run using podman (example for oracle-oci-cloud-mcp-server):
 
 ```json
 {
   "mcpServers": {
-    "oracle-oci-api-mcp-server": {
+    "oracle-oci-cloud-mcp-server": {
       "type": "stdio",
       "command": "podman",
-      "args": ["run", "-i", "--rm", "-v", "/path/to/your/.oci:/app/.oci", "oracle.oci-api-mcp-server:latest"],
+      "args": ["run", "-i", "--rm", "-v", "/path/to/your/.oci:/app/.oci", "oracle.oci-cloud-mcp-server:latest"],
       "env": {
         "FASTMCP_LOG_LEVEL": "INFO"
       }
@@ -294,11 +294,11 @@ For macOS/Linux:
 ```json
 {
   "mcpServers": {
-    "oracle-oci-api-mcp-server": {
+    "oracle-oci-cloud-mcp-server": {
       "type": "stdio",
       "command": "uvx",
       "args": [
-        "oracle.oci-api-mcp-server"
+        "oracle.oci-cloud-mcp-server"
       ],
       "env": {
         "OCI_CONFIG_PROFILE": "<profile_name>",
@@ -309,15 +309,15 @@ For macOS/Linux:
 }
 ```
 
-Alternatively, to run using podman (example for oracle-oci-api-mcp-server):
+Alternatively, to run using podman (example for oracle-oci-cloud-mcp-server):
 
 ```json
 {
   "mcpServers": {
-    "oracle-oci-api-mcp-server": {
+    "oracle-oci-cloud-mcp-server": {
       "type": "stdio",
       "command": "podman",
-      "args": ["run", "-i", "--rm", "-v", "/path/to/your/.oci:/app/.oci", "oracle.oci-api-mcp-server:latest"],
+      "args": ["run", "-i", "--rm", "-v", "/path/to/your/.oci:/app/.oci", "oracle.oci-cloud-mcp-server:latest"],
       "env": {
         "FASTMCP_LOG_LEVEL": "INFO"
       }
@@ -368,11 +368,11 @@ For macOS/Linux:
 ```json
 {
   "mcpServers": {
-    "oracle-oci-api-mcp-server": {
+    "oracle-oci-cloud-mcp-server": {
       "command": "uv",
       "args": [
         "run",
-        "oracle.oci-api-mcp-server"
+        "oracle.oci-cloud-mcp-server"
       ],
       "env": {
         "VIRTUAL_ENV": "<path to your cloned repo>/mcp/.venv",
@@ -410,12 +410,12 @@ update it as needed. For instance:
 ```json
 {
   "mcpServers": {
-    "oracle-oci-api-mcp-server": {
+    "oracle-oci-cloud-mcp-server": {
       "type": "stdio",
       "command": "uv",
       "args": [
         "run",
-        "oracle.oci-api-mcp-server"
+        "oracle.oci-cloud-mcp-server"
       ],
       "env": {
         "VIRTUAL_ENV": "<path to your cloned repo>/oci-mcp/.venv",
@@ -437,7 +437,7 @@ make install
 
 then start the server:
 ```bash
-VIRTUAL_ENV=$(pwd)/.venv ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8888 uv run oracle.oci-api-mcp-server
+VIRTUAL_ENV=$(pwd)/.venv ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8888 uv run oracle.oci-cloud-mcp-server
 ```
 
 ### Inspector
@@ -483,7 +483,7 @@ uv run --index=https://test.pypi.org/simple <mcp server package>
 ```
 example:
 ```bash
-uv run --index=https://test.pypi.org/simple oracle.oci-api-mcp-server
+uv run --index=https://test.pypi.org/simple oracle.oci-cloud-mcp-server
 ```
 
 ### Publish packages

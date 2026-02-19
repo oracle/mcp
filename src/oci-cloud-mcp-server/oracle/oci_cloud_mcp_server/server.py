@@ -582,7 +582,13 @@ def invoke_oci_api(
 
 @mcp.tool(description="List public callable operations for a given OCI client class.")
 def list_client_operations(
-    client_fqn: Annotated[str, "Fully-qualified client class, e.g. 'oci.core.ComputeClient'"],
+    client_fqn: Annotated[
+        str, "Fully-qualified client class, e.g. 'oci.core.ComputeClient'"
+    ],
+    name_regex: Annotated[
+        Optional[str],
+        "Optional regex to filter operations by name (Python re syntax). Uses re.search.",
+    ] = None,
 ) -> dict:
     try:
         module_name, class_name = client_fqn.rsplit(".", 1)
@@ -591,9 +597,18 @@ def list_client_operations(
         if not inspect.isclass(cls):
             raise ValueError(f"{client_fqn} is not a class")
 
+        compiled: Optional[re.Pattern] = None
+        if name_regex:
+            try:
+                compiled = re.compile(name_regex)
+            except re.error as e:
+                raise ValueError(f"Invalid name_regex: {e}")
+
         ops: List[dict] = []
         for name, member in inspect.getmembers(cls, predicate=inspect.isfunction):
             if name.startswith("_"):
+                continue
+            if compiled and not compiled.search(name):
                 continue
             try:
                 doc = (inspect.getdoc(member) or "").strip()
@@ -604,9 +619,11 @@ def list_client_operations(
                 params = ""
             ops.append({"name": name, "summary": first_line, "params": str(params)})
 
-        logger.info(f"Found {len(ops)} operations on {client_fqn}")
+        logger.info(
+            f"Found {len(ops)} operations on {client_fqn} (name_regex={name_regex!r})"
+        )
         # return a mapping to avoid Pydantic RootModel list-wrapping
-        return {"operations": ops}
+        return {"operations": ops, "name_regex": name_regex}
     except Exception as e:
         logger.error(f"Error listing operations for {client_fqn}: {e}")
         raise

@@ -58,8 +58,17 @@ Response (shape):
 ### list_client_operations
 
 - client_fqn: Fully-qualified client class name, e.g. `oci.identity.IdentityClient`
+- name_regex (optional): Regex to filter operation names (Python `re` syntax; uses `re.search`).
 
 Returns a list of operations with a short summary extracted from docstrings when available.
+
+Example usage (filtering only list operations):
+```json
+{
+  "client_fqn": "oci.core.ComputeClient",
+  "name_regex": "^list_"
+}
+```
 
 ## Passing complex model parameters
 

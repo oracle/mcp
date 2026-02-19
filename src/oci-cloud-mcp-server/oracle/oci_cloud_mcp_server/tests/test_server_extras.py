@@ -704,6 +704,52 @@ class TestListClientOperationsDirect:
         assert "operations" in res2
 
 
+class TestListClientOperationsRegexFilter:
+    @pytest.mark.asyncio
+    async def test_name_regex_filters_results(self, monkeypatch):
+        class Klass:
+            def list_things(self):
+                """List things."""
+
+            def get_thing(self):
+                """Get thing."""
+
+        fake_module = SimpleNamespace(Klass=Klass)
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module
+        )
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "list_client_operations",
+                    {"client_fqn": "x.y.Klass", "name_regex": "^list_"},
+                )
+            ).data
+
+        assert res["name_regex"] == "^list_"
+        names = [op["name"] for op in res["operations"]]
+        assert names == ["list_things"]
+
+    @pytest.mark.asyncio
+    async def test_invalid_name_regex_raises_tool_error(self, monkeypatch):
+        class Klass:
+            def list_things(self):
+                return 1
+
+        fake_module = SimpleNamespace(Klass=Klass)
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool(
+                    "list_client_operations",
+                    {"client_fqn": "x.y.Klass", "name_regex": "["},
+                )
+
+
 class TestConstructModelFallback:
     def test_construct_model_returns_mapping_when_no_candidates(self):
         from oracle.oci_cloud_mcp_server.server import _construct_model_from_mapping

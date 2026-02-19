@@ -6,16 +6,23 @@ https://oss.oracle.com/licenses/upl.
 
 import os
 from logging import Logger
-from typing import Annotated, Optional
+from typing import Optional, Literal
 
 import oci
 from fastmcp import FastMCP
+from pydantic import Field
 
 from . import __project__, __version__
 from .utils import (
     list_limit_definitions_with_pagination,
     list_limit_values_with_pagination,
     list_services_with_pagination,
+)
+from .models import (
+    map_service_summary,
+    map_limit_definition_summary,
+    map_limit_value_summary,
+    map_resource_availability,
 )
 
 logger = Logger(__name__, level="INFO")
@@ -47,87 +54,12 @@ def get_limits_client():
 
 def get_identity_client():
     """
-    Build an OCI IdentityClient using Security Token auth (consistent with other servers in this repo).
-    Honors OCI_CONFIG_PROFILE if set. Adds a product-specific user agent.
+    Deprecated: This server no longer constructs an Identity client.
+    For identity-related data (e.g., availability domains), use the oracle-identity-mcp-server tools.
     """
-    config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+    raise NotImplementedError(
+        "Use oracle-identity-mcp-server tools for Identity operations (e.g., list_availability_domains)."
     )
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-
-    # Security token signer (same pattern as compute/identity)
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = config["security_token_file"]
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-
-    # Identity client
-    return oci.identity.IdentityClient(config, signer=signer)
-
-
-# ----------------------------
-# Mappers to stable dict shapes
-# ----------------------------
-def map_service_summary(svc: "oci.limits.models.ServiceSummary") -> dict:
-    return {
-        "name": getattr(svc, "name", None),
-        "description": getattr(svc, "description", None),
-        "supported_subscriptions": getattr(svc, "supported_subscriptions", None),
-    }
-
-
-def map_limit_definition_summary(
-    defn: "oci.limits.models.LimitDefinitionSummary",
-) -> dict:
-    return {
-        "name": getattr(defn, "name", None),
-        "serviceName": getattr(defn, "service_name", None),
-        "description": getattr(defn, "description", None),
-        "scopeType": getattr(defn, "scope_type", None),
-        "areQuotasSupported": getattr(defn, "are_quotas_supported", None),
-        "isResourceAvailabilitySupported": getattr(
-            defn, "is_resource_availability_supported", None
-        ),
-        "isDeprecated": getattr(defn, "is_deprecated", None),
-        "isEligibleForLimitIncrease": getattr(
-            defn, "is_eligible_for_limit_increase", None
-        ),
-        "isDynamic": getattr(defn, "is_dynamic", None),
-        "externalLocationSupportedSubscriptions": getattr(
-            defn, "external_location_supported_subscriptions", None
-        ),
-        "supportedSubscriptions": getattr(defn, "supported_subscriptions", None),
-        "supportedQuotaFamilies": getattr(defn, "supported_quota_families", None),
-    }
-
-
-def map_limit_value_summary(val: "oci.limits.models.LimitValueSummary") -> dict:
-    return {
-        "name": getattr(val, "name", None),
-        "scopeType": getattr(val, "scope_type", None),
-        "availabilityDomain": getattr(val, "availability_domain", None),
-        "value": getattr(val, "value", None),
-    }
-
-
-def map_resource_availability(ra: "oci.limits.models.ResourceAvailability") -> dict:
-    return {
-        "used": getattr(ra, "used", None),
-        "available": getattr(ra, "available", None),
-        "fractionalUsage": getattr(ra, "fractional_usage", None),
-        "fractionalAvailability": getattr(ra, "fractional_availability", None),
-        "effectiveQuotaValue": getattr(ra, "effective_quota_value", None),
-    }
-
-
-def list_availability_domains(compartment_id: str) -> list[dict]:
-    client = get_identity_client()
-    response = client.list_availability_domains(compartment_id=compartment_id)
-    data = response.data
-    return [{"name": ad.name, "id": ad.id} for ad in data]
-
 
 # ----------------------------
 # Tools
@@ -135,24 +67,48 @@ def list_availability_domains(compartment_id: str) -> list[dict]:
 
 
 @mcp.tool(
-    description="List availability domains for a given compartment needed for limits"
+    description=(
+        "Redirect shim: Use oracle-identity-mcp-server.list_availability_domains. "
+        "This tool intentionally does not query Identity and will instruct the MCP host to call the Identity tool."
+    )
 )
 def provide_availability_domains_for_limits(
-    compartment_id: Annotated[str, "OCID of the compartment"],
+    compartment_id: str = Field(..., description="OCID of the compartment (tenancy)")
 ) -> list[dict]:
-    return list_availability_domains(compartment_id)
+    """
+    This is a non-fetching shim to guide orchestration. It avoids duplicating Identity logic
+    and returns a structured hint for the MCP host to call the correct tool.
+    """
+    return [
+        {
+            "message": (
+                "Call oracle-identity-mcp-server.list_availability_domains with tenancy_id=the tenancy OCID. "
+                "Then pass one of the returned AD names to get_resource_availability when scopeType is AD."
+            ),
+            "redirect": {
+                "server": "oracle.oci-identity-mcp-server",
+                "tool": "list_availability_domains",
+                "args": {"tenancy_id": compartment_id},
+            },
+        }
+    ]
 
 
 @mcp.tool(
     description="Returns the list of supported services that have resource limits exposed"
 )
 def list_services(
-    compartment_id: Annotated[str, "OCID of the root compartment (tenancy)"],
-    sort_by: Annotated[str, "Sort field: name or description"] = "name",
-    sort_order: Annotated[str, "Sort order: ASC or DESC"] = "ASC",
-    limit: Annotated[Optional[int], "Max items per page (1-1000)"] = 100,
-    page: Annotated[Optional[str], "Pagination token from a previous call"] = None,
-    subscription_id: Annotated[Optional[str], "Subscription OCID filter"] = None,
+    compartment_id: str = Field(..., description="OCID of the root compartment (tenancy)"),
+    sort_by: Literal["name", "description"] = Field("name", description="Sort field"),
+    sort_order: Literal["ASC", "DESC"] = Field("ASC", description="Sort order"),
+    limit: Optional[int] = Field(
+        None,
+        description="Max items per page (1-1000). If None, service default page size is used.",
+        ge=1,
+        le=1000,
+    ),
+    page: Optional[str] = Field(None, description="Pagination token from a previous call"),
+    subscription_id: Optional[str] = Field(None, description="Subscription OCID filter"),
 ) -> list[dict]:
     """
     Maps to GET /20190729/services
@@ -177,14 +133,19 @@ def list_services(
 
 @mcp.tool(description="Get the list of resource limit definitions for a service")
 def list_limit_definitions(
-    compartment_id: Annotated[str, "OCID of the root compartment (tenancy)"],
-    service_name: Annotated[Optional[str], "Target service name filter"] = None,
-    name: Annotated[Optional[str], "Specific resource limit name filter"] = None,
-    sort_by: Annotated[str, "Sort field: name or description"] = "name",
-    sort_order: Annotated[str, "Sort order: ASC or DESC"] = "ASC",
-    limit: Annotated[Optional[int], "Max items per page (1-1000)"] = 100,
-    page: Annotated[Optional[str], "Pagination token from a previous call"] = None,
-    subscription_id: Annotated[Optional[str], "Subscription OCID filter"] = None,
+    compartment_id: str = Field(..., description="OCID of the root compartment (tenancy)"),
+    service_name: Optional[str] = Field(None, description="Target service name filter"),
+    name: Optional[str] = Field(None, description="Specific resource limit name filter"),
+    sort_by: Literal["name", "description"] = Field("name", description="Sort field"),
+    sort_order: Literal["ASC", "DESC"] = Field("ASC", description="Sort order"),
+    limit: Optional[int] = Field(
+        None,
+        description="Max items per page (1-1000). If None, service default page size is used.",
+        ge=1,
+        le=1000,
+    ),
+    page: Optional[str] = Field(None, description="Pagination token from a previous call"),
+    subscription_id: Optional[str] = Field(None, description="Subscription OCID filter"),
 ) -> list[dict]:
     """
     Maps to GET /20190729/limitDefinitions
@@ -209,21 +170,26 @@ def list_limit_definitions(
 
 
 @mcp.tool(
-    description="Get the full list of resource limit values for the given service"
+    description="List resource limit values for the given service"
 )
-def get_limit_value(
-    compartment_id: Annotated[str, "OCID of the root compartment (tenancy)"],
-    service_name: Annotated[str, "Target service name"],
-    name: Annotated[str, "Specific resource limit name filter"],
-    scope_type: Annotated[str, "Filter by scope type: GLOBAL, REGION, or AD"],
-    availability_domain: Annotated[
-        Optional[str], "If scope_type is AD, filter by availability domain"
-    ] = None,
-    sort_by: Annotated[str, "Sort field: name"] = "name",
-    sort_order: Annotated[str, "Sort order: ASC or DESC"] = "ASC",
-    limit: Annotated[Optional[int], "Max items per page (1-1000)"] = 100,
-    page: Annotated[Optional[str], "Pagination token from a previous call"] = None,
-    subscription_id: Annotated[Optional[str], "Subscription OCID filter"] = None,
+def list_limit_value(
+    compartment_id: str = Field(..., description="OCID of the root compartment (tenancy)"),
+    service_name: str = Field(..., description="Target service name"),
+    name: str = Field(..., description="Specific resource limit name filter"),
+    scope_type: Literal["GLOBAL", "REGION", "AD"] = Field(..., description="Scope type"),
+    availability_domain: Optional[str] = Field(
+        None, description="If scope_type is AD, filter by availability domain"
+    ),
+    sort_by: Literal["name"] = Field("name", description="Sort field"),
+    sort_order: Literal["ASC", "DESC"] = Field("ASC", description="Sort order"),
+    limit: Optional[int] = Field(
+        None,
+        description="Max items per page (1-1000). If None, service default page size is used.",
+        ge=1,
+        le=1000,
+    ),
+    page: Optional[str] = Field(None, description="Pagination token from a previous call"),
+    subscription_id: Optional[str] = Field(None, description="Subscription OCID filter"),
 ) -> list[dict]:
     """
     Maps to GET /20190729/limitValues
@@ -245,22 +211,28 @@ def get_limit_value(
         )
         return [map_limit_value_summary(d) for d in items]
     except Exception as e:
-        logger.error(f"Error in get_limit_value: {e}")
+        logger.error(f"Error in list_limit_value: {e}")
         raise
 
 
 @mcp.tool(
-    description="Get the availability and usage within a compartment for a given resource limit"
+    description=(
+        "Get the availability and usage for a resource limit. For AD-scoped limits, "
+        "you must provide availability_domain. Use oracle-identity-mcp-server.list_availability_domains "
+        "to discover valid AD names, then pass one here."
+    )
 )
 def get_resource_availability(
-    service_name: Annotated[str, "Service name of the target limit"],
-    limit_name: Annotated[str, "Limit name"],
-    compartment_id: Annotated[str, "OCID of the compartment to evaluate"],
-    availability_domain: Annotated[
-        Optional[str],
-        "Required if the limit scopeType is AD; omit otherwise. Example: 'US-ASHBURN-AD-1'",
-    ] = None,
-    subscription_id: Annotated[Optional[str], "Subscription OCID filter"] = None,
+    service_name: str = Field(..., description="Service name of the target limit"),
+    limit_name: str = Field(..., description="Limit name"),
+    compartment_id: str = Field(..., description="OCID of the compartment to evaluate"),
+    availability_domain: Optional[str] = Field(
+        None,
+        description=(
+            "Required if the limit scopeType is AD; omit otherwise. Example: 'US-ASHBURN-AD-1'"
+        ),
+    ),
+    subscription_id: Optional[str] = Field(None, description="Subscription OCID filter"),
 ) -> list[dict]:
     """
     Maps to GET /20190729/services/{serviceName}/limits/{limitName}/resourceAvailability
@@ -285,29 +257,40 @@ def get_resource_availability(
             return [
                 {
                     "message": f"Resource availability not supported for limit '{limit_name}'. "
-                    f"Consider calling get_limit_value to get the limit value."
+                    f"Consider calling list_limit_value to get the limit value."
                 }
             ]
 
         if limit_definition.scope_type == "AD":
-            availability_domains = list_availability_domains(compartment_id)
-            resource_availability = []
-            for ad in availability_domains:
-                response: oci.response.Response = client.get_resource_availability(
-                    service_name=service_name,
-                    limit_name=limit_name,
-                    compartment_id=compartment_id,
-                    availability_domain=ad["name"],
-                    subscription_id=subscription_id,
-                )
-                data: oci.limits.models.ResourceAvailability = response.data
-                resource_availability.append(
+            if not availability_domain:
+                # Return a structured redirect hint instead of raising, so MCP hosts can chain to Identity
+                return [
                     {
-                        "availabilityDomain": ad["name"],
-                        "resourceAvailability": map_resource_availability(data),
+                        "message": (
+                            "availability_domain is required for AD-scoped limits. "
+                            "Call oracle-identity-mcp-server.list_availability_domains first, then retry with an AD name."
+                        ),
+                        "redirect": {
+                            "server": "oracle.oci-identity-mcp-server",
+                            "tool": "list_availability_domains",
+                            "args": {"tenancy_id": compartment_id},
+                        },
                     }
-                )
-            return resource_availability
+                ]
+            response: oci.response.Response = client.get_resource_availability(
+                service_name=service_name,
+                limit_name=limit_name,
+                compartment_id=compartment_id,
+                availability_domain=availability_domain,
+                subscription_id=subscription_id,
+            )
+            data: oci.limits.models.ResourceAvailability = response.data
+            return [
+                {
+                    "availabilityDomain": availability_domain,
+                    "resourceAvailability": map_resource_availability(data),
+                }
+            ]
         else:
             response: oci.response.Response = client.get_resource_availability(
                 service_name=service_name,

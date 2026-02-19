@@ -98,7 +98,7 @@ class TestLimitsTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_limits_mcp_server.server.get_limits_client")
-    async def test_get_limit_value(self, mock_get_client):
+    async def test_list_limit_value(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -115,7 +115,7 @@ class TestLimitsTools:
         async with Client(mcp) as client:
             result = (
                 await client.call_tool(
-                    "get_limit_value",
+                    "list_limit_value",
                     {
                         "compartment_id": "ocid1.compartment.oc1..xxxx",
                         "service_name": "service1",

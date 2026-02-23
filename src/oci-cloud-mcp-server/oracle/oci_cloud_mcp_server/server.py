@@ -7,6 +7,7 @@ https://oss.oracle.com/licenses/upl.
 import inspect
 import json
 import os
+import pkgutil
 import re
 from importlib import import_module
 from logging import Logger
@@ -627,6 +628,84 @@ def list_client_operations(
     except Exception as e:
         logger.error(f"Error listing operations for {client_fqn}: {e}")
         raise
+
+
+def _discover_oci_clients() -> List[dict]:
+    """Discover available OCI Python SDK client classes.
+
+    Returns a list of entries of the shape:
+      {
+        "client_fqn": "oci.core.ComputeClient",
+        "module": "oci.core",
+        "class": "ComputeClient"
+      }
+
+    Detection:
+    - Walk submodules under `oci`.
+    - Import only modules whose name ends with `_client` (OCI SDK convention)
+      to avoid importing every single models module.
+    - Collect any public class ending with `Client` that inherits from
+      `oci.base_client.BaseClient` (excluding BaseClient itself).
+    """
+    clients: List[dict] = []
+
+    try:
+        BaseClient = getattr(oci.base_client, "BaseClient", None)
+
+        def iter_oci_submodules():
+            # walk packages recursively under `oci` but only import *_client modules
+            for modinfo in pkgutil.walk_packages(oci.__path__, prefix="oci."):
+                name = getattr(modinfo, "name", None) or modinfo[1]
+                if not isinstance(name, str):
+                    continue
+                if not name.endswith("_client"):
+                    continue
+                yield name
+
+        seen: set[str] = set()
+        for module_name in iter_oci_submodules():
+            try:
+                module = import_module(module_name)
+            except Exception:
+                continue
+
+            for cls_name, member in inspect.getmembers(module, predicate=inspect.isclass):
+                if cls_name.startswith("_"):
+                    continue
+                if cls_name == "BaseClient":
+                    continue
+                if not cls_name.endswith("Client"):
+                    continue
+                if BaseClient and not (
+                    inspect.isclass(member) and issubclass(member, BaseClient)
+                ):
+                    continue
+
+                client_fqn = f"{module_name}.{cls_name}"
+                if client_fqn in seen:
+                    continue
+                seen.add(client_fqn)
+                clients.append(
+                    {
+                        "client_fqn": client_fqn,
+                        "module": module_name,
+                        "class": cls_name,
+                    }
+                )
+    except Exception as e:
+        logger.error(f"Error discovering OCI SDK clients: {e}")
+        raise
+
+    # Stable output for tests and user experience
+    clients.sort(key=lambda c: c["client_fqn"])
+    return clients
+
+
+@mcp.tool(description="List all available clients in the installed OCI Python SDK.")
+def list_oci_clients() -> dict:
+    """Return a list of discoverable OCI SDK client classes."""
+    clients = _discover_oci_clients()
+    return {"count": len(clients), "clients": clients}
 
 
 def main():

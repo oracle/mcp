@@ -14,11 +14,13 @@ from oracle.oci_cloud_mcp_server.server import (
     _ADDITIONAL_UA,
     _align_params_to_signature,
     _coerce_params_to_oci_models,
+    _discover_oci_clients,
     _get_config_and_signer,
     _import_client,
     _import_models_module_from_client_fqn,
     _serialize_oci_data,
     list_client_operations,
+    list_oci_clients,
     main,
     mcp,
 )
@@ -1191,6 +1193,125 @@ class TestSerializeToDictFailure:
         s = _serialize_oci_data(Z())
         assert isinstance(s, str)
         assert "Z" in s
+
+
+class TestDiscoverOciClients:
+    def test_discovers_client_classes_and_sorts(self, monkeypatch):
+        # Fake pkgutil.walk_packages output (matching `_client` modules)
+        class ModInfo:
+            def __init__(self, name):
+                self.name = name
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.pkgutil.walk_packages",
+            lambda path, prefix=None: [
+                ModInfo("oci.core.compute_client"),
+                ModInfo("oci.core.virtual_network_client"),
+                ModInfo("oci.identity.identity_client"),
+                ModInfo("oci.identity.models"),  # not a _client module
+            ],
+        )
+
+        # Fake base client type and service modules with client classes
+        class BaseClient:  # noqa: D401
+            """Fake base class."""
+
+        class ComputeClient(BaseClient):
+            __module__ = "oci.core"
+
+        class VirtualNetworkClient(BaseClient):
+            __module__ = "oci.core"
+
+        class IdentityClient(BaseClient):
+            __module__ = "oci.identity"
+
+        # Not a BaseClient subclass; should be ignored even though name endswith Client
+        class ImportedClient:
+            __module__ = "oci.other"
+
+        def fake_import(name):
+            if name == "oci.core.compute_client":
+                return SimpleNamespace(
+                    ComputeClient=ComputeClient,
+                    ImportedClient=ImportedClient,
+                    SomethingElse=object,
+                )
+            if name == "oci.core.virtual_network_client":
+                return SimpleNamespace(VirtualNetworkClient=VirtualNetworkClient)
+            if name == "oci.identity.identity_client":
+                return SimpleNamespace(IdentityClient=IdentityClient)
+            raise ImportError("nope")
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module", fake_import
+        )
+
+        # Patch the SDK's BaseClient for issubclass checks
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.oci.base_client.BaseClient",
+            BaseClient,
+            raising=False,
+        )
+
+        out = _discover_oci_clients()
+        fqns = [c["client_fqn"] for c in out]
+
+        # should include three real clients
+        assert "oci.core.ComputeClient" in fqns
+        assert "oci.core.VirtualNetworkClient" in fqns
+        assert "oci.identity.IdentityClient" in fqns
+        # should NOT include non-BaseClient client-like class
+        assert "oci.core.ImportedClient" not in fqns
+        # should be sorted
+        assert fqns == sorted(fqns)
+
+    def test_import_failures_are_ignored(self, monkeypatch):
+        class ModInfo:
+            def __init__(self, name):
+                self.name = name
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.pkgutil.walk_packages",
+            lambda path, prefix=None: [ModInfo("oci.broken_client")],
+        )
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module",
+            lambda name: (_ for _ in ()).throw(ImportError("boom")),
+        )
+
+        out = _discover_oci_clients()
+        assert out == []
+
+
+class TestListOciClientsTool:
+    @pytest.mark.asyncio
+    async def test_tool_returns_count_and_clients(self, monkeypatch):
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._discover_oci_clients",
+            lambda: [
+                {
+                    "client_fqn": "oci.core.ComputeClient",
+                    "module": "oci.core",
+                    "class": "ComputeClient",
+                },
+                {
+                    "client_fqn": "oci.identity.IdentityClient",
+                    "module": "oci.identity",
+                    "class": "IdentityClient",
+                },
+            ],
+        )
+
+        async with Client(mcp) as client:
+            res = (await client.call_tool("list_oci_clients", {})).data
+
+        assert res["count"] == 2
+        assert isinstance(res["clients"], list)
+        assert res["clients"][0]["client_fqn"] == "oci.core.ComputeClient"
+
+    # NOTE: `@mcp.tool` wraps functions into FastMCP `FunctionTool` objects,
+    # which are not directly callable. We validate tool behavior via the
+    # FastMCP client in async tests above.
 
 
 class TestInvokeUnexpectedKwOther:

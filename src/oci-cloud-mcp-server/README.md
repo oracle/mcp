@@ -26,6 +26,7 @@ ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.o
 | --- | --- |
 | invoke_oci_api | Invoke an OCI Python SDK API via client and operation name. Example: client_fqn="oci.core.ComputeClient", operation="list_instances", params={"compartment_id": "ocid1.compartment.oc1..."} |
 | list_client_operations | List public callable operations for a given OCI client class (by fully-qualified name). |
+| list_oci_clients | List all available OCI Python SDK clients discoverable in the current environment. |
 
 ### invoke_oci_api
 
@@ -67,6 +68,26 @@ Example usage (filtering only list operations):
 {
   "client_fqn": "oci.core.ComputeClient",
   "name_regex": "^list_"
+}
+```
+
+### list_oci_clients
+
+Returns a list of OCI SDK client classes available in the installed `oci` Python SDK.
+
+Example usage:
+```json
+{}
+```
+
+Response (shape):
+```json
+{
+  "count": 2,
+  "clients": [
+    { "client_fqn": "oci.core.ComputeClient", "module": "oci.core", "class": "ComputeClient" },
+    { "client_fqn": "oci.identity.IdentityClient", "module": "oci.identity", "class": "IdentityClient" }
+  ]
 }
 ```
 

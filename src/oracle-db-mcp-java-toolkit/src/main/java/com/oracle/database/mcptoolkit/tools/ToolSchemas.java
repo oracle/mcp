@@ -337,4 +337,51 @@ public class ToolSchemas {
       "required": ["table", "filePath"]
     }""";
 
+  /**
+   * Schema for embedding text from an existing Oracle table into a vector store.
+   */
+  static final String EMBED_FROM_TABLE = """
+  {
+    "type": "object",
+    "properties": {
+      "sourceTable": {
+         "type": "string",
+         "description": "Source table name containing the text to embed"
+      },
+      "sourceTextColumn": {
+         "type": "string",
+         "description": "Column in source table containing the text to embed"
+      },
+      "sourceIdColumn": {
+         "type": "string",
+         "description": "Column in source table used as unique identifier (stored in metadata)"
+      },
+      "targetTable": {
+         "type": "string",
+         "description": "Target vector store table name"
+      },
+      "textColumn": {
+         "type": "string",
+         "description": "Text/CLOB column in target table (default: TEXT)"
+      },
+      "embeddingColumn": {
+         "type": "string",
+         "description": "Vector column in target table (default: EMBEDDING)"
+      },
+      "metadataColumn": {
+         "type": "string",
+         "description": "Metadata JSON column in target table (default: METADATA)"
+      },
+      "modelName": {
+         "type": "string",
+         "description": "Vector embedding model name (default: doc_model)"
+      },
+      "chunkParams": {
+         "type": "string",
+         "description": "JSON chunking params (default: {\\\"max\\\": 500, \\\"overlap\\\": 50})"
+      }
+    },
+    "required": ["sourceTable", "sourceTextColumn", "sourceIdColumn", "targetTable"]
+  }""";
+
 }

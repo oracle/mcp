@@ -58,6 +58,7 @@ public class RagTools {
     tools.add(getDropVectorModelTool(config));
     tools.add(getCreateVectorStoreTool(config));
     tools.add(getInsertFileWithEmbeddingTool(config));
+    tools.add(getEmbedFromTableTool(config));
     return tools;
   }
 
@@ -327,6 +328,98 @@ public class RagTools {
         ))
               .addTextContent("Successfully processed '" + fullPath + "' and inserted " + chunksInserted + " chunks with embeddings")
               .build();
+        }
+      }))
+    .build();
+  }
+
+  /**
+   * Generates vector embeddings from text in an existing Oracle table and inserts
+   * them into a target vector store.
+   *
+   * <p>The tool inspects the target table at runtime to determine whether a
+   * {@code METADATA} column is present, and automatically selects the appropriate
+   * INSERT pipeline:</p>
+   * <ul>
+   *   <li><strong>With metadata</strong>: each chunk row includes a JSON object
+   *       containing {@code source_table}, {@code source_id}, {@code chunk_index},
+   *       and {@code embedded_at}, allowing full traceability back to the origin row.</li>
+   *   <li><strong>Without metadata</strong>: only the text chunk and vector embedding
+   *       are inserted, with no additional tracking.</li>
+   * </ul>
+   *
+   * @param config the server configuration used to open the database connection
+   * @return a tool specification for the {@code embed-from-table} tool
+   */
+  public static McpServerFeatures.SyncToolSpecification getEmbedFromTableTool(ServerConfig config) {
+    return McpServerFeatures.SyncToolSpecification.builder()
+      .tool(McpSchema.Tool.builder()
+         .name("embed-from-table")
+         .title("Embed From Table")
+         .description("Generate vector embeddings from text in an existing Oracle table and insert them into a vector store.")
+         .inputSchema(ToolSchemas.EMBED_FROM_TABLE)
+         .build())
+      .callHandler((exchange, callReq) -> tryCall(() -> {
+        try (Connection conn = openConnection(config, null)) {
+          Map<String, Object> args = callReq.arguments();
+
+          String sourceTable   = String.valueOf(args.get("sourceTable"));
+          String sourceTextCol = String.valueOf(args.get("sourceTextColumn"));
+          String sourceIdCol   = String.valueOf(args.get("sourceIdColumn"));
+          String targetTable   = String.valueOf(args.get("targetTable"));
+          String textCol       = getOrDefault(args.get("textColumn"),      "TEXT");
+          String embeddingCol  = getOrDefault(args.get("embeddingColumn"), "EMBEDDING");
+          String metadataCol   = getOrDefault(args.get("metadataColumn"),  "METADATA");
+          String modelName     = getOrDefault(args.get("modelName"),       DEFAULT_VECTOR_MODEL_NAME);
+          String chunkParams   = getOrDefault(args.get("chunkParams"),     DEFAULT_CHUNK_PARAMS);
+          String embedParams   = "{\"provider\": \"database\", \"model\": \"" + modelName + "\"}";
+
+          boolean withMetadata = hasMetadataColumn(conn, targetTable);
+
+          String sql;
+          if (withMetadata) {
+            sql = String.format(SqlQueries.INSERT_EMBEDDINGS_FROM_TABLE,
+                    targetTable,
+                    textCol, embeddingCol, metadataCol,
+                    sourceIdCol,
+                    sourceIdCol,
+                    sourceTable,
+                    sourceTextCol
+            );
+          } else {
+            sql = String.format(SqlQueries.INSERT_EMBEDDINGS_FROM_TABLE_NO_METADATA,
+                    targetTable,
+                    textCol, embeddingCol,
+                    sourceTable,
+                    sourceTextCol
+            );
+          }
+
+          try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            if (withMetadata) {
+              stmt.setString(1, sourceTable);
+              stmt.setString(2, chunkParams);
+              stmt.setString(3, embedParams);
+            } else {
+              stmt.setString(1, chunkParams);
+              stmt.setString(2, embedParams);
+            }
+
+            int inserted = stmt.executeUpdate();
+
+            return McpSchema.CallToolResult.builder()
+                    .structuredContent(Map.of(
+                            "status",           "ok",
+                            "rowsInserted",     inserted,
+                            "source",           sourceTable,
+                            "target",           targetTable,
+                            "metadataTracking", withMetadata
+                    ))
+                    .addTextContent("Successfully embedded " + inserted + " chunks from "
+                            + sourceTable + " into " + targetTable
+                            + (withMetadata ? " (with metadata)" : " (no metadata column)") + ".")
+                    .build();
+          }
         }
       }))
     .build();

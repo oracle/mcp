@@ -63,9 +63,10 @@ public final class ServerConfig {
   private static final Set<String> DB_TOOLS = Set.of(
     "similarity-search", "list-vector-models", "list-vector-stores",
     "create-vector-store", "insert-file-with-embedding", "drop-vector-model",
-    "explain-plan", "read-query", "write-query", "create-table", "delete-table",
-    "list-tables", "describe-table", "start-transaction", "resume-transaction",
-    "commit-transaction", "rollback-transaction", "db-ping", "db-metrics-range"
+    "embed-from-table", "explain-plan", "read-query", "write-query",
+    "create-table", "delete-table", "list-tables", "describe-table",
+    "start-transaction", "resume-transaction", "commit-transaction",
+    "rollback-transaction", "db-ping", "db-metrics-range"
   );
 
   /** Built-in toolsets covering predefined tools. Lowercase keys and members. */
@@ -86,7 +87,8 @@ public final class ServerConfig {
               "list-vector-stores",
               "create-vector-store",
               "insert-file-with-embedding",
-              "drop-vector-model"
+              "drop-vector-model",
+              "embed-from-table"
           ),
       "database-operator", Set.of(
               "read-query", "write-query", "create-table", "delete-table",

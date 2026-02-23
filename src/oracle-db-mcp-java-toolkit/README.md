@@ -148,7 +148,7 @@ The server provides four built-in toolsets that can be enabled via `-Dtools`:
       <td>Vector store management and semantic similarity search</td>
       <td>
         list-vector-models, list-vector-stores, create-vector-store,
-        insert-file-with-embedding, similarity-search
+        insert-file-with-embedding, embed-from-table, drop-vector-model, similarity-search
       </td>
     </tr>
   </tbody>
@@ -216,6 +216,7 @@ These tools provide a full RAG pipeline: model discovery, vector store creation,
 
 * **`list-vector-models`**: Lists all loaded ONNX embedding models with their names, algorithms, creation dates, and sizes.
 
+
 * **`drop-vector-model`**: Remove an embedding model from your database when you no longer need it.
 
   - **Inputs:**
@@ -223,7 +224,9 @@ These tools provide a full RAG pipeline: model discovery, vector store creation,
 
   - **Returns:** `{ modelName, status: "dropped" }`
 
+
 * **`list-vector-stores`**: Lists all tables in the current schema that contain at least one VECTOR column, along with their approximate row counts.
+
 
 * **`create-vector-store`**: Build a new vector store table optimized for AI-powered search.
 Every table gets an `ID` primary key and a `CREATED_AT` timestamp automatically. When you enable metadata tracking (on by default),
@@ -238,6 +241,7 @@ the table also includes:
    * `embeddingColumn` (default: `EMBEDDING`) — Where to store the AI-generated vectors
    * `dimensions` (optional) — Lock vector size to a specific dimension, or leave flexible to accept any model
    * `includeMetadata` (default: `true`) — Track document sources and enable smart deduplication
+
 
 * **`insert-file-with-embedding`**: Drop in any document — PDF, Word, or text — and watch it transform into searchable knowledge.
 The MCP toolkit orchestrates Oracle's native capabilities: extracting text, splitting into smart chunks, generating embeddings,
@@ -266,6 +270,40 @@ the entire insert is skipped. No duplicate chunks are created. Returns status: `
     * `total_chunks` Total number of chunks for this file.
 
   **Note:** Tables created without `includeMetadata` accept inserts but have no deduplication — the same file can be inserted multiple times.
+
+
+* **`embed-from-table`**: Embed text from an existing Oracle table directly into a vector store.
+  The mcp java toolkit reads rows from your source table, splits each row's text
+  into chunks, generates vector embeddings using your loaded ONNX model, and inserts everything
+  into the target vector store.
+
+  The tool inspects the target table (vector store) at runtime: if it has a `METADATA` column, full traceability
+  metadata is written per chunk so you can always trace a search result back to its origin row.
+  If there is no `METADATA` column, only the text chunk and vector are inserted.
+
+  **Inputs:**
+
+    * `sourceTable` (string, required): The table containing the text to embed.
+    * `sourceTextColumn` (string, required): The column in the source table holding the text to chunk and embed.
+    * `sourceIdColumn` (string, required): A unique identifier column in the source table. Its value is
+      stored in metadata as `source_id`, allowing you to join search results back to the original row.
+    * `targetTable` (string, required): The vector store table to insert embeddings into.
+    * `textColumn` (string, default: `TEXT`): Text/CLOB column in the target table.
+    * `embeddingColumn` (string, default: `EMBEDDING`): Vector column in the target table.
+    * `metadataColumn` (string, default: `METADATA`): Metadata JSON column in the target table.
+    * `modelName` (string, default: `doc_model`): The ONNX embedding model to use.
+    * `chunkParams` (string, default: `{"max": 500, "overlap": 50}`): Chunking parameters passed
+      to `UTL_TO_CHUNKS` — controls max tokens per chunk and overlap between chunks.
+
+  **Returns:** `{ status, rowsInserted, source, target, metadataTracking }`
+
+  **Metadata written per chunk** (when target table has a `METADATA` column):
+
+  * `source_table` — name of the source table.
+  * `source_id` — value of the `sourceIdColumn` for the originating row.
+  * `chunk_index` — zero-based position of the chunk within that source row's text.
+  * `embedded_at` — timestamp of when the embedding was generated.
+
 
 * **`similarity-search`**: Perform semantic similarity search using Oracle’s vector features (`VECTOR_EMBEDDING`, `VECTOR_DISTANCE`).
 
@@ -604,7 +642,7 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
           <li><code>mcp-admin</code> — server discovery and runtime configuration tools (list-tools, edit-tools)</li>
           <li><code>database-operator</code> — database operations, transactions, monitoring, and execution plans (read-query, write-query, create-table, delete-table, list-tables, describe-table, start-transaction, resume-transaction, commit-transaction, rollback-transaction, db-ping, db-metrics-range, explain-plan).</li>
           <li><code>log-analyzer</code> — all JDBC log and RDBMS/SQLNet analysis tools (get-jdbc-stats, get-jdbc-queries, get-jdbc-errors, list-log-files-from-directory, jdbc-log-comparison, get-jdbc-connection-events, get-rdbms-errors, get-rdbms-packet-dumps)</li>
-          <li><code>rag</code> — vector store management and semantic similarity search (list-vector-models, list-vector-stores, create-vector-store, insert-file-with-embedding, similarity-search)</li>         </ul>
+          <li><code>rag</code> — vector store management and semantic similarity search (list-vector-models, drop-vector-model, list-vector-stores, create-vector-store, insert-file-with-embedding, embed-from-table, similarity-search)</li>         </ul>
         You can also define your own YAML <code>toolsets:</code> and reference them here.  
         Use <code>*</code> or <code>all</code> to enable everything. If omitted, all tools are enabled by default.
       </td>

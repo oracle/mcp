@@ -155,6 +155,50 @@ final class SqlQueries {
     ) jt
   """;
 
+  /**
+   * Embeds text from an existing source table into a vector store with metadata and deduplication.
+   */
+  public static final String INSERT_EMBEDDINGS_FROM_TABLE = """
+    INSERT INTO %s (id, created_at, %s, %s, %s)
+    SELECT
+        SYS_GUID(),
+        SYSTIMESTAMP,
+        JSON_VALUE(t.COLUMN_VALUE, '$.embed_data' RETURNING CLOB),
+        TO_VECTOR(JSON_VALUE(t.COLUMN_VALUE, '$.embed_vector' RETURNING CLOB)),
+        JSON_OBJECT(
+            KEY 'source_table'  VALUE ?,
+            KEY 'source_id'     VALUE src.%s,
+            KEY 'chunk_index'   VALUE (ROW_NUMBER() OVER (PARTITION BY src.%s ORDER BY ROWNUM) - 1),
+            KEY 'embedded_at'   VALUE TO_CHAR(SYSTIMESTAMP, 'YYYY-MM-DD HH24:MI:SS')
+        )
+    FROM %s src,
+    TABLE(
+        DBMS_VECTOR.UTL_TO_EMBEDDINGS(
+            data   => DBMS_VECTOR.UTL_TO_CHUNKS(data => src.%s, params => json(?)),
+            params => json(?)
+        )
+    ) t
+  """;
+
+  /**
+   * Embeds text from an existing source table into a vector store WITHOUT metadata column.
+   */
+  public static final String INSERT_EMBEDDINGS_FROM_TABLE_NO_METADATA = """
+    INSERT INTO %s (id, created_at, %s, %s)
+    SELECT
+        SYS_GUID(),
+        SYSTIMESTAMP,
+        JSON_VALUE(t.COLUMN_VALUE, '$.embed_data' RETURNING CLOB),
+        TO_VECTOR(JSON_VALUE(t.COLUMN_VALUE, '$.embed_vector' RETURNING CLOB))
+    FROM %s src,
+    TABLE(
+        DBMS_VECTOR.UTL_TO_EMBEDDINGS(
+            data   => DBMS_VECTOR.UTL_TO_CHUNKS(data => src.%s, params => json(?)),
+            params => json(?)
+        )
+    ) t
+  """;
+
   private SqlQueries() {
     // Utility class
   }

@@ -10,34 +10,19 @@ from typing import Annotated
 
 import oci
 from fastmcp import FastMCP
+from oci.usage_api import UsageapiClient
 from oci.usage_api.models import RequestSummarizedUsagesDetails
+from oracle.mcp_common import with_oci_client
 
-from . import __project__, __version__
+from . import __project__
 
 logger = Logger(__name__, level="INFO")
 
 mcp = FastMCP(name=__project__)
 
 
-def get_usage_client():
-    logger.info("entering get_monitoring_client")
-    config = oci.config.from_file(
-        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
-    )
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = os.path.expanduser(config["security_token_file"])
-    token = None
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    return oci.usage_api.UsageapiClient(config, signer=signer)
-
-
 @mcp.tool
+@with_oci_client(UsageapiClient)
 def get_summarized_usage(
     tenant_id: Annotated[str, "Tenancy OCID"],
     start_time: Annotated[
@@ -72,8 +57,9 @@ def get_summarized_usage(
         "Specifies whether aggregated by time. If isAggregateByTime is true,"
         "all usage or cost over the query time period will be added up.",
     ] = False,
+    *,
+    client: UsageapiClient,
 ) -> list[dict]:
-    usage_client = get_usage_client()
     summarized_details = RequestSummarizedUsagesDetails(
         tenant_id=tenant_id,
         time_usage_started=start_time,
@@ -85,7 +71,7 @@ def get_summarized_usage(
         compartment_depth=compartment_depth,
     )
 
-    response = usage_client.request_summarized_usages(
+    response = client.request_summarized_usages(
         request_summarized_usages_details=summarized_details
     )
     # Convert UsageSummary objects to dictionaries for proper serialization

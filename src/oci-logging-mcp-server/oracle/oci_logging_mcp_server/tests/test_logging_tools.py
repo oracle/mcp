@@ -4,7 +4,7 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
-from unittest.mock import MagicMock, create_autospec, mock_open, patch
+from unittest.mock import MagicMock, create_autospec, patch
 
 import oci
 import oracle.oci_logging_mcp_server.server as server
@@ -16,10 +16,10 @@ from oracle.oci_logging_mcp_server.server import mcp
 
 class TestLoggingTools:
     @pytest.mark.asyncio
-    @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
-    async def test_list_log_groups(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_list_log_groups(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         mock_summarize_response = create_autospec(oci.response.Response)
         mock_summarize_response.data = [
@@ -44,10 +44,10 @@ class TestLoggingTools:
             assert result[0]["id"] == "logGroup1"
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
-    async def test_list_log_groups_pagination_without_limit(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_list_log_groups_pagination_without_limit(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         # Page 1
         resp1 = create_autospec(oci.response.Response)
@@ -85,10 +85,10 @@ class TestLoggingTools:
         assert second_kwargs["limit"] is None
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
-    async def test_list_log_groups_limit_stops_pagination(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_list_log_groups_limit_stops_pagination(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         resp1 = create_autospec(oci.response.Response)
         resp1.data = [
@@ -121,10 +121,10 @@ class TestLoggingTools:
         assert kwargs["page"] is None
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
-    async def test_get_log_group(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_get_log_group(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         mock_get_response = create_autospec(oci.response.Response)
         mock_get_response.data = oci.logging.models.LogGroup(
@@ -147,10 +147,10 @@ class TestLoggingTools:
             assert result["display_name"] == "groupUp"
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
-    async def test_list_logs(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_list_logs(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         mock_summarize_response = create_autospec(oci.response.Response)
         mock_summarize_response.data = [
@@ -175,10 +175,10 @@ class TestLoggingTools:
             assert result[0]["display_name"] == "logjam"
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
-    async def test_list_logs_pagination_without_limit(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_list_logs_pagination_without_limit(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         # Page 1
         resp1 = create_autospec(oci.response.Response)
@@ -213,10 +213,10 @@ class TestLoggingTools:
         assert second_kwargs["page"] == "np"
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
-    async def test_list_logs_limit_stops_pagination(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_list_logs_limit_stops_pagination(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         resp1 = create_autospec(oci.response.Response)
         resp1.data = [
@@ -249,10 +249,10 @@ class TestLoggingTools:
         assert kwargs["page"] is None
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
-    async def test_get_log(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_get_log(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         mock_get_response = create_autospec(oci.response.Response)
         mock_get_response.data = oci.logging.models.Log(
@@ -281,10 +281,10 @@ class TestLoggingTools:
             assert result["retention_duration"] == 30
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
-    async def test_list_log_groups_exception_propagates(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_list_log_groups_exception_propagates(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
         mock_client.list_log_groups.side_effect = RuntimeError("boom")
 
         async with Client(mcp) as client:
@@ -295,10 +295,10 @@ class TestLoggingTools:
                 )
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
-    async def test_list_logs_exception_propagates(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_list_logs_exception_propagates(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
         mock_client.list_logs.side_effect = ValueError("err")
 
         async with Client(mcp) as client:
@@ -306,10 +306,10 @@ class TestLoggingTools:
                 await client.call_tool("list_logs", {"log_group_id": "ocid1.loggroup"})
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
-    async def test_get_log_exception_propagates(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_get_log_exception_propagates(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
         mock_client.get_log.side_effect = RuntimeError("boom")
 
         async with Client(mcp) as client:
@@ -320,10 +320,10 @@ class TestLoggingTools:
                 )
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_logging_mcp_server.server.get_logging_search_client")
-    async def test_search_logs(self, mock_get_client):
+    @patch("oracle.mcp_common.helpers._create_oci_client")
+    async def test_search_logs(self, mock_create_client):
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         mock_get_response = create_autospec(oci.response.Response)
         mock_get_response.data = oci.loggingsearch.models.SearchResponse(
@@ -350,9 +350,9 @@ class TestLoggingTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_logging_mcp_server.server.map_search_response")
-    @patch("oracle.oci_logging_mcp_server.server.get_logging_search_client")
+    @patch("oracle.mcp_common.helpers._create_oci_client")
     async def test_search_logs_oversize_raises_toolerror(
-        self, mock_get_client, mock_map
+        self, mock_create_client, mock_map
     ):
         class DummySearchResponse:
             def model_dump_json(self):
@@ -360,7 +360,7 @@ class TestLoggingTools:
                 return "x" * 60000
 
         mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
+        mock_create_client.return_value = mock_client
 
         resp = create_autospec(oci.response.Response)
         resp.data = object()  # not used by our patched map
@@ -503,197 +503,3 @@ class TestServer:
 
         server.main()
         mock_mcp_run.assert_called_once_with()
-
-
-class TestGetClient:
-    @patch("oracle.oci_logging_mcp_server.server.oci.logging.LoggingManagementClient")
-    @patch("oracle.oci_logging_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
-    @patch("oracle.oci_logging_mcp_server.server.oci.signer.load_private_key_from_file")
-    @patch(
-        "oracle.oci_logging_mcp_server.server.open",
-        new_callable=mock_open,
-        read_data="SECURITY_TOKEN",
-    )
-    @patch("oracle.oci_logging_mcp_server.server.oci.config.from_file")
-    @patch("oracle.oci_logging_mcp_server.server.os.getenv")
-    def test_get_logging_client_with_profile_env(
-        self,
-        mock_getenv,
-        mock_from_file,
-        mock_open_file,
-        mock_load_private_key,
-        mock_security_token_signer,
-        mock_client,
-    ):
-        # Arrange: provide profile via env var and minimal config dict
-        mock_getenv.side_effect = lambda k, default=None: (
-            "MYPROFILE" if k == "OCI_CONFIG_PROFILE" else default
-        )
-        config = {
-            "key_file": "/abs/path/to/key.pem",
-            "security_token_file": "/abs/path/to/token",
-        }
-        mock_from_file.return_value = config
-        private_key_obj = object()
-        mock_load_private_key.return_value = private_key_obj
-
-        # Act
-        result = server.get_logging_client()
-
-        # Assert calls
-        mock_from_file.assert_called_once_with(
-            file_location=oci.config.DEFAULT_LOCATION,
-            profile_name="MYPROFILE",
-        )
-        mock_open_file.assert_called_once_with("/abs/path/to/token", "r")
-        mock_security_token_signer.assert_called_once_with(
-            "SECURITY_TOKEN", private_key_obj
-        )
-        # Ensure user agent was set on the same config dict passed into client
-        args, _ = mock_client.call_args
-        passed_config = args[0]
-        assert passed_config is config
-        # And we returned the client instance
-        assert result == mock_client.return_value
-
-    @patch("oracle.oci_logging_mcp_server.server.oci.logging.LoggingManagementClient")
-    @patch("oracle.oci_logging_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
-    @patch("oracle.oci_logging_mcp_server.server.oci.signer.load_private_key_from_file")
-    @patch(
-        "oracle.oci_logging_mcp_server.server.open",
-        new_callable=mock_open,
-        read_data="TOK",
-    )
-    @patch("oracle.oci_logging_mcp_server.server.oci.config.from_file")
-    @patch("oracle.oci_logging_mcp_server.server.os.getenv")
-    def test_get_logging_client_uses_default_profile_when_env_missing(
-        self,
-        mock_getenv,
-        mock_from_file,
-        mock_open_file,
-        mock_load_private_key,
-        mock_security_token_signer,
-        mock_client,
-    ):
-        # Arrange: no env var present; from_file should be called with DEFAULT_PROFILE
-        mock_getenv.side_effect = lambda k, default=None: default
-        config = {"key_file": "/k.pem", "security_token_file": "/tkn"}
-        mock_from_file.return_value = config
-        priv = object()
-        mock_load_private_key.return_value = priv
-
-        # Act
-        srv_client = server.get_logging_client()
-
-        # Assert: profile defaulted
-        mock_from_file.assert_called_once_with(
-            file_location=oci.config.DEFAULT_LOCATION,
-            profile_name=oci.config.DEFAULT_PROFILE,
-        )
-        # Token file opened and read
-        mock_open_file.assert_called_once_with("/tkn", "r")
-        mock_security_token_signer.assert_called_once()
-        signer_args, _ = mock_security_token_signer.call_args
-        assert signer_args[0] == "TOK"
-        assert signer_args[1] is priv
-        # additional_user_agent set on original config and passed through
-        cc_args, _ = mock_client.call_args
-        assert cc_args[0] is config
-        # Returned object is client instance
-        assert srv_client is mock_client.return_value
-
-    @patch("oracle.oci_logging_mcp_server.server.oci.loggingsearch.LogSearchClient")
-    @patch("oracle.oci_logging_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
-    @patch("oracle.oci_logging_mcp_server.server.oci.signer.load_private_key_from_file")
-    @patch(
-        "oracle.oci_logging_mcp_server.server.open",
-        new_callable=mock_open,
-        read_data="SECURITY_TOKEN",
-    )
-    @patch("oracle.oci_logging_mcp_server.server.oci.config.from_file")
-    @patch("oracle.oci_logging_mcp_server.server.os.getenv")
-    def test_get_logging_search_client_with_profile_env(
-        self,
-        mock_getenv,
-        mock_from_file,
-        mock_open_file,
-        mock_load_private_key,
-        mock_security_token_signer,
-        mock_client,
-    ):
-        # Arrange: provide profile via env var and minimal config dict
-        mock_getenv.side_effect = lambda k, default=None: (
-            "MYPROFILE" if k == "OCI_CONFIG_PROFILE" else default
-        )
-        config = {
-            "key_file": "/abs/path/to/key.pem",
-            "security_token_file": "/abs/path/to/token",
-        }
-        mock_from_file.return_value = config
-        private_key_obj = object()
-        mock_load_private_key.return_value = private_key_obj
-
-        # Act
-        result = server.get_logging_search_client()
-
-        # Assert calls
-        mock_from_file.assert_called_once_with(
-            file_location=oci.config.DEFAULT_LOCATION,
-            profile_name="MYPROFILE",
-        )
-        mock_open_file.assert_called_once_with("/abs/path/to/token", "r")
-        mock_security_token_signer.assert_called_once_with(
-            "SECURITY_TOKEN", private_key_obj
-        )
-        # Ensure user agent was set on the same config dict passed into client
-        args, _ = mock_client.call_args
-        passed_config = args[0]
-        assert passed_config is config
-        # And we returned the client instance
-        assert result == mock_client.return_value
-
-    @patch("oracle.oci_logging_mcp_server.server.oci.loggingsearch.LogSearchClient")
-    @patch("oracle.oci_logging_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
-    @patch("oracle.oci_logging_mcp_server.server.oci.signer.load_private_key_from_file")
-    @patch(
-        "oracle.oci_logging_mcp_server.server.open",
-        new_callable=mock_open,
-        read_data="TOK",
-    )
-    @patch("oracle.oci_logging_mcp_server.server.oci.config.from_file")
-    @patch("oracle.oci_logging_mcp_server.server.os.getenv")
-    def test_get_logging_search_client_uses_default_profile_when_env_missing(
-        self,
-        mock_getenv,
-        mock_from_file,
-        mock_open_file,
-        mock_load_private_key,
-        mock_security_token_signer,
-        mock_client,
-    ):
-        # Arrange: no env var present; from_file should be called with DEFAULT_PROFILE
-        mock_getenv.side_effect = lambda k, default=None: default
-        config = {"key_file": "/k.pem", "security_token_file": "/tkn"}
-        mock_from_file.return_value = config
-        priv = object()
-        mock_load_private_key.return_value = priv
-
-        # Act
-        srv_client = server.get_logging_search_client()
-
-        # Assert: profile defaulted
-        mock_from_file.assert_called_once_with(
-            file_location=oci.config.DEFAULT_LOCATION,
-            profile_name=oci.config.DEFAULT_PROFILE,
-        )
-        # Token file opened and read
-        mock_open_file.assert_called_once_with("/tkn", "r")
-        mock_security_token_signer.assert_called_once()
-        signer_args, _ = mock_security_token_signer.call_args
-        assert signer_args[0] == "TOK"
-        assert signer_args[1] is priv
-        # additional_user_agent set on original config and passed through
-        cc_args, _ = mock_client.call_args
-        assert cc_args[0] is config
-        # Returned object is client instance
-        assert srv_client is mock_client.return_value

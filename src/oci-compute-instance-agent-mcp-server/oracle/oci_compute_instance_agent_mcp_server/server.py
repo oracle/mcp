@@ -18,6 +18,7 @@ from oci.compute_instance_agent.models import (
     InstanceAgentCommandSourceViaTextDetails,
     InstanceAgentCommandTarget,
 )
+from oracle.mcp_common import with_oci_client
 from oracle.oci_compute_instance_agent_mcp_server.models import (
     InstanceAgentCommandExecution,
     InstanceAgentCommandExecutionSummary,
@@ -26,35 +27,17 @@ from oracle.oci_compute_instance_agent_mcp_server.models import (
 )
 from pydantic import Field
 
-from . import __project__, __version__
+from . import __project__
 
 logger = Logger(__name__, level="INFO")
 
 mcp = FastMCP(name=__project__)
 
 
-def get_compute_instance_agent_client():
-    logger.info("entering get_compute_instance_agent_client")
-    config = oci.config.from_file(
-        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
-    )
-
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = os.path.expanduser(config["security_token_file"])
-    token = None
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    return oci.compute_instance_agent.ComputeInstanceAgentClient(config, signer=signer)
-
-
 @mcp.tool(
     description="Runs a script on a compute instance",
 )
+@with_oci_client(oci.compute_instance_agent.ComputeInstanceAgentClient)
 def run_instance_agent_command(
     compartment_id: str = Field(
         ..., description="The OCID of the compartment to create the command in"
@@ -73,9 +56,10 @@ def run_instance_agent_command(
     execution_time_out_in_seconds: Optional[int] = Field(
         30, description="The command's timeout in seconds"
     ),
+    *,
+    client: oci.compute_instance_agent.ComputeInstanceAgentClient,
 ) -> InstanceAgentCommandExecution:
     try:
-        client = get_compute_instance_agent_client()
         command_details = CreateInstanceAgentCommandDetails(
             display_name=display_name,
             compartment_id=compartment_id,
@@ -126,6 +110,7 @@ def run_instance_agent_command(
 
 
 @mcp.tool(description="Lists an instance's agent command executions")
+@with_oci_client(oci.compute_instance_agent.ComputeInstanceAgentClient)
 def list_instance_agent_command_executions(
     compartment_id: str = Field(
         ..., description="The OCID of the compartment to list commands from"
@@ -138,12 +123,12 @@ def list_instance_agent_command_executions(
         description="The maximum amount of commands to return. If None, there is no limit.",
         ge=1,
     ),
+    *,
+    client: oci.compute_instance_agent.ComputeInstanceAgentClient,
 ) -> list[InstanceAgentCommandExecutionSummary]:
     commands: list[InstanceAgentCommandExecutionSummary] = []
 
     try:
-        client = get_compute_instance_agent_client()
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None

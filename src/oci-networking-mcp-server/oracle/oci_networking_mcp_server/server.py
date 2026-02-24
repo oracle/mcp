@@ -6,10 +6,11 @@ https://oss.oracle.com/licenses/upl.
 
 import os
 from logging import Logger
-from typing import Annotated
+from typing import Optional
 
 import oci
 from fastmcp import FastMCP
+from oracle.mcp_common import with_oci_client
 from oracle.oci_networking_mcp_server.models import (
     NetworkSecurityGroup,
     Response,
@@ -26,36 +27,25 @@ from oracle.oci_networking_mcp_server.models import (
 )
 from pydantic import Field
 
-from . import __project__, __version__
+from . import __project__
 
 logger = Logger(__name__, level="INFO")
 
 mcp = FastMCP(name=__project__)
 
 
-def get_networking_client():
-    config = oci.config.from_file(
-        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
-    )
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = os.path.expanduser(config["security_token_file"])
-    token = None
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    return oci.core.VirtualNetworkClient(config, signer=signer)
-
-
 @mcp.tool
-def list_vcns(compartment_id: str) -> list[Vcn]:
+@with_oci_client(oci.core.VirtualNetworkClient)
+def list_vcns(
+    compartment_id: str = Field(
+        ..., description="The OCID of the compartment containing the VCNs"
+    ),
+    *,
+    client: oci.core.VirtualNetworkClient,
+) -> list[Vcn]:
     vcns: list[Vcn] = []
 
     try:
-        client = get_networking_client()
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None
@@ -79,10 +69,13 @@ def list_vcns(compartment_id: str) -> list[Vcn]:
 
 
 @mcp.tool
-def get_vcn(vcn_id: str) -> Vcn:
+@with_oci_client(oci.core.VirtualNetworkClient)
+def get_vcn(
+    vcn_id: str = Field(..., description="The OCID of the VCN to retrieve"),
+    *,
+    client: oci.core.VirtualNetworkClient,
+) -> Vcn:
     try:
-        client = get_networking_client()
-
         response: oci.response.Response = client.get_vcn(vcn_id)
         data: oci.core.models.Vcn = response.data
         logger.info("Found Vcn")
@@ -94,10 +87,13 @@ def get_vcn(vcn_id: str) -> Vcn:
 
 
 @mcp.tool
-def delete_vcn(vcn_id: str) -> Response:
+@with_oci_client(oci.core.VirtualNetworkClient)
+def delete_vcn(
+    vcn_id: str = Field(..., description="The OCID of the VCN to delete"),
+    *,
+    client: oci.core.VirtualNetworkClient,
+) -> Response:
     try:
-        client = get_networking_client()
-
         response: oci.response.Response = client.delete_vcn(vcn_id)
         logger.info("Deleted Vcn")
         return map_response(response)
@@ -108,10 +104,17 @@ def delete_vcn(vcn_id: str) -> Response:
 
 
 @mcp.tool
-def create_vcn(compartment_id: str, cidr_block: str, display_name: str) -> Vcn:
+@with_oci_client(oci.core.VirtualNetworkClient)
+def create_vcn(
+    compartment_id: str = Field(
+        ..., description="The OCID of the compartment where the VCN will be created"
+    ),
+    cidr_block: str = Field(..., description="The IPv4 CIDR block for the VCN"),
+    display_name: str = Field(..., description="A user-friendly display name"),
+    *,
+    client: oci.core.VirtualNetworkClient,
+) -> Vcn:
     try:
-        client = get_networking_client()
-
         vcn_details = oci.core.models.CreateVcnDetails(
             compartment_id=compartment_id,
             cidr_block=cidr_block,
@@ -129,12 +132,20 @@ def create_vcn(compartment_id: str, cidr_block: str, display_name: str) -> Vcn:
 
 
 @mcp.tool
-def list_subnets(compartment_id: str, vcn_id: str = None) -> list[Subnet]:
+@with_oci_client(oci.core.VirtualNetworkClient)
+def list_subnets(
+    compartment_id: str = Field(
+        ..., description="The OCID of the compartment containing the subnets"
+    ),
+    vcn_id: Optional[str] = Field(
+        None, description="Optional VCN OCID used to filter subnets"
+    ),
+    *,
+    client: oci.core.VirtualNetworkClient,
+) -> list[Subnet]:
     subnets: list[Subnet] = []
 
     try:
-        client = get_networking_client()
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None
@@ -160,10 +171,13 @@ def list_subnets(compartment_id: str, vcn_id: str = None) -> list[Subnet]:
 
 
 @mcp.tool
-def get_subnet(subnet_id: str) -> Subnet:
+@with_oci_client(oci.core.VirtualNetworkClient)
+def get_subnet(
+    subnet_id: str = Field(..., description="The OCID of the subnet to retrieve"),
+    *,
+    client: oci.core.VirtualNetworkClient,
+) -> Subnet:
     try:
-        client = get_networking_client()
-
         response: oci.response.Response = client.get_subnet(subnet_id)
         data: oci.core.models.Subnet = response.data
         logger.info("Found Subnet")
@@ -175,12 +189,18 @@ def get_subnet(subnet_id: str) -> Subnet:
 
 
 @mcp.tool
+@with_oci_client(oci.core.VirtualNetworkClient)
 def create_subnet(
-    vcn_id: str, compartment_id: str, cidr_block: str, display_name: str
+    vcn_id: str = Field(..., description="The OCID of the VCN for the subnet"),
+    compartment_id: str = Field(
+        ..., description="The OCID of the compartment for the subnet"
+    ),
+    cidr_block: str = Field(..., description="The IPv4 CIDR block for the subnet"),
+    display_name: str = Field(..., description="A user-friendly display name"),
+    *,
+    client: oci.core.VirtualNetworkClient,
 ) -> Subnet:
     try:
-        client = get_networking_client()
-
         subnet_details = oci.core.models.CreateSubnetDetails(
             compartment_id=compartment_id,
             vcn_id=vcn_id,
@@ -204,15 +224,20 @@ def create_subnet(
     "If the VCN ID is not provided, then the list includes the security lists from all "
     "VCNs in the specified compartment.",
 )
+@with_oci_client(oci.core.VirtualNetworkClient)
 def list_security_lists(
-    compartment_id: Annotated[str, "Compartment ocid"],
-    vcn_id: Annotated[str, "VCN ocid"] = None,
+    compartment_id: str = Field(
+        ..., description="The OCID of the compartment containing the security lists"
+    ),
+    vcn_id: Optional[str] = Field(
+        None, description="Optional VCN OCID to limit the results"
+    ),
+    *,
+    client: oci.core.VirtualNetworkClient,
 ) -> list[SecurityList]:
     security_lists: list[SecurityList] = []
 
     try:
-        client = get_networking_client()
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None
@@ -238,10 +263,13 @@ def list_security_lists(
 
 
 @mcp.tool(name="get_security_list", description="Gets the security list's information.")
-def get_security_list(security_list_id: Annotated[str, "security list id"]):
+@with_oci_client(oci.core.VirtualNetworkClient)
+def get_security_list(
+    security_list_id: str = Field(..., description="The OCID of the security list"),
+    *,
+    client: oci.core.VirtualNetworkClient,
+):
     try:
-        client = get_networking_client()
-
         response: oci.response.Response = client.get_security_list(security_list_id)
         data: oci.core.models.Subnet = response.data
         logger.info("Found Security List")
@@ -258,16 +286,23 @@ def get_security_list(security_list_id: Annotated[str, "security list id"]):
     "a compartmentId, but not both. If you specify a vlanId, all other parameters are "
     "ignored.",
 )
+@with_oci_client(oci.core.VirtualNetworkClient)
 def list_network_security_groups(
-    compartment_id: Annotated[str, "compartment ocid"],
-    vlan_id: Annotated[str, "vlan ocid"] = None,
-    vcn_id: Annotated[str, "vcn ocid"] = None,
+    compartment_id: Optional[str] = Field(
+        None, description="The OCID of the compartment containing the NSGs"
+    ),
+    vlan_id: Optional[str] = Field(
+        None, description="Optional VLAN OCID to filter the results"
+    ),
+    vcn_id: Optional[str] = Field(
+        None, description="Optional VCN OCID to filter the results"
+    ),
+    *,
+    client: oci.core.VirtualNetworkClient,
 ) -> list[NetworkSecurityGroup]:
     nsgs: list[NetworkSecurityGroup] = []
 
     try:
-        client = get_networking_client()
-
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None
@@ -298,12 +333,15 @@ def list_network_security_groups(
 @mcp.tool(
     description="Gets the specified network security group's information.",
 )
+@with_oci_client(oci.core.VirtualNetworkClient)
 def get_network_security_group(
-    network_security_group_id: Annotated[str, "nsg id"],
+    network_security_group_id: str = Field(
+        ..., description="The OCID of the network security group"
+    ),
+    *,
+    client: oci.core.VirtualNetworkClient,
 ):
     try:
-        client = get_networking_client()
-
         response: oci.response.Response = client.get_network_security_group(
             network_security_group_id
         )
@@ -317,10 +355,13 @@ def get_network_security_group(
 
 
 @mcp.tool(description="Get Vnic with a given OCID")
-def get_vnic(vnic_id: str = Field(..., description="The OCID of the vnic")) -> Vnic:
+@with_oci_client(oci.core.VirtualNetworkClient)
+def get_vnic(
+    vnic_id: str = Field(..., description="The OCID of the VNIC"),
+    *,
+    client: oci.core.VirtualNetworkClient,
+) -> Vnic:
     try:
-        client = get_networking_client()
-
         response: oci.response.Response = client.get_vnic(vnic_id=vnic_id)
         data: oci.core.models.Vnic = response.data
         logger.info("Found Vnic")

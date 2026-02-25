@@ -61,10 +61,8 @@ public final class ServerConfig {
   }
 
   private static final Set<String> DB_TOOLS = Set.of(
-    "similarity-search", "explain-plan",
-    "read-query", "write-query", "create-table", "delete-table",
-    "list-tables", "describe-table", "start-transaction", "resume-transaction",
-    "commit-transaction", "rollback-transaction", "db-ping", "db-metrics-range"
+    "similarity-search",  "explain-plan", "read-query", "write-query",
+     "transaction", "table", "db-ping", "db-metrics-range"
   );
 
   /** Built-in toolsets covering predefined tools. Lowercase keys and members. */
@@ -81,9 +79,7 @@ public final class ServerConfig {
       ),
       "rag", Set.of("similarity-search"),
       "database-operator", Set.of(
-              "read-query", "write-query", "create-table", "delete-table",
-              "list-tables", "describe-table", "start-transaction", "resume-transaction",
-              "commit-transaction", "rollback-transaction", "db-ping", "db-metrics-range",
+              "read-query", "write-query", "transaction", "table", "db-ping", "db-metrics-range",
               "explain-plan"
       ),
       "mcp-admin", Set.of("list-tools", "edit-tools")

@@ -137,9 +137,7 @@ The server provides four built-in toolsets that can be enabled via `-Dtools`:
       <td><code>database-operator</code></td>
       <td>Database operations, transactions, monitoring, and execution plans</td>
       <td>
-        read-query, write-query, create-table, delete-table,
-        list-tables, describe-table, start-transaction, resume-transaction,
-        commit-transaction, rollback-transaction, db-ping,
+        read-query, write-query, table, transaction, db-ping,
         db-metrics-range, explain-plan
       </td>
     </tr>
@@ -168,20 +166,20 @@ These tools provide direct SQL execution capabilities:
 - **`write-query`**: Execute DML/DDL operations (INSERT, UPDATE, DELETE, CREATE, etc.) with autocommit.
 
 ### 3.2. Table Management
-These tools help you manage database tables:
+A single **`table`** tool covers all table management operations via an `action` parameter:
 
-- **`create-table`**: Create a table using full CREATE TABLE statements
-- **`delete-table`**: Drop an existing table by name
-- **`list-tables`**: List all tables and synonyms in the current schema
-- **`describe-table`**: Get detailed column information for any table
+- **`action=create`**: Create a table using full CREATE TABLE statements
+- **`action=drop`**: Drop an existing table by name  (`table` required)
+- **`action=list`**: List all tables and synonyms in the current schema
+- **`action=describe`**: Get detailed column information for any table (`table` required)
 
 ### 3.3. Transaction Management
-These tools provide fine-grained control over database transactions:
+A single **`transaction`** tool covers all transaction lifecycle operations via an `action` parameter:
 
-- **`start-transaction`**: Begin a new JDBC transaction and get a transaction ID
-- **`resume-transaction`**: Verify if a transaction ID is still active
-- **`commit-transaction`**: Commit and close a transaction
-- **`rollback-transaction`**: Rollback and close a transaction
+- **`action=start`**: Begin a new JDBC transaction and get a transaction ID
+- **`action=resume`**: Verify if a transaction ID is still active (`txId` required)
+- **`action=commit`**: Commit and close a transaction (`txId` required)
+- **`action=rollback`**: Rollback and close a transaction (`txId` required)
 
 ### 3.4. Database Monitoring
 These tools help monitor database health and performance:
@@ -544,7 +542,7 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
         You can pass individual tools (e.g. <code>get-jdbc-stats</code>, <code>read-query</code>) or any of the following built-in toolsets:
         <ul>
           <li><code>mcp-admin</code> — server discovery and runtime configuration tools (list-tools, edit-tools)</li>
-          <li><code>database-operator</code> — database operations, transactions, monitoring, and execution plans (read-query, write-query, create-table, delete-table, list-tables, describe-table, start-transaction, resume-transaction, commit-transaction, rollback-transaction, db-ping, db-metrics-range, explain-plan).</li>
+          <li><code>database-operator</code> — database operations, transactions, monitoring, and execution plans (read-query, write-query, table, transaction, db-ping, db-metrics-range, explain-plan).</li>
           <li><code>log-analyzer</code> — all JDBC log and RDBMS/SQLNet analysis tools (get-jdbc-stats, get-jdbc-queries, get-jdbc-errors, list-log-files-from-directory, jdbc-log-comparison, get-jdbc-connection-events, get-rdbms-errors, get-rdbms-packet-dumps)</li>
           <li><code>rag</code> — similarity-search</li>
         </ul>

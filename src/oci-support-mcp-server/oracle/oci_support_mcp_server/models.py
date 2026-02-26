@@ -64,9 +64,7 @@ class Resource(BaseModel):
 class Ticket(BaseModel):
     ticket_number: Optional[str] = Field(None)
     severity: Optional[str] = Field(None)
-    resource_list: Optional[List[dict]] = Field(
-        None
-    )  # dict instead of Resource for serialization safety
+    resource_list: List[Resource] = Field(default_factory=list)
     title: Optional[str] = Field(None)
     description: Optional[str] = Field(None)
     time_created: Optional[int] = Field(None)
@@ -212,7 +210,6 @@ class CreateTicketDetails(BaseModel):
 class CreateIncident(BaseModel):
     compartment_id: Optional[str] = Field(None)
     ticket: Optional[CreateTicketDetails] = Field(None)
-    csi: Optional[str] = Field(None)
     user_group_id: Optional[str] = Field(None)
     problem_type: Optional[str] = Field(None)
     contacts: Optional[List[Contact]] = Field(None)
@@ -328,7 +325,6 @@ def to_oci_create_incident(p):
     return oci.cims.models.CreateIncident(
         compartment_id=p.compartment_id,
         ticket=ticket,
-        csi=p.csi,
         user_group_id=p.user_group_id,
         problem_type=p.problem_type,
         contacts=(
@@ -554,10 +550,12 @@ def map_ticket(oci_ticket) -> Ticket | None:
             if hasattr(mapped, "model_dump"):
                 mapped = mapped.model_dump(exclude_none=True)
         resource_list.append(mapped)
+    # Defensive: if somehow None, make it an empty list
+    resource_list = resource_list or []
     return Ticket(
         ticket_number=get("ticket_number"),
         severity=get("severity"),
-        resource_list=resource_list if resource_list else None,
+        resource_list=resource_list,
         title=get("title"),
         description=get("description"),
         time_created=get("time_created"),
@@ -722,7 +720,6 @@ def map_create_incident(oci_incident) -> CreateIncident | None:
     return CreateIncident(
         compartment_id=get("compartment_id"),
         ticket=map_create_ticket_details(get("ticket")),
-        csi=get("csi"),
         user_group_id=get("user_group_id"),
         problem_type=get("problem_type"),
         contacts=(

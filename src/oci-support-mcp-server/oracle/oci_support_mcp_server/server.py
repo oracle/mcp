@@ -50,12 +50,6 @@ def get_cims_client():
 )
 def list_incidents(
     compartment_id: str = Field(..., description="The OCID of the tenancy."),
-    csi: Optional[str] = Field(
-        None,
-        description=(
-            "The Customer Support Identifier (CSI) number associated with the support account. "
-        ),
-    ),
     ocid: Optional[str] = Field(
         None,
         description=(
@@ -141,8 +135,6 @@ def list_incidents(
             kwargs = {
                 "compartment_id": compartment_id,
             }
-            if csi is not None:
-                kwargs["csi"] = csi
             if ocid is not None:
                 kwargs["ocid"] = ocid
             if remaining is not None:
@@ -225,10 +217,6 @@ def get_incident(
         description="Unique Oracle-assigned identifier for the request. "
         "Provide this if needing to contact Oracle about a particular request.",
     ),
-    csi: Optional[str] = Field(
-        None,
-        description="The Customer Support Identifier (CSI) number associated with the support account.",
-    ),
     ocid: Optional[str] = Field(
         None,
         description="User OCID for Oracle Identity Cloud Service (IDCS) users who have "
@@ -279,8 +267,6 @@ def get_incident(
         }
         if opc_request_id is not None:
             kwargs["opc_request_id"] = opc_request_id
-        if csi is not None:
-            kwargs["csi"] = csi
         if ocid is not None:
             kwargs["ocid"] = ocid
         if homeregion is not None:
@@ -440,10 +426,6 @@ def list_incident_resource_types(
     name: Optional[str] = Field(
         None, description="The user-friendly name of the support request type."
     ),
-    csi: Optional[str] = Field(
-        None,
-        description="The Customer Support Identifier (CSI) number associated with the support account.",
-    ),
     ocid: Optional[str] = Field(
         None,
         description="User OCID for Oracle Identity Cloud Service (IDCS) users who also have "
@@ -488,8 +470,6 @@ def list_incident_resource_types(
             kwargs["sort_order"] = sort_order
         if name is not None:
             kwargs["name"] = name
-        if csi is not None:
-            kwargs["csi"] = csi
         if ocid is not None:
             kwargs["ocid"] = ocid
         if homeregion is not None:
@@ -520,10 +500,6 @@ def list_incident_resource_types(
     "Returns mapped ValidationResponse model."
 )
 def validate_user(
-    csi: Optional[str] = Field(
-        None,
-        description="The Customer Support Identifier (CSI) number associated with the support account.",
-    ),
     opc_request_id: Optional[str] = Field(
         None,
         description="Unique Oracle-assigned identifier for the request. "
@@ -573,8 +549,6 @@ def validate_user(
     try:
         client = get_cims_client()
         kwargs = {}
-        if csi is not None:
-            kwargs["csi"] = csi
         if opc_request_id is not None:
             kwargs["opc_request_id"] = opc_request_id
         if problem_type is not None:

@@ -19,6 +19,7 @@ from oracle.oci_cloud_mcp_server.server import (
     _import_client,
     _import_models_module_from_client_fqn,
     _serialize_oci_data,
+    get_client_operation_details,
     list_client_operations,
     list_oci_clients,
     main,
@@ -883,6 +884,66 @@ class TestListClientOperationsDetails:
         entry = next(o for o in ops if o["name"] == "foo")
         assert "summary" in entry and "Doc first line." in entry["summary"]
         assert "params" in entry and "(" in entry["params"] and ")" in entry["params"]
+
+
+class TestGetClientOperationDetails:
+    @pytest.mark.asyncio
+    async def test_returns_expected_kwargs_when_present(self, monkeypatch):
+        class Klass:
+            def list_things(self, compartment_id):  # noqa: ARG002
+                """List things."""
+
+        fake_module = SimpleNamespace(Klass=Klass)
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module
+        )
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._extract_expected_kwargs_from_source",
+            lambda member: {"page", "limit", "opc_request_id"},
+        )
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "get_client_operation_details",
+                    {"client_fqn": "x.y.Klass", "operation": "list_things"},
+                )
+            ).data
+
+        assert res["client_fqn"] == "x.y.Klass"
+        assert res["operation"] == "list_things"
+        assert res["summary"] == "List things."
+        assert "(" in res["params"] and ")" in res["params"]
+        assert res["expected_kwargs"] == ["limit", "opc_request_id", "page"]
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_expected_kwargs_when_source_unavailable(self, monkeypatch):
+        class Klass:
+            def get_thing(self, id):  # noqa: ARG002
+                """Get thing."""
+
+        fake_module = SimpleNamespace(Klass=Klass)
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module
+        )
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._extract_expected_kwargs_from_source",
+            lambda member: None,
+        )
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "get_client_operation_details",
+                    {"client_fqn": "x.y.Klass", "operation": "get_thing"},
+                )
+            ).data
+
+        assert res["expected_kwargs"] == []
+
+    def test_direct_invalid_fqn_raises(self):
+        with pytest.raises(Exception):
+            get_client_operation_details("InvalidFqn", "list_things")
 
 
 class TestFromDictSuccess:

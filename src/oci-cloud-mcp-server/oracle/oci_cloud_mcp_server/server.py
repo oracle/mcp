@@ -30,6 +30,7 @@ mcp = FastMCP(
         invoking API clients and operations in-process (no CLI).
         - invoke_oci_api: Call any OCI SDK client operation by FQN and method.
         - list_client_operations: Discover available operations on a client.
+        - get_client_operation_details: Inspect one operation including expected kwargs.
     """,
 )
 
@@ -627,6 +628,64 @@ def list_client_operations(
         return {"operations": ops, "name_regex": name_regex}
     except Exception as e:
         logger.error(f"Error listing operations for {client_fqn}: {e}")
+        raise
+
+
+@mcp.tool(
+    description="Get details for one OCI client operation, including expected_kwargs when available."
+)
+def get_client_operation_details(
+    client_fqn: Annotated[
+        str, "Fully-qualified client class, e.g. 'oci.core.ComputeClient'"
+    ],
+    operation: Annotated[str, "Client method/operation name, e.g. 'list_instances'"],
+) -> dict:
+    try:
+        module_name, class_name = client_fqn.rsplit(".", 1)
+        module = import_module(module_name)
+        cls = getattr(module, class_name)
+        if not inspect.isclass(cls):
+            raise ValueError(f"{client_fqn} is not a class")
+
+        if not hasattr(cls, operation):
+            raise AttributeError(
+                f"Operation '{operation}' not found on client '{client_fqn}'"
+            )
+
+        member = getattr(cls, operation)
+        if not callable(member):
+            raise AttributeError(
+                f"Attribute '{operation}' on client '{client_fqn}' is not callable"
+            )
+
+        try:
+            doc = (inspect.getdoc(member) or "").strip()
+            first_line = doc.splitlines()[0] if doc else ""
+        except Exception:
+            first_line = ""
+
+        try:
+            params = str(inspect.signature(member))
+        except Exception:
+            params = ""
+
+        expected_kwargs = _extract_expected_kwargs_from_source(member)
+        if expected_kwargs is None:
+            expected_kwargs_list = []
+        else:
+            expected_kwargs_list = sorted(expected_kwargs)
+
+        return {
+            "client_fqn": client_fqn,
+            "operation": operation,
+            "summary": first_line,
+            "params": params,
+            "expected_kwargs": expected_kwargs_list,
+        }
+    except Exception as e:
+        logger.error(
+            f"Error getting operation details for {client_fqn}.{operation}: {e}"
+        )
         raise
 
 

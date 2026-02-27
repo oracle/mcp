@@ -703,8 +703,16 @@ def _discover_oci_clients() -> List[dict]:
     - Walk submodules under `oci`.
     - Import only modules whose name ends with `_client` (OCI SDK convention)
       to avoid importing every single models module.
-    - Collect any public class ending with `Client` that inherits from
-      `oci.base_client.BaseClient` (excluding BaseClient itself).
+    - Collect any public class ending with `Client`.
+
+      Note: OCI Python SDK v2.160.0+ no longer has service clients inherit
+      from `oci.base_client.BaseClient`. Instead, service clients *compose*
+      a `BaseClient` (e.g., `self.base_client = BaseClient(...)`).
+      Therefore, inheritance checks will incorrectly filter out all clients.
+      We detect clients by either:
+        - inheriting from BaseClient (legacy SDK versions), OR
+        - exposing an `__init__(config, **kwargs)` and a `base_client` attribute
+          (current SDK versions).
     """
     clients: List[dict] = []
 
@@ -735,10 +743,25 @@ def _discover_oci_clients() -> List[dict]:
                     continue
                 if not cls_name.endswith("Client"):
                     continue
-                if BaseClient and not (
-                    inspect.isclass(member) and issubclass(member, BaseClient)
-                ):
-                    continue
+                # OCI SDK client classes historically inherited from BaseClient.
+                # Newer SDK versions (e.g., 2.160.0) use composition instead, so
+                # an issubclass check will fail for every client.
+                if BaseClient and inspect.isclass(member):
+                    if issubclass(member, BaseClient):
+                        pass
+                    else:
+                        # Heuristic: client exposes 'base_client' after init.
+                        # We can't instantiate here (would require config), so
+                        # use a cheap source/attribute inspection fallback.
+                        try:
+                            # Some generated clients include 'self.base_client =' in __init__
+                            src = inspect.getsource(member.__init__)
+                            if "self.base_client" not in src:
+                                continue
+                        except Exception:
+                            # If we can't inspect source, be permissive and keep it.
+                            # Worst case: user sees extra non-usable 'Client' classes.
+                            pass
 
                 client_fqn = f"{module_name}.{cls_name}"
                 if client_fqn in seen:

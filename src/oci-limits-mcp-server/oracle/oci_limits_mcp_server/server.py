@@ -6,23 +6,23 @@ https://oss.oracle.com/licenses/upl.
 
 import os
 from logging import Logger
-from typing import Optional, Literal
+from typing import Literal, Optional
 
 import oci
 from fastmcp import FastMCP
 from pydantic import Field
 
 from . import __project__, __version__
+from .models import (
+    map_limit_definition_summary,
+    map_limit_value_summary,
+    map_resource_availability,
+    map_service_summary,
+)
 from .utils import (
     list_limit_definitions_with_pagination,
     list_limit_values_with_pagination,
     list_services_with_pagination,
-)
-from .models import (
-    map_service_summary,
-    map_limit_definition_summary,
-    map_limit_value_summary,
-    map_resource_availability,
 )
 
 logger = Logger(__name__, level="INFO")
@@ -61,6 +61,7 @@ def get_identity_client():
         "Use oracle-identity-mcp-server tools for Identity operations (e.g., list_availability_domains)."
     )
 
+
 # ----------------------------
 # Tools
 # ----------------------------
@@ -69,7 +70,7 @@ def get_identity_client():
 @mcp.tool(
     description=(
         "Redirect shim: Use oracle-identity-mcp-server.list_availability_domains. "
-        "This tool intentionally does not query Identity and will instruct the MCP host to call the Identity tool."
+        "This tool does not query Identity and will instruct the MCP host to call the Identity tool."
     )
 )
 def provide_availability_domains_for_limits(
@@ -98,7 +99,9 @@ def provide_availability_domains_for_limits(
     description="Returns the list of supported services that have resource limits exposed"
 )
 def list_services(
-    compartment_id: str = Field(..., description="OCID of the root compartment (tenancy)"),
+    compartment_id: str = Field(
+        ..., description="OCID of the root compartment (tenancy)"
+    ),
     sort_by: Literal["name", "description"] = Field("name", description="Sort field"),
     sort_order: Literal["ASC", "DESC"] = Field("ASC", description="Sort order"),
     limit: Optional[int] = Field(
@@ -107,8 +110,12 @@ def list_services(
         ge=1,
         le=1000,
     ),
-    page: Optional[str] = Field(None, description="Pagination token from a previous call"),
-    subscription_id: Optional[str] = Field(None, description="Subscription OCID filter"),
+    page: Optional[str] = Field(
+        None, description="Pagination token from a previous call"
+    ),
+    subscription_id: Optional[str] = Field(
+        None, description="Subscription OCID filter"
+    ),
 ) -> list[dict]:
     """
     Maps to GET /20190729/services
@@ -133,9 +140,13 @@ def list_services(
 
 @mcp.tool(description="Get the list of resource limit definitions for a service")
 def list_limit_definitions(
-    compartment_id: str = Field(..., description="OCID of the root compartment (tenancy)"),
+    compartment_id: str = Field(
+        ..., description="OCID of the root compartment (tenancy)"
+    ),
     service_name: Optional[str] = Field(None, description="Target service name filter"),
-    name: Optional[str] = Field(None, description="Specific resource limit name filter"),
+    name: Optional[str] = Field(
+        None, description="Specific resource limit name filter"
+    ),
     sort_by: Literal["name", "description"] = Field("name", description="Sort field"),
     sort_order: Literal["ASC", "DESC"] = Field("ASC", description="Sort order"),
     limit: Optional[int] = Field(
@@ -144,8 +155,12 @@ def list_limit_definitions(
         ge=1,
         le=1000,
     ),
-    page: Optional[str] = Field(None, description="Pagination token from a previous call"),
-    subscription_id: Optional[str] = Field(None, description="Subscription OCID filter"),
+    page: Optional[str] = Field(
+        None, description="Pagination token from a previous call"
+    ),
+    subscription_id: Optional[str] = Field(
+        None, description="Subscription OCID filter"
+    ),
 ) -> list[dict]:
     """
     Maps to GET /20190729/limitDefinitions
@@ -169,14 +184,16 @@ def list_limit_definitions(
         raise
 
 
-@mcp.tool(
-    description="List resource limit values for the given service"
-)
+@mcp.tool(description="List resource limit values for the given service")
 def list_limit_value(
-    compartment_id: str = Field(..., description="OCID of the root compartment (tenancy)"),
+    compartment_id: str = Field(
+        ..., description="OCID of the root compartment (tenancy)"
+    ),
     service_name: str = Field(..., description="Target service name"),
     name: str = Field(..., description="Specific resource limit name filter"),
-    scope_type: Literal["GLOBAL", "REGION", "AD"] = Field(..., description="Scope type"),
+    scope_type: Literal["GLOBAL", "REGION", "AD"] = Field(
+        ..., description="Scope type"
+    ),
     availability_domain: Optional[str] = Field(
         None, description="If scope_type is AD, filter by availability domain"
     ),
@@ -188,8 +205,12 @@ def list_limit_value(
         ge=1,
         le=1000,
     ),
-    page: Optional[str] = Field(None, description="Pagination token from a previous call"),
-    subscription_id: Optional[str] = Field(None, description="Subscription OCID filter"),
+    page: Optional[str] = Field(
+        None, description="Pagination token from a previous call"
+    ),
+    subscription_id: Optional[str] = Field(
+        None, description="Subscription OCID filter"
+    ),
 ) -> list[dict]:
     """
     Maps to GET /20190729/limitValues
@@ -232,7 +253,9 @@ def get_resource_availability(
             "Required if the limit scopeType is AD; omit otherwise. Example: 'US-ASHBURN-AD-1'"
         ),
     ),
-    subscription_id: Optional[str] = Field(None, description="Subscription OCID filter"),
+    subscription_id: Optional[str] = Field(
+        None, description="Subscription OCID filter"
+    ),
 ) -> list[dict]:
     """
     Maps to GET /20190729/services/{serviceName}/limits/{limitName}/resourceAvailability
@@ -268,7 +291,7 @@ def get_resource_availability(
                     {
                         "message": (
                             "availability_domain is required for AD-scoped limits. "
-                            "Call oracle-identity-mcp-server.list_availability_domains first, then retry with an AD name."
+                            "Call oracle-identity-mcp-server.list_availability_domains first,then retry"
                         ),
                         "redirect": {
                             "server": "oracle.oci-identity-mcp-server",

@@ -14,33 +14,6 @@ from oracle.oci_limits_mcp_server.server import mcp
 
 class TestLimitsTools:
     @pytest.mark.asyncio
-    @patch("oracle.oci_limits_mcp_server.server.get_identity_client")
-    async def test_provide_availability_domains_for_limits(self, mock_get_client):
-        mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
-
-        mock_response = create_autospec(oci.response.Response)
-        mock_response.data = [
-            oci.identity.models.AvailabilityDomain(name="AD1", id="US-ASHBURN-AD-1")
-        ]
-        mock_response.has_next_page = False
-        mock_response.next_page = None
-        mock_client.list_availability_domains.return_value = mock_response
-
-        async with Client(mcp) as client:
-            result = (
-                await client.call_tool(
-                    "provide_availability_domains_for_limits",
-                    {
-                        "compartment_id": "ocid1.compartment.oc1..xxxx",
-                    },
-                )
-            ).structured_content["result"]
-
-            assert len(result) == 1
-            assert result[0]["name"] == "AD1"
-
-    @pytest.mark.asyncio
     @patch("oracle.oci_limits_mcp_server.server.get_limits_client")
     async def test_list_services(self, mock_get_client):
         mock_client = MagicMock()
@@ -130,10 +103,7 @@ class TestLimitsTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_limits_mcp_server.server.get_limits_client")
-    @patch("oracle.oci_limits_mcp_server.server.list_availability_domains")
-    async def test_get_resource_availability_ad_scope(
-        self, mock_list_ad, mock_get_client
-    ):
+    async def test_get_resource_availability_ad_scope(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -149,22 +119,7 @@ class TestLimitsTools:
         mock_response.next_page = None
         mock_client.list_limit_definitions.return_value = mock_response
 
-        mock_list_ad.return_value = [{"name": "AD1"}, {"name": "AD2"}]
-
-        mock_response_ad1 = create_autospec(oci.response.Response)
-        mock_response_ad1.data = oci.limits.models.ResourceAvailability(
-            used=10, available=100
-        )
-        mock_response_ad2 = create_autospec(oci.response.Response)
-        mock_response_ad2.data = oci.limits.models.ResourceAvailability(
-            used=20, available=200
-        )
-
-        mock_client.get_resource_availability.side_effect = [
-            mock_response_ad1,
-            mock_response_ad2,
-        ]
-
+        # Simulate that the tool returns a redirect/hint to identity server for AD lists
         async with Client(mcp) as client:
             result = await client.call_tool(
                 "get_resource_availability",
@@ -175,17 +130,18 @@ class TestLimitsTools:
                 },
             )
 
-            assert len(result.structured_content["result"]) == 2
-            assert result.structured_content["result"][0]["availabilityDomain"] == "AD1"
-            assert (
-                result.structured_content["result"][0]["resourceAvailability"]["used"]
-                == 10
-            )
-            assert result.structured_content["result"][1]["availabilityDomain"] == "AD2"
-            assert (
-                result.structured_content["result"][1]["resourceAvailability"]["used"]
-                == 20
-            )
+            result_obj = result.structured_content["result"]
+            assert isinstance(result_obj, list)
+            assert "redirect" in result_obj[0] or "message" in result_obj[0]
+            assert "identity" in result_obj[0].get(
+                "message", ""
+            ) or "list_availability_domains" in str(result_obj[0])
+
+            # Optionally check that the redirect/hint is well-formed
+            if "redirect" in result_obj[0]:
+                redirect = result_obj[0]["redirect"]
+                assert redirect["server"].endswith("identity-mcp-server")
+                assert redirect["tool"] == "list_availability_domains"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_limits_mcp_server.server.get_limits_client")

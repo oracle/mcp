@@ -34,8 +34,11 @@ https://oss.oracle.com/licenses/upl.
 import json
 import logging
 import os
+import time
+import traceback
+import uuid
 from logging.handlers import RotatingFileHandler
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Callable, Literal, Optional
 
 import oci
 from fastmcp import FastMCP
@@ -100,64 +103,99 @@ from . import __project__, __version__
 - get_db_system
 """
 
-OCI_RECOVERY_SERVICE_DASHBOARD_PROMPT = """You are an expert dashboard generator. You very well know how to generate a presentable charts for the executives .
- Make sure the chart is loadable and there are no errors while loading chart.
+OCI_RECOVERY_SERVICE_DASHBOARD_PROMPT = """
+You are an expert dashboard generator.
+You very well know how to generate a presentable charts for the executives.
+Make sure the chart is loadable and there are no errors while loading chart.
 
- Visualise OCI Recovery - Dashboard charts in one html document with below metrics in the given compartment.
-Display the Title - OCI Recovery - Dashboard 
-Under the Title, mention the compartment name. 
-Under this compartment name add  a note : 	Generated using Recovery Service MCP Server 
+Visualise OCI Recovery - Dashboard charts in one html document with below metrics in the given compartment.
+Display the Title - OCI Recovery - Dashboard
+Under the Title, mention the compartment name.
+Under this compartment name add a note: Generated using Recovery Service MCP Server
 Add the date of report generation
 
-Main page ( Overview)
- In first row, summarise base db systems based on backup destination - DBRS, OBJECT_STORE or UNCONFIGURED using donut chart - using tool summarise_protected_database_backup_destination . Use title - Databases categorised by backup destination. Replace DBRS with "RecoveryService” while generating the report.
- In another frame, first row, second column, With title Protected Database Space : report total backup space used by protected databases - using tool summarize_backup_space_used. Note : Space used by ACTIVE/DELETE SCHEDULED protected databases
- In Second Row first column, Summarise protected database based on lifecycle status using donut chart - Title - protected databases by lifecycle state. Make sure the values are based on actual data. Double check this
- In Second row, summarise protected databases on health status - PROTECTED, WARNING, ALERT using donut chart - using tool summarize_protected_database_health - Title - ACTIVE protected databases by health state
- In Second row, summarise protected databases on realtime redo status - ENABLED, DISABLED using donut chart - using tool summarize_protected_database_redo_status -- Title - ACTIVE protected databases by real time redo 
-In the Fourth row, Report the protected databases with OCID, database db unique name, health status, lifecycle state, redo status, backup space used ﻿ ﻿in tabular format ﻿. Filterable columns - Health status, Redo status , life cycle state . This data is very important. extract details very carefully from list protecetd datbase output and carefully map the columns to the OCIDs. Be very diligent while filling up this table. Dont miss the filters.
+Main page (Overview)
+In first row, summarise base db systems based on backup destination - DBRS, OBJECT_STORE or UNCONFIGURED
+using donut chart.
+Use tool summarise_protected_database_backup_destination.
+Use title - Databases categorised by backup destination.
+Replace DBRS with "RecoveryService" while generating the report.
+In another frame, first row, second column, With title Protected Database Space:
+Report total backup space used by protected databases - using tool summarize_backup_space_used.
+Note: Space used by ACTIVE/DELETE SCHEDULED protected databases.
+In Second Row first column, Summarise protected database based on lifecycle status using donut chart.
+Title - protected databases by lifecycle state.
+Make sure the values are based on actual data.
+Double check this.
+In Second row, summarise protected databases on health status - PROTECTED, WARNING, ALERT using donut chart.
+Use tool summarize_protected_database_health.
+Title - ACTIVE protected databases by health state.
+In Second row, summarise protected databases on realtime redo status - ENABLED, DISABLED using donut chart.
+Use tool summarize_protected_database_redo_status.
+Title - ACTIVE protected databases by real time redo.
 
+In the Fourth row, report the protected databases with OCID, database db unique name, health status,
+lifecycle state,
+redo status, backup space used in tabular format.
+Filterable columns - Health status, Redo status, life cycle state.
+This data is very important.
+Extract details carefully from list protecetd datbase output and map the columns to the OCIDs.
+Be diligent while filling up this table.
+Don't miss the filters.
 
-In another tab  named - Backup Details
-Tool to use list backups with compartment id as argument
-You are an expert dashboard generator. You very well know how to generate a presentable charts for the executives . 
-Make sure the chart is loadable and there are no errors while loading chart. The lines in graph are clearly visible and well positioned.
+In another tab named - Backup Details
+Tool to use list backups with compartment id as argument.
+You are an expert dashboard generator.
+You very well know how to generate a presentable charts for the executives.
+Make sure the chart is loadable and there are no errors while loading chart.
+The lines in graph are clearly visible and well positioned.
 
-Generate a line chart showing backup creation timelines for databases in the mentioned compartment. Each database is represented by a distinct line, with points marking individual backup events based on 'time_started'. The chart is styled for executive presentation, with a clean layout, legend, and tooltips.
+Generate a line chart showing backup creation timelines for databases in the mentioned compartment.
+Each database is represented by a distinct line, with points marking individual backup events
+based on 'time_started'
+The chart is styled for executive presentation, with a clean layout, legend, and tooltips
 X axis - Creation date/ Start date
 Y axis - db_unique_name
-Generate a line chart showing time taken by each backup for databases in the mentioned compartment. Each database is represented by a distinct line, with points marking individual backup events based on ‘duration'. If user hovers over individual points then they should gets details such as exact duration and type of backup (FULL or INCREMENTAL)   ﻿ ﻿
- - X axis: Creation date / Start date
- - Y axis: duration_minutes.
-Give your insight on
-If any backup has taken more time or less time than usual pattern
-Is there any backup missing in the pattern
-If backup is Manually taken or LTR call that out separately
 
-IMPORTANT: ﻿
-Make sure charts are loadable and renderable clearly in html. Double check this condition.
-There should be no missing line charts
-Donot add date/time on the points unless user hovers over that point.
+Generate a line chart showing time taken by each backup for databases in the mentioned compartment.
+Each database is represented by a distinct line, with points marking individual backup events
+based on 'duration'
+If user hovers over individual points then they should get details such as exact duration and type of backup
+(FULL or INCREMENTAL).
+- X axis: Creation date / Start date
+- Y axis: duration_minutes.
 
+Give your insight on:
+- If any backup has taken more time or less time than usual pattern
+- Is there any backup missing in the pattern
+- If backup is manually taken or LTR call that out separately
 
-In another tab  named - Backup space usage
-Tool to use get_recovery_service_metrics and resolution used 1 day. 
-Generate a line chart of backup space used by each protected databases in last 5 days  - using tool get_recovery_service_metrics and metricName SpaceUsedForRecoveryWindow ﻿. Each protected database is represented by a distinct line with points marking individual space.
-Give your insight on
-If there are any anomolies in the space usage pattern.
-Any other space anomoly you can think of
+IMPORTANT:
+Make sure charts are loadable and renderable clearly in html.
+Double check this condition.
+There should be no missing line charts.
+Do not add date/time on the points unless user hovers over that point.
+
+In another tab named - Backup space usage
+Tool to use get_recovery_service_metrics and resolution used 1 day.
+
+Generate a line chart of backup space used by each protected databases in last 5 days - using tool
+get_recovery_service_metrics and metricName SpaceUsedForRecoveryWindow.
+Each protected database is represented by a distinct line with points marking individual space.
+
+Give your insight on:
+- If there are any anomalies in the space usage pattern.
+- Any other space anomaly you can think of
 
 Add an executive KPI summary row directly below the dashboard title.
 
 Create 4 KPI cards displayed horizontally using Bootstrap grid:
-
 1. Total Protected Databases
 2. Healthy Databases (%)
 3. Redo Shipping Enabled (%)
 4. Total Backup Space Used (GB)
 
 Rules:
-
 - Use existing dashboard data to calculate KPI values.
 - KPI cards must be visually compact and equal height.
 - Each KPI card should contain:
@@ -166,7 +204,6 @@ Rules:
     - Optional subtext (e.g. "of 3 databases")
 
 Styling:
-
 - Use soft card backgrounds with rounded corners.
 - Center-align KPI content.
 - Use large font (2–2.5rem) for KPI numbers.
@@ -174,13 +211,11 @@ Styling:
 - Maintain spacing with Bootstrap g-4.
 
 Layout:
-
 - KPI row must appear ABOVE all charts.
 - Dashboard width remains 75vw.
 - On mobile, stack KPI cards vertically.
 
 Data logic:
-
 - Total Protected Databases = count of protected databases.
 - Healthy % = (PROTECTED / total) * 100.
 - Redo Enabled % = (ENABLED / total) * 100.
@@ -188,11 +223,9 @@ Data logic:
 
 After KPIs, keep charts as secondary visual detail.
 
-
- IMPORTANT 
+IMPORTANT
 
 Layout rules for HTML dashboard:
-
 - Wrap all content in a .dashboard-container:
     width: 75vw;
     max-width: 1200px;
@@ -202,7 +235,6 @@ Layout rules for HTML dashboard:
 - On mobile (<768px), expand dashboard to 95vw.
 
 Chart container sizing:
-
 - Do NOT use a single default height for all charts.
 - Overview donut charts MUST be compact:
     height: 260px.
@@ -214,7 +246,6 @@ Chart container sizing:
 - Ensure donuts appear compact and not vertically stretched.
 
 When using Chart.js:
-
 - NEVER use custom HTML legends.
 - NEVER use absolute positioning over canvas.
 - Always use native Chart.js legend positioned on the right.
@@ -226,22 +257,24 @@ When using Chart.js:
 - Avoid overlapping elements.
 - Maintain clean spacing between panels.
 - Optimize layout for presentation-quality visuals.
-Make sure chart sizes are equal and fit well inside demarcation. 
-Make sure there are no rendering issues
-Dont generate trucated html file. 
-Make sure its a complete file wihtout any syntax issues 
-Make sure legends are written on the rightside of donut chart and with in frame
-Show all the legends and next to legends mention the count as well in brackets 
-Make sure titles are on the top of the donut chart . 
-Makesure title, donut chart and legends fit with in the frame 
+Make sure chart sizes are equal and fit well inside demarcation.
+Make sure there are no rendering issues.
+Don't generate truncated html file.
+Make sure its a complete file without any syntax issues.
+Make sure legends are written on the rightside of donut chart and within frame.
+Show all the legends and next to legends mention the count as well in brackets.
+Make sure titles are on the top of the donut chart.
+Make sure title, donut chart and legends fit within the frame.
 
-Always render charts for every tab
-Include required JS adapters
-Initialize charts after tab activation
+Always render charts for every tab.
+Include required JS adapters.
+Initialize charts after tab activation.
 
-Use soft colors in the chart - executive appealing colors
-Demarcate between the rows Since this is a dashboard make sure user gets the visbility of most charts without scrolling. 
-Create a responsive layout minimizing scrolling"""
+Use soft colors in the chart - executive appealing colors.
+Demarcate between the rows.
+Since this is a dashboard make sure user gets the visibility of most charts without scrolling.
+Create a responsive layout minimizing scrolling.
+"""
 
 
 # Logging setup
@@ -249,6 +282,9 @@ def setup_logging():
     # Resolve log level from env, default to INFO
     level_name = os.getenv("ORACLE_MCP_LOG_LEVEL", "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
+    log_to_stdout_env = os.getenv("ORACLE_MCP_LOG_TO_STDOUT")
+    if log_to_stdout_env is None:
+        os.environ["ORACLE_MCP_LOG_TO_STDOUT"] = "0"
 
     # Compute default log dir relative to project root; allow env override
     base_dir = os.path.abspath(
@@ -285,7 +321,7 @@ def setup_logging():
         root_logger.addHandler(fh)
 
     # Optional console handler (default on; set ORACLE_MCP_LOG_TO_STDOUT=0 to disable)
-    if os.getenv("ORACLE_MCP_LOG_TO_STDOUT", "1").lower() in (
+    if os.getenv("ORACLE_MCP_LOG_TO_STDOUT", "0").lower() in (
         "1",
         "true",
         "yes",
@@ -309,101 +345,357 @@ def setup_logging():
 
 setup_logging()
 logger = logging.getLogger(__name__)
+
+# Exhaustive structured logging helpers
+
+_LOG_MAX_VALUE_CHARS = int(os.getenv("ORACLE_MCP_LOG_MAX_VALUE_CHARS", "20000"))
+_LOG_REDACT_KEYS = {
+    k.strip().lower()
+    for k in os.getenv(
+        "ORACLE_MCP_LOG_REDACT_KEYS",
+        (
+            "authorization,token,security_token,security_token_file,private_key,key_file,"
+            "passphrase,password,secret,client_secret"
+        ),
+    ).split(",")
+    if k.strip()
+}
+
+
+def _truncate_str(s: str) -> str:
+    if _LOG_MAX_VALUE_CHARS and len(s) > _LOG_MAX_VALUE_CHARS:
+        return s[:_LOG_MAX_VALUE_CHARS] + f"...(truncated,len={len(s)})"
+    return s
+
+
+def _safe_jsonable(obj: Any) -> Any:
+    try:
+        if obj is None or isinstance(obj, (bool, int, float, str)):
+            return _truncate_str(obj) if isinstance(obj, str) else obj
+        if isinstance(obj, (list, tuple)):
+            return [_safe_jsonable(x) for x in obj]
+        if isinstance(obj, dict):
+            out: dict[str, Any] = {}
+            for k, v in obj.items():
+                key_l = str(k).lower()
+                if any(rk in key_l for rk in _LOG_REDACT_KEYS):
+                    out[str(k)] = "***REDACTED***"
+                else:
+                    out[str(k)] = _safe_jsonable(v)
+            return out
+
+        # OCI SDK & pydantic helpers
+        try:
+            if hasattr(oci, "util") and hasattr(oci.util, "to_dict"):
+                d = oci.util.to_dict(obj)
+                if isinstance(d, dict):
+                    return _safe_jsonable(d)
+        except Exception:
+            pass
+
+        if hasattr(obj, "model_dump"):
+            try:
+                return _safe_jsonable(obj.model_dump(exclude_none=False, by_alias=True))
+            except Exception:
+                pass
+        if hasattr(obj, "dict"):
+            try:
+                return _safe_jsonable(obj.dict(exclude_none=False, by_alias=True))
+            except Exception:
+                pass
+        if hasattr(obj, "__dict__"):
+            try:
+                return _safe_jsonable(dict(obj.__dict__))
+            except Exception:
+                pass
+
+        return _truncate_str(repr(obj))
+    except Exception:
+        return "<unserializable>"
+
+
+def _log_event(
+    event: str,
+    *,
+    request_id: str,
+    tool: Optional[str] = None,
+    phase: Optional[str] = None,
+    payload: Optional[dict[str, Any]] = None,
+    level: int = logging.INFO,
+):
+    rec = {
+        "event": event,
+        "request_id": request_id,
+        "tool": tool,
+        "phase": phase,
+        "payload": _safe_jsonable(payload or {}),
+    }
+    # Log as single-line JSON for easy grepping / ingestion
+    try:
+        logger.log(level, json.dumps(rec, ensure_ascii=False, default=str))
+    except Exception:
+        logger.log(level, str(rec))
+
+
+def _wrap_oci_client(client: Any, *, request_id: str, client_name: str):
+    """Proxy that logs every SDK method call + response summary, without changing behavior."""
+
+    class _Proxy:
+        def __init__(self, inner: Any):
+            self._inner = inner
+
+        def __getattr__(self, name: str):
+            attr = getattr(self._inner, name)
+            if not callable(attr):
+                return attr
+
+            def _call(*args, **kwargs):
+                start = time.time()
+                _log_event(
+                    "oci_call",
+                    request_id=request_id,
+                    tool=None,
+                    phase="start",
+                    payload={
+                        "client": client_name,
+                        "method": name,
+                        "args": _safe_jsonable(args),
+                        "kwargs": _safe_jsonable(kwargs),
+                    },
+                )
+                try:
+                    resp = attr(*args, **kwargs)
+                    dur_ms = int((time.time() - start) * 1000)
+                    # Response object may be oci.response.Response or other
+                    payload = {
+                        "client": client_name,
+                        "method": name,
+                        "duration_ms": dur_ms,
+                    }
+                    try:
+                        payload["status"] = getattr(resp, "status", None)
+                        payload["headers"] = getattr(resp, "headers", None)
+                        payload["request_id"] = getattr(resp, "request_id", None)
+                        payload["opc_request_id"] = getattr(
+                            resp, "opc_request_id", None
+                        )
+                        payload["has_next_page"] = getattr(resp, "has_next_page", None)
+                        payload["next_page"] = getattr(resp, "next_page", None)
+                    except Exception:
+                        pass
+                    # Log full data as requested (may be truncated)
+                    try:
+                        payload["data"] = _safe_jsonable(getattr(resp, "data", resp))
+                    except Exception:
+                        payload["data"] = "<unavailable>"
+                    _log_event(
+                        "oci_call",
+                        request_id=request_id,
+                        tool=None,
+                        phase="end",
+                        payload=payload,
+                    )
+                    return resp
+                except Exception as e:
+                    dur_ms = int((time.time() - start) * 1000)
+                    _log_event(
+                        "oci_call",
+                        request_id=request_id,
+                        tool=None,
+                        phase="error",
+                        payload={
+                            "client": client_name,
+                            "method": name,
+                            "duration_ms": dur_ms,
+                            "error": str(e),
+                            "traceback": traceback.format_exc(),
+                        },
+                        level=logging.ERROR,
+                    )
+                    raise
+
+            return _call
+
+    return _Proxy(client)
+
+
+def _tool_logger(tool_name: str):
+    """
+    Decorator to log MCP tool inputs/outputs/errors with a correlation id.
+
+    IMPORTANT (FastMCP constraint):
+    FastMCP tool functions must NOT use *args or **kwargs in their signature.
+    So this decorator MUST preserve the original function signature.
+
+    We therefore wrap by delegating with the original signature via ParamSpec.
+    """
+    from functools import wraps
+    from typing import ParamSpec, TypeVar
+
+    P = ParamSpec("P")
+    R = TypeVar("R")
+
+    def _decorator(fn: Callable[P, R]) -> Callable[P, R]:
+        @wraps(fn)
+        def _wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+            request_id = uuid.uuid4().hex
+            start = time.time()
+            _log_event(
+                "tool_call",
+                request_id=request_id,
+                tool=tool_name,
+                phase="start",
+                payload={
+                    "args": _safe_jsonable(args),
+                    "kwargs": _safe_jsonable(kwargs),
+                },
+            )
+            try:
+                out = fn(*args, **kwargs)
+                dur_ms = int((time.time() - start) * 1000)
+                _log_event(
+                    "tool_call",
+                    request_id=request_id,
+                    tool=tool_name,
+                    phase="end",
+                    payload={"duration_ms": dur_ms, "result": _safe_jsonable(out)},
+                )
+                return out
+            except Exception as e:
+                dur_ms = int((time.time() - start) * 1000)
+                _log_event(
+                    "tool_call",
+                    request_id=request_id,
+                    tool=tool_name,
+                    phase="error",
+                    payload={
+                        "duration_ms": dur_ms,
+                        "error": str(e),
+                        "traceback": traceback.format_exc(),
+                    },
+                    level=logging.ERROR,
+                )
+                raise
+
+        return _wrapped
+
+    return _decorator
+
+
+# Auth/Config
+
+
+def _effective_auth_method() -> Literal["session", "apikey"]:
+    """
+    Auth selection is done strictly via environment variables (set by the MCP host).
+
+    Required:
+      - ORACLE_MCP_AUTH_METHOD: "session" or "apikey"
+
+    Optional:
+      - ORACLE_MCP_AUTH_PROFILE: OCI config profile name (defaults to OCI_CONFIG_PROFILE/DEFAULT)
+    """
+    m = (os.getenv("ORACLE_MCP_AUTH_METHOD") or "session").strip().lower()
+    if m in ("apikey", "api_key", "api-key"):
+        return "apikey"
+    return "session"
+
+
+def _effective_profile_name() -> str:
+    prof = (os.getenv("ORACLE_MCP_AUTH_PROFILE") or "").strip()
+    if prof:
+        return prof
+    return os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+
+
+def _load_oci_config_for_server() -> dict:
+    config = oci.config.from_file(profile_name=_effective_profile_name())
+    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
+    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
+    return config
+
+
+def _build_signer_for_session(config: dict):
+    private_key = oci.signer.load_private_key_from_file(config["key_file"])
+    token_file = config["security_token_file"]
+    with open(token_file, "r", encoding="utf-8") as f:
+        token = f.read()
+    return oci.auth.signers.SecurityTokenSigner(token, private_key)
+
+
 # Create the FastMCP app that exposes the functions decorated with @mcp.tool
 mcp = FastMCP(name=__project__)
 
 
 def get_recovery_client(
     region: str | None = None,
+    *,
+    request_id: Optional[str] = None,
 ) -> oci.recovery.DatabaseRecoveryClient:
-    """
-    Initialize DatabaseRecoveryClient using the OCI config and a SecurityTokenSigner.
-    Adds a custom user agent derived from the package name and version.
-    Optionally overrides the region.
-    """
-    # Load config (profile or DEFAULT) and tag requests with additional user agent
-    config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
-    )
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-
-    # Build SecurityTokenSigner from configured key + token
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = config["security_token_file"]
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
+    """Create a Recovery Service client using auth selected via env vars."""
+    config = _load_oci_config_for_server()
 
     # Region-aware client construction
-    if region is None:
-        return oci.recovery.DatabaseRecoveryClient(config, signer=signer)
+    regional_config = config if region is None else {**config, "region": region}
 
-    regional_config = config.copy()
-    regional_config["region"] = region
-    return oci.recovery.DatabaseRecoveryClient(regional_config, signer=signer)
+    method = _effective_auth_method()
+    if method == "apikey":
+        client = oci.recovery.DatabaseRecoveryClient(regional_config)
+    else:
+        signer = _build_signer_for_session(regional_config)
+        client = oci.recovery.DatabaseRecoveryClient(regional_config, signer=signer)
 
-
-def get_identity_client():
-    # Create Identity client (for compartment/tenancy queries) with same UA and signer setup
-    config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
-    )
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = config["security_token_file"]
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    return oci.identity.IdentityClient(config, signer=signer)
+    rid = request_id or uuid.uuid4().hex
+    return _wrap_oci_client(client, request_id=rid, client_name="recovery")
 
 
-def get_database_client(region: str = None):
-    # Create Database Service client (DB Home/DB/Backup APIs)
-    config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
-    )
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = config["security_token_file"]
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    if region is None:
-        return oci.database.DatabaseClient(config, signer=signer)
-    regional_config = config.copy()  # make a shallow copy
-    regional_config["region"] = region
-    return oci.database.DatabaseClient(regional_config, signer=signer)
+def get_identity_client(*, request_id: Optional[str] = None):
+    config = _load_oci_config_for_server()
+    method = _effective_auth_method()
+    if method == "apikey":
+        client = oci.identity.IdentityClient(config)
+    else:
+        signer = _build_signer_for_session(config)
+        client = oci.identity.IdentityClient(config, signer=signer)
+
+    rid = request_id or uuid.uuid4().hex
+    return _wrap_oci_client(client, request_id=rid, client_name="identity")
 
 
-def get_monitoring_client(region: str | None = None):
-    # Create Monitoring Service client (for Recovery metrics via Monitoring namespace)
+def get_database_client(region: str = None, *, request_id: Optional[str] = None):
+    config = _load_oci_config_for_server()
+    regional_config = config if region is None else {**config, "region": region}
+    method = _effective_auth_method()
+    if method == "apikey":
+        client = oci.database.DatabaseClient(regional_config)
+    else:
+        signer = _build_signer_for_session(regional_config)
+        client = oci.database.DatabaseClient(regional_config, signer=signer)
+
+    rid = request_id or uuid.uuid4().hex
+    return _wrap_oci_client(client, request_id=rid, client_name="database")
+
+
+def get_monitoring_client(
+    region: str | None = None, *, request_id: Optional[str] = None
+):
     logger.info("entering get_monitoring_client")
-    config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
-    )
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
+    config = _load_oci_config_for_server()
+    regional_config = config if region is None else {**config, "region": region}
+    method = _effective_auth_method()
+    if method == "apikey":
+        client = oci.monitoring.MonitoringClient(regional_config)
+    else:
+        signer = _build_signer_for_session(regional_config)
+        client = oci.monitoring.MonitoringClient(regional_config, signer=signer)
 
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = config["security_token_file"]
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    if region is None:
-        return oci.monitoring.MonitoringClient(config, signer=signer)
-    regional_config = config.copy()
-    regional_config["region"] = region
-    return oci.monitoring.MonitoringClient(regional_config, signer=signer)
+    rid = request_id or uuid.uuid4().hex
+    return _wrap_oci_client(client, request_id=rid, client_name="monitoring")
 
 
 def get_tenancy():
     # Return the tenancy OCID from config unless overridden by TENANCY_ID_OVERRIDE
-    config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
-    )
+    config = _load_oci_config_for_server()
     return os.getenv("TENANCY_ID_OVERRIDE", config["tenancy"])
 
 
@@ -500,12 +792,13 @@ def get_compartment_by_name(compartment_name: str):
         "the match as JSON or a clear error if none is found."
     )
 )
+@_tool_logger("get_compartment_by_name_tool")
 def get_compartment_by_name_tool(
     name: Annotated[
         str,
         "Compartment display name to search for (case-insensitive). Searches all "
-        "accessible ACTIVE compartments in the tenancy, including the root tenancy."
-    ]
+        "accessible ACTIVE compartments in the tenancy, including the root tenancy.",
+    ],
 ) -> str:
     """Return a compartment matching the provided name"""
     compartment = get_compartment_by_name(name)
@@ -523,6 +816,7 @@ def get_compartment_by_name_tool(
         "dictionaries, each with cleaned subnet information and a small metrics map."
     )
 )
+@_tool_logger("list_protected_databases")
 def list_protected_databases(
     compartment_id: Annotated[str, "The OCID of the compartment"],
     lifecycle_state: Annotated[
@@ -561,7 +855,9 @@ def list_protected_databases(
     a list of ProtectedDatabaseSummary models mapped from the OCI SDK response.
     """
     try:
-        client = get_recovery_client(region)
+        # Keep tool behavior intact; only add correlation-id based logging via wrapped client
+        request_id = uuid.uuid4().hex
+        client = get_recovery_client(region, request_id=request_id)
 
         results: list[ProtectedDatabaseSummary] = []
         has_next_page = True
@@ -601,6 +897,7 @@ def list_protected_databases(
             data = response.data
             items = getattr(data, "items", data)  # collection.items or raw list
             for d in items:
+                logger.info(f"Item structure: {d}")
                 pd_summary = map_protected_database_summary(d)
                 if pd_summary is None:
                     continue
@@ -750,6 +1047,7 @@ def list_protected_databases(
         "with subnet info and a simple metrics section."
     )
 )
+@_tool_logger("get_protected_database")
 def get_protected_database(
     protected_database_id: Annotated[str, "Protected Database OCID"],
     opc_request_id: Annotated[
@@ -764,7 +1062,8 @@ def get_protected_database(
     a ProtectedDatabase model mapped from the OCI SDK response.
     """
     try:
-        client = get_recovery_client(region)
+        request_id = uuid.uuid4().hex
+        client = get_recovery_client(region, request_id=request_id)
 
         # Optional request ID passthrough
         kwargs = {}
@@ -914,6 +1213,7 @@ def get_protected_database(
         "compartmentId, and the region."
     )
 )
+@_tool_logger("summarize_protected_database_health")
 def summarize_protected_database_health(
     compartment_id: Annotated[
         Optional[str],
@@ -922,7 +1222,7 @@ def summarize_protected_database_health(
     region: Annotated[
         Optional[str], "OCI region to execute the request in (e.g., us-ashburn-1)"
     ] = None,
-) -> dict:
+) -> ProtectedDatabaseHealthCounts:
     """
     Summarizes Protected Database health status counts (PROTECTED, WARNING, ALERT, UNKNOWN) in a compartment.
     The tool lists protected databases, reads health from summary when available, falls back to GET per PD,
@@ -930,7 +1230,8 @@ def summarize_protected_database_health(
     or transitional).
     """
     try:
-        client = get_recovery_client(region)
+        request_id = uuid.uuid4().hex
+        client = get_recovery_client(region, request_id=request_id)
         comp_id = compartment_id or get_tenancy()
 
         protected = 0
@@ -970,7 +1271,7 @@ def summarize_protected_database_health(
                 pd_id = getattr(item, "id", None) or (
                     getattr(item, "data", None) and getattr(item.data, "id", None)
                 )
-                logger.info(f"Item structure: {item}, Extracted id: {pd_id}")
+                logger.info(f"Item structure: {item}")
                 if pd_id is None:
                     try:
                         item_dict = getattr(item, "__dict__", None) or {}
@@ -1019,8 +1320,10 @@ def summarize_protected_database_health(
             unknown,
             total,
         )
+        # NOTE: construct using the alias key (compartmentId) to avoid any
+        # pydantic alias population edge-cases that can result in null output.
         result = ProtectedDatabaseHealthCounts(
-            compartment_id=comp_id,
+            compartmentId=comp_id,
             region=region,
             protected=protected,
             warning=warning,
@@ -1056,6 +1359,7 @@ def summarize_protected_database_health(
         "and the region."
     )
 )
+@_tool_logger("summarize_protected_database_redo_status")
 def summarize_protected_database_redo_status(
     compartment_id: Annotated[
         Optional[str],
@@ -1064,14 +1368,15 @@ def summarize_protected_database_redo_status(
     region: Annotated[
         Optional[str], "OCI region to execute the request in (e.g., us-ashburn-1)"
     ] = None,
-) -> dict:
+) -> ProtectedDatabaseRedoCounts:
     """
     Summarizes redo transport enablement for Protected Databases in a compartment.
     Lists protected databases then fetches each to inspect
     is_redo_logs_shipped (true=enabled, false=disabled).
     """
     try:
-        client = get_recovery_client(region)
+        request_id = uuid.uuid4().hex
+        client = get_recovery_client(region, request_id=request_id)
         comp_id = compartment_id or get_tenancy()
 
         enabled = 0
@@ -1151,8 +1456,10 @@ def summarize_protected_database_redo_status(
             disabled,
             total,
         )
+        # NOTE: construct using the alias key (compartmentId) to avoid any
+        # pydantic alias population edge-cases that can result in null output.
         result = ProtectedDatabaseRedoCounts(
-            compartment_id=comp_id,
+            compartmentId=comp_id,
             region=region,
             enabled=enabled,
             disabled=disabled,
@@ -1185,6 +1492,7 @@ def summarize_protected_database_redo_status(
         "totalDatabasesScanned, and the total space in GB."
     )
 )
+@_tool_logger("summarize_backup_space_used")
 def summarize_backup_space_used(
     compartment_id: Annotated[
         Optional[str],
@@ -1203,7 +1511,8 @@ def summarize_backup_space_used(
     Returns: compartmentId, region, totalDatabasesScanned, sumBackupSpaceUsedInGBs.
     """
     try:
-        client = get_recovery_client(region)
+        request_id = uuid.uuid4().hex
+        client = get_recovery_client(region, request_id=request_id)
         comp_id = compartment_id or get_tenancy()
         sum_gb = 0.0
         scanned = 0
@@ -1244,7 +1553,7 @@ def summarize_backup_space_used(
                 pd_id = getattr(item, "id", None) or (
                     getattr(item, "data", None) and getattr(item.data, "id", None)
                 )
-                logger.info(f"Item structure: {item}, Extracted id: {pd_id}")
+                logger.info(f"Item structure: {item}")
                 if pd_id is None:
                     try:
                         item_dict = getattr(item, "__dict__", None) or {}
@@ -1334,6 +1643,7 @@ def summarize_backup_space_used(
         "paging. The result is a straightforward list of protection policies."
     )
 )
+@_tool_logger("list_protection_policies")
 def list_protection_policies(
     compartment_id: Annotated[str, "The OCID of the compartment"],
     lifecycle_state: Annotated[
@@ -1363,7 +1673,8 @@ def list_protection_policies(
     a list of ProtectionPolicy models mapped from the OCI SDK response.
     """
     try:
-        client = get_recovery_client(region)
+        request_id = uuid.uuid4().hex
+        client = get_recovery_client(region, request_id=request_id)
 
         results: list[ProtectionPolicy] = []
         has_next_page = True
@@ -1397,6 +1708,7 @@ def list_protection_policies(
             data = response.data
             items = getattr(data, "items", data)  # collection.items or raw list
             for d in items:
+                logger.info(f"Item structure: {d}")
                 pp = map_protection_policy(d)
                 if pp is not None:
                     results.append(pp)
@@ -1412,6 +1724,7 @@ def list_protection_policies(
 @mcp.tool(
     description=("Gets a protection policy by OCID and returns it as a simple object.")
 )
+@_tool_logger("get_protection_policy")
 def get_protection_policy(
     protection_policy_id: Annotated[str, "Protection Policy OCID"],
     opc_request_id: Annotated[
@@ -1426,7 +1739,8 @@ def get_protection_policy(
     a ProtectionPolicy model mapped from the OCI SDK response.
     """
     try:
-        client = get_recovery_client(region)
+        request_id = uuid.uuid4().hex
+        client = get_recovery_client(region, request_id=request_id)
 
         kwargs = {}
         if opc_request_id is not None:
@@ -1454,6 +1768,7 @@ def get_protection_policy(
         "included when available."
     )
 )
+@_tool_logger("list_recovery_service_subnets")
 def list_recovery_service_subnets(
     compartment_id: Annotated[str, "The OCID of the compartment"],
     lifecycle_state: Annotated[
@@ -1487,7 +1802,8 @@ def list_recovery_service_subnets(
     a list of RecoveryServiceSubnet models mapped from the OCI SDK response.
     """
     try:
-        client = get_recovery_client(region)
+        request_id = uuid.uuid4().hex
+        client = get_recovery_client(region, request_id=request_id)
 
         results: list[RecoveryServiceSubnet] = []
         has_next_page = True
@@ -1524,6 +1840,7 @@ def list_recovery_service_subnets(
             data = response.data
             items = getattr(data, "items", data)  # collection.items or raw list
             for d in items:
+                logger.info(f"Item structure: {d}")
                 rss = map_recovery_service_subnet(d)
                 if rss is None:
                     continue
@@ -1568,6 +1885,7 @@ def list_recovery_service_subnets(
         "subnet."
     )
 )
+@_tool_logger("get_recovery_service_subnet")
 def get_recovery_service_subnet(
     recovery_service_subnet_id: Annotated[str, "Recovery Service Subnet OCID"],
     opc_request_id: Annotated[
@@ -1582,7 +1900,8 @@ def get_recovery_service_subnet(
     a RecoveryServiceSubnet model mapped from the OCI SDK response.
     """
     try:
-        client = get_recovery_client(region)
+        request_id = uuid.uuid4().hex
+        client = get_recovery_client(region, request_id=request_id)
 
         kwargs = {}
         if opc_request_id is not None:
@@ -1618,15 +1937,14 @@ def get_recovery_service_subnet(
         "and a list of {timestamp, value} points."
     )
 )
+@_tool_logger("get_recovery_service_metrics")
 def get_recovery_service_metrics(
     compartment_id: Annotated[str, "The OCID of the compartment to query metrics for."],
     start_time: Annotated[
-        str,
-        "Start time for the metric query. Provide a RFC3339/ISO-8601 timestamp."
+        str, "Start time for the metric query. Provide a RFC3339/ISO-8601 timestamp."
     ],
     end_time: Annotated[
-        str,
-        "End time for the metric query. Provide a RFC3339/ISO-8601 timestamp."
+        str, "End time for the metric query. Provide a RFC3339/ISO-8601 timestamp."
     ],
     metricName: Annotated[
         str,
@@ -1650,7 +1968,8 @@ def get_recovery_service_metrics(
     ] = None,
 ) -> list[dict]:
     # Build Monitoring query against Recovery metrics namespace
-    monitoring_client = get_monitoring_client()
+    request_id = uuid.uuid4().hex
+    monitoring_client = get_monitoring_client(request_id=request_id)
     namespace = "oci_recovery_service"
     filter_clause = (
         f'{{resourceId="{protected_database_id}"}}' if protected_database_id else ""
@@ -1673,6 +1992,7 @@ def get_recovery_service_metrics(
     # Convert SDK series into a simple dict of dimensions + aggregated datapoints
     result: list[dict] = []
     for series in series_list:
+        logger.info(f"Item structure: {series}")
         dims = getattr(series, "dimensions", None)
         points = []
         for p in getattr(series, "aggregated_datapoints", []):
@@ -1703,6 +2023,7 @@ def get_recovery_service_metrics(
         "protection policy ID."
     )
 )
+@_tool_logger("list_databases")
 def list_databases(
     compartment_id: Annotated[
         Optional[str], "The compartment OCID. Required if db_home_id is not provided."
@@ -1731,7 +2052,8 @@ def list_databases(
     ] = None,
 ) -> list[DatabaseSummary]:
     try:
-        client = get_database_client(region)
+        request_id = uuid.uuid4().hex
+        client = get_database_client(region, request_id=request_id)
 
         # Determine DB Home scope:
         # - If db_home_id not provided, discover all DB Homes in the compartment.
@@ -1753,7 +2075,7 @@ def list_databases(
         pd_policy_by_dbid: dict[str, str] = {}
         if compartment_id:
             try:
-                rec_client = get_recovery_client(region)
+                rec_client = get_recovery_client(region, request_id=request_id)
                 has_next = True
                 next_page = None
                 while has_next:
@@ -1765,6 +2087,7 @@ def list_databases(
                     pdata = lp.data
                     pitems = getattr(pdata, "items", pdata)
                     for it in pitems or []:
+                        logger.info(f"Item structure: {it}")
                         try:
                             if hasattr(oci, "util") and hasattr(oci.util, "to_dict"):
                                 d = oci.util.to_dict(it)
@@ -1808,6 +2131,7 @@ def list_databases(
             response: oci.response.Response = client.list_databases(**kwargs)
             raw = getattr(response.data, "items", response.data)
             for item in raw or []:
+                logger.info(f"Item structure: {item}")
                 mapped = map_database_summary(item)
                 if mapped is not None:
                     # Enrich db_backup_config lazily by fetching full Database only if missing
@@ -1867,6 +2191,7 @@ def list_databases(
         "links the database to its protection policy. The result is one database."
     )
 )
+@_tool_logger("get_database")
 def get_database(
     database_id: Annotated[str, "OCID of the Database to retrieve."],
     region: Annotated[
@@ -1874,7 +2199,8 @@ def get_database(
     ] = None,
 ) -> Database:
     try:
-        client = get_database_client(region)
+        request_id = uuid.uuid4().hex
+        client = get_database_client(region, request_id=request_id)
         resp = client.get_database(database_id=database_id)
         mapped = map_database(resp.data)
         # Enrich protection_policy_id by correlating with Recovery Service
@@ -1893,7 +2219,7 @@ def get_database(
                     d = getattr(resp.data, "__dict__", {}) or {}
                 comp_id = d.get("compartmentId") or d.get("compartment_id")
             if comp_id:
-                rec_client = get_recovery_client(region)
+                rec_client = get_recovery_client(region, request_id=request_id)
                 has_next = True
                 next_page = None
                 found_ppid = None
@@ -1940,6 +2266,7 @@ def get_database(
         "result is a list of easy-to-read backup summaries."
     )
 )
+@_tool_logger("list_backups")
 def list_backups(
     compartment_id: Annotated[
         Optional[str], "OCID of the compartment to scope the search."
@@ -1966,7 +2293,8 @@ def list_backups(
     ] = True,
 ) -> list[BackupSummary]:
     try:
-        client = get_database_client(region)
+        request_id = uuid.uuid4().hex
+        client = get_database_client(region, request_id=request_id)
 
         def _to_dict(o):
             try:
@@ -2025,6 +2353,7 @@ def list_backups(
                 items = getattr(resp.data, "items", resp.data) or []
                 raw_list = items if isinstance(items, list) else [items]
                 for obj in raw_list:
+                    logger.info(f"Item structure: {obj}")
                     mapped = map_backup_summary(obj)
                     if mapped is None:
                         continue
@@ -2128,6 +2457,7 @@ def list_backups(
                     dresp = client.list_databases(**kwargs_db)
                     ditems = getattr(dresp.data, "items", dresp.data) or []
                     for d in ditems:
+                        logger.info(f"Item structure: {d}")
                         d_dict = _to_dict(d)
                         dbid = d_dict.get("id") or getattr(d, "id", None)
                         dun = (
@@ -2185,6 +2515,7 @@ def list_backups(
         "unique name. The result is one backup with those helpful fields included."
     )
 )
+@_tool_logger("get_backup")
 def get_backup(
     backup_id: Annotated[str, "OCID of the Backup to retrieve."],
     region: Annotated[
@@ -2196,7 +2527,8 @@ def get_backup(
     Mirrors the simpler logic used in rcv_mcp_server/fast_server.py without additional enrichment.
     """
     try:
-        client = get_database_client(region)
+        request_id = uuid.uuid4().hex
+        client = get_database_client(region, request_id=request_id)
         resp = client.get_backup(backup_id=backup_id)
         mapped = map_backup(resp.data)
         try:
@@ -2355,6 +2687,7 @@ def get_backup(
         "counts, name lists, and per‑database details."
     )
 )
+@_tool_logger("summarize_protected_database_backup_destination")
 def summarize_protected_database_backup_destination(
     compartment_id: Annotated[
         Optional[str],
@@ -2382,7 +2715,8 @@ def summarize_protected_database_backup_destination(
     ] = None,
 ) -> ProtectedDatabaseBackupDestinationSummary:
     try:
-        db_client = get_database_client(region)
+        request_id = uuid.uuid4().hex
+        db_client = get_database_client(region, request_id=request_id)
         if not compartment_id:
             compartment_id = get_tenancy()
 
@@ -2742,6 +3076,7 @@ def summarize_protected_database_backup_destination(
         "for you. The result is a list of database home summaries."
     )
 )
+@_tool_logger("list_db_homes")
 def list_db_homes(
     compartment_id: Annotated[
         Optional[str], "OCID of the compartment to scope the search."
@@ -2757,7 +3092,8 @@ def list_db_homes(
 ) -> list[DatabaseHomeSummary]:
     # Note: This helper is not exposed as an MCP tool; other tools use it internally.
     try:
-        client = get_database_client(region)
+        request_id = uuid.uuid4().hex
+        client = get_database_client(region, request_id=request_id)
         if not compartment_id and not db_system_id:
             compartment_id = get_tenancy()
         results: list[DatabaseHomeSummary] = []
@@ -2791,6 +3127,7 @@ def list_db_homes(
         "is one database home."
     )
 )
+@_tool_logger("get_db_home")
 def get_db_home(
     db_home_id: Annotated[str, "OCID of the DB Home to retrieve."],
     region: Annotated[
@@ -2798,7 +3135,8 @@ def get_db_home(
     ] = None,
 ) -> DatabaseHome:
     try:
-        client = get_database_client(region)
+        request_id = uuid.uuid4().hex
+        client = get_database_client(region, request_id=request_id)
         resp = client.get_db_home(db_home_id=db_home_id)
         return map_database_home(resp.data)
     except Exception as e:
@@ -2813,6 +3151,7 @@ def get_db_home(
         "for you. The result is a list of database system summaries."
     )
 )
+@_tool_logger("list_db_systems")
 def list_db_systems(
     compartment_id: Annotated[
         Optional[str], "OCID of the compartment to scope the search."
@@ -2825,7 +3164,8 @@ def list_db_systems(
     ] = None,
 ) -> list[DbSystemSummary]:
     try:
-        client = get_database_client(region)
+        request_id = uuid.uuid4().hex
+        client = get_database_client(region, request_id=request_id)
         if not compartment_id:
             compartment_id = get_tenancy()
         results: list[DbSystemSummary] = []
@@ -2859,6 +3199,7 @@ def list_db_systems(
         "result is one database system."
     )
 )
+@_tool_logger("get_db_system")
 def get_db_system(
     db_system_id: Annotated[str, "OCID of the DB System to retrieve."],
     region: Annotated[
@@ -2866,7 +3207,8 @@ def get_db_system(
     ] = None,
 ) -> DbSystem:
     try:
-        client = get_database_client(region)
+        request_id = uuid.uuid4().hex
+        client = get_database_client(region, request_id=request_id)
         resp = client.get_db_system(db_system_id=db_system_id)
         return map_db_system(resp.data)
     except Exception as e:
@@ -2876,13 +3218,11 @@ def get_db_system(
 
 @mcp.prompt(
     name="oci_recovery_service_dashboard_prompt",
-    description="Returns the OCI Recovery Service Dashboard prompt."
+    description="Returns the OCI Recovery Service Dashboard prompt.",
 )
 def oci_recovery_service_dashboard_prompt():
-    return [{
-        "role": "system",
-        "content": OCI_RECOVERY_SERVICE_DASHBOARD_PROMPT
-    }]
+    return [{"role": "system", "content": OCI_RECOVERY_SERVICE_DASHBOARD_PROMPT}]
+
 
 def main():
     # Entrypoint: choose transport based on env; always log startup meta and log file location

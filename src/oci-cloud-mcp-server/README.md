@@ -156,6 +156,52 @@ This server now automatically constructs SDK model objects from JSON parameters 
 
 - Nested dictionaries and lists inside such parameters are recursively coerced. For lists that do not obviously
   map to a model type, you can provide explicit hints.
+- Nested fields can be provided in Python SDK snake_case; the server normalizes them to OCI wire keys
+  (for example: `source_type -> sourceType`, `tcp_options -> tcpOptions`,
+  `destination_port_range -> destinationPortRange`, `instance_options -> instanceOptions`)
+  before model deserialization.
+
+Common nested update examples:
+
+```json
+{
+  "client_fqn": "oci.core.ComputeClient",
+  "operation": "update_instance",
+  "params": {
+    "instance_id": "ocid1.instance.oc1..exampleuniqueID",
+    "update_instance_details": {
+      "instance_options": {
+        "are_legacy_imds_endpoints_disabled": true
+      }
+    }
+  }
+}
+```
+
+```json
+{
+  "client_fqn": "oci.core.VirtualNetworkClient",
+  "operation": "update_security_list",
+  "params": {
+    "security_list_id": "ocid1.securitylist.oc1..exampleuniqueID",
+    "update_security_list_details": {
+      "ingress_security_rules": [
+        {
+          "protocol": "6",
+          "source": "0.0.0.0/0",
+          "source_type": "CIDR_BLOCK",
+          "tcp_options": {
+            "destination_port_range": {
+              "min": 22,
+              "max": 22
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+```
 
 Explicit model hints (optional):
 - __model: Simple class name in the client's models module (e.g., "CreateVcnDetails")

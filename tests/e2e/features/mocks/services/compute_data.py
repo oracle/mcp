@@ -7,7 +7,7 @@ https://oss.oracle.com/licenses/upl.
 INSTANCES = [
     {
         "id": "ocid1.instance.oc1..mock-uuid-1",
-        "compartmentId": "ocid1.compartment.oc1..mock",
+        "compartmentId": "ocid1.tenancy.oc1..mock",
         "displayName": "Mock-Server-1",
         "lifecycleState": "RUNNING",
         "availabilityDomain": "aNMj:US-ASHBURN-AD-1",
@@ -16,7 +16,7 @@ INSTANCES = [
     },
     {
         "id": "ocid1.instance.oc1..mock-uuid-2",
-        "compartmentId": "ocid1.compartment.oc1..mock",
+        "compartmentId": "ocid1.tenancy.oc1..mock",
         "displayName": "Mock-Server-2",
         "lifecycleState": "RUNNING",
         "availabilityDomain": "aNMj:US-ASHBURN-AD-1",
@@ -38,7 +38,7 @@ VNIC_ATTACHMENTS = [
     {
         "id": "ocid1.vnicattachment.oc1..mock-vnic-1",
         "instanceId": "ocid1.instance.oc1..mock-uuid-1",
-        "compartmentId": "ocid1.compartment.oc1..mock",
+        "compartmentId": "ocid1.tenancy.oc1..mock",
         "lifecycleState": "ATTACHED",
         "vnicId": "ocid1.vnic.oc1..mock-vnic-core-1",
     }

@@ -111,12 +111,8 @@ def handle_client(client_sock):
                 target_sock.connect(("127.0.0.1", 5001))
 
                 # Create threads for bidirectional traffic
-                t1 = threading.Thread(
-                    target=pipe, args=(ssock, target_sock), daemon=True
-                )
-                t2 = threading.Thread(
-                    target=pipe, args=(target_sock, ssock), daemon=True
-                )
+                t1 = threading.Thread(target=pipe, args=(ssock, target_sock), daemon=True)
+                t2 = threading.Thread(target=pipe, args=(target_sock, ssock), daemon=True)
 
                 t1.start()
                 t2.start()

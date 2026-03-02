@@ -44,7 +44,8 @@ mcp = FastMCP(
 def get_monitoring_client():
     logger.info("entering get_monitoring_client")
     config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
     user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
     config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
@@ -67,9 +68,7 @@ def list_alarms(
     ],
 ) -> list[AlarmSummary] | str:
     monitoring_client = get_monitoring_client()
-    response: Response | None = monitoring_client.list_alarms(
-        compartment_id=compartment_id
-    )
+    response: Response | None = monitoring_client.list_alarms(compartment_id=compartment_id)
     if response is None:
         logger.error("Received None response from list_metrics")
         return "There was no response returned from the Monitoring API"

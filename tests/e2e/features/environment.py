@@ -12,6 +12,8 @@ import tempfile
 import time
 
 import requests
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
@@ -27,12 +29,10 @@ try:
 
 except FileNotFoundError:
     raise EnvironmentError(
-        print(
-            f"{config["MCP_HOST_FILE"]} could not be found. Provide one to configure the MCP servers"
-        )
+        print(f"{config['MCP_HOST_FILE']} could not be found. Provide one to configure the MCP servers")
     )
 
-_system_prompt = f"""You are an Oracle Cloud Infrastructure expert generative chat assistant. For any compartment IDs or tenancy IDs, just pass in a mocked value. Limit your answers to OCI. OCID is synonymous with ID. If the user makes a request that relies on a tool that requires a compartment id, and the user doesn't specify one, don't ask the user for the compartment id and use the active (current) compartment instead. If I ask you for a list of things, prefer either a tabular or text-based approach over dumping them in a code block. When formatting your response, don't use bullets or lists within tables. When a user makes a request, you must first attempt to fulfill it by using the available MCP tools. These tools are connected to our live data sources and provide the most accurate and real-time information. Only after exhausting the capabilities of the MCP tools should you resort to other methods, such as using a general web search, if the MCP tools cannot provide the necessary information. If there is an error in calling the run_oci_command tool, then try to use the get_oci_command_help tool to get more information on the command and retry with the updated information. Don't send back emojis in the responses."""  # noqa ES501
+_system_prompt = f"""You are an Oracle Cloud Infrastructure expert generative chat assistant. You are working out of this tenancy (also know as the root compartment): ocid1.tenancy.oc1..mock. For any compartment IDs, just pass in the tenancy ID. Limit your answers to OCI. OCID is synonymous with ID. If the user makes a request that relies on a tool that requires a compartment id, and the user doesn't specify one, don't ask the user for the compartment id and use the active (current) compartment instead. If I ask you for a list of things, prefer either a tabular or text-based approach over dumping them in a code block. When formatting your response, don't use bullets or lists within tables. When a user makes a request, you must first attempt to fulfill it by using the available MCP tools. These tools are connected to our live data sources and provide the most accurate and real-time information. Only after exhausting the capabilities of the MCP tools should you resort to other methods, such as using a general web search, if the MCP tools cannot provide the necessary information. If there is an error in calling the run_oci_command tool, then try to use the get_oci_command_help tool to get more information on the command and retry with the updated information. Don't send back emojis in the responses."""  # noqa ES501
 
 
 def set_mcp_servers(context):
@@ -46,7 +46,7 @@ def set_mcp_servers(context):
         print("Configured servers: ", ", ".join(sorted(context.mcp_servers)))
     except FileNotFoundError:
         raise EnvironmentError(
-            f"{config["MCP_HOST_FILE"]} could not be found. Provide one to configure the MCP servers"
+            f"{config['MCP_HOST_FILE']} could not be found. Provide one to configure the MCP servers"
         )
 
 
@@ -66,9 +66,7 @@ def wait_for_health_check(context, url, service_name, max_retries=30):
 
     if not ready:
         cleanup_all_processes(context)
-        raise RuntimeError(
-            f"{service_name} failed to become healthy within {max_retries} seconds."
-        )
+        raise RuntimeError(f"{service_name} failed to become healthy within {max_retries} seconds.")
 
 
 def before_all(context):
@@ -87,11 +85,17 @@ def before_all(context):
         context.temp_dir = tempfile.TemporaryDirectory()
 
         # Create a dummy private key
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+        key_data = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+
         key_path = os.path.join(context.temp_dir.name, "dummy_key.pem")
-        with open(key_path, "w") as f:
-            f.write(
-                "-----BEGIN RSA PRIVATE KEY-----\nMC4CAQA\n-----END RSA PRIVATE KEY-----"
-            )
+        with open(key_path, "wb") as f:
+            f.write(key_data)
 
         # Create a dummy security token
         token_path = os.path.join(context.temp_dir.name, "token.txt")
@@ -129,19 +133,22 @@ security_token_file={token_path}
 
         # Start Proxy Shim (Port 5000)
         print("Starting Proxy Shim on http://127.0.0.1:5000...")
-        context.shim_proc = subprocess.Popen(
-            [sys.executable, proxy_shim_path], env=shim_env
-        )
+        context.shim_proc = subprocess.Popen([sys.executable, proxy_shim_path], env=shim_env)
 
         wait_for_health_check(context, "http://127.0.0.1:5000", "Proxy Shim")
 
         # Configure MCP servers
         set_mcp_servers(context)
 
+        # Prepare MCP Bridge's env
+        bridge_env = os.environ.copy()
+        bridge_env["OCI_CONFIG_FILE"] = config_path
+
         # Start MCP Bridge
         print(f"Starting MCP Bridge with {len(context.mcp_servers)} servers...")
         context.bridge_proc = subprocess.Popen(
             ["uv", "run", "ollama-mcp-bridge", "--config", config["MCP_HOST_FILE"]],
+            env=bridge_env,
             preexec_fn=os.setpgrp,
         )
 

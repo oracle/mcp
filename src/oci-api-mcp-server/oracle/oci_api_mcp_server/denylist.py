@@ -39,12 +39,7 @@ class Denylist:
         i = 0
         while i < len(command_parts):
             if command_parts[i].startswith("--"):
-                i += (
-                    1
-                    if i + 1 >= len(command_parts)
-                    or command_parts[i + 1].startswith("--")
-                    else 2
-                )
+                i += 1 if i + 1 >= len(command_parts) or command_parts[i + 1].startswith("--") else 2
             else:
                 filtered_parts.append(command_parts[i])
                 i += 1

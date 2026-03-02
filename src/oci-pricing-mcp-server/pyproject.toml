@@ -1,6 +1,6 @@
 [project]
 name = "oci-pricing-mcp-server"
-version = "0.1.1"
+version = "0.1.2"
 description = "OCI Pricing MCP Server"
 readme = "README.md"
 license = "UPL-1.0"

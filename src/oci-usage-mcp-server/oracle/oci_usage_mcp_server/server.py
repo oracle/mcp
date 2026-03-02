@@ -22,7 +22,8 @@ mcp = FastMCP(name=__project__)
 def get_usage_client():
     logger.info("entering get_monitoring_client")
     config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
     user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
     config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
@@ -84,13 +85,9 @@ def get_summarized_usage(
         compartment_depth=compartment_depth,
     )
 
-    response = usage_client.request_summarized_usages(
-        request_summarized_usages_details=summarized_details
-    )
+    response = usage_client.request_summarized_usages(request_summarized_usages_details=summarized_details)
     # Convert UsageSummary objects to dictionaries for proper serialization
-    summarized_usages = [
-        oci.util.to_dict(usage_summary) for usage_summary in response.data.items
-    ]
+    summarized_usages = [oci.util.to_dict(usage_summary) for usage_summary in response.data.items]
     return summarized_usages
 
 

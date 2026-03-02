@@ -168,8 +168,7 @@ class TestProblemMapping:
         assert mapped.peak_risk_score == problem_data.peak_risk_score
         assert mapped.auto_resolve_date == problem_data.auto_resolve_date
         assert (
-            mapped.peak_risk_score_lookup_period_in_days
-            == problem_data.peak_risk_score_lookup_period_in_days
+            mapped.peak_risk_score_lookup_period_in_days == problem_data.peak_risk_score_lookup_period_in_days
         )
         assert mapped.resource_id == problem_data.resource_id
         assert mapped.resource_name == problem_data.resource_name

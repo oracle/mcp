@@ -1,0 +1,29 @@
+# Copyright (c) 2026, Oracle and/or its affiliates.
+# Licensed under the Universal Permissive License v1.0 as shown at
+# https://oss.oracle.com/licenses/upl.
+
+FROM ghcr.io/oracle/oraclelinux:9-slim@sha256:1950389c3dd619841813520b4e69d7f3112c4c10f713fcb90680703d184c33ad
+
+# Install python 3.13
+RUN microdnf install epel-release && \
+  microdnf install python3.13 python3.13-pip \
+  && rm -rf /var/cache/dnf/* \
+  && useradd -m -d /app oracle
+
+# Copy the MCP server to the docker container
+WORKDIR /app
+COPY --chown=oracle:oracle . /app
+
+# Install dependencies
+RUN pip3.13 install --no-cache-dir uv && \
+  uv --no-cache sync --locked --all-extras
+
+# Change user
+USER oracle
+
+# HTTP support
+ENV ORACLE_MCP_HOST=""
+ENV ORACLE_MCP_PORT=""
+
+# Start the MCP server
+ENTRYPOINT ["uv", "run", "oracle.oci-cloud-mcp-server"]

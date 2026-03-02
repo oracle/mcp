@@ -61,9 +61,7 @@ class TestComputeTools:
 
         async with Client(mcp) as client:
             with pytest.raises(fastmcp.exceptions.ToolError) as e:
-                await client.call_tool(
-                    "list_instances", {"compartment_id": "test_compartment"}
-                )
+                await client.call_tool("list_instances", {"compartment_id": "test_compartment"})
 
             # Verify the ToolError message contains the expected details
             assert "Error calling tool 'list_instances'" in str(e.value)
@@ -84,9 +82,7 @@ class TestComputeTools:
         mock_client.get_instance.return_value = mock_get_response
 
         async with Client(mcp) as client:
-            call_tool_result = await client.call_tool(
-                "get_instance", {"instance_id": "instance1"}
-            )
+            call_tool_result = await client.call_tool("get_instance", {"instance_id": "instance1"})
             result = call_tool_result.structured_content
 
             assert result["id"] == "instance1"
@@ -566,9 +562,7 @@ class TestComputeTools:
 
         async with Client(mcp) as client:
             with pytest.raises(fastmcp.exceptions.ToolError) as e:
-                await client.call_tool(
-                    "get_vnic_attachment", {"vnic_attachment_id": "vnicattachment1"}
-                )
+                await client.call_tool("get_vnic_attachment", {"vnic_attachment_id": "vnicattachment1"})
 
             # Verify the ToolError message contains the expected details
             assert "Error calling tool 'get_vnic_attachment'" in str(e.value)
@@ -703,16 +697,19 @@ class TestGetClient:
         result = server.get_compute_client()
 
         # Assert calls
-        mock_from_file.assert_called_once_with(profile_name="MYPROFILE")
-        mock_open_file.assert_called_once_with("/abs/path/to/token", "r")
-        mock_security_token_signer.assert_called_once_with(
-            "SECURITY_TOKEN", private_key_obj
+        mock_from_file.assert_called_once_with(
+            file_location=oci.config.DEFAULT_LOCATION,
+            profile_name="MYPROFILE",
         )
+        mock_open_file.assert_called_once_with("/abs/path/to/token", "r")
+        mock_security_token_signer.assert_called_once_with("SECURITY_TOKEN", private_key_obj)
         # Ensure user agent was set on the same config dict passed into client
         args, _ = mock_client.call_args
         passed_config = args[0]
         assert passed_config is config
-        expected_user_agent = f"{server.__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{server.__version__}"  # noqa
+        expected_user_agent = (
+            f"{server.__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{server.__version__}"  # noqa
+        )
         assert passed_config.get("additional_user_agent") == expected_user_agent
         # And we returned the client instance
         assert result == mock_client.return_value
@@ -747,7 +744,10 @@ class TestGetClient:
         srv_client = server.get_compute_client()
 
         # Assert: profile defaulted
-        mock_from_file.assert_called_once_with(profile_name=oci.config.DEFAULT_PROFILE)
+        mock_from_file.assert_called_once_with(
+            file_location=oci.config.DEFAULT_LOCATION,
+            profile_name=oci.config.DEFAULT_PROFILE,
+        )
         # Token file opened and read
         mock_open_file.assert_called_once_with("/tkn", "r")
         mock_security_token_signer.assert_called_once()
@@ -758,9 +758,6 @@ class TestGetClient:
         cc_args, _ = mock_client.call_args
         assert cc_args[0] is config
         assert "additional_user_agent" in config
-        assert (
-            isinstance(config["additional_user_agent"], str)
-            and "/" in config["additional_user_agent"]
-        )
+        assert isinstance(config["additional_user_agent"], str) and "/" in config["additional_user_agent"]
         # Returned object is client instance
         assert srv_client is mock_client.return_value

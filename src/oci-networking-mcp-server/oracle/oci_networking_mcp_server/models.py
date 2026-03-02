@@ -55,9 +55,7 @@ class Vcn(BaseModel):
     cidr_blocks: Optional[List[str]] = Field(
         None, description="The list of IPv4 CIDR blocks the VCN will use."
     )
-    compartment_id: Optional[str] = Field(
-        None, description="The OCID of the compartment containing the VCN."
-    )
+    compartment_id: Optional[str] = Field(None, description="The OCID of the compartment containing the VCN.")
     default_dhcp_options_id: Optional[str] = Field(
         None, description="The OCID for the VCN's default set of DHCP options."
     )
@@ -71,9 +69,7 @@ class Vcn(BaseModel):
         None,
         description="Defined tags for this resource, each key scoped to a namespace.",
     )
-    display_name: Optional[str] = Field(
-        None, description="A user-friendly name. Does not have to be unique."
-    )
+    display_name: Optional[str] = Field(None, description="A user-friendly name. Does not have to be unique.")
     dns_label: Optional[str] = Field(
         None,
         description="DNS label for the VCN, used to form FQDNs with subnet DNS label and VNIC hostname.",  # noqa
@@ -107,9 +103,7 @@ class Vcn(BaseModel):
         None,
         description="The VCN's domain name, which consists of the VCN's DNS label and the oraclevcn.com domain.",  # noqa
     )
-    is_zpr_only: Optional[bool] = Field(
-        None, description="Indicates whether ZPR Only Mode is enforced."
-    )
+    is_zpr_only: Optional[bool] = Field(None, description="Indicates whether ZPR Only Mode is enforced.")
 
 
 def map_vcn(vcn: oci.core.models.Vcn) -> Vcn | None:
@@ -157,9 +151,7 @@ class Subnet(BaseModel):
         None,
         description="The subnet's availability domain. Null if this is a regional subnet.",  # noqa
     )
-    cidr_block: Optional[str] = Field(
-        None, description="The IPv4 CIDR block of the subnet."
-    )
+    cidr_block: Optional[str] = Field(None, description="The IPv4 CIDR block of the subnet.")
     compartment_id: Optional[str] = Field(
         None, description="The OCID of the compartment containing the subnet."
     )
@@ -170,9 +162,7 @@ class Subnet(BaseModel):
     dhcp_options_id: Optional[str] = Field(
         None, description="The OCID of the set of DHCP options that the subnet uses."
     )
-    display_name: Optional[str] = Field(
-        None, description="A user-friendly name. Does not have to be unique."
-    )
+    display_name: Optional[str] = Field(None, description="A user-friendly name. Does not have to be unique.")
     dns_label: Optional[str] = Field(
         None,
         description="DNS label for the subnet, used with the VNIC's hostname and the VCN's DNS label to form the FQDN.",  # noqa
@@ -225,15 +215,9 @@ class Subnet(BaseModel):
     time_created: Optional[datetime] = Field(
         None, description="The date and time the subnet was created (RFC3339)."
     )
-    vcn_id: Optional[str] = Field(
-        None, description="The OCID of the VCN the subnet is in."
-    )
-    virtual_router_ip: Optional[str] = Field(
-        None, description="The IPv4 address of the virtual router."
-    )
-    virtual_router_mac: Optional[str] = Field(
-        None, description="The MAC address of the virtual router."
-    )
+    vcn_id: Optional[str] = Field(None, description="The OCID of the VCN the subnet is in.")
+    virtual_router_ip: Optional[str] = Field(None, description="The IPv4 address of the virtual router.")
+    virtual_router_mac: Optional[str] = Field(None, description="The MAC address of the virtual router.")
 
 
 def map_subnet(subnet: oci.core.models.Subnet) -> Subnet | None:
@@ -298,18 +282,12 @@ class TcpOptions(BaseModel):
     Supports both singular and list-based port range fields.
     """
 
-    destination_port_range: Optional[PortRange] = Field(
-        None, description="Single destination port range."
-    )
-    source_port_range: Optional[PortRange] = Field(
-        None, description="Single source port range."
-    )
+    destination_port_range: Optional[PortRange] = Field(None, description="Single destination port range.")
+    source_port_range: Optional[PortRange] = Field(None, description="Single source port range.")
     destination_port_ranges: Optional[List[PortRange]] = Field(
         None, description="List of destination port ranges."
     )
-    source_port_ranges: Optional[List[PortRange]] = Field(
-        None, description="List of source port ranges."
-    )
+    source_port_ranges: Optional[List[PortRange]] = Field(None, description="List of source port ranges.")
 
 
 class UdpOptions(BaseModel):
@@ -318,18 +296,12 @@ class UdpOptions(BaseModel):
     Supports both singular and list-based port range fields.
     """
 
-    destination_port_range: Optional[PortRange] = Field(
-        None, description="Single destination port range."
-    )
-    source_port_range: Optional[PortRange] = Field(
-        None, description="Single source port range."
-    )
+    destination_port_range: Optional[PortRange] = Field(None, description="Single destination port range.")
+    source_port_range: Optional[PortRange] = Field(None, description="Single source port range.")
     destination_port_ranges: Optional[List[PortRange]] = Field(
         None, description="List of destination port ranges."
     )
-    source_port_ranges: Optional[List[PortRange]] = Field(
-        None, description="List of source port ranges."
-    )
+    source_port_ranges: Optional[List[PortRange]] = Field(None, description="List of source port ranges.")
 
 
 class EgressSecurityRule(BaseModel):
@@ -337,12 +309,8 @@ class EgressSecurityRule(BaseModel):
     Pydantic model mirroring oci.core.models.EgressSecurityRule.
     """
 
-    description: Optional[str] = Field(
-        None, description="An optional description of the rule."
-    )
-    destination: Optional[str] = Field(
-        None, description="The destination CIDR block or service CIDR."
-    )
+    description: Optional[str] = Field(None, description="An optional description of the rule.")
+    destination: Optional[str] = Field(None, description="The destination CIDR block or service CIDR.")
     destination_type: Optional[
         Literal[
             "CIDR_BLOCK",
@@ -377,9 +345,7 @@ class IngressSecurityRule(BaseModel):
     Pydantic model mirroring oci.core.models.IngressSecurityRule.
     """
 
-    description: Optional[str] = Field(
-        None, description="An optional description of the rule."
-    )
+    description: Optional[str] = Field(None, description="An optional description of the rule.")
     icmp_options: Optional[IcmpOptions] = Field(
         None,
         description="ICMP options. Required if protocol is ICMP and using ICMP type/code.",  # noqa
@@ -391,9 +357,7 @@ class IngressSecurityRule(BaseModel):
         None,
         description="The transport protocol. Specify either all or the protocol number.",  # noqa
     )
-    source: Optional[str] = Field(
-        None, description="The source CIDR block or service CIDR."
-    )
+    source: Optional[str] = Field(None, description="The source CIDR block or service CIDR.")
     source_type: Optional[
         Literal[
             "CIDR_BLOCK",
@@ -424,9 +388,7 @@ class SecurityList(BaseModel):
         None,
         description="Defined tags for this resource. Each key is predefined and scoped to a namespace.",  # noqa
     )
-    display_name: Optional[str] = Field(
-        None, description="A user-friendly name. Does not have to be unique."
-    )
+    display_name: Optional[str] = Field(None, description="A user-friendly name. Does not have to be unique.")
     egress_security_rules: Optional[List[EgressSecurityRule]] = Field(
         None, description="Rules for allowing egress IP packets."
     )
@@ -449,9 +411,7 @@ class SecurityList(BaseModel):
     time_created: Optional[datetime] = Field(
         None, description="The date and time the security list was created (RFC3339)."
     )
-    vcn_id: Optional[str] = Field(
-        None, description="The OCID of the VCN the security list belongs to."
-    )
+    vcn_id: Optional[str] = Field(None, description="The OCID of the VCN the security list belongs to.")
 
 
 def map_port_range(pr) -> PortRange | None:
@@ -487,16 +447,10 @@ def map_tcp_options(tcp) -> TcpOptions | None:
     if not tcp:
         return None
     data = _oci_to_dict(tcp) or {}
-    dest_range = getattr(tcp, "destination_port_range", None) or data.get(
-        "destination_port_range"
-    )
+    dest_range = getattr(tcp, "destination_port_range", None) or data.get("destination_port_range")
     src_range = getattr(tcp, "source_port_range", None) or data.get("source_port_range")
-    dest_ranges = getattr(tcp, "destination_port_ranges", None) or data.get(
-        "destination_port_ranges"
-    )
-    src_ranges = getattr(tcp, "source_port_ranges", None) or data.get(
-        "source_port_ranges"
-    )
+    dest_ranges = getattr(tcp, "destination_port_ranges", None) or data.get("destination_port_ranges")
+    src_ranges = getattr(tcp, "source_port_ranges", None) or data.get("source_port_ranges")
     return TcpOptions(
         destination_port_range=map_port_range(dest_range),
         source_port_range=map_port_range(src_range),
@@ -509,16 +463,10 @@ def map_udp_options(udp) -> UdpOptions | None:
     if not udp:
         return None
     data = _oci_to_dict(udp) or {}
-    dest_range = getattr(udp, "destination_port_range", None) or data.get(
-        "destination_port_range"
-    )
+    dest_range = getattr(udp, "destination_port_range", None) or data.get("destination_port_range")
     src_range = getattr(udp, "source_port_range", None) or data.get("source_port_range")
-    dest_ranges = getattr(udp, "destination_port_ranges", None) or data.get(
-        "destination_port_ranges"
-    )
-    src_ranges = getattr(udp, "source_port_ranges", None) or data.get(
-        "source_port_ranges"
-    )
+    dest_ranges = getattr(udp, "destination_port_ranges", None) or data.get("destination_port_ranges")
+    src_ranges = getattr(udp, "source_port_ranges", None) or data.get("source_port_ranges")
     return UdpOptions(
         destination_port_range=map_port_range(dest_range),
         source_port_range=map_port_range(src_range),
@@ -534,19 +482,12 @@ def map_egress_security_rule(rule) -> EgressSecurityRule | None:
     return EgressSecurityRule(
         description=getattr(rule, "description", None) or data.get("description"),
         destination=getattr(rule, "destination", None) or data.get("destination"),
-        destination_type=getattr(rule, "destination_type", None)
-        or data.get("destination_type"),
-        icmp_options=map_icmp_options(
-            getattr(rule, "icmp_options", None) or data.get("icmp_options")
-        ),
+        destination_type=getattr(rule, "destination_type", None) or data.get("destination_type"),
+        icmp_options=map_icmp_options(getattr(rule, "icmp_options", None) or data.get("icmp_options")),
         is_stateless=getattr(rule, "is_stateless", None) or data.get("is_stateless"),
         protocol=getattr(rule, "protocol", None) or data.get("protocol"),
-        tcp_options=map_tcp_options(
-            getattr(rule, "tcp_options", None) or data.get("tcp_options")
-        ),
-        udp_options=map_udp_options(
-            getattr(rule, "udp_options", None) or data.get("udp_options")
-        ),
+        tcp_options=map_tcp_options(getattr(rule, "tcp_options", None) or data.get("tcp_options")),
+        udp_options=map_udp_options(getattr(rule, "udp_options", None) or data.get("udp_options")),
     )
 
 
@@ -556,19 +497,13 @@ def map_ingress_security_rule(rule) -> IngressSecurityRule | None:
     data = _oci_to_dict(rule) or {}
     return IngressSecurityRule(
         description=getattr(rule, "description", None) or data.get("description"),
-        icmp_options=map_icmp_options(
-            getattr(rule, "icmp_options", None) or data.get("icmp_options")
-        ),
+        icmp_options=map_icmp_options(getattr(rule, "icmp_options", None) or data.get("icmp_options")),
         is_stateless=getattr(rule, "is_stateless", None) or data.get("is_stateless"),
         protocol=getattr(rule, "protocol", None) or data.get("protocol"),
         source=getattr(rule, "source", None) or data.get("source"),
         source_type=getattr(rule, "source_type", None) or data.get("source_type"),
-        tcp_options=map_tcp_options(
-            getattr(rule, "tcp_options", None) or data.get("tcp_options")
-        ),
-        udp_options=map_udp_options(
-            getattr(rule, "udp_options", None) or data.get("udp_options")
-        ),
+        tcp_options=map_tcp_options(getattr(rule, "tcp_options", None) or data.get("tcp_options")),
+        udp_options=map_udp_options(getattr(rule, "udp_options", None) or data.get("udp_options")),
     )
 
 
@@ -591,9 +526,7 @@ def map_security_list(
         defined_tags=getattr(sl, "defined_tags", None),
         display_name=getattr(sl, "display_name", None),
         egress_security_rules=(
-            [map_egress_security_rule(r) for r in (egress_rules or [])]
-            if egress_rules is not None
-            else None
+            [map_egress_security_rule(r) for r in (egress_rules or [])] if egress_rules is not None else None
         ),
         freeform_tags=getattr(sl, "freeform_tags", None),
         id=getattr(sl, "id", None),
@@ -626,15 +559,11 @@ class NetworkSecurityGroup(BaseModel):
         None,
         description="Defined tags for this resource. Each key is predefined and scoped to a namespace.",  # noqa
     )
-    display_name: Optional[str] = Field(
-        None, description="A user-friendly name. Does not have to be unique."
-    )
+    display_name: Optional[str] = Field(None, description="A user-friendly name. Does not have to be unique.")
     freeform_tags: Optional[Dict[str, str]] = Field(
         None, description="Free-form tags for this resource as simple key/value pairs."
     )
-    id: Optional[str] = Field(
-        None, description="The OCID of the network security group."
-    )
+    id: Optional[str] = Field(None, description="The OCID of the network security group.")
     lifecycle_state: Optional[
         Literal[
             "PROVISIONING",
@@ -687,16 +616,10 @@ class Request(BaseModel):
 
     method: Optional[str] = Field(None, description="The HTTP method.")
     url: Optional[str] = Field(None, description="URL that will serve the request.")
-    query_params: Optional[Dict[str, Any]] = Field(
-        None, description="Query parameters in the URL."
-    )
-    header_params: Optional[Dict[str, Any]] = Field(
-        None, description="Request header parameters."
-    )
+    query_params: Optional[Dict[str, Any]] = Field(None, description="Query parameters in the URL.")
+    header_params: Optional[Dict[str, Any]] = Field(None, description="Request header parameters.")
     body: Optional[Any] = Field(None, description="Request body.")
-    response_type: Optional[str] = Field(
-        None, description="Expected response data type."
-    )
+    response_type: Optional[str] = Field(None, description="Expected response data type.")
     enforce_content_headers: Optional[bool] = Field(
         None,
         description=(
@@ -712,24 +635,12 @@ class Response(BaseModel):
     """
 
     status: Optional[int] = Field(None, description="The HTTP status code.")
-    headers: Optional[Dict[str, Any]] = Field(
-        None, description="The HTTP headers (case-insensitive keys)."
-    )
-    data: Optional[Any] = Field(
-        None, description="The response data. Type depends on the request."
-    )
-    request: Optional[Request] = Field(
-        None, description="The corresponding request for this response."
-    )
-    next_page: Optional[str] = Field(
-        None, description="The value of the opc-next-page response header."
-    )
-    request_id: Optional[str] = Field(
-        None, description="The ID of the request that generated this response."
-    )
-    has_next_page: Optional[bool] = Field(
-        None, description="Whether there is a next page of results."
-    )
+    headers: Optional[Dict[str, Any]] = Field(None, description="The HTTP headers (case-insensitive keys).")
+    data: Optional[Any] = Field(None, description="The response data. Type depends on the request.")
+    request: Optional[Request] = Field(None, description="The corresponding request for this response.")
+    next_page: Optional[str] = Field(None, description="The value of the opc-next-page response header.")
+    request_id: Optional[str] = Field(None, description="The ID of the request that generated this response.")
+    has_next_page: Optional[bool] = Field(None, description="Whether there is a next page of results.")
 
 
 def map_request(req) -> Request | None:
@@ -936,9 +847,7 @@ class Vnic(BaseModel):
             "Example: `true`"
         ),
     )
-    subnet_id: Optional[str] = Field(
-        None, description="The OCID of the subnet the VNIC is in."
-    )
+    subnet_id: Optional[str] = Field(None, description="The OCID of the subnet the VNIC is in.")
     time_created: Optional[datetime] = Field(
         None,
         description=(

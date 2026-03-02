@@ -40,9 +40,7 @@ def launch_instance():
 @compute_bp.route("/instances/<instance_id>", methods=["GET"])
 def get_instance(instance_id):
     inst = next((i for i in INSTANCES if i["id"] == instance_id), None)
-    return (
-        oci_res(inst) if inst else (jsonify({"code": "NotAuthorizedOrNotFound"}), 404)
-    )
+    return oci_res(inst) if inst else (jsonify({"code": "NotAuthorizedOrNotFound"}), 404)
 
 
 @compute_bp.route("/instances/<instance_id>", methods=["DELETE"])
@@ -82,6 +80,4 @@ def list_vnic_attachments():
 @compute_bp.route("/vnicAttachments/<vnic_attachment_id>", methods=["GET"])
 def get_vnic_attachment(vnic_attachment_id):
     vnic = next((i for i in VNIC_ATTACHMENTS if i["id"] == vnic_attachment_id), None)
-    return (
-        oci_res(vnic) if vnic else (jsonify({"code": "NotAuthorizedOrNotFound"}), 404)
-    )
+    return oci_res(vnic) if vnic else (jsonify({"code": "NotAuthorizedOrNotFound"}), 404)

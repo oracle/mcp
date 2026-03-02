@@ -27,7 +27,8 @@ mcp = FastMCP(name=__project__)
 def get_search_client():
     logger.info("entering get_search_client")
     config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
 
     user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
@@ -49,9 +50,7 @@ def list_all_resources(
         description="The tenancy ID, which can be used to specify a different tenancy "
         "(for cross-tenancy authorization) when searching for resources in a different tenancy",
     ),
-    compartment_id: str = Field(
-        ..., description="The OCID of the compartment to list from"
-    ),
+    compartment_id: str = Field(..., description="The OCID of the compartment to list from"),
     limit: Optional[int] = Field(
         None,
         description="The maximum amount of resources to return. If None, there is no limit.",
@@ -101,12 +100,8 @@ def search_resources(
         description="The tenancy ID, which can be used to specify a different tenancy "
         "(for cross-tenancy authorization) when searching for resources in a different tenancy",
     ),
-    compartment_id: str = Field(
-        ..., description="The OCID of the compartment to list from"
-    ),
-    display_name: str = Field(
-        ..., description="The display name (full or substring) of the resource"
-    ),
+    compartment_id: str = Field(..., description="The OCID of the compartment to list from"),
+    display_name: str = Field(..., description="The display name (full or substring) of the resource"),
     limit: Optional[int] = Field(
         None,
         description="The maximum amount of resources to return. If None, there is no limit.",
@@ -154,9 +149,7 @@ def search_resources(
         raise e
 
 
-@mcp.tool(
-    description="Searches for the presence of the search string in all resource fields"
-)
+@mcp.tool(description="Searches for the presence of the search string in all resource fields")
 def search_resources_free_form(
     tenant_id: str = Field(
         ...,
@@ -213,9 +206,7 @@ def search_resources_by_type(
         description="The tenancy ID, which can be used to specify a different tenancy "
         "(for cross-tenancy authorization) when searching for resources in a different tenancy",
     ),
-    compartment_id: str = Field(
-        ..., description="The OCID of the compartment to list from"
-    ),
+    compartment_id: str = Field(..., description="The OCID of the compartment to list from"),
     resource_type: str = Field(
         ...,
         description="The source type to search by"
@@ -243,8 +234,7 @@ def search_resources_by_type(
                 "search_details": StructuredSearchDetails(
                     type="Structured",
                     query=(
-                        f"query {resource_type.lower()} "
-                        f"resources where compartmentId = '{compartment_id}'"
+                        f"query {resource_type.lower()} resources where compartmentId = '{compartment_id}'"
                     ),
                 ),
                 "page": next_page,

@@ -48,14 +48,10 @@ class LogGroupSummary(BaseModel):
             "and it's changeable. Avoid entering confidential information."
         ),
     )
-    description: Optional[str] = Field(
-        None, description="Description for this resource."
-    )
+    description: Optional[str] = Field(None, description="Description for this resource.")
     defined_tags: Optional[Dict[str, Dict[str, Any]]] = Field(
         None,
-        description=(
-            "Defined tags for this resource. Each key is predefined and scoped to a namespace."
-        ),
+        description=("Defined tags for this resource. Each key is predefined and scoped to a namespace."),
     )
     freeform_tags: Optional[Dict[str, str]] = Field(
         None,
@@ -64,9 +60,7 @@ class LogGroupSummary(BaseModel):
             "type, or namespace."
         ),
     )
-    time_created: Optional[datetime] = Field(
-        None, description="Time the resource was created (RFC3339)."
-    )
+    time_created: Optional[datetime] = Field(None, description="Time the resource was created (RFC3339).")
     time_last_modified: Optional[datetime] = Field(
         None, description="Time the resource was last modified (RFC3339)."
     )
@@ -131,9 +125,7 @@ class LogGroup(BaseModel):
             "and it's changeable. Avoid entering confidential information."
         ),
     )
-    description: Optional[str] = Field(
-        None, description="Description for this resource."
-    )
+    description: Optional[str] = Field(None, description="Description for this resource.")
     lifecycle_state: Optional[
         Literal[
             "CREATING",
@@ -147,9 +139,7 @@ class LogGroup(BaseModel):
     ] = Field(None, description="The log group object state.")
     defined_tags: Optional[Dict[str, Dict[str, Any]]] = Field(
         None,
-        description=(
-            "Defined tags for this resource. Each key is predefined and scoped to a namespace."
-        ),
+        description=("Defined tags for this resource. Each key is predefined and scoped to a namespace."),
     )
     freeform_tags: Optional[Dict[str, str]] = Field(
         None,
@@ -158,9 +148,7 @@ class LogGroup(BaseModel):
             "type, or namespace."
         ),
     )
-    time_created: Optional[datetime] = Field(
-        None, description="Time the resource was created (RFC3339)."
-    )
+    time_created: Optional[datetime] = Field(None, description="Time the resource was created (RFC3339).")
     time_last_modified: Optional[datetime] = Field(
         None, description="Time the resource was last modified (RFC3339)."
     )
@@ -221,13 +209,9 @@ class OciService(Source):
     """
 
     service: Optional[str] = Field(None, description="Service generating the log.")
-    resource: Optional[str] = Field(
-        None, description="Unique identifier of the resource emitting the log."
-    )
+    resource: Optional[str] = Field(None, description="Unique identifier of the resource emitting the log.")
     category: Optional[str] = Field(None, description="Log object category.")
-    parameters: Optional[Dict[str, str]] = Field(
-        None, description="Log category parameters."
-    )
+    parameters: Optional[Dict[str, str]] = Field(None, description="Log category parameters.")
 
 
 class Configuration(BaseModel):
@@ -239,12 +223,8 @@ class Configuration(BaseModel):
     compartment_id: Optional[str] = Field(
         None, description="The OCID of the compartment that the resource belongs to."
     )
-    source: Optional[Source] = Field(
-        None, description="The source the log object comes from."
-    )
-    archiving: Optional[Archiving] = Field(
-        None, description="Log archiving configuration."
-    )
+    source: Optional[Source] = Field(None, description="The source the log object comes from.")
+    archiving: Optional[Archiving] = Field(None, description="Log archiving configuration.")
 
 
 class LogSummary(BaseModel):
@@ -262,9 +242,7 @@ class LogSummary(BaseModel):
             "and it's changeable. Avoid entering confidential information."
         ),
     )
-    is_enabled: Optional[bool] = Field(
-        None, description="Whether or not this resource is currently enabled."
-    )
+    is_enabled: Optional[bool] = Field(None, description="Whether or not this resource is currently enabled.")
     lifecycle_state: Optional[
         Literal[
             "CREATING",
@@ -280,9 +258,7 @@ class LogSummary(BaseModel):
         None,
         description="The logType that the log object is for, whether custom or service.",
     )
-    configuration: Optional[Configuration] = Field(
-        None, description="Log object configuration."
-    )
+    configuration: Optional[Configuration] = Field(None, description="Log object configuration.")
     defined_tags: Optional[Dict[str, Dict[str, Any]]] = Field(
         None,
         description="Defined tags for this resource. Each key is predefined and scoped to a namespace.",
@@ -291,9 +267,7 @@ class LogSummary(BaseModel):
         None,
         description="Free-form tags for this resource as simple key/value pairs without predefined names.",
     )
-    time_created: Optional[datetime] = Field(
-        None, description="Time the resource was created (RFC3339)."
-    )
+    time_created: Optional[datetime] = Field(None, description="Time the resource was created (RFC3339).")
     time_last_modified: Optional[datetime] = Field(
         None, description="Time the resource was last modified (RFC3339)."
     )
@@ -391,9 +365,7 @@ class Log(BaseModel):
         None,
         description="The logType that the log object is for, whether custom or service.",
     )
-    is_enabled: Optional[bool] = Field(
-        None, description="Whether or not this resource is currently enabled."
-    )
+    is_enabled: Optional[bool] = Field(None, description="Whether or not this resource is currently enabled.")
     defined_tags: Optional[Dict[str, Dict[str, Any]]] = Field(
         None,
         description="Defined tags for this resource. Each key is predefined and scoped to a namespace.",
@@ -402,9 +374,7 @@ class Log(BaseModel):
         None,
         description="Free-form tags for this resource as simple key/value pairs without predefined names.",
     )
-    configuration: Optional[Configuration] = Field(
-        None, description="Log object configuration."
-    )
+    configuration: Optional[Configuration] = Field(None, description="Log object configuration.")
     lifecycle_state: Optional[
         Literal[
             "CREATING",
@@ -416,9 +386,7 @@ class Log(BaseModel):
             "UNKNOWN_ENUM_VALUE",
         ]
     ] = Field(None, description="The pipeline state.")
-    time_created: Optional[datetime] = Field(
-        None, description="Time the resource was created (RFC3339)."
-    )
+    time_created: Optional[datetime] = Field(None, description="Time the resource was created (RFC3339).")
     time_last_modified: Optional[datetime] = Field(
         None, description="Time the resource was last modified (RFC3339)."
     )
@@ -487,26 +455,16 @@ class SearchResult(BaseModel):
 class SearchResultSummary(BaseModel):
     """Summary of results."""
 
-    result_count: Optional[int] = Field(
-        None, description="Total number of search results."
-    )
-    field_count: Optional[int] = Field(
-        None, description="Total number of field schema information."
-    )
+    result_count: Optional[int] = Field(None, description="Total number of search results.")
+    field_count: Optional[int] = Field(None, description="Total number of field schema information.")
 
 
 class SearchResponse(BaseModel):
     """Search response object."""
 
-    results: Optional[List[SearchResult]] = Field(
-        None, description="List of search results"
-    )
-    fields: Optional[List[FieldInfo]] = Field(
-        None, description="List of log field schema information."
-    )
-    summary: Optional[SearchResultSummary] = Field(
-        None, description="Summary of results."
-    )
+    results: Optional[List[SearchResult]] = Field(None, description="List of search results")
+    fields: Optional[List[FieldInfo]] = Field(None, description="List of log field schema information.")
+    summary: Optional[SearchResultSummary] = Field(None, description="Summary of results.")
 
 
 def map_field_info(fi) -> FieldInfo | None:

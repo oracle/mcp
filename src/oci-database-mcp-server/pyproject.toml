@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-database-mcp-server"
-version = "1.0.3"
+version = "1.0.4"
 description = "OCI Database Service MCP server"
 readme = "README.md"
 requires-python = ">=3.13"

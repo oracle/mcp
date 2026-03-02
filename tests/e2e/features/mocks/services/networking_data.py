@@ -8,6 +8,6 @@ SUBNETS = [
     {
         "id": "ocid1.subnet.oc1..mock-subnet",
         "displayName": "Default Subnet",
-        "compartmentId": "ocid1.compartment.oc1..mock",
+        "compartmentId": "ocid1.tenancy.oc1..mock",
     }
 ]

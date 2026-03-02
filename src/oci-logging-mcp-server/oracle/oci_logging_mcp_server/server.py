@@ -40,7 +40,8 @@ mcp = FastMCP(name=__project__)
 def get_logging_client():
     logger.info("entering get_logging_client")
     config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
 
     private_key = oci.signer.load_private_key_from_file(config["key_file"])
@@ -55,7 +56,8 @@ def get_logging_client():
 def get_logging_search_client():
     logger.info("entering get_logging_client")
     config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
 
     private_key = oci.signer.load_private_key_from_file(config["key_file"])
@@ -116,16 +118,12 @@ def list_log_groups(
     "Only use this tool if the user specifically mentions Log Groups"
 )
 def get_log_group(
-    log_group_id: str = Field(
-        ..., description="The OCID of the log group that the log belongs to."
-    ),
+    log_group_id: str = Field(..., description="The OCID of the log group that the log belongs to."),
 ) -> LogGroup:
     try:
         client = get_logging_client()
 
-        response: oci.response.Response = client.get_log_group(
-            log_group_id=log_group_id
-        )
+        response: oci.response.Response = client.get_log_group(log_group_id=log_group_id)
         data: oci.logging.models.Log = response.data
         logger.info("Found Log Group")
         return map_log_group(data)
@@ -140,9 +138,7 @@ def get_log_group(
     "Only use this tool if the user explicitly supplies a Log Group OCID"
 )
 def list_logs(
-    log_group_id: str = Field(
-        ..., description="The OCID of the log group to list logs from."
-    ),
+    log_group_id: str = Field(..., description="The OCID of the log group to list logs from."),
     limit: Optional[int] = Field(
         None,
         description="The maximum amount of resources to return. If None, there is no limit.",
@@ -187,16 +183,12 @@ def list_logs(
 )
 def get_log(
     log_id: str = Field(..., description="The OCID of the log"),
-    log_group_id: str = Field(
-        ..., description="The OCID of the log group that the log belongs to."
-    ),
+    log_group_id: str = Field(..., description="The OCID of the log group that the log belongs to."),
 ) -> Log:
     try:
         client = get_logging_client()
 
-        response: oci.response.Response = client.get_log(
-            log_group_id=log_group_id, log_id=log_id
-        )
+        response: oci.response.Response = client.get_log(log_group_id=log_group_id, log_id=log_id)
         data: oci.logging.models.Log = response.data
         logger.info("Found Log")
         return map_log(data)
@@ -223,9 +215,7 @@ def search_log_query_syntax_guide() -> str:
 )
 def get_paginated_event_types(
     page: int = Field(1, description="The page number to retrieve", ge=1),
-    page_size: int = Field(
-        50, description="Number of event types per page", ge=1, le=200
-    ),
+    page_size: int = Field(50, description="Number of event types per page", ge=1, le=200),
 ) -> str:
     content = get_script_content(SEARCH_LOG_EVENT_TYPES_SCRIPT)
     lines = content.split("\n")
@@ -236,17 +226,13 @@ def get_paginated_event_types(
             table_start = i + 2  # Skip header and separator
             break
 
-    intro = "\n".join(
-        lines[: table_start - 2]
-    )  # Content before table header and separator
+    intro = "\n".join(lines[: table_start - 2])  # Content before table header and separator
     if table_start == 0:
         return "Table not found in the guide."
 
     # Extract table rows
     rows = [
-        line
-        for line in lines[table_start:]
-        if line.strip().startswith("|") and not line.startswith("|---")
+        line for line in lines[table_start:] if line.strip().startswith("|") and not line.startswith("|---")
     ]
 
     total_rows = len(rows)
@@ -300,9 +286,7 @@ def search_logs(
         ge=1,
         le=50,
     ),
-    page: Optional[str] = Field(
-        None, description="The next page token for the search_logs API call. "
-    ),
+    page: Optional[str] = Field(None, description="The next page token for the search_logs API call. "),
 ) -> SearchResponse:
     try:
         client = get_logging_search_client()

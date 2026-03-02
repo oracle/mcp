@@ -36,7 +36,8 @@ mcp = FastMCP(name=__project__)
 def get_compute_instance_agent_client():
     logger.info("entering get_compute_instance_agent_client")
     config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
 
     user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
@@ -55,12 +56,8 @@ def get_compute_instance_agent_client():
     description="Runs a script on a compute instance",
 )
 def run_instance_agent_command(
-    compartment_id: str = Field(
-        ..., description="The OCID of the compartment to create the command in"
-    ),
-    instance_id: str = Field(
-        ..., description="The OCID of the instance to run the command on"
-    ),
+    compartment_id: str = Field(..., description="The OCID of the compartment to create the command in"),
+    instance_id: str = Field(..., description="The OCID of the instance to run the command on"),
     display_name: str = Field(
         ...,
         description="The display name of the command"
@@ -69,9 +66,7 @@ def run_instance_agent_command(
         "where those time values come from the current date time",
     ),
     script: str = Field(..., description="The plain text command to run"),
-    execution_time_out_in_seconds: Optional[int] = Field(
-        30, description="The command's timeout in seconds"
-    ),
+    execution_time_out_in_seconds: Optional[int] = Field(30, description="The command's timeout in seconds"),
 ) -> InstanceAgentCommandExecution:
     try:
         client = get_compute_instance_agent_client()
@@ -101,10 +96,8 @@ def run_instance_agent_command(
 
         # Poll until the command finishes
         command_id = data.id
-        execution_response: oci.response.Response = (
-            client.get_instance_agent_command_execution(
-                instance_agent_command_id=command_id, instance_id=instance_id
-            )
+        execution_response: oci.response.Response = client.get_instance_agent_command_execution(
+            instance_agent_command_id=command_id, instance_id=instance_id
         )
 
         final_response: oci.response.Response = oci.wait_until(
@@ -126,12 +119,8 @@ def run_instance_agent_command(
 
 @mcp.tool(description="Lists an instance's agent command executions")
 def list_instance_agent_command_executions(
-    compartment_id: str = Field(
-        ..., description="The OCID of the compartment to list commands from"
-    ),
-    instance_id: str = Field(
-        ..., description="The OCID of the instance to list commands from"
-    ),
+    compartment_id: str = Field(..., description="The OCID of the compartment to list commands from"),
+    instance_id: str = Field(..., description="The OCID of the instance to list commands from"),
     limit: Optional[int] = Field(
         None,
         description="The maximum amount of commands to return. If None, there is no limit.",
@@ -159,9 +148,7 @@ def list_instance_agent_command_executions(
             has_next_page = response.has_next_page
             next_page = response.next_page if hasattr(response, "next_page") else None
 
-            data: list[
-                oci.compute_instance_agent.models.InstanceAgentCommandExecutionSummary
-            ] = response.data
+            data: list[oci.compute_instance_agent.models.InstanceAgentCommandExecutionSummary] = response.data
             for d in data:
                 commands.append(map_instance_agent_command_execution_summary(d))
 

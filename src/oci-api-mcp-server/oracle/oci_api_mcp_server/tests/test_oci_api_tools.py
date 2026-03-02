@@ -30,16 +30,11 @@ class TestOCITools:
 
         async with Client(mcp) as client:
             result = (
-                await client.call_tool(
-                    "get_oci_command_help", {"command": "compute instance list"}
-                )
+                await client.call_tool("get_oci_command_help", {"command": "compute instance list"})
             ).structured_content["result"]
 
             assert result == "Help output"
-            assert (
-                mock_run.call_args.kwargs["env"]["OCI_SDK_APPEND_USER_AGENT"]
-                == USER_AGENT
-            )
+            assert mock_run.call_args.kwargs["env"]["OCI_SDK_APPEND_USER_AGENT"] == USER_AGENT
             mock_run.assert_called_once_with(
                 ["oci", "compute", "instance", "list", "--help"],
                 env=ANY,
@@ -64,9 +59,7 @@ class TestOCITools:
 
         async with Client(mcp) as client:
             result = (
-                await client.call_tool(
-                    "get_oci_command_help", {"command": "compute instance list"}
-                )
+                await client.call_tool("get_oci_command_help", {"command": "compute instance list"})
             ).structured_content["result"]
 
             assert "Error: Some error" in result
@@ -83,9 +76,7 @@ class TestOCITools:
         mock_run.return_value = mock_result
 
         async with Client(mcp) as client:
-            result = (
-                await client.call_tool("run_oci_command", {"command": command})
-            ).data
+            result = (await client.call_tool("run_oci_command", {"command": command})).data
 
             assert result == {
                 "command": command,
@@ -106,9 +97,7 @@ class TestOCITools:
         mock_run.return_value = mock_result
 
         async with Client(mcp) as client:
-            result = (
-                await client.call_tool("run_oci_command", {"command": command})
-            ).data
+            result = (await client.call_tool("run_oci_command", {"command": command})).data
 
             assert result == {
                 "command": command,
@@ -135,9 +124,7 @@ class TestOCITools:
         )
 
         async with Client(mcp) as client:
-            result = (
-                await client.call_tool("run_oci_command", {"command": command})
-            ).data
+            result = (await client.call_tool("run_oci_command", {"command": command})).data
 
             assert result == {
                 "command": command,
@@ -158,10 +145,7 @@ class TestOCITools:
             result = (await client.read_resource("resource://oci-api-commands"))[0].text
 
             assert result == "OCI commands output"
-            assert (
-                mock_run.call_args.kwargs["env"]["OCI_SDK_APPEND_USER_AGENT"]
-                == USER_AGENT
-            )
+            assert mock_run.call_args.kwargs["env"]["OCI_SDK_APPEND_USER_AGENT"] == USER_AGENT
             mock_run.assert_called_once_with(
                 ["oci", "--help"],
                 env=ANY,
@@ -200,9 +184,7 @@ class TestOCITools:
 
         async with Client(mcp) as client:
             result = (
-                await client.call_tool(
-                    "run_oci_command", {"command": "compute instance terminate"}
-                )
+                await client.call_tool("run_oci_command", {"command": "compute instance terminate"})
             ).data
 
             assert "error" in result

@@ -31,7 +31,8 @@ mcp = FastMCP(name=__project__)
 
 def get_object_storage_client():
     config = oci.config.from_file(
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
     user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
     config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
@@ -147,9 +148,7 @@ def list_object_versions(
         fields="timeModified",
     ).data
 
-    versioned_objects = [
-        map_object_version_summary(obj) for obj in list_object_versions.items
-    ]
+    versioned_objects = [map_object_version_summary(obj) for obj in list_object_versions.items]
     prefixes = list_object_versions.prefixes if list_object_versions.prefixes else []
     return ObjectVersionCollection(items=versioned_objects, prefixes=prefixes)
 
@@ -198,9 +197,7 @@ def upload_object(
     logger.info("Checking file at path: %s", file_path)
     try:
         with open(file_path, "rb") as file:
-            object_storage_client.put_object(
-                namespace_name, bucket_name, object_name, file
-            )
+            object_storage_client.put_object(namespace_name, bucket_name, object_name, file)
         return {"message": "Object uploaded successfully"}
     except Exception as e:
         return {"error": str(e)}

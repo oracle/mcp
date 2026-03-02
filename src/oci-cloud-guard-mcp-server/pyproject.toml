@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-cloud-guard-mcp-server"
-version = "1.1.2"
+version = "1.1.3"
 description = "OCI Cloud Guard Service MCP server"
 readme = "README.md"
 requires-python = ">=3.13"

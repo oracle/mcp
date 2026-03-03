@@ -10,7 +10,6 @@ env.bak/
 venv.bak/
 
 # Python uv
-uv.lock
 .python-version
 
 # VScode

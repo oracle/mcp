@@ -128,9 +128,7 @@ The server provides four built-in toolsets that can be enabled via `-Dtools`:
       <td><code>log-analyzer</code></td>
       <td>JDBC and RDBMS log analysis</td>
       <td>
-        get-jdbc-stats, get-jdbc-queries, get-jdbc-errors,
-        get-jdbc-connection-events, list-log-files-from-directory,
-        jdbc-log-comparison, get-rdbms-errors, get-rdbms-packet-dumps
+        jdbc-analyzer, rdbms-analyzer
       </td>
     </tr>
     <tr>
@@ -153,7 +151,7 @@ _Note: Each tool belongs to exactly one built-in toolset. Enabling a toolset ena
 
 **Common Configurations:**
 - `-Dtools=mcp-admin` - Admin and runtime configuration tools
-- `-Dtools=log-analyzer` - Log analysis only (no database required)
+- `-Dtools=log-analyzer` - Oracle JDBC Log and RDBMS/SQLNet trace file analysis only (no database required)
 - `-Dtools=database-operator` - Database operations and SQL execution
 - `-Dtools=rag` – Vector similarity search
 - `-Dtools=mcp-admin,log-analyzer` - Admin + log analysis
@@ -189,21 +187,25 @@ These tools help monitor database health and performance:
 
 ### 3.5. Oracle JDBC Log Analysis
 
-These tools operate on Oracle JDBC thin client logs:
+The `jdbc-analyzer` tool covers the Oracle JDBC thin client logs analysis using the `action` parameter, it supports the following values:
 
-* **`get-jdbc-stats`**: Extracts performance statistics including error counts, sent/received packets and byte counts.
-* **`get-jdbc-queries`**: Retrieves all executed SQL queries with timestamps and execution times.
-* **`get-jdbc-errors`**: Extracts all errors reported by both server and client.
-* **`get-jdbc-connection-events`**: Shows connection open/close events.
-* **`list-log-files-from-directory`**: List all visible files from a specified directory, which helps the user analyze multiple files with one prompt.
-* **`jdbc-log-comparison`**: Compares two log files for performance metrics, errors, and network information.
+* **`action=stats`**: Extracts performance statistics including error counts, sent/received packets and byte counts.
+* **`action=queries`**: Retrieves all executed SQL queries with timestamps and execution times.
+* **`action=errors`**: Extracts all errors reported by both server and client.
+* **`action=connection-events`**: Shows connection open/close events.
+* **`action=compare`**: Compares two log files for performance metrics, errors, and network information.
+* **`action=list-files`**: List all visible files from a specified directory, which helps the user analyze multiple files with one prompt.
+
+The tool returns results serialized in JSON format.
 
 ### 3.6. RDBMS/SQLNet Trace Analysis:
 
-These tools operate on RDBMS/SQLNet trace files:
+The `rdbms-analyzer` tool operate on RDBMS/SQLNet trace files based on the chosen `action`:
 
-* **`get-rdbms-errors`**: Extracts errors from RDBMS/SQLNet trace files.
-* **`get-rdbms-packet-dumps`**: Extracts packet dumps for a specific connection ID.
+* **`action=rdbms-errors`**: Extracts errors from RDBMS/SQLNet trace files.
+* **`action=packet-dumps`**: Extracts packet dumps for a specific connection ID.
+
+Each extracted record includes relevant details/context and is returned serialized in JSON format.
 
 ### 3.7. Vector Similarity Search (RAG)
 
@@ -332,7 +334,7 @@ This is the mode used by tools like Claude Desktop, where the client directly la
         "-Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service",
         "-Ddb.user=your_user",
         "-Ddb.password=your_password",
-        "-Dtools=get-jdbc-stats,get-jdbc-queries",
+        "-Dtools=jdbc-analyzer",
         "-Dojdbc.ext.dir=/path/to/extra-jars",
         "-jar",
         "<path-to-jar>/oracle-db-mcp-toolkit-1.0.0.jar"
@@ -367,7 +369,7 @@ java \
   -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service \
   -Ddb.user=your_user \
   -Ddb.password=your_password \
-  -Dtools=get-jdbc-stats,get-jdbc-queries \
+  -Dtools=jdbc-analyzer \
   -jar <path-to-jar>/oracle-db-mcp-toolkit-1.0.0.jar
 ```
 
@@ -539,17 +541,17 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
       <td>No</td>
       <td>
         Comma-separated allow-list of tool or toolset names to enable (case-insensitive).<br/>
-        You can pass individual tools (e.g. <code>get-jdbc-stats</code>, <code>read-query</code>) or any of the following built-in toolsets:
+        You can pass individual tools (e.g. <code>jdbc-analyzer</code>, <code>read-query</code>) or any of the following built-in toolsets:
         <ul>
           <li><code>mcp-admin</code> — server discovery and runtime configuration tools (list-tools, edit-tools)</li>
           <li><code>database-operator</code> — database operations, transactions, monitoring, and execution plans (read-query, write-query, table, transaction, db-ping, db-metrics-range, explain-plan).</li>
-          <li><code>log-analyzer</code> — all JDBC log and RDBMS/SQLNet analysis tools (get-jdbc-stats, get-jdbc-queries, get-jdbc-errors, list-log-files-from-directory, jdbc-log-comparison, get-jdbc-connection-events, get-rdbms-errors, get-rdbms-packet-dumps)</li>
+          <li><code>log-analyzer</code> — all JDBC log and RDBMS/SQLNet analysis tools (jdbc-analyzer and rdbms-analyzer)</li>
           <li><code>rag</code> — similarity-search</li>
         </ul>
         You can also define your own YAML <code>toolsets:</code> and reference them here.  
         Use <code>*</code> or <code>all</code> to enable everything. If omitted, all tools are enabled by default.
       </td>
-      <td><code>mcp-admin,log-analyzer</code> or <code>reporting</code></td>
+      <td><code>mcp-admin, log-analyzer</code> or <code>reporting</code></td>
     </tr>
     <tr>
       <td><code>ojdbc.ext.dir</code></td>
@@ -681,7 +683,6 @@ podman run --rm \
     -Dhttps.port=45451 \
     -DcertificatePath=[path/to/certificate] \
     -DcertificatePassword=[password] \
-    -Dtools=get-jdbc-stats,get-jdbc-queries \
     -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service \
     -Ddb.user=your_user \
     -Ddb.password=your_password" \
@@ -709,7 +710,6 @@ podman run --rm \
   -e JAVA_TOOL_OPTIONS="\
     -Dtransport=http \
     -Dhttps.port=45451 \
-    -Dtools=get-jdbc-stats,get-jdbc-queries \
     -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service \
     -Ddb.user=your_user \
     -Ddb.password=your_password \
@@ -738,7 +738,7 @@ In this configuration, Claude Desktop runs `podman run --rm -i ...à and connect
         "-i",
         "-v", "/absolute/path/to/ext:/ext:ro",
         "-e",
-        "JAVA_TOOL_OPTIONS=-Dtools=get-jdbc-stats,get-jdbc-queries -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service -Ddb.user=your_user -Ddb.password=your_password -Dojdbc.ext.dir=/ext -DconfigFile=/config/config.yaml",
+        "JAVA_TOOL_OPTIONS=-Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service -Ddb.user=your_user -Ddb.password=your_password -Dojdbc.ext.dir=/ext -DconfigFile=/config/config.yaml",
         "oracle-db-mcp-toolkit:1.0.0"
       ]
     }

@@ -34,20 +34,14 @@ class TestGetConfigAndSigner:
             "security_token_file": "/path/to/token",
         }
 
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.oci.config.from_file"
-        ) as m_from, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file"
-        ) as m_loadkey, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner"
-        ) as m_sts, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.Signer"
-        ) as m_signer, patch(
-            "oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=True
-        ), patch(
-            "builtins.open", mock_open(read_data="TOKEN123")
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.oci.config.from_file") as m_from,
+            patch("oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file") as m_loadkey,
+            patch("oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner") as m_sts,
+            patch("oracle.oci_cloud_mcp_server.server.oci.signer.Signer") as m_signer,
+            patch("oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=True),
+            patch("builtins.open", mock_open(read_data="TOKEN123")),
         ):
-
             m_from.return_value = dict(cfg)  # function mutates to add UA
             m_loadkey.return_value = object()
             sentinel_signer = object()
@@ -69,18 +63,13 @@ class TestGetConfigAndSigner:
             "security_token_file": "/path/to/token",
         }
 
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.oci.config.from_file"
-        ) as m_from, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file"
-        ) as m_loadkey, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner"
-        ) as m_sts, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.Signer"
-        ) as m_signer, patch(
-            "oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=False
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.oci.config.from_file") as m_from,
+            patch("oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file") as m_loadkey,
+            patch("oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner") as m_sts,
+            patch("oracle.oci_cloud_mcp_server.server.oci.signer.Signer") as m_signer,
+            patch("oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=False),
         ):
-
             m_from.return_value = dict(cfg)
             m_loadkey.return_value = object()
             sentinel_signer = object()
@@ -124,9 +113,7 @@ class TestAlignParamsSignature:
         def create_vcn(create_vcn_details):  # noqa: ARG001
             return None
 
-        aligned = _align_params_to_signature(
-            create_vcn, "create_vcn", {"vcn_details": {"x": 1}}
-        )
+        aligned = _align_params_to_signature(create_vcn, "create_vcn", {"vcn_details": {"x": 1}})
         assert "create_vcn_details" in aligned
         assert "vcn_details" not in aligned
 
@@ -151,11 +138,10 @@ class TestSerializeFallback:
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.import_module"
-        ) as m_import, patch(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
-        ) as m_cfg:
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.import_module") as m_import,
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as m_cfg,
+        ):
             m_import.return_value = fake_module
             m_cfg.return_value = ({}, object())
 
@@ -190,9 +176,7 @@ class TestListClientOperationsErrors:
             m_import.return_value = SimpleNamespace(NotAClass=42)
             async with Client(mcp) as client:
                 with pytest.raises(ToolError):
-                    await client.call_tool(
-                        "list_client_operations", {"client_fqn": "x.y.NotAClass"}
-                    )
+                    await client.call_tool("list_client_operations", {"client_fqn": "x.y.NotAClass"})
 
 
 class TestModelCoercionAdvanced:
@@ -211,9 +195,7 @@ class TestModelCoercionAdvanced:
             InstanceShapeConfigDetails=InstanceShapeConfigDetails,
         )
 
-        with patch(
-            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn"
-        ) as m_models:
+        with patch("oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn") as m_models:
             m_models.return_value = fake_models
 
             coerced = _coerce_params_to_oci_models(
@@ -303,11 +285,10 @@ class TestImportClientInstantiation:
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.import_module"
-        ) as m_import, patch(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
-        ) as m_cfg:
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.import_module") as m_import,
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as m_cfg,
+        ):
             m_import.return_value = fake_module
             m_cfg.return_value = ({"k": "v"}, object())
             inst = _import_client("x.y.FakeClient")
@@ -323,11 +304,10 @@ class TestInvokeErrors:
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.import_module"
-        ) as m_import, patch(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
-        ) as m_cfg:
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.import_module") as m_import,
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as m_cfg,
+        ):
             m_import.return_value = fake_module
             m_cfg.return_value = ({}, object())
 
@@ -358,11 +338,10 @@ class TestInvokeErrors:
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.import_module"
-        ) as m_import, patch(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
-        ) as m_cfg:
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.import_module") as m_import,
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as m_cfg,
+        ):
             m_import.return_value = fake_module
             m_cfg.return_value = ({}, object())
 
@@ -394,11 +373,12 @@ class TestGetConfigAndSignerErrors:
             "security_token_file": "/path/to/token",
         }
 
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.oci.config.from_file"
-        ) as m_from, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file",
-            side_effect=Exception("bad key"),
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.oci.config.from_file") as m_from,
+            patch(
+                "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file",
+                side_effect=Exception("bad key"),
+            ),
         ):
             m_from.return_value = dict(cfg)
             with pytest.raises(Exception):
@@ -414,19 +394,16 @@ class TestSignerFallbackOnStsFailure:
             "key_file": "/path/to/key.pem",
             "security_token_file": "/path/to/token",
         }
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.oci.config.from_file"
-        ) as m_from, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file"
-        ) as m_loadkey, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner",
-            side_effect=Exception("boom"),
-        ), patch(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.Signer"
-        ) as m_signer, patch(
-            "oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=True
-        ), patch(
-            "builtins.open", mock_open(read_data="TOKEN123")
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.oci.config.from_file") as m_from,
+            patch("oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file") as m_loadkey,
+            patch(
+                "oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner",
+                side_effect=Exception("boom"),
+            ),
+            patch("oracle.oci_cloud_mcp_server.server.oci.signer.Signer") as m_signer,
+            patch("oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=True),
+            patch("builtins.open", mock_open(read_data="TOKEN123")),
         ):
             m_from.return_value = dict(cfg)
             m_loadkey.return_value = object()
@@ -445,9 +422,7 @@ class TestParamCoercionAndAlignmentExtras:
             "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
             return_value=None,
         ):
-            out = _coerce_params_to_oci_models(
-                "x.y.Fake", "create_vcn", {"vcn_details": {"x": 1}}
-            )
+            out = _coerce_params_to_oci_models("x.y.Fake", "create_vcn", {"vcn_details": {"x": 1}})
             assert "create_vcn_details" in out
             assert "vcn_details" not in out
 
@@ -455,9 +430,7 @@ class TestParamCoercionAndAlignmentExtras:
         def create_vcn(vcn_details):  # noqa: ARG001
             return None
 
-        aligned = _align_params_to_signature(
-            create_vcn, "create_vcn", {"vcn_details": 1}
-        )
+        aligned = _align_params_to_signature(create_vcn, "create_vcn", {"vcn_details": 1})
         assert "vcn_details" in aligned
         assert "create_vcn_details" not in aligned
 
@@ -475,9 +448,7 @@ class TestCallWithPaginationFallback:
         data, opc = __import__(
             "oracle.oci_cloud_mcp_server.server",
             fromlist=["_call_with_pagination_if_applicable"],
-        )._call_with_pagination_if_applicable(
-            create_vcn, {"vcn_details": {}}, "create_vcn"
-        )
+        )._call_with_pagination_if_applicable(create_vcn, {"vcn_details": {}}, "create_vcn")
         assert data == {"ok": True}
         assert opc is None
 
@@ -498,9 +469,7 @@ class TestConstructModelFQN:
 
         from oracle.oci_cloud_mcp_server.server import _construct_model_from_mapping
 
-        inst = _construct_model_from_mapping(
-            {"__model_fqn": "mymod.Banana", "a": 1}, None, []
-        )
+        inst = _construct_model_from_mapping({"__model_fqn": "mymod.Banana", "a": 1}, None, [])
         assert isinstance(inst, Banana)
         assert inst.kwargs["a"] == 1
 
@@ -512,9 +481,7 @@ class TestListAndCandidates:
                 self.kw = dict(kwargs)
 
         fake_models = SimpleNamespace(MyModel=MyModel)
-        with patch(
-            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn"
-        ) as m_models:
+        with patch("oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn") as m_models:
             m_models.return_value = fake_models
             out = _coerce_params_to_oci_models(
                 "x.y.Fake",
@@ -531,13 +498,9 @@ class TestListAndCandidates:
                 self.kw = dict(kwargs)
 
         fake_models = SimpleNamespace(SourceDetails=SourceDetails)
-        with patch(
-            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn"
-        ) as m_models:
+        with patch("oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn") as m_models:
             m_models.return_value = fake_models
-            out = _coerce_params_to_oci_models(
-                "x.y.Fake", "op", {"source_details": {"foo": "bar"}}
-            )
+            out = _coerce_params_to_oci_models("x.y.Fake", "op", {"source_details": {"foo": "bar"}})
             assert isinstance(out["source_details"], SourceDetails)
             assert out["source_details"].kw["foo"] == "bar"
 
@@ -577,9 +540,7 @@ class TestImportModelsAndResolve:
             assert name == "x.y.models"
             return fake_models
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module", fake_import
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", fake_import)
         from oracle.oci_cloud_mcp_server.server import (
             _import_models_module_from_client_fqn,
         )
@@ -605,11 +566,10 @@ class TestInvokePlainReturnNoHeaders:
                 return {"ok": True}
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.import_module"
-        ) as m_import, patch(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
-        ) as m_cfg:
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.import_module") as m_import,
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as m_cfg,
+        ):
             m_import.return_value = fake_module
             m_cfg.return_value = ({}, object())
             async with Client(mcp) as client:
@@ -630,10 +590,13 @@ class TestInvokePlainReturnNoHeaders:
 class TestInvokeImportFailure:
     @pytest.mark.asyncio
     async def test_invoke_oci_api_import_error_surfaces_as_error_payload(self):
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            side_effect=ImportError("boom"),
-        ), patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as m_cfg:
+        with (
+            patch(
+                "oracle.oci_cloud_mcp_server.server.import_module",
+                side_effect=ImportError("boom"),
+            ),
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as m_cfg,
+        ):
             m_cfg.return_value = ({}, object())
             async with Client(mcp) as client:
                 res = (
@@ -659,18 +622,13 @@ class TestSignerTokenReadFailure:
             "key_file": "/path/to/key.pem",
             "security_token_file": "/path/to/token",
         }
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.oci.config.from_file"
-        ) as m_from, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file"
-        ) as m_loadkey, patch(
-            "oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=True
-        ), patch(
-            "oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner"
-        ) as m_sts, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.Signer"
-        ) as m_signer, patch(
-            "builtins.open", side_effect=Exception("io")
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.oci.config.from_file") as m_from,
+            patch("oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file") as m_loadkey,
+            patch("oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=True),
+            patch("oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner") as m_sts,
+            patch("oracle.oci_cloud_mcp_server.server.oci.signer.Signer") as m_signer,
+            patch("builtins.open", side_effect=Exception("io")),
         ):
             m_from.return_value = dict(cfg)
             m_loadkey.return_value = object()
@@ -691,12 +649,8 @@ class TestAlignParamsSignatureRaises:
         def _raise_sig(*args, **kwargs):
             raise Exception("boom")
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.inspect.signature", _raise_sig
-        )
-        aligned = _align_params_to_signature(
-            fn, "create_something", {"something_details": 1}
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.inspect.signature", _raise_sig)
+        aligned = _align_params_to_signature(fn, "create_something", {"something_details": 1})
         # should return params unchanged when inspect.signature fails
         assert aligned == {"something_details": 1}
 
@@ -729,15 +683,9 @@ class TestListClientOperationsDirect:
         fake_module = SimpleNamespace(Klass=Klass)
 
         # first run with normal behavior
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
         async with Client(mcp) as client:
-            res = (
-                await client.call_tool(
-                    "list_client_operations", {"client_fqn": "x.y.Klass"}
-                )
-            ).data
+            res = (await client.call_tool("list_client_operations", {"client_fqn": "x.y.Klass"})).data
         assert isinstance(res, dict)
         assert "operations" in res
         names = [op["name"] for op in res["operations"]]
@@ -748,15 +696,9 @@ class TestListClientOperationsDirect:
         def sig_raises(_):
             raise Exception("sig boom")
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.inspect.signature", sig_raises
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.inspect.signature", sig_raises)
         async with Client(mcp) as client:
-            res2 = (
-                await client.call_tool(
-                    "list_client_operations", {"client_fqn": "x.y.Klass"}
-                )
-            ).data
+            res2 = (await client.call_tool("list_client_operations", {"client_fqn": "x.y.Klass"})).data
         # should still succeed with empty/summary fallback
         assert isinstance(res2, dict)
         assert "operations" in res2
@@ -790,9 +732,7 @@ class TestCallWithPaginationHeadersError:
         def fn_ok():
             return Resp()
 
-        data, opc = _call_with_pagination_if_applicable(
-            lambda: fn_ok(), {}, "get_thing"
-        )
+        data, opc = _call_with_pagination_if_applicable(lambda: fn_ok(), {}, "get_thing")
         assert data == {"val": 1}
         assert opc is None
 
@@ -808,11 +748,10 @@ class TestInvokeTypeErrorNonUnexpected:
                 raise TypeError("some other error")
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.import_module"
-        ) as m_import, patch(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer"
-        ) as m_cfg:
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.import_module") as m_import,
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as m_cfg,
+        ):
             m_import.return_value = fake_module
             m_cfg.return_value = ({}, object())
             async with Client(mcp) as client:
@@ -837,9 +776,7 @@ class TestCoerceUpdateAlias:
             "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
             return_value=None,
         ):
-            out = _coerce_params_to_oci_models(
-                "x.y.Fake", "update_vcn", {"vcn_details": {"x": 1}}
-            )
+            out = _coerce_params_to_oci_models("x.y.Fake", "update_vcn", {"vcn_details": {"x": 1}})
             assert "update_vcn_details" in out
             assert "vcn_details" not in out
 
@@ -852,9 +789,7 @@ class TestListClientOperationsErrorsDirect:
 
     def test_not_class_raises_direct(self, monkeypatch):
         fake_module = SimpleNamespace(NotAClass=42)
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
         with pytest.raises(Exception):
             list_client_operations("x.y.NotAClass")
 
@@ -868,15 +803,14 @@ class TestSignerApiKeyFailure:
             "key_file": "/path/to/key.pem",
             "security_token_file": "/path/to/token",
         }
-        with patch(
-            "oracle.oci_cloud_mcp_server.server.oci.config.from_file"
-        ) as m_from, patch(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file"
-        ) as m_loadkey, patch(
-            "oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=False
-        ), patch(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.Signer",
-            side_effect=Exception("signer-fail"),
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.oci.config.from_file") as m_from,
+            patch("oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file") as m_loadkey,
+            patch("oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=False),
+            patch(
+                "oracle.oci_cloud_mcp_server.server.oci.signer.Signer",
+                side_effect=Exception("signer-fail"),
+            ),
         ):
             m_from.return_value = dict(cfg)
             m_loadkey.return_value = object()
@@ -893,15 +827,9 @@ class TestListClientOperationsDetails:
                 return 1
 
         fake_module = SimpleNamespace(Klass=Klass)
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
         async with Client(mcp) as client:
-            res = (
-                await client.call_tool(
-                    "list_client_operations", {"client_fqn": "x.y.Klass"}
-                )
-            ).data
+            res = (await client.call_tool("list_client_operations", {"client_fqn": "x.y.Klass"})).data
         ops = res["operations"]
         assert isinstance(ops, list) and ops
         entry = next(o for o in ops if o["name"] == "foo")
@@ -921,15 +849,11 @@ class TestFromDictSuccess:
         # inject a from_dict into oci.util that calls the constructor
         from oracle.oci_cloud_mcp_server.server import oci as _oci
 
-        monkeypatch.setattr(
-            _oci.util, "from_dict", lambda cls, data: cls(**data), raising=False
-        )
+        monkeypatch.setattr(_oci.util, "from_dict", lambda cls, data: cls(**data), raising=False)
 
         from oracle.oci_cloud_mcp_server.server import _construct_model_from_mapping
 
-        inst = _construct_model_from_mapping(
-            {"__model": "MyModel", "a": 1}, fake_models, []
-        )
+        inst = _construct_model_from_mapping({"__model": "MyModel", "a": 1}, fake_models, [])
         assert isinstance(inst, MyModel)
         assert inst._data == {"a": 1}
 
@@ -943,9 +867,7 @@ class TestFromDictSuccess:
 
         from oracle.oci_cloud_mcp_server.server import oci as _oci
 
-        monkeypatch.setattr(
-            _oci.util, "from_dict", lambda cls, data: cls(**data), raising=False
-        )
+        monkeypatch.setattr(_oci.util, "from_dict", lambda cls, data: cls(**data), raising=False)
 
         from oracle.oci_cloud_mcp_server.server import _construct_model_from_mapping
 
@@ -969,15 +891,11 @@ class TestFromDictSuccess:
 
         from oracle.oci_cloud_mcp_server.server import oci as _oci
 
-        monkeypatch.setattr(
-            _oci.util, "from_dict", lambda cls, data: cls(**data), raising=False
-        )
+        monkeypatch.setattr(_oci.util, "from_dict", lambda cls, data: cls(**data), raising=False)
 
         from oracle.oci_cloud_mcp_server.server import _construct_model_from_mapping
 
-        inst = _construct_model_from_mapping(
-            {"__model_fqn": "mymod2.Pear", "a": 3}, None, []
-        )
+        inst = _construct_model_from_mapping({"__model_fqn": "mymod2.Pear", "a": 3}, None, [])
         assert isinstance(inst, Pear)
         assert inst.kw == {"a": 3}
 
@@ -1072,9 +990,7 @@ class TestCoerceParamsCornerCases:
             "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
             lambda fqn: fake_models,
         )
-        out = _coerce_params_to_oci_models(
-            "x.y.Fake", "op", {"source_configuration": {"a": 1}}
-        )
+        out = _coerce_params_to_oci_models("x.y.Fake", "op", {"source_configuration": {"a": 1}})
         assert isinstance(out["source_configuration"], SourceConfiguration)
         assert out["source_configuration"].kw["a"] == 1
 
@@ -1095,9 +1011,7 @@ class TestConstructModelClassFqn:
 
         from oracle.oci_cloud_mcp_server.server import _construct_model_from_mapping
 
-        inst = _construct_model_from_mapping(
-            {"__class_fqn": "mymod3.Grape", "v": 7}, None, []
-        )
+        inst = _construct_model_from_mapping({"__class_fqn": "mymod3.Grape", "v": 7}, None, [])
         assert isinstance(inst, Grape)
         assert inst.kw == {"v": 7}
 
@@ -1110,15 +1024,9 @@ class TestListClientOperationsNoDoc:
                 return 1
 
         fake_module = SimpleNamespace(Klass=Klass)
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
         async with Client(mcp) as client:
-            res = (
-                await client.call_tool(
-                    "list_client_operations", {"client_fqn": "x.y.Klass"}
-                )
-            ).data
+            res = (await client.call_tool("list_client_operations", {"client_fqn": "x.y.Klass"})).data
         ops = res["operations"]
         entry = next(o for o in ops if o["name"] == "foo")
         assert entry["summary"] == ""
@@ -1129,9 +1037,7 @@ class TestAlignParamsUpdateSignature:
         def update_vcn(update_vcn_details):  # noqa: ARG001
             return None
 
-        aligned = _align_params_to_signature(
-            update_vcn, "update_vcn", {"vcn_details": {"x": 1}}
-        )
+        aligned = _align_params_to_signature(update_vcn, "update_vcn", {"vcn_details": {"x": 1}})
         assert "update_vcn_details" in aligned
         assert "vcn_details" not in aligned
 
@@ -1153,9 +1059,7 @@ class TestListClientOperationsInvalidFqnTool:
     async def test_invalid_fqn_tool_error(self):
         async with Client(mcp) as client:
             with pytest.raises(ToolError):
-                await client.call_tool(
-                    "list_client_operations", {"client_fqn": "InvalidFqn"}
-                )
+                await client.call_tool("list_client_operations", {"client_fqn": "InvalidFqn"})
 
 
 class TestSerializeTuple:
@@ -1245,9 +1149,7 @@ class TestSerializeToDictFailure:
 
 class TestInvokeUnexpectedKwOther:
     @pytest.mark.asyncio
-    async def test_invoke_oci_api_unexpected_kw_non_matching_raises_error(
-        self, monkeypatch
-    ):
+    async def test_invoke_oci_api_unexpected_kw_non_matching_raises_error(self, monkeypatch):
         # if TypeError occurs with unexpected kw that does not match expected alias, error should surface
         class FakeClient:
             def __init__(self, config, signer):  # noqa: ARG002
@@ -1302,9 +1204,7 @@ class TestConstructModelCtorSwaggerFilter:
 
         monkeypatch.setattr(_oci.util, "from_dict", raising_from_dict, raising=False)
 
-        inst = _construct_model_from_mapping(
-            {"__model": "MyModel", "a": 1, "b": 2}, fake_models, []
-        )
+        inst = _construct_model_from_mapping({"__model": "MyModel", "a": 1, "b": 2}, fake_models, [])
         assert isinstance(inst, MyModel)
         # 'b' should be filtered out because it's not in swagger_types
         assert inst.kw == {"a": 1}

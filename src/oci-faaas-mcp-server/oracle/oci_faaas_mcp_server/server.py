@@ -49,23 +49,16 @@ def get_faaas_client():
     return oci.fusion_apps.FusionApplicationsClient(config, signer=signer)
 
 
-@mcp.tool(
-    description="Returns a list of Fusion Environment Families in the specified compartment."
-)
+@mcp.tool(description="Returns a list of Fusion Environment Families in the specified compartment.")
 def list_fusion_environment_families(
-    compartment_id: str = Field(
-        ..., description="The ID of the compartment in which to list resources."
-    ),
-    display_name: Optional[str] = Field(
-        None, description="Filter to match entire display name."
-    ),
+    compartment_id: str = Field(..., description="The ID of the compartment in which to list resources."),
+    display_name: Optional[str] = Field(None, description="Filter to match entire display name."),
     lifecycle_state: Optional[
         Literal["CREATING", "UPDATING", "ACTIVE", "DELETING", "DELETED", "FAILED"]
     ] = Field(
         None,
         description=(
-            "Filter by lifecycle state. Allowed: CREATING, UPDATING, ACTIVE, "
-            "DELETING, DELETED, FAILED"
+            "Filter by lifecycle state. Allowed: CREATING, UPDATING, ACTIVE, DELETING, DELETED, FAILED"
         ),
     ),
 ) -> list[FusionEnvironmentFamily]:
@@ -84,18 +77,12 @@ def list_fusion_environment_families(
         if lifecycle_state is not None:
             kwargs["lifecycle_state"] = lifecycle_state
 
-        response: oci.response.Response = client.list_fusion_environment_families(
-            **kwargs
-        )
+        response: oci.response.Response = client.list_fusion_environment_families(**kwargs)
 
         # Normalize response data to an iterable without using helpers
         data_obj = response.data or []
         items = getattr(data_obj, "items", None)
-        iterable = (
-            items
-            if items is not None
-            else (data_obj if isinstance(data_obj, list) else [data_obj])
-        )
+        iterable = items if items is not None else (data_obj if isinstance(data_obj, list) else [data_obj])
         for d in iterable:
             families.append(map_fusion_environment_family(d))
 
@@ -115,20 +102,15 @@ def list_fusion_environment_families(
 
 @mcp.tool(
     description=(
-        "Returns a list of Fusion Environments in the specified compartment "
-        "(optionally filtered by family)."
+        "Returns a list of Fusion Environments in the specified compartment (optionally filtered by family)."
     )
 )
 def list_fusion_environments(
-    compartment_id: str = Field(
-        ..., description="The ID of the compartment in which to list resources."
-    ),
+    compartment_id: str = Field(..., description="The ID of the compartment in which to list resources."),
     fusion_environment_family_id: Optional[str] = Field(
         None, description="Optional Fusion Environment Family OCID"
     ),
-    display_name: Optional[str] = Field(
-        None, description="Filter to match entire display name."
-    ),
+    display_name: Optional[str] = Field(None, description="Filter to match entire display name."),
     lifecycle_state: Optional[
         Literal[
             "CREATING",
@@ -169,11 +151,7 @@ def list_fusion_environments(
         # Normalize response data to an iterable without using helpers
         data_obj = response.data or []
         items = getattr(data_obj, "items", None)
-        iterable = (
-            items
-            if items is not None
-            else (data_obj if isinstance(data_obj, list) else [data_obj])
-        )
+        iterable = items if items is not None else (data_obj if isinstance(data_obj, list) else [data_obj])
         for d in iterable:
             environments.append(map_fusion_environment(d))
 
@@ -193,27 +171,19 @@ def list_fusion_environments(
 
 @mcp.tool(description="Gets a Fusion Environment by OCID.")
 def get_fusion_environment(
-    fusion_environment_id: str = Field(
-        ..., description="Unique FusionEnvironment identifier (OCID)"
-    ),
+    fusion_environment_id: str = Field(..., description="Unique FusionEnvironment identifier (OCID)"),
 ) -> FusionEnvironment:
     client = get_faaas_client()
-    response: oci.response.Response = client.get_fusion_environment(
-        fusion_environment_id
-    )
+    response: oci.response.Response = client.get_fusion_environment(fusion_environment_id)
     return map_fusion_environment(response.data)
 
 
 @mcp.tool(description="Gets the status of a Fusion Environment by OCID.")
 def get_fusion_environment_status(
-    fusion_environment_id: str = Field(
-        ..., description="Unique FusionEnvironment identifier (OCID)"
-    ),
+    fusion_environment_id: str = Field(..., description="Unique FusionEnvironment identifier (OCID)"),
 ) -> FusionEnvironmentStatus:
     client = get_faaas_client()
-    response: oci.response.Response = client.get_fusion_environment_status(
-        fusion_environment_id
-    )
+    response: oci.response.Response = client.get_fusion_environment_status(fusion_environment_id)
     return map_fusion_environment_status(response.data)
 
 

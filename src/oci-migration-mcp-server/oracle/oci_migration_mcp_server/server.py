@@ -43,9 +43,7 @@ def get_migration_client():
 
 
 @mcp.tool(description="Get details for a specific Migration Project by OCID")
-def get_migration(
-    migration_id: str = Field(..., description="OCID of the migration project")
-) -> Migration:
+def get_migration(migration_id: str = Field(..., description="OCID of the migration project")) -> Migration:
     try:
         client = get_migration_client()
 
@@ -59,9 +57,7 @@ def get_migration(
         raise e
 
 
-@mcp.tool(
-    description="List Migration Projects for a compartment, optionally filtered by lifecycle state"
-)
+@mcp.tool(description="List Migration Projects for a compartment, optionally filtered by lifecycle state")
 def list_migrations(
     compartment_id: str = Field(..., description="The OCID of the compartment"),
     limit: Optional[int] = Field(
@@ -104,9 +100,7 @@ def list_migrations(
             has_next_page = response.has_next_page
             next_page = response.next_page if hasattr(response, "next_page") else None
 
-            data: list[oci.cloud_migrations.models.MigrationSummary] = (
-                response.data.items
-            )
+            data: list[oci.cloud_migrations.models.MigrationSummary] = response.data.items
             for d in data:
                 migrations.append(map_migration_summary(d))
 

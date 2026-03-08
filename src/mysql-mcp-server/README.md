@@ -20,8 +20,11 @@ A Python-based MCP (Model Context Protocol) server that provides a suite of tool
   - `ml_generate`: Text generation with GenAI
   - `ragify_column`: Create/populate vector columns for embeddings
   - `ask_ml_rag`: Retrieval-augmented generation from vector stores
+  - `ask_ml_rag_vector_store`: Retrieve segments from the default vector store (skip_generate)
+  - `ask_ml_rag_innodb`: Retrieve segments from InnoDB tables using specified segment and embedding columns
   - `heatwave_ask_help`: Answers questions about how to use HeatWave ML
   - `ask_nl_sql`: Convert natural language questions into SQL queries and execute them automatically
+  - `retrieve_relevant_schema_information`: Retrieve relevant schemas and tables (DDL) for a natural language question
 
 - **Vector Store Management**
   - List files in `secure_file_priv` (local mode)
@@ -190,14 +193,14 @@ uv run oracle.mysql_mcp_server
 ## API Tools
 
 1. `list_all_connections()`: List configured database connections and modes
-2. `execute_sql_tool_by_connection_id(connection_id, sql, params)`: Execute SQL on a database connection
+2. `execute_sql_tool_by_connection_id(connection_id, sql_script, params)`: Execute SQL on a database connection
 3. `ml_generate(connection_id, question)`: Generate text
-4. `ragify_column(connection_id, table, input_col, embedding_col)`: Embed text into a VECTOR column
+4. `ragify_column(connection_id, table_name, input_column_name, embedding_column_name)`: Embed text into a VECTOR column
 5. `list_vector_store_files_local(connection_id)`: List available files in `secure_file_priv`
 6. `load_vector_store_local(connection_id, file_path)`: Load documents from local filesystem
-7. `load_vector_store_oci(connection_id, namespace, bucket, prefix, schema, table)`: Load documents from OCI Object Storage
-8. `ask_ml_rag_vector_store(connection_id, question)`: RAG query on default vector store
-9. `ask_ml_rag_innodb(connection_id, question, segment_col, embedding_col)`: RAG query restricted to InnoDB tables
+7. `load_vector_store_oci(connection_id, namespace, bucket_name, document_prefix)`: Load documents from OCI Object Storage
+8. `ask_ml_rag_vector_store(connection_id, question, context_size)`: RAG query on default vector store
+9. `ask_ml_rag_innodb(connection_id, question, segment_col, embedding_col, context_size)`: RAG query restricted to InnoDB tables
 10. `heatwave_ask_help(connection_id, question)`: Ask natural language questions about MySQL HeatWave AutoML via NL2ML
 11. `list_all_compartments()`: List OCI compartments
 12. `object_storage_list_buckets(compartment_name | compartment_id)`: List buckets in a compartment

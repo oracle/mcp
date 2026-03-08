@@ -148,9 +148,7 @@ def list_object_versions(
         fields="timeModified",
     ).data
 
-    versioned_objects = [
-        map_object_version_summary(obj) for obj in list_object_versions.items
-    ]
+    versioned_objects = [map_object_version_summary(obj) for obj in list_object_versions.items]
     prefixes = list_object_versions.prefixes if list_object_versions.prefixes else []
     return ObjectVersionCollection(items=versioned_objects, prefixes=prefixes)
 
@@ -199,9 +197,7 @@ def upload_object(
     logger.info("Checking file at path: %s", file_path)
     try:
         with open(file_path, "rb") as file:
-            object_storage_client.put_object(
-                namespace_name, bucket_name, object_name, file
-            )
+            object_storage_client.put_object(namespace_name, bucket_name, object_name, file)
         return {"message": "Object uploaded successfully"}
     except Exception as e:
         return {"error": str(e)}

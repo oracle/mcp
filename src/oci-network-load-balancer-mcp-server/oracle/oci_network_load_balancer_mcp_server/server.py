@@ -94,9 +94,7 @@ def list_network_load_balancers(
             has_next_page = response.has_next_page
             next_page = response.next_page if hasattr(response, "next_page") else None
 
-            data: list[oci.network_load_balancer.models.NetworkLoadBalancer] = (
-                response.data.items
-            )
+            data: list[oci.network_load_balancer.models.NetworkLoadBalancer] = response.data.items
             for d in data:
                 nlbs.append(map_network_load_balancer(d))
 
@@ -108,20 +106,14 @@ def list_network_load_balancers(
         raise e
 
 
-@mcp.tool(
-    name="get_network_load_balancer", description="Get network load balancer details"
-)
+@mcp.tool(name="get_network_load_balancer", description="Get network load balancer details")
 def get_network_load_balancer(
-    network_load_balancer_id: str = Field(
-        ..., description="The OCID of the network load balancer"
-    )
+    network_load_balancer_id: str = Field(..., description="The OCID of the network load balancer"),
 ):
     try:
         client = get_nlb_client()
 
-        response: oci.response.Response = client.get_network_load_balancer(
-            network_load_balancer_id
-        )
+        response: oci.response.Response = client.get_network_load_balancer(network_load_balancer_id)
         data: oci.network_load_balancer.models.NetworkLoadBalancer = response.data
         logger.info("Found Network Load Balancer")
         return map_network_load_balancer(data)
@@ -179,8 +171,7 @@ def list_listeners(
 
 @mcp.tool(
     name="get_network_load_balancer_listener",
-    description="Gets the listener with the given listener name"
-    "from the given network load balancer",
+    description="Gets the listener with the given listener namefrom the given network load balancer",
 )
 def get_listener(
     network_load_balancer_id: str = Field(
@@ -192,9 +183,7 @@ def get_listener(
     try:
         client = get_nlb_client()
 
-        response: oci.response.Response = client.get_listener(
-            network_load_balancer_id, listener_name
-        )
+        response: oci.response.Response = client.get_listener(network_load_balancer_id, listener_name)
         data: oci.network_load_balancer.models.Listener = response.data
         logger.info("Found Listener")
         return map_listener(data)
@@ -239,9 +228,7 @@ def list_backend_sets(
             has_next_page = response.has_next_page
             next_page = response.next_page if hasattr(response, "next_page") else None
 
-            data: list[oci.network_load_balancer.models.BackendSet] = (
-                response.data.items
-            )
+            data: list[oci.network_load_balancer.models.BackendSet] = response.data.items
             for d in data:
                 backend_sets.append(map_backend_set(d))
 
@@ -255,8 +242,7 @@ def list_backend_sets(
 
 @mcp.tool(
     name="get_network_load_balancer_backend_set",
-    description="Gets the backend set with the given backend set name"
-    "from the given network load balancer",
+    description="Gets the backend set with the given backend set namefrom the given network load balancer",
 )
 def get_backend_set(
     network_load_balancer_id: str = Field(
@@ -268,9 +254,7 @@ def get_backend_set(
     try:
         client = get_nlb_client()
 
-        response: oci.response.Response = client.get_backend_set(
-            network_load_balancer_id, backend_set_name
-        )
+        response: oci.response.Response = client.get_backend_set(network_load_balancer_id, backend_set_name)
         data: oci.network_load_balancer.models.BackendSet = response.data
         logger.info("Found Backend Set")
         return map_backend_set(data)
@@ -289,9 +273,7 @@ def list_backends(
         ...,
         description="The OCID of the network load balancer to list the backends from",
     ),
-    backend_set_name: str = Field(
-        ..., description="The name of the backend set to list the backends from"
-    ),
+    backend_set_name: str = Field(..., description="The name of the backend set to list the backends from"),
     limit: Optional[int] = Field(
         None,
         description="The maximum amount of backends to return. If None, there is no limit.",
@@ -340,9 +322,7 @@ def get_backend(
     network_load_balancer_id: str = Field(
         ..., description="The OCID of the network load balancer to get the backend from"
     ),
-    backend_set_name: str = Field(
-        ..., description="The name of the backend set to get the backend from"
-    ),
+    backend_set_name: str = Field(..., description="The name of the backend set to get the backend from"),
     backend_name: str = Field(..., description="The name of the backend"),
 ):
     try:

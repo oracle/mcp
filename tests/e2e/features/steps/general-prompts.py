@@ -20,9 +20,7 @@ def step_impl_ollama_model(context):
         response = requests.get("http://localhost:8000/health")
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
-        raise ConnectionError(
-            f"Could not connect to Ollama or model not found: {e}. Is Ollama running?"
-        )
+        raise ConnectionError(f"Could not connect to Ollama or model not found: {e}. Is Ollama running?")
 
 
 @when('I send a request with the prompt "{prompt}"')
@@ -62,6 +60,4 @@ def step_impl_tools_available(context):
     assert "content" in result["message"], "Response does not contain a content key."
 
     for tool_server in context.mcp_servers:
-        assert (
-            tool_server in result["message"]["content"]
-        ), f"{tool_server} is missing from tools."
+        assert tool_server in result["message"]["content"], f"{tool_server} is missing from tools."

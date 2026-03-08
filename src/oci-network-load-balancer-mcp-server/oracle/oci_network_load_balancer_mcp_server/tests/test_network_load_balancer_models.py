@@ -136,9 +136,7 @@ class TestNetworkLoadBalancerModels:
                 oci.network_load_balancer.models.Backend(name="b1", port=80),
                 oci.network_load_balancer.models.Backend(name="b2", port=81),
             ],
-            health_checker=oci.network_load_balancer.models.HealthChecker(
-                protocol="TCP"
-            ),
+            health_checker=oci.network_load_balancer.models.HealthChecker(protocol="TCP"),
         )
         dst = map_backend_set(src)
         assert isinstance(dst, BackendSet)
@@ -172,9 +170,7 @@ class TestNetworkLoadBalancerModels:
                 "ln1": oci.network_load_balancer.models.Listener(name="ln1", port=80),
             },
             backend_sets={
-                "bs1": oci.network_load_balancer.models.BackendSet(
-                    name="bs1", policy="THREE_TUPLE"
-                )
+                "bs1": oci.network_load_balancer.models.BackendSet(name="bs1", policy="THREE_TUPLE")
             },
             freeform_tags={"a": "b"},
             defined_tags={"ns": {"k": "v"}},

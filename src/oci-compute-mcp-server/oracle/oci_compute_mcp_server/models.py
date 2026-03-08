@@ -40,26 +40,16 @@ class PlacementConstraintDetails(BaseModel):
         None,
         description="Placement strategy/policy identifier (e.g., anti-affinity, cluster).",  # noqa
     )
-    details: Optional[Dict[str, Any]] = Field(
-        None, description="Additional placement constraint details."
-    )
+    details: Optional[Dict[str, Any]] = Field(None, description="Additional placement constraint details.")
 
 
 class LaunchOptions(BaseModel):
     """Launch options for VM instances."""
 
-    boot_volume_type: Optional[str] = Field(
-        None, description="Boot volume attachment type."
-    )
-    firmware: Optional[str] = Field(
-        None, description="Firmware type to use when launching instances."
-    )
-    network_type: Optional[str] = Field(
-        None, description="Network attachment type for VNIC."
-    )
-    remote_data_volume_type: Optional[str] = Field(
-        None, description="Data volume attachment type."
-    )
+    boot_volume_type: Optional[str] = Field(None, description="Boot volume attachment type.")
+    firmware: Optional[str] = Field(None, description="Firmware type to use when launching instances.")
+    network_type: Optional[str] = Field(None, description="Network attachment type for VNIC.")
+    remote_data_volume_type: Optional[str] = Field(None, description="Data volume attachment type.")
     is_pv_encryption_in_transit_enabled: Optional[bool] = Field(
         None,
         description="Whether paravirtualized volume encryption in transit is enabled.",
@@ -87,9 +77,7 @@ class InstanceAvailabilityConfig(BaseModel):
         None,
         description="Action when host fails (e.g., RESTORE_INSTANCE, STOP_INSTANCE).",
     )
-    is_pmu_enabled: Optional[bool] = Field(
-        None, description="Whether PMU is enabled (platform-dependent)."
-    )
+    is_pmu_enabled: Optional[bool] = Field(None, description="Whether PMU is enabled (platform-dependent).")
 
 
 class PreemptibleInstanceConfigDetails(BaseModel):
@@ -112,38 +100,24 @@ class InstanceShapeConfig(BaseModel):
     )
     nvmes: Optional[int] = Field(None, description="Number of local NVMe drives.")
     local_disks: Optional[int] = Field(None, description="Number of local disks.")
-    local_disks_total_size_in_gbs: Optional[float] = Field(
-        None, description="Total local disk size in GB."
-    )
+    local_disks_total_size_in_gbs: Optional[float] = Field(None, description="Total local disk size in GB.")
 
 
 class InstanceSourceDetails(BaseModel):
     """Source details used for instance creation."""
 
-    source_type: Optional[str] = Field(
-        None, description="Type of source (e.g., image, bootVolume)."
-    )
+    source_type: Optional[str] = Field(None, description="Type of source (e.g., image, bootVolume).")
     image_id: Optional[str] = Field(None, description="Image OCID.")
-    boot_volume_size_in_gbs: Optional[int] = Field(
-        None, description="Boot volume size in GB."
-    )
+    boot_volume_size_in_gbs: Optional[int] = Field(None, description="Boot volume size in GB.")
 
 
 class InstanceAgentConfig(BaseModel):
     """Oracle Cloud Agent configuration."""
 
-    is_monitoring_disabled: Optional[bool] = Field(
-        None, description="Disable monitoring plugins."
-    )
-    is_management_disabled: Optional[bool] = Field(
-        None, description="Disable management plugins."
-    )
-    are_all_plugins_disabled: Optional[bool] = Field(
-        None, description="Disable all plugins."
-    )
-    plugins_config: Optional[List[Dict[str, Any]]] = Field(
-        None, description="Per-plugin configuration list."
-    )
+    is_monitoring_disabled: Optional[bool] = Field(None, description="Disable monitoring plugins.")
+    is_management_disabled: Optional[bool] = Field(None, description="Disable management plugins.")
+    are_all_plugins_disabled: Optional[bool] = Field(None, description="Disable all plugins.")
+    plugins_config: Optional[List[Dict[str, Any]]] = Field(None, description="Per-plugin configuration list.")
 
 
 class PlatformConfig(BaseModel):
@@ -153,21 +127,15 @@ class PlatformConfig(BaseModel):
         None,
         description="Platform config discriminator (e.g., AMD_VM, INTEL_VM, AARCH64_VM).",  # noqa
     )
-    details: Optional[Dict[str, Any]] = Field(
-        None, description="Additional platform-specific details."
-    )
+    details: Optional[Dict[str, Any]] = Field(None, description="Additional platform-specific details.")
 
 
 class LicensingConfig(BaseModel):
     """Licensing configuration associated with the instance."""
 
     license_type: Optional[str] = Field(None, description="License type or SKU.")
-    is_vendor_oracle: Optional[bool] = Field(
-        None, description="Whether Oracle is the license vendor."
-    )
-    is_bring_your_own_license: Optional[bool] = Field(
-        None, description="Whether BYOL is used."
-    )
+    is_vendor_oracle: Optional[bool] = Field(None, description="Whether Oracle is the license vendor.")
+    is_bring_your_own_license: Optional[bool] = Field(None, description="Whether BYOL is used.")
 
 
 # Based on oci.core.Instance
@@ -208,12 +176,10 @@ class Instance(BaseModel):
         None,
         description="Security attributes for Zero Trust Packet Routing (ZPR), labeled by namespace.",  # noqa
     )
-    security_attributes_state: Optional[
-        Literal["STABLE", "UPDATING", "UNKNOWN_ENUM_VALUE"]
-    ] = Field(None, description="The lifecycle state of the securityAttributes.")
-    display_name: Optional[str] = Field(
-        None, description="A user-friendly name. Does not have to be unique."
+    security_attributes_state: Optional[Literal["STABLE", "UPDATING", "UNKNOWN_ENUM_VALUE"]] = Field(
+        None, description="The lifecycle state of the securityAttributes."
     )
+    display_name: Optional[str] = Field(None, description="A user-friendly name. Does not have to be unique.")
     extended_metadata: Optional[Dict[str, Any]] = Field(
         None,
         description="Additional metadata key/value pairs; may contain nested JSON objects.",  # noqa
@@ -225,9 +191,7 @@ class Instance(BaseModel):
         None, description="Free-form tags for this resource as simple key/value pairs."
     )
     id: Optional[str] = Field(None, description="The OCID of the instance.")
-    image_id: Optional[str] = Field(
-        None, description="Deprecated. Use sourceDetails instead."
-    )
+    image_id: Optional[str] = Field(None, description="Deprecated. Use sourceDetails instead.")
     ipxe_script: Optional[str] = Field(
         None,
         description="Custom iPXE script to run when the instance boots. Not used for paravirtualized boot volumes.",  # noqa
@@ -236,9 +200,7 @@ class Instance(BaseModel):
         Literal["NATIVE", "EMULATED", "PARAVIRTUALIZED", "CUSTOM", "UNKNOWN_ENUM_VALUE"]
     ] = Field(None, description="Configuration mode for launching VM instances.")
     launch_options: Optional[LaunchOptions] = Field(None, description="Launch options.")
-    instance_options: Optional[InstanceOptions] = Field(
-        None, description="Instance options."
-    )
+    instance_options: Optional[InstanceOptions] = Field(None, description="Instance options.")
     availability_config: Optional[InstanceAvailabilityConfig] = Field(
         None, description="Availability configuration."
     )
@@ -259,9 +221,7 @@ class Instance(BaseModel):
             "UNKNOWN_ENUM_VALUE",
         ]
     ] = Field(None, description="The current lifecycle state of the instance.")
-    metadata: Optional[Dict[str, str]] = Field(
-        None, description="Custom metadata that you provide."
-    )
+    metadata: Optional[Dict[str, str]] = Field(None, description="Custom metadata that you provide.")
     region: Optional[str] = Field(
         None,
         description="The region that contains the availability domain the instance is running in.",  # noqa
@@ -270,9 +230,7 @@ class Instance(BaseModel):
         None,
         description="The shape of the instance. Determines CPU and memory allocated.",
     )
-    shape_config: Optional[InstanceShapeConfig] = Field(
-        None, description="Instance shape configuration."
-    )
+    shape_config: Optional[InstanceShapeConfig] = Field(None, description="Instance shape configuration.")
     is_cross_numa_node: Optional[bool] = Field(
         None,
         description="Whether the instance’s OCPUs and memory are distributed across multiple NUMA nodes.",  # noqa
@@ -287,16 +245,12 @@ class Instance(BaseModel):
     time_created: Optional[datetime] = Field(
         None, description="The date and time the instance was created (RFC3339)."
     )
-    agent_config: Optional[InstanceAgentConfig] = Field(
-        None, description="Instance agent configuration."
-    )
+    agent_config: Optional[InstanceAgentConfig] = Field(None, description="Instance agent configuration.")
     time_maintenance_reboot_due: Optional[datetime] = Field(
         None,
         description="The date and time the instance is expected to be stopped/started (RFC3339).",  # noqa
     )
-    platform_config: Optional[PlatformConfig] = Field(
-        None, description="Platform configuration."
-    )
+    platform_config: Optional[PlatformConfig] = Field(None, description="Platform configuration.")
     instance_configuration_id: Optional[str] = Field(
         None,
         description="The OCID of the Instance Configuration used to source launch details for this instance.",  # noqa
@@ -325,12 +279,8 @@ def map_launch_options(lo) -> LaunchOptions | None:
         firmware=getattr(lo, "firmware", None),
         network_type=getattr(lo, "network_type", None),
         remote_data_volume_type=getattr(lo, "remote_data_volume_type", None),
-        is_pv_encryption_in_transit_enabled=getattr(
-            lo, "is_pv_encryption_in_transit_enabled", None
-        ),
-        is_consistent_volume_naming_enabled=getattr(
-            lo, "is_consistent_volume_naming_enabled", None
-        ),
+        is_pv_encryption_in_transit_enabled=getattr(lo, "is_pv_encryption_in_transit_enabled", None),
+        is_consistent_volume_naming_enabled=getattr(lo, "is_consistent_volume_naming_enabled", None),
     )
 
 
@@ -338,9 +288,7 @@ def map_instance_options(io) -> InstanceOptions | None:
     if not io:
         return None
     return InstanceOptions(
-        are_legacy_imds_endpoints_disabled=getattr(
-            io, "are_legacy_imds_endpoints_disabled", None
-        )
+        are_legacy_imds_endpoints_disabled=getattr(io, "are_legacy_imds_endpoints_disabled", None)
     )
 
 
@@ -371,9 +319,7 @@ def map_shape_config(sc) -> InstanceShapeConfig | None:
         vcpus=getattr(sc, "vcpus", None),
         baseline_ocpu_utilization=getattr(sc, "baseline_ocpu_utilization", None),
         local_disks=getattr(sc, "local_disks", None),
-        local_disks_total_size_in_gbs=getattr(
-            sc, "local_disks_total_size_in_gbs", None
-        ),
+        local_disks_total_size_in_gbs=getattr(sc, "local_disks_total_size_in_gbs", None),
     )
 
 
@@ -424,8 +370,7 @@ def map_licensing_configs(items) -> list[LicensingConfig] | None:
         data = _oci_to_dict(it) or {}
         result.append(
             LicensingConfig(
-                license_type=getattr(it, "license_type", None)
-                or data.get("license_type"),
+                license_type=getattr(it, "license_type", None) or data.get("license_type"),
             )
         )
     return result
@@ -445,15 +390,11 @@ def map_instance(
         placement_constraint_details=map_placement_constraint_details(
             getattr(instance_data, "placement_constraint_details", None)
         ),
-        cluster_placement_group_id=getattr(
-            instance_data, "cluster_placement_group_id", None
-        ),
+        cluster_placement_group_id=getattr(instance_data, "cluster_placement_group_id", None),
         dedicated_vm_host_id=getattr(instance_data, "dedicated_vm_host_id", None),
         defined_tags=getattr(instance_data, "defined_tags", None),
         security_attributes=getattr(instance_data, "security_attributes", None),
-        security_attributes_state=getattr(
-            instance_data, "security_attributes_state", None
-        ),
+        security_attributes_state=getattr(instance_data, "security_attributes_state", None),
         display_name=getattr(instance_data, "display_name", None),
         extended_metadata=getattr(instance_data, "extended_metadata", None),
         fault_domain=getattr(instance_data, "fault_domain", None),
@@ -462,15 +403,9 @@ def map_instance(
         image_id=getattr(instance_data, "image_id", None),
         ipxe_script=getattr(instance_data, "ipxe_script", None),
         launch_mode=getattr(instance_data, "launch_mode", None),
-        launch_options=map_launch_options(
-            getattr(instance_data, "launch_options", None)
-        ),
-        instance_options=map_instance_options(
-            getattr(instance_data, "instance_options", None)
-        ),
-        availability_config=map_availability_config(
-            getattr(instance_data, "availability_config", None)
-        ),
+        launch_options=map_launch_options(getattr(instance_data, "launch_options", None)),
+        instance_options=map_instance_options(getattr(instance_data, "instance_options", None)),
+        availability_config=map_availability_config(getattr(instance_data, "availability_config", None)),
         preemptible_instance_config=map_preemptible_config(
             getattr(instance_data, "preemptible_instance_config", None)
         ),
@@ -480,24 +415,14 @@ def map_instance(
         shape=getattr(instance_data, "shape", None),
         shape_config=map_shape_config(getattr(instance_data, "shape_config", None)),
         is_cross_numa_node=getattr(instance_data, "is_cross_numa_node", None),
-        source_details=map_source_details(
-            getattr(instance_data, "source_details", None)
-        ),
+        source_details=map_source_details(getattr(instance_data, "source_details", None)),
         system_tags=getattr(instance_data, "system_tags", None),
         time_created=getattr(instance_data, "time_created", None),
         agent_config=map_agent_config(getattr(instance_data, "agent_config", None)),
-        time_maintenance_reboot_due=getattr(
-            instance_data, "time_maintenance_reboot_due", None
-        ),
-        platform_config=map_platform_config(
-            getattr(instance_data, "platform_config", None)
-        ),
-        instance_configuration_id=getattr(
-            instance_data, "instance_configuration_id", None
-        ),
-        licensing_configs=map_licensing_configs(
-            getattr(instance_data, "licensing_configs", None)
-        ),
+        time_maintenance_reboot_due=getattr(instance_data, "time_maintenance_reboot_due", None),
+        platform_config=map_platform_config(getattr(instance_data, "platform_config", None)),
+        instance_configuration_id=getattr(instance_data, "instance_configuration_id", None),
+        licensing_configs=map_licensing_configs(getattr(instance_data, "licensing_configs", None)),
     )
 
 
@@ -509,12 +434,8 @@ def map_instance(
 class InstanceAgentFeatures(BaseModel):
     """Oracle Cloud Agent features supported on the image."""
 
-    is_monitoring_supported: Optional[bool] = Field(
-        None, description="This attribute is not used."
-    )
-    is_management_supported: Optional[bool] = Field(
-        None, description="This attribute is not used."
-    )
+    is_monitoring_supported: Optional[bool] = Field(None, description="This attribute is not used.")
+    is_management_supported: Optional[bool] = Field(None, description="This attribute is not used.")
 
 
 class Image(BaseModel):
@@ -620,9 +541,7 @@ def map_image(image_data: oci.core.models.Image) -> Image:
         lifecycle_state=getattr(image_data, "lifecycle_state", None),
         operating_system=getattr(image_data, "operating_system", None),
         operating_system_version=getattr(image_data, "operating_system_version", None),
-        agent_features=map_instance_agent_features(
-            getattr(image_data, "agent_features", None)
-        ),
+        agent_features=map_instance_agent_features(getattr(image_data, "agent_features", None)),
         listing_type=getattr(image_data, "listing_type", None),
         size_in_mbs=getattr(image_data, "size_in_mbs", None),
         billable_size_in_gbs=getattr(image_data, "billable_size_in_gbs", None),
@@ -642,16 +561,10 @@ class Request(BaseModel):
 
     method: Optional[str] = Field(None, description="The HTTP method.")
     url: Optional[str] = Field(None, description="URL that will serve the request.")
-    query_params: Optional[Dict[str, Any]] = Field(
-        None, description="Query parameters in the URL."
-    )
-    header_params: Optional[Dict[str, Any]] = Field(
-        None, description="Request header parameters."
-    )
+    query_params: Optional[Dict[str, Any]] = Field(None, description="Query parameters in the URL.")
+    header_params: Optional[Dict[str, Any]] = Field(None, description="Request header parameters.")
     body: Optional[Any] = Field(None, description="Request body.")
-    response_type: Optional[str] = Field(
-        None, description="Expected response data type."
-    )
+    response_type: Optional[str] = Field(None, description="Expected response data type.")
     enforce_content_headers: Optional[bool] = Field(
         None,
         description=(
@@ -667,24 +580,12 @@ class Response(BaseModel):
     """
 
     status: Optional[int] = Field(None, description="The HTTP status code.")
-    headers: Optional[Dict[str, Any]] = Field(
-        None, description="The HTTP headers (case-insensitive keys)."
-    )
-    data: Optional[Any] = Field(
-        None, description="The response data. Type depends on the request."
-    )
-    request: Optional[Request] = Field(
-        None, description="The corresponding request for this response."
-    )
-    next_page: Optional[str] = Field(
-        None, description="The value of the opc-next-page response header."
-    )
-    request_id: Optional[str] = Field(
-        None, description="The ID of the request that generated this response."
-    )
-    has_next_page: Optional[bool] = Field(
-        None, description="Whether there is a next page of results."
-    )
+    headers: Optional[Dict[str, Any]] = Field(None, description="The HTTP headers (case-insensitive keys).")
+    data: Optional[Any] = Field(None, description="The response data. Type depends on the request.")
+    request: Optional[Request] = Field(None, description="The corresponding request for this response.")
+    next_page: Optional[str] = Field(None, description="The value of the opc-next-page response header.")
+    request_id: Optional[str] = Field(None, description="The ID of the request that generated this response.")
+    has_next_page: Optional[bool] = Field(None, description="Whether there is a next page of results.")
 
 
 def map_request(req) -> Request | None:
@@ -817,9 +718,7 @@ class VnicAttachment(BaseModel):
             "Cards (VNICs)."
         ),
     )
-    subnet_id: Optional[str] = Field(
-        None, description="The OCID of the subnet to create the VNIC in."
-    )
+    subnet_id: Optional[str] = Field(None, description="The OCID of the subnet to create the VNIC in.")
     vlan_id: Optional[str] = Field(
         None,
         description=(
@@ -848,10 +747,7 @@ class VnicAttachment(BaseModel):
     )
     vnic_id: Optional[str] = Field(
         None,
-        description=(
-            "The OCID of the VNIC. Available after the attachment process is "
-            "complete."
-        ),
+        description=("The OCID of the VNIC. Available after the attachment process is complete."),
     )
 
 

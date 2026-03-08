@@ -24,9 +24,7 @@ class TestModels:
 
         uri_input = {"exit_code": 1, "message": "u", "output_uri": "https://x"}
         uri = mdl.map_uri_output(uri_input)
-        assert uri.output_type == "OBJECT_STORAGE_URI" and uri.output_uri.startswith(
-            "https://"
-        )
+        assert uri.output_type == "OBJECT_STORAGE_URI" and uri.output_uri.startswith("https://")
 
         tup_input = {
             "exit_code": 2,
@@ -84,9 +82,7 @@ class TestModels:
         assert res.content.text == cmd.content.text
         assert res.content.exit_code == cmd.content.exit_code
 
-    def test_map_instance_agent_command_execution_summary_maps_fields(
-        self, monkeypatch
-    ):
+    def test_map_instance_agent_command_execution_summary_maps_fields(self, monkeypatch):
         # Force models._oci_to_dict to bypass oci.util.to_dict and use __dict__ fallback
         def boom(_):
             raise RuntimeError("boom")

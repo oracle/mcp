@@ -1,5 +1,5 @@
 """
-Copyright (c) 2025, Oracle and/or its affiliates.
+Copyright (c) 2026, Oracle and/or its affiliates.
 Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
@@ -21,11 +21,7 @@ def list_ads():
 def get_compartment(compartment_id):
     compartments = COMPARTMENTS + [TENANCY]
     compartment = next((i for i in compartments if i["id"] == compartment_id), None)
-    return (
-        oci_res(compartment)
-        if compartment
-        else (jsonify({"code": "NotAuthorizedOrNotFound"}), 404)
-    )
+    return oci_res(compartment) if compartment else (jsonify({"code": "NotAuthorizedOrNotFound"}), 404)
 
 
 @identity_bp.route("/compartments", methods=["GET"])

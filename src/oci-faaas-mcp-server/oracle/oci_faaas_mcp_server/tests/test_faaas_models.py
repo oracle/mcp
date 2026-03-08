@@ -78,9 +78,7 @@ class TestFaaasModels:
         assert fam_o.id == obj.id and fam_o.display_name == obj.display_name
         assert fam_o.lifecycle_state == obj.lifecycle_state
 
-    def test_map_fusion_environment_includes_maintenance_policy_to_dict(
-        self, monkeypatch
-    ):
+    def test_map_fusion_environment_includes_maintenance_policy_to_dict(self, monkeypatch):
         # Ensure maintenance_policy goes through _oci_to_dict via oci.util.to_dict
         def to_dict_override(x):
             # Simulate SDK model conversion

@@ -17,9 +17,7 @@ class TestSupportsPaginationAllowlistIntrospectionFailure:
         def boom_sig(obj):
             raise Exception("no sig")
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.inspect.signature", boom_sig
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.inspect.signature", boom_sig)
 
         def fn(**kwargs):  # noqa: ARG001
             """
@@ -109,9 +107,7 @@ class TestImportClientHappyPath:
 
         # module with GoodClient
         fake_mod = SimpleNamespace(GoodClient=GoodClient)
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_mod
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_mod)
         # basic config/signer
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
@@ -178,9 +174,7 @@ class TestCallWithPaginationTypeErrorFallback:
 
 class TestSupportsPaginationAdditional:
     def test_known_allowlist_variant_get_rr_set_true(self):
-        def fn(
-            zone_name_or_id, domain, rtype, page=None, limit=None, **kwargs
-        ):  # noqa: ARG001
+        def fn(zone_name_or_id, domain, rtype, page=None, limit=None, **kwargs):  # noqa: ARG001
             return None
 
         assert _supports_pagination(fn, "get_rr_set") is True

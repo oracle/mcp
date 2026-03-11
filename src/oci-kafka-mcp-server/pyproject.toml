@@ -1,0 +1,85 @@
+[project]
+name = "oracle.oci-kafka-mcp-server"
+version = "0.1.0"
+description = "OCI Streaming with Apache Kafka MCP server — enables AI agents to manage Kafka clusters"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "UPL-1.0"
+license-files = ["LICENSE.txt"]
+authors = [
+    {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
+]
+keywords = ["mcp", "kafka", "oci", "oracle", "streaming", "ai", "llm"]
+dependencies = [
+    "mcp>=1.0.0",
+    "confluent-kafka>=2.6.0",
+    "oci>=2.130.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+]
+
+classifiers = [
+    "License :: OSI Approved :: Universal Permissive License (UPL)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.scripts]
+"oracle.oci-kafka-mcp-server" = "oracle.oci_kafka_mcp_server.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["oracle"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.11.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["oracle/oci_kafka_mcp_server/tests"]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+omit = [
+    "**/__init__.py",
+    "**/tests/*",
+    "dist/*",
+    ".venv/*",
+]
+
+[tool.coverage.report]
+omit = [
+    "**/__init__.py",
+    "**/tests/*",
+]
+precision = 2
+fail_under = 45
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[[tool.mypy.overrides]]
+module = [
+    "confluent_kafka.*",
+    "oci.*",
+]
+ignore_missing_imports = true

@@ -8,14 +8,16 @@ WASM sandbox for executing Python code in isolation.
 
 from __future__ import annotations
 
+import errno
+import hashlib
 import os
 import tempfile
 import urllib.request
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from wasmtime import Config, Engine, ExitTrap, Linker, Module, Store, Trap, WasiConfig
+from wasmtime import Config, Engine, ExitTrap, Linker, Module, Store, Trap, WasiConfig, WasmtimeError
 
 # v3.13 stable release — zip contains python.wasm + lib/python3.13/
 WASM_RELEASE_URL = (
@@ -25,12 +27,16 @@ WASM_RELEASE_URL = (
 CACHE_DIR = Path.home() / ".cache" / "python-sandbox-mcp"
 WASM_FILENAME = "python.wasm"
 LIB_DIR_NAME = "lib"  # extracted inside CACHE_DIR
+EXPECTED_WASM_SHA256 = "875dd63414642fbeda8c45517777b891d5936b304d261879e3dcc1b201daf5d9"
 
 # Fuel per second — 1 unit ≈ 10ns at ~100M instructions/sec.
 # Tuning: increase for faster machines, decrease if timeouts fire too late.
 FUEL_PER_SECOND = 100_000_000
 
 MAX_CODE_LENGTH = 1_000_000  # 1 MB — reject oversized inputs early
+MAX_MEMORY_BYTES = 256 * 1024 * 1024  # 256 MiB guest linear memory cap
+MAX_STDOUT_BYTES = 1 * 1024 * 1024  # 1 MiB captured stdout per execution
+MAX_STDERR_BYTES = 1 * 1024 * 1024  # 1 MiB captured stderr per execution
 
 # Cached across calls: Engine is expensive to create, Module avoids
 # re-reading the ~30 MB WASM binary on every execution.
@@ -45,6 +51,54 @@ class SandboxResult:
     stderr: str
     exit_code: int
     timed_out: bool = False
+
+
+@dataclass
+class _CappedOutput:
+    """Collect output up to a fixed byte budget and fail further writes."""
+
+    name: str
+    max_bytes: int
+    chunks: bytearray = field(default_factory=bytearray)
+    exceeded: bool = False
+
+    def callback(self, data: bytes) -> int:
+        if self.exceeded:
+            return -errno.EIO
+
+        remaining = self.max_bytes - len(self.chunks)
+        if remaining <= 0:
+            self.exceeded = True
+            return -errno.EIO
+
+        take = min(len(data), remaining)
+        if take:
+            self.chunks.extend(data[:take])
+
+        if take < len(data):
+            self.exceeded = True
+
+        return take
+
+    def text(self) -> str:
+        return self.chunks.decode("utf-8", errors="replace")
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _verify_wasm_checksum(path: Path) -> None:
+    digest = _sha256_file(path)
+    if digest != EXPECTED_WASM_SHA256:
+        raise ValueError(
+            "Downloaded python.wasm checksum mismatch: "
+            f"expected {EXPECTED_WASM_SHA256}, got {digest}"
+        )
 
 
 def _cache_dir() -> Path:
@@ -73,6 +127,7 @@ def get_wasm_path() -> tuple[Path, Path]:
     lib_dir = cache / LIB_DIR_NAME
 
     if wasm_path.exists() and lib_dir.exists():
+        _verify_wasm_checksum(wasm_path)
         return wasm_path, lib_dir
 
     print(
@@ -84,8 +139,37 @@ def get_wasm_path() -> tuple[Path, Path]:
     zip_tmp = cache / "python-wasi.zip.tmp"
     try:
         urllib.request.urlretrieve(WASM_RELEASE_URL, zip_tmp)
+        extract_dir = cache / "extract-tmp"
+        if extract_dir.exists():
+            for child in sorted(extract_dir.rglob("*"), reverse=True):
+                if child.is_file() or child.is_symlink():
+                    child.unlink(missing_ok=True)
+                elif child.is_dir():
+                    child.rmdir()
+            extract_dir.rmdir()
+        extract_dir.mkdir(parents=True, exist_ok=False)
         with zipfile.ZipFile(zip_tmp) as zf:
-            zf.extractall(cache)
+            zf.extractall(extract_dir)
+
+        extracted_wasm = extract_dir / WASM_FILENAME
+        extracted_lib = extract_dir / LIB_DIR_NAME
+        _verify_wasm_checksum(extracted_wasm)
+
+        wasm_path.write_bytes(extracted_wasm.read_bytes())
+        if lib_dir.exists():
+            for child in sorted(lib_dir.rglob("*"), reverse=True):
+                if child.is_file() or child.is_symlink():
+                    child.unlink(missing_ok=True)
+                elif child.is_dir():
+                    child.rmdir()
+            lib_dir.rmdir()
+        extracted_lib.rename(lib_dir)
+        for child in sorted(extract_dir.rglob("*"), reverse=True):
+            if child.is_file() or child.is_symlink():
+                child.unlink(missing_ok=True)
+            elif child.is_dir():
+                child.rmdir()
+        extract_dir.rmdir()
         zip_tmp.unlink(missing_ok=True)
     except Exception:
         zip_tmp.unlink(missing_ok=True)
@@ -142,13 +226,10 @@ def run_python(
     module, lib_dir = _get_module()
     store = Store(engine)
     store.set_fuel(int(timeout_seconds * FUEL_PER_SECOND))
+    store.set_limits(memory_size=MAX_MEMORY_BYTES, instances=1, tables=1, memories=1)
 
-    with (
-        tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as stdout_f,
-        tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as stderr_f,
-    ):
-        stdout_path = stdout_f.name
-        stderr_path = stderr_f.name
+    stdout_capture = _CappedOutput(name="stdout", max_bytes=MAX_STDOUT_BYTES)
+    stderr_capture = _CappedOutput(name="stderr", max_bytes=MAX_STDERR_BYTES)
 
     stdin_path: str | None = None
 
@@ -160,8 +241,8 @@ def run_python(
         # inside the sandbox, giving Python access to its stdlib without
         # exposing any other host paths.
         wasi.preopen_dir(str(lib_dir), "/lib")
-        wasi.stdout_file = stdout_path
-        wasi.stderr_file = stderr_path
+        wasi.stdout_custom = stdout_capture.callback
+        wasi.stderr_custom = stderr_capture.callback
 
         # Always write stdin to a temp file — never inherit the host's stdin
         # since that carries the MCP protocol stream.
@@ -178,10 +259,17 @@ def run_python(
         linker = Linker(engine)
         linker.define_wasi()
 
-        instance = linker.instantiate(store, module)
-
         timed_out = False
         exit_code = 0
+
+        try:
+            instance = linker.instantiate(store, module)
+        except WasmtimeError as e:
+            return SandboxResult(
+                stdout="",
+                stderr=f"Sandbox instantiation failed: {e}",
+                exit_code=1,
+            )
 
         try:
             instance.exports(store)["_start"](store)
@@ -195,8 +283,22 @@ def run_python(
             else:
                 raise
 
-        stdout = Path(stdout_path).read_text(encoding="utf-8", errors="replace")
-        stderr = Path(stderr_path).read_text(encoding="utf-8", errors="replace")
+        stdout = stdout_capture.text()
+        stderr = stderr_capture.text()
+
+        if stdout_capture.exceeded:
+            stderr += (
+                f"\n[stdout exceeded {MAX_STDOUT_BYTES} bytes; further output was blocked]"
+            )
+            if exit_code == 0:
+                exit_code = 1
+
+        if stderr_capture.exceeded:
+            stderr += (
+                f"\n[stderr exceeded {MAX_STDERR_BYTES} bytes; further output was blocked]"
+            )
+            if exit_code == 0:
+                exit_code = 1
 
         return SandboxResult(
             stdout=stdout,
@@ -205,7 +307,7 @@ def run_python(
             timed_out=timed_out,
         )
     finally:
-        for p in filter(None, [stdout_path, stderr_path, stdin_path]):
+        for p in filter(None, [stdin_path]):
             try:
                 Path(p).unlink()
             except OSError:

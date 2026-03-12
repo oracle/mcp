@@ -8,6 +8,7 @@ import os.path
 import requests
 import json
 import re
+import time
 import oci
 from oci.signer import Signer
 from oci.resource_search.models import StructuredSearchDetails
@@ -71,6 +72,13 @@ def _escape_sql_literal(value: str) -> str:
     if value is None:
         return ""
     return str(value).replace("'", "''")
+
+def _validated_model_name():
+    """Return a validated Oracle identifier for model name or None."""
+    candidate = MODEL_NAME.strip()
+    if not _is_safe_oracle_identifier(candidate):
+        return None
+    return candidate
 
 def list_all_compartments_internal(only_one_page: bool , limit = 100  ):
     """Internal function to get List all compartments in a tenancy"""
@@ -254,6 +262,10 @@ def get_minimal_connection_by_name(dbtools_connection_display_name: str):
 
 def execute_sql_tool_by_connection_id(connection_id: str, sql_script: str, binds: list = None) -> str:
     """Internal function to execute a SQL script using a connection ID with optional bind variables"""
+    connect_timeout = float(os.getenv("SQL_CONNECT_TIMEOUT_SEC", "5"))
+    read_timeout = float(os.getenv("SQL_READ_TIMEOUT_SEC", "60"))
+    max_retries = int(os.getenv("SQL_HTTP_RETRIES", "2"))
+
     try:
         execute_sql_endpoint = f"{ords_endpoint}/ords/{connection_id}/_/sql"
         
@@ -263,19 +275,49 @@ def execute_sql_tool_by_connection_id(connection_id: str, sql_script: str, binds
         }
         if binds:
             payload["binds"] = binds
-            
-        response = requests.post(
-            execute_sql_endpoint,
-            json=payload,
-            auth=auth_signer,
-            headers={"Content-Type": "application/json"}
-        )
+
+        response = None
+        for attempt in range(max_retries + 1):
+            try:
+                response = requests.post(
+                    execute_sql_endpoint,
+                    json=payload,
+                    auth=auth_signer,
+                    headers={"Content-Type": "application/json"},
+                    timeout=(connect_timeout, read_timeout)
+                )
+                response.raise_for_status()
+                break
+            except requests.exceptions.Timeout:
+                if attempt >= max_retries:
+                    raise
+                time.sleep(min(2 ** attempt, 3))
+            except requests.exceptions.HTTPError:
+                status_code = response.status_code if response is not None else None
+                if status_code not in (429, 500, 502, 503, 504) or attempt >= max_retries:
+                    raise
+                time.sleep(min(2 ** attempt, 3))
         
         # Try to format JSON response if possible
         try:
             return json.dumps(response.json(), indent=2)
         except:
             return response.text
+    except requests.exceptions.Timeout:
+        return json.dumps({
+            "error": "SQL execution request timed out",
+            "details": {
+                "connect_timeout_seconds": connect_timeout,
+                "read_timeout_seconds": read_timeout
+            }
+        })
+    except requests.exceptions.HTTPError as e:
+        response = e.response
+        return json.dumps({
+            "error": "SQL execution HTTP error",
+            "status_code": response.status_code if response is not None else None,
+            "details": response.text[:500] if response is not None else str(e)
+        })
     except Exception as e:
         return json.dumps({
             "error": f"Error executing SQL: {str(e)}"
@@ -694,8 +736,8 @@ def create_report(dbtools_connection_display_name: str, name: str, sql_query: st
     if description:
         text_to_embed = f"{name}. {description}"
 
-    safe_model_name = MODEL_NAME.strip()
-    if not _is_safe_oracle_identifier(safe_model_name):
+    safe_model_name = _validated_model_name()
+    if not safe_model_name:
         return json.dumps({
             "error": "Invalid MODEL_NAME configuration. Use an unquoted Oracle identifier."
         })
@@ -1005,6 +1047,12 @@ def find_matching_reports(dbtools_connection_display_name: str, search_text: str
     except:
         return bootstrap_result
 
+    safe_model_name = _validated_model_name()
+    if not safe_model_name:
+        return json.dumps({
+            "error": "Invalid MODEL_NAME configuration. Use an unquoted Oracle identifier."
+        })
+
     # Query similar reports using vector similarity
     query = f"""
         SELECT 
@@ -1014,11 +1062,11 @@ def find_matching_reports(dbtools_connection_display_name: str, search_text: str
             TO_CHAR(r.time_updated, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "time_updated",
             r.sql_definition as "sql_definition",
             ROUND(1 - VECTOR_DISTANCE(r.text_vector, 
-                VECTOR_EMBEDDING({MODEL_NAME} USING :search_text AS data)), 4) as "similarity_score"
+                VECTOR_EMBEDDING({safe_model_name} USING :search_text AS data)), 4) as "similarity_score"
         FROM report_definitions r
         WHERE r.text_vector IS NOT NULL
             AND 1 - VECTOR_DISTANCE(r.text_vector, 
-                VECTOR_EMBEDDING({MODEL_NAME} USING :search_text AS data)) > 0.3
+                VECTOR_EMBEDDING({safe_model_name} USING :search_text AS data)) > 0.3
         ORDER BY "similarity_score" DESC
         FETCH FIRST :limit ROWS ONLY
     """
@@ -1120,8 +1168,8 @@ def ragify_column(dbtools_connection_display_name: str, table_name: str, column_
 
     safe_table_name = table_name.strip()
     safe_vector_column_name = vector_column_name.strip()
-    safe_model_name = MODEL_NAME.strip()
-    if not _is_safe_oracle_identifier(safe_model_name):
+    safe_model_name = _validated_model_name()
+    if not safe_model_name:
         return json.dumps({
             "status": "error",
             "message": "Invalid MODEL_NAME configuration. Use an unquoted Oracle identifier."

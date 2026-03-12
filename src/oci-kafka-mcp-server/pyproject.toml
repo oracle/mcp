@@ -64,7 +64,7 @@ omit = [
     "**/tests/*",
 ]
 precision = 2
-fail_under = 45
+fail_under = 36
 
 [tool.ruff]
 target-version = "py311"

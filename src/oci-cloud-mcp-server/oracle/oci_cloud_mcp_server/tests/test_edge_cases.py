@@ -138,41 +138,43 @@ class TestInvokePreNormalize:
 class TestNestedSnakeCaseNormalization:
     def test_model_attribute_map_normalizes_nested_snake_case(self):
         class PortRange:
-            swagger_types = {"min": "int", "max": "int"}
-            attribute_map = {"min": "min", "max": "max"}
-
             def __init__(self, **kwargs):
+                self.swagger_types = {"min": "int", "max": "int"}
+                self.attribute_map = {"min": "min", "max": "max"}
                 self.kw = dict(kwargs)
 
         class TcpOptions:
-            swagger_types = {"destination_port_range": "PortRange"}
-            attribute_map = {"destination_port_range": "destinationPortRange"}
-
             def __init__(self, **kwargs):
+                self.swagger_types = {"destination_port_range": "PortRange"}
+                self.attribute_map = {
+                    "destination_port_range": "destinationPortRange"
+                }
                 self.kw = dict(kwargs)
 
         class IngressSecurityRule:
-            swagger_types = {
-                "protocol": "str",
-                "source": "str",
-                "source_type": "str",
-                "tcp_options": "TcpOptions",
-            }
-            attribute_map = {
-                "protocol": "protocol",
-                "source": "source",
-                "source_type": "sourceType",
-                "tcp_options": "tcpOptions",
-            }
-
             def __init__(self, **kwargs):
+                self.swagger_types = {
+                    "protocol": "str",
+                    "source": "str",
+                    "source_type": "str",
+                    "tcp_options": "TcpOptions",
+                }
+                self.attribute_map = {
+                    "protocol": "protocol",
+                    "source": "source",
+                    "source_type": "sourceType",
+                    "tcp_options": "tcpOptions",
+                }
                 self.kw = dict(kwargs)
 
         class UpdateSecurityListDetails:
-            swagger_types = {"ingress_security_rules": "list[IngressSecurityRule]"}
-            attribute_map = {"ingress_security_rules": "ingressSecurityRules"}
-
             def __init__(self, **kwargs):
+                self.swagger_types = {
+                    "ingress_security_rules": "list[IngressSecurityRule]"
+                }
+                self.attribute_map = {
+                    "ingress_security_rules": "ingressSecurityRules"
+                }
                 self.kw = dict(kwargs)
 
         fake_models = SimpleNamespace(
@@ -201,9 +203,11 @@ class TestNestedSnakeCaseNormalization:
 
         assert "ingressSecurityRules" in out
         rule = out["ingressSecurityRules"][0]
-        assert "sourceType" in rule
-        assert "tcpOptions" in rule
-        assert "destinationPortRange" in rule["tcpOptions"]
+        assert isinstance(rule, IngressSecurityRule)
+        assert "source_type" in rule.kw
+        assert "tcp_options" in rule.kw
+        assert isinstance(rule.kw["tcp_options"], TcpOptions)
+        assert "destination_port_range" in rule.kw["tcp_options"].kw
 
     def test_model_attribute_map_normalizes_route_rule_network_entity_id(self):
         class RouteRule:

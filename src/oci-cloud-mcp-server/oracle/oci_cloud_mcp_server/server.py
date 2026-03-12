@@ -290,16 +290,9 @@ def _get_model_schema(model_cls: type) -> Tuple[Optional[Dict[str, str]], Option
     """
     Return (swagger_types, attribute_map) for an OCI model class.
 
-    OCI SDK 2.160.0 exposes these on instances (not classes), while older
-    versions may expose them on the class. Support both.
+    OCI SDK 2.160.0+ exposes these on instances, so instantiate the model
+    before reading its schema metadata.
     """
-    swagger_types = getattr(model_cls, "swagger_types", None)
-    attribute_map = getattr(model_cls, "attribute_map", None)
-    if isinstance(swagger_types, dict):
-        if not isinstance(attribute_map, dict):
-            attribute_map = {}
-        return swagger_types, attribute_map
-
     try:
         inst = model_cls()
         swagger_types = getattr(inst, "swagger_types", None)
@@ -651,7 +644,6 @@ def _coerce_params_to_oci_models(
                     if inspect.isclass(cls):
                         swagger_types, _ = _get_model_schema(cls)
                         if not isinstance(swagger_types, dict):
-                            # keep legacy heuristic path for classes without model schema
                             continue
                         try:
                             constructed = _construct_model_with_class(
@@ -1146,21 +1138,10 @@ def _discover_oci_clients() -> List[dict]:
     - Import only modules whose name ends with `_client` (OCI SDK convention)
       to avoid importing every single models module.
     - Collect any public class ending with `Client`.
-
-      Note: OCI Python SDK v2.160.0+ no longer has service clients inherit
-      from `oci.base_client.BaseClient`. Instead, service clients *compose*
-      a `BaseClient` (e.g., `self.base_client = BaseClient(...)`).
-      Therefore, inheritance checks will incorrectly filter out all clients.
-      We detect clients by either:
-        - inheriting from BaseClient (legacy SDK versions), OR
-        - exposing an `__init__(config, **kwargs)` and a `base_client` attribute
-          (current SDK versions).
     """
     clients: List[dict] = []
 
     try:
-        BaseClient = getattr(oci.base_client, "BaseClient", None)
-
         def iter_oci_submodules():
             # walk packages recursively under `oci` but only import *_client modules
             for modinfo in pkgutil.walk_packages(oci.__path__, prefix="oci."):
@@ -1185,27 +1166,19 @@ def _discover_oci_clients() -> List[dict]:
                     continue
                 if not cls_name.endswith("Client"):
                     continue
-                # OCI SDK client classes historically inherited from BaseClient.
-                # Newer SDK versions (e.g., 2.160.0) use composition instead, so
-                # an issubclass check will fail for every client.
-                if BaseClient and inspect.isclass(member):
-                    if issubclass(member, BaseClient):
-                        pass
-                    else:
-                        # Heuristic: client exposes 'base_client' after init.
-                        # We can't instantiate here (would require config), so
-                        # use a cheap source/attribute inspection fallback.
-                        try:
-                            # Some generated clients include 'self.base_client =' in __init__
-                            src = inspect.getsource(member.__init__)
-                            if "self.base_client" not in src:
-                                continue
-                        except Exception:
-                            # If we can't inspect source, be permissive and keep it.
-                            # Worst case: user sees extra non-usable 'Client' classes.
-                            pass
+                try:
+                    src = inspect.getsource(member.__init__)
+                    if "self.base_client" not in src:
+                        continue
+                except Exception:
+                    # If we can't inspect source, keep the client-like class rather than
+                    # dropping a valid OCI client from discovery.
+                    pass
 
-                client_fqn = f"{module_name}.{cls_name}"
+                client_module = getattr(member, "__module__", None)
+                if not isinstance(client_module, str) or not client_module:
+                    client_module = module_name
+                client_fqn = f"{client_module}.{cls_name}"
                 if client_fqn in seen:
                     continue
                 seen.add(client_fqn)

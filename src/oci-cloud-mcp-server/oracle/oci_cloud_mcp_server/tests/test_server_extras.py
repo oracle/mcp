@@ -1273,22 +1273,29 @@ class TestDiscoverOciClients:
             ],
         )
 
-        # Fake base client type and service modules with client classes
-        class BaseClient:  # noqa: D401
-            """Fake base class."""
-
-        class ComputeClient(BaseClient):
+        class ComputeClient:
             __module__ = "oci.core"
 
-        class VirtualNetworkClient(BaseClient):
+            def __init__(self, config, **kwargs):
+                self.base_client = object()
+
+        class VirtualNetworkClient:
             __module__ = "oci.core"
 
-        class IdentityClient(BaseClient):
+            def __init__(self, config, **kwargs):
+                self.base_client = object()
+
+        class IdentityClient:
             __module__ = "oci.identity"
 
-        # Not a BaseClient subclass; should be ignored even though name endswith Client
+            def __init__(self, config, **kwargs):
+                self.base_client = object()
+
         class ImportedClient:
             __module__ = "oci.other"
+
+            def __init__(self, config, **kwargs):
+                self.not_base_client = object()
 
         def fake_import(name):
             if name == "oci.core.compute_client":
@@ -1307,13 +1314,6 @@ class TestDiscoverOciClients:
             "oracle.oci_cloud_mcp_server.server.import_module", fake_import
         )
 
-        # Patch the SDK's BaseClient for issubclass checks
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.base_client.BaseClient",
-            BaseClient,
-            raising=False,
-        )
-
         out = _discover_oci_clients()
         fqns = [c["client_fqn"] for c in out]
 
@@ -1321,7 +1321,7 @@ class TestDiscoverOciClients:
         assert "oci.core.ComputeClient" in fqns
         assert "oci.core.VirtualNetworkClient" in fqns
         assert "oci.identity.IdentityClient" in fqns
-        # should NOT include non-BaseClient client-like class
+        # should NOT include client-like classes without composed base_client support
         assert "oci.core.ImportedClient" not in fqns
         # should be sorted
         assert fqns == sorted(fqns)

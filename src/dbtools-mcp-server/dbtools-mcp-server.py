@@ -7,6 +7,7 @@ import os.path
 
 import requests
 import json
+import re
 import oci
 from oci.signer import Signer
 from oci.resource_search.models import StructuredSearchDetails
@@ -39,6 +40,37 @@ auth_signer = Signer(
     pass_phrase=config['pass_phrase']
 )
 tenancy_id = os.getenv("TENANCY_ID_OVERRIDE", config['tenancy'])
+ORACLE_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_$#]*$")
+RESOURCE_SEARCH_FILTER_PATTERN = re.compile(r"^[A-Za-z0-9 _.:/@()+-]{1,255}$")
+
+def _is_safe_oracle_identifier(identifier: str, allow_qualified: bool = False) -> bool:
+    """Validate unquoted Oracle identifiers (optionally schema-qualified)."""
+    if not isinstance(identifier, str):
+        return False
+    candidate = identifier.strip()
+    if not candidate:
+        return False
+
+    parts = candidate.split(".")
+    if not allow_qualified and len(parts) != 1:
+        return False
+    if allow_qualified and len(parts) > 2:
+        return False
+
+    for part in parts:
+        if len(part) > 128 or not ORACLE_IDENTIFIER_PATTERN.fullmatch(part):
+            return False
+    return True
+
+def _is_safe_resource_search_filter(value: str) -> bool:
+    """Allow a conservative character set for OCI resource-search filter values."""
+    return isinstance(value, str) and bool(RESOURCE_SEARCH_FILTER_PATTERN.fullmatch(value.strip()))
+
+def _escape_sql_literal(value: str) -> str:
+    """Escape a value for SQL single-quoted literals."""
+    if value is None:
+        return ""
+    return str(value).replace("'", "''")
 
 def list_all_compartments_internal(only_one_page: bool , limit = 100  ):
     """Internal function to get List all compartments in a tenancy"""
@@ -152,6 +184,12 @@ def list_all_connections() -> str:
 @mcp.tool()
 def get_dbtools_connection_by_name_tool(display_name: str) -> str:
     """Get a dbtools connection for a given connection name"""
+    if not _is_safe_resource_search_filter(display_name):
+        return json.dumps({
+            "error": "Invalid connection name filter",
+            "details": "Only letters, digits, spaces, and .:_/@()+- are allowed."
+        })
+
     search_details = StructuredSearchDetails(
         query=f"query databasetoolsconnection resources where displayName =~ '{display_name}'",
         type="Structured",
@@ -177,6 +215,8 @@ def get_minimal_connection_by_name(dbtools_connection_display_name: str):
     Internal function to get minimal connection information from a display name.
     Returns a dictionary with connection details like id, type, and connection string.
     """
+    if not _is_safe_resource_search_filter(dbtools_connection_display_name):
+        return None
     search_details = StructuredSearchDetails(
         query=f"query databasetoolsconnection resources return allAdditionalFields where displayName =~ '{dbtools_connection_display_name}'",
         type="Structured",
@@ -238,9 +278,7 @@ def execute_sql_tool_by_connection_id(connection_id: str, sql_script: str, binds
             return response.text
     except Exception as e:
         return json.dumps({
-            "error": f"Error executing SQL: {str(e)}",
-            "sql_script": sql_script,
-            "binds": binds
+            "error": f"Error executing SQL: {str(e)}"
         })
 
 @mcp.tool()
@@ -278,16 +316,17 @@ def get_table_info(dbtools_connection_display_name: str, table_name: str) -> str
     try:
         # Get database type from the connection info
         db_type = connection_info.get('type')
+        query_binds = [{"name": "table_name", "data_type": "VARCHAR", "value": table_name}]
         
         if db_type == 'ORACLE_DATABASE':
             # First try with all_tab_columns (includes system views)
-            column_sql = f"""
+            column_sql = """
             WITH pk_columns AS (
                 SELECT column_name
                 FROM all_cons_columns acc
                 JOIN all_constraints ac ON acc.constraint_name = ac.constraint_name
                     AND acc.owner = ac.owner
-                WHERE ac.table_name = '{table_name.upper()}'
+                WHERE ac.table_name = UPPER(:table_name)
                 AND ac.constraint_type = 'P'
             )
             SELECT 
@@ -309,11 +348,11 @@ def get_table_info(dbtools_connection_display_name: str, table_name: str) -> str
             LEFT JOIN all_tables t 
                 ON t.table_name = c.table_name
                 AND t.owner = c.owner
-            WHERE c.table_name = '{table_name.upper()}'
+            WHERE c.table_name = UPPER(:table_name)
             ORDER BY c.column_id
             """
         elif db_type == 'MYSQL':
-            column_sql = f"""
+            column_sql = """
             SELECT 
                 c.column_name,
                 c.data_type,
@@ -335,7 +374,7 @@ def get_table_info(dbtools_connection_display_name: str, table_name: str) -> str
             LEFT JOIN information_schema.tables t
                 ON t.table_schema = c.table_schema
                 AND t.table_name = c.table_name
-            WHERE c.table_name = '{table_name}'
+            WHERE c.table_name = :table_name
                 AND c.table_schema = database()
             ORDER BY c.ordinal_position
             """
@@ -345,7 +384,7 @@ def get_table_info(dbtools_connection_display_name: str, table_name: str) -> str
                 "supported_types": ["ORACLE_DATABASE", "MYSQL"]
             })
         
-        result = execute_sql_tool_by_connection_id(connection_info['id'], column_sql)
+        result = execute_sql_tool_by_connection_id(connection_info['id'], column_sql, query_binds)
         
         try:
             raw_data = json.loads(result)
@@ -654,8 +693,13 @@ def create_report(dbtools_connection_display_name: str, name: str, sql_query: st
     text_to_embed = name
     if description:
         text_to_embed = f"{name}. {description}"
+
+    safe_model_name = MODEL_NAME.strip()
+    if not _is_safe_oracle_identifier(safe_model_name):
+        return json.dumps({
+            "error": "Invalid MODEL_NAME configuration. Use an unquoted Oracle identifier."
+        })
     
-    # Insert the new report using direct SQL to avoid bind variable issues
     insert_sql = f"""
         INSERT INTO report_definitions (
             name,
@@ -665,15 +709,22 @@ def create_report(dbtools_connection_display_name: str, name: str, sql_query: st
             sql_definition,
             text_vector
         ) VALUES (
-            '{name}',
-            '{description or ""}',
+            :name,
+            :description,
             SYSTIMESTAMP,
             SYSTIMESTAMP,
-            '{json.dumps(sql_definition).replace("'", "''")}',
-            VECTOR_EMBEDDING({MODEL_NAME} USING '{text_to_embed.replace("'", "''") if text_to_embed else ""}' AS data)
+            :sql_definition,
+            VECTOR_EMBEDDING({safe_model_name} USING :text_to_embed AS data)
         )"""
 
-    result = execute_sql_tool_by_connection_id(connection_info['id'], insert_sql)
+    insert_binds = [
+        {"name": "name", "data_type": "VARCHAR", "value": name},
+        {"name": "description", "data_type": "VARCHAR", "value": description or ""},
+        {"name": "sql_definition", "data_type": "VARCHAR", "value": json.dumps(sql_definition)},
+        {"name": "text_to_embed", "data_type": "VARCHAR", "value": text_to_embed if text_to_embed else ""}
+    ]
+
+    result = execute_sql_tool_by_connection_id(connection_info['id'], insert_sql, insert_binds)
     try:
         # Check for errors
         json_result = json.loads(result)
@@ -1047,10 +1098,38 @@ def ragify_column(dbtools_connection_display_name: str, table_name: str, column_
 
     if not column_names:
         return json.dumps({"status": "error", "message": "column_names list cannot be empty."}) 
+    if not _is_safe_oracle_identifier(table_name, allow_qualified=True):
+        return json.dumps({
+            "status": "error",
+            "message": "Invalid table_name. Use unquoted Oracle identifiers only (optionally schema-qualified)."
+        })
+    if not _is_safe_oracle_identifier(vector_column_name):
+        return json.dumps({
+            "status": "error",
+            "message": "Invalid vector_column_name. Use unquoted Oracle identifiers only."
+        })
+
+    normalized_columns = []
+    for col in column_names:
+        if not _is_safe_oracle_identifier(col):
+            return json.dumps({
+                "status": "error",
+                "message": f"Invalid column name '{col}'. Use unquoted Oracle identifiers only."
+            })
+        normalized_columns.append(col.strip())
+
+    safe_table_name = table_name.strip()
+    safe_vector_column_name = vector_column_name.strip()
+    safe_model_name = MODEL_NAME.strip()
+    if not _is_safe_oracle_identifier(safe_model_name):
+        return json.dumps({
+            "status": "error",
+            "message": "Invalid MODEL_NAME configuration. Use an unquoted Oracle identifier."
+        })
 
     # 1. Add the vector column
-    alter_sql = f"ALTER TABLE {table_name} ADD ({vector_column_name} VECTOR({MODEL_EMBEDDING_DIMENSION}))"
-    print(f"Executing ALTER TABLE statement: {alter_sql}")
+    alter_sql = f"ALTER TABLE {safe_table_name} ADD ({safe_vector_column_name} VECTOR({MODEL_EMBEDDING_DIMENSION}))"
+    print("Executing ALTER TABLE statement for ragify_column.")
     
     alter_result_str = execute_sql_tool(dbtools_connection_display_name, alter_sql)
     try:
@@ -1067,14 +1146,12 @@ def ragify_column(dbtools_connection_display_name: str, table_name: str, column_
         print(f"Warning: Exception occurred during ALTER TABLE or response handling: {e}. Proceeding anyway.")
         
     # Regardless of ALTER outcome/warnings, proceed to COMMENT and UPDATE
-    pass # Proceed to COMMENT and UPDATE steps
-
     # 2. Add a comment to the vector column indicating source columns
-    comment_text = f"Vector embedding generated from columns: {', '.join(column_names)}"
+    comment_text = f"Vector embedding generated from columns: {', '.join(normalized_columns)}"
     # Ensure comment text isn't too long for Oracle's limit (4000 bytes, but play safe)
-    comment_text = comment_text[:3900] 
-    comment_sql = f"COMMENT ON COLUMN {table_name}.{vector_column_name} IS '{comment_text}'"
-    print(f"Executing COMMENT ON COLUMN statement: {comment_sql}")
+    comment_text = comment_text[:3900].replace("'", "''")
+    comment_sql = f"COMMENT ON COLUMN {safe_table_name}.{safe_vector_column_name} IS '{comment_text}'"
+    print("Executing COMMENT ON COLUMN statement for ragify_column.")
     
     comment_result_str = execute_sql_tool(dbtools_connection_display_name, comment_sql)
     # Basic check for comment result - less critical, so just print errors
@@ -1089,15 +1166,15 @@ def ragify_column(dbtools_connection_display_name: str, table_name: str, column_
     # Construct the concatenation expression for the source columns
     # Using COALESCE to handle potential NULLs gracefully, replacing them with empty strings
     # Concatenating with a space separator
-    concatenated_columns = " || ' ' || ".join([f"COALESCE(TO_CHAR({col}), '')" for col in column_names])
+    concatenated_columns = " || ' ' || ".join([f"COALESCE(TO_CHAR({col}), '')" for col in normalized_columns])
     
     # Construct the WHERE clause to only update rows where at least one source column is not null
-    where_clause_conditions = [f"{col} IS NOT NULL" for col in column_names]
+    where_clause_conditions = [f"{col} IS NOT NULL" for col in normalized_columns]
     where_clause = " OR ".join(where_clause_conditions)
 
     # 3. Populate the vector column
-    update_sql = f"UPDATE {table_name}\nSET {vector_column_name} = VECTOR_EMBEDDING({MODEL_NAME} USING ({concatenated_columns}) AS data)\nWHERE {where_clause}"
-    print(f"Executing UPDATE statement: {update_sql}")
+    update_sql = f"UPDATE {safe_table_name}\nSET {safe_vector_column_name} = VECTOR_EMBEDDING({safe_model_name} USING ({concatenated_columns}) AS data)\nWHERE {where_clause}"
+    print("Executing UPDATE statement for ragify_column.")
 
     update_result_str = execute_sql_tool(dbtools_connection_display_name, update_sql)
     try:
@@ -1145,7 +1222,8 @@ def heatwave_ask_help(dbtools_connection_display_name: str, question: str) -> st
             })
             
         # Execute the heatwave chat query
-        nl2ml_call = f"call sys.NL2ML('{question}', @nl2ml_response); select @nl2ml_response"
+        escaped_question = _escape_sql_literal(question)
+        nl2ml_call = f"call sys.NL2ML('{escaped_question}', @nl2ml_response); select @nl2ml_response"
         response = execute_sql_tool_by_connection_id(connection_info['id'], nl2ml_call)
         
         # return response
@@ -1199,7 +1277,17 @@ def heatwave_load_vector_store(dbtools_connection_display_name: str, namespace: 
                 "suggestion": "Please provide a MySQL database connection."
             })
             
-        vsload = f"SET @vsl_options=JSON_OBJECT('schema_name', '{schema_name}', 'table_name', '{table_name}'); CALL sys.VECTOR_STORE_LOAD('oci://{bucket_name}@{namespace}/{document_prefix}', @vsl_options);"
+        escaped_schema_name = _escape_sql_literal(schema_name)
+        escaped_table_name = _escape_sql_literal(table_name)
+        escaped_bucket_name = _escape_sql_literal(bucket_name)
+        escaped_namespace = _escape_sql_literal(namespace)
+        escaped_document_prefix = _escape_sql_literal(document_prefix)
+        vsload = (
+            "SET @vsl_options=JSON_OBJECT("
+            f"'schema_name', '{escaped_schema_name}', 'table_name', '{escaped_table_name}'"
+            "); "
+            f"CALL sys.VECTOR_STORE_LOAD('oci://{escaped_bucket_name}@{escaped_namespace}/{escaped_document_prefix}', @vsl_options);"
+        )
         response = execute_sql_tool_by_connection_id(connection_info['id'], vsload)
         
         return response
@@ -1271,7 +1359,8 @@ def heatwave_ask_ml_rag(dbtools_connection_display_name: str, question: str) -> 
             })
             
         # Execute the heatwave chat query
-        ask_ml_rag = f"set @options = NULL; call sys.ml_rag('{question}', @response, JSON_OBJECT('skip_generate', true)); SELECT @response;"
+        escaped_question = _escape_sql_literal(question)
+        ask_ml_rag = f"set @options = NULL; call sys.ml_rag('{escaped_question}', @response, JSON_OBJECT('skip_generate', true)); SELECT @response;"
         response = execute_sql_tool_by_connection_id(connection_info['id'], ask_ml_rag)
         
         # Parse the response
@@ -1326,7 +1415,8 @@ def heatwave_ask_nl_sql(dbtools_connection_display_name: str, question: str) -> 
                 "suggestion": "Please provide a MySQL database connection."
             })
 
-        call_sql = f"CALL sys.NL_SQL('{question.replace("'","''")}', @response, JSON_OBJECT('execute', FALSE)); SELECT @response;"
+        escaped_question = _escape_sql_literal(question)
+        call_sql = f"CALL sys.NL_SQL('{escaped_question}', @response, JSON_OBJECT('execute', FALSE)); SELECT @response;"
 
         response = execute_sql_tool_by_connection_id(connection_info['id'], call_sql)
         # Parse the response
@@ -1392,7 +1482,8 @@ def heatwave_retrieve_relevant_schema_information(dbtools_connection_display_nam
                 "suggestion": "Please provide a MySQL database connection."
             })
 
-        call_sql = f"CALL sys.ML_RETRIEVE_SCHEMA_METADATA('{question.replace("'","''")}', @response, NULL);SELECT JSON_OBJECT('create_statements', @response) AS jobj;"
+        escaped_question = _escape_sql_literal(question)
+        call_sql = f"CALL sys.ML_RETRIEVE_SCHEMA_METADATA('{escaped_question}', @response, NULL);SELECT JSON_OBJECT('create_statements', @response) AS jobj;"
         response = execute_sql_tool_by_connection_id(connection_info['id'], call_sql)
         # Parse the response
         if isinstance(response, str):

@@ -319,14 +319,14 @@ def get_table_info(dbtools_connection_display_name: str, table_name: str) -> str
         query_binds = [{"name": "table_name", "data_type": "VARCHAR", "value": table_name}]
         
         if db_type == 'ORACLE_DATABASE':
-            # First try with all_tab_columns (includes system views)
+            # Query Oracle dictionary views from SYS to avoid synonym shadowing.
             column_sql = """
             WITH pk_columns AS (
                 SELECT column_name
-                FROM all_cons_columns acc
-                JOIN all_constraints ac ON acc.constraint_name = ac.constraint_name
+                FROM SYS.all_cons_columns acc
+                JOIN SYS.all_constraints ac ON acc.constraint_name = ac.constraint_name
                     AND acc.owner = ac.owner
-                WHERE ac.table_name = UPPER(:table_name)
+                WHERE (ac.table_name = :table_name OR ac.table_name = UPPER(:table_name))
                 AND ac.constraint_type = 'P'
             )
             SELECT 
@@ -338,17 +338,17 @@ def get_table_info(dbtools_connection_display_name: str, table_name: str) -> str
                 cc.comments,
                 CASE WHEN pk.column_name IS NOT NULL THEN 1 ELSE 0 END as is_primary_key,
                 t.num_rows
-            FROM all_tab_columns c
-            LEFT JOIN all_col_comments cc 
+            FROM SYS.all_tab_columns c
+            LEFT JOIN SYS.all_col_comments cc 
                 ON cc.table_name = c.table_name 
                 AND cc.column_name = c.column_name
                 AND cc.owner = c.owner
             LEFT JOIN pk_columns pk 
                 ON pk.column_name = c.column_name
-            LEFT JOIN all_tables t 
+            LEFT JOIN SYS.all_tables t 
                 ON t.table_name = c.table_name
                 AND t.owner = c.owner
-            WHERE c.table_name = UPPER(:table_name)
+            WHERE (c.table_name = :table_name OR c.table_name = UPPER(:table_name))
             ORDER BY c.column_id
             """
         elif db_type == 'MYSQL':
@@ -472,8 +472,8 @@ def list_tables(dbtools_connection_display_name: str) -> str:
         if db_type == 'ORACLE_DATABASE':
             sql_script = """
             SELECT table_name, num_rows, comments
-            FROM user_tables
-            LEFT JOIN user_tab_comments USING (table_name)
+            FROM SYS.user_tables
+            LEFT JOIN SYS.user_tab_comments USING (table_name)
             ORDER BY table_name
             """
         elif db_type == 'MYSQL':
@@ -579,7 +579,7 @@ def bootstrap_reports(dbtools_connection_display_name: str) -> str:
         # Check if table exists in current schema
         check_sql = """
             SELECT owner, table_name 
-            FROM all_tables 
+            FROM SYS.all_tables 
             WHERE table_name = 'REPORT_DEFINITIONS'
             AND owner = SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
         """
@@ -626,7 +626,7 @@ def bootstrap_reports(dbtools_connection_display_name: str) -> str:
             current_schema = None
             try:
                 # Get current schema for the success message
-                schema_sql = "SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') as schema FROM DUAL"
+                schema_sql = "SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') as schema FROM SYS.DUAL"
                 schema_result = execute_sql_tool_by_connection_id(connection_info['id'], schema_sql)
                 schema_data = json.loads(schema_result)
                 result_set = schema_data.get("items", [{}])[0].get("resultSet", {})

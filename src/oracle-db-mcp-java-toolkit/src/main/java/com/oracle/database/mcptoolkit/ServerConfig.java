@@ -61,9 +61,8 @@ public final class ServerConfig {
   }
 
   private static final Set<String> DB_TOOLS = Set.of(
-    "similarity-search", "list-vector-models", "list-vector-stores",
-    "create-vector-store", "insert-file-with-embedding", "drop-vector-model",
-    "embed-from-table", "explain-plan", "read-query", "write-query",
+    "similarity-search", "vector-store", "vector-model", "embed", "task", "oci-storage",
+    "explain-plan", "read-query", "write-query",
     "create-table", "delete-table", "list-tables", "describe-table",
     "start-transaction", "resume-transaction", "commit-transaction",
     "rollback-transaction", "db-ping", "db-metrics-range"
@@ -82,13 +81,8 @@ public final class ServerConfig {
           "get-rdbms-packet-dumps"
       ),
       "rag", Set.of(
-              "similarity-search",
-              "list-vector-models",
-              "list-vector-stores",
-              "create-vector-store",
-              "insert-file-with-embedding",
-              "drop-vector-model",
-              "embed-from-table"
+              "similarity-search", "vector-store", "vector-model",
+              "embed", "task", "oci-storage"
           ),
       "database-operator", Set.of(
               "read-query", "write-query", "create-table", "delete-table",

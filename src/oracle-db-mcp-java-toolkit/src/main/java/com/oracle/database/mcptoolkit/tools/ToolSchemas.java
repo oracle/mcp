@@ -227,161 +227,223 @@ public class ToolSchemas {
       """;
 
   /**
-   * JSON schema for listing vector stores.
+   * JSON schema for vector store management (create, list).
    */
-  static final String LIST_VECTOR_STORES = """
-    {
-      "type": "object",
-      "properties": {}
-    }""";
-
-  /**
-   * JSON schema for listing vector models.
-   */
-  static final String LIST_VECTOR_MODELS = """
-    {
-      "type": "object",
-      "properties": {}
-    }""";
-
-  /**
-   * JSON schema for drop-vector-model operations.
-   * <p>
-   * Requires the name of the model to delete.
-   */
-  static final String DROP_VECTOR_MODEL = """
+  static final String VECTOR_STORE = """
     {
       "type": "object",
       "properties": {
-        "modelName": {
+        "action": {
           "type": "string",
-          "description": "Name of the ONNX model to drop"
-        }
-      },
-      "required": ["modelName"]
-    }""";
-
-  /**
-   * Schema for creating a new vector store table.
-   * <p>
-   * This schema requires a "tableName" property and optionally accepts column names,
-   * vector dimensions, and a flag to include metadata tracking.
-   */
-  static final String CREATE_VECTOR_STORE = """
-  {
-    "type": "object",
-    "properties": {
-      "tableName": {
-        "type": "string",
-        "description": "Name of the vector store table to create"
-      },
-      "textColumn": {
-        "type": "string",
-        "description": "Name for text/CLOB column (default: text)"
-      },
-      "embeddingColumn": {
-        "type": "string",
-        "description": "Name for vector embedding column (default: EMBEDDING)"
-      },
-      "dimensions": {
-        "type": "integer",
-        "description": "Vector dimensions (optional). If not specified, allows flexible dimensions"
-      },
-      "includeMetadata": {
-        "type": "boolean",
-        "description": "Include ID and metadata columns (default: true)"
-      }
-    },
-    "required": ["tableName"]
-  }""";
-
-  /**
-   * Schema for uploading a document to a vector store.
-   * <p>
-   * Requires the table name and file path. Optionally accepts column names,
-   * model selection, and chunking configuration.
-   */
-  static final String INSERT_FILE_WITH_EMBEDDING = """
-    {
-      "type": "object",
-      "properties": {
-        "table": {
-          "type": "string",
-          "description": "Target vector store table name"
+          "enum": ["create", "list"],
+          "description": "create=Create a new vector store (needs tableName). list=List all existing vector stores."
         },
-        "filePath": {
+        "tableName": {
           "type": "string",
-          "description": "Path to file (PDF, DOC, JSON, etc.)"
+          "description": "Table name to create. Required for action=create."
         },
         "textColumn": {
           "type": "string",
-          "description": "Text column name (default: text)"
+          "description": "Text/CLOB column name (default: TEXT)."
         },
         "embeddingColumn": {
           "type": "string",
-          "description": "Embedding column name (default: EMBEDDING)"
+          "description": "Vector embedding column name (default: EMBEDDING)."
         },
-        "modelName": {
-          "type": "string",
-          "description": "Vector model name (default: doc_model)"
+        "dimensions": {
+           "type": "integer",
+           "description": "Fixed vector dimensions. Omit for flexible size."
         },
-        "metadata": {
-          "type": "string",
-          "description": "Optional JSON metadata"
-        },
-        "chunkParams": {
-          "type": "string",
-          "description": "JSON chunking params (default: {\\\"max\\\": 500, \\\"overlap\\\": 50})"
+        "includeMetadata": {
+           "type": "boolean",
+           "description": "Add METADATA column for tracking and dedup (default: true)."
         }
       },
-      "required": ["table", "filePath"]
+      "required": ["action"]
     }""";
 
   /**
-   * Schema for embedding text from an existing Oracle table into a vector store.
+   * JSON schema for vector model management (list, drop).
    */
-  static final String EMBED_FROM_TABLE = """
-  {
-    "type": "object",
-    "properties": {
-      "sourceTable": {
-         "type": "string",
-         "description": "Source table name containing the text to embed"
+  static final String VECTOR_MODEL = """
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["list", "drop"],
+          "description": "list=List all ONNX embedding models. drop=Drop a model by name (needs modelName)."
+        },
+        "modelName": {
+          "type": "string",
+          "description": "Model name to drop. Required for action=drop."
+        }
       },
-      "sourceTextColumn": {
-         "type": "string",
-         "description": "Column in source table containing the text to embed"
+      "required": ["action"]
+    }""";
+
+  /**
+   * JSON schema for embedding documents into a vector store.
+   * All actions run in the background and return a taskId immediately.
+   */
+  static final String EMBED = """
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["file", "files", "table", "object", "bucket"],
+          "description": "file=Single local file (needs filePath, table). files=Multiple local files (needs filePaths array, table). table=From existing Oracle table (needs sourceTable, sourceTextColumn, sourceIdColumn, targetTable). object=Single OCI file (use objectUrl for a direct or PAR URL, or provide region+namespace+bucketName+objectName+table). bucket=Entire OCI bucket (use bucketUrl for a direct or PAR URL, or provide region+namespace+bucketName+table). PAR URLs are self-authenticating — credentialName is ignored."
+        },
+        "table": {
+          "type": "string",
+          "description": "Target vector store. Required for actions: file, files, object, bucket."
+        },
+        "textColumn": {
+          "type": "string",
+          "description": "Text column name (default: TEXT)."
+        },
+        "embeddingColumn": {
+           "type": "string",
+           "description": "Embedding column name (default: EMBEDDING)."
+        },
+        "modelName": {
+          "type": "string",
+          "description": "Vector model name (default: doc_model)."
+        },
+        "chunkParams": {
+          "type": "string",
+          "description": "JSON chunking params (default: {\\\"max\\\": 500, \\\"overlap\\\": 50})."
+        },
+        "filePath": {
+          "type": "string",
+          "description": "Single local file path. Required for action=file."
+        },
+        "filePaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of local file paths. Required for action=files."
+        },
+        "sourceTable": {
+          "type": "string",
+          "description": "Source table containing text. Required for action=table."
+        },
+        "sourceTextColumn": {
+          "type": "string",
+          "description": "Text column in source table. Required for action=table."
+        },
+        "sourceIdColumn": {
+          "type": "string",
+          "description": "ID column in source table. Required for action=table."
+        },
+        "targetTable": {
+          "type": "string",
+          "description": "Target vector store. Required for action=table."
+        },
+        "metadataColumn": {
+          "type": "string",
+          "description": "Metadata column in target (default: METADATA). For action=table." },
+        "credentialName": {
+          "type":
+          "string", "description": "DBMS_CLOUD credential name. Omit for public buckets. For action=object/bucket." 
+        },
+        "region": {
+          "type": "string",
+          "description": "OCI region (e.g. us-ashburn-1). Required for action=object/bucket."
+        },
+        "namespace": {
+          "type": "string",
+          "description": "OCI namespace. Required for action=object/bucket."
+        },
+        "bucketName": {
+          "type": "string",
+          "description": "OCI bucket name. Required for action=object/bucket."
+        },
+        "objectName": {
+          "type": "string",
+          "description": "Object path in the bucket. Required for action=object when objectUrl is not provided."
+        },
+        "prefix": {
+          "type": "string",
+          "description": "Optional prefix filter (e.g. docs/). For action=bucket."
+        },
+        "allowedExtensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional file extension filter (e.g. pdf, txt, docx). For action=bucket. If omitted, all files are processed." 
+        },
+        "objectUrl": {
+          "type": "string",
+          "description": "Direct OCI URL or Pre-Authenticated Request (PAR) URL for a single object. For action=object. Alternative to region/namespace/bucketName/objectName. PAR URLs do not require credentialName."
+        },
+        "bucketUrl": {
+          "type": "string",
+          "description": "Direct OCI bucket URL or Pre-Authenticated Request (PAR) bucket URL. For action=bucket. Alternative to region/namespace/bucketName. PAR URLs do not require credentialName." }
       },
-      "sourceIdColumn": {
-         "type": "string",
-         "description": "Column in source table used as unique identifier (stored in metadata)"
+      "required": ["action"]
+    }""";
+
+  /**
+   * JSON schema for background embedding task management (status, list).
+   */
+  static final String TASK = """
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["status", "list"],
+          "description": "status=Get status of a specific task (needs taskId). list=List all embedding tasks submitted since the server started."
+        },
+        "taskId": {
+          "type": "string",
+          "description": "Task ID returned by the embed tool. Required for action=status." }
       },
-      "targetTable": {
-         "type": "string",
-         "description": "Target vector store table name"
+      "required": ["action"]
+    }""";
+
+  /**
+   * JSON schema for OCI Object Storage utilities (list-objects, list-credentials).
+   */
+  static final String OCI_STORAGE = """
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["list-objects", "list-credentials"],
+          "description": "list-objects=List all objects in an OCI bucket (use bucketUrl for a direct or PAR URL, or provide region+namespace+bucketName). list-credentials=List all DBMS_CLOUD credentials in the schema."
+        },
+        "credentialName": {
+          "type": "string",
+          "description": "DB credential name. Omit for public buckets. For action=list-objects."
+        },
+        "region": {
+          "type": "string",
+          "description": "OCI region (e.g. eu-amsterdam-1). Required for action=list-objects."
+        },
+        "namespace": {
+          "type": "string",
+          "description": "OCI Object Storage namespace. Required for action=list-objects."
+        },
+        "bucketName": {
+          "type": "string",
+          "description": "OCI bucket name. Required for action=list-objects." 
+         },
+        "prefix": {
+          "type": "string",
+          "description": "Optional prefix filter (e.g. docs/). For action=list-objects."
+        },
+        "bucketUrl": {
+          "type": "string",
+          "description": "Direct OCI bucket URL or Pre-Authenticated Request (PAR) bucket URL. For action=list-objects. Alternative to region/namespace/bucketName. PAR URLs do not require credentialName." 
+        }
       },
-      "textColumn": {
-         "type": "string",
-         "description": "Text/CLOB column in target table (default: TEXT)"
-      },
-      "embeddingColumn": {
-         "type": "string",
-         "description": "Vector column in target table (default: EMBEDDING)"
-      },
-      "metadataColumn": {
-         "type": "string",
-         "description": "Metadata JSON column in target table (default: METADATA)"
-      },
-      "modelName": {
-         "type": "string",
-         "description": "Vector embedding model name (default: doc_model)"
-      },
-      "chunkParams": {
-         "type": "string",
-         "description": "JSON chunking params (default: {\\\"max\\\": 500, \\\"overlap\\\": 50})"
-      }
-    },
-    "required": ["sourceTable", "sourceTextColumn", "sourceIdColumn", "targetTable"]
-  }""";
+      "required": ["action"]
+    }""";
 
 }

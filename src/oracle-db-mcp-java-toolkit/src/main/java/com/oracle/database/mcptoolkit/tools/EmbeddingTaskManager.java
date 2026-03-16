@@ -521,6 +521,6 @@ public class EmbeddingTaskManager {
   }
 
   private static String quoteIdent(String name) {
-    return "\"" + name.replace("\"", "\"\"") + "\"";
+    return "\"" + name.toUpperCase().replace("\"", "\"\"") + "\"";
   }
 }

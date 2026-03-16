@@ -511,7 +511,7 @@ public class RagTools {
                                                   int topK) throws SQLException {
     String sql = String.format(
         SqlQueries.SIMILARITY_SEARCH_QUERY,
-        quoteIdent(dataColumn), textFetchLimit, quoteIdent(table), embeddingColumn, modelName
+        quoteIdent(dataColumn.toUpperCase()), textFetchLimit, quoteIdent(table.toUpperCase()), quoteIdent(embeddingColumn.toUpperCase()), modelName
     );
 
     List<String> result = new ArrayList<>();
@@ -620,7 +620,7 @@ public class RagTools {
           Integer dimensions, boolean includeMetadata) throws SQLException {
 
     StringBuilder sql = new StringBuilder("CREATE TABLE ");
-    sql.append(quoteIdent(tableName)).append(" (");
+    sql.append(quoteIdent(tableName.toUpperCase())).append(" (");
 
     sql.append("ID VARCHAR2(36) DEFAULT SYS_GUID() PRIMARY KEY, ");
     sql.append("CREATED_AT TIMESTAMP DEFAULT SYSTIMESTAMP, ");
@@ -629,12 +629,12 @@ public class RagTools {
       sql.append("METADATA JSON, ");
     }
 
-    sql.append(quoteIdent(textColumn)).append(" CLOB, ");
+    sql.append(quoteIdent(textColumn.toUpperCase())).append(" CLOB, ");
 
     if (dimensions == null) {
-      sql.append(quoteIdent(embeddingColumn)).append(" VECTOR(*, FLOAT32) NOT NULL");
+      sql.append(quoteIdent(embeddingColumn.toUpperCase())).append(" VECTOR(*, FLOAT32) NOT NULL");
     } else {
-      sql.append(quoteIdent(embeddingColumn)).append(" VECTOR(").append(dimensions).append(", FLOAT32) NOT NULL");
+      sql.append(quoteIdent(embeddingColumn.toUpperCase())).append(" VECTOR(").append(dimensions).append(", FLOAT32) NOT NULL");
     }
 
     sql.append(")");
@@ -645,8 +645,8 @@ public class RagTools {
       if (includeMetadata) {
         String indexSql = String.format(
                 "CREATE INDEX %s ON %s (JSON_VALUE(METADATA, '$.source_uri'))",
-                quoteIdent(tableName + "_SOURCE_IDX"),
-                quoteIdent(tableName)
+                quoteIdent((tableName + "_SOURCE_IDX").toUpperCase()),
+                quoteIdent(tableName.toUpperCase())
         );
         st.executeUpdate(indexSql);
       }
@@ -682,10 +682,10 @@ public class RagTools {
     if (withMetadata) {
       String sql = String.format(
               SqlQueries.INSERT_FILE_WITH_EMBEDDING_QUERY,
-              quoteIdent(table),
-              quoteIdent(textColumn),
-              quoteIdent(embeddingColumn),
-              quoteIdent(table)
+              quoteIdent(table.toUpperCase()),
+              quoteIdent(textColumn.toUpperCase()),
+              quoteIdent(embeddingColumn.toUpperCase()),
+              quoteIdent(table.toUpperCase())
       );
 
       String documentId = UUID.randomUUID().toString();
@@ -704,9 +704,9 @@ public class RagTools {
     } else {
       String sql = String.format(
               SqlQueries.INSERT_FILE_WITHOUT_METADATA_QUERY,
-              quoteIdent(table),
-              quoteIdent(textColumn),
-              quoteIdent(embeddingColumn)
+              quoteIdent(table.toUpperCase()),
+              quoteIdent(textColumn.toUpperCase()),
+              quoteIdent(embeddingColumn.toUpperCase())
       );
 
       try (PreparedStatement ps = c.prepareStatement(sql)) {
@@ -745,7 +745,7 @@ public class RagTools {
    * @throws SQLException if the query fails
    */
   static boolean fileExistsInVectorStore(Connection c, String table, String sourceUri) throws SQLException {
-    String sql = String.format(SqlQueries.CHECK_FILE_EXISTS_IN_STORE_QUERY, quoteIdent(table));
+    String sql = String.format(SqlQueries.CHECK_FILE_EXISTS_IN_STORE_QUERY, quoteIdent(table.toUpperCase()));
     try (PreparedStatement ps = c.prepareStatement(sql)) {
       ps.setString(1, sourceUri);
       try (ResultSet rs = ps.executeQuery()) {

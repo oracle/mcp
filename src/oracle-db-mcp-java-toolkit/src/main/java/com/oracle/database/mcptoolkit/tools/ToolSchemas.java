@@ -14,6 +14,54 @@ package com.oracle.database.mcptoolkit.tools;
 public class ToolSchemas {
 
   /**
+   * JSON schema for the consolidated transaction tool.
+   */
+  static final String TRANSACTION = """
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["start", "resume", "commit", "rollback"],
+          "description": "start=Begin a new JDBC transaction (returns txId). resume=Verify a txId is still active. commit=Commit and close a transaction. rollback=Rollback and close a transaction."
+        },
+        "txId": {
+          "type": "string",
+          "description": "Required for resume, commit, and rollback actions."
+        }
+      },
+      "required": ["action"]
+    }""";
+
+  /**
+   * JSON schema for the consolidated table management tool.
+   */
+  static final String TABLE_MANAGEMENT = """
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["create", "drop", "list", "describe"],
+          "description": "create=Create a table from a full CREATE TABLE statement. drop=Drop a table by name. list=List all tables and synonyms in the current schema. describe=Get detailed column info for a specific table."
+        },
+        "sql": {
+          "type": "string",
+          "description": "Full CREATE TABLE statement. Required for action=create."
+        },
+        "table": {
+          "type": "string",
+          "description": "Table name. Required for action=drop and action=describe."
+        },
+        "txId": {
+          "type": "string",
+          "description": "Optional active transaction ID. Applies to action=create."
+        }
+      },
+      "required": ["action"]
+    }""";
+
+  /**
    * JSON schema for SQL-only operations.
    * <p>
    * This schema requires a "sql" property and optionally accepts a "txId" property.
@@ -156,4 +204,47 @@ public class ToolSchemas {
       },
       "required": ["sql"]
     }""";
+
+  /**
+   * JSON schema for admin tools that take no input.
+   */
+  static final String NO_INPUT_SCHEMA = """
+      {
+        "type": "object",
+        "properties": {}
+      }
+      """;
+
+  /**
+   * JSON schema for editing or adding a dynamic tool in the YAML config.
+   * The operation is an upsert keyed by the tool name. Only provided fields are updated.
+   */
+  static final String EDIT_TOOL_SCHEMA = """
+      {
+        "type": "object",
+        "properties": {
+          "name":        { "type": "string", "description": "Tool name (YAML key). Required for upsert or delete." },
+          "remove":      { "type": "boolean", "description": "If true, remove this tool from the YAML config. Other fields are ignored." },
+          "description": { "type": "string", "description": "Human-friendly description of the tool" },
+          "dataSource":  { "type": "string", "description": "Reference key from dataSources to use for this tool" },
+          "statement":   { "type": "string", "description": "SQL statement to execute (SELECT or DML)" },
+          "parameters":  {
+            "type": "array",
+            "description": "Optional parameter list for the tool",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name":        { "type": "string",  "description": "Parameter name" },
+                "type":        { "type": "string",  "description": "JSON schema type (e.g., string, number, integer, boolean)" },
+                "description": { "type": "string",  "description": "Parameter description" },
+                "required":    { "type": "boolean", "description": "Whether this parameter is required" }
+              },
+              "required": ["name", "type"]
+            }
+          }
+        },
+        "required": ["name"]
+      }
+      """;
+
 }

@@ -61,6 +61,17 @@ public class ToolConfig {
     }
   }
 
+  /**
+   * Builds a JSON representation of the input schema for this tool configuration.
+   * <p>
+   * The input schema is constructed based on the tool's parameter configurations.
+   * Each parameter is represented as a property in the schema, with its type and description.
+   * Required parameters are listed in the "required" section of the schema.
+   * <p>
+   * The resulting JSON string can be used to validate input data for the tool.
+   *
+   * @return a JSON string representing the input schema for this tool configuration
+   */
   public String buildInputSchemaJson() {
     ObjectNode schema = JsonNodeFactory.instance.objectNode();
     schema.put("type", "object");

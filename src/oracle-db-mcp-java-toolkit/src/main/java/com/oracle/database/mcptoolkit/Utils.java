@@ -12,9 +12,7 @@ import com.oracle.database.mcptoolkit.config.ConfigRoot;
 import com.oracle.database.mcptoolkit.config.DataSourceConfig;
 import com.oracle.database.mcptoolkit.config.ToolConfig;
 import com.oracle.database.mcptoolkit.config.ToolParameterConfig;
-import com.oracle.database.mcptoolkit.tools.ExplainAndExecutePlanTool;
-import com.oracle.database.mcptoolkit.tools.LogAnalyzerTools;
-import com.oracle.database.mcptoolkit.tools.SimilaritySearchTool;
+import com.oracle.database.mcptoolkit.tools.*;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -39,14 +37,18 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import java.lang.reflect.Field;
 
 /**
  * Utility class for managing Oracle database connections and
@@ -60,9 +62,13 @@ import java.util.stream.Stream;
  */
 public class Utils {
   private static final Logger LOG = Logger.getLogger(Utils.class.getName());
+  private static final Pattern SAFE_IDENT = Pattern.compile("[A-Za-z0-9_$.#]+");
 
   private static final Map<String, DataSource> dataSources = new ConcurrentHashMap<>();
   private static volatile DataSource defaultDataSource;
+
+  public static final Set<String> customToolNames = new HashSet<>();
+  private static final Map<String, String> customToolSignatures = new ConcurrentHashMap<>();
 
   /**
    * <p>
@@ -70,66 +76,175 @@ public class Utils {
    * </p>
    */
   static void addSyncToolSpecifications(McpSyncServer server, ServerConfig config) {
+    // Clear custom tool names at startup in case of restart
+    synchronized (customToolNames) {
+      customToolNames.clear();
+      customToolSignatures.clear();
+    }
+
     List<McpServerFeatures.SyncToolSpecification> specs = LogAnalyzerTools.getTools();
     for (McpServerFeatures.SyncToolSpecification spec : specs) {
-      String toolName = spec.tool().name(); // e.g. "get-stats", "get-queries"
+      String toolName = spec.tool().name();
       if (isToolEnabled(config, toolName)) {
         server.addTool(spec);
       }
     }
 
-    // similarity_search
-    if (isToolEnabled(config, "similarity_search")) {
-      server.addTool(SimilaritySearchTool.getSymilaritySearchTool(config));
+    // RAG tools
+    List<McpServerFeatures.SyncToolSpecification> ragSpecs = RagTools.getTools(config);
+    for (McpServerFeatures.SyncToolSpecification spec : ragSpecs) {
+      String toolName = spec.tool().name();
+      if (isToolEnabled(config, toolName)) {
+        server.addTool(spec);
+      }
     }
 
-    // explain_plan
-    if (isToolEnabled(config, "explain_plan")) {
-      server.addTool(ExplainAndExecutePlanTool.getExplainAndExecutePlanTool(config));
+    // Database Operator tools
+    List<McpServerFeatures.SyncToolSpecification> dbOperatorSpecs = DatabaseOperatorTools.getTools(config);
+    for (McpServerFeatures.SyncToolSpecification spec : dbOperatorSpecs) {
+      String toolName = spec.tool().name();
+      if (isToolEnabled(config, toolName)) {
+        server.addTool(spec);
+      }
+    }
+
+    // MCP Admin tools
+    List<McpServerFeatures.SyncToolSpecification> mcpAdminSpecs = McpAdminTools.getTools(config);
+    for (McpServerFeatures.SyncToolSpecification spec : mcpAdminSpecs) {
+      String toolName = spec.tool().name();
+      if (isToolEnabled(config, toolName)) {
+        server.addTool(spec);
+      }
     }
 
     // ---------- Dynamically Added Tools ----------
-    for (Map.Entry<String, ToolConfig> entry : config.tools.entrySet()) {
-      ToolConfig tc = entry.getValue();
-      server.addTool(
-          McpServerFeatures.SyncToolSpecification.builder()
-              .tool(McpSchema.Tool.builder()
-                  .name(tc.name)
-                  .title(tc.name)
-                  .description(tc.description)
-                  .inputSchema(tc.buildInputSchemaJson())
-                  .build()
-              )
-              .callHandler((exchange, callReq) ->
-                  tryCall(() -> {
-                    try (Connection c = openConnection(config, tc.dataSource)) {
-                      PreparedStatement ps = c.prepareStatement(tc.statement);
-                      int paramIdx = 1;
-                      if (tc.parameters != null) {
-                        for (ToolParameterConfig param : tc.parameters) {
-                          Object argVal = callReq.arguments().get(param.name);
-                          ps.setObject(paramIdx++, argVal);
-                        }
-                      }
-                      if (tc.statement.trim().toLowerCase().startsWith("select")) {
-                        ResultSet rs = ps.executeQuery();
-                        List<Map<String,Object>> rows = rsToList(rs);
-                        return McpSchema.CallToolResult.builder()
-                            .structuredContent(Map.of("rows", rows, "rowCount", rows.size()))
-                            .addTextContent(new ObjectMapper().writeValueAsString(rows))
-                            .build();
-                      } else {
-                        int n = ps.executeUpdate();
-                        return McpSchema.CallToolResult.builder()
-                            .structuredContent(Map.of("updateCount", n))
-                            .addTextContent("{\"updateCount\":" + n + "}")
-                            .build();
-                      }
-                    }
-                  })
-              )
-              .build()
-      );
+    if (config.tools != null) {
+      for (Map.Entry<String, ToolConfig> entry : config.tools.entrySet()) {
+        ToolConfig tc = entry.getValue();
+        if (!isToolEnabled(config, tc.name)) continue;
+        server.addTool(makeSyncToolSpecification(tc, config));
+        String sig = computeSignature(tc);
+        synchronized (customToolNames) {
+          customToolNames.add(tc.name);
+          customToolSignatures.put(tc.name, sig);
+        }
+      }
+    }
+  }
+
+  private static String computeSignature(ToolConfig tc) {
+    StringBuilder sb = new StringBuilder();
+    sb.append(nullToEmpty(tc.name)).append('|')
+      .append(nullToEmpty(tc.dataSource)).append('|')
+      .append(nullToEmpty(tc.description)).append('|')
+      .append(nullToEmpty(tc.statement)).append('|');
+    if (tc.parameters != null) {
+      for (ToolParameterConfig p : tc.parameters) {
+        if (p == null) continue;
+        sb.append(nullToEmpty(p.name)).append(':')
+          .append(nullToEmpty(p.type)).append(':')
+          .append(nullToEmpty(p.description)).append(':')
+          .append(p.required).append(';');
+      }
+    }
+    return sb.toString();
+  }
+
+  private static String nullToEmpty(String s) { return s == null ? "" : s; }
+
+  /**
+   * Unregister a custom tool from local in-memory registries so runtime removal stays consistent.
+   */
+  public static void unregisterCustomToolLocally(String name) {
+    if (name == null) return;
+    synchronized (customToolNames) {
+      customToolNames.remove(name);
+      try {
+        // Remove signature if present; safe even if missing
+        Field f = Utils.class.getDeclaredField("customToolSignatures");
+        f.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, String> sigs = (java.util.Map<String, String>) f.get(null);
+        sigs.remove(name);
+      } catch (Throwable ignored) {}
+    }
+  }
+
+
+  private static McpServerFeatures.SyncToolSpecification makeSyncToolSpecification(ToolConfig tc, ServerConfig config) {
+    return McpServerFeatures.SyncToolSpecification.builder()
+        .tool(McpSchema.Tool.builder()
+            .name(tc.name)
+            .title(tc.name)
+            .description(tc.description)
+            .inputSchema(tc.buildInputSchemaJson())
+            .build()
+        )
+        .callHandler((exchange, callReq) -> tryCall(() -> {
+          try (Connection c = openConnection(config, tc.dataSource)) {
+            PreparedStatement ps = c.prepareStatement(tc.statement);
+            int paramIdx = 1;
+            if (tc.parameters != null) {
+              for (ToolParameterConfig param : tc.parameters) {
+                Object argVal = callReq.arguments().get(param.name);
+                ps.setObject(paramIdx++, argVal);
+              }
+            }
+            if (tc.statement.trim().toLowerCase().startsWith("select")) {
+              ResultSet rs = ps.executeQuery();
+              List<Map<String, Object>> rows = rsToList(rs);
+              return McpSchema.CallToolResult.builder()
+                  .structuredContent(Map.of("rows", rows, "rowCount", rows.size()))
+                  .addTextContent(new ObjectMapper().writeValueAsString(rows))
+                  .build();
+            } else {
+              int n = ps.executeUpdate();
+              return McpSchema.CallToolResult.builder()
+                  .structuredContent(Map.of("updateCount", n))
+                  .addTextContent("{\"updateCount\":" + n + "}")
+                  .build();
+            }
+          }
+        }))
+        .build();
+  }
+
+  /**
+   * Incrementally apply YAML tool changes: add new tools, update changed ones, and do NOT remove tools
+   * that are not present in the new config.
+   */
+  public static void reloadCustomTools(McpSyncServer server, ServerConfig config) {
+    synchronized (customToolNames) {
+      if (config.tools != null) {
+        for (Map.Entry<String, ToolConfig> entry : config.tools.entrySet()) {
+          String name = entry.getKey();
+          ToolConfig tc = entry.getValue();
+          if (!isToolEnabled(config, name)) {
+            continue;
+          }
+          String newSig = computeSignature(tc);
+
+          if (!customToolNames.contains(name)) {
+            server.addTool(makeSyncToolSpecification(tc, config));
+            customToolNames.add(name);
+            customToolSignatures.put(name, newSig);
+          } else {
+            String oldSig = customToolSignatures.get(name);
+            if (oldSig == null || !oldSig.equals(newSig)) {
+              try {
+                server.removeTool(name);
+              } catch (Exception ex) {
+                LOG.info(() -> "Failed to remove tool for update: " + name + ". Exception: " + ex);
+              }
+              server.addTool(makeSyncToolSpecification(tc, config));
+              customToolSignatures.put(name, newSig);
+            } else {
+              LOG.info(() -> "Tool unchanged (skipped): " + name);
+            }
+          }
+        }
+      }
+      // Intentionally do not remove tools absent from the new config
     }
   }
 
@@ -163,13 +278,15 @@ public class Utils {
     if (yamlConfig == null) {
       config = ServerConfig.fromSystemProperties();
     } else {
-      String defaultSourceKey = yamlConfig.dataSources!=null?yamlConfig.dataSources.keySet().stream().findFirst().orElse(null):null;
+      String defaultSourceKey = yamlConfig.dataSources != null
+          ? yamlConfig.dataSources.keySet().stream().findFirst().orElse(null)
+          : null;
       config = ServerConfig.fromSystemPropertiesAndYaml(yamlConfig, defaultSourceKey);
     }
     return config;
   }
 
-  /**
+/**
    * Acquires a JDBC connection from the active data source.
    *
    * @param cfg server configuration
@@ -189,7 +306,7 @@ public class Utils {
    * @param sourceName the name of the source; if null, uses the default source
    * @return a {@link DataSource} for the specified source
    * @throws SQLException if creation or configuration fails
-   */
+   */  
   private static DataSource getOrCreateDataSource(ServerConfig cfg, String sourceName) throws SQLException {
     if (sourceName == null || sourceName.equals(ServerConfig.defaultSourceName)) {
       if (defaultDataSource != null) return defaultDataSource;
@@ -330,7 +447,7 @@ public class Utils {
    * @return list of rows with column:value mapping
    * @throws SQLException if reading from ResultSet fails
    */
-  static List<Map<String, Object>> rsToList(ResultSet rs) throws SQLException {
+  public static List<Map<String, Object>> rsToList(ResultSet rs) throws SQLException {
     List<Map<String, Object>> out = new ArrayList<>();
     ResultSetMetaData md = rs.getMetaData();
     int cols = md.getColumnCount();
@@ -377,5 +494,50 @@ public class Utils {
     String key = toolName.toLowerCase(Locale.ROOT);
     return config.toolsFilter.contains(key);
   }
+
+  /**
+   * Checks if the provided SQL looks like a SELECT.
+   *
+   * @param sql the SQL string
+   * @return true if it begins with "SELECT" (case-insensitive)
+   */
+  public static boolean looksSelect(String sql) {
+    return sql != null && sql.trim().regionMatches(true, 0, "SELECT", 0, 6);
+  }
+
+  /**
+   * DDL detector (CREATE/ALTER/DROP/TRUNCATE/RENAME/COMMENT/GRANT/REVOKE).
+   * Used to block DDL inside user-managed transactions.
+   */
+  public static boolean isDdl(String sql) {
+    if (sql == null) return false;
+    String s = sql.trim().toUpperCase();
+    return s.startsWith("CREATE ")
+            || s.startsWith("ALTER ")
+            || s.startsWith("DROP ")
+            || s.startsWith("TRUNCATE ")
+            || s.startsWith("RENAME ")
+            || s.startsWith("COMMENT ")
+            || s.startsWith("GRANT ")
+            || s.startsWith("REVOKE ");
+  }
+
+  /**
+   * Escapes and quotes a potentially unsafe identifier for SQL use.
+   *
+   * @param ident identifier to quote
+   * @return a quoted or validated identifier
+   */
+  public static String quoteIdent(String ident) {
+    if (ident == null) throw new IllegalArgumentException("identifier is null");
+    String s = ident.trim();
+    if (!SAFE_IDENT.matcher(s).matches()) {
+      return "\"" + s.replace("\"", "\"\"") + "\"";
+    }
+    return s;
+  }
+
+
+
 
 }

@@ -28,7 +28,15 @@ import org.apache.tomcat.util.net.SSLHostConfig;
 import org.apache.tomcat.util.net.SSLHostConfigCertificate;
 
 import java.io.File;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
+import java.nio.file.FileSystems;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardWatchEventKinds;
+import java.nio.file.WatchEvent;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
 import java.util.logging.Logger;
 
 import static com.oracle.database.mcptoolkit.Utils.installExternalExtensionsFromDir;
@@ -41,6 +49,8 @@ public class OracleDatabaseMCPToolkit {
   private static final Logger LOG = Logger.getLogger(OracleDatabaseMCPToolkit.class.getName());
 
   static ServerConfig config;
+  private static volatile McpSyncServer serverInstance;
+
 
   static {
     config = Utils.loadConfig();
@@ -49,14 +59,12 @@ public class OracleDatabaseMCPToolkit {
   public static void main(String[] args) {
     installExternalExtensionsFromDir();
 
-    McpSyncServer server;
-
     switch (LoadedConstants.TRANSPORT_KIND) {
       case "http" -> {
-        server = startHttpServer();
+        serverInstance = startHttpServer();
       }
       case "stdio" -> {
-        server = McpServer
+        serverInstance = McpServer
           .sync(new StdioServerTransportProvider(new ObjectMapper()))
           .serverInfo("oracle-db-mcp-toolkit", "1.0.0")
           .capabilities(McpSchema.ServerCapabilities.builder()
@@ -69,7 +77,11 @@ public class OracleDatabaseMCPToolkit {
       default -> throw new IllegalArgumentException(
               "Unsupported transport: " + LoadedConstants.TRANSPORT_KIND + " (expected 'stdio' or 'http')");
     }
-    Utils.addSyncToolSpecifications(server, config);
+    Utils.addSyncToolSpecifications(serverInstance, config);
+
+    Thread pollingThread = new Thread(() -> pollConfigFile(), "config-file-poller");
+    pollingThread.setDaemon(true);
+    pollingThread.start();
   }
 
   private OracleDatabaseMCPToolkit() {
@@ -82,10 +94,11 @@ public class OracleDatabaseMCPToolkit {
   private static McpSyncServer startHttpServer() {
     try {
       HttpServletStreamableServerTransportProvider transport =
-              HttpServletStreamableServerTransportProvider.builder()
-                      .objectMapper(new ObjectMapper())
-                      .mcpEndpoint("/mcp")
-                      .build();
+        HttpServletStreamableServerTransportProvider.builder()
+          .objectMapper(new ObjectMapper())
+          .keepAliveInterval(Duration.ofSeconds(60))
+          .mcpEndpoint("/mcp")
+          .build();
 
       McpSyncServer server = McpServer
         .sync(transport)
@@ -128,7 +141,7 @@ public class OracleDatabaseMCPToolkit {
       if (LoadedConstants.HTTPS_PORT == null || LoadedConstants.KEYSTORE_PATH == null || LoadedConstants.KEYSTORE_PASSWORD == null)
         throw new RuntimeException("SSL setup failed: HTTPS port, Keystore path or password not specified");
 
-    enableHttps(tomcat, LoadedConstants.KEYSTORE_PATH, LoadedConstants.KEYSTORE_PASSWORD);
+      enableHttps(tomcat);
 
       tomcat.start();
 
@@ -143,11 +156,9 @@ public class OracleDatabaseMCPToolkit {
    * Configures and enables HTTPS on the provided Tomcat server using the specified keystore.
    *
    * @param tomcat          the Tomcat server instance to configure
-   * @param keystorePath    the file path to the PKCS12 keystore containing the SSL certificate
-   * @param keystorePassword the password for the keystore
    * @throws RuntimeException if the HTTPS connector or SSL configuration fails
    */
-  private static void enableHttps(Tomcat tomcat, String keystorePath, String keystorePassword) {
+  private static void enableHttps(Tomcat tomcat) {
     try {
       // Create HTTPS connector
       Connector https = new Connector("org.apache.coyote.http11.Http11NioProtocol");
@@ -155,8 +166,6 @@ public class OracleDatabaseMCPToolkit {
       https.setSecure(true);
       https.setScheme("https");
       https.setProperty("SSLEnabled", "true");
-      //
-
 
       // Create SSL config
       SSLHostConfig sslHostConfig = new SSLHostConfig();
@@ -167,8 +176,8 @@ public class OracleDatabaseMCPToolkit {
           SSLHostConfigCertificate.Type.RSA
       );
 
-      cert.setCertificateKeystoreFile(keystorePath);
-      cert.setCertificateKeystorePassword(keystorePassword);
+      cert.setCertificateKeystoreFile(LoadedConstants.KEYSTORE_PATH);
+      cert.setCertificateKeystorePassword(LoadedConstants.KEYSTORE_PASSWORD);
       cert.setCertificateKeystoreType("PKCS12");
 
       // Attach certificate to SSL config
@@ -185,5 +194,47 @@ public class OracleDatabaseMCPToolkit {
     }
   }
 
+  public static ServerConfig getConfig() {
+    return config;
+  }
 
+  /**
+   * Exposes the running McpSyncServer instance for admin operations (e.g., removing tools at runtime).
+   */
+  public static McpSyncServer getServer() {
+    return serverInstance;
+  }
+
+  private static void reloadConfigAndResetTools() {
+    try {
+      LOG.info(()->"[DEBUG] Reloading config...");
+      ServerConfig newConfig = Utils.loadConfig();
+      LOG.info(()->"[DEBUG] Old custom tool names: " + Utils.customToolNames);
+      LOG.info(()->"[DEBUG] New config tool names: " + newConfig.tools.keySet());
+      config = newConfig;      // update reference
+      Utils.reloadCustomTools(serverInstance, newConfig);
+      LOG.info(()->"[DEBUG] Reloaded config and refreshed tools.");
+    } catch (Exception e) {
+      System.err.println("[oracle-db-mcp-toolkit] Failed to reload config: " + e);
+    }
+  }
+
+  // For now, we rely on this instead of the nio watcher logic (for container’s sake)
+  private static void pollConfigFile() {
+    File configFile = new File(LoadedConstants.CONFIG_FILE);
+    long lastModified = configFile.lastModified();
+    while (true) {
+      long nowModified = configFile.lastModified();
+      if (nowModified != lastModified && nowModified != 0) {
+        lastModified = nowModified;
+        reloadConfigAndResetTools();
+      }
+      try {
+        Thread.sleep(2000); // Check every 2 seconds
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        break;
+      }
+    }
+  }
 }

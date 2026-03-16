@@ -25,16 +25,16 @@ class PluggableDatabase(OCIBaseModel):
         None,
         description="**[Required]** Gets the compartment_id of this PluggableDatabase. The `OCID`__ of the compartment. __ https://docs.cloud.oracle.com/Content/General/Concepts/identifiers.htm",
     )
-    connection_strings: Optional[str] = Field(None, description="")
+    connection_strings: Optional[Any] = Field(None, description="")
     container_database_id: Optional[str] = Field(
         None,
         description="**[Required]** Gets the container_database_id of this PluggableDatabase. The `OCID`__ of the CDB. __ https://docs.cloud.oracle.com/Content/General/Concepts/identifiers.htm",
     )
-    defined_tags: Optional[str] = Field(
+    defined_tags: Optional[dict] = Field(
         None,
         description="Defined tags for this resource. Each key is predefined and scoped to a namespace. For more information, see `Resource Tags`__. __ https://docs.cloud.oracle.com/Content/General/Concepts/resourcetags.htm",
     )
-    freeform_tags: Optional[str] = Field(
+    freeform_tags: Optional[dict] = Field(
         None,
         description='Free-form tags for this resource. Each tag is a simple key-value pair with no predefined name, type, or namespace. For more information, see `Resource Tags`__. Example: `{"Department": "Finance"}` __ https://docs.cloud.oracle.com/Content/General/Concepts/resourcetags.htm',
     )

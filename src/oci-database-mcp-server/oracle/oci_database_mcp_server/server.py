@@ -312,11 +312,107 @@ def call_create_pdb(client, details, opc_retry_token=None, opc_request_id=None):
     return map_pluggabledatabase(response.data)
 
 
+@mcp.tool(
+    description="Fetches the public IP address for a specified Database. For a Pluggable Database, use it's container database id as input"
+)
+def get_public_ip_for_database(
+    database_id: Annotated[
+        str,
+        "The database `OCID` ",
+    ],
+    region: Annotated[
+        str,
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
+    ] = None,
+) -> Optional[str]:
+    try:
+        logger.info(f"Fetching public IP for Database: {database_id}")
+        client = get_database_client(region)
+
+        get_database_response = client.get_database(database_id=database_id)
+        database = get_database_response.data
+
+        db_system_id = database.db_system_id
+        vm_cluster_id = getattr(database, "vm_cluster_id", None)
+        compartment_id = database.compartment_id
+
+        # Prepare arguments for list_db_nodes
+        kwargs = {"compartment_id": compartment_id}
+
+        if db_system_id:
+            kwargs["db_system_id"] = db_system_id
+        elif vm_cluster_id:
+            kwargs["vm_cluster_id"] = vm_cluster_id
+        else:
+            logger.error(
+                f"Database {database_id} is not associated with a DB System or VM Cluster."
+            )
+            return None
+
+        # Get all DB nodes
+        try:
+            list_db_nodes_response = client.list_db_nodes(**kwargs)
+            db_nodes = list_db_nodes_response.data
+        except oci.exceptions.ServiceError as e:
+            logger.error(f"Service error while listing DB nodes: {e}")
+            return None
+
+        if not db_nodes:
+            return None
+
+        # Initialize Virtual Network Client
+        config = oci.config.from_file(
+            profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+        )
+        private_key = oci.signer.load_private_key_from_file(config["key_file"])
+        token_file = config["security_token_file"]
+        with open(token_file, "r") as f:
+            token = f.read()
+        signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
+
+        virtual_network_client = oci.core.VirtualNetworkClient(config, signer=signer)
+        if region:
+            virtual_network_client.base_client.set_region(region)
+
+        # Iterate through nodes to find one with a valid VNIC and Public IP
+        found_public_ip = None
+
+        for node in db_nodes:
+            # Safety Check: Skip nodes with no VNIC ID
+            if not node.vnic_id:
+                continue
+
+            try:
+                # Fetch VNIC details
+                get_vnic_response = virtual_network_client.get_vnic(node.vnic_id)
+                vnic = get_vnic_response.data
+
+                # Check for Public IP
+                if vnic.public_ip:
+                    found_public_ip = vnic.public_ip
+                    break  # Stop once we find a valid IP
+
+            except Exception:
+                continue
+
+        if found_public_ip:
+            return found_public_ip
+
+        logger.warning(
+            f"No public IP found for any active VNIC in the Database cluster."
+        )
+        return None
+
+    except Exception as e:
+        logger.error(f"Error in get_public_ip_for_db tool: {e}")
+        raise
+
+
 @mcp.tool(description="Deletes the specified pluggable database.")
 def delete_pluggable_database(
     pluggable_database_id: Annotated[
         Optional[str],
-        "The database `OCID`__. __ https://docs.cloud.oracle.com/Content/General/Concepts/identifiers.htm",
+        "The database `OCID` ",
     ],
     if_match: Annotated[
         Optional[str],
@@ -327,7 +423,7 @@ def delete_pluggable_database(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> Any:
     try:
@@ -349,11 +445,11 @@ def delete_pluggable_database(
 def get_pluggable_database(
     pluggable_database_id: Annotated[
         Optional[str],
-        "The database `OCID`__. __ https://docs.cloud.oracle.com/Content/General/Concepts/identifiers.htm",
+        "The database `OCID` ",
     ],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> PluggableDatabase:
     try:
@@ -362,6 +458,7 @@ def get_pluggable_database(
         kwargs["pluggable_database_id"] = pluggable_database_id
         response: oci.response.Response = client.get_pluggable_database(**kwargs)
         return map_pluggabledatabase(response.data)
+
     except Exception as e:
         logger.error(f"Error in get_pluggable_database tool: {e}")
         raise
@@ -371,7 +468,7 @@ def get_pluggable_database(
 def update_pluggable_database(
     pluggable_database_id: Annotated[
         Optional[str],
-        "The database `OCID`__. __ https://docs.cloud.oracle.com/Content/General/Concepts/identifiers.htm",
+        "The database `OCID` ",
     ],
     update_pluggable_database_details: Annotated[
         dict | UpdatePluggableDatabaseDetails,
@@ -383,7 +480,7 @@ def update_pluggable_database(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> PluggableDatabase:
     try:
@@ -615,11 +712,11 @@ def create_pluggable_database_from_relocate(
     )
 )
 def list_application_vips(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     cloud_vm_cluster_id: Annotated[
         Optional[Any],
         (
-            "The `OCID`__ of the cloud VM cluster associated with the"
+            "The `OCID` of the cloud VM cluster associated with the"
             "application virtual IP (VIP) address."
         ),
     ],
@@ -660,7 +757,7 @@ def list_application_vips(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[ApplicationVipSummary]:
     try:
@@ -695,7 +792,7 @@ def list_application_vips(
 )
 def list_autonomous_container_database_dataguard_associations(
     autonomous_container_database_id: Annotated[
-        Optional[Any], ("The Autonomous Container Database `OCID`__.")
+        Optional[Any], ("The Autonomous Container Database `OCID`.")
     ],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
@@ -705,7 +802,7 @@ def list_autonomous_container_database_dataguard_associations(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[AutonomousContainerDatabaseDataguardAssociation]:
     try:
@@ -734,7 +831,7 @@ def list_autonomous_container_database_dataguard_associations(
     description=("Gets a list of supported Autonomous Container Database versions.")
 )
 def list_autonomous_container_database_versions(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     service_component: Annotated[
         Optional[Any],
         (
@@ -760,7 +857,7 @@ def list_autonomous_container_database_versions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[AutonomousContainerDatabaseVersionSummary]:
     try:
@@ -794,12 +891,12 @@ def list_autonomous_container_database_versions(
     )
 )
 def list_autonomous_container_databases(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     autonomous_exadata_infrastructure_id: Annotated[
-        Optional[Any], ("The Autonomous Exadata Infrastructure `OCID`__.")
+        Optional[Any], ("The Autonomous Exadata Infrastructure `OCID`.")
     ] = None,
     autonomous_vm_cluster_id: Annotated[
-        Optional[Any], ("The Autonomous VM Cluster `OCID`__.")
+        Optional[Any], ("The Autonomous VM Cluster `OCID`.")
     ] = None,
     infrastructure_type: Annotated[
         Optional[Any],
@@ -869,11 +966,11 @@ def list_autonomous_container_databases(
         ),
     ] = None,
     cloud_autonomous_vm_cluster_id: Annotated[
-        Optional[Any], ("The cloud Autonomous VM Cluster `OCID`__.")
+        Optional[Any], ("The cloud Autonomous VM Cluster `OCID`.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[AutonomousContainerDatabaseSummary]:
     try:
@@ -922,8 +1019,8 @@ def list_autonomous_container_databases(
     )
 )
 def list_autonomous_database_backups(
-    autonomous_database_id: Annotated[Optional[Any], ("The database `OCID`__.")] = None,
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")] = None,
+    autonomous_database_id: Annotated[Optional[Any], ("The database `OCID`.")] = None,
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")] = None,
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -977,7 +1074,7 @@ def list_autonomous_database_backups(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[AutonomousDatabaseBackupSummary]:
     try:
@@ -1043,7 +1140,7 @@ def list_autonomous_database_character_sets(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[AutonomousDatabaseCharacterSets]:
     try:
@@ -1072,8 +1169,8 @@ def list_autonomous_database_character_sets(
     )
 )
 def list_autonomous_database_clones(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
-    autonomous_database_id: Annotated[Optional[Any], ("The database `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
+    autonomous_database_id: Annotated[Optional[Any], ("The database `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
@@ -1133,7 +1230,7 @@ def list_autonomous_database_clones(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[AutonomousDatabaseSummary]:
     try:
@@ -1173,7 +1270,7 @@ def list_autonomous_database_clones(
     )
 )
 def list_autonomous_database_dataguard_associations(
-    autonomous_database_id: Annotated[Optional[Any], ("The database `OCID`__.")],
+    autonomous_database_id: Annotated[Optional[Any], ("The database `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -1182,7 +1279,7 @@ def list_autonomous_database_dataguard_associations(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[AutonomousDatabaseDataguardAssociation]:
     try:
@@ -1212,7 +1309,7 @@ def list_autonomous_database_dataguard_associations(
     )
 )
 def list_autonomous_database_peers(
-    autonomous_database_id: Annotated[Optional[Any], ("The database `OCID`__.")],
+    autonomous_database_id: Annotated[Optional[Any], ("The database `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
@@ -1224,7 +1321,7 @@ def list_autonomous_database_peers(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[AutonomousDatabasePeerCollection]:
     try:
@@ -1254,7 +1351,7 @@ def list_autonomous_database_peers(
     )
 )
 def list_autonomous_database_refreshable_clones(
-    autonomous_database_id: Annotated[Optional[Any], ("The database `OCID`__.")],
+    autonomous_database_id: Annotated[Optional[Any], ("The database `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
@@ -1266,7 +1363,7 @@ def list_autonomous_database_refreshable_clones(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[RefreshableCloneCollection]:
     try:
@@ -1295,7 +1392,7 @@ def list_autonomous_database_refreshable_clones(
     )
 )
 def list_autonomous_database_software_images(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     image_shape_family: Annotated[
         Optional[Any],
         (
@@ -1346,7 +1443,7 @@ def list_autonomous_database_software_images(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[AutonomousDatabaseSoftwareImageCollection]:
     try:
@@ -1386,9 +1483,9 @@ def list_autonomous_database_software_images(
     )
 )
 def list_autonomous_databases(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     autonomous_container_database_id: Annotated[
-        Optional[Any], ("The Autonomous Container Database `OCID`__.")
+        Optional[Any], ("The Autonomous Container Database `OCID`.")
     ] = None,
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
@@ -1512,11 +1609,11 @@ def list_autonomous_databases(
     ] = None,
     resource_pool_leader_id: Annotated[
         Optional[Any],
-        ("The database `OCID`__ of the resourcepool Leader Autonomous" "Database."),
+        ("The database `OCID` of the resourcepool Leader Autonomous" "Database."),
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[AutonomousDatabaseSummary]:
     try:
@@ -1573,7 +1670,7 @@ def list_autonomous_databases(
     )
 )
 def list_autonomous_db_preview_versions(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -1602,7 +1699,7 @@ def list_autonomous_db_preview_versions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[AutonomousDbPreviewVersionSummary]:
     try:
@@ -1630,7 +1727,7 @@ def list_autonomous_db_preview_versions(
 
 @mcp.tool(description=("Gets a list of supported Autonomous Database versions."))
 def list_autonomous_db_versions(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -1657,7 +1754,7 @@ def list_autonomous_db_versions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[AutonomousDbVersionSummary]:
     try:
@@ -1688,9 +1785,9 @@ def list_autonomous_db_versions(
     )
 )
 def list_autonomous_virtual_machines(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     autonomous_vm_cluster_id: Annotated[
-        Optional[Any], ("The Autonomous Virtual machine `OCID`__.")
+        Optional[Any], ("The Autonomous Virtual machine `OCID`.")
     ],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
@@ -1713,7 +1810,7 @@ def list_autonomous_virtual_machines(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[AutonomousVirtualMachineSummary]:
     try:
@@ -1746,7 +1843,7 @@ def list_autonomous_virtual_machines(
     )
 )
 def list_autonomous_vm_clusters(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     exadata_infrastructure_id: Annotated[
         Optional[Any],
         ("If provided, filters the results for the given Exadata" "Infrastructure."),
@@ -1796,7 +1893,7 @@ def list_autonomous_vm_clusters(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[AutonomousVmClusterSummary]:
     try:
@@ -1830,7 +1927,7 @@ def list_autonomous_vm_clusters(
     description=("Gets a list of backup destinations in the specified compartment.")
 )
 def list_backup_destination(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -1849,7 +1946,7 @@ def list_backup_destination(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[BackupDestinationSummary]:
     try:
@@ -1878,8 +1975,8 @@ def list_backup_destination(
     )
 )
 def list_backups(
-    database_id: Annotated[Optional[Any], ("The `OCID`__ of the database.")] = None,
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")] = None,
+    database_id: Annotated[Optional[Any], ("The `OCID` of the database.")] = None,
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")] = None,
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -1897,7 +1994,7 @@ def list_backups(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[BackupSummary]:
     try:
@@ -1927,7 +2024,7 @@ def list_backups(
     )
 )
 def list_cloud_autonomous_vm_clusters(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     cloud_exadata_infrastructure_id: Annotated[
         Optional[Any],
         (
@@ -1987,7 +2084,7 @@ def list_cloud_autonomous_vm_clusters(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[CloudAutonomousVmClusterSummary]:
     try:
@@ -2029,7 +2126,7 @@ def list_cloud_autonomous_vm_clusters(
     )
 )
 def list_cloud_exadata_infrastructures(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -2082,7 +2179,7 @@ def list_cloud_exadata_infrastructures(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[CloudExadataInfrastructureSummary]:
     try:
@@ -2121,7 +2218,7 @@ def list_cloud_exadata_infrastructures(
     )
 )
 def list_cloud_vm_cluster_updates(
-    cloud_vm_cluster_id: Annotated[Optional[Any], ("The cloud VM cluster `OCID`__.")],
+    cloud_vm_cluster_id: Annotated[Optional[Any], ("The cloud VM cluster `OCID`.")],
     update_type: Annotated[
         Optional[Any],
         (
@@ -2141,7 +2238,7 @@ def list_cloud_vm_cluster_updates(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[UpdateSummary]:
     try:
@@ -2171,7 +2268,7 @@ def list_cloud_vm_cluster_updates(
     )
 )
 def list_cloud_vm_clusters(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     cloud_exadata_infrastructure_id: Annotated[
         Optional[Any],
         (
@@ -2224,7 +2321,7 @@ def list_cloud_vm_clusters(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[CloudVmClusterSummary]:
     try:
@@ -2258,10 +2355,10 @@ def list_cloud_vm_clusters(
     description=("Lists the console connections for the specified database node.")
 )
 def list_console_connections(
-    db_node_id: Annotated[Optional[Any], ("The database node `OCID`__.")],
+    db_node_id: Annotated[Optional[Any], ("The database node `OCID`.")],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[ConsoleConnectionSummary]:
     try:
@@ -2277,7 +2374,7 @@ def list_console_connections(
 
 @mcp.tool(description=("Lists the console histories for the specified database node."))
 def list_console_histories(
-    db_node_id: Annotated[Optional[Any], ("The database node `OCID`__.")],
+    db_node_id: Annotated[Optional[Any], ("The database node `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -2322,7 +2419,7 @@ def list_console_histories(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[ConsoleHistoryCollection]:
     try:
@@ -2355,9 +2452,9 @@ def list_console_histories(
 )
 def list_container_database_patches(
     autonomous_container_database_id: Annotated[
-        Optional[Any], ("The Autonomous Container Database `OCID`__.")
+        Optional[Any], ("The Autonomous Container Database `OCID`.")
     ],
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -2373,7 +2470,7 @@ def list_container_database_patches(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[AutonomousPatchSummary]:
     try:
@@ -2398,7 +2495,7 @@ def list_container_database_patches(
 
 @mcp.tool(description=("Lists all Data Guard associations for the specified database."))
 def list_data_guard_associations(
-    database_id: Annotated[Optional[Any], ("The database `OCID`__.")],
+    database_id: Annotated[Optional[Any], ("The database `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -2407,7 +2504,7 @@ def list_data_guard_associations(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[DataGuardAssociationSummary]:
     try:
@@ -2431,7 +2528,7 @@ def list_data_guard_associations(
     )
 )
 def list_database_software_images(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -2504,7 +2601,7 @@ def list_database_software_images(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[DatabaseSoftwareImageSummary]:
     try:
@@ -2542,12 +2639,12 @@ def list_database_software_images(
 
 @mcp.tool(description=("Gets a list of the databases in the specified Database Home."))
 def list_databases(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
-    db_home_id: Annotated[Optional[Any], ("A Database Home `OCID`__.")] = None,
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
+    db_home_id: Annotated[Optional[Any], ("A Database Home `OCID`.")] = None,
     system_id: Annotated[
         Optional[Any],
         (
-            "The `OCID`__ of the Exadata DB system that you want to"
+            "The `OCID` of the Exadata DB system that you want to"
             "filter the database results by. Applies only to Exadata DB"
             "systems."
         ),
@@ -2595,7 +2692,7 @@ def list_databases(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[DatabaseSummary]:
     try:
@@ -2631,7 +2728,7 @@ def list_databases(
     )
 )
 def list_db_home_patch_history_entries(
-    db_home_id: Annotated[Optional[Any], ("The Database Home `OCID`__.")],
+    db_home_id: Annotated[Optional[Any], ("The Database Home `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -2640,7 +2737,7 @@ def list_db_home_patch_history_entries(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[PatchHistoryEntrySummary]:
     try:
@@ -2662,7 +2759,7 @@ def list_db_home_patch_history_entries(
 
 @mcp.tool(description=("Lists patches applicable to the requested Database Home."))
 def list_db_home_patches(
-    db_home_id: Annotated[Optional[Any], ("The Database Home `OCID`__.")],
+    db_home_id: Annotated[Optional[Any], ("The Database Home `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -2671,7 +2768,7 @@ def list_db_home_patches(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[PatchSummary]:
     try:
@@ -2696,20 +2793,20 @@ def list_db_home_patches(
     )
 )
 def list_db_homes(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     db_system_id: Annotated[
         Optional[Any],
         (
-            "The DB system `OCID`__. If provided, filters the results to"
+            "The DB system `OCID`. If provided, filters the results to"
             "the set of database versions which are supported for the DB"
             "system."
         ),
     ] = None,
-    vm_cluster_id: Annotated[Optional[Any], ("The `OCID`__ of the VM cluster.")] = None,
+    vm_cluster_id: Annotated[Optional[Any], ("The `OCID` of the VM cluster.")] = None,
     backup_id: Annotated[
         Optional[Any],
         (
-            "The `OCID`__ of the backup. Specify a backupId to list only"
+            "The `OCID` of the backup. Specify a backupId to list only"
             "the DB systems or DB homes that support creating a database"
             "using this backup in this compartment."
         ),
@@ -2759,7 +2856,7 @@ def list_db_homes(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[DbHomeSummary]:
     try:
@@ -2800,16 +2897,16 @@ def list_db_homes(
     )
 )
 def list_db_nodes(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     db_system_id: Annotated[
         Optional[Any],
         (
-            "The DB system `OCID`__. If provided, filters the results to"
+            "The DB system `OCID`. If provided, filters the results to"
             "the set of database versions which are supported for the DB"
             "system."
         ),
     ] = None,
-    vm_cluster_id: Annotated[Optional[Any], ("The `OCID`__ of the VM cluster.")] = None,
+    vm_cluster_id: Annotated[Optional[Any], ("The `OCID` of the VM cluster.")] = None,
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -2841,11 +2938,11 @@ def list_db_nodes(
         ),
     ] = None,
     db_server_id: Annotated[
-        Optional[Any], ("The `OCID`__ of the Exacc Db server.")
+        Optional[Any], ("The `OCID` of the Exacc Db server.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[DbNodeSummary]:
     try:
@@ -2882,9 +2979,9 @@ def list_db_nodes(
     )
 )
 def list_db_servers(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     exadata_infrastructure_id: Annotated[
-        Optional[Any], ("The `OCID`__ of the ExadataInfrastructure.")
+        Optional[Any], ("The `OCID` of the ExadataInfrastructure.")
     ],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
@@ -2927,7 +3024,7 @@ def list_db_servers(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[DbServerSummary]:
     try:
@@ -2975,7 +3072,7 @@ def list_db_system_compute_performances(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[DbSystemComputePerformanceSummary]:
     try:
@@ -2996,7 +3093,7 @@ def list_db_system_compute_performances(
 
 @mcp.tool(description=("Lists the patches applicable to the specified DB system."))
 def list_db_system_patches(
-    db_system_id: Annotated[Optional[Any], ("The DB system `OCID`__.")],
+    db_system_id: Annotated[Optional[Any], ("The DB system `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -3005,7 +3102,7 @@ def list_db_system_patches(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[PatchSummary]:
     try:
@@ -3031,7 +3128,7 @@ def list_db_system_patches(
     )
 )
 def list_db_system_shapes(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     availability_domain: Annotated[
         Optional[Any], ("The name of the Availability Domain.")
     ] = None,
@@ -3043,7 +3140,7 @@ def list_db_system_shapes(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[DbSystemShapeSummary]:
     try:
@@ -3089,7 +3186,7 @@ def list_db_system_storage_performances(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[DbSystemStoragePerformanceSummary]:
     try:
@@ -3117,7 +3214,7 @@ def list_db_system_storage_performances(
     )
 )
 def list_db_systems(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -3127,7 +3224,7 @@ def list_db_systems(
     backup_id: Annotated[
         Optional[Any],
         (
-            "The `OCID`__ of the backup. Specify a backupId to list only"
+            "The `OCID` of the backup. Specify a backupId to list only"
             "the DB systems or DB homes that support creating a database"
             "using this backup in this compartment."
         ),
@@ -3178,7 +3275,7 @@ def list_db_systems(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[DbSystemSummary]:
     try:
@@ -3210,7 +3307,7 @@ def list_db_systems(
 
 @mcp.tool(description=("Gets a list of supported Oracle Database versions."))
 def list_db_versions(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -3227,7 +3324,7 @@ def list_db_versions(
     db_system_id: Annotated[
         Optional[Any],
         (
-            "The DB system `OCID`__. If provided, filters the results to"
+            "The DB system `OCID`. If provided, filters the results to"
             "the set of database versions which are supported for the DB"
             "system."
         ),
@@ -3260,7 +3357,7 @@ def list_db_versions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[DbVersionSummary]:
     try:
@@ -3297,7 +3394,7 @@ def list_db_versions(
     )
 )
 def list_exadata_infrastructures(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -3351,7 +3448,7 @@ def list_exadata_infrastructures(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[ExadataInfrastructureSummary]:
     try:
@@ -3389,7 +3486,7 @@ def list_exadata_infrastructures(
 )
 def list_exadb_vm_cluster_updates(
     exadb_vm_cluster_id: Annotated[
-        Optional[Any], ("The Exadata VM cluster `OCID`__ on Exascale Infrastructure.")
+        Optional[Any], ("The Exadata VM cluster `OCID` on Exascale Infrastructure.")
     ],
     update_type: Annotated[
         Optional[Any],
@@ -3417,7 +3514,7 @@ def list_exadb_vm_cluster_updates(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[ExadbVmClusterUpdateSummary]:
     try:
@@ -3449,7 +3546,7 @@ def list_exadb_vm_cluster_updates(
     )
 )
 def list_exadb_vm_clusters(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -3503,7 +3600,7 @@ def list_exadb_vm_clusters(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[ExadbVmClusterSummary]:
     try:
@@ -3539,7 +3636,7 @@ def list_exadb_vm_clusters(
     )
 )
 def list_exascale_db_storage_vaults(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -3591,7 +3688,7 @@ def list_exascale_db_storage_vaults(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[ExascaleDbStorageVaultSummary]:
     try:
@@ -3627,7 +3724,7 @@ def list_exascale_db_storage_vaults(
     description=("Lists the execution action resources in the specified compartment.")
 )
 def list_execution_actions(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -3679,7 +3776,7 @@ def list_execution_actions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[ExecutionActionSummary]:
     try:
@@ -3713,7 +3810,7 @@ def list_execution_actions(
     description=("Lists the execution window resources in the specified compartment.")
 )
 def list_execution_windows(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -3766,7 +3863,7 @@ def list_execution_windows(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[ExecutionWindowSummary]:
     try:
@@ -3802,7 +3899,7 @@ def list_execution_windows(
     )
 )
 def list_external_container_databases(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
@@ -3847,7 +3944,7 @@ def list_external_container_databases(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[ExternalContainerDatabaseSummary]:
     try:
@@ -3883,10 +3980,10 @@ def list_external_container_databases(
     )
 )
 def list_external_database_connectors(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     external_database_id: Annotated[
         Optional[Any],
-        ("The `OCID`__ of the external database whose connectors will" "be listed."),
+        ("The `OCID` of the external database whose connectors will" "be listed."),
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
@@ -3932,7 +4029,7 @@ def list_external_database_connectors(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[ExternalDatabaseConnectorSummary]:
     try:
@@ -3969,7 +4066,7 @@ def list_external_database_connectors(
     )
 )
 def list_external_non_container_databases(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
@@ -4014,7 +4111,7 @@ def list_external_non_container_databases(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[ExternalNonContainerDatabaseSummary]:
     try:
@@ -4050,12 +4147,12 @@ def list_external_non_container_databases(
     )
 )
 def list_external_pluggable_databases(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     external_container_database_id: Annotated[
-        Optional[Any], ("The ExternalContainerDatabase `OCID`__.")
+        Optional[Any], ("The ExternalContainerDatabase `OCID`.")
     ] = None,
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
@@ -4098,7 +4195,7 @@ def list_external_pluggable_databases(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[ExternalPluggableDatabaseSummary]:
     try:
@@ -4138,7 +4235,7 @@ def list_external_pluggable_databases(
     )
 )
 def list_flex_components(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     name: Annotated[
         Optional[Any],
         (
@@ -4176,7 +4273,7 @@ def list_flex_components(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[FlexComponentCollection]:
     try:
@@ -4216,7 +4313,7 @@ def list_gi_version_minor_versions(
         Optional[Any],
         ("The target availability domain. Only passed if the limit is" "AD-specific."),
     ] = None,
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")] = None,
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")] = None,
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
@@ -4261,7 +4358,7 @@ def list_gi_version_minor_versions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[GiMinorVersionSummary]:
     try:
@@ -4299,7 +4396,7 @@ def list_gi_version_minor_versions(
 
 @mcp.tool(description=("Gets a list of supported GI versions."))
 def list_gi_versions(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -4322,7 +4419,7 @@ def list_gi_versions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[GiVersionSummary]:
     try:
@@ -4348,7 +4445,7 @@ def list_gi_versions(
 
 @mcp.tool(description=("Gets a list of key stores in the specified compartment."))
 def list_key_stores(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -4360,7 +4457,7 @@ def list_key_stores(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[KeyStoreSummary]:
     try:
@@ -4386,7 +4483,7 @@ def list_key_stores(
     )
 )
 def list_maintenance_run_history(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     target_resource_id: Annotated[Optional[Any], ("The target resource ID.")] = None,
     target_resource_type: Annotated[
         Optional[Any],
@@ -4457,7 +4554,7 @@ def list_maintenance_run_history(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[MaintenanceRunHistorySummary]:
     try:
@@ -4495,7 +4592,7 @@ def list_maintenance_run_history(
     description=("Gets a list of the maintenance runs in the specified compartment.")
 )
 def list_maintenance_runs(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     target_resource_id: Annotated[Optional[Any], ("The target resource ID.")] = None,
     target_resource_type: Annotated[
         Optional[Any],
@@ -4566,7 +4663,7 @@ def list_maintenance_runs(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[MaintenanceRunSummary]:
     try:
@@ -4602,7 +4699,7 @@ def list_maintenance_runs(
 
 @mcp.tool(description=("Lists one-off patches in the specified compartment."))
 def list_oneoff_patches(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -4648,7 +4745,7 @@ def list_oneoff_patches(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[OneoffPatchSummary]:
     try:
@@ -4683,8 +4780,8 @@ def list_oneoff_patches(
     )
 )
 def list_pluggable_databases(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")] = None,
-    database_id: Annotated[Optional[Any], ("The `OCID`__ of the database.")] = None,
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")] = None,
+    database_id: Annotated[Optional[Any], ("The `OCID` of the database.")] = None,
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -4728,7 +4825,7 @@ def list_pluggable_databases(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[PluggableDatabaseSummary]:
     try:
@@ -4761,7 +4858,7 @@ def list_pluggable_databases(
     description=("Lists the Scheduled Action resources in the specified compartment.")
 )
 def list_scheduled_actions(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -4825,7 +4922,7 @@ def list_scheduled_actions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[ScheduledActionCollection]:
     try:
@@ -4863,7 +4960,7 @@ def list_scheduled_actions(
     description=("Lists the Scheduling Plan resources in the specified compartment.")
 )
 def list_scheduling_plans(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -4927,7 +5024,7 @@ def list_scheduling_plans(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[SchedulingPlanCollection]:
     try:
@@ -4965,7 +5062,7 @@ def list_scheduling_plans(
     description=("Lists the Scheduling Policy resources in the specified compartment.")
 )
 def list_scheduling_policies(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -5010,7 +5107,7 @@ def list_scheduling_policies(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[SchedulingPolicySummary]:
     try:
@@ -5042,8 +5139,8 @@ def list_scheduling_policies(
     description=("Lists the Scheduling Window resources in the specified compartment.")
 )
 def list_scheduling_windows(
-    scheduling_policy_id: Annotated[Optional[Any], ("The Scheduling Policy `OCID`__.")],
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")] = None,
+    scheduling_policy_id: Annotated[Optional[Any], ("The Scheduling Policy `OCID`.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")] = None,
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -5088,7 +5185,7 @@ def list_scheduling_windows(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[SchedulingWindowSummary]:
     try:
@@ -5125,7 +5222,7 @@ def list_scheduling_windows(
     )
 )
 def list_system_versions(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     shape: Annotated[Optional[Any], ("Specifies shape query parameter.")],
     gi_version: Annotated[Optional[Any], ("Specifies gi version query parameter.")],
     limit: Annotated[
@@ -5146,7 +5243,7 @@ def list_system_versions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[SystemVersionCollection]:
     try:
@@ -5178,9 +5275,9 @@ def list_system_versions(
 )
 def list_vm_cluster_networks(
     exadata_infrastructure_id: Annotated[
-        Optional[Any], ("The Exadata infrastructure `OCID`__.")
+        Optional[Any], ("The Exadata infrastructure `OCID`.")
     ],
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -5227,7 +5324,7 @@ def list_vm_cluster_networks(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[VmClusterNetworkSummary]:
     try:
@@ -5263,7 +5360,7 @@ def list_vm_cluster_networks(
     )
 )
 def list_vm_cluster_patches(
-    vm_cluster_id: Annotated[Optional[Any], ("The VM cluster `OCID`__.")],
+    vm_cluster_id: Annotated[Optional[Any], ("The VM cluster `OCID`.")],
     limit: Annotated[
         Optional[Any], ("The maximum number of items to return per page.")
     ] = None,
@@ -5272,7 +5369,7 @@ def list_vm_cluster_patches(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[PatchSummary]:
     try:
@@ -5297,7 +5394,7 @@ def list_vm_cluster_patches(
     )
 )
 def list_vm_cluster_updates(
-    vm_cluster_id: Annotated[Optional[Any], ("The VM cluster `OCID`__.")],
+    vm_cluster_id: Annotated[Optional[Any], ("The VM cluster `OCID`.")],
     update_type: Annotated[
         Optional[Any],
         (
@@ -5325,7 +5422,7 @@ def list_vm_cluster_updates(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[VmClusterUpdateSummary]:
     try:
@@ -5356,7 +5453,7 @@ def list_vm_cluster_updates(
     )
 )
 def list_vm_clusters(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     exadata_infrastructure_id: Annotated[
         Optional[Any],
         ("If provided, filters the results for the given Exadata" "Infrastructure."),
@@ -5406,7 +5503,7 @@ def list_vm_clusters(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[VmClusterSummary]:
     try:
@@ -5472,7 +5569,7 @@ def resource_pool_shapes(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[ResourcePoolShapeCollection]:
     try:
@@ -5502,14 +5599,14 @@ def resource_pool_shapes(
 )
 def get_application_vip(
     application_vip_id: Annotated[
-        Optional[Any], ("The `OCID`__ of the application virtual IP (VIP) address.")
+        Optional[Any], ("The `OCID` of the application virtual IP (VIP) address.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ApplicationVip:
     try:
@@ -5530,11 +5627,11 @@ def get_application_vip(
 )
 def get_autonomous_container_database(
     autonomous_container_database_id: Annotated[
-        Optional[Any], ("The Autonomous Container Database `OCID`__.")
+        Optional[Any], ("The Autonomous Container Database `OCID`.")
     ],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> AutonomousContainerDatabase:
     try:
@@ -5558,18 +5655,18 @@ def get_autonomous_container_database(
 )
 def get_autonomous_container_database_dataguard_association(
     autonomous_container_database_id: Annotated[
-        Optional[Any], ("The Autonomous Container Database `OCID`__.")
+        Optional[Any], ("The Autonomous Container Database `OCID`.")
     ],
     autonomous_container_database_dataguard_association_id: Annotated[
         Optional[Any],
         (
             "The Autonomous Container Database-Autonomous Data Guard"
-            "association `OCID`__."
+            "association `OCID`."
         ),
     ],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> AutonomousContainerDatabaseDataguardAssociation:
     try:
@@ -5597,14 +5694,14 @@ def get_autonomous_container_database_dataguard_association(
 )
 def get_autonomous_container_database_resource_usage(
     autonomous_container_database_id: Annotated[
-        Optional[Any], ("The Autonomous Container Database `OCID`__.")
+        Optional[Any], ("The Autonomous Container Database `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> AutonomousContainerDatabaseResourceUsage:
     try:
@@ -5626,13 +5723,13 @@ def get_autonomous_container_database_resource_usage(
 
 @mcp.tool(description=("Gets the details of the specified Autonomous Database."))
 def get_autonomous_database(
-    autonomous_database_id: Annotated[Optional[Any], ("The database `OCID`__.")],
+    autonomous_database_id: Annotated[Optional[Any], ("The database `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> AutonomousDatabase:
     try:
@@ -5653,14 +5750,14 @@ def get_autonomous_database(
 )
 def get_autonomous_database_backup(
     autonomous_database_backup_id: Annotated[
-        Optional[Any], ("The `OCID`__ of the Autonomous Database backup.")
+        Optional[Any], ("The `OCID` of the Autonomous Database backup.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> AutonomousDatabaseBackup:
     try:
@@ -5685,12 +5782,12 @@ def get_autonomous_database_backup(
     )
 )
 def get_autonomous_database_dataguard_association(
-    autonomous_database_id: Annotated[Optional[Any], ("The database `OCID`__.")],
+    autonomous_database_id: Annotated[Optional[Any], ("The database `OCID`.")],
     autonomous_database_dataguard_association_id: Annotated[
         Optional[Any],
         (
             "The Autonomous Container Database-Autonomous Data Guard"
-            "association `OCID`__."
+            "association `OCID`."
         ),
     ],
     opc_request_id: Annotated[
@@ -5698,7 +5795,7 @@ def get_autonomous_database_dataguard_association(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> AutonomousDatabaseDataguardAssociation:
     try:
@@ -5728,7 +5825,7 @@ def get_autonomous_database_regional_wallet(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> AutonomousDatabaseWallet:
     try:
@@ -5752,14 +5849,14 @@ def get_autonomous_database_regional_wallet(
 )
 def get_autonomous_database_software_image(
     autonomous_database_software_image_id: Annotated[
-        Optional[Any], ("The Autonomous Database Software Image `OCID`__.")
+        Optional[Any], ("The Autonomous Database Software Image `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> AutonomousDatabaseSoftwareImage:
     try:
@@ -5783,13 +5880,13 @@ def get_autonomous_database_software_image(
     description=("Gets the wallet details for the specified Autonomous Database.")
 )
 def get_autonomous_database_wallet(
-    autonomous_database_id: Annotated[Optional[Any], ("The database `OCID`__.")],
+    autonomous_database_id: Annotated[Optional[Any], ("The database `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> AutonomousDatabaseWallet:
     try:
@@ -5817,11 +5914,11 @@ def get_autonomous_database_wallet(
 )
 def get_autonomous_exadata_infrastructure(
     autonomous_exadata_infrastructure_id: Annotated[
-        Optional[Any], ("The Autonomous Exadata Infrastructure `OCID`__.")
+        Optional[Any], ("The Autonomous Exadata Infrastructure `OCID`.")
     ],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> AutonomousExadataInfrastructure:
     try:
@@ -5841,10 +5938,10 @@ def get_autonomous_exadata_infrastructure(
 
 @mcp.tool(description=("Gets information about a specific autonomous patch."))
 def get_autonomous_patch(
-    autonomous_patch_id: Annotated[Optional[Any], ("The autonomous patch `OCID`__.")],
+    autonomous_patch_id: Annotated[Optional[Any], ("The autonomous patch `OCID`.")],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> AutonomousPatch:
     try:
@@ -5861,14 +5958,14 @@ def get_autonomous_patch(
 @mcp.tool(description=("Gets the details of specific Autonomous Virtual Machine."))
 def get_autonomous_virtual_machine(
     autonomous_virtual_machine_id: Annotated[
-        Optional[Any], ("The Autonomous Virtual machine `OCID`__.")
+        Optional[Any], ("The Autonomous Virtual machine `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> AutonomousVirtualMachine:
     try:
@@ -5895,14 +5992,14 @@ def get_autonomous_virtual_machine(
 )
 def get_autonomous_vm_cluster(
     autonomous_vm_cluster_id: Annotated[
-        Optional[Any], ("The autonomous VM cluster `OCID`__.")
+        Optional[Any], ("The autonomous VM cluster `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> AutonomousVmCluster:
     try:
@@ -5925,14 +6022,14 @@ def get_autonomous_vm_cluster(
 )
 def get_autonomous_vm_cluster_resource_usage(
     autonomous_vm_cluster_id: Annotated[
-        Optional[Any], ("The autonomous VM cluster `OCID`__.")
+        Optional[Any], ("The autonomous VM cluster `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> AutonomousVmClusterResourceUsage:
     try:
@@ -5952,10 +6049,10 @@ def get_autonomous_vm_cluster_resource_usage(
 
 @mcp.tool(description=("Gets information about the specified backup."))
 def get_backup(
-    backup_id: Annotated[Optional[Any], ("The backup `OCID`__.")],
+    backup_id: Annotated[Optional[Any], ("The backup `OCID`.")],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> Backup:
     try:
@@ -5977,14 +6074,14 @@ def get_backup(
 )
 def get_backup_destination(
     backup_destination_id: Annotated[
-        Optional[Any], ("The `OCID`__ of the backup destination.")
+        Optional[Any], ("The `OCID` of the backup destination.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> BackupDestination:
     try:
@@ -6009,14 +6106,14 @@ def get_backup_destination(
 )
 def get_cloud_autonomous_vm_cluster(
     cloud_autonomous_vm_cluster_id: Annotated[
-        Optional[Any], ("The Cloud VM cluster `OCID`__.")
+        Optional[Any], ("The Cloud VM cluster `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> CloudAutonomousVmCluster:
     try:
@@ -6042,14 +6139,14 @@ def get_cloud_autonomous_vm_cluster(
 )
 def get_cloud_autonomous_vm_cluster_resource_usage(
     cloud_autonomous_vm_cluster_id: Annotated[
-        Optional[Any], ("The Cloud VM cluster `OCID`__.")
+        Optional[Any], ("The Cloud VM cluster `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> CloudAutonomousVmClusterResourceUsage:
     try:
@@ -6078,14 +6175,14 @@ def get_cloud_autonomous_vm_cluster_resource_usage(
 )
 def get_cloud_exadata_infrastructure(
     cloud_exadata_infrastructure_id: Annotated[
-        Optional[Any], ("The cloud Exadata infrastructure `OCID`__.")
+        Optional[Any], ("The cloud Exadata infrastructure `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> CloudExadataInfrastructure:
     try:
@@ -6111,17 +6208,17 @@ def get_cloud_exadata_infrastructure(
 )
 def get_cloud_exadata_infrastructure_unallocated_resources(
     cloud_exadata_infrastructure_id: Annotated[
-        Optional[Any], ("The cloud Exadata infrastructure `OCID`__.")
+        Optional[Any], ("The cloud Exadata infrastructure `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     db_servers: Annotated[
-        Optional[Any], ("The list of `OCIDs`__ of the Db servers.")
+        Optional[Any], ("The list of `OCIDs` of the Db servers.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> CloudExadataInfrastructureUnallocatedResources:
     try:
@@ -6151,13 +6248,13 @@ def get_cloud_exadata_infrastructure_unallocated_resources(
     )
 )
 def get_cloud_vm_cluster(
-    cloud_vm_cluster_id: Annotated[Optional[Any], ("The cloud VM cluster `OCID`__.")],
+    cloud_vm_cluster_id: Annotated[Optional[Any], ("The cloud VM cluster `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> CloudVmCluster:
     try:
@@ -6180,13 +6277,13 @@ def get_cloud_vm_cluster(
     )
 )
 def get_cloud_vm_cluster_iorm_config(
-    cloud_vm_cluster_id: Annotated[Optional[Any], ("The cloud VM cluster `OCID`__.")],
+    cloud_vm_cluster_id: Annotated[Optional[Any], ("The cloud VM cluster `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ExadataIormConfig:
     try:
@@ -6211,14 +6308,14 @@ def get_cloud_vm_cluster_iorm_config(
     )
 )
 def get_cloud_vm_cluster_update(
-    cloud_vm_cluster_id: Annotated[Optional[Any], ("The cloud VM cluster `OCID`__.")],
-    update_id: Annotated[Optional[Any], ("The `OCID`__ of the maintenance update.")],
+    cloud_vm_cluster_id: Annotated[Optional[Any], ("The cloud VM cluster `OCID`.")],
+    update_id: Annotated[Optional[Any], ("The `OCID` of the maintenance update.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> Update:
     try:
@@ -6242,16 +6339,16 @@ def get_cloud_vm_cluster_update(
     )
 )
 def get_cloud_vm_cluster_update_history_entry(
-    cloud_vm_cluster_id: Annotated[Optional[Any], ("The cloud VM cluster `OCID`__.")],
+    cloud_vm_cluster_id: Annotated[Optional[Any], ("The cloud VM cluster `OCID`.")],
     update_history_entry_id: Annotated[
-        Optional[Any], ("The `OCID`__ of the maintenance update history entry.")
+        Optional[Any], ("The `OCID` of the maintenance update history entry.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> UpdateHistoryEntry:
     try:
@@ -6274,13 +6371,13 @@ def get_cloud_vm_cluster_update_history_entry(
     description=("Gets the specified database node console connection's information.")
 )
 def get_console_connection(
-    db_node_id: Annotated[Optional[Any], ("The database node `OCID`__.")],
+    db_node_id: Annotated[Optional[Any], ("The database node `OCID`.")],
     console_connection_id: Annotated[
         Optional[Any], ("The OCID of the console connection.")
     ],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ConsoleConnection:
     try:
@@ -6299,14 +6396,14 @@ def get_console_connection(
     description=("Gets information about the specified database node console history.")
 )
 def get_console_history(
-    db_node_id: Annotated[Optional[Any], ("The database node `OCID`__.")],
+    db_node_id: Annotated[Optional[Any], ("The database node `OCID`.")],
     console_history_id: Annotated[Optional[Any], ("The OCID of the console history.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ConsoleHistory:
     try:
@@ -6329,14 +6426,14 @@ def get_console_history(
     )
 )
 def get_console_history_content(
-    db_node_id: Annotated[Optional[Any], ("The database node `OCID`__.")],
+    db_node_id: Annotated[Optional[Any], ("The database node `OCID`.")],
     console_history_id: Annotated[Optional[Any], ("The OCID of the console history.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> list[Any]:
     try:
@@ -6359,13 +6456,13 @@ def get_console_history_content(
     )
 )
 def get_data_guard_association(
-    database_id: Annotated[Optional[Any], ("The database `OCID`__.")],
+    database_id: Annotated[Optional[Any], ("The database `OCID`.")],
     data_guard_association_id: Annotated[
-        Optional[Any], ("The Data Guard association's `OCID`__.")
+        Optional[Any], ("The Data Guard association's `OCID`.")
     ],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> DataGuardAssociation:
     try:
@@ -6382,10 +6479,10 @@ def get_data_guard_association(
 
 @mcp.tool(description=("Gets information about the specified database."))
 def get_database(
-    database_id: Annotated[Optional[Any], ("The database `OCID`__.")],
+    database_id: Annotated[Optional[Any], ("The database `OCID`.")],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> Database:
     try:
@@ -6401,10 +6498,10 @@ def get_database(
 
 @mcp.tool(description=("Gets information about the specified database software image."))
 def get_database_software_image(
-    database_software_image_id: Annotated[Optional[Any], ("The DB system `OCID`__.")],
+    database_software_image_id: Annotated[Optional[Any], ("The DB system `OCID`.")],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> DatabaseSoftwareImage:
     try:
@@ -6420,16 +6517,16 @@ def get_database_software_image(
 
 @mcp.tool(description=("gets the upgrade history for a specified database."))
 def get_database_upgrade_history_entry(
-    database_id: Annotated[Optional[Any], ("The database `OCID`__.")],
+    database_id: Annotated[Optional[Any], ("The database `OCID`.")],
     upgrade_history_entry_id: Annotated[
-        Optional[Any], ("The database/db system upgrade History `OCID`__.")
+        Optional[Any], ("The database/db system upgrade History `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> DatabaseUpgradeHistoryEntry:
     try:
@@ -6450,10 +6547,10 @@ def get_database_upgrade_history_entry(
 
 @mcp.tool(description=("Gets information about the specified Database Home."))
 def get_db_home(
-    db_home_id: Annotated[Optional[Any], ("The Database Home `OCID`__.")],
+    db_home_id: Annotated[Optional[Any], ("The Database Home `OCID`.")],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> DbHome:
     try:
@@ -6469,11 +6566,11 @@ def get_db_home(
 
 @mcp.tool(description=("Gets information about a specified patch package."))
 def get_db_home_patch(
-    db_home_id: Annotated[Optional[Any], ("The Database Home `OCID`__.")],
-    patch_id: Annotated[Optional[Any], ("The `OCID`__ of the patch.")],
+    db_home_id: Annotated[Optional[Any], ("The Database Home `OCID`.")],
+    patch_id: Annotated[Optional[Any], ("The `OCID` of the patch.")],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> Patch:
     try:
@@ -6492,13 +6589,13 @@ def get_db_home_patch(
     description=("Gets the patch history details for the specified patchHistoryEntryId")
 )
 def get_db_home_patch_history_entry(
-    db_home_id: Annotated[Optional[Any], ("The Database Home `OCID`__.")],
+    db_home_id: Annotated[Optional[Any], ("The Database Home `OCID`.")],
     patch_history_entry_id: Annotated[
-        Optional[Any], ("The `OCID`__ of the patch history entry.")
+        Optional[Any], ("The `OCID` of the patch history entry.")
     ],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> PatchHistoryEntry:
     try:
@@ -6517,10 +6614,10 @@ def get_db_home_patch_history_entry(
 
 @mcp.tool(description=("Gets information about the specified database node."))
 def get_db_node(
-    db_node_id: Annotated[Optional[Any], ("The database node `OCID`__.")],
+    db_node_id: Annotated[Optional[Any], ("The database node `OCID`.")],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> DbNode:
     try:
@@ -6537,15 +6634,15 @@ def get_db_node(
 @mcp.tool(description=("Gets information about the Exadata Db server."))
 def get_db_server(
     exadata_infrastructure_id: Annotated[
-        Optional[Any], ("The `OCID`__ of the ExadataInfrastructure.")
+        Optional[Any], ("The `OCID` of the ExadataInfrastructure.")
     ],
-    db_server_id: Annotated[Optional[Any], ("The DB server `OCID`__.")],
+    db_server_id: Annotated[Optional[Any], ("The DB server `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> DbServer:
     try:
@@ -6564,10 +6661,10 @@ def get_db_server(
 
 @mcp.tool(description=("Gets information about the specified DB system."))
 def get_db_system(
-    db_system_id: Annotated[Optional[Any], ("The DB system `OCID`__.")],
+    db_system_id: Annotated[Optional[Any], ("The DB system `OCID`.")],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> DbSystem:
     try:
@@ -6583,11 +6680,11 @@ def get_db_system(
 
 @mcp.tool(description=("Gets information the specified patch."))
 def get_db_system_patch(
-    db_system_id: Annotated[Optional[Any], ("The DB system `OCID`__.")],
-    patch_id: Annotated[Optional[Any], ("The `OCID`__ of the patch.")],
+    db_system_id: Annotated[Optional[Any], ("The DB system `OCID`.")],
+    patch_id: Annotated[Optional[Any], ("The `OCID` of the patch.")],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> Patch:
     try:
@@ -6608,13 +6705,13 @@ def get_db_system_patch(
     )
 )
 def get_db_system_patch_history_entry(
-    db_system_id: Annotated[Optional[Any], ("The DB system `OCID`__.")],
+    db_system_id: Annotated[Optional[Any], ("The DB system `OCID`.")],
     patch_history_entry_id: Annotated[
-        Optional[Any], ("The `OCID`__ of the patch history entry.")
+        Optional[Any], ("The `OCID` of the patch history entry.")
     ],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> PatchHistoryEntry:
     try:
@@ -6638,16 +6735,16 @@ def get_db_system_patch_history_entry(
     )
 )
 def get_db_system_upgrade_history_entry(
-    db_system_id: Annotated[Optional[Any], ("The DB system `OCID`__.")],
+    db_system_id: Annotated[Optional[Any], ("The DB system `OCID`.")],
     upgrade_history_entry_id: Annotated[
-        Optional[Any], ("The database/db system upgrade History `OCID`__.")
+        Optional[Any], ("The database/db system upgrade History `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> DbSystemUpgradeHistoryEntry:
     try:
@@ -6674,7 +6771,7 @@ def get_db_system_upgrade_history_entry(
 )
 def get_exadata_infrastructure(
     exadata_infrastructure_id: Annotated[
-        Optional[Any], ("The Exadata infrastructure `OCID`__.")
+        Optional[Any], ("The Exadata infrastructure `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
@@ -6688,7 +6785,7 @@ def get_exadata_infrastructure(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ExadataInfrastructure:
     try:
@@ -6714,14 +6811,14 @@ def get_exadata_infrastructure(
 )
 def get_exadata_infrastructure_ocpus(
     autonomous_exadata_infrastructure_id: Annotated[
-        Optional[Any], ("The Autonomous Exadata Infrastructure `OCID`__.")
+        Optional[Any], ("The Autonomous Exadata Infrastructure `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> OCPUs:
     try:
@@ -6749,17 +6846,17 @@ def get_exadata_infrastructure_ocpus(
 )
 def get_exadata_infrastructure_un_allocated_resources(
     exadata_infrastructure_id: Annotated[
-        Optional[Any], ("The Exadata infrastructure `OCID`__.")
+        Optional[Any], ("The Exadata infrastructure `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     db_servers: Annotated[
-        Optional[Any], ("The list of `OCIDs`__ of the Db servers.")
+        Optional[Any], ("The list of `OCIDs` of the Db servers.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ExadataInfrastructureUnAllocatedResources:
     try:
@@ -6787,13 +6884,13 @@ def get_exadata_infrastructure_un_allocated_resources(
     )
 )
 def get_exadata_iorm_config(
-    db_system_id: Annotated[Optional[Any], ("The DB system `OCID`__.")],
+    db_system_id: Annotated[Optional[Any], ("The DB system `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ExadataIormConfig:
     try:
@@ -6818,14 +6915,14 @@ def get_exadata_iorm_config(
 )
 def get_exadb_vm_cluster(
     exadb_vm_cluster_id: Annotated[
-        Optional[Any], ("The Exadata VM cluster `OCID`__ on Exascale Infrastructure.")
+        Optional[Any], ("The Exadata VM cluster `OCID` on Exascale Infrastructure.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ExadbVmCluster:
     try:
@@ -6849,15 +6946,15 @@ def get_exadb_vm_cluster(
 )
 def get_exadb_vm_cluster_update(
     exadb_vm_cluster_id: Annotated[
-        Optional[Any], ("The Exadata VM cluster `OCID`__ on Exascale Infrastructure.")
+        Optional[Any], ("The Exadata VM cluster `OCID` on Exascale Infrastructure.")
     ],
-    update_id: Annotated[Optional[Any], ("The `OCID`__ of the maintenance update.")],
+    update_id: Annotated[Optional[Any], ("The `OCID` of the maintenance update.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ExadbVmClusterUpdate:
     try:
@@ -6882,17 +6979,17 @@ def get_exadb_vm_cluster_update(
 )
 def get_exadb_vm_cluster_update_history_entry(
     exadb_vm_cluster_id: Annotated[
-        Optional[Any], ("The Exadata VM cluster `OCID`__ on Exascale Infrastructure.")
+        Optional[Any], ("The Exadata VM cluster `OCID` on Exascale Infrastructure.")
     ],
     update_history_entry_id: Annotated[
-        Optional[Any], ("The `OCID`__ of the maintenance update history entry.")
+        Optional[Any], ("The `OCID` of the maintenance update history entry.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ExadbVmClusterUpdateHistoryEntry:
     try:
@@ -6919,14 +7016,14 @@ def get_exadb_vm_cluster_update_history_entry(
 )
 def get_exascale_db_storage_vault(
     exascale_db_storage_vault_id: Annotated[
-        Optional[Any], ("The Exadata Database Storage Vault `OCID`__.")
+        Optional[Any], ("The Exadata Database Storage Vault `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ExascaleDbStorageVault:
     try:
@@ -6944,13 +7041,13 @@ def get_exascale_db_storage_vault(
 
 @mcp.tool(description=("Gets information about the specified execution action."))
 def get_execution_action(
-    execution_action_id: Annotated[Optional[Any], ("The execution action `OCID`__.")],
+    execution_action_id: Annotated[Optional[Any], ("The execution action `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ExecutionAction:
     try:
@@ -6968,13 +7065,13 @@ def get_execution_action(
 
 @mcp.tool(description=("Gets information about the specified execution window."))
 def get_execution_window(
-    execution_window_id: Annotated[Optional[Any], ("The execution window `OCID`__.")],
+    execution_window_id: Annotated[Optional[Any], ("The execution window `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ExecutionWindow:
     try:
@@ -6992,10 +7089,10 @@ def get_execution_window(
 
 @mcp.tool(description=("Gets information about the specified external backup job."))
 def get_external_backup_job(
-    backup_id: Annotated[Optional[Any], ("The backup `OCID`__.")],
+    backup_id: Annotated[Optional[Any], ("The backup `OCID`.")],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ExternalBackupJob:
     try:
@@ -7014,14 +7111,14 @@ def get_external_backup_job(
 )
 def get_external_container_database(
     external_container_database_id: Annotated[
-        Optional[Any], ("The ExternalContainerDatabase `OCID`__.")
+        Optional[Any], ("The ExternalContainerDatabase `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ExternalContainerDatabase:
     try:
@@ -7046,7 +7143,7 @@ def get_external_database_connector(
     external_database_connector_id: Annotated[
         Optional[Any],
         (
-            "The `OCID`__ of the external database connector resource"
+            "The `OCID` of the external database connector resource"
             "(`ExternalDatabaseConnectorId`)."
         ),
     ],
@@ -7055,7 +7152,7 @@ def get_external_database_connector(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ExternalDatabaseConnector:
     try:
@@ -7078,14 +7175,14 @@ def get_external_database_connector(
 )
 def get_external_non_container_database(
     external_non_container_database_id: Annotated[
-        Optional[Any], ("The external non-container database `OCID`__.")
+        Optional[Any], ("The external non-container database `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ExternalNonContainerDatabase:
     try:
@@ -7108,14 +7205,14 @@ def get_external_non_container_database(
 @mcp.tool(description=("Gets information about a specific"))
 def get_external_pluggable_database(
     external_pluggable_database_id: Annotated[
-        Optional[Any], ("The ExternalPluggableDatabaseId `OCID`__.")
+        Optional[Any], ("The ExternalPluggableDatabaseId `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ExternalPluggableDatabase:
     try:
@@ -7140,7 +7237,7 @@ def get_external_pluggable_database(
     )
 )
 def get_infrastructure_target_versions(
-    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`__.")],
+    compartment_id: Annotated[Optional[Any], ("The compartment `OCID`.")],
     target_resource_id: Annotated[Optional[Any], ("The target resource ID.")] = None,
     target_resource_type: Annotated[
         Optional[Any],
@@ -7158,7 +7255,7 @@ def get_infrastructure_target_versions(
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> InfrastructureTargetVersion:
     try:
@@ -7182,13 +7279,13 @@ def get_infrastructure_target_versions(
 
 @mcp.tool(description=("Gets information about the specified key store."))
 def get_key_store(
-    key_store_id: Annotated[Optional[Any], ("The `OCID`__ of the key store.")],
+    key_store_id: Annotated[Optional[Any], ("The `OCID` of the key store.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> KeyStore:
     try:
@@ -7209,7 +7306,7 @@ def get_maintenance_run(
     maintenance_run_id: Annotated[Optional[Any], ("The maintenance run OCID.")],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> MaintenanceRun:
     try:
@@ -7230,7 +7327,7 @@ def get_maintenance_run_history(
     ],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> MaintenanceRunHistory:
     try:
@@ -7246,13 +7343,13 @@ def get_maintenance_run_history(
 
 @mcp.tool(description=("Gets information about the specified one-off patch."))
 def get_oneoff_patch(
-    oneoff_patch_id: Annotated[Optional[Any], ("The one-off patch `OCID`__.")],
+    oneoff_patch_id: Annotated[Optional[Any], ("The one-off patch `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> OneoffPatch:
     try:
@@ -7275,16 +7372,16 @@ def get_oneoff_patch(
     )
 )
 def get_pdb_conversion_history_entry(
-    database_id: Annotated[Optional[Any], ("The database `OCID`__.")],
+    database_id: Annotated[Optional[Any], ("The database `OCID`.")],
     pdb_conversion_history_entry_id: Annotated[
-        Optional[Any], ("The database conversion history `OCID`__.")
+        Optional[Any], ("The database conversion history `OCID`.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> PdbConversionHistoryEntry:
     try:
@@ -7305,13 +7402,13 @@ def get_pdb_conversion_history_entry(
 
 @mcp.tool(description=("Gets information about the specified Scheduled Action."))
 def get_scheduled_action(
-    scheduled_action_id: Annotated[Optional[Any], ("The Scheduled Action `OCID`__.")],
+    scheduled_action_id: Annotated[Optional[Any], ("The Scheduled Action `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> ScheduledAction:
     try:
@@ -7329,13 +7426,13 @@ def get_scheduled_action(
 
 @mcp.tool(description=("Gets information about the specified Scheduling Plan."))
 def get_scheduling_plan(
-    scheduling_plan_id: Annotated[Optional[Any], ("The Schedule Plan `OCID`__.")],
+    scheduling_plan_id: Annotated[Optional[Any], ("The Schedule Plan `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> SchedulingPlan:
     try:
@@ -7353,13 +7450,13 @@ def get_scheduling_plan(
 
 @mcp.tool(description=("Gets information about the specified Scheduling Policy."))
 def get_scheduling_policy(
-    scheduling_policy_id: Annotated[Optional[Any], ("The Scheduling Policy `OCID`__.")],
+    scheduling_policy_id: Annotated[Optional[Any], ("The Scheduling Policy `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> SchedulingPolicy:
     try:
@@ -7377,14 +7474,14 @@ def get_scheduling_policy(
 
 @mcp.tool(description=("Gets information about the specified Scheduling Window."))
 def get_scheduling_window(
-    scheduling_policy_id: Annotated[Optional[Any], ("The Scheduling Policy `OCID`__.")],
-    scheduling_window_id: Annotated[Optional[Any], ("The Scheduling Window `OCID`__.")],
+    scheduling_policy_id: Annotated[Optional[Any], ("The Scheduling Policy `OCID`.")],
+    scheduling_window_id: Annotated[Optional[Any], ("The Scheduling Window `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> SchedulingWindow:
     try:
@@ -7408,13 +7505,13 @@ def get_scheduling_window(
     )
 )
 def get_vm_cluster(
-    vm_cluster_id: Annotated[Optional[Any], ("The VM cluster `OCID`__.")],
+    vm_cluster_id: Annotated[Optional[Any], ("The VM cluster `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> VmCluster:
     try:
@@ -7438,17 +7535,15 @@ def get_vm_cluster(
 )
 def get_vm_cluster_network(
     exadata_infrastructure_id: Annotated[
-        Optional[Any], ("The Exadata infrastructure `OCID`__.")
+        Optional[Any], ("The Exadata infrastructure `OCID`.")
     ],
-    vm_cluster_network_id: Annotated[
-        Optional[Any], ("The VM cluster network `OCID`__.")
-    ],
+    vm_cluster_network_id: Annotated[Optional[Any], ("The VM cluster network `OCID`.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> VmClusterNetwork:
     try:
@@ -7467,11 +7562,11 @@ def get_vm_cluster_network(
 
 @mcp.tool(description=("Gets information about a specified patch package."))
 def get_vm_cluster_patch(
-    vm_cluster_id: Annotated[Optional[Any], ("The VM cluster `OCID`__.")],
-    patch_id: Annotated[Optional[Any], ("The `OCID`__ of the patch.")],
+    vm_cluster_id: Annotated[Optional[Any], ("The VM cluster `OCID`.")],
+    patch_id: Annotated[Optional[Any], ("The `OCID` of the patch.")],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> Patch:
     try:
@@ -7492,13 +7587,13 @@ def get_vm_cluster_patch(
     )
 )
 def get_vm_cluster_patch_history_entry(
-    vm_cluster_id: Annotated[Optional[Any], ("The VM cluster `OCID`__.")],
+    vm_cluster_id: Annotated[Optional[Any], ("The VM cluster `OCID`.")],
     patch_history_entry_id: Annotated[
-        Optional[Any], ("The `OCID`__ of the patch history entry.")
+        Optional[Any], ("The `OCID` of the patch history entry.")
     ],
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> PatchHistoryEntry:
     try:
@@ -7522,14 +7617,14 @@ def get_vm_cluster_patch_history_entry(
     )
 )
 def get_vm_cluster_update(
-    vm_cluster_id: Annotated[Optional[Any], ("The VM cluster `OCID`__.")],
-    update_id: Annotated[Optional[Any], ("The `OCID`__ of the maintenance update.")],
+    vm_cluster_id: Annotated[Optional[Any], ("The VM cluster `OCID`.")],
+    update_id: Annotated[Optional[Any], ("The `OCID` of the maintenance update.")],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> VmClusterUpdate:
     try:
@@ -7553,16 +7648,16 @@ def get_vm_cluster_update(
     )
 )
 def get_vm_cluster_update_history_entry(
-    vm_cluster_id: Annotated[Optional[Any], ("The VM cluster `OCID`__.")],
+    vm_cluster_id: Annotated[Optional[Any], ("The VM cluster `OCID`.")],
     update_history_entry_id: Annotated[
-        Optional[Any], ("The `OCID`__ of the maintenance update history entry.")
+        Optional[Any], ("The `OCID` of the maintenance update history entry.")
     ],
     opc_request_id: Annotated[
         Optional[Any], ("Unique identifier for the request.")
     ] = None,
     region: Annotated[
         str,
-        "Region to execute the request (Use list_subscribed_regions_tool from identity server to get proper region identifier), if no region is specified then default will be picked",
+        "Region to execute the request (Use proper region identifiers like us-ashburn-1, eu-zurich-1), if unspecified then default region will be picked",
     ] = None,
 ) -> VmClusterUpdateHistoryEntry:
     try:

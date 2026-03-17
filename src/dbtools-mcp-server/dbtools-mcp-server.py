@@ -7,6 +7,8 @@ import os.path
 
 import requests
 import json
+import re
+import time
 import oci
 from oci.signer import Signer
 from oci.resource_search.models import StructuredSearchDetails
@@ -39,6 +41,178 @@ auth_signer = Signer(
     pass_phrase=config['pass_phrase']
 )
 tenancy_id = os.getenv("TENANCY_ID_OVERRIDE", config['tenancy'])
+ORACLE_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_$#]*$")
+RESOURCE_SEARCH_FILTER_PATTERN = re.compile(r"^[A-Za-z0-9 _.:/@()+-]{1,255}$")
+BIND_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,127}$")
+
+def _is_safe_oracle_identifier(identifier: str, allow_qualified: bool = False) -> bool:
+    """Validate unquoted Oracle identifiers (optionally schema-qualified)."""
+    if not isinstance(identifier, str):
+        return False
+    candidate = identifier.strip()
+    if not candidate:
+        return False
+
+    parts = candidate.split(".")
+    if not allow_qualified and len(parts) != 1:
+        return False
+    if allow_qualified and len(parts) > 2:
+        return False
+
+    for part in parts:
+        if len(part) > 128 or not ORACLE_IDENTIFIER_PATTERN.fullmatch(part):
+            return False
+    return True
+
+def _is_safe_resource_search_filter(value: str) -> bool:
+    """Allow a conservative character set for OCI resource-search filter values."""
+    return isinstance(value, str) and bool(RESOURCE_SEARCH_FILTER_PATTERN.fullmatch(value.strip()))
+
+def _escape_sql_literal(value: str) -> str:
+    """Escape a value for SQL single-quoted literals."""
+    if value is None:
+        return ""
+    return str(value).replace("'", "''")
+
+def _validated_model_name():
+    """Return a validated Oracle identifier for model name or None."""
+    candidate = MODEL_NAME.strip()
+    if not _is_safe_oracle_identifier(candidate):
+        return None
+    return candidate
+
+def _first_sql_keyword(sql_script: str) -> str:
+    """Return the first SQL keyword for a single statement after removing comments."""
+    if not isinstance(sql_script, str):
+        return ""
+    cleaned = re.sub(r"/\*.*?\*/", " ", sql_script, flags=re.S)
+    cleaned = re.sub(r"--.*?$", " ", cleaned, flags=re.M).strip()
+    if not cleaned:
+        return ""
+    without_trailing = cleaned.rstrip(";").strip()
+    # Multi-statement inputs are not retry-safe.
+    if ";" in without_trailing:
+        return ""
+    return without_trailing.split(None, 1)[0].upper()
+
+def _is_retryable_sql(sql_script: str) -> bool:
+    """Only retry clearly idempotent read-only statement types."""
+    return _first_sql_keyword(sql_script) in {"SELECT", "SHOW", "DESCRIBE", "EXPLAIN"}
+
+def _validate_report_sql_definition(sql_definition):
+    """
+    Validate stored report SQL definition.
+    Expected schema: {"sql": <str>, "binds": [{"name": <safe bind name>}, ...]}
+    """
+    if isinstance(sql_definition, str):
+        try:
+            sql_definition = json.loads(sql_definition)
+        except Exception:
+            return None, "sql_definition must be valid JSON object"
+
+    if not isinstance(sql_definition, dict):
+        return None, "sql_definition must be an object"
+
+    allowed_keys = {"sql", "binds"}
+    unknown_keys = set(sql_definition.keys()) - allowed_keys
+    if unknown_keys:
+        return None, f"sql_definition contains unsupported keys: {sorted(list(unknown_keys))}"
+
+    sql_text = sql_definition.get("sql")
+    if not isinstance(sql_text, str) or not sql_text.strip():
+        return None, "sql_definition.sql must be a non-empty string"
+
+    normalized = {"sql": sql_text}
+
+    binds = sql_definition.get("binds", [])
+    if binds is None:
+        binds = []
+    if not isinstance(binds, list):
+        return None, "sql_definition.binds must be an array"
+
+    seen = set()
+    normalized_binds = []
+    for bind in binds:
+        if not isinstance(bind, dict):
+            return None, "Each bind definition must be an object"
+        if set(bind.keys()) != {"name"}:
+            return None, "Each bind definition must only contain the 'name' field"
+        bind_name = bind.get("name")
+        if not isinstance(bind_name, str) or not BIND_NAME_PATTERN.fullmatch(bind_name):
+            return None, f"Invalid bind name '{bind_name}'"
+        if bind_name in seen:
+            return None, f"Duplicate bind name '{bind_name}'"
+        seen.add(bind_name)
+        normalized_binds.append({"name": bind_name})
+
+    if normalized_binds:
+        normalized["binds"] = normalized_binds
+    return normalized, None
+
+def _query_exact_connection_matches(display_name: str):
+    """Search connections and return exact display-name matches."""
+    if not _is_safe_resource_search_filter(display_name):
+        return None, json.dumps({
+            "error": "Invalid connection name filter",
+            "details": "Only letters, digits, spaces, and .:_/@()+- are allowed."
+        })
+
+    search_details = StructuredSearchDetails(
+        query=f"query databasetoolsconnection resources return allAdditionalFields where displayName =~ '{display_name}'",
+        type="Structured",
+        matching_context_type="NONE"
+    )
+    resp = search_client.search_resources(search_details=search_details, tenant_id=config['tenancy']).data
+    items = getattr(resp, "items", []) if resp else []
+    exact_items = [item for item in items if getattr(item, "display_name", None) == display_name]
+    return exact_items, None
+
+def _connection_item_to_minimal_info(item):
+    """Build minimal connection object from a resource-search item."""
+    connection_info = {
+        "id": item.identifier,
+        "display_name": item.display_name,
+        "time_created": item.time_created,
+        "compartment_id": item.compartment_id,
+        "lifecycle_state": item.lifecycle_state
+    }
+    additional = getattr(item, "additional_details", None)
+    if isinstance(additional, dict):
+        connection_info.update({
+            "type": additional.get("type"),
+            "connection_string": additional.get("connectionString")
+        })
+    return connection_info
+
+def _resolve_connection_or_error(display_name: str):
+    """Resolve a single exact connection or return a structured ambiguity/not-found error."""
+    try:
+        exact_items, err = _query_exact_connection_matches(display_name)
+        if err:
+            return None, err
+        if len(exact_items) == 0:
+            return None, json.dumps({
+                "error": f"No connection found with exact name '{display_name}'",
+                "suggestion": "Use list_all_connections() and pass the exact display name."
+            })
+        if len(exact_items) > 1:
+            candidates = [{
+                "id": item.identifier,
+                "display_name": item.display_name,
+                "compartment_id": item.compartment_id,
+                "lifecycle_state": item.lifecycle_state
+            } for item in exact_items]
+            return None, json.dumps({
+                "error": f"Ambiguous connection name '{display_name}'",
+                "details": "Multiple connections share this display name. Use a unique name.",
+                "candidates": candidates
+            })
+        return _connection_item_to_minimal_info(exact_items[0]), None
+    except Exception as e:
+        return None, json.dumps({
+            "error": "Failed to resolve connection",
+            "details": str(e)
+        })
 
 def list_all_compartments_internal(only_one_page: bool , limit = 100  ):
     """Internal function to get List all compartments in a tenancy"""
@@ -152,21 +326,27 @@ def list_all_connections() -> str:
 @mcp.tool()
 def get_dbtools_connection_by_name_tool(display_name: str) -> str:
     """Get a dbtools connection for a given connection name"""
-    search_details = StructuredSearchDetails(
-        query=f"query databasetoolsconnection resources where displayName =~ '{display_name}'",
-        type="Structured",
-        matching_context_type="NONE"
-    )
-    search_results = search_client.search_resources(search_details=search_details, tenant_id=config['tenancy']).data
-    
-    if not hasattr(search_results, 'items') or len(search_results.items) == 0:
+    exact_items, err = _query_exact_connection_matches(display_name)
+    if err:
+        return err
+    if len(exact_items) == 0:
         return json.dumps({
-            "error": f"No connection found with name '{display_name}'",
-            "suggestion": "Use list_all_connections() to see available connections"
+            "error": f"No connection found with exact name '{display_name}'",
+            "suggestion": "Use list_all_connections() and pass the exact display name."
+        })
+    if len(exact_items) > 1:
+        return json.dumps({
+            "error": f"Ambiguous connection name '{display_name}'",
+            "details": "Multiple connections share this display name.",
+            "candidates": [{
+                "id": item.identifier,
+                "display_name": item.display_name,
+                "compartment_id": item.compartment_id,
+                "lifecycle_state": item.lifecycle_state
+            } for item in exact_items]
         })
 
-    # Get the first matching connection's OCID
-    connection_id = search_results.items[0].identifier
+    connection_id = exact_items[0].identifier
     
     # Get the full connection details
     connection = dbtools_client.get_database_tools_connection(connection_id).data
@@ -177,43 +357,16 @@ def get_minimal_connection_by_name(dbtools_connection_display_name: str):
     Internal function to get minimal connection information from a display name.
     Returns a dictionary with connection details like id, type, and connection string.
     """
-    search_details = StructuredSearchDetails(
-        query=f"query databasetoolsconnection resources return allAdditionalFields where displayName =~ '{dbtools_connection_display_name}'",
-        type="Structured",
-        matching_context_type="NONE"
-    )
-    try:
-        resp = search_client.search_resources(search_details=search_details, tenant_id=config['tenancy']).data
-        
-        if not hasattr(resp, 'items') or len(resp.items) == 0:
-            return None
-        
-        item = resp.items[0]
-        
-        # Extract key information from the search result
-        connection_info = {
-            'id': item.identifier,
-            'display_name': item.display_name,
-            'time_created': item.time_created,
-            'compartment_id': item.compartment_id,
-            'lifecycle_state': item.lifecycle_state
-        }
-        
-        # Extract additional fields if available
-        if hasattr(item, 'additional_details') and item.additional_details:
-            additional = item.additional_details
-            if isinstance(additional, dict):
-                connection_info.update({
-                    'type': additional.get('type'),
-                    'connection_string': additional.get('connectionString')
-                })
-        return connection_info
-    except Exception as e:
-        print(f"Error in get_minimal_connection_by_name: {str(e)}")
-        return None
+    connection_info, _ = _resolve_connection_or_error(dbtools_connection_display_name)
+    return connection_info
 
 def execute_sql_tool_by_connection_id(connection_id: str, sql_script: str, binds: list = None) -> str:
     """Internal function to execute a SQL script using a connection ID with optional bind variables"""
+    connect_timeout = float(os.getenv("SQL_CONNECT_TIMEOUT_SEC", "5"))
+    read_timeout = float(os.getenv("SQL_READ_TIMEOUT_SEC", "60"))
+    configured_retries = max(0, int(os.getenv("SQL_HTTP_RETRIES", "2")))
+    max_retries = configured_retries if _is_retryable_sql(sql_script) else 0
+
     try:
         execute_sql_endpoint = f"{ords_endpoint}/ords/{connection_id}/_/sql"
         
@@ -223,24 +376,55 @@ def execute_sql_tool_by_connection_id(connection_id: str, sql_script: str, binds
         }
         if binds:
             payload["binds"] = binds
-            
-        response = requests.post(
-            execute_sql_endpoint,
-            json=payload,
-            auth=auth_signer,
-            headers={"Content-Type": "application/json"}
-        )
+
+        response = None
+        for attempt in range(max_retries + 1):
+            try:
+                response = requests.post(
+                    execute_sql_endpoint,
+                    json=payload,
+                    auth=auth_signer,
+                    headers={"Content-Type": "application/json"},
+                    timeout=(connect_timeout, read_timeout)
+                )
+                response.raise_for_status()
+                break
+            except requests.exceptions.Timeout:
+                if attempt >= max_retries:
+                    raise
+                time.sleep(min(2 ** attempt, 3))
+            except requests.exceptions.HTTPError:
+                status_code = response.status_code if response is not None else None
+                if status_code not in (429, 500, 502, 503, 504) or attempt >= max_retries:
+                    raise
+                time.sleep(min(2 ** attempt, 3))
         
         # Try to format JSON response if possible
         try:
             return json.dumps(response.json(), indent=2)
         except:
             return response.text
+    except requests.exceptions.Timeout:
+        return json.dumps({
+            "error": "SQL execution request timed out",
+            "details": {
+                "connect_timeout_seconds": connect_timeout,
+                "read_timeout_seconds": read_timeout
+            }
+        })
+    except requests.exceptions.HTTPError as e:
+        response = e.response
+        request_id = None
+        if response is not None:
+            request_id = response.headers.get("opc-request-id") or response.headers.get("x-request-id")
+        return json.dumps({
+            "error": "SQL execution HTTP error",
+            "status_code": response.status_code if response is not None else None,
+            "request_id": request_id
+        })
     except Exception as e:
         return json.dumps({
-            "error": f"Error executing SQL: {str(e)}",
-            "sql_script": sql_script,
-            "binds": binds
+            "error": f"Error executing SQL: {str(e)}"
         })
 
 @mcp.tool()
@@ -250,13 +434,9 @@ def execute_sql_tool(dbtools_connection_display_name: str, sql_script: str) -> s
     WARNING: This tool can perform destructive operations on the database, 
     user permission must be explicitely requested by the client before executing.
     """
-    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
-    
-    if connection_info is None:
-        return json.dumps({
-            "error": f"No connection found with name '{dbtools_connection_display_name}'",
-            "suggestion": "Use list_all_connections() to see available connections"
-        })
+    connection_info, connection_error = _resolve_connection_or_error(dbtools_connection_display_name)
+    if connection_error:
+        return connection_error
     
     return execute_sql_tool_by_connection_id(connection_info['id'], sql_script)
 
@@ -267,27 +447,25 @@ def get_table_info(dbtools_connection_display_name: str, table_name: str) -> str
     
     Supports ORACLE_DATABASE and MYSQL database types.
     """
-    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
-    
-    if connection_info is None:
-        return json.dumps({
-            "error": f"No connection found with name '{dbtools_connection_display_name}'",
-            "suggestion": "Use list_all_connections() to see available connections"
-        })
+    connection_info, connection_error = _resolve_connection_or_error(dbtools_connection_display_name)
+    if connection_error:
+        return connection_error
     
     try:
         # Get database type from the connection info
         db_type = connection_info.get('type')
+        query_binds = [{"name": "table_name", "data_type": "VARCHAR", "value": table_name}]
+        resolved_table_name = table_name
         
         if db_type == 'ORACLE_DATABASE':
-            # First try with all_tab_columns (includes system views)
-            column_sql = f"""
+            # Query Oracle dictionary views from SYS to avoid synonym shadowing.
+            column_sql = """
             WITH pk_columns AS (
                 SELECT column_name
-                FROM all_cons_columns acc
-                JOIN all_constraints ac ON acc.constraint_name = ac.constraint_name
+                FROM SYS.all_cons_columns acc
+                JOIN SYS.all_constraints ac ON acc.constraint_name = ac.constraint_name
                     AND acc.owner = ac.owner
-                WHERE ac.table_name = '{table_name.upper()}'
+                WHERE ac.table_name = :table_name
                 AND ac.constraint_type = 'P'
             )
             SELECT 
@@ -299,21 +477,21 @@ def get_table_info(dbtools_connection_display_name: str, table_name: str) -> str
                 cc.comments,
                 CASE WHEN pk.column_name IS NOT NULL THEN 1 ELSE 0 END as is_primary_key,
                 t.num_rows
-            FROM all_tab_columns c
-            LEFT JOIN all_col_comments cc 
+            FROM SYS.all_tab_columns c
+            LEFT JOIN SYS.all_col_comments cc 
                 ON cc.table_name = c.table_name 
                 AND cc.column_name = c.column_name
                 AND cc.owner = c.owner
             LEFT JOIN pk_columns pk 
                 ON pk.column_name = c.column_name
-            LEFT JOIN all_tables t 
+            LEFT JOIN SYS.all_tables t 
                 ON t.table_name = c.table_name
                 AND t.owner = c.owner
-            WHERE c.table_name = '{table_name.upper()}'
+            WHERE c.table_name = :table_name
             ORDER BY c.column_id
             """
         elif db_type == 'MYSQL':
-            column_sql = f"""
+            column_sql = """
             SELECT 
                 c.column_name,
                 c.data_type,
@@ -335,7 +513,7 @@ def get_table_info(dbtools_connection_display_name: str, table_name: str) -> str
             LEFT JOIN information_schema.tables t
                 ON t.table_schema = c.table_schema
                 AND t.table_name = c.table_name
-            WHERE c.table_name = '{table_name}'
+            WHERE c.table_name = :table_name
                 AND c.table_schema = database()
             ORDER BY c.ordinal_position
             """
@@ -345,7 +523,20 @@ def get_table_info(dbtools_connection_display_name: str, table_name: str) -> str
                 "supported_types": ["ORACLE_DATABASE", "MYSQL"]
             })
         
-        result = execute_sql_tool_by_connection_id(connection_info['id'], column_sql)
+        result = execute_sql_tool_by_connection_id(connection_info['id'], column_sql, query_binds)
+        if db_type == 'ORACLE_DATABASE':
+            try:
+                parsed = json.loads(result)
+                rows = parsed.get("items", [{}])[0].get("resultSet", {}).get("items", [])
+                if not rows and table_name != table_name.upper():
+                    query_binds = [{"name": "table_name", "data_type": "VARCHAR", "value": table_name.upper()}]
+                    result = execute_sql_tool_by_connection_id(connection_info['id'], column_sql, query_binds)
+                    parsed = json.loads(result)
+                    rows = parsed.get("items", [{}])[0].get("resultSet", {}).get("items", [])
+                    if rows:
+                        resolved_table_name = table_name.upper()
+            except Exception:
+                pass
         
         try:
             raw_data = json.loads(result)
@@ -385,7 +576,7 @@ def get_table_info(dbtools_connection_display_name: str, table_name: str) -> str
                 })
             # Build the final response
             response = {
-                "table_name": table_name.upper() if db_type == 'ORACLE_DATABASE' else table_name,
+                "table_name": resolved_table_name if db_type == 'ORACLE_DATABASE' else table_name,
                 "columns": columns,
                 "primary_key": primary_keys,
                 "row_count": row_count
@@ -418,13 +609,9 @@ def list_tables(dbtools_connection_display_name: str) -> str:
     
     Supports ORACLE_DATABASE and MYSQL database types.
     """
-    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
-    
-    if connection_info is None:
-        return json.dumps({
-            "error": f"No connection found with name '{dbtools_connection_display_name}'",
-            "suggestion": "Use list_all_connections() to see available connections"
-        })
+    connection_info, connection_error = _resolve_connection_or_error(dbtools_connection_display_name)
+    if connection_error:
+        return connection_error
     
     try:
         # Get database type from the connection info
@@ -433,8 +620,8 @@ def list_tables(dbtools_connection_display_name: str) -> str:
         if db_type == 'ORACLE_DATABASE':
             sql_script = """
             SELECT table_name, num_rows, comments
-            FROM user_tables
-            LEFT JOIN user_tab_comments USING (table_name)
+            FROM SYS.user_tables
+            LEFT JOIN SYS.user_tab_comments USING (table_name)
             ORDER BY table_name
             """
         elif db_type == 'MYSQL':
@@ -520,11 +707,12 @@ def bootstrap_reports(dbtools_connection_display_name: str) -> str:
     }
     """
     try:
-        connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
-        if connection_info is None:
+        connection_info, connection_error = _resolve_connection_or_error(dbtools_connection_display_name)
+        if connection_error:
             return json.dumps({
                 "ok": False,
-                "error": f"No connection found with name '{dbtools_connection_display_name}'",
+                "error": "Failed to resolve connection",
+                "details": json.loads(connection_error),
                 "step": "connection"
             })
         
@@ -540,7 +728,7 @@ def bootstrap_reports(dbtools_connection_display_name: str) -> str:
         # Check if table exists in current schema
         check_sql = """
             SELECT owner, table_name 
-            FROM all_tables 
+            FROM SYS.all_tables 
             WHERE table_name = 'REPORT_DEFINITIONS'
             AND owner = SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA')
         """
@@ -587,7 +775,7 @@ def bootstrap_reports(dbtools_connection_display_name: str) -> str:
             current_schema = None
             try:
                 # Get current schema for the success message
-                schema_sql = "SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') as schema FROM DUAL"
+                schema_sql = "SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') as schema FROM SYS.DUAL"
                 schema_result = execute_sql_tool_by_connection_id(connection_info['id'], schema_sql)
                 schema_data = json.loads(schema_result)
                 result_set = schema_data.get("items", [{}])[0].get("resultSet", {})
@@ -628,9 +816,9 @@ def create_report(dbtools_connection_display_name: str, name: str, sql_query: st
         description: Optional description of what the report does
         bind_parameters: Optional list of bind parameter names, e.g. ["customer_id", "start_date"]
     """
-    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
-    if connection_info is None:
-        return json.dumps({"error": f"No connection found with name '{dbtools_connection_display_name}'"})    
+    connection_info, connection_error = _resolve_connection_or_error(dbtools_connection_display_name)
+    if connection_error:
+        return connection_error
 
     # Check if table exists first
     bootstrap_result = bootstrap_reports(dbtools_connection_display_name)
@@ -646,16 +834,37 @@ def create_report(dbtools_connection_display_name: str, name: str, sql_query: st
         "sql": sql_query
     }
     if bind_parameters:
-        sql_definition["binds"] = [{
-            "name": param
-        } for param in bind_parameters]
+        invalid_names = [param for param in bind_parameters if not isinstance(param, str) or not BIND_NAME_PATTERN.fullmatch(param)]
+        if invalid_names:
+            return json.dumps({
+                "error": "Invalid bind parameter names",
+                "details": invalid_names
+            })
+        if len(set(bind_parameters)) != len(bind_parameters):
+            return json.dumps({
+                "error": "Duplicate bind parameter names are not allowed"
+            })
+        sql_definition["binds"] = [{"name": param} for param in bind_parameters]
+
+    validated_definition, validation_error = _validate_report_sql_definition(sql_definition)
+    if validation_error:
+        return json.dumps({
+            "error": "Invalid report SQL definition",
+            "details": validation_error
+        })
+    sql_definition = validated_definition
 
     # Generate text embedding from name and description
     text_to_embed = name
     if description:
         text_to_embed = f"{name}. {description}"
+
+    safe_model_name = _validated_model_name()
+    if not safe_model_name:
+        return json.dumps({
+            "error": "Invalid MODEL_NAME configuration. Use an unquoted Oracle identifier."
+        })
     
-    # Insert the new report using direct SQL to avoid bind variable issues
     insert_sql = f"""
         INSERT INTO report_definitions (
             name,
@@ -665,15 +874,22 @@ def create_report(dbtools_connection_display_name: str, name: str, sql_query: st
             sql_definition,
             text_vector
         ) VALUES (
-            '{name}',
-            '{description or ""}',
+            :name,
+            :description,
             SYSTIMESTAMP,
             SYSTIMESTAMP,
-            '{json.dumps(sql_definition).replace("'", "''")}',
-            VECTOR_EMBEDDING({MODEL_NAME} USING '{text_to_embed.replace("'", "''") if text_to_embed else ""}' AS data)
+            :sql_definition,
+            VECTOR_EMBEDDING({safe_model_name} USING :text_to_embed AS data)
         )"""
 
-    result = execute_sql_tool_by_connection_id(connection_info['id'], insert_sql)
+    insert_binds = [
+        {"name": "name", "data_type": "VARCHAR", "value": name},
+        {"name": "description", "data_type": "VARCHAR", "value": description or ""},
+        {"name": "sql_definition", "data_type": "VARCHAR", "value": json.dumps(sql_definition)},
+        {"name": "text_to_embed", "data_type": "VARCHAR", "value": text_to_embed if text_to_embed else ""}
+    ]
+
+    result = execute_sql_tool_by_connection_id(connection_info['id'], insert_sql, insert_binds)
     try:
         # Check for errors
         json_result = json.loads(result)
@@ -707,9 +923,9 @@ def execute_report(dbtools_connection_display_name: str, report_name: str, bind_
         report_name: Name of the report to execute
         bind_values: Optional dictionary of bind parameter values, e.g. {"year": 2024, "rating": 8.5}
     """
-    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
-    if connection_info is None:
-        return json.dumps({"error": f"No connection found with name '{dbtools_connection_display_name}'"})    
+    connection_info, connection_error = _resolve_connection_or_error(dbtools_connection_display_name)
+    if connection_error:
+        return connection_error
 
     # Get the report definition
     get_report_sql = """
@@ -740,20 +956,49 @@ def execute_report(dbtools_connection_display_name: str, report_name: str, bind_
             "response": result
         })
 
+    sql_definition, validation_error = _validate_report_sql_definition(sql_definition)
+    if validation_error:
+        return json.dumps({
+            "error": "Stored report definition is invalid",
+            "details": validation_error
+        })
+
+    if bind_values is not None and not isinstance(bind_values, dict):
+        return json.dumps({
+            "error": "bind_values must be an object"
+        })
+
+    declared_bind_names = [b["name"] for b in sql_definition.get("binds", [])]
+    provided_bind_values = bind_values or {}
+
+    if declared_bind_names and not provided_bind_values:
+        return json.dumps({
+            "error": "Missing required bind parameters",
+            "required_binds": declared_bind_names
+        })
+
+    unknown_binds = [name for name in provided_bind_values.keys() if name not in declared_bind_names]
+    if unknown_binds:
+        return json.dumps({
+            "error": "Unexpected bind parameters provided",
+            "unexpected_binds": unknown_binds,
+            "allowed_binds": declared_bind_names
+        })
+
     # Prepare the binds if needed
     binds = None
-    if "binds" in sql_definition and bind_values:
+    if declared_bind_names:
         binds = []
         for bind_def in sql_definition["binds"]:
             bind_name = bind_def["name"]
-            if bind_name not in bind_values:
+            if bind_name not in provided_bind_values:
                 return json.dumps({
                     "error": f"Missing required bind parameter: {bind_name}",
-                    "required_binds": [b["name"] for b in sql_definition["binds"]]
+                    "required_binds": declared_bind_names
                 })
             
             # Infer data type from the value
-            value = bind_values[bind_name]
+            value = provided_bind_values[bind_name]
             if isinstance(value, int):
                 data_type = "NUMBER"
             elif isinstance(value, float):
@@ -784,9 +1029,9 @@ def get_report(dbtools_connection_display_name: str, report_name: str) -> str:
         dbtools_connection_display_name: The name of the database connection
         report_name: Name of the report to retrieve
     """
-    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
-    if connection_info is None:
-        return json.dumps({"error": f"No connection found with name '{dbtools_connection_display_name}'"})    
+    connection_info, connection_error = _resolve_connection_or_error(dbtools_connection_display_name)
+    if connection_error:
+        return connection_error
 
     # Get the report definition
     get_report_sql = """
@@ -814,7 +1059,12 @@ def get_report(dbtools_connection_display_name: str, report_name: str) -> str:
         if "items" not in json_result or not json_result["items"]:
             return json.dumps({"error": f"Report '{report_name}' not found"})
         report = json_result["items"][0]["resultSet"]["items"][0]
-        sql_definition = report["sql_definition"]
+        sql_definition, validation_error = _validate_report_sql_definition(report["sql_definition"])
+        if validation_error:
+            return json.dumps({
+                "error": "Stored report definition is invalid",
+                "details": validation_error
+            })
         
         return json.dumps({
             "name": report["name"],
@@ -842,9 +1092,9 @@ def delete_report(dbtools_connection_display_name: str, report_name: str) -> str
         dbtools_connection_display_name: The name of the database connection
         report_name: Name of the report to delete
     """
-    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
-    if connection_info is None:
-        return json.dumps({"error": f"No connection found with name '{dbtools_connection_display_name}'"})    
+    connection_info, connection_error = _resolve_connection_or_error(dbtools_connection_display_name)
+    if connection_error:
+        return connection_error
 
     # First check if the report exists
     get_report_sql = """
@@ -902,9 +1152,9 @@ def list_reports(dbtools_connection_display_name: str) -> str:
     Returns report name, description, and creation/update times.
     This is only supported for Oracle databases.
     """
-    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
-    if connection_info is None:
-        return json.dumps({"error": f"No connection found with name '{dbtools_connection_display_name}'"})    
+    connection_info, connection_error = _resolve_connection_or_error(dbtools_connection_display_name)
+    if connection_error:
+        return connection_error
 
     # Check if table exists first
     bootstrap_result = bootstrap_reports(dbtools_connection_display_name)
@@ -941,9 +1191,9 @@ def find_matching_reports(dbtools_connection_display_name: str, search_text: str
     Returns:
         JSON string containing the matched reports sorted by similarity score
     """
-    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
-    if connection_info is None:
-        return json.dumps({"error": f"No connection found with name '{dbtools_connection_display_name}'"})
+    connection_info, connection_error = _resolve_connection_or_error(dbtools_connection_display_name)
+    if connection_error:
+        return connection_error
 
     # Check if table exists
     bootstrap_result = bootstrap_reports(dbtools_connection_display_name)
@@ -954,6 +1204,12 @@ def find_matching_reports(dbtools_connection_display_name: str, search_text: str
     except:
         return bootstrap_result
 
+    safe_model_name = _validated_model_name()
+    if not safe_model_name:
+        return json.dumps({
+            "error": "Invalid MODEL_NAME configuration. Use an unquoted Oracle identifier."
+        })
+
     # Query similar reports using vector similarity
     query = f"""
         SELECT 
@@ -963,11 +1219,11 @@ def find_matching_reports(dbtools_connection_display_name: str, search_text: str
             TO_CHAR(r.time_updated, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "time_updated",
             r.sql_definition as "sql_definition",
             ROUND(1 - VECTOR_DISTANCE(r.text_vector, 
-                VECTOR_EMBEDDING({MODEL_NAME} USING :search_text AS data)), 4) as "similarity_score"
+                VECTOR_EMBEDDING({safe_model_name} USING :search_text AS data)), 4) as "similarity_score"
         FROM report_definitions r
         WHERE r.text_vector IS NOT NULL
             AND 1 - VECTOR_DISTANCE(r.text_vector, 
-                VECTOR_EMBEDDING({MODEL_NAME} USING :search_text AS data)) > 0.3
+                VECTOR_EMBEDDING({safe_model_name} USING :search_text AS data)) > 0.3
         ORDER BY "similarity_score" DESC
         FETCH FIRST :limit ROWS ONLY
     """
@@ -1047,10 +1303,38 @@ def ragify_column(dbtools_connection_display_name: str, table_name: str, column_
 
     if not column_names:
         return json.dumps({"status": "error", "message": "column_names list cannot be empty."}) 
+    if not _is_safe_oracle_identifier(table_name, allow_qualified=True):
+        return json.dumps({
+            "status": "error",
+            "message": "Invalid table_name. Use unquoted Oracle identifiers only (optionally schema-qualified)."
+        })
+    if not _is_safe_oracle_identifier(vector_column_name):
+        return json.dumps({
+            "status": "error",
+            "message": "Invalid vector_column_name. Use unquoted Oracle identifiers only."
+        })
+
+    normalized_columns = []
+    for col in column_names:
+        if not _is_safe_oracle_identifier(col):
+            return json.dumps({
+                "status": "error",
+                "message": f"Invalid column name '{col}'. Use unquoted Oracle identifiers only."
+            })
+        normalized_columns.append(col.strip())
+
+    safe_table_name = table_name.strip()
+    safe_vector_column_name = vector_column_name.strip()
+    safe_model_name = _validated_model_name()
+    if not safe_model_name:
+        return json.dumps({
+            "status": "error",
+            "message": "Invalid MODEL_NAME configuration. Use an unquoted Oracle identifier."
+        })
 
     # 1. Add the vector column
-    alter_sql = f"ALTER TABLE {table_name} ADD ({vector_column_name} VECTOR({MODEL_EMBEDDING_DIMENSION}))"
-    print(f"Executing ALTER TABLE statement: {alter_sql}")
+    alter_sql = f"ALTER TABLE {safe_table_name} ADD ({safe_vector_column_name} VECTOR({MODEL_EMBEDDING_DIMENSION}))"
+    print("Executing ALTER TABLE statement for ragify_column.")
     
     alter_result_str = execute_sql_tool(dbtools_connection_display_name, alter_sql)
     try:
@@ -1067,14 +1351,12 @@ def ragify_column(dbtools_connection_display_name: str, table_name: str, column_
         print(f"Warning: Exception occurred during ALTER TABLE or response handling: {e}. Proceeding anyway.")
         
     # Regardless of ALTER outcome/warnings, proceed to COMMENT and UPDATE
-    pass # Proceed to COMMENT and UPDATE steps
-
     # 2. Add a comment to the vector column indicating source columns
-    comment_text = f"Vector embedding generated from columns: {', '.join(column_names)}"
+    comment_text = f"Vector embedding generated from columns: {', '.join(normalized_columns)}"
     # Ensure comment text isn't too long for Oracle's limit (4000 bytes, but play safe)
-    comment_text = comment_text[:3900] 
-    comment_sql = f"COMMENT ON COLUMN {table_name}.{vector_column_name} IS '{comment_text}'"
-    print(f"Executing COMMENT ON COLUMN statement: {comment_sql}")
+    comment_text = comment_text[:3900].replace("'", "''")
+    comment_sql = f"COMMENT ON COLUMN {safe_table_name}.{safe_vector_column_name} IS '{comment_text}'"
+    print("Executing COMMENT ON COLUMN statement for ragify_column.")
     
     comment_result_str = execute_sql_tool(dbtools_connection_display_name, comment_sql)
     # Basic check for comment result - less critical, so just print errors
@@ -1089,15 +1371,15 @@ def ragify_column(dbtools_connection_display_name: str, table_name: str, column_
     # Construct the concatenation expression for the source columns
     # Using COALESCE to handle potential NULLs gracefully, replacing them with empty strings
     # Concatenating with a space separator
-    concatenated_columns = " || ' ' || ".join([f"COALESCE(TO_CHAR({col}), '')" for col in column_names])
+    concatenated_columns = " || ' ' || ".join([f"COALESCE(TO_CHAR({col}), '')" for col in normalized_columns])
     
     # Construct the WHERE clause to only update rows where at least one source column is not null
-    where_clause_conditions = [f"{col} IS NOT NULL" for col in column_names]
+    where_clause_conditions = [f"{col} IS NOT NULL" for col in normalized_columns]
     where_clause = " OR ".join(where_clause_conditions)
 
     # 3. Populate the vector column
-    update_sql = f"UPDATE {table_name}\nSET {vector_column_name} = VECTOR_EMBEDDING({MODEL_NAME} USING ({concatenated_columns}) AS data)\nWHERE {where_clause}"
-    print(f"Executing UPDATE statement: {update_sql}")
+    update_sql = f"UPDATE {safe_table_name}\nSET {safe_vector_column_name} = VECTOR_EMBEDDING({safe_model_name} USING ({concatenated_columns}) AS data)\nWHERE {where_clause}"
+    print("Executing UPDATE statement for ragify_column.")
 
     update_result_str = execute_sql_tool(dbtools_connection_display_name, update_sql)
     try:
@@ -1128,13 +1410,9 @@ def heatwave_ask_help(dbtools_connection_display_name: str, question: str) -> st
     This tool should be prioritized for HeatWave AutoML syntax when trying to call ML stored procedures.
     The provided dbtools_connection_display_name is that of a dbtools connection of type MySQL
     """
-    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
-    
-    if connection_info is None:
-        return json.dumps({
-            "error": f"No connection found with name '{dbtools_connection_display_name}'",
-            "suggestion": "Use list_all_connections() to see available connections"
-        })
+    connection_info, connection_error = _resolve_connection_or_error(dbtools_connection_display_name)
+    if connection_error:
+        return connection_error
     
     try:
         # Verify this is a MySQL connection
@@ -1145,7 +1423,8 @@ def heatwave_ask_help(dbtools_connection_display_name: str, question: str) -> st
             })
             
         # Execute the heatwave chat query
-        nl2ml_call = f"call sys.NL2ML('{question}', @nl2ml_response); select @nl2ml_response"
+        escaped_question = _escape_sql_literal(question)
+        nl2ml_call = f"call sys.NL2ML('{escaped_question}', @nl2ml_response); select @nl2ml_response"
         response = execute_sql_tool_by_connection_id(connection_info['id'], nl2ml_call)
         
         # return response
@@ -1183,13 +1462,9 @@ def heatwave_load_vector_store(dbtools_connection_display_name: str, namespace: 
 
     The provided dbtools_connection_display_name is that of a dbtools connection of type MySQL
     """
-    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
-    
-    if connection_info is None:
-        return json.dumps({
-            "error": f"No connection found with name '{dbtools_connection_display_name}'",
-            "suggestion": "Use list_all_connections() to see available connections"
-        })
+    connection_info, connection_error = _resolve_connection_or_error(dbtools_connection_display_name)
+    if connection_error:
+        return connection_error
     
     try:
         # Verify this is a MySQL connection
@@ -1199,7 +1474,17 @@ def heatwave_load_vector_store(dbtools_connection_display_name: str, namespace: 
                 "suggestion": "Please provide a MySQL database connection."
             })
             
-        vsload = f"SET @vsl_options=JSON_OBJECT('schema_name', '{schema_name}', 'table_name', '{table_name}'); CALL sys.VECTOR_STORE_LOAD('oci://{bucket_name}@{namespace}/{document_prefix}', @vsl_options);"
+        escaped_schema_name = _escape_sql_literal(schema_name)
+        escaped_table_name = _escape_sql_literal(table_name)
+        escaped_bucket_name = _escape_sql_literal(bucket_name)
+        escaped_namespace = _escape_sql_literal(namespace)
+        escaped_document_prefix = _escape_sql_literal(document_prefix)
+        vsload = (
+            "SET @vsl_options=JSON_OBJECT("
+            f"'schema_name', '{escaped_schema_name}', 'table_name', '{escaped_table_name}'"
+            "); "
+            f"CALL sys.VECTOR_STORE_LOAD('oci://{escaped_bucket_name}@{escaped_namespace}/{escaped_document_prefix}', @vsl_options);"
+        )
         response = execute_sql_tool_by_connection_id(connection_info['id'], vsload)
         
         return response
@@ -1254,13 +1539,9 @@ def heatwave_ask_ml_rag(dbtools_connection_display_name: str, question: str) -> 
     Instead, MCP Host LLM should use the retreived context to generate the response.
     The provided dbtools_connection_display_name is that of a dbtools connection of type MySQL
     """
-    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
-    
-    if connection_info is None:
-        return json.dumps({
-            "error": f"No connection found with name '{dbtools_connection_display_name}'",
-            "suggestion": "Use list_all_connections() to see available connections"
-        })
+    connection_info, connection_error = _resolve_connection_or_error(dbtools_connection_display_name)
+    if connection_error:
+        return connection_error
     
     try:
         # Verify this is a MySQL connection
@@ -1271,7 +1552,8 @@ def heatwave_ask_ml_rag(dbtools_connection_display_name: str, question: str) -> 
             })
             
         # Execute the heatwave chat query
-        ask_ml_rag = f"set @options = NULL; call sys.ml_rag('{question}', @response, JSON_OBJECT('skip_generate', true)); SELECT @response;"
+        escaped_question = _escape_sql_literal(question)
+        ask_ml_rag = f"set @options = NULL; call sys.ml_rag('{escaped_question}', @response, JSON_OBJECT('skip_generate', true)); SELECT @response;"
         response = execute_sql_tool_by_connection_id(connection_info['id'], ask_ml_rag)
         
         # Parse the response
@@ -1311,13 +1593,9 @@ def heatwave_ask_nl_sql(dbtools_connection_display_name: str, question: str) -> 
         is_sql_valid(bool): Whether the generated SQL statement is valid
         model_id(str): The LLM used for generation
     """
-    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
-
-    if connection_info is None:
-        return json.dumps({
-            "error": f"No connection found with name '{dbtools_connection_display_name}'",
-            "suggestion": "Use list_all_connections() to see available connections"
-        })
+    connection_info, connection_error = _resolve_connection_or_error(dbtools_connection_display_name)
+    if connection_error:
+        return connection_error
 
     try:
         if connection_info.get('type') != 'MYSQL':
@@ -1326,7 +1604,8 @@ def heatwave_ask_nl_sql(dbtools_connection_display_name: str, question: str) -> 
                 "suggestion": "Please provide a MySQL database connection."
             })
 
-        call_sql = f"CALL sys.NL_SQL('{question.replace("'","''")}', @response, JSON_OBJECT('execute', FALSE)); SELECT @response;"
+        escaped_question = _escape_sql_literal(question)
+        call_sql = f"CALL sys.NL_SQL('{escaped_question}', @response, JSON_OBJECT('execute', FALSE)); SELECT @response;"
 
         response = execute_sql_tool_by_connection_id(connection_info['id'], call_sql)
         # Parse the response
@@ -1379,12 +1658,9 @@ def heatwave_retrieve_relevant_schema_information(dbtools_connection_display_nam
         
         Where the DDL/CREATE statements of all relevant tables are listed   
     """
-    connection_info = get_minimal_connection_by_name(dbtools_connection_display_name)
-    if connection_info is None:
-        return json.dumps({
-            "error": f"No connection found with name '{dbtools_connection_display_name}'",
-            "suggestion": "Use list_all_connections() to see available connections"
-        })
+    connection_info, connection_error = _resolve_connection_or_error(dbtools_connection_display_name)
+    if connection_error:
+        return connection_error
     try:
         if connection_info.get('type') != 'MYSQL':
             return json.dumps({
@@ -1392,7 +1668,8 @@ def heatwave_retrieve_relevant_schema_information(dbtools_connection_display_nam
                 "suggestion": "Please provide a MySQL database connection."
             })
 
-        call_sql = f"CALL sys.ML_RETRIEVE_SCHEMA_METADATA('{question.replace("'","''")}', @response, NULL);SELECT JSON_OBJECT('create_statements', @response) AS jobj;"
+        escaped_question = _escape_sql_literal(question)
+        call_sql = f"CALL sys.ML_RETRIEVE_SCHEMA_METADATA('{escaped_question}', @response, NULL);SELECT JSON_OBJECT('create_statements', @response) AS jobj;"
         response = execute_sql_tool_by_connection_id(connection_info['id'], call_sql)
         # Parse the response
         if isinstance(response, str):

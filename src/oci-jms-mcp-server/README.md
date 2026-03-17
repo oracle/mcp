@@ -56,7 +56,7 @@ When `JMS_TEST_ENVIRONMENT=PROD` or the variable is unset, the server keeps the 
 From the JMS package directory:
 
 ```sh
-cd /Users/bhuvesku/Documents/projects/oracle-jms-mcp-server/src/oci-jms-mcp-server
+cd src/oci-jms-mcp-server
 mkdir -p /tmp/uv-cache
 UV_CACHE_DIR=/tmp/uv-cache uv sync
 ```
@@ -103,7 +103,7 @@ http://127.0.0.1:8888/mcp
       "command": "/bin/zsh",
       "args": [
         "-lc",
-        "cd /Users/bhuvesku/Documents/projects/oracle-jms-mcp-server/src/oci-jms-mcp-server && OCI_CONFIG_FILE=/Users/bhuvesku/.oci/config OCI_CONFIG_PROFILE=DEFAULT UV_CACHE_DIR=/tmp/uv-cache uv run oracle.oci-jms-mcp-server"
+        "cd src/oci-jms-mcp-server && OCI_CONFIG_FILE=~/.oci/config OCI_CONFIG_PROFILE=DEFAULT UV_CACHE_DIR=/tmp/uv-cache uv run oracle.oci-jms-mcp-server"
       ],
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR"

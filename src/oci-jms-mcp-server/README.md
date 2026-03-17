@@ -150,6 +150,7 @@ Prefer verifying `get_fleet` only with an OCID returned by `list_fleets`. If `ge
 - If your client config was copied from `oci_api_mcp`, replace `OCI_CONFIG`/`OCI_PROFILE` with `OCI_CONFIG_FILE`/`OCI_CONFIG_PROFILE`.
 - If you set `JMS_TEST_ENVIRONMENT`, make sure the OCI config contains a `region`.
 - If you need a dev endpoint, set `JMS_TEST_ENVIRONMENT`; tool inputs do not accept a per-call endpoint override.
+- Blank optional filter values are ignored. For example, empty `time_start`, `time_end`, or blank entries in `os_family` are treated as unset inputs instead of being sent to the OCI SDK.
 
 ## Tools
 

@@ -36,6 +36,7 @@ from pydantic import Field
 from . import __project__, __version__
 from .util import get_jms_service_endpoint
 
+# Setup
 logger = Logger(__name__, level="INFO")
 
 mcp = FastMCP(name=__project__)
@@ -45,7 +46,7 @@ _UNSUPPORTED_ENV_ALIASES = {
     "OCI_PROFILE": "OCI_CONFIG_PROFILE",
 }
 
-
+# Input Normalization Helpers
 def _normalize_enum(value: Optional[str]) -> Optional[str]:
     """Normalize flexible enum input into OCI SDK-style uppercase values."""
     if value is None:
@@ -60,7 +61,9 @@ def _normalize_enum_list(values: Optional[list[str]]) -> Optional[list[str]]:
     """Normalize lists of enum-like values."""
     if values is None:
         return None
-    return [_normalize_enum(value) for value in values]
+    normalized = [_normalize_enum(value) for value in values]
+    normalized = [value for value in normalized if value is not None]
+    return normalized or None
 
 
 def _normalized_key(value: str) -> str:
@@ -100,7 +103,10 @@ def _parse_rfc3339(value: Optional[str]) -> Optional[datetime]:
     """Convert an optional RFC3339 timestamp string into a datetime."""
     if value is None:
         return None
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    normalized = value.strip()
+    if not normalized:
+        return None
+    return datetime.fromisoformat(normalized.replace("Z", "+00:00"))
 
 
 def _warn_on_unsupported_env_aliases():
@@ -144,7 +150,7 @@ def get_jms_client():
     client_kwargs = _omit_none(signer=signer, service_endpoint=service_endpoint)
     return oci.jms.JavaManagementServiceClient(config, **client_kwargs)
 
-
+# mcp tool functions
 @mcp.tool(description="List Java Management Service fleets in a compartment.")
 def list_fleets(
     compartment_id: Optional[str] = Field(

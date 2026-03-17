@@ -307,6 +307,68 @@ class TestJmsTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_list_installation_sites_omits_blank_os_family_entries(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        response = create_autospec(oci.response.Response)
+        response.data = oci.jms.models.InstallationSiteCollection(
+            items=[
+                oci.jms.models.InstallationSiteSummary(
+                    installation_key="install1",
+                    managed_instance_id="mi1",
+                    path="/usr/java",
+                )
+            ]
+        )
+        response.has_next_page = False
+        response.next_page = None
+        mock_client.list_installation_sites.return_value = response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_installation_sites",
+                    {"fleet_id": "fleet1", "os_family": ["linux", "   "]},
+                )
+            ).structured_content["result"]
+
+            assert result[0]["installation_key"] == "install1"
+            assert mock_client.list_installation_sites.call_args.kwargs["os_family"] == ["LINUX"]
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_list_installation_sites_omits_os_family_when_only_blank_values(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        response = create_autospec(oci.response.Response)
+        response.data = oci.jms.models.InstallationSiteCollection(
+            items=[
+                oci.jms.models.InstallationSiteSummary(
+                    installation_key="install1",
+                    managed_instance_id="mi1",
+                    path="/usr/java",
+                )
+            ]
+        )
+        response.has_next_page = False
+        response.next_page = None
+        mock_client.list_installation_sites.return_value = response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_installation_sites",
+                    {"fleet_id": "fleet1", "os_family": ["   "]},
+                )
+            ).structured_content["result"]
+
+            assert result[0]["installation_key"] == "install1"
+            assert "os_family" not in mock_client.list_installation_sites.call_args.kwargs
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
     async def test_list_installation_sites_normalizes_sort_by(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -406,6 +468,36 @@ class TestJmsTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_summarize_resource_inventory_omits_blank_time_start(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        response = create_autospec(oci.response.Response)
+        response.data = oci.jms.models.ResourceInventory(
+            active_fleet_count=1,
+            managed_instance_count=2,
+            jre_count=3,
+            installation_count=4,
+            application_count=5,
+        )
+        mock_client.summarize_resource_inventory.return_value = response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "summarize_resource_inventory",
+                    {
+                        "compartment_id": "ocid1.compartment.oc1..test",
+                        "time_start": "",
+                    },
+                )
+            ).structured_content
+
+            assert result["active_fleet_count"] == 1
+            assert "time_start" not in mock_client.summarize_resource_inventory.call_args.kwargs
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
     async def test_summarize_managed_instance_usage(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -472,6 +564,46 @@ class TestJmsTools:
                 mock_client.summarize_managed_instance_usage.call_args.kwargs["sort_by"]
                 == "timeFirstSeen"
             )
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_summarize_managed_instance_usage_omits_blank_os_family_entries_and_time_end(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        response = create_autospec(oci.response.Response)
+        response.data = oci.jms.models.ManagedInstanceUsageCollection(
+            items=[
+                oci.jms.models.ManagedInstanceUsage(
+                    managed_instance_id="mi1",
+                    managed_instance_type="ORACLE_MANAGEMENT_AGENT",
+                    hostname="host1",
+                )
+            ]
+        )
+        response.has_next_page = False
+        response.next_page = None
+        mock_client.summarize_managed_instance_usage.return_value = response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "summarize_managed_instance_usage",
+                    {
+                        "fleet_id": "fleet1",
+                        "os_family": ["linux", "   "],
+                        "time_end": "   ",
+                    },
+                )
+            ).structured_content["result"]
+
+            assert result[0]["managed_instance_id"] == "mi1"
+            assert mock_client.summarize_managed_instance_usage.call_args.kwargs["os_family"] == [
+                "LINUX"
+            ]
+            assert "time_end" not in mock_client.summarize_managed_instance_usage.call_args.kwargs
 
 
 class TestServerMain:

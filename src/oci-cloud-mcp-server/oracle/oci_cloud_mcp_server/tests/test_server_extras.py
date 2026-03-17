@@ -20,6 +20,7 @@ from oracle.oci_cloud_mcp_server.server import (
     _import_models_module_from_client_fqn,
     _serialize_oci_data,
     get_client_operation_details,
+    invoke_oci_api,
     list_client_operations,
     list_oci_clients,
     main,
@@ -170,6 +171,16 @@ class TestSerializeFallback:
         s = _serialize_oci_data(X())
         assert isinstance(s, str)
         assert "X" in s
+
+
+class TestInvokeClientFqnValidation:
+    def test_invoke_rejects_non_oci_client_fqn_before_import(self):
+        with patch("oracle.oci_cloud_mcp_server.server._import_client") as m_import:
+            res = invoke_oci_api.fn("x.y.FakeClient", "do_thing", {})
+
+        assert "error" in res
+        assert "only allows OCI SDK client classes" in res["error"]
+        m_import.assert_not_called()
 
 
 class TestListClientOperationsErrors:

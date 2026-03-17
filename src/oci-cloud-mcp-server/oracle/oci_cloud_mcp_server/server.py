@@ -37,10 +37,11 @@ mcp = FastMCP(
 _user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
 _ADDITIONAL_UA = f"{_user_agent_name}/{__version__}"
 
-# Backwards-compat pagination allowlist placeholder.
-# Heuristic detection handles most cases; keep an empty set to avoid NameError
-# in any residual fallback checks.
-known_paginated: set = set()
+# Backwards-compat pagination allowlist for operations whose pagination support
+# is not always discoverable from signatures or generated source.
+known_paginated: set = {
+    "get_rr_set",
+}
 
 
 def _get_config_and_signer() -> Tuple[Dict[str, Any], Any]:
@@ -109,6 +110,69 @@ def _import_client(client_fqn: str) -> Any:
     return instance
 
 
+def _validate_invoke_client_fqn(client_fqn: str) -> None:
+    if not isinstance(client_fqn, str) or not client_fqn.startswith("oci."):
+        raise ValueError("invoke_oci_api only allows OCI SDK client classes under the 'oci.' namespace")
+    if "." not in client_fqn:
+        raise ValueError("client_fqn must be a fully-qualified class name like 'oci.core.ComputeClient'")
+    class_name = client_fqn.rsplit(".", 1)[-1]
+    if not class_name.endswith("Client"):
+        raise ValueError("invoke_oci_api only allows OCI SDK client classes ending in 'Client'")
+
+
+def _classify_invoke_error(operation: str, error: Exception) -> Dict[str, str]:
+    message = str(error)
+    lower_message = message.lower()
+    result = {"error": message}
+
+    is_stateful = operation.startswith(
+        (
+            "create_",
+            "update_",
+            "delete_",
+            "launch_",
+            "terminate_",
+            "attach_",
+            "detach_",
+            "change_",
+            "start_",
+            "stop_",
+            "reboot_",
+            "reset_",
+        )
+    )
+
+    if not is_stateful:
+        return result
+
+    if "invalid typeid provided" in lower_message or "missing 1 required positional argument" in lower_message:
+        result["error_category"] = "payload_shape"
+        result["error_hint"] = (
+            "The request payload may not match the SDK shape expected by this operation. "
+            "Check the parameter names, required top-level details object, and nested model fields."
+        )
+        return result
+
+    if "incorrectstate" in lower_message or "lifecycle state" in lower_message or "not in the correct state" in lower_message:
+        result["error_category"] = "instance_lifecycle_state"
+        result["error_hint"] = (
+            "The target resource may not be in a valid state for this operation. "
+            "Check the current resource state and retry when it is stable."
+        )
+        return result
+
+    shape_terms = ("shape_config", "shape config", "ocpus", "memory_in_gbs", "memoryingbs")
+    if "invalidparameter" in lower_message and any(term in lower_message for term in shape_terms):
+        result["error_category"] = "invalid_shape_config"
+        result["error_hint"] = (
+            "One or more configuration values may be invalid for this resource. "
+            "Check the allowed values and constraints for the target operation."
+        )
+        return result
+
+    return result
+
+
 def _snake_to_camel(name: str) -> str:
     parts = name.split("_")
     return "".join(p.capitalize() for p in parts if p)
@@ -172,6 +236,24 @@ def _resolve_discriminated_model_class(
     if not models_module or not isinstance(payload, dict) or not isinstance(swagger_type, str):
         return None
 
+    if swagger_type == "SearchDetails":
+        discriminator = payload.get("type")
+        if not isinstance(discriminator, str):
+            if "query" in payload:
+                discriminator = "Structured"
+            elif "text" in payload:
+                discriminator = "FreeText"
+        known_search_types = {
+            "Structured": "StructuredSearchDetails",
+            "FreeText": "FreeTextSearchDetails",
+        }
+        cls_name = known_search_types.get(discriminator)
+        if cls_name:
+            cls = _resolve_model_class(models_module, cls_name)
+            if inspect.isclass(cls):
+                return cls
+        return None
+
     discriminator = payload.get("source_type")
     if not isinstance(discriminator, str):
         discriminator = payload.get("sourceType")
@@ -194,6 +276,31 @@ def _resolve_discriminated_model_class(
         if inspect.isclass(cls):
             return cls
     return None
+
+
+def _apply_discriminator_defaults(
+    swagger_type: str, payload: Dict[str, Any]
+) -> Dict[str, Any]:
+    if not isinstance(payload, dict) or not isinstance(swagger_type, str):
+        return payload
+
+    updated = dict(payload)
+    if swagger_type == "SearchDetails" and "type" not in updated:
+        if "query" in updated:
+            updated["type"] = "Structured"
+        elif "text" in updated:
+            updated["type"] = "FreeText"
+    return updated
+
+
+def _resolve_model_class_with_payload(
+    models_module: Any, swagger_type: str, payload: Dict[str, Any]
+) -> Tuple[Optional[type], Dict[str, Any]]:
+    adjusted_payload = _apply_discriminator_defaults(swagger_type, payload)
+    cls = _resolve_discriminated_model_class(swagger_type, adjusted_payload, models_module)
+    if cls is None:
+        cls = _resolve_model_class_from_swagger_type(swagger_type, models_module)
+    return cls, adjusted_payload
 
 
 def _normalize_value_for_swagger_type(
@@ -220,6 +327,7 @@ def _normalize_value_for_swagger_type(
         ]
 
     if isinstance(value, dict):
+        value = _apply_discriminator_defaults(t, value)
         m_dict = re.match(r"^dict\(\s*[^,]+,\s*(.+)\)$", t)
         if m_dict:
             val_type = m_dict.group(1).strip()
@@ -230,9 +338,7 @@ def _normalize_value_for_swagger_type(
                 for k, v in value.items()
             }
 
-        nested_cls = _resolve_discriminated_model_class(t, value, models_module)
-        if not nested_cls:
-            nested_cls = _resolve_model_class_from_swagger_type(t, models_module)
+        nested_cls, value = _resolve_model_class_with_payload(models_module, t, value)
         if nested_cls:
             normalized = _normalize_mapping_for_model(
                 value, nested_cls, models_module, use_wire_keys=use_wire_keys
@@ -351,10 +457,10 @@ def _import_models_module_from_client_fqn(client_fqn: str):
         parts = client_fqn.split(".")
         candidates: List[str] = []
 
-        if len(parts) >= 3:
+        if len(parts) >= 4:
             # preferred: drop "<module>.<ClassName>"
             candidates.append(".".join(parts[:-2]) + ".models")
-        if len(parts) >= 2:
+        if len(parts) >= 3:
             # fallback for simpler FQNs used in tests/mocks: "x.y.Client" -> "x.y.models"
             candidates.append(".".join(parts[:-1]) + ".models")
 
@@ -507,6 +613,7 @@ def _construct_model_from_mapping(
             cls = getattr(mod, cls_name)
             if inspect.isclass(cls):
                 try:
+                    clean = _apply_discriminator_defaults(cls_name, clean)
                     normalized_clean = _to_model_attribute_keys(
                         clean, cls, models_module
                     )
@@ -520,7 +627,7 @@ def _construct_model_from_mapping(
             pass
     # try explicit simple class name within models module
     if models_module and isinstance(class_name, str):
-        cls = _resolve_model_class(models_module, class_name)
+        cls, clean = _resolve_model_class_with_payload(models_module, class_name, clean)
         if inspect.isclass(cls):
             try:
                 normalized_clean = _to_model_attribute_keys(clean, cls, models_module)
@@ -539,7 +646,7 @@ def _construct_model_from_mapping(
     # try candidates derived from param name
     if models_module:
         for cand in candidate_classnames:
-            cls = _resolve_model_class(models_module, cand)
+            cls, clean = _resolve_model_class_with_payload(models_module, cand, clean)
             if inspect.isclass(cls):
                 try:
                     normalized_clean = _to_model_attribute_keys(clean, cls, models_module)
@@ -640,7 +747,9 @@ def _coerce_params_to_oci_models(
             constructed = None
             if models_module:
                 for cand in deduped:
-                    cls = _resolve_model_class(models_module, cand)
+                    cls, val = _resolve_model_class_with_payload(
+                        models_module, cand, val
+                    )
                     if inspect.isclass(cls):
                         swagger_types, _ = _get_model_schema(cls)
                         if not isinstance(swagger_types, dict):
@@ -729,6 +838,26 @@ def _align_params_to_signature(
         aligned[dst_id] = aligned.pop(src_id)
 
     return aligned
+
+
+def _coerce_params_for_invoke(
+    client_fqn: str,
+    operation: str,
+    params: Dict[str, Any],
+    method: Callable[..., Any],
+) -> Dict[str, Any]:
+    """
+    Call model coercion with the newer method hint when supported, while keeping
+    older test doubles that only accept the original 3-argument signature working.
+    """
+    try:
+        return _coerce_params_to_oci_models(
+            client_fqn, operation, params, method=method
+        )
+    except TypeError as e:
+        if "unexpected keyword argument 'method'" not in str(e):
+            raise
+        return _coerce_params_to_oci_models(client_fqn, operation, params)
 
 
 def _serialize_oci_data(data: Any) -> Any:
@@ -946,6 +1075,7 @@ def invoke_oci_api(
       params={'compartment_id': '<ocid>', 'availability_domain': '...'}
     """
     try:
+        _validate_invoke_client_fqn(client_fqn)
         client = _import_client(client_fqn)
         if not hasattr(client, operation):
             raise AttributeError(f"Operation '{operation}' not found on client '{client_fqn}'")
@@ -965,8 +1095,8 @@ def invoke_oci_api(
             if src in normalized_params and dst not in normalized_params:
                 normalized_params[dst] = normalized_params.pop(src)
 
-        coerced_params = _coerce_params_to_oci_models(
-            client_fqn, operation, normalized_params, method=method
+        coerced_params = _coerce_params_for_invoke(
+            client_fqn, operation, normalized_params, method
         )
         # final kwarg aliasing at the top-level prior to invocation to ensure correct SDK kw
         final_params = dict(coerced_params)
@@ -1008,11 +1138,12 @@ def invoke_oci_api(
 
     except Exception as e:
         logger.error(f"Error invoking OCI API {client_fqn}.{operation}: {e}")
+        error_info = _classify_invoke_error(operation, e)
         return {
             "client": client_fqn,
             "operation": operation,
             "params": params or {},
-            "error": str(e),
+            **error_info,
         }
 
 
@@ -1059,7 +1190,10 @@ def list_client_operations(
             f"Found {len(ops)} operations on {client_fqn} (name_regex={name_regex!r})"
         )
         # return a mapping to avoid Pydantic RootModel list-wrapping
-        return {"operations": ops, "name_regex": name_regex}
+        result = {"operations": ops}
+        if name_regex is not None:
+            result["name_regex"] = name_regex
+        return result
     except Exception as e:
         logger.error(f"Error listing operations for {client_fqn}: {e}")
         raise

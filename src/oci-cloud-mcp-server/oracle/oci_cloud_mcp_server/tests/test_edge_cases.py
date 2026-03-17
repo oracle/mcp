@@ -13,6 +13,7 @@ from oracle.oci_cloud_mcp_server.server import (
     _serialize_oci_data,
     _supports_pagination,
     _to_model_attribute_map_keys,
+    invoke_oci_api,
     mcp,
 )
 
@@ -872,6 +873,80 @@ class TestSchemaDrivenCoercion:
         if not isinstance(src, dict):
             assert isinstance(src, InstanceSourceViaImageDetails)
 
+    def test_search_resources_plain_query_defaults_to_structured_details(
+        self, monkeypatch
+    ):
+        from oci.resource_search import models as search_models
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
+            lambda fqn: search_models,
+        )
+
+        out = _coerce_params_to_oci_models(
+            "oci.resource_search.ResourceSearchClient",
+            "search_resources",
+            {"search_details": {"query": "query instance resources"}},
+        )
+
+        details = out["search_details"]
+        assert isinstance(details, search_models.StructuredSearchDetails)
+        assert details.type == "Structured"
+        assert details.query == "query instance resources"
+
+    def test_invoke_launch_instance_plain_dict_payload_coerces_models(
+        self, monkeypatch
+    ):
+        from oci.core import models as core_models
+
+        captured: dict = {}
+
+        class FakeComputeClient:
+            def launch_instance(self, launch_instance_details, **kwargs):  # noqa: ARG002
+                captured["details"] = launch_instance_details
+                return SimpleNamespace(
+                    data={"id": "ocid1.instance.oc1..example"},
+                    headers={"opc-request-id": "req-123"},
+                )
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._import_client",
+            lambda client_fqn: FakeComputeClient(),
+        )
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
+            lambda fqn: core_models,
+        )
+
+        result = invoke_oci_api.fn(
+            "oci.core.ComputeClient",
+            "launch_instance",
+            {
+                "launch_instance_details": {
+                    "availability_domain": "AD-1",
+                    "compartment_id": "ocid1.compartment.oc1..example",
+                    "display_name": "test",
+                    "shape": "VM.Standard.A1.Flex",
+                    "shape_config": {"ocpus": 1, "memory_in_gbs": 6},
+                    "source_details": {
+                        "source_type": "image",
+                        "image_id": "ocid1.image.oc1..example",
+                    },
+                    "create_vnic_details": {
+                        "subnet_id": "ocid1.subnet.oc1..example",
+                        "assign_public_ip": True,
+                    },
+                }
+            },
+        )
+
+        details = captured["details"]
+        assert isinstance(details, core_models.LaunchInstanceDetails)
+        assert isinstance(details.shape_config, core_models.LaunchInstanceShapeConfigDetails)
+        assert isinstance(details.create_vnic_details, core_models.CreateVnicDetails)
+        assert isinstance(details.source_details, core_models.InstanceSourceViaImageDetails)
+        assert result["opc_request_id"] == "req-123"
+
 
 class TestListElementClassFqn:
     def test_list_item_with_class_fqn_constructs(self, monkeypatch):
@@ -1506,6 +1581,69 @@ class TestInvokeGenericException:
 
         assert "error" in res
         assert "boom" in res["error"]
+
+
+class TestInvokeErrorClassification:
+    def test_payload_shape_error_gets_hint(self, monkeypatch):
+        class FakeClient:
+            def launch_instance(self, **kwargs):  # noqa: ARG002
+                raise Exception("Invalid typeId provided ")
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._import_client",
+            lambda client_fqn: FakeClient(),
+        )
+
+        res = invoke_oci_api.fn(
+            "oci.core.ComputeClient",
+            "launch_instance",
+            {"launch_instance_details": {"shape": "VM.Standard.A1.Flex"}},
+        )
+
+        assert res["error_category"] == "payload_shape"
+        assert "may not match the SDK shape" in res["error_hint"]
+
+    def test_invalid_shape_config_error_gets_hint(self, monkeypatch):
+        class FakeClient:
+            def update_instance(self, **kwargs):  # noqa: ARG002
+                raise Exception(
+                    "InvalidParameter: shape_config ocpus must be between 1 and 4"
+                )
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._import_client",
+            lambda client_fqn: FakeClient(),
+        )
+
+        res = invoke_oci_api.fn(
+            "oci.core.ComputeClient",
+            "update_instance",
+            {"instance_id": "ocid1.instance.oc1..example"},
+        )
+
+        assert res["error_category"] == "invalid_shape_config"
+        assert "configuration values may be invalid" in res["error_hint"]
+
+    def test_lifecycle_state_error_gets_hint(self, monkeypatch):
+        class FakeClient:
+            def terminate_instance(self, **kwargs):  # noqa: ARG002
+                raise Exception(
+                    "IncorrectState: Instance is not in the correct state for this operation"
+                )
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._import_client",
+            lambda client_fqn: FakeClient(),
+        )
+
+        res = invoke_oci_api.fn(
+            "oci.core.ComputeClient",
+            "terminate_instance",
+            {"instance_id": "ocid1.instance.oc1..example"},
+        )
+
+        assert res["error_category"] == "instance_lifecycle_state"
+        assert "may not be in a valid state" in res["error_hint"]
 
 
 class TestListPaginatorHeadersMissing:

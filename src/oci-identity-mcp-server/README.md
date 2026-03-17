@@ -4,18 +4,28 @@
 
 This server provides tools to interact with the OCI Identity service.
 
-## Running the server
+## MCP client configuration (recommended)
 
-### STDIO transport mode
+Most users should configure their MCP client to launch the server, rather than starting it manually.
 
-```sh
-uvx oracle.oci-identity-mcp-server
-```
+Add a stanza like this to your MCP client config (often called `mcp.json`; example shown is **stdio**):
 
-### HTTP streaming transport mode
-
-```sh
-ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.oci-identity-mcp-server
+```json
+{
+  "mcpServers": {
+    "oci-identity": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "oracle.oci-identity-mcp-server"
+      ],
+      "env": {
+        "OCI_CONFIG_PROFILE": "DEFAULT",
+        "TENANCY_ID_OVERRIDE": ""
+      }
+    }
+  }
+}
 ```
 
 ## Environment Variables
@@ -24,6 +34,36 @@ The server supports the following environment variables:
 
 - `OCI_CONFIG_PROFILE`: OCI configuration profile name (default: "DEFAULT")
 - `TENANCY_ID_OVERRIDE`: Overrides the tenancy ID from the config file
+
+## Run the server locally (HTTP transport)
+
+Most MCP clients run this server for you over **stdio** (see above). If you want to run the server as a standalone
+service and connect to it over HTTP (**streamable HTTP**), you can.
+
+1) Start the server in HTTP mode (choose host/port):
+
+```bash
+ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8000 uvx oracle.oci-identity-mcp-server
+```
+
+This will expose the MCP endpoint at:
+
+`http://127.0.0.1:8000/mcp`
+
+2) Configure your MCP client to connect via `streamableHttp`:
+
+> Note: MCP client configuration varies by client/tooling. Some clients refer to streamable HTTP as just `http`.
+
+```json
+{
+  "mcpServers": {
+    "oci-identity": {
+      "type": "streamableHttp",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
 
 ## Tools
 

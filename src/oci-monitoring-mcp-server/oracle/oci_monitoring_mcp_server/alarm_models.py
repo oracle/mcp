@@ -18,9 +18,7 @@ class Suppression(BaseModel):
     Pydantic model mirroring oci.monitoring.models.Suppression.
     """
 
-    description: Optional[str] = Field(
-        None, description="Human-readable description of the suppression."
-    )
+    description: Optional[str] = Field(None, description="Human-readable description of the suppression.")
     time_suppress_from: Optional[datetime] = Field(
         None, description="The start time for the suppression (RFC3339)."
     )
@@ -34,10 +32,8 @@ def map_suppression(s: oci.monitoring.models.Suppression | None) -> Suppression 
         return None
     return Suppression(
         description=getattr(s, "description", None),
-        time_suppress_from=getattr(s, "time_suppress_from", None)
-        or getattr(s, "timeSuppressFrom", None),
-        time_suppress_until=getattr(s, "time_suppress_until", None)
-        or getattr(s, "timeSuppressUntil", None),
+        time_suppress_from=getattr(s, "time_suppress_from", None) or getattr(s, "timeSuppressFrom", None),
+        time_suppress_until=getattr(s, "time_suppress_until", None) or getattr(s, "timeSuppressUntil", None),
     )
 
 
@@ -51,12 +47,8 @@ class AlarmOverride(BaseModel):
         None,
         description="Identifier of the alarm's base/override values. Default is 'BASE'.",
     )
-    query: Optional[str] = Field(
-        None, description="MQL expression override for this rule."
-    )
-    severity: Optional[SeverityType] = Field(
-        None, description="Severity override for this rule."
-    )
+    query: Optional[str] = Field(None, description="MQL expression override for this rule.")
+    severity: Optional[SeverityType] = Field(None, description="Severity override for this rule.")
     body: Optional[str] = Field(None, description="Message body override (alarm body).")
     pending_duration: Optional[str] = Field(
         None,
@@ -74,8 +66,7 @@ def map_alarm_override(
         query=getattr(o, "query", None),
         severity=getattr(o, "severity", None),
         body=getattr(o, "body", None),
-        pending_duration=getattr(o, "pending_duration", None)
-        or getattr(o, "pendingDuration", None),
+        pending_duration=getattr(o, "pending_duration", None) or getattr(o, "pendingDuration", None),
     )
 
 
@@ -107,9 +98,7 @@ class AlarmSummary(BaseModel):
         None,
         description="The OCID of the compartment containing the metric evaluated by the alarm.",
     )
-    namespace: Optional[str] = Field(
-        None, description="The source service/application emitting the metric."
-    )
+    namespace: Optional[str] = Field(None, description="The source service/application emitting the metric.")
     query: Optional[str] = Field(
         None,
         description="The Monitoring Query Language (MQL) expression to evaluate for the alarm.",
@@ -125,9 +114,7 @@ class AlarmSummary(BaseModel):
     suppression: Optional[Suppression] = Field(
         None, description="Configuration details for suppressing an alarm."
     )
-    is_enabled: Optional[bool] = Field(
-        None, description="Whether the alarm is enabled."
-    )
+    is_enabled: Optional[bool] = Field(None, description="Whether the alarm is enabled.")
     is_notifications_per_metric_dimension_enabled: Optional[bool] = Field(
         None,
         description="Whether the alarm sends a separate message for each metric stream.",
@@ -138,9 +125,7 @@ class AlarmSummary(BaseModel):
     defined_tags: Optional[Dict[str, Dict[str, Any]]] = Field(
         None, description="Defined tags for this resource, scoped to namespaces."
     )
-    lifecycle_state: Optional[str] = Field(
-        None, description="The current lifecycle state of the alarm."
-    )
+    lifecycle_state: Optional[str] = Field(None, description="The current lifecycle state of the alarm.")
     overrides: Optional[List[AlarmOverride]] = Field(
         None,
         description="Overrides controlling alarm evaluations (query, severity, body, pending duration).",
@@ -180,10 +165,8 @@ def map_alarm_summary(
     """
     return AlarmSummary(
         id=getattr(alarm, "id", None),
-        display_name=getattr(alarm, "display_name", None)
-        or getattr(alarm, "displayName", None),
-        compartment_id=getattr(alarm, "compartment_id", None)
-        or getattr(alarm, "compartmentId", None),
+        display_name=getattr(alarm, "display_name", None) or getattr(alarm, "displayName", None),
+        compartment_id=getattr(alarm, "compartment_id", None) or getattr(alarm, "compartmentId", None),
         metric_compartment_id=getattr(alarm, "metric_compartment_id", None)
         or getattr(alarm, "metricCompartmentId", None),
         namespace=getattr(alarm, "namespace", None),
@@ -191,18 +174,14 @@ def map_alarm_summary(
         severity=getattr(alarm, "severity", None),
         destinations=getattr(alarm, "destinations", None),
         suppression=map_suppression(getattr(alarm, "suppression", None)),
-        is_enabled=getattr(alarm, "is_enabled", None)
-        or getattr(alarm, "isEnabled", None),
+        is_enabled=getattr(alarm, "is_enabled", None) or getattr(alarm, "isEnabled", None),
         is_notifications_per_metric_dimension_enabled=getattr(
             alarm, "is_notifications_per_metric_dimension_enabled", None
         )
         or getattr(alarm, "isNotificationsPerMetricDimensionEnabled", None),
-        freeform_tags=getattr(alarm, "freeform_tags", None)
-        or getattr(alarm, "freeformTags", None),
-        defined_tags=getattr(alarm, "defined_tags", None)
-        or getattr(alarm, "definedTags", None),
-        lifecycle_state=getattr(alarm, "lifecycle_state", None)
-        or getattr(alarm, "lifecycleState", None),
+        freeform_tags=getattr(alarm, "freeform_tags", None) or getattr(alarm, "freeformTags", None),
+        defined_tags=getattr(alarm, "defined_tags", None) or getattr(alarm, "definedTags", None),
+        lifecycle_state=getattr(alarm, "lifecycle_state", None) or getattr(alarm, "lifecycleState", None),
         overrides=map_alarm_overrides(getattr(alarm, "overrides", None)),
         rule_name=getattr(alarm, "rule_name", None) or getattr(alarm, "ruleName", None),
         notification_version=getattr(alarm, "notification_version", None)
@@ -211,8 +190,6 @@ def map_alarm_summary(
         or getattr(alarm, "notificationTitle", None),
         evaluation_slack_duration=getattr(alarm, "evaluation_slack_duration", None)
         or getattr(alarm, "evaluationSlackDuration", None),
-        alarm_summary=getattr(alarm, "alarm_summary", None)
-        or getattr(alarm, "alarmSummary", None),
-        resource_group=getattr(alarm, "resource_group", None)
-        or getattr(alarm, "resourceGroup", None),
+        alarm_summary=getattr(alarm, "alarm_summary", None) or getattr(alarm, "alarmSummary", None),
+        resource_group=getattr(alarm, "resource_group", None) or getattr(alarm, "resourceGroup", None),
     )

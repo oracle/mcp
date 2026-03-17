@@ -40,9 +40,7 @@ class TestResourceSummaryMapping:
             freeform_tags={"Owner": "Dev"},
             defined_tags={"Operations": {"CostCenter": "42"}},
             system_tags={"orcl-cloud": {"free-tier-retain": True}},
-            search_context=SimpleNamespace(
-                highlights={"displayName": ["<h1>My Instance</h1>"]}
-            ),
+            search_context=SimpleNamespace(highlights={"displayName": ["<h1>My Instance</h1>"]}),
             identity_context={"keyA": "valueA"},
             additional_details={"attachedVnic": []},
         )
@@ -60,9 +58,7 @@ class TestResourceSummaryMapping:
         assert mapped.defined_tags == {"Operations": {"CostCenter": "42"}}
         assert mapped.system_tags == {"orcl-cloud": {"free-tier-retain": True}}
         assert mapped.search_context is not None
-        assert mapped.search_context.highlights == {
-            "displayName": ["<h1>My Instance</h1>"]
-        }
+        assert mapped.search_context.highlights == {"displayName": ["<h1>My Instance</h1>"]}
         assert mapped.identity_context == {"keyA": "valueA"}
         assert mapped.additional_details == {"attachedVnic": []}
 

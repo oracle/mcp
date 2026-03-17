@@ -47,13 +47,10 @@ class ResourceLock(BaseModel):
     message: Optional[str] = Field(
         None,
         description=(
-            "A message added by the creator of the lock, typically indicating why "
-            "the resource is locked."
+            "A message added by the creator of the lock, typically indicating why the resource is locked."
         ),
     )
-    time_created: Optional[datetime] = Field(
-        None, description="When the lock was created (RFC3339)."
-    )
+    time_created: Optional[datetime] = Field(None, description="When the lock was created (RFC3339).")
 
 
 class Problem(BaseModel):
@@ -61,35 +58,23 @@ class Problem(BaseModel):
     Pydantic model mirroring oci.cloud_guard.models.Problem.
     """
 
-    id: Optional[str] = Field(
-        None, description="Unique identifier that can't be changed after creation."
-    )
-    compartment_id: Optional[str] = Field(
-        None, description="Compartment OCID where the resource is created."
-    )
+    id: Optional[str] = Field(None, description="Unique identifier that can't be changed after creation.")
+    compartment_id: Optional[str] = Field(None, description="Compartment OCID where the resource is created.")
     detector_rule_id: Optional[str] = Field(
         None,
         description="Unique identifier of the detector rule that triggered the problem.",
     )
     region: Optional[str] = Field(None, description="DEPRECATED.")
-    regions: Optional[List[str]] = Field(
-        None, description="Regions where the problem is found."
+    regions: Optional[List[str]] = Field(None, description="Regions where the problem is found.")
+    risk_level: Optional[Literal["CRITICAL", "HIGH", "MEDIUM", "LOW", "MINOR", "UNKNOWN_ENUM_VALUE"]] = Field(
+        None, description="The risk level for the problem."
     )
-    risk_level: Optional[
-        Literal["CRITICAL", "HIGH", "MEDIUM", "LOW", "MINOR", "UNKNOWN_ENUM_VALUE"]
-    ] = Field(None, description="The risk level for the problem.")
-    risk_score: Optional[float] = Field(
-        None, description="The risk score for the problem."
-    )
+    risk_score: Optional[float] = Field(None, description="The risk score for the problem.")
     peak_risk_score_date: Optional[str] = Field(
         None,
-        description=(
-            "The date and time for the peak risk score observed for the problem (RFC3339)."
-        ),
+        description=("The date and time for the peak risk score observed for the problem (RFC3339)."),
     )
-    peak_risk_score: Optional[float] = Field(
-        None, description="Peak risk score for the problem."
-    )
+    peak_risk_score: Optional[float] = Field(None, description="Peak risk score for the problem.")
     auto_resolve_date: Optional[str] = Field(
         None,
         description="The date and time when the problem will be auto resolved (RFC3339).",
@@ -101,28 +86,20 @@ class Problem(BaseModel):
     resource_id: Optional[str] = Field(
         None, description="Unique identifier of the resource affected by the problem."
     )
-    resource_name: Optional[str] = Field(
-        None, description="Display name of the affected resource."
-    )
-    resource_type: Optional[str] = Field(
-        None, description="Type of the affected resource."
-    )
-    labels: Optional[List[str]] = Field(
-        None, description="User-defined labels on the problem."
-    )
+    resource_name: Optional[str] = Field(None, description="Display name of the affected resource.")
+    resource_type: Optional[str] = Field(None, description="Type of the affected resource.")
+    labels: Optional[List[str]] = Field(None, description="User-defined labels on the problem.")
     time_last_detected: Optional[datetime] = Field(
         None, description="The date and time the problem was last detected (RFC3339)."
     )
     time_first_detected: Optional[datetime] = Field(
         None, description="The date and time the problem was first detected (RFC3339)."
     )
-    lifecycle_state: Optional[Literal["ACTIVE", "INACTIVE", "UNKNOWN_ENUM_VALUE"]] = (
-        Field(None, description="The current lifecycle state of the problem.")
+    lifecycle_state: Optional[Literal["ACTIVE", "INACTIVE", "UNKNOWN_ENUM_VALUE"]] = Field(
+        None, description="The current lifecycle state of the problem."
     )
-    lifecycle_detail: Optional[
-        Literal["OPEN", "RESOLVED", "DISMISSED", "DELETED", "UNKNOWN_ENUM_VALUE"]
-    ] = Field(
-        None, description="Additional details on the substate of the lifecycle state."
+    lifecycle_detail: Optional[Literal["OPEN", "RESOLVED", "DISMISSED", "DELETED", "UNKNOWN_ENUM_VALUE"]] = (
+        Field(None, description="Additional details on the substate of the lifecycle state.")
     )
     detector_id: Optional[
         Literal[
@@ -145,22 +122,14 @@ class Problem(BaseModel):
         None, description="Additional details of the problem as key/value pairs."
     )
     description: Optional[str] = Field(None, description="Description of the problem.")
-    recommendation: Optional[str] = Field(
-        None, description="Recommendation for the problem."
-    )
+    recommendation: Optional[str] = Field(None, description="Recommendation for the problem.")
     comment: Optional[str] = Field(None, description="User comments on the problem.")
     impacted_resource_id: Optional[str] = Field(
         None, description="Unique identifier of the resource impacted by the problem."
     )
-    impacted_resource_name: Optional[str] = Field(
-        None, description="Display name of the impacted resource."
-    )
-    impacted_resource_type: Optional[str] = Field(
-        None, description="Type of the impacted resource."
-    )
-    locks: Optional[List[ResourceLock]] = Field(
-        None, description="Locks associated with this resource."
-    )
+    impacted_resource_name: Optional[str] = Field(None, description="Display name of the impacted resource.")
+    impacted_resource_type: Optional[str] = Field(None, description="Type of the impacted resource.")
+    locks: Optional[List[ResourceLock]] = Field(None, description="Locks associated with this resource.")
 
 
 def map_resource_lock(rl) -> ResourceLock | None:
@@ -227,9 +196,9 @@ class UpdateProblemStatusDetails(BaseModel):
     Pydantic model mirroring oci.cloud_guard.models.UpdateProblemStatusDetails.
     """
 
-    status: Optional[
-        Literal["OPEN", "RESOLVED", "DISMISSED", "DELETED", "UNKNOWN_ENUM_VALUE"]
-    ] = Field(None, description="Action taken by user.")
+    status: Optional[Literal["OPEN", "RESOLVED", "DISMISSED", "DELETED", "UNKNOWN_ENUM_VALUE"]] = Field(
+        None, description="Action taken by user."
+    )
     comment: Optional[str] = Field(None, description="User comments.")
 
 

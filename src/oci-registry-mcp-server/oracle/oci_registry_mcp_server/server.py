@@ -86,7 +86,7 @@ def list_container_repositories(
 
 @mcp.tool
 def get_container_repository(
-    repository_id: str = Field(..., description="The OCID of the container repository")
+    repository_id: str = Field(..., description="The OCID of the container repository"),
 ) -> ContainerRepository:
     try:
         client = get_ocir_client()
@@ -116,24 +116,18 @@ def create_container_repository(
         min_length=1,
         max_length=255,
     ),
-    is_public: bool = Field(
-        False, description="Whether or not the repository is public"
-    ),
+    is_public: bool = Field(False, description="Whether or not the repository is public"),
 ) -> ContainerRepository:
     try:
         client = get_ocir_client()
 
-        create_repository_details = (
-            oci.artifacts.models.CreateContainerRepositoryDetails(
-                compartment_id=compartment_id,
-                display_name=repository_name,
-                is_public=is_public,
-            )
+        create_repository_details = oci.artifacts.models.CreateContainerRepositoryDetails(
+            compartment_id=compartment_id,
+            display_name=repository_name,
+            is_public=is_public,
         )
 
-        response: oci.response.Response = client.create_container_repository(
-            create_repository_details
-        )
+        response: oci.response.Response = client.create_container_repository(create_repository_details)
         data: oci.artifacts.models.ContainerRepository = response.data
         logger.info("Created Container Repository")
         return map_container_repository(data)
@@ -145,14 +139,12 @@ def create_container_repository(
 
 @mcp.tool
 def delete_container_repository(
-    repository_id: str = Field(..., description="The OCID of the container repository")
+    repository_id: str = Field(..., description="The OCID of the container repository"),
 ) -> Response:
     try:
         client = get_ocir_client()
 
-        response: oci.response.Response = client.delete_container_repository(
-            repository_id
-        )
+        response: oci.response.Response = client.delete_container_repository(repository_id)
         logger.info("Deleted Container Repository")
         return map_response(response)
 

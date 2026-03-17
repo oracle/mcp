@@ -74,12 +74,8 @@ class TestMigrationModels:
         assert mapped.compartment_id == src.compartment_id
         assert mapped.lifecycle_state == src.lifecycle_state
         assert mapped.lifecycle_details == src.lifecycle_details
-        expected_created = datetime.fromisoformat(
-            src.time_created.replace("Z", "+00:00")
-        )
-        expected_updated = datetime.fromisoformat(
-            src.time_updated.replace("Z", "+00:00")
-        )
+        expected_created = datetime.fromisoformat(src.time_created.replace("Z", "+00:00"))
+        expected_updated = datetime.fromisoformat(src.time_updated.replace("Z", "+00:00"))
         assert mapped.time_created == expected_created
         assert mapped.time_updated == expected_updated
         assert mapped.replication_schedule_id == src.replication_schedule_id
@@ -125,12 +121,8 @@ class TestMigrationModels:
         assert mapped.id == src.id
         assert mapped.display_name == src.display_name
         assert mapped.compartment_id == src.compartment_id
-        expected_created = datetime.fromisoformat(
-            src.time_created.replace("Z", "+00:00")
-        )
-        expected_updated = datetime.fromisoformat(
-            src.time_updated.replace("Z", "+00:00")
-        )
+        expected_created = datetime.fromisoformat(src.time_created.replace("Z", "+00:00"))
+        expected_updated = datetime.fromisoformat(src.time_updated.replace("Z", "+00:00"))
         assert mapped.time_created == expected_created
         assert mapped.time_updated == expected_updated
         assert mapped.lifecycle_state == src.lifecycle_state

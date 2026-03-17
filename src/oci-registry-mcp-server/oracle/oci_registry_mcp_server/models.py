@@ -38,11 +38,9 @@ class ContainerRepositoryReadme(BaseModel):
     content: Optional[str] = Field(
         None, description="Readme content. Avoid entering confidential information."
     )
-    format: Optional[Literal["TEXT_MARKDOWN", "TEXT_PLAIN", "UNKNOWN_ENUM_VALUE"]] = (
-        Field(
-            None,
-            description="Readme format. Supported formats are text/plain and text/markdown.",
-        )
+    format: Optional[Literal["TEXT_MARKDOWN", "TEXT_PLAIN", "UNKNOWN_ENUM_VALUE"]] = Field(
+        None,
+        description="Readme format. Supported formats are text/plain and text/markdown.",
     )
 
 
@@ -69,9 +67,7 @@ class ContainerRepository(BaseModel):
     created_by: Optional[str] = Field(
         None, description="The id of the user or principal that created the resource."
     )
-    display_name: Optional[str] = Field(
-        None, description="The container repository name."
-    )
+    display_name: Optional[str] = Field(None, description="The container repository name.")
     id: Optional[str] = Field(None, description="The OCID of the container repository.")
     image_count: Optional[int] = Field(None, description="Total number of images.")
     is_immutable: Optional[bool] = Field(
@@ -87,12 +83,10 @@ class ContainerRepository(BaseModel):
     layers_size_in_bytes: Optional[int] = Field(
         None, description="Total storage in bytes consumed by layers."
     )
-    lifecycle_state: Optional[
-        Literal["AVAILABLE", "DELETING", "DELETED", "UNKNOWN_ENUM_VALUE"]
-    ] = Field(None, description="The current state of the container repository.")
-    readme: Optional[ContainerRepositoryReadme] = Field(
-        None, description="The repository readme."
+    lifecycle_state: Optional[Literal["AVAILABLE", "DELETING", "DELETED", "UNKNOWN_ENUM_VALUE"]] = Field(
+        None, description="The current state of the container repository."
     )
+    readme: Optional[ContainerRepositoryReadme] = Field(None, description="The repository readme.")
     time_created: Optional[datetime] = Field(
         None,
         description="An RFC 3339 timestamp indicating when the repository was created.",
@@ -107,9 +101,7 @@ class ContainerRepository(BaseModel):
     namespace: Optional[str] = Field(
         None, description="The tenancy namespace used in the container repository path."
     )
-    freeform_tags: Optional[Dict[str, str]] = Field(
-        None, description="Free-form tags for this resource."
-    )
+    freeform_tags: Optional[Dict[str, str]] = Field(None, description="Free-form tags for this resource.")
     defined_tags: Optional[Dict[str, Dict[str, Any]]] = Field(
         None, description="Defined tags for this resource."
     )
@@ -160,16 +152,10 @@ class Request(BaseModel):
 
     method: Optional[str] = Field(None, description="The HTTP method.")
     url: Optional[str] = Field(None, description="URL that will serve the request.")
-    query_params: Optional[Dict[str, Any]] = Field(
-        None, description="Query parameters in the URL."
-    )
-    header_params: Optional[Dict[str, Any]] = Field(
-        None, description="Request header parameters."
-    )
+    query_params: Optional[Dict[str, Any]] = Field(None, description="Query parameters in the URL.")
+    header_params: Optional[Dict[str, Any]] = Field(None, description="Request header parameters.")
     body: Optional[Any] = Field(None, description="Request body.")
-    response_type: Optional[str] = Field(
-        None, description="Expected response data type."
-    )
+    response_type: Optional[str] = Field(None, description="Expected response data type.")
     enforce_content_headers: Optional[bool] = Field(
         None,
         description=(
@@ -185,24 +171,12 @@ class Response(BaseModel):
     """
 
     status: Optional[int] = Field(None, description="The HTTP status code.")
-    headers: Optional[Dict[str, Any]] = Field(
-        None, description="The HTTP headers (case-insensitive keys)."
-    )
-    data: Optional[Any] = Field(
-        None, description="The response data. Type depends on the request."
-    )
-    request: Optional[Request] = Field(
-        None, description="The corresponding request for this response."
-    )
-    next_page: Optional[str] = Field(
-        None, description="The value of the opc-next-page response header."
-    )
-    request_id: Optional[str] = Field(
-        None, description="The ID of the request that generated this response."
-    )
-    has_next_page: Optional[bool] = Field(
-        None, description="Whether there is a next page of results."
-    )
+    headers: Optional[Dict[str, Any]] = Field(None, description="The HTTP headers (case-insensitive keys).")
+    data: Optional[Any] = Field(None, description="The response data. Type depends on the request.")
+    request: Optional[Request] = Field(None, description="The corresponding request for this response.")
+    next_page: Optional[str] = Field(None, description="The value of the opc-next-page response header.")
+    request_id: Optional[str] = Field(None, description="The ID of the request that generated this response.")
+    has_next_page: Optional[bool] = Field(None, description="Whether there is a next page of results.")
 
 
 def map_request(req) -> Request | None:

@@ -79,9 +79,7 @@ class TestGetConfigAndSigner:
             lambda **kwargs: dict(cfg),
         )
         # no token file
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.os.path.exists", lambda p: False
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.os.path.exists", lambda p: False)
         # key loader ok
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file",
@@ -102,9 +100,7 @@ class TestGetConfigAndSigner:
                 self.fingerprint = fingerprint
                 self.private_key_file_location = private_key_file_location
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.Signer", FakeSigner
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.oci.signer.Signer", FakeSigner)
 
         config, signer = _get_config_and_signer()
         assert isinstance(signer, FakeSigner)
@@ -173,13 +169,9 @@ class TestMainHttpRun:
         import runpy
         import sys as _sys
 
-        monkeypatch.delitem(
-            _sys.modules, "oracle.oci_cloud_mcp_server.server", raising=False
-        )
+        monkeypatch.delitem(_sys.modules, "oracle.oci_cloud_mcp_server.server", raising=False)
 
-        runpy.run_module(
-            "oracle.oci_cloud_mcp_server.server", run_name="__main__", alter_sys=True
-        )
+        runpy.run_module("oracle.oci_cloud_mcp_server.server", run_name="__main__", alter_sys=True)
         assert called["kwargs"] == {
             "transport": "http",
             "host": "127.0.0.1",
@@ -194,9 +186,7 @@ class TestImportClientValidation:
 
     def test_attribute_not_a_class_raises(self, monkeypatch):
         fake_mod = SimpleNamespace(NotClass=42)
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_mod
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_mod)
         with pytest.raises(ValueError):
             _import_client("x.y.NotClass")
 
@@ -273,9 +263,7 @@ class TestGetConfigAndSignerMoreBranches:
             "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file",
             lambda p: "PK",
         )
-        monkeypatch.setattr(
-            "builtins.open", lambda *a, **k: StringIO("token"), raising=False
-        )
+        monkeypatch.setattr("builtins.open", lambda *a, **k: StringIO("token"), raising=False)
 
         # SecurityTokenSigner init fails to trigger warning path, then API key used
         class BoomSTS:
@@ -322,9 +310,7 @@ class TestGetConfigAndSignerMoreBranches:
             lambda **kwargs: dict(cfg),
         )
         # token file not present
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.os.path.exists", lambda p: False
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.os.path.exists", lambda p: False)
         # key loader ok
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file",
@@ -335,8 +321,6 @@ class TestGetConfigAndSignerMoreBranches:
         def boom_signer(**kwargs):  # noqa: ARG001
             raise Exception("signer ctor boom")
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.Signer", boom_signer
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.oci.signer.Signer", boom_signer)
         with pytest.raises(Exception):
             _get_config_and_signer()

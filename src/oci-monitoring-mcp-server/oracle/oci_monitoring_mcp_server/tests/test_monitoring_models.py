@@ -180,9 +180,7 @@ class TestMetricModels:
             dimensions={"k": "v"},
             metadata={"unit": "%"},
             resolution="1m",
-            aggregated_datapoints=[
-                SimpleNamespace(timestamp=datetime(2024, 1, 1), value=2.0)
-            ],
+            aggregated_datapoints=[SimpleNamespace(timestamp=datetime(2024, 1, 1), value=2.0)],
         )
         mapped = map_metric_data(md)
         assert isinstance(mapped, MetricData)

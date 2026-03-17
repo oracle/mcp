@@ -34,9 +34,7 @@ class TestCandidateSwaggerFilter:
 
         monkeypatch.setattr(_oci.util, "from_dict", raising_from_dict, raising=False)
 
-        inst = _construct_model_from_mapping(
-            {"a": 1, "b": 2}, fake_models, ["MyDetails"]
-        )
+        inst = _construct_model_from_mapping({"a": 1, "b": 2}, fake_models, ["MyDetails"])
         assert isinstance(inst, MyDetails)
         assert inst._data == {"a": 1}
 
@@ -64,9 +62,7 @@ class TestCoerceTopLevelConfigSuffix:
 
 class TestInvokePreNormalize:
     @pytest.mark.asyncio
-    async def test_invoke_pre_normalizes_create_details_before_coerce(
-        self, monkeypatch
-    ):
+    async def test_invoke_pre_normalizes_create_details_before_coerce(self, monkeypatch):
         class FakeResponse:
             def __init__(self, data):
                 self.data = data
@@ -125,9 +121,7 @@ class TestListClientOperationsImportErrorTool:
 
         async with Client(mcp) as client:
             with pytest.raises(ToolError):
-                await client.call_tool(
-                    "list_client_operations", {"client_fqn": "x.y.Klass"}
-                )
+                await client.call_tool("list_client_operations", {"client_fqn": "x.y.Klass"})
 
 
 class TestInvokePlainListReturn:
@@ -180,13 +174,9 @@ class TestConstructFqnSuccess:
         from oracle.oci_cloud_mcp_server.server import oci as _oci
 
         # make from_dict call the constructor successfully
-        monkeypatch.setattr(
-            _oci.util, "from_dict", lambda cls, data: cls(**data), raising=False
-        )
+        monkeypatch.setattr(_oci.util, "from_dict", lambda cls, data: cls(**data), raising=False)
 
-        inst = _construct_model_from_mapping(
-            {"__class_fqn": "mymod9.Kiwi", "a": 7}, None, []
-        )
+        inst = _construct_model_from_mapping({"__class_fqn": "mymod9.Kiwi", "a": 7}, None, [])
         assert isinstance(inst, Kiwi)
         assert inst.kw == {"a": 7}
 
@@ -225,9 +215,7 @@ class TestListClientOperationsGetdocRaises:
                 return 1
 
         fake_module = SimpleNamespace(Klass=Klass)
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
 
         # force inspect.getdoc to raise to hit exception path for summary extraction
         import inspect as _inspect
@@ -239,16 +227,10 @@ class TestListClientOperationsGetdocRaises:
                 raise Exception("doc boom")
             return orig_getdoc(obj)
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.inspect.getdoc", boom_getdoc
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.inspect.getdoc", boom_getdoc)
 
         async with Client(mcp) as client:
-            res = (
-                await client.call_tool(
-                    "list_client_operations", {"client_fqn": "x.y.Klass"}
-                )
-            ).data
+            res = (await client.call_tool("list_client_operations", {"client_fqn": "x.y.Klass"})).data
 
         ops = res["operations"]
         entry = next(o for o in ops if o["name"] == "foo")
@@ -256,9 +238,7 @@ class TestListClientOperationsGetdocRaises:
 
 
 class TestConstructExplicitClassKey:
-    def test_construct_model_with___class_key_uses_from_dict_then_ctor(
-        self, monkeypatch
-    ):
+    def test_construct_model_with___class_key_uses_from_dict_then_ctor(self, monkeypatch):
         class Foo:
             def __init__(self, **kwargs):
                 self._data = dict(kwargs)
@@ -268,13 +248,9 @@ class TestConstructExplicitClassKey:
         from oracle.oci_cloud_mcp_server.server import oci as _oci
 
         # first let from_dict succeed
-        monkeypatch.setattr(
-            _oci.util, "from_dict", lambda cls, data: cls(**data), raising=False
-        )
+        monkeypatch.setattr(_oci.util, "from_dict", lambda cls, data: cls(**data), raising=False)
 
-        inst1 = _construct_model_from_mapping(
-            {"__class": "Foo", "a": 1}, fake_models, []
-        )
+        inst1 = _construct_model_from_mapping({"__class": "Foo", "a": 1}, fake_models, [])
         assert isinstance(inst1, Foo)
         assert inst1._data == {"a": 1}
 
@@ -283,9 +259,7 @@ class TestConstructExplicitClassKey:
             raise Exception("nope")
 
         monkeypatch.setattr(_oci.util, "from_dict", raising_from_dict, raising=False)
-        inst2 = _construct_model_from_mapping(
-            {"__class": "Foo", "a": 2}, fake_models, []
-        )
+        inst2 = _construct_model_from_mapping({"__class": "Foo", "a": 2}, fake_models, [])
         assert isinstance(inst2, Foo)
         assert inst2._data == {"a": 2}
 
@@ -389,9 +363,7 @@ class TestFqnCtorFallback:
 
         monkeypatch.setattr(_oci.util, "from_dict", raising_from_dict, raising=False)
 
-        inst = _construct_model_from_mapping(
-            {"__model_fqn": "mymod5.Apple", "a": 10}, None, []
-        )
+        inst = _construct_model_from_mapping({"__model_fqn": "mymod5.Apple", "a": 10}, None, [])
         assert isinstance(inst, Apple)
         assert inst.kw == {"a": 10}
 
@@ -425,15 +397,9 @@ class TestListClientOpsHiddenOnly:
                 return 1
 
         fake_module = SimpleNamespace(Klass=Klass)
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
         async with Client(mcp) as client:
-            res = (
-                await client.call_tool(
-                    "list_client_operations", {"client_fqn": "x.y.Klass"}
-                )
-            ).data
+            res = (await client.call_tool("list_client_operations", {"client_fqn": "x.y.Klass"})).data
         assert res == {"operations": []}
 
 
@@ -448,9 +414,7 @@ class TestResolveModelClassSuccess:
 
 
 class TestParentPrefixAlt:
-    def test_parent_prefix_prefers_non_details_variant_when_available(
-        self, monkeypatch
-    ):
+    def test_parent_prefix_prefers_non_details_variant_when_available(self, monkeypatch):
         # ensure when only 'InstanceShapeConfig' exists (no '...Details'),
         # nested coercion picks it using the parent prefix hint path.
         class InstanceDetails:
@@ -500,13 +464,9 @@ class TestDunderMainExecution:
         monkeypatch.delenv("ORACLE_MCP_PORT", raising=False)
 
         # remove pre-imported module to avoid runpy RuntimeWarning
-        monkeypatch.delitem(
-            sys.modules, "oracle.oci_cloud_mcp_server.server", raising=False
-        )
+        monkeypatch.delitem(sys.modules, "oracle.oci_cloud_mcp_server.server", raising=False)
 
-        runpy.run_module(
-            "oracle.oci_cloud_mcp_server.server", run_name="__main__", alter_sys=True
-        )
+        runpy.run_module("oracle.oci_cloud_mcp_server.server", run_name="__main__", alter_sys=True)
         assert called["args"] == ()
         assert called["kwargs"] == {}
 
@@ -537,9 +497,7 @@ class TestExplicitModelCtorRaisesFallsBack:
 
 
 class TestCandidateCtorRaisesContinueAndFallback:
-    def test_candidate_ctor_and_from_dict_fail_continue_and_return_mapping(
-        self, monkeypatch
-    ):
+    def test_candidate_ctor_and_from_dict_fail_continue_and_return_mapping(self, monkeypatch):
         class Candidate:
             def __init__(self, **kwargs):
                 raise Exception("ctor fail")
@@ -569,9 +527,7 @@ class TestSourceDetailsSuffixCoercion:
             "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
             lambda fqn: fake_models,
         )
-        out = _coerce_params_to_oci_models(
-            "x.y.Client", "op", {"source_details": {"a": 1}}
-        )
+        out = _coerce_params_to_oci_models("x.y.Client", "op", {"source_details": {"a": 1}})
         assert isinstance(out["source_details"], SourceDetails)
         assert out["source_details"].kw == {"a": 1}
 
@@ -607,9 +563,7 @@ class TestFinalAliasingNonDict:
             "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
             lambda fqn: None,
         )
-        out = _coerce_params_to_oci_models(
-            "x.y.Client", "create_vcn", {"vcn_details": [1, 2]}
-        )
+        out = _coerce_params_to_oci_models("x.y.Client", "create_vcn", {"vcn_details": [1, 2]})
         assert "create_vcn_details" in out and "vcn_details" not in out
         assert out["create_vcn_details"] == [1, 2]
 
@@ -796,13 +750,9 @@ class TestConstructModelFilteredFromDictSuccess:
         from oracle.oci_cloud_mcp_server.server import oci as _oci
 
         # from_dict should receive filtered data (without 'b')
-        monkeypatch.setattr(
-            _oci.util, "from_dict", lambda cls, data: cls(**data), raising=False
-        )
+        monkeypatch.setattr(_oci.util, "from_dict", lambda cls, data: cls(**data), raising=False)
 
-        inst = _construct_model_from_mapping(
-            {"__model": "MyModel2", "a": 1, "b": 2}, fake_models, []
-        )
+        inst = _construct_model_from_mapping({"__model": "MyModel2", "a": 1, "b": 2}, fake_models, [])
         assert isinstance(inst, MyModel2)
         assert inst.kw == {"a": 1}
 
@@ -879,22 +829,16 @@ class TestListClientOperationsScanError:
                 return 1
 
         fake_module = SimpleNamespace(Klass=Klass)
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
 
         def boom(*args, **kwargs):
             raise Exception("scan boom")
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.inspect.getmembers", boom
-        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.inspect.getmembers", boom)
 
         async with Client(mcp) as client:
             with pytest.raises(ToolError):
-                await client.call_tool(
-                    "list_client_operations", {"client_fqn": "x.y.Klass"}
-                )
+                await client.call_tool("list_client_operations", {"client_fqn": "x.y.Klass"})
 
 
 class TestSupportsPaginationHeuristics:

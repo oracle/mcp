@@ -70,9 +70,7 @@ class ResourceSummary(BaseModel):
     compartment_id: Optional[str] = Field(
         None, description="The OCID of the compartment that contains this resource."
     )
-    time_created: Optional[datetime] = Field(
-        None, description="The time that this resource was created."
-    )
+    time_created: Optional[datetime] = Field(None, description="The time that this resource was created.")
     display_name: Optional[str] = Field(
         None, description="The display name (or name) of this resource, if one exists."
     )

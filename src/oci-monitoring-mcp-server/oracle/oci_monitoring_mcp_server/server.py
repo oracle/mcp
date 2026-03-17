@@ -68,9 +68,7 @@ def list_alarms(
     ],
 ) -> list[AlarmSummary] | str:
     monitoring_client = get_monitoring_client()
-    response: Response | None = monitoring_client.list_alarms(
-        compartment_id=compartment_id
-    )
+    response: Response | None = monitoring_client.list_alarms(compartment_id=compartment_id)
     if response is None:
         logger.error("Received None response from list_metrics")
         return "There was no response returned from the Monitoring API"

@@ -37,12 +37,8 @@ class Migration(BaseModel):
     This model has no nested custom types; all fields are primitives or dicts.
     """
 
-    id: Optional[str] = Field(
-        None, description="Unique identifier that is immutable on creation"
-    )
-    display_name: Optional[str] = Field(
-        None, description="Migration Identifier that can be renamed"
-    )
+    id: Optional[str] = Field(None, description="Unique identifier that is immutable on creation")
+    display_name: Optional[str] = Field(None, description="Migration Identifier that can be renamed")
     compartment_id: Optional[str] = Field(None, description="Compartment Identifier")
     lifecycle_state: Optional[str] = Field(
         None,
@@ -72,9 +68,7 @@ class Migration(BaseModel):
         None,
         description="The time when the migration project was updated. An RFC3339 formatted datetime string",
     )
-    replication_schedule_id: Optional[str] = Field(
-        None, description="Replication schedule identifier"
-    )
+    replication_schedule_id: Optional[str] = Field(None, description="Replication schedule identifier")
     is_completed: Optional[bool] = Field(
         None, description="Indicates whether migration is marked as completed."
     )
@@ -106,9 +100,7 @@ def map_migration(migration_data: oci.cloud_migrations.models.Migration) -> Migr
         lifecycle_details=getattr(migration_data, "lifecycle_details", None),
         time_created=getattr(migration_data, "time_created", None),
         time_updated=getattr(migration_data, "time_updated", None),
-        replication_schedule_id=getattr(
-            migration_data, "replication_schedule_id", None
-        ),
+        replication_schedule_id=getattr(migration_data, "replication_schedule_id", None),
         is_completed=getattr(migration_data, "is_completed", None),
         freeform_tags=getattr(migration_data, "freeform_tags", None),
         defined_tags=getattr(migration_data, "defined_tags", None),
@@ -127,12 +119,8 @@ class MigrationSummary(BaseModel):
     This model has no nested custom types; all fields are primitives or dicts.
     """
 
-    id: Optional[str] = Field(
-        None, description="Unique identifier that is immutable on creation."
-    )
-    display_name: Optional[str] = Field(
-        None, description="Migration identifier that can be renamed"
-    )
+    id: Optional[str] = Field(None, description="Unique identifier that is immutable on creation.")
+    display_name: Optional[str] = Field(None, description="Migration identifier that can be renamed")
     compartment_id: Optional[str] = Field(None, description="Compartment identifier")
     time_created: Optional[datetime] = Field(
         None,
@@ -142,9 +130,7 @@ class MigrationSummary(BaseModel):
         None,
         description="The time when the migration project was updated. An RFC3339 formatted datetime string.",
     )
-    lifecycle_state: Optional[str] = Field(
-        None, description="The current state of migration."
-    )
+    lifecycle_state: Optional[str] = Field(None, description="The current state of migration.")
     lifecycle_details: Optional[str] = Field(
         None,
         description="A message describing the current state in more detail. "
@@ -153,9 +139,7 @@ class MigrationSummary(BaseModel):
     is_completed: Optional[bool] = Field(
         None, description="Indicates whether migration is marked as complete."
     )
-    replication_schedule_id: Optional[str] = Field(
-        None, description="Replication schedule identifier"
-    )
+    replication_schedule_id: Optional[str] = Field(None, description="Replication schedule identifier")
     freeform_tags: Optional[Dict[str, str]] = Field(
         None,
         description="Simple key-value pair that is applied without any predefined name, type or scope. "

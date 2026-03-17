@@ -50,9 +50,7 @@ def get_cloud_guard_client():
 def list_problems(
     compartment_id: str = Field(..., description="The OCID of the compartment"),
     risk_level: Optional[str] = Field(None, description="Risk level of the problem"),
-    lifecycle_state: Optional[
-        Literal["ACTIVE", "INACTIVE", "UNKNOWN_ENUM_VALUE"]
-    ] = Field(
+    lifecycle_state: Optional[Literal["ACTIVE", "INACTIVE", "UNKNOWN_ENUM_VALUE"]] = Field(
         "ACTIVE",
         description="The field lifecycle state. "
         "Only one state can be provided. Default value for state is active.",
@@ -61,14 +59,10 @@ def list_problems(
         None,
         description="Comma separated list of detector rule IDs to be passed in to match against Problems.",
     ),
-    time_range_days: Optional[int] = Field(
-        30, description="Number of days to look back for problems"
-    ),
+    time_range_days: Optional[int] = Field(30, description="Number of days to look back for problems"),
     limit: Optional[int] = Field(10, description="The number of problems to return"),
 ) -> list[Problem]:
-    time_filter = (
-        datetime.now(timezone.utc) - timedelta(days=time_range_days)
-    ).isoformat()
+    time_filter = (datetime.now(timezone.utc) - timedelta(days=time_range_days)).isoformat()
 
     kwargs = {
         "compartment_id": compartment_id,
@@ -97,9 +91,7 @@ def list_problems(
     name="get_problem_details",
     description="Get the details for a Problem identified by problemId.",
 )
-def get_problem_details(
-    problem_id: str = Field(..., description="The OCID of the problem")
-) -> Problem:
+def get_problem_details(problem_id: str = Field(..., description="The OCID of the problem")) -> Problem:
     response = get_cloud_guard_client().get_problem(problem_id=problem_id)
     problem = response.data
     return map_problem(problem)
@@ -112,17 +104,13 @@ def get_problem_details(
 )
 def update_problem_status(
     problem_id: str = Field(..., description="The OCID of the problem"),
-    status: Literal[
-        "OPEN", "RESOLVED", "DISMISSED", "DELETED", "UNKNOWN_ENUM_VALUE"
-    ] = Field(
+    status: Literal["OPEN", "RESOLVED", "DISMISSED", "DELETED", "UNKNOWN_ENUM_VALUE"] = Field(
         "OPEN",
         description="Action taken by user. Allowed values are: OPEN, RESOLVED, DISMISSED, CLOSED",
     ),
     comment: str = Field(None, description="A comment from the user"),
 ) -> Problem:
-    updated_problem_status = oci.cloud_guard.models.UpdateProblemStatusDetails(
-        status=status, comment=comment
-    )
+    updated_problem_status = oci.cloud_guard.models.UpdateProblemStatusDetails(status=status, comment=comment)
     response = get_cloud_guard_client().update_problem_status(
         problem_id=problem_id,
         update_problem_status_details=updated_problem_status,

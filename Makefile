@@ -52,7 +52,7 @@ lock-check:
 	done
 
 lint:
-	uv run tox -e lint
+	uv tool run ruff check
 
 test:
 	@set -e -o pipefail; \
@@ -88,7 +88,7 @@ publish:
 	done
 
 format:
-	uv tool run --from 'tox==4.30.2' tox -e format
+	uv tool run ruff format
 
 e2e-tests: build install
 	behave tests/e2e/features && cd ..

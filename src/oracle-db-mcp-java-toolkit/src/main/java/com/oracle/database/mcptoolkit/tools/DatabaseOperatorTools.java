@@ -27,14 +27,8 @@ import static com.oracle.database.mcptoolkit.Utils.*;
  * <ul>
  *   <li><strong>read-query</strong>: Execute SELECT queries and return JSON results.</li>
  *   <li><strong>write-query</strong>: Execute DML/DDL statements.</li>
- *   <li><strong>create-table</strong>: Create table.</li>
- *   <li><strong>delete-table</strong>: Drop table by name.</li>
- *   <li><strong>list-tables</strong>: List all tables and synonyms in the current schema.</li>
- *   <li><strong>describe-table</strong>: Get column details for a specific table.</li>
- *   <li><strong>start-transaction</strong>: Begin a new JDBC transaction.</li>
- *   <li><strong>resume-transaction</strong>: Verify a transaction ID is active.</li>
- *   <li><strong>commit-transaction</strong>: Commit and close a transaction.</li>
- *   <li><strong>rollback-transaction</strong>: Rollback and close a transaction.</li>
+ *   <li><strong>table</strong>: Manage database tables (create, drop, list, describe).</li>
+ *   <li><strong>transaction</strong>: Manage JDBC transactions (start, resume, commit, rollback).</li>
  *   <li><strong>db-ping</strong>: Check database connectivity and latency.</li>
  *   <li><strong>db-metrics-range</strong>: Retrieve Oracle performance metrics from V$SYSSTAT.</li>
  *   <li><strong>explain-plan</strong>: Generate and explain Oracle SQL execution plans (static or dynamic).</li>
@@ -56,14 +50,8 @@ public final class DatabaseOperatorTools {
    * <ul>
    *   <li><strong>read-query</strong>: Execute SELECT queries and return JSON results.</li>
    *   <li><strong>write-query</strong>: Execute DML/DDL statements.</li>
-   *   <li><strong>create-table</strong>: Create table.</li>
-   *   <li><strong>delete-table</strong>: Drop table by name.</li>
-   *   <li><strong>list-tables</strong>: List all tables and synonyms in the current schema.</li>
-   *   <li><strong>describe-table</strong>: Get column details for a specific table.</li>
-   *   <li><strong>start-transaction</strong>: Begin a new JDBC transaction.</li>
-   *   <li><strong>resume-transaction</strong>: Verify a transaction ID is active.</li>
-   *   <li><strong>commit-transaction</strong>: Commit and close a transaction.</li>
-   *   <li><strong>rollback-transaction</strong>: Rollback and close a transaction.</li>
+   *   <li><strong>table</strong>: Manage database tables (create, drop, list, describe).</li>
+   *   <li><strong>transaction</strong>: Manage JDBC transactions (start, resume, commit, rollback).</li>
    *   <li><strong>db-ping</strong>: Check database connectivity and latency.</li>
    *   <li><strong>db-metrics-range</strong>: Retrieve Oracle performance metrics from V$SYSSTAT.</li>
    *   <li><strong>explain-plan</strong>: Generate and explain Oracle SQL execution plans (static or dynamic).</li>
@@ -79,14 +67,8 @@ public final class DatabaseOperatorTools {
 
     tools.add(getReadQueryTool(config));
     tools.add(getWriteQueryTool(config));
-    tools.add(getCreateTableTool(config));
-    tools.add(getDeleteTableTool(config));
-    tools.add(getListTablesTool(config));
-    tools.add(getDescribeTableTool(config));
-    tools.add(getStartTransactionTool(config));
-    tools.add(getResumeTransactionTool());
-    tools.add(getCommitTransactionTool());
-    tools.add(getRollbackTransactionTool());
+    tools.add(getTransactionTool(config));
+    tools.add(getTableManagementTool(config));
     tools.add(getDbPingTool(config));
     tools.add(getDbMetricsTool(config));
     tools.add(getExplainAndExecutePlanTool(config));
@@ -155,238 +137,193 @@ public final class DatabaseOperatorTools {
     .build();
   }
 
-  private static McpServerFeatures.SyncToolSpecification getCreateTableTool(ServerConfig config) {
-    return McpServerFeatures.SyncToolSpecification.builder()
-            .tool(McpSchema.Tool.builder()
-                    .name("create-table")
-                    .title("Create Table")
-                    .description("Create a table from a full CREATE TABLE statement.")
-                    .inputSchema(ToolSchemas.SQL_ONLY)
-                    .build())
-            .callHandler((exchange, callReq) -> tryCall(() -> {
-              try (Connection c = openConnection(config, null)) {
-                String sql = String.valueOf(callReq.arguments().get("sql"));
-                execUpdate(c, sql);
-                return new McpSchema.CallToolResult("OK", false);
-              }
-            }))
-            .build();
-  }
-
-  private static McpServerFeatures.SyncToolSpecification getDeleteTableTool(ServerConfig config) {
+  private static McpServerFeatures.SyncToolSpecification getTableManagementTool(ServerConfig config) {
     return McpServerFeatures.SyncToolSpecification.builder()
       .tool(McpSchema.Tool.builder()
-         .name("delete-table")
-         .title("Drop Table")
-         .description("Drop a table by name.")
-         .inputSchema(ToolSchemas.DROP_OR_DESCRIBE_TABLE)
-         .build())
-      .callHandler((exchange, callReq) -> tryCall(() -> {
-        try (Connection c = openConnection(config, null)) {
-          String table = String.valueOf(callReq.arguments().get("table"));
-          int updateCount = execUpdate(c, "DROP TABLE " + quoteIdent(table));
-          return McpSchema.CallToolResult.builder()
-                  .structuredContent(Map.of("updateCount", updateCount, "table", table))
-                  .addTextContent("OK")
-                  .build();
-        }
-      }))
-    .build();
-  }
-
-  private static McpServerFeatures.SyncToolSpecification getListTablesTool(ServerConfig config) {
-    return McpServerFeatures.SyncToolSpecification.builder()
-      .tool(McpSchema.Tool.builder()
-         .name("list-tables")
-         .title("List Tables & Synonyms")
-         .description("List TABLE and SYNONYM in the current schema via DatabaseMetaData (includes comments).")
-         .inputSchema(ToolSchemas.NO_INPUT_SCHEMA)
-         .build())
-      .callHandler((exchange, callReq) -> tryCall(() -> {
-        try (Connection c = openConnection(config, null)) {
-          DatabaseMetaData md = c.getMetaData();
-          String schema = Optional.ofNullable(c.getSchema())
-                  .orElseGet(() -> {
-                    try {
-                      return md.getUserName();
-                    } catch (SQLException e) {
-                      return null;
-                    }
-                  });
-          if (schema != null)
-            schema = schema.toUpperCase(Locale.ROOT);
-          List<Map<String,Object>> tables = new ArrayList<>();
-          List<Map<String,Object>> synonyms = new ArrayList<>();
-          try (ResultSet rs = md.getTables(null, schema, "%", new String[]{"TABLE", "SYNONYM"})) {
-            while (rs.next()) {
-              Map<String,Object> row = new LinkedHashMap<>();
-              row.put("owner", rs.getString("TABLE_SCHEM"));
-              row.put("name", rs.getString("TABLE_NAME"));
-              row.put("kind", rs.getString("TABLE_TYPE"));
-              row.put("comment", rs.getString("REMARKS"));
-              String kind = String.valueOf(row.get("kind"));
-              if ("SYNONYM".equalsIgnoreCase(kind)) {
-                synonyms.add(row);
-              } else {
-                tables.add(row);
-              }
-            }
-          }
-          Map<String,Object> payload = Map.of(
-                  "schema", schema,
-                  "counts", Map.of("tables", tables.size(), "synonyms", synonyms.size()),
-                  "tables", tables,
-                  "synonyms", synonyms
-          );
-          return McpSchema.CallToolResult.builder()
-                  .structuredContent(payload)
-                  .addTextContent(new ObjectMapper().writeValueAsString(payload))
-                  .build();
-        }
-      }))
-    .build();
-  }
-
-  private static McpServerFeatures.SyncToolSpecification getDescribeTableTool(ServerConfig config) {
-    return McpServerFeatures.SyncToolSpecification.builder()
-      .tool(McpSchema.Tool.builder()
-         .name("describe-table")
-         .title("Describe Table")
-         .description("Describe columns via DatabaseMetaData. Returns COLUMN_ID, COLUMN_NAME, DATA_TYPE, DATA_LENGTH, DATA_PRECISION, DATA_SCALE, NULLABLE, COMMENTS.")
-         .inputSchema(ToolSchemas.DROP_OR_DESCRIBE_TABLE)
-         .build())
-      .callHandler((exchange, callReq) -> tryCall(() -> {
-        try (Connection c = openConnection(config, null)) {
-          String table = String.valueOf(callReq.arguments().get("table"));
-          if (table == null || table.isBlank()) {
-            return new McpSchema.CallToolResult("Parameter 'table' is required", true);
-          }
-          DatabaseMetaData md = c.getMetaData();
-          String schema = Optional.ofNullable(c.getSchema())
-                  .orElseGet(() -> {
-                    try {
-                      return md.getUserName();
-                    } catch (SQLException e) {
-                      return null;
-                    }
-                  });
-          if (schema != null)
-            schema = schema.toUpperCase(Locale.ROOT);
-          String tableName = table.toUpperCase(Locale.ROOT);
-          List<Map<String,Object>> rows = new ArrayList<>();
-          try (ResultSet rs = md.getColumns(null, schema, tableName, "%")) {
-            while (rs.next()) {
-              int ordinal = rs.getInt("ORDINAL_POSITION");
-              String colName = rs.getString("COLUMN_NAME");
-              String typeName = rs.getString("TYPE_NAME");
-              int colSize = rs.getInt("COLUMN_SIZE");
-              int precision = rs.getInt("COLUMN_SIZE");
-              int scale = rs.getInt("DECIMAL_DIGITS");
-              int nullableFlag = rs.getInt("NULLABLE");
-              String remarks = rs.getString("REMARKS");
-              String nullableYN = (nullableFlag == DatabaseMetaData.columnNullable) ? "Y" : "N";
-              if (remarks == null)
-                remarks = "";
-              Map<String,Object> row = new LinkedHashMap<>();
-              row.put("COLUMN_ID", ordinal);
-              row.put("COLUMN_NAME", colName);
-              row.put("DATA_TYPE", typeName);
-              row.put("DATA_LENGTH", colSize);
-              row.put("DATA_PRECISION", (scale >= 0 && precision > 0) ? precision : null);
-              row.put("DATA_SCALE", (scale >= 0) ? scale : null);
-              row.put("NULLABLE", nullableYN);
-              row.put("COMMENTS", remarks);
-              rows.add(row);
-            }
-          }
-          rows.sort(Comparator.comparingInt(m -> ((Number)m.get("COLUMN_ID")).intValue()));
-          return McpSchema.CallToolResult.builder()
-                  .structuredContent(Map.of("columns", rows))
-                  .addTextContent(new ObjectMapper().writeValueAsString(rows))
-                  .build();
-        }
-      }))
-    .build();
-  }
-
-  private static McpServerFeatures.SyncToolSpecification getStartTransactionTool(ServerConfig config) {
-    return McpServerFeatures.SyncToolSpecification.builder()
-      .tool(McpSchema.Tool.builder()
-         .name("start-transaction")
-         .title("Start Transaction")
-         .description("Start a JDBC transaction (autoCommit=false). Returns txId.")
-         .inputSchema(ToolSchemas.NO_INPUT_SCHEMA)
-         .build())
-      .callHandler((exchange, callReq) -> tryCall(() -> {
-        Connection c = openConnection(config, null);
-        c.setAutoCommit(false);
-        String txId = UUID.randomUUID().toString();
-        TX.put(txId, c);
-        return McpSchema.CallToolResult.builder()
-                .structuredContent(Map.of("txId", txId))
-                .addTextContent("{\"txId\":\"" + txId + "\"}")
-                .build();
-      }))
-    .build();
-  }
-
-  private static McpServerFeatures.SyncToolSpecification getResumeTransactionTool() {
-    return McpServerFeatures.SyncToolSpecification.builder()
-      .tool(McpSchema.Tool.builder()
-         .name("resume-transaction")
-         .title("Resume Transaction")
-         .description("Verify a txId is active (no-op). Returns ok.")
-         .inputSchema(ToolSchemas.TX_ID)
+         .name("table")
+         .title("Table Management")
+         .description("Manage database tables. action=create (needs sql), drop (needs table), list (no args), describe (needs table).")
+         .inputSchema(ToolSchemas.TABLE_MANAGEMENT)
          .build())
       .callHandler((exchange, callReq) -> {
-        String txId = String.valueOf(callReq.arguments().get("txId"));
-        if (TX.containsKey(txId)) {
-          return new McpSchema.CallToolResult("{\"ok\":true}", false);
-        }
-        return new McpSchema.CallToolResult("Unknown txId", true);
+        String action = String.valueOf(callReq.arguments().getOrDefault("action", ""));
+        return switch (action) {
+          case "create" -> tryCall(() -> {
+            try (Connection c = openConnection(config, null)) {
+              String sql = String.valueOf(callReq.arguments().get("sql"));
+              execUpdate(c, sql);
+              return new McpSchema.CallToolResult("OK", false);
+            }
+          });
+          case "drop" -> tryCall(() -> {
+            try (Connection c = openConnection(config, null)) {
+              String table = String.valueOf(callReq.arguments().get("table"));
+              int updateCount = execUpdate(c, "DROP TABLE " + quoteIdent(table));
+              return McpSchema.CallToolResult.builder()
+                      .structuredContent(Map.of("updateCount", updateCount, "table", table))
+                      .addTextContent("OK")
+                      .build();
+            }
+          });
+          case "list" -> tryCall(() -> {
+            try (Connection c = openConnection(config, null)) {
+              DatabaseMetaData md = c.getMetaData();
+              String schema = Optional.ofNullable(c.getSchema())
+                      .orElseGet(() -> {
+                        try {
+                          return md.getUserName();
+                        } catch (SQLException e) {
+                          return null;
+                        }
+                      });
+              if (schema != null)
+                schema = schema.toUpperCase(Locale.ROOT);
+              List<Map<String,Object>> tables = new ArrayList<>();
+              List<Map<String,Object>> synonyms = new ArrayList<>();
+              try (ResultSet rs = md.getTables(null, schema, "%", new String[]{"TABLE", "SYNONYM"})) {
+                while (rs.next()) {
+                  Map<String,Object> row = new LinkedHashMap<>();
+                  row.put("owner", rs.getString("TABLE_SCHEM"));
+                  row.put("name", rs.getString("TABLE_NAME"));
+                  row.put("kind", rs.getString("TABLE_TYPE"));
+                  row.put("comment", rs.getString("REMARKS"));
+                  String kind = String.valueOf(row.get("kind"));
+                  if ("SYNONYM".equalsIgnoreCase(kind)) {
+                    synonyms.add(row);
+                  } else {
+                    tables.add(row);
+                  }
+                }
+              }
+              Map<String,Object> payload = Map.of(
+                      "schema", schema,
+                      "counts", Map.of("tables", tables.size(), "synonyms", synonyms.size()),
+                      "tables", tables,
+                      "synonyms", synonyms
+              );
+              return McpSchema.CallToolResult.builder()
+                      .structuredContent(payload)
+                      .addTextContent(new ObjectMapper().writeValueAsString(payload))
+                      .build();
+            }
+          });
+          case "describe" -> tryCall(() -> {
+            try (Connection c = openConnection(config, null)) {
+              String table = String.valueOf(callReq.arguments().get("table"));
+              if (table == null || table.isBlank()) {
+                return new McpSchema.CallToolResult("'table' is required for action=describe", true);
+              }
+              DatabaseMetaData md = c.getMetaData();
+              String schema = Optional.ofNullable(c.getSchema())
+                      .orElseGet(() -> {
+                        try {
+                          return md.getUserName();
+                        } catch (SQLException e) {
+                          return null;
+                        }
+                      });
+              if (schema != null)
+                schema = schema.toUpperCase(Locale.ROOT);
+              String tableName = table.toUpperCase(Locale.ROOT);
+              List<Map<String,Object>> rows = new ArrayList<>();
+              try (ResultSet rs = md.getColumns(null, schema, tableName, "%")) {
+                while (rs.next()) {
+                  int ordinal = rs.getInt("ORDINAL_POSITION");
+                  String colName = rs.getString("COLUMN_NAME");
+                  String typeName = rs.getString("TYPE_NAME");
+                  int colSize = rs.getInt("COLUMN_SIZE");
+                  int precision = rs.getInt("COLUMN_SIZE");
+                  int scale = rs.getInt("DECIMAL_DIGITS");
+                  int nullableFlag = rs.getInt("NULLABLE");
+                  String remarks = rs.getString("REMARKS");
+                  String nullableYN = (nullableFlag == DatabaseMetaData.columnNullable) ? "Y" : "N";
+                  if (remarks == null)
+                    remarks = "";
+                  Map<String,Object> row = new LinkedHashMap<>();
+                  row.put("COLUMN_ID", ordinal);
+                  row.put("COLUMN_NAME", colName);
+                  row.put("DATA_TYPE", typeName);
+                  row.put("DATA_LENGTH", colSize);
+                  row.put("DATA_PRECISION", (scale >= 0 && precision > 0) ? precision : null);
+                  row.put("DATA_SCALE", (scale >= 0) ? scale : null);
+                  row.put("NULLABLE", nullableYN);
+                  row.put("COMMENTS", remarks);
+                  rows.add(row);
+                }
+              }
+              rows.sort(Comparator.comparingInt(m -> ((Number)m.get("COLUMN_ID")).intValue()));
+              return McpSchema.CallToolResult.builder()
+                      .structuredContent(Map.of("columns", rows))
+                      .addTextContent(new ObjectMapper().writeValueAsString(rows))
+                      .build();
+            }
+          });
+          default -> new McpSchema.CallToolResult(
+                  "Unknown action '" + action + "'. Must be one of: create, drop, list, describe", true);
+        };
       })
     .build();
   }
 
-  private static McpServerFeatures.SyncToolSpecification getCommitTransactionTool() {
+  private static McpServerFeatures.SyncToolSpecification getTransactionTool(ServerConfig config) {
     return McpServerFeatures.SyncToolSpecification.builder()
       .tool(McpSchema.Tool.builder()
-         .name("commit-transaction")
-         .title("Commit Transaction")
-         .description("Commit and close a txId.")
-         .inputSchema(ToolSchemas.TX_ID)
+         .name("transaction")
+         .title("Transaction")
+         .description("Manage JDBC transactions. Use action=start to begin (returns txId), resume to verify, commit to commit, rollback to rollback.")
+         .inputSchema(ToolSchemas.TRANSACTION)
          .build())
-      .callHandler((exchange, callReq) -> tryCall(() -> {
-        String txId = String.valueOf(callReq.arguments().get("txId"));
-        Connection c = TX.remove(txId);
-        if (c == null)
-          return new McpSchema.CallToolResult("Unknown txId", true);
-        try (c) {
-          c.commit();
-          return new McpSchema.CallToolResult("{\"ok\":true}", false);
-        }
-      }))
-    .build();
-  }
-
-  private static McpServerFeatures.SyncToolSpecification getRollbackTransactionTool() {
-    return McpServerFeatures.SyncToolSpecification.builder()
-      .tool(McpSchema.Tool.builder()
-         .name("rollback-transaction")
-         .title("Rollback Transaction")
-         .description("Rollback and close a txId.")
-         .inputSchema(ToolSchemas.TX_ID)
-         .build())
-      .callHandler((exchange, callReq) -> tryCall(() -> {
-        String txId = String.valueOf(callReq.arguments().get("txId"));
-        Connection c = TX.remove(txId);
-        if (c == null)
-          return new McpSchema.CallToolResult("Unknown txId", true);
-        try (c) {
-          c.rollback();
-          return new McpSchema.CallToolResult("{\"ok\":true}", false);
-        }
-      }))
+      .callHandler((exchange, callReq) -> {
+        String action = String.valueOf(callReq.arguments().getOrDefault("action", ""));
+        String txId = callReq.arguments().get("txId") != null ? String.valueOf(callReq.arguments().get("txId")) : null;
+        return switch (action) {
+          case "start" -> tryCall(() -> {
+            Connection c = openConnection(config, null);
+            c.setAutoCommit(false);
+            String newTxId = UUID.randomUUID().toString();
+            TX.put(newTxId, c);
+            return McpSchema.CallToolResult.builder()
+                    .structuredContent(Map.of("txId", newTxId))
+                    .addTextContent("{\"txId\":\"" + newTxId + "\"}")
+                    .build();
+          });
+          case "resume" -> tryCall(() -> {
+            if (txId == null) {
+              return new McpSchema.CallToolResult("'txId' is required for action=resume", true);
+            }
+            if (TX.containsKey(txId)) {
+              return new McpSchema.CallToolResult("{\"ok\":true}", false);
+            }
+            return new McpSchema.CallToolResult("Unknown txId", true);
+          });
+          case "commit" -> tryCall(() -> {
+            if (txId == null) {
+              return new McpSchema.CallToolResult("'txId' is required for action=commit", true);
+            }
+            Connection c = TX.remove(txId);
+            if (c == null)
+              return new McpSchema.CallToolResult("Unknown txId", true);
+            try (c) {
+              c.commit();
+              return new McpSchema.CallToolResult("{\"ok\":true}", false);
+            }
+          });
+          case "rollback" -> tryCall(() -> {
+            if (txId == null) {
+              return new McpSchema.CallToolResult("'txId' is required for action=rollback", true);
+            }
+            Connection c = TX.remove(txId);
+            if (c == null)
+              return new McpSchema.CallToolResult("Unknown txId", true);
+            try (c) {
+              c.rollback();
+              return new McpSchema.CallToolResult("{\"ok\":true}", false);
+            }
+          });
+          default -> new McpSchema.CallToolResult(
+                  "Unknown action '" + action + "'. Must be one of: start, resume, commit, rollback", true);
+        };
+      })
     .build();
   }
 

@@ -14,6 +14,54 @@ package com.oracle.database.mcptoolkit.tools;
 public class ToolSchemas {
 
   /**
+   * JSON schema for the consolidated transaction tool.
+   */
+  static final String TRANSACTION = """
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["start", "resume", "commit", "rollback"],
+          "description": "start=Begin a new JDBC transaction (returns txId). resume=Verify a txId is still active. commit=Commit and close a transaction. rollback=Rollback and close a transaction."
+        },
+        "txId": {
+          "type": "string",
+          "description": "Required for resume, commit, and rollback actions."
+        }
+      },
+      "required": ["action"]
+    }""";
+
+  /**
+   * JSON schema for the consolidated table management tool.
+   */
+  static final String TABLE_MANAGEMENT = """
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["create", "drop", "list", "describe"],
+          "description": "create=Create a table from a full CREATE TABLE statement. drop=Drop a table by name. list=List all tables and synonyms in the current schema. describe=Get detailed column info for a specific table."
+        },
+        "sql": {
+          "type": "string",
+          "description": "Full CREATE TABLE statement. Required for action=create."
+        },
+        "table": {
+          "type": "string",
+          "description": "Table name. Required for action=drop and action=describe."
+        },
+        "txId": {
+          "type": "string",
+          "description": "Optional active transaction ID. Applies to action=create."
+        }
+      },
+      "required": ["action"]
+    }""";
+
+  /**
    * JSON schema for SQL-only operations.
    * <p>
    * This schema requires a "sql" property and optionally accepts a "txId" property.
@@ -31,33 +79,6 @@ public class ToolSchemas {
             }
           },
           "required":["sql"]
-      }""";
-
-  /**
-   * JSON schema for DROP/DESCRIBE table operations.
-   */
-  static final String DROP_OR_DESCRIBE_TABLE = """
-      {
-        "type":"object",
-        "properties":
-          {
-            "table":
-              {
-              "type":"string"
-              }},
-          "required":["table"]
-     }""";
-
-  /**
-   * JSON schema for transaction ID operations.
-   */
-  static final String TX_ID = """
-      {
-        "type":"object",
-        "properties":
-          {"txId":
-            {"type":"string"}},
-            "required":["txId"]
       }""";
 
   /**

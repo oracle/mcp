@@ -36,19 +36,11 @@ class FusionEnvironmentFamily(BaseModel):
         None,
         description="Lifecycle state (e.g., CREATING, UPDATING, ACTIVE, DELETING, DELETED, FAILED)",
     )
-    compartment_id: Optional[str] = Field(
-        None, description="Compartment OCID containing this family"
-    )
-    time_created: Optional[datetime] = Field(
-        None, description="Creation time (RFC3339)"
-    )
-    time_updated: Optional[datetime] = Field(
-        None, description="Last update time (RFC3339)"
-    )
+    compartment_id: Optional[str] = Field(None, description="Compartment OCID containing this family")
+    time_created: Optional[datetime] = Field(None, description="Creation time (RFC3339)")
+    time_updated: Optional[datetime] = Field(None, description="Last update time (RFC3339)")
     freeform_tags: Optional[Dict[str, str]] = Field(None, description="Freeform tags")
-    defined_tags: Optional[Dict[str, Dict[str, Any]]] = Field(
-        None, description="Defined tags"
-    )
+    defined_tags: Optional[Dict[str, Dict[str, Any]]] = Field(None, description="Defined tags")
 
 
 class FusionEnvironment(BaseModel):
@@ -56,9 +48,7 @@ class FusionEnvironment(BaseModel):
 
     id: Optional[str] = Field(None, description="OCID of the Fusion Environment")
     display_name: Optional[str] = Field(None, description="Display name")
-    compartment_id: Optional[str] = Field(
-        None, description="Compartment OCID containing the environment"
-    )
+    compartment_id: Optional[str] = Field(None, description="Compartment OCID containing the environment")
     fusion_environment_family_id: Optional[str] = Field(
         None, description="OCID of the parent Fusion Environment Family"
     )
@@ -71,70 +61,44 @@ class FusionEnvironment(BaseModel):
     domain_id: Optional[str] = Field(None, description="IDCS domain OCID")
 
     lifecycle_state: Optional[str] = Field(None, description="Lifecycle state")
-    lifecycle_details: Optional[str] = Field(
-        None, description="Additional lifecycle details"
-    )
+    lifecycle_details: Optional[str] = Field(None, description="Additional lifecycle details")
     is_suspended: Optional[bool] = Field(None, description="Suspended flag")
     system_name: Optional[str] = Field(None, description="System name/code")
     environment_role: Optional[str] = Field(None, description="Environment role")
 
-    maintenance_policy: Optional[Dict[str, Any]] = Field(
-        None, description="Maintenance policy details"
-    )
+    maintenance_policy: Optional[Dict[str, Any]] = Field(None, description="Maintenance policy details")
     time_upcoming_maintenance: Optional[datetime] = Field(
         None, description="Upcoming maintenance window (RFC3339)"
     )
-    applied_patch_bundles: Optional[List[str]] = Field(
-        None, description="Applied patch bundles"
-    )
+    applied_patch_bundles: Optional[List[str]] = Field(None, description="Applied patch bundles")
 
-    subscription_ids: Optional[List[str]] = Field(
-        None, description="Associated subscription OCIDs"
-    )
-    additional_language_packs: Optional[List[str]] = Field(
-        None, description="Enabled language packs"
-    )
+    subscription_ids: Optional[List[str]] = Field(None, description="Associated subscription OCIDs")
+    additional_language_packs: Optional[List[str]] = Field(None, description="Enabled language packs")
 
     kms_key_id: Optional[str] = Field(None, description="KMS key OCID")
     kms_key_info: Optional[Dict[str, Any]] = Field(None, description="KMS key info")
 
     dns_prefix: Optional[str] = Field(None, description="DNS prefix")
     lockbox_id: Optional[str] = Field(None, description="Lockbox OCID")
-    is_break_glass_enabled: Optional[bool] = Field(
-        None, description="Break glass access enabled"
-    )
+    is_break_glass_enabled: Optional[bool] = Field(None, description="Break glass access enabled")
 
     refresh: Optional[Any] = Field(None, description="Refresh details")
     rules: Optional[List[Any]] = Field(None, description="Rules")
-    time_created: Optional[datetime] = Field(
-        None, description="Creation time (RFC3339)"
-    )
-    time_updated: Optional[datetime] = Field(
-        None, description="Last update time (RFC3339)"
-    )
+    time_created: Optional[datetime] = Field(None, description="Creation time (RFC3339)")
+    time_updated: Optional[datetime] = Field(None, description="Last update time (RFC3339)")
 
     freeform_tags: Optional[Dict[str, Any]] = Field(None, description="Freeform tags")
-    defined_tags: Optional[Dict[str, Dict[str, Any]]] = Field(
-        None, description="Defined tags"
-    )
+    defined_tags: Optional[Dict[str, Dict[str, Any]]] = Field(None, description="Defined tags")
 
 
 class FusionEnvironmentStatus(BaseModel):
     """Pydantic model representing the status of a Fusion Environment."""
 
-    fusion_environment_id: Optional[str] = Field(
-        None, description="OCID of the Fusion Environment"
-    )
+    fusion_environment_id: Optional[str] = Field(None, description="OCID of the Fusion Environment")
     status: Optional[str] = Field(None, description="Status value")
-    time_updated: Optional[datetime] = Field(
-        None, description="Last status update time (RFC3339)"
-    )
-    time_created: Optional[datetime] = Field(
-        None, description="Creation time if present (RFC3339)"
-    )
-    details: Optional[Dict[str, Any]] = Field(
-        None, description="Additional status details"
-    )
+    time_updated: Optional[datetime] = Field(None, description="Last status update time (RFC3339)")
+    time_created: Optional[datetime] = Field(None, description="Creation time if present (RFC3339)")
+    details: Optional[Dict[str, Any]] = Field(None, description="Additional status details")
 
 
 def _get(data: Any, key: str) -> Any:
@@ -203,8 +167,7 @@ def map_fusion_environment_status(data: Any) -> FusionEnvironmentStatus:
     details = {
         k: v
         for k, v in coerced.items()
-        if k
-        not in {"fusion_environment_id", "id", "status", "time_updated", "time_created"}
+        if k not in {"fusion_environment_id", "id", "status", "time_updated", "time_created"}
     }  # noqa: E501
     return FusionEnvironmentStatus(
         fusion_environment_id=fe_id,

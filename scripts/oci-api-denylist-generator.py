@@ -11,9 +11,7 @@ from datetime import datetime
 
 
 def get_oci_version():
-    result = subprocess.run(
-        ["oci", "--version", "--raw-output"], capture_output=True, text=True
-    )
+    result = subprocess.run(["oci", "--version", "--raw-output"], capture_output=True, text=True)
     return result.stdout.strip()
 
 
@@ -32,11 +30,9 @@ def get_services():
 
 def get_sub_commands(command: str):
     indentation_level = len(command.split())
-    print(f"{'  '*indentation_level}Getting subcommands for: {command}")
+    print(f"{'  ' * indentation_level}Getting subcommands for: {command}")
     try:
-        result = subprocess.run(
-            f"oci {command} --help", shell=True, capture_output=True, text=True
-        )
+        result = subprocess.run(f"oci {command} --help", shell=True, capture_output=True, text=True)
         output = result.stdout.splitlines()
         sub_commands = []
         in_commands_section = False
@@ -50,7 +46,7 @@ def get_sub_commands(command: str):
                 # match = re.match(r"^\s{2}(\w+)", line)
                 match = line.split()[0]
                 if match:
-                    print(f"{'  '*indentation_level}Appending sub command {match}")
+                    print(f"{'  ' * indentation_level}Appending sub command {match}")
                     sub_commands.append(match)
         if not sub_commands:
             return [command]
@@ -95,17 +91,11 @@ def create_denylist(version):
     commands_file = f"commands_{version}.txt"
 
     if os.path.exists(denylist_filename):
-        backup_filename = (
-            f"{denylist_filename}_backup_{datetime.now().strftime('%d%b%y_%H%M')}"
-        )
+        backup_filename = f"{denylist_filename}_backup_{datetime.now().strftime('%d%b%y_%H%M')}"
         os.rename(denylist_filename, backup_filename)
 
     with open(commands_file, "r") as f:
-        commands = [
-            line.strip()
-            for line in f
-            if not line.strip().startswith("#") and len(line.strip()) > 0
-        ]
+        commands = [line.strip() for line in f if not line.strip().startswith("#") and len(line.strip()) > 0]
 
     actions = [
         "delete",
@@ -118,9 +108,7 @@ def create_denylist(version):
     ]
 
     denied_commands = [
-        cmd.strip()
-        for cmd in commands
-        if any(cmd.split()[-1].startswith(action) for action in actions)
+        cmd.strip() for cmd in commands if any(cmd.split()[-1].startswith(action) for action in actions)
     ]
 
     with open(denylist_filename, "w") as f:

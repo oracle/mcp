@@ -169,10 +169,7 @@ def run_oci_command(
     # Run OCI CLI command using subprocess
     try:
         result = subprocess.run(
-            ["oci", "--profile"]
-            + [profile]
-            + ["--auth", "security_token"]
-            + command.split(),
+            ["oci", "--profile"] + [profile] + ["--auth", "security_token"] + command.split(),
             env=env_copy,
             capture_output=True,
             text=True,

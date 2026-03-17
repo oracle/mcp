@@ -168,10 +168,7 @@ class TestLoggingModels:
         assert isinstance(mapped, LogSummary)
         assert mapped.id == log.id
         assert mapped.configuration is not None
-        assert (
-            mapped.configuration.archiving.is_enabled
-            == log.configuration.archiving.is_enabled
-        )
+        assert mapped.configuration.archiving.is_enabled == log.configuration.archiving.is_enabled
 
     def test_map_log_nested(self):
         log = SimpleNamespace(
@@ -197,10 +194,7 @@ class TestLoggingModels:
         mapped = map_log(log)
         assert isinstance(mapped, Log)
         assert mapped.log_type == log.log_type
-        assert (
-            mapped.configuration.source.source_type
-            == log.configuration.source.source_type
-        )
+        assert mapped.configuration.source.source_type == log.configuration.source.source_type
 
     def test_map_search_response_full(self):
         # FieldInfo mapping
@@ -245,9 +239,7 @@ class TestLoggingModels:
 
         # If oci.util is already present, patch its to_dict. Otherwise, inject a minimal module.
         if "oci.util" in sys.modules:
-            monkeypatch.setattr(
-                sys.modules["oci.util"], "to_dict", fake_to_dict, raising=False
-            )
+            monkeypatch.setattr(sys.modules["oci.util"], "to_dict", fake_to_dict, raising=False)
         else:
             util_mod = types.ModuleType("oci.util")
             util_mod.to_dict = fake_to_dict

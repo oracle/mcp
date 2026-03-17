@@ -10,15 +10,11 @@ from logging.handlers import RotatingFileHandler
 
 def initAuditLogger(logger):
     # Create a rotating file handler
-    handler = RotatingFileHandler(
-        "/tmp/audit.log", maxBytes=5 * 1024 * 1024, backupCount=1
-    )
+    handler = RotatingFileHandler("/tmp/audit.log", maxBytes=5 * 1024 * 1024, backupCount=1)
     handler.setLevel(logging.INFO)
 
     # Create a logging format
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     handler.setFormatter(formatter)
 
     # Add the handler to the logger

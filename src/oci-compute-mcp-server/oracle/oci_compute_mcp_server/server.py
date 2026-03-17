@@ -112,9 +112,7 @@ def list_instances(
 
 
 @mcp.tool(description="Get Instance with a given instance OCID")
-def get_instance(
-    instance_id: str = Field(..., description="The OCID of the instance")
-) -> Instance:
+def get_instance(instance_id: str = Field(..., description="The OCID of the instance")) -> Instance:
     try:
         client = get_compute_client()
 
@@ -216,9 +214,7 @@ def launch_instance(
 
 
 @mcp.tool(description="Delete instance with given instance OCID")
-def terminate_instance(
-    instance_id: str = Field(..., description="The OCID of the instance")
-) -> Response:
+def terminate_instance(instance_id: str = Field(..., description="The OCID of the instance")) -> Response:
     try:
         client = get_compute_client()
 
@@ -231,9 +227,7 @@ def terminate_instance(
         raise e
 
 
-@mcp.tool(
-    description="Update instance. This may restart the instance, so warn the user"
-)
+@mcp.tool(description="Update instance. This may restart the instance, so warn the user")
 def update_instance(
     instance_id: str = Field(..., description="The OCID of the instance"),
     ocpus: Optional[int] = Field(
@@ -266,15 +260,10 @@ def update_instance(
         raise e
 
 
-@mcp.tool(
-    description="List images in a given compartment, "
-    "optionally filtered by operating system"
-)
+@mcp.tool(description="List images in a given compartment, optionally filtered by operating system")
 def list_images(
     compartment_id: str = Field(..., description="The OCID of the compartment"),
-    operating_system: Optional[str] = Field(
-        None, description="The operating system to filter with"
-    ),
+    operating_system: Optional[str] = Field(None, description="The operating system to filter with"),
     limit: Optional[int] = Field(
         None,
         description="The maximum amount of resources to return. If None, there is no limit.",
@@ -359,9 +348,7 @@ def instance_action(
         raise e
 
 
-@mcp.tool(
-    description="List vnic attachments in a given compartment and/or on a given instance. "
-)
+@mcp.tool(description="List vnic attachments in a given compartment and/or on a given instance. ")
 def list_vnic_attachments(
     compartment_id: str = Field(
         ...,
@@ -414,14 +401,12 @@ def list_vnic_attachments(
 
 @mcp.tool(description="Get Vnic Attachment with a given OCID")
 def get_vnic_attachment(
-    vnic_attachment_id: str = Field(..., description="The OCID of the vnic attachment")
+    vnic_attachment_id: str = Field(..., description="The OCID of the vnic attachment"),
 ) -> VnicAttachment:
     try:
         client = get_compute_client()
 
-        response: oci.response.Response = client.get_vnic_attachment(
-            vnic_attachment_id=vnic_attachment_id
-        )
+        response: oci.response.Response = client.get_vnic_attachment(vnic_attachment_id=vnic_attachment_id)
         data: oci.core.models.VnicAttachment = response.data
         logger.info("Found Vnic Attachment")
         return map_vnic_attachment(data)

@@ -1,5 +1,5 @@
 """
-Copyright (c) 2025, Oracle and/or its affiliates.
+Copyright (c) 2026, Oracle and/or its affiliates.
 Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
@@ -59,9 +59,7 @@ def list_fusion_environments():
 
 @faaas_bp.route("/fusionEnvironments/<fusion_environment_id>", methods=["GET"])
 def get_fusion_environment(fusion_environment_id):
-    env = next(
-        (i for i in FUSION_ENVIRONMENTS if i.get("id") == fusion_environment_id), None
-    )
+    env = next((i for i in FUSION_ENVIRONMENTS if i.get("id") == fusion_environment_id), None)
     if not env:
         return jsonify({"code": "NotAuthorizedOrNotFound"}), 404
     return oci_res(env)
@@ -70,11 +68,7 @@ def get_fusion_environment(fusion_environment_id):
 @faaas_bp.route("/fusionEnvironments/<fusion_environment_id>/status", methods=["GET"])
 def get_fusion_environment_status(fusion_environment_id):
     status = next(
-        (
-            i
-            for i in FUSION_ENVIRONMENT_STATUSES
-            if i.get("fusionEnvironmentId") == fusion_environment_id
-        ),
+        (i for i in FUSION_ENVIRONMENT_STATUSES if i.get("fusionEnvironmentId") == fusion_environment_id),
         None,
     )
     if not status:

@@ -105,9 +105,7 @@ class Metric(BaseModel):
         None,
         description="The OCID of the compartment containing the resource emitting the metric.",
     )
-    name: Optional[str] = Field(
-        None, description="The metric name (for example, CpuUtilization)."
-    )
+    name: Optional[str] = Field(None, description="The metric name (for example, CpuUtilization).")
     dimensions: Optional[Dict[str, str]] = Field(
         None,
         description="Dimensions (key/value pairs) that qualify the metric (for example, resourceId).",
@@ -147,9 +145,7 @@ class AggregatedDatapoint(BaseModel):
         None,
         description="The date and time associated with the aggregated value (RFC3339).",
     )
-    value: Optional[float] = Field(
-        None, description="The aggregated metric value for the time window."
-    )
+    value: Optional[float] = Field(None, description="The aggregated metric value for the time window.")
 
 
 class MetricData(BaseModel):
@@ -160,22 +156,16 @@ class MetricData(BaseModel):
     namespace: Optional[str] = Field(
         None, description="The source service or application emitting the metric."
     )
-    resource_group: Optional[str] = Field(
-        None, description="Resource group specified for the metric."
-    )
+    resource_group: Optional[str] = Field(None, description="Resource group specified for the metric.")
     compartment_id: Optional[str] = Field(
         None, description="The OCID of the compartment containing the resource."
     )
-    name: Optional[str] = Field(
-        None, description="The metric name (for example, CpuUtilization)."
-    )
+    name: Optional[str] = Field(None, description="The metric name (for example, CpuUtilization).")
     dimensions: Optional[Dict[str, str]] = Field(
         None,
         description="Dimensions that qualify the metric (for example, resourceId).",
     )
-    metadata: Optional[Dict[str, str]] = Field(
-        None, description="Metric metadata such as unit."
-    )
+    metadata: Optional[Dict[str, str]] = Field(None, description="Metric metadata such as unit.")
     resolution: Optional[str] = Field(
         None,
         description="The publication resolution of the metric (for example, '1m').",
@@ -220,9 +210,7 @@ def map_metric_data(metric_data: oci.monitoring.models.MetricData) -> MetricData
         dimensions=getattr(metric_data, "dimensions", None),
         metadata=getattr(metric_data, "metadata", None),
         resolution=getattr(metric_data, "resolution", None),
-        aggregated_datapoints=map_aggregated_datapoints(
-            getattr(metric_data, "aggregated_datapoints", None)
-        ),
+        aggregated_datapoints=map_aggregated_datapoints(getattr(metric_data, "aggregated_datapoints", None)),
     )
 
 
@@ -235,9 +223,7 @@ class Datapoint(BaseModel):
     timestamp: Optional[datetime] = Field(
         None, description="The time the metric value was recorded (RFC3339)."
     )
-    value: Optional[float] = Field(
-        None, description="Metric value at the given timestamp."
-    )
+    value: Optional[float] = Field(None, description="Metric value at the given timestamp.")
     count: Optional[int] = Field(
         None,
         description="Optional number of samples represented by this value (if provided).",
@@ -274,25 +260,17 @@ class MetricDataDetails(BaseModel):
     namespace: Optional[str] = Field(
         None, description="The source service or application emitting the metric."
     )
-    resource_group: Optional[str] = Field(
-        None, description="Resource group specified for the metric."
-    )
+    resource_group: Optional[str] = Field(None, description="Resource group specified for the metric.")
     compartment_id: Optional[str] = Field(
         None, description="The OCID of the compartment containing the resource."
     )
-    name: Optional[str] = Field(
-        None, description="The metric name (for example, CpuUtilization)."
-    )
+    name: Optional[str] = Field(None, description="The metric name (for example, CpuUtilization).")
     dimensions: Optional[Dict[str, str]] = Field(
         None,
         description="Dimensions that qualify the metric (for example, resourceId).",
     )
-    metadata: Optional[Dict[str, str]] = Field(
-        None, description="Metric metadata such as unit."
-    )
-    datapoints: Optional[List[Datapoint]] = Field(
-        None, description="Raw datapoints to post for this metric."
-    )
+    metadata: Optional[Dict[str, str]] = Field(None, description="Metric metadata such as unit.")
+    datapoints: Optional[List[Datapoint]] = Field(None, description="Raw datapoints to post for this metric.")
 
 
 def map_metric_data_details(
@@ -325,12 +303,8 @@ class ListMetricsDetails(BaseModel):
     namespace: Optional[str] = Field(
         None, description="The source service or application emitting the metric."
     )
-    resource_group: Optional[str] = Field(
-        None, description="Resource group specified for the metric."
-    )
-    name: Optional[str] = Field(
-        None, description="Optional metric name to filter by (e.g., CpuUtilization)."
-    )
+    resource_group: Optional[str] = Field(None, description="Resource group specified for the metric.")
+    name: Optional[str] = Field(None, description="Optional metric name to filter by (e.g., CpuUtilization).")
     dimension_filters: Optional[Dict[str, str]] = Field(
         None,
         description="Filter to only include metrics that match these dimension key/value pairs.",
@@ -355,8 +329,7 @@ def map_list_metrics_details(
         resource_group=getattr(lmd, "resource_group", None),
         name=getattr(lmd, "name", None),
         # OCI SDK may expose snake_case or camelCase depending on version
-        dimension_filters=getattr(lmd, "dimension_filters", None)
-        or getattr(lmd, "dimensionFilters", None),
+        dimension_filters=getattr(lmd, "dimension_filters", None) or getattr(lmd, "dimensionFilters", None),
         group_by=getattr(lmd, "group_by", None) or getattr(lmd, "groupBy", None),
     )
 
@@ -370,9 +343,7 @@ class SummarizeMetricsDataDetails(BaseModel):
     namespace: Optional[str] = Field(
         None, description="The source service or application emitting the metric."
     )
-    resource_group: Optional[str] = Field(
-        None, description="Resource group specified for the metric."
-    )
+    resource_group: Optional[str] = Field(None, description="Resource group specified for the metric.")
     query: Optional[str] = Field(
         None,
         description=(

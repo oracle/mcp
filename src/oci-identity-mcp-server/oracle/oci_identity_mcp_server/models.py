@@ -59,9 +59,9 @@ class Compartment(BaseModel):
         description="Date and time the compartment was created, in the format "
         "defined by RFC3339. Example: `2016-08-25T21:10:29.600Z`",
     )
-    lifecycle_state: Optional[
-        Literal["CREATING", "ACTIVE", "INACTIVE", "DELETING", "DELETED", "FAILED"]
-    ] = Field(None, description="The compartment's current state.")
+    lifecycle_state: Optional[Literal["CREATING", "ACTIVE", "INACTIVE", "DELETING", "DELETED", "FAILED"]] = (
+        Field(None, description="The compartment's current state.")
+    )
     inactive_status: Optional[int] = Field(
         None, description="The detailed status of INACTIVE lifecycleState."
     )
@@ -111,12 +111,8 @@ class Tenancy(BaseModel):
 
     id: Optional[str] = Field(None, description="The OCID of the tenancy.")
     name: Optional[str] = Field(None, description="The name of the tenancy.")
-    description: Optional[str] = Field(
-        None, description="The description of the tenancy."
-    )
-    home_region_key: Optional[str] = Field(
-        None, description="The region key for the tenancy's home region."
-    )
+    description: Optional[str] = Field(None, description="The description of the tenancy.")
+    home_region_key: Optional[str] = Field(None, description="The region key for the tenancy's home region.")
     freeform_tags: Optional[Dict[str, str]] = Field(
         None,
         description='Free-form tags for this resource. Each tag is a simple key-value pair with "'
@@ -159,9 +155,7 @@ class AvailabilityDomain(BaseModel):
     """
 
     id: Optional[str] = Field(None, description="The OCID of the Availability Domain.")
-    name: Optional[str] = Field(
-        None, description="The name of the Availability Domain."
-    )
+    name: Optional[str] = Field(None, description="The name of the Availability Domain.")
     compartment_id: Optional[str] = Field(
         None, description="The OCID of the tenancy containing the Availability Domain."
     )
@@ -194,9 +188,7 @@ class AuthToken(BaseModel):
 
     id: Optional[str] = Field(None, description="The OCID of the auth token.")
     token: Optional[str] = Field(None, description="The raw auth token string.")
-    user_id: Optional[str] = Field(
-        None, description="The OCID of the user the password belongs to."
-    )
+    user_id: Optional[str] = Field(None, description="The OCID of the user the password belongs to.")
     description: Optional[str] = Field(
         None,
         description="The description you assign to the auth token. "
@@ -212,9 +204,9 @@ class AuthToken(BaseModel):
         description="Date and time when this auth token will expire, in the format "
         "defined by RFC3339. Example: `2016-08-25T21:10:29.600Z`",
     )
-    lifecycle_state: Optional[
-        Literal["CREATING", "ACTIVE", "INACTIVE", "DELETING", "DELETED"]
-    ] = Field(None, description="The auth token's current state.")
+    lifecycle_state: Optional[Literal["CREATING", "ACTIVE", "INACTIVE", "DELETING", "DELETED"]] = Field(
+        None, description="The auth token's current state."
+    )
     inactive_status: Optional[int] = Field(
         None, description="The detailed status of INACTIVE lifecycleState."
     )
@@ -264,9 +256,7 @@ class User(BaseModel):
     """
 
     id: Optional[str] = Field(None, description="The OCID of the user.")
-    compartment_id: Optional[str] = Field(
-        None, description="The OCID of the tenancy containing the user."
-    )
+    compartment_id: Optional[str] = Field(None, description="The OCID of the tenancy containing the user.")
     name: Optional[str] = Field(
         None,
         description="The name you assign to the user during creation. "
@@ -279,9 +269,7 @@ class User(BaseModel):
         "Does not have to be unique, and it's changeable.",
     )
     email: Optional[str] = Field(None, description="The email address of the user.")
-    email_verified: Optional[bool] = Field(
-        None, description="Whether the email address has been validated."
-    )
+    email_verified: Optional[bool] = Field(None, description="Whether the email address has been validated.")
     db_user_name: Optional[str] = Field(
         None,
         description="DB username of the DB credential. Has to be unique across the tenancy.",
@@ -297,9 +285,9 @@ class User(BaseModel):
         description="Date and time the user was created, in the format defined by RFC3339. "
         "Example: `2016-08-25T21:10:29.600Z`",
     )
-    lifecycle_state: Optional[
-        Literal["CREATING", "ACTIVE", "INACTIVE", "DELETING", "DELETED"]
-    ] = Field(None, description="The user's current state.")
+    lifecycle_state: Optional[Literal["CREATING", "ACTIVE", "INACTIVE", "DELETING", "DELETED"]] = Field(
+        None, description="The user's current state."
+    )
     inactive_status: Optional[int] = Field(
         None,
         description="Returned only if the user's `lifecycleState` is INACTIVE. "
@@ -360,15 +348,9 @@ class RegionSubscription(BaseModel):
     Pydantic model mirroring the fields of oci.identity.models.RegionSubscription.
     """
 
-    region_key: Optional[str] = Field(
-        None, description="The region key. Example: `PHX`"
-    )
-    region_name: Optional[str] = Field(
-        None, description="The region name. Example: `us-phoenix-1`"
-    )
-    status: Optional[str] = Field(
-        None, description="The status of the region subscription."
-    )
+    region_key: Optional[str] = Field(None, description="The region key. Example: `PHX`")
+    region_name: Optional[str] = Field(None, description="The region name. Example: `us-phoenix-1`")
+    status: Optional[str] = Field(None, description="The status of the region subscription.")
     is_home_region: Optional[bool] = Field(
         None, description="Indicates if the region is the home region for the tenancy."
     )

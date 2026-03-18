@@ -366,32 +366,6 @@ class TestRecoveryTools:
             assert len(result[0]["datapoints"]) == 2
             assert result[0]["datapoints"][0]["value"] == 1.0
 
-    @pytest.mark.asyncio
-    @patch("oracle.oci_recovery_mcp_server.server.list_all_compartments_internal")
-    async def test_get_compartment_by_name_tool(self, mock_list_all):
-        class DummyCompartment:
-            def __init__(self, name, id):
-                self.name = name
-                self.id = id
-
-            def __str__(self):
-                return f"Compartment(name={self.name}, id={self.id})"
-
-        comps = [
-            DummyCompartment("Other", "ocid1.compartment.oc1..other"),
-            DummyCompartment("Target", "ocid1.compartment.oc1..target"),
-        ]
-        mock_list_all.return_value = comps
-
-        async with Client(mcp) as client:
-            call_tool_result = await client.call_tool(
-                "get_compartment_by_name_tool", {"name": "Target"}
-            )
-            result = call_tool_result.structured_content["result"]
-            assert "Target" in result
-            assert "ocid1.compartment.oc1..target" in result
-
-
 class TestServer:
     @patch("oracle.oci_recovery_mcp_server.server.mcp.run")
     @patch("os.getenv")

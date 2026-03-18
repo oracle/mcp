@@ -4,6 +4,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from oracle.oci_cloud_mcp_server.server import (
+    _align_params_to_signature,
     _call_with_pagination_if_applicable,
     _coerce_params_to_oci_models,
     _construct_model_from_mapping,
@@ -11,6 +12,7 @@ from oracle.oci_cloud_mcp_server.server import (
     _resolve_model_class,
     _serialize_oci_data,
     _supports_pagination,
+    _to_model_attribute_map_keys,
     mcp,
 )
 
@@ -35,6 +37,29 @@ class TestCandidateSwaggerFilter:
         monkeypatch.setattr(_oci.util, "from_dict", raising_from_dict, raising=False)
 
         inst = _construct_model_from_mapping({"a": 1, "b": 2}, fake_models, ["MyDetails"])
+        assert isinstance(inst, MyDetails)
+        assert inst._data == {"a": 1}
+
+    def test_candidate_ctor_works_without_from_dict_symbol(self, monkeypatch):
+        class MyDetails:
+            def __init__(self, **kwargs):
+                self.swagger_types = {"a": "int"}
+                self.attribute_map = {"a": "a"}
+                self._data = dict(kwargs)
+
+        fake_models = SimpleNamespace(MyDetails=MyDetails)
+        from oracle.oci_cloud_mcp_server.server import oci as _oci
+
+        monkeypatch.setattr(
+            _oci.util,
+            "from_dict",
+            lambda cls, data: (_ for _ in ()).throw(Exception("unexpected")),  # noqa: ARG005
+            raising=False,
+        )
+
+        inst = _construct_model_from_mapping(
+            {"a": 1, "b": 2}, fake_models, ["MyDetails"]
+        )
         assert isinstance(inst, MyDetails)
         assert inst._data == {"a": 1}
 
@@ -108,6 +133,218 @@ class TestInvokePreNormalize:
         assert res["opc_request_id"] == "pre-norm-1"
         assert res["data"]["ok"] is True
         assert res["data"]["k"] == 42
+
+
+class TestNestedSnakeCaseNormalization:
+    def test_model_attribute_map_normalizes_nested_snake_case(self):
+        class PortRange:
+            def __init__(self, **kwargs):
+                self.swagger_types = {"min": "int", "max": "int"}
+                self.attribute_map = {"min": "min", "max": "max"}
+                self.kw = dict(kwargs)
+
+        class TcpOptions:
+            def __init__(self, **kwargs):
+                self.swagger_types = {"destination_port_range": "PortRange"}
+                self.attribute_map = {
+                    "destination_port_range": "destinationPortRange"
+                }
+                self.kw = dict(kwargs)
+
+        class IngressSecurityRule:
+            def __init__(self, **kwargs):
+                self.swagger_types = {
+                    "protocol": "str",
+                    "source": "str",
+                    "source_type": "str",
+                    "tcp_options": "TcpOptions",
+                }
+                self.attribute_map = {
+                    "protocol": "protocol",
+                    "source": "source",
+                    "source_type": "sourceType",
+                    "tcp_options": "tcpOptions",
+                }
+                self.kw = dict(kwargs)
+
+        class UpdateSecurityListDetails:
+            def __init__(self, **kwargs):
+                self.swagger_types = {
+                    "ingress_security_rules": "list[IngressSecurityRule]"
+                }
+                self.attribute_map = {
+                    "ingress_security_rules": "ingressSecurityRules"
+                }
+                self.kw = dict(kwargs)
+
+        fake_models = SimpleNamespace(
+            PortRange=PortRange,
+            TcpOptions=TcpOptions,
+            IngressSecurityRule=IngressSecurityRule,
+            UpdateSecurityListDetails=UpdateSecurityListDetails,
+        )
+
+        out = _to_model_attribute_map_keys(
+            {
+                "ingress_security_rules": [
+                    {
+                        "protocol": "6",
+                        "source": "0.0.0.0/0",
+                        "source_type": "CIDR_BLOCK",
+                        "tcp_options": {
+                            "destination_port_range": {"min": 22, "max": 22}
+                        },
+                    }
+                ]
+            },
+            UpdateSecurityListDetails,
+            fake_models,
+        )
+
+        assert "ingressSecurityRules" in out
+        rule = out["ingressSecurityRules"][0]
+        assert isinstance(rule, IngressSecurityRule)
+        assert "source_type" in rule.kw
+        assert "tcp_options" in rule.kw
+        assert isinstance(rule.kw["tcp_options"], TcpOptions)
+        assert "destination_port_range" in rule.kw["tcp_options"].kw
+
+    def test_model_attribute_map_normalizes_route_rule_network_entity_id(self):
+        class RouteRule:
+            swagger_types = {
+                "destination": "str",
+                "destination_type": "str",
+                "network_entity_id": "str",
+            }
+            attribute_map = {
+                "destination": "destination",
+                "destination_type": "destinationType",
+                "network_entity_id": "networkEntityId",
+            }
+
+        class UpdateRouteTableDetails:
+            swagger_types = {"route_rules": "list[RouteRule]"}
+            attribute_map = {"route_rules": "routeRules"}
+
+        fake_models = SimpleNamespace(
+            RouteRule=RouteRule, UpdateRouteTableDetails=UpdateRouteTableDetails
+        )
+
+        out = _to_model_attribute_map_keys(
+            {
+                "route_rules": [
+                    {
+                        "destination": "0.0.0.0/0",
+                        "destination_type": "CIDR_BLOCK",
+                        "network_entity_id": "ocid1.internetgateway.oc1..example",
+                    }
+                ]
+            },
+            UpdateRouteTableDetails,
+            fake_models,
+        )
+
+        assert "routeRules" in out
+        rr = out["routeRules"][0]
+        assert rr["destinationType"] == "CIDR_BLOCK"
+        assert rr["networkEntityId"] == "ocid1.internetgateway.oc1..example"
+
+    def test_model_attribute_map_normalizes_launch_instance_source_details(self):
+        class InstanceSourceViaImageDetails:
+            swagger_types = {"source_type": "str", "image_id": "str"}
+            attribute_map = {"source_type": "sourceType", "image_id": "imageId"}
+
+        class LaunchInstanceShapeConfigDetails:
+            swagger_types = {"ocpus": "float", "memory_in_gbs": "float"}
+            attribute_map = {"ocpus": "ocpus", "memory_in_gbs": "memoryInGBs"}
+
+        class CreateVnicDetails:
+            swagger_types = {"subnet_id": "str", "assign_public_ip": "bool"}
+            attribute_map = {"subnet_id": "subnetId", "assign_public_ip": "assignPublicIp"}
+
+        class LaunchInstanceDetails:
+            swagger_types = {
+                "availability_domain": "str",
+                "compartment_id": "str",
+                "shape": "str",
+                "shape_config": "LaunchInstanceShapeConfigDetails",
+                "source_details": "InstanceSourceViaImageDetails",
+                "create_vnic_details": "CreateVnicDetails",
+            }
+            attribute_map = {
+                "availability_domain": "availabilityDomain",
+                "compartment_id": "compartmentId",
+                "shape": "shape",
+                "shape_config": "shapeConfig",
+                "source_details": "sourceDetails",
+                "create_vnic_details": "createVnicDetails",
+            }
+
+        fake_models = SimpleNamespace(
+            LaunchInstanceDetails=LaunchInstanceDetails,
+            InstanceSourceViaImageDetails=InstanceSourceViaImageDetails,
+            LaunchInstanceShapeConfigDetails=LaunchInstanceShapeConfigDetails,
+            CreateVnicDetails=CreateVnicDetails,
+        )
+
+        out = _to_model_attribute_map_keys(
+            {
+                "availability_domain": "AD-1",
+                "compartment_id": "ocid1.compartment.oc1..example",
+                "shape": "VM.Standard.A1.Flex",
+                "shape_config": {"ocpus": 1.0, "memory_in_gbs": 6.0},
+                "source_details": {
+                    "source_type": "image",
+                    "image_id": "ocid1.image.oc1..example",
+                },
+                "create_vnic_details": {
+                    "subnet_id": "ocid1.subnet.oc1..example",
+                    "assign_public_ip": True,
+                },
+            },
+            LaunchInstanceDetails,
+            fake_models,
+        )
+
+        assert out["availabilityDomain"] == "AD-1"
+        assert out["compartmentId"] == "ocid1.compartment.oc1..example"
+        assert out["shapeConfig"]["memoryInGBs"] == 6.0
+        assert out["sourceDetails"]["sourceType"] == "image"
+        assert out["sourceDetails"]["imageId"] == "ocid1.image.oc1..example"
+        assert out["createVnicDetails"]["assignPublicIp"] is True
+
+    def test_model_attribute_map_uses_source_details_discriminator(self):
+        class InstanceSourceDetails:
+            swagger_types = {"source_type": "str"}
+            attribute_map = {"source_type": "sourceType"}
+
+        class InstanceSourceViaImageDetails:
+            swagger_types = {"source_type": "str", "image_id": "str"}
+            attribute_map = {"source_type": "sourceType", "image_id": "imageId"}
+
+        class LaunchInstanceDetails:
+            swagger_types = {"source_details": "InstanceSourceDetails"}
+            attribute_map = {"source_details": "sourceDetails"}
+
+        fake_models = SimpleNamespace(
+            InstanceSourceDetails=InstanceSourceDetails,
+            InstanceSourceViaImageDetails=InstanceSourceViaImageDetails,
+            LaunchInstanceDetails=LaunchInstanceDetails,
+        )
+
+        out = _to_model_attribute_map_keys(
+            {
+                "source_details": {
+                    "source_type": "image",
+                    "image_id": "ocid1.image.oc1..example",
+                }
+            },
+            LaunchInstanceDetails,
+            fake_models,
+        )
+
+        assert out["sourceDetails"]["sourceType"] == "image"
+        assert out["sourceDetails"]["imageId"] == "ocid1.image.oc1..example"
 
 
 class TestListClientOperationsImportErrorTool:
@@ -303,6 +540,338 @@ class TestCreateUpdateCandidateClasses:
         assert isinstance(out["update_vcn_details"], UpdateVcnDetails)
         assert out["update_vcn_details"].kw == {"a": 2}
 
+    def test_method_hint_prefers_create_model_over_generic(self, monkeypatch):
+        class VcnDetails:
+            def __init__(self, **kwargs):
+                raise Exception("generic should not be selected")
+
+        class CreateVcnDetails:
+            def __init__(self, **kwargs):
+                self.kw = dict(kwargs)
+
+        fake_models = SimpleNamespace(
+            VcnDetails=VcnDetails,
+            CreateVcnDetails=CreateVcnDetails,
+        )
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
+            lambda fqn: fake_models,
+        )
+
+        def create_vcn(create_vcn_details):  # noqa: ARG001
+            return None
+
+        out = _coerce_params_to_oci_models(
+            "x.y.Client",
+            "create_vcn",
+            {"vcn_details": {"a": 1}},
+            method=create_vcn,
+        )
+        assert isinstance(out["create_vcn_details"], CreateVcnDetails)
+        assert out["create_vcn_details"].kw == {"a": 1}
+
+
+class TestSchemaDrivenCoercion:
+    def test_update_route_table_uses_instance_level_model_schema(self, monkeypatch):
+        class RouteRule:
+            def __init__(self, **kwargs):
+                self.swagger_types = {
+                    "destination": "str",
+                    "destination_type": "str",
+                    "network_entity_id": "str",
+                }
+                self.attribute_map = {
+                    "destination": "destination",
+                    "destination_type": "destinationType",
+                    "network_entity_id": "networkEntityId",
+                }
+                self.kw = dict(kwargs)
+
+        class UpdateRouteTableDetails:
+            def __init__(self, **kwargs):
+                self.swagger_types = {"route_rules": "list[RouteRule]"}
+                self.attribute_map = {"route_rules": "routeRules"}
+                self.kw = dict(kwargs)
+
+        fake_models = SimpleNamespace(
+            RouteRule=RouteRule,
+            UpdateRouteTableDetails=UpdateRouteTableDetails,
+        )
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
+            lambda fqn: fake_models,
+        )
+
+        out = _coerce_params_to_oci_models(
+            "x.y.Client",
+            "update_route_table",
+            {
+                "update_route_table_details": {
+                    "route_rules": [
+                        {
+                            "destination": "0.0.0.0/0",
+                            "destination_type": "CIDR_BLOCK",
+                            "network_entity_id": "ocid1.internetgateway.oc1..example",
+                        }
+                    ]
+                }
+            },
+        )
+        details = out["update_route_table_details"]
+        assert isinstance(details, UpdateRouteTableDetails)
+        rr = details.kw["route_rules"][0]
+        if isinstance(rr, dict):
+            assert rr["destination_type"] == "CIDR_BLOCK"
+            assert rr["network_entity_id"] == "ocid1.internetgateway.oc1..example"
+        else:
+            assert isinstance(rr, RouteRule)
+            assert rr.kw["destination_type"] == "CIDR_BLOCK"
+            assert rr.kw["network_entity_id"] == "ocid1.internetgateway.oc1..example"
+
+    def test_update_route_table_with_real_sdk_models(self, monkeypatch):
+        from oci.core import models as core_models
+
+        # OCI SDK 2.160.0 stores swagger_types/attribute_map on instances.
+        assert not hasattr(core_models.UpdateRouteTableDetails, "swagger_types")
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
+            lambda fqn: core_models,
+        )
+
+        out = _coerce_params_to_oci_models(
+            "oci.core.VirtualNetworkClient",
+            "update_route_table",
+            {
+                "update_route_table_details": {
+                    "route_rules": [
+                        {
+                            "destination": "0.0.0.0/0",
+                            "destination_type": "CIDR_BLOCK",
+                            "network_entity_id": "ocid1.internetgateway.oc1..example",
+                        }
+                    ]
+                }
+            },
+        )
+        details = out["update_route_table_details"]
+        assert isinstance(details, core_models.UpdateRouteTableDetails)
+        rr = details.route_rules[0]
+        rr_neid = rr["network_entity_id"] if isinstance(rr, dict) else rr.network_entity_id
+        assert rr_neid == "ocid1.internetgateway.oc1..example"
+
+    def test_launch_instance_with_real_sdk_models_builds_typed_source_details(
+        self, monkeypatch
+    ):
+        from oci.core import models as core_models
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
+            lambda fqn: core_models,
+        )
+
+        out = _coerce_params_to_oci_models(
+            "oci.core.ComputeClient",
+            "launch_instance",
+            {
+                "launch_instance_details": {
+                    "availability_domain": "AD-1",
+                    "compartment_id": "ocid1.compartment.oc1..example",
+                    "shape": "VM.Standard.A1.Flex",
+                    "shape_config": {"ocpus": 1, "memory_in_gbs": 6},
+                    "source_details": {
+                        "source_type": "image",
+                        "image_id": "ocid1.image.oc1..example",
+                    },
+                    "create_vnic_details": {
+                        "subnet_id": "ocid1.subnet.oc1..example",
+                        "assign_public_ip": True,
+                    },
+                }
+            },
+        )
+
+        details = out["launch_instance_details"]
+        assert isinstance(details, core_models.LaunchInstanceDetails)
+        assert isinstance(details.shape_config, core_models.LaunchInstanceShapeConfigDetails)
+        assert isinstance(details.create_vnic_details, core_models.CreateVnicDetails)
+        assert isinstance(
+            details.source_details, core_models.InstanceSourceViaImageDetails
+        )
+        assert details.source_details.source_type == "image"
+
+    def test_update_route_table_plain_snake_case_coerces_nested_route_rules(
+        self, monkeypatch
+    ):
+        class RouteRule:
+            swagger_types = {
+                "destination": "str",
+                "destination_type": "str",
+                "network_entity_id": "str",
+            }
+            attribute_map = {
+                "destination": "destination",
+                "destination_type": "destinationType",
+                "network_entity_id": "networkEntityId",
+            }
+
+            def __init__(self, **kwargs):
+                self.kw = dict(kwargs)
+
+        class UpdateRouteTableDetails:
+            swagger_types = {"route_rules": "list[RouteRule]"}
+            attribute_map = {"route_rules": "routeRules"}
+
+            def __init__(self, **kwargs):
+                self.kw = dict(kwargs)
+
+        fake_models = SimpleNamespace(
+            RouteRule=RouteRule,
+            UpdateRouteTableDetails=UpdateRouteTableDetails,
+        )
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
+            lambda fqn: fake_models,
+        )
+        from oracle.oci_cloud_mcp_server.server import oci as _oci
+
+        monkeypatch.setattr(
+            _oci.util, "from_dict", lambda cls, data: cls(**data), raising=False
+        )
+
+        out = _coerce_params_to_oci_models(
+            "x.y.Client",
+            "update_route_table",
+            {
+                "update_route_table_details": {
+                    "route_rules": [
+                        {
+                            "destination": "0.0.0.0/0",
+                            "destination_type": "CIDR_BLOCK",
+                            "network_entity_id": "ocid1.internetgateway.oc1..example",
+                        }
+                    ]
+                }
+            },
+        )
+        details = out["update_route_table_details"]
+        assert isinstance(details, UpdateRouteTableDetails)
+        rr = details.kw["route_rules"][0]
+        if isinstance(rr, dict):
+            assert rr["destination_type"] == "CIDR_BLOCK"
+            assert rr["network_entity_id"] == "ocid1.internetgateway.oc1..example"
+        else:
+            assert isinstance(rr, RouteRule)
+            assert rr.kw["destination_type"] == "CIDR_BLOCK"
+            assert rr.kw["network_entity_id"] == "ocid1.internetgateway.oc1..example"
+
+    def test_launch_instance_plain_snake_case_no_explicit_model_hints(self, monkeypatch):
+        class LaunchInstanceShapeConfigDetails:
+            swagger_types = {"ocpus": "float", "memory_in_gbs": "float"}
+            attribute_map = {"ocpus": "ocpus", "memory_in_gbs": "memoryInGBs"}
+
+            def __init__(self, **kwargs):
+                self.kw = dict(kwargs)
+
+        class InstanceSourceViaImageDetails:
+            swagger_types = {"source_type": "str", "image_id": "str"}
+            attribute_map = {"source_type": "sourceType", "image_id": "imageId"}
+
+            def __init__(self, **kwargs):
+                self.kw = dict(kwargs)
+
+        class CreateVnicDetails:
+            swagger_types = {"subnet_id": "str", "assign_public_ip": "bool"}
+            attribute_map = {"subnet_id": "subnetId", "assign_public_ip": "assignPublicIp"}
+
+            def __init__(self, **kwargs):
+                self.kw = dict(kwargs)
+
+        class LaunchInstanceDetails:
+            swagger_types = {
+                "availability_domain": "str",
+                "compartment_id": "str",
+                "shape": "str",
+                "shape_config": "LaunchInstanceShapeConfigDetails",
+                "source_details": "InstanceSourceDetails",
+                "create_vnic_details": "CreateVnicDetails",
+                "metadata": "dict(str, str)",
+            }
+            attribute_map = {
+                "availability_domain": "availabilityDomain",
+                "compartment_id": "compartmentId",
+                "shape": "shape",
+                "shape_config": "shapeConfig",
+                "source_details": "sourceDetails",
+                "create_vnic_details": "createVnicDetails",
+                "metadata": "metadata",
+            }
+
+            def __init__(self, **kwargs):
+                self.kw = dict(kwargs)
+
+        fake_models = SimpleNamespace(
+            LaunchInstanceDetails=LaunchInstanceDetails,
+            LaunchInstanceShapeConfigDetails=LaunchInstanceShapeConfigDetails,
+            InstanceSourceViaImageDetails=InstanceSourceViaImageDetails,
+            CreateVnicDetails=CreateVnicDetails,
+        )
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
+            lambda fqn: fake_models,
+        )
+        from oracle.oci_cloud_mcp_server.server import oci as _oci
+
+        monkeypatch.setattr(
+            _oci.util, "from_dict", lambda cls, data: cls(**data), raising=False
+        )
+
+        out = _coerce_params_to_oci_models(
+            "x.y.Client",
+            "launch_instance",
+            {
+                "launch_instance_details": {
+                    "availability_domain": "AD-1",
+                    "compartment_id": "ocid1.compartment.oc1..example",
+                    "shape": "VM.Standard.A1.Flex",
+                    "shape_config": {"ocpus": 1, "memory_in_gbs": 6},
+                    "source_details": {
+                        "source_type": "image",
+                        "image_id": "ocid1.image.oc1..example",
+                    },
+                    "create_vnic_details": {
+                        "subnet_id": "ocid1.subnet.oc1..example",
+                        "assign_public_ip": True,
+                    },
+                    "metadata": {"ssh_authorized_keys": "ssh-rsa AAA..."},
+                }
+            },
+        )
+
+        details = out["launch_instance_details"]
+        assert isinstance(details, LaunchInstanceDetails)
+        shape_cfg = details.kw["shape_config"]
+        src = details.kw["source_details"]
+        vnic = details.kw["create_vnic_details"]
+
+        shape_mem = (
+            shape_cfg["memory_in_gbs"]
+            if isinstance(shape_cfg, dict)
+            else shape_cfg.kw["memory_in_gbs"]
+        )
+        src_type = src["source_type"] if isinstance(src, dict) else src.kw["source_type"]
+        src_img = src["image_id"] if isinstance(src, dict) else src.kw["image_id"]
+        assign_public = (
+            vnic["assign_public_ip"] if isinstance(vnic, dict) else vnic.kw["assign_public_ip"]
+        )
+
+        assert shape_mem == 6
+        assert src_type == "image"
+        assert src_img == "ocid1.image.oc1..example"
+        assert assign_public is True
+        if not isinstance(src, dict):
+            assert isinstance(src, InstanceSourceViaImageDetails)
+
 
 class TestListElementClassFqn:
     def test_list_item_with_class_fqn_constructs(self, monkeypatch):
@@ -338,6 +907,21 @@ class TestListPassThroughNonDict:
     def test_list_of_scalars_passthrough(self):
         out = _coerce_params_to_oci_models("x.y.Client", "op", {"items": [1, 2, 3]})
         assert out["items"] == [1, 2, 3]
+
+
+class TestSignatureAlignment:
+    def test_align_maps_single_unknown_id_to_single_expected_id(self):
+        def delete_internet_gateway(ig_id, **kwargs):  # noqa: ARG001
+            return None
+
+        out = _align_params_to_signature(
+            delete_internet_gateway,
+            "delete_internet_gateway",
+            {"internet_gateway_id": "ocid1.internetgateway.oc1..example"},
+        )
+        assert "ig_id" in out
+        assert out["ig_id"] == "ocid1.internetgateway.oc1..example"
+        assert "internet_gateway_id" not in out
 
 
 class TestFqnCtorFallback:
@@ -442,6 +1026,256 @@ class TestParentPrefixAlt:
         assert isinstance(inst, InstanceDetails)
         assert isinstance(inst._data["shape_config"], InstanceShapeConfig)
         assert inst._data["shape_config"]._data["ocpus"] == 1
+
+    def test_parent_prefix_preferred_over_generic_nested_candidate(
+        self, monkeypatch
+    ):
+        class LaunchInstanceDetails:
+            swagger_types = {"shape_config": "LaunchInstanceShapeConfigDetails"}
+            attribute_map = {"shape_config": "shapeConfig"}
+
+            def __init__(self, **kwargs):
+                self._data = dict(kwargs)
+
+        class ShapeConfig:
+            def __init__(self, **kwargs):
+                raise Exception("generic should not be used")
+
+        class LaunchInstanceShapeConfigDetails:
+            def __init__(self, **kwargs):
+                self._data = dict(kwargs)
+
+        fake_models = SimpleNamespace(
+            LaunchInstanceDetails=LaunchInstanceDetails,
+            ShapeConfig=ShapeConfig,
+            LaunchInstanceShapeConfigDetails=LaunchInstanceShapeConfigDetails,
+        )
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
+            lambda fqn: fake_models,
+        )
+        from oracle.oci_cloud_mcp_server.server import oci as _oci
+
+        monkeypatch.setattr(
+            _oci.util, "from_dict", lambda cls, data: cls(**data), raising=False
+        )
+
+        out = _coerce_params_to_oci_models(
+            "x.y.Fake",
+            "launch_instance",
+            {"launch_instance_details": {"shape_config": {"ocpus": 1}}},
+        )
+        inst = out["launch_instance_details"]
+        assert isinstance(inst, LaunchInstanceDetails)
+        shape_cfg = inst._data["shape_config"]
+        if isinstance(shape_cfg, dict):
+            assert shape_cfg["ocpus"] == 1
+        else:
+            assert isinstance(shape_cfg, LaunchInstanceShapeConfigDetails)
+            assert shape_cfg._data["ocpus"] == 1
+
+    def test_parent_prefix_avoids_generic_shape_config_in_construct_with_class(
+        self, monkeypatch
+    ):
+        class LaunchInstanceDetails:
+            swagger_types = {"shape_config": "LaunchInstanceShapeConfigDetails"}
+            attribute_map = {"shape_config": "shapeConfig"}
+
+            def __init__(self, **kwargs):
+                self._data = dict(kwargs)
+
+        class ShapeConfig:
+            # Generic class that accepts kwargs; prior behavior could select this,
+            # leading to malformed launch payloads for real SDK requests.
+            def __init__(self, **kwargs):
+                self._data = dict(kwargs)
+
+        class LaunchInstanceShapeConfigDetails:
+            swagger_types = {"ocpus": "float"}
+            attribute_map = {"ocpus": "ocpus"}
+
+            def __init__(self, **kwargs):
+                self._data = dict(kwargs)
+
+        fake_models = SimpleNamespace(
+            LaunchInstanceDetails=LaunchInstanceDetails,
+            ShapeConfig=ShapeConfig,
+            LaunchInstanceShapeConfigDetails=LaunchInstanceShapeConfigDetails,
+        )
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
+            lambda fqn: fake_models,
+        )
+        from oracle.oci_cloud_mcp_server.server import _construct_model_with_class
+        from oracle.oci_cloud_mcp_server.server import oci as _oci
+
+        monkeypatch.setattr(
+            _oci.util, "from_dict", lambda cls, data: cls(**data), raising=False
+        )
+
+        inst = _construct_model_with_class(
+            {"shape_config": {"ocpus": 1}},
+            LaunchInstanceDetails,
+            fake_models,
+        )
+        assert isinstance(inst, LaunchInstanceDetails)
+        shape_cfg = inst._data["shape_config"]
+        assert isinstance(shape_cfg, LaunchInstanceShapeConfigDetails)
+        assert shape_cfg._data["ocpus"] == 1
+
+    def test_source_details_stays_mapping_for_parent_discriminator_path(
+        self, monkeypatch
+    ):
+        class LaunchInstanceDetails:
+            swagger_types = {"source_details": "InstanceSourceDetails"}
+            attribute_map = {"source_details": "sourceDetails"}
+
+            def __init__(self, **kwargs):
+                self._data = dict(kwargs)
+
+        class SourceDetails:
+            # intentionally wrong candidate; this should not be chosen for source_details
+            def __init__(self, **kwargs):
+                self._data = dict(kwargs)
+
+        fake_models = SimpleNamespace(
+            LaunchInstanceDetails=LaunchInstanceDetails,
+            SourceDetails=SourceDetails,
+        )
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
+            lambda fqn: fake_models,
+        )
+        from oracle.oci_cloud_mcp_server.server import oci as _oci
+
+        monkeypatch.setattr(
+            _oci.util, "from_dict", lambda cls, data: cls(**data), raising=False
+        )
+
+        out = _coerce_params_to_oci_models(
+            "x.y.Fake",
+            "launch_instance",
+            {
+                "launch_instance_details": {
+                    "source_details": {
+                        "source_type": "image",
+                        "image_id": "ocid1.image.oc1..example",
+                    }
+                }
+            },
+        )
+        inst = out["launch_instance_details"]
+        assert isinstance(inst, LaunchInstanceDetails)
+        src = (
+            inst._data["sourceDetails"]
+            if "sourceDetails" in inst._data
+            else inst._data["source_details"]
+        )
+        assert isinstance(src, dict)
+        assert src["source_type"] == "image"
+        assert src["image_id"] == "ocid1.image.oc1..example"
+
+    def test_construct_model_with_class_keeps_camelcase_keys_via_normalization(
+        self, monkeypatch
+    ):
+        class CreateSubnetDetails:
+            swagger_types = {
+                "compartment_id": "str",
+                "vcn_id": "str",
+                "dns_label": "str",
+                "prohibit_public_ip_on_vnic": "bool",
+            }
+            attribute_map = {
+                "compartment_id": "compartmentId",
+                "vcn_id": "vcnId",
+                "dns_label": "dnsLabel",
+                "prohibit_public_ip_on_vnic": "prohibitPublicIpOnVnic",
+            }
+
+            def __init__(self, **kwargs):
+                self._data = dict(kwargs)
+
+        fake_models = SimpleNamespace(CreateSubnetDetails=CreateSubnetDetails)
+        from oracle.oci_cloud_mcp_server.server import _construct_model_with_class
+        from oracle.oci_cloud_mcp_server.server import oci as _oci
+
+        monkeypatch.setattr(
+            _oci.util, "from_dict", lambda cls, data: cls(**data), raising=False
+        )
+
+        inst = _construct_model_with_class(
+            {
+                "compartment_id": "ocid1.compartment.oc1..x",
+                "vcnId": "ocid1.vcn.oc1..x",
+                "dnsLabel": "edge1",
+                "prohibitPublicIpOnVnic": False,
+            },
+            CreateSubnetDetails,
+            fake_models,
+        )
+        assert isinstance(inst, CreateSubnetDetails)
+        assert inst._data["compartment_id"] == "ocid1.compartment.oc1..x"
+        assert inst._data["vcn_id"] == "ocid1.vcn.oc1..x"
+        assert inst._data["dns_label"] == "edge1"
+        assert inst._data["prohibit_public_ip_on_vnic"] is False
+
+    def test_create_subnet_alias_with_mixed_key_styles_coerces_model(self, monkeypatch):
+        class CreateSubnetDetails:
+            swagger_types = {
+                "compartment_id": "str",
+                "vcn_id": "str",
+                "cidr_block": "str",
+                "display_name": "str",
+                "dns_label": "str",
+                "prohibit_public_ip_on_vnic": "bool",
+            }
+            attribute_map = {
+                "compartment_id": "compartmentId",
+                "vcn_id": "vcnId",
+                "cidr_block": "cidrBlock",
+                "display_name": "displayName",
+                "dns_label": "dnsLabel",
+                "prohibit_public_ip_on_vnic": "prohibitPublicIpOnVnic",
+            }
+
+            def __init__(self, **kwargs):
+                self._data = dict(kwargs)
+
+        fake_models = SimpleNamespace(CreateSubnetDetails=CreateSubnetDetails)
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
+            lambda fqn: fake_models,
+        )
+        from oracle.oci_cloud_mcp_server.server import oci as _oci
+
+        monkeypatch.setattr(
+            _oci.util, "from_dict", lambda cls, data: cls(**data), raising=False
+        )
+
+        out = _coerce_params_to_oci_models(
+            "x.y.Client",
+            "create_subnet",
+            {
+                "subnet_details": {
+                    "compartment_id": "ocid1.compartment.oc1..x",
+                    "vcnId": "ocid1.vcn.oc1..x",
+                    "cidr_block": "10.0.1.0/24",
+                    "display_name": "edge-subnet",
+                    "dnsLabel": "edge1",
+                    "prohibitPublicIpOnVnic": False,
+                }
+            },
+        )
+
+        details = out["create_subnet_details"]
+        assert isinstance(details, CreateSubnetDetails)
+        assert details._data["compartment_id"] == "ocid1.compartment.oc1..x"
+        assert details._data["vcn_id"] == "ocid1.vcn.oc1..x"
+        assert details._data["cidr_block"] == "10.0.1.0/24"
+        assert details._data["display_name"] == "edge-subnet"
+        assert details._data["dns_label"] == "edge1"
+        assert details._data["prohibit_public_ip_on_vnic"] is False
 
 
 class TestDunderMainExecution:
@@ -624,6 +1458,19 @@ class TestSerializeToDictReturnsNonJsonable:
         _json.dumps(out)
         assert isinstance(out, str)
         assert "P" in out
+
+    def test_serialize_model_when_to_dict_returns_original_model(self, monkeypatch):
+        from oracle.oci_cloud_mcp_server.server import oci as _oci
+
+        class M:
+            def __init__(self):
+                self.swagger_types = {"a": "str"}
+                self.attribute_map = {"a": "a"}
+                self.a = "x"
+
+        monkeypatch.setattr(_oci.util, "to_dict", lambda data: data, raising=False)
+        out = _serialize_oci_data(M())
+        assert out == {"a": "x"}
 
 
 class TestInvokeGenericException:
@@ -884,4 +1731,96 @@ class TestSupportsPaginationHeuristics:
             """
             return None
 
-        assert _supports_pagination(get_zone_records, "get_zone_records") is True
+        assert _supports_pagination(get_zone_records, "list_zone_records") is True
+
+    def test_supports_pagination_docstring_only_false_for_create(self):
+        def create_vcn(**kwargs):  # noqa: ARG001
+            """
+            Create VCN.
+
+            :param str page: mentioned in docs but not applicable
+            :param int limit: mentioned in docs but not applicable
+            """
+            return None
+
+        assert _supports_pagination(create_vcn, "create_vcn") is False
+
+
+class TestPaginationFallback:
+    def test_paginator_failure_falls_back_to_direct_call(self, monkeypatch):
+        class FakeResponse:
+            def __init__(self):
+                self.data = {"ok": True}
+                self.headers = {"opc-request-id": "fallback-1"}
+
+        def list_stuff(**kwargs):  # noqa: ARG001
+            return FakeResponse()
+
+        from oracle.oci_cloud_mcp_server.server import oci as _oci
+
+        def boom(*args, **kwargs):  # noqa: ARG001
+            raise AttributeError("object has no attribute items")
+
+        monkeypatch.setattr(
+            _oci.pagination, "list_call_get_all_results", boom, raising=False
+        )
+
+        data, opc = _call_with_pagination_if_applicable(list_stuff, {}, "list_stuff")
+        assert data == {"ok": True}
+        assert opc == "fallback-1"
+
+    def test_paginator_failure_falls_back_for_create_operation(self, monkeypatch):
+        class FakeResponse:
+            def __init__(self):
+                self.data = {"id": "ocid1.vcn.oc1..example"}
+                self.headers = {"opc-request-id": "fallback-create-1"}
+
+        def create_vcn(**kwargs):  # noqa: ARG001
+            return FakeResponse()
+
+        from oracle.oci_cloud_mcp_server.server import oci as _oci
+
+        def boom(*args, **kwargs):  # noqa: ARG001
+            raise AttributeError("'Vcn' object has no attribute 'items'")
+
+        monkeypatch.setattr(
+            _oci.pagination, "list_call_get_all_results", boom, raising=False
+        )
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._supports_pagination",
+            lambda method, op: True,  # noqa: ARG005
+        )
+
+        data, opc = _call_with_pagination_if_applicable(create_vcn, {}, "create_vcn")
+        assert data["id"] == "ocid1.vcn.oc1..example"
+        assert opc == "fallback-create-1"
+
+    def test_create_operation_never_uses_paginator_heuristics(self, monkeypatch):
+        calls = {"paginator": 0}
+
+        class FakeResponse:
+            def __init__(self):
+                self.data = {"id": "ocid1.vcn.oc1..example"}
+                self.headers = {"opc-request-id": "non-paged-create-1"}
+
+        def create_vcn(**kwargs):  # noqa: ARG001
+            return FakeResponse()
+
+        from oracle.oci_cloud_mcp_server.server import oci as _oci
+
+        def paginator(*args, **kwargs):  # noqa: ARG001
+            calls["paginator"] += 1
+            raise AssertionError("paginator should not be used for create operations")
+
+        monkeypatch.setattr(
+            _oci.pagination, "list_call_get_all_results", paginator, raising=False
+        )
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._extract_expected_kwargs_from_source",
+            lambda method: {"page", "limit"},  # noqa: ARG005
+        )
+
+        data, opc = _call_with_pagination_if_applicable(create_vcn, {}, "create_vcn")
+        assert data["id"] == "ocid1.vcn.oc1..example"
+        assert opc == "non-paged-create-1"
+        assert calls["paginator"] == 0

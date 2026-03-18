@@ -5,6 +5,7 @@
 This server provides tools to interact with Oracle Cloud Infrastructure (OCI) services using the official OCI Python SDK directly (no OCI CLI subprocess calls). It exposes generic tools that let you:
 - Invoke any OCI SDK client operation by fully-qualified client class and method name
 - Discover available operations for a given OCI client
+- Inspect a specific client operation and return expected kwargs
 
 ## Running the server
 
@@ -26,6 +27,8 @@ ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.o
 | --- | --- |
 | invoke_oci_api | Invoke an OCI Python SDK API via client and operation name. Example: client_fqn="oci.core.ComputeClient", operation="list_instances", params={"compartment_id": "ocid1.compartment.oc1..."} |
 | list_client_operations | List public callable operations for a given OCI client class (by fully-qualified name). |
+| get_client_operation_details | Get details for one operation on a client, including `expected_kwargs` when available from SDK source. |
+| list_oci_clients | List all available OCI Python SDK clients discoverable in the current environment. |
 
 ### invoke_oci_api
 
@@ -58,8 +61,63 @@ Response (shape):
 ### list_client_operations
 
 - client_fqn: Fully-qualified client class name, e.g. `oci.identity.IdentityClient`
+- name_regex (optional): Regex to filter operation names (Python `re` syntax; uses `re.search`).
 
 Returns a list of operations with a short summary extracted from docstrings when available.
+
+Example usage (filtering only list operations):
+```json
+{
+  "client_fqn": "oci.core.ComputeClient",
+  "name_regex": "^list_"
+}
+```
+
+### list_oci_clients
+
+Returns a list of OCI SDK client classes available in the installed `oci` Python SDK.
+
+Example usage:
+```json
+{}
+```
+
+Response (shape):
+```json
+{
+  "count": 2,
+  "clients": [
+    { "client_fqn": "oci.core.ComputeClient", "module": "oci.core", "class": "ComputeClient" },
+    { "client_fqn": "oci.identity.IdentityClient", "module": "oci.identity", "class": "IdentityClient" }
+  ]
+}
+```
+
+### get_client_operation_details
+
+- client_fqn: Fully-qualified client class name, e.g. `oci.core.ComputeClient`
+- operation: Client method/operation, e.g. `list_instances`
+
+Returns operation metadata plus `expected_kwargs` parsed from SDK method source when available.
+
+Example usage:
+```json
+{
+  "client_fqn": "oci.core.ComputeClient",
+  "operation": "list_instances"
+}
+```
+
+Response (shape):
+```json
+{
+  "client_fqn": "oci.core.ComputeClient",
+  "operation": "list_instances",
+  "summary": "Lists the instances in the specified compartment.",
+  "params": "(self, compartment_id, **kwargs)",
+  "expected_kwargs": ["limit", "opc_request_id", "page", "sort_by", "sort_order"]
+}
+```
 
 ## Passing complex model parameters
 
@@ -98,6 +156,52 @@ This server now automatically constructs SDK model objects from JSON parameters 
 
 - Nested dictionaries and lists inside such parameters are recursively coerced. For lists that do not obviously
   map to a model type, you can provide explicit hints.
+- Nested fields can be provided in Python SDK snake_case; the server normalizes them to OCI wire keys
+  (for example: `source_type -> sourceType`, `tcp_options -> tcpOptions`,
+  `destination_port_range -> destinationPortRange`, `instance_options -> instanceOptions`)
+  before model deserialization.
+
+Common nested update examples:
+
+```json
+{
+  "client_fqn": "oci.core.ComputeClient",
+  "operation": "update_instance",
+  "params": {
+    "instance_id": "ocid1.instance.oc1..exampleuniqueID",
+    "update_instance_details": {
+      "instance_options": {
+        "are_legacy_imds_endpoints_disabled": true
+      }
+    }
+  }
+}
+```
+
+```json
+{
+  "client_fqn": "oci.core.VirtualNetworkClient",
+  "operation": "update_security_list",
+  "params": {
+    "security_list_id": "ocid1.securitylist.oc1..exampleuniqueID",
+    "update_security_list_details": {
+      "ingress_security_rules": [
+        {
+          "protocol": "6",
+          "source": "0.0.0.0/0",
+          "source_type": "CIDR_BLOCK",
+          "tcp_options": {
+            "destination_port_range": {
+              "min": 22,
+              "max": 22
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+```
 
 Explicit model hints (optional):
 - __model: Simple class name in the client's models module (e.g., "CreateVcnDetails")

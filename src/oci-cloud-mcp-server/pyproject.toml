@@ -11,7 +11,7 @@ authors = [
 ]
 dependencies = [
     "fastmcp==2.14.2",
-    "oci==2.160.0"
+    "oci>=2.160.0"
 ]
 
 classifiers = [

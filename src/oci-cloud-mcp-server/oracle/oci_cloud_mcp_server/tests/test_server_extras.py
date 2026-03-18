@@ -14,11 +14,14 @@ from oracle.oci_cloud_mcp_server.server import (
     _ADDITIONAL_UA,
     _align_params_to_signature,
     _coerce_params_to_oci_models,
+    _discover_oci_clients,
     _get_config_and_signer,
     _import_client,
     _import_models_module_from_client_fqn,
     _serialize_oci_data,
+    get_client_operation_details,
     list_client_operations,
+    list_oci_clients,
     main,
     mcp,
 )
@@ -704,6 +707,52 @@ class TestListClientOperationsDirect:
         assert "operations" in res2
 
 
+class TestListClientOperationsRegexFilter:
+    @pytest.mark.asyncio
+    async def test_name_regex_filters_results(self, monkeypatch):
+        class Klass:
+            def list_things(self):
+                """List things."""
+
+            def get_thing(self):
+                """Get thing."""
+
+        fake_module = SimpleNamespace(Klass=Klass)
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module
+        )
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "list_client_operations",
+                    {"client_fqn": "x.y.Klass", "name_regex": "^list_"},
+                )
+            ).data
+
+        assert res["name_regex"] == "^list_"
+        names = [op["name"] for op in res["operations"]]
+        assert names == ["list_things"]
+
+    @pytest.mark.asyncio
+    async def test_invalid_name_regex_raises_tool_error(self, monkeypatch):
+        class Klass:
+            def list_things(self):
+                return 1
+
+        fake_module = SimpleNamespace(Klass=Klass)
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool(
+                    "list_client_operations",
+                    {"client_fqn": "x.y.Klass", "name_regex": "["},
+                )
+
+
 class TestConstructModelFallback:
     def test_construct_model_returns_mapping_when_no_candidates(self):
         from oracle.oci_cloud_mcp_server.server import _construct_model_from_mapping
@@ -835,6 +884,66 @@ class TestListClientOperationsDetails:
         entry = next(o for o in ops if o["name"] == "foo")
         assert "summary" in entry and "Doc first line." in entry["summary"]
         assert "params" in entry and "(" in entry["params"] and ")" in entry["params"]
+
+
+class TestGetClientOperationDetails:
+    @pytest.mark.asyncio
+    async def test_returns_expected_kwargs_when_present(self, monkeypatch):
+        class Klass:
+            def list_things(self, compartment_id):  # noqa: ARG002
+                """List things."""
+
+        fake_module = SimpleNamespace(Klass=Klass)
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module
+        )
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._extract_expected_kwargs_from_source",
+            lambda member: {"page", "limit", "opc_request_id"},
+        )
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "get_client_operation_details",
+                    {"client_fqn": "x.y.Klass", "operation": "list_things"},
+                )
+            ).data
+
+        assert res["client_fqn"] == "x.y.Klass"
+        assert res["operation"] == "list_things"
+        assert res["summary"] == "List things."
+        assert "(" in res["params"] and ")" in res["params"]
+        assert res["expected_kwargs"] == ["limit", "opc_request_id", "page"]
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_expected_kwargs_when_source_unavailable(self, monkeypatch):
+        class Klass:
+            def get_thing(self, id):  # noqa: ARG002
+                """Get thing."""
+
+        fake_module = SimpleNamespace(Klass=Klass)
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module
+        )
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._extract_expected_kwargs_from_source",
+            lambda member: None,
+        )
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "get_client_operation_details",
+                    {"client_fqn": "x.y.Klass", "operation": "get_thing"},
+                )
+            ).data
+
+        assert res["expected_kwargs"] == []
+
+    def test_direct_invalid_fqn_raises(self):
+        with pytest.raises(Exception):
+            get_client_operation_details("InvalidFqn", "list_things")
 
 
 class TestFromDictSuccess:
@@ -1145,6 +1254,125 @@ class TestSerializeToDictFailure:
         s = _serialize_oci_data(Z())
         assert isinstance(s, str)
         assert "Z" in s
+
+
+class TestDiscoverOciClients:
+    def test_discovers_client_classes_and_sorts(self, monkeypatch):
+        # Fake pkgutil.walk_packages output (matching `_client` modules)
+        class ModInfo:
+            def __init__(self, name):
+                self.name = name
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.pkgutil.walk_packages",
+            lambda path, prefix=None: [
+                ModInfo("oci.core.compute_client"),
+                ModInfo("oci.core.virtual_network_client"),
+                ModInfo("oci.identity.identity_client"),
+                ModInfo("oci.identity.models"),  # not a _client module
+            ],
+        )
+
+        class ComputeClient:
+            __module__ = "oci.core"
+
+            def __init__(self, config, **kwargs):
+                self.base_client = object()
+
+        class VirtualNetworkClient:
+            __module__ = "oci.core"
+
+            def __init__(self, config, **kwargs):
+                self.base_client = object()
+
+        class IdentityClient:
+            __module__ = "oci.identity"
+
+            def __init__(self, config, **kwargs):
+                self.base_client = object()
+
+        class ImportedClient:
+            __module__ = "oci.other"
+
+            def __init__(self, config, **kwargs):
+                self.not_base_client = object()
+
+        def fake_import(name):
+            if name == "oci.core.compute_client":
+                return SimpleNamespace(
+                    ComputeClient=ComputeClient,
+                    ImportedClient=ImportedClient,
+                    SomethingElse=object,
+                )
+            if name == "oci.core.virtual_network_client":
+                return SimpleNamespace(VirtualNetworkClient=VirtualNetworkClient)
+            if name == "oci.identity.identity_client":
+                return SimpleNamespace(IdentityClient=IdentityClient)
+            raise ImportError("nope")
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module", fake_import
+        )
+
+        out = _discover_oci_clients()
+        fqns = [c["client_fqn"] for c in out]
+
+        # should include three real clients
+        assert "oci.core.ComputeClient" in fqns
+        assert "oci.core.VirtualNetworkClient" in fqns
+        assert "oci.identity.IdentityClient" in fqns
+        # should NOT include client-like classes without composed base_client support
+        assert "oci.core.ImportedClient" not in fqns
+        # should be sorted
+        assert fqns == sorted(fqns)
+
+    def test_import_failures_are_ignored(self, monkeypatch):
+        class ModInfo:
+            def __init__(self, name):
+                self.name = name
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.pkgutil.walk_packages",
+            lambda path, prefix=None: [ModInfo("oci.broken_client")],
+        )
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module",
+            lambda name: (_ for _ in ()).throw(ImportError("boom")),
+        )
+
+        out = _discover_oci_clients()
+        assert out == []
+
+
+class TestListOciClientsTool:
+    @pytest.mark.asyncio
+    async def test_tool_returns_count_and_clients(self, monkeypatch):
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._discover_oci_clients",
+            lambda: [
+                {
+                    "client_fqn": "oci.core.ComputeClient",
+                    "module": "oci.core",
+                    "class": "ComputeClient",
+                },
+                {
+                    "client_fqn": "oci.identity.IdentityClient",
+                    "module": "oci.identity",
+                    "class": "IdentityClient",
+                },
+            ],
+        )
+
+        async with Client(mcp) as client:
+            res = (await client.call_tool("list_oci_clients", {})).data
+
+        assert res["count"] == 2
+        assert isinstance(res["clients"], list)
+        assert res["clients"][0]["client_fqn"] == "oci.core.ComputeClient"
+
+    # NOTE: `@mcp.tool` wraps functions into FastMCP `FunctionTool` objects,
+    # which are not directly callable. We validate tool behavior via the
+    # FastMCP client in async tests above.
 
 
 class TestInvokeUnexpectedKwOther:

@@ -18,12 +18,12 @@ DEFAULT_URL = "http://127.0.0.1:8888/mcp"
 
 #compartment = JMS-TEST-CANARY
 DEFAULT_COMPARTMENT_ID = (
-    "ocid1.compartment.oc1..aaaaaaaamfgnvfzwcbbhn7ktlulig2whera32rwrvvmfkkx3svic4geffgxq"
+    ""
 )
 
 #fleet name = auto-ol8-epp-test
 DEFAULT_FLEET_ID = (
-    "ocid1.jmsfleet.oc1.iad.amaaaaaa6cijguiaukoncqzg33zxlz5zcfzw7hsrfrrbceg7vf7fe2dq73nq"
+    ""
 )
 
 TOOL_ORDER = [

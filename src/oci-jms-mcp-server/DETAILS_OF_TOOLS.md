@@ -1,6 +1,6 @@
 # JMS Tool Details
 
-This file documents the 9 tools exposed by `oracle.oci-jms-mcp-server`.
+This file documents the 12 tools exposed by `oracle.oci-jms-mcp-server`.
 
 Use this as a quick reference for:
 
@@ -513,6 +513,161 @@ Call the `summarize_managed_instance_usage` tool with:
   "sort_order": "DESC",
   "sort_by": "timeLastSeen",
   "limit": 25
+}
+```
+
+---
+
+## 10. `summarize_fleet_health`
+
+Summarizes fleet health using fleet diagnoses and fleet errors.
+
+### Inputs
+
+```json
+{
+  "fleet_id": "ocid1.jmsfleet..."
+}
+```
+
+### Output
+
+Returns a `FleetHealthSummary` object:
+
+```json
+{
+  "fleet_id": "ocid1.jmsfleet...",
+  "diagnosis_count": 2,
+  "fleet_errors": [
+    {
+      "fleet_id": "ocid1.jmsfleet...",
+      "fleet_name": "Test Fleet",
+      "errors": [
+        {
+          "reason": "Agent connectivity failure",
+          "details": "Critical agent reporting failure",
+          "time_last_seen": "2026-03-18T12:00:00Z"
+        }
+      ]
+    }
+  ],
+  "top_issue_categories": ["Inventory scan issue", "Agent connectivity failure"],
+  "overall_health_status": "CRITICAL",
+  "recommended_next_checks": [
+    "Review fleet agent configuration and inventory collection settings.",
+    "Check JMS notices for any known service-side issues or advisories."
+  ]
+}
+```
+
+### Demo Query
+
+```text
+Call the `summarize_fleet_health` tool with:
+{
+  "fleet_id": "ocid1.jmsfleet.oc1.iad.example"
+}
+```
+
+---
+
+## 11. `get_fleet_health_diagnostics`
+
+Gets detailed fleet diagnoses and fleet errors for drill-down troubleshooting.
+
+### Inputs
+
+```json
+{
+  "fleet_id": "ocid1.jmsfleet..."
+}
+```
+
+### Output
+
+Returns a `FleetHealthDiagnostics` object:
+
+```json
+{
+  "fleet_id": "ocid1.jmsfleet...",
+  "diagnoses": [
+    {
+      "resource_id": "ocid1.jmsfleet...",
+      "resource_diagnosis": "Inventory scan issue",
+      "resource_state": "FAILED",
+      "resource_type": "JMS_FLEET"
+    }
+  ],
+  "fleet_errors": [
+    {
+      "fleet_id": "ocid1.jmsfleet...",
+      "fleet_name": "Test Fleet",
+      "errors": [
+        {
+          "reason": "Agent connectivity failure",
+          "details": "Critical agent reporting failure",
+          "time_last_seen": "2026-03-18T12:00:00Z"
+        }
+      ]
+    }
+  ],
+  "diagnosis_count": 1,
+  "fleet_error_count": 1
+}
+```
+
+### Demo Query
+
+```text
+Call the `get_fleet_health_diagnostics` tool with:
+{
+  "fleet_id": "ocid1.jmsfleet.oc1.iad.example"
+}
+```
+
+---
+
+## 12. `list_jms_notices`
+
+Lists JMS announcements and notices.
+
+### Inputs
+
+```json
+{
+  "summary_contains": "maintenance",
+  "time_start": "2026-03-01T00:00:00Z",
+  "time_end": "2026-03-10T00:00:00Z",
+  "limit": 10,
+  "sort_order": "DESC",
+  "sort_by": "timeReleased"
+}
+```
+
+### Output
+
+Returns a list of `JmsNotice` objects:
+
+```json
+[
+  {
+    "key": "announcement-1",
+    "summary": "Planned JMS maintenance",
+    "time_released": "2026-03-18T12:00:00Z",
+    "url": "https://example.com"
+  }
+]
+```
+
+### Demo Query
+
+```text
+Call the `list_jms_notices` tool with:
+{
+  "summary_contains": "maintenance",
+  "sort_order": "DESC",
+  "sort_by": "timeReleased",
+  "limit": 10
 }
 ```
 

@@ -5,6 +5,7 @@ https://oss.oracle.com/licenses/upl.
 """
 
 import os
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, create_autospec, mock_open, patch
 
 import fastmcp.exceptions
@@ -604,6 +605,222 @@ class TestJmsTools:
                 "LINUX"
             ]
             assert "time_end" not in mock_client.summarize_managed_instance_usage.call_args.kwargs
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_summarize_fleet_health_with_issues(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        diagnoses_page = create_autospec(oci.response.Response)
+        diagnoses_page.data = oci.jms.models.FleetDiagnosisCollection(
+            items=[
+                oci.jms.models.FleetDiagnosisSummary(
+                    resource_id="resource1",
+                    resource_diagnosis="Inventory scan issue",
+                )
+            ]
+        )
+        diagnoses_page.has_next_page = False
+        diagnoses_page.next_page = None
+
+        error_detail = oci.jms.models.FleetErrorDetails(
+            details="Critical agent reporting failure",
+            reason="Agent connectivity failure",
+            time_last_seen=datetime.now(UTC),
+        )
+        fleet_errors_page = create_autospec(oci.response.Response)
+        fleet_errors_page.data = oci.jms.models.FleetErrorCollection(
+            items=[
+                oci.jms.models.FleetErrorSummary(
+                    fleet_id="fleet1",
+                    fleet_name="Fleet 1",
+                    errors=[error_detail],
+                )
+            ]
+        )
+        fleet_errors_page.has_next_page = False
+        fleet_errors_page.next_page = None
+
+        mock_client.list_fleet_diagnoses.return_value = diagnoses_page
+        mock_client.list_fleet_errors.return_value = fleet_errors_page
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool("summarize_fleet_health", {"fleet_id": "fleet1"})
+            ).structured_content
+
+            assert result["fleet_id"] == "fleet1"
+            assert result["diagnosis_count"] == 1
+            assert result["overall_health_status"] == "CRITICAL"
+            assert "Inventory scan issue" in result["top_issue_categories"]
+            assert "Critical agent reporting failure" in result["top_issue_categories"]
+            assert "Check JMS notices for any known service-side issues or advisories." in result[
+                "recommended_next_checks"
+            ]
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_summarize_fleet_health_healthy(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        diagnoses_page = create_autospec(oci.response.Response)
+        diagnoses_page.data = oci.jms.models.FleetDiagnosisCollection(items=[])
+        diagnoses_page.has_next_page = False
+        diagnoses_page.next_page = None
+
+        fleet_errors_page = create_autospec(oci.response.Response)
+        fleet_errors_page.data = oci.jms.models.FleetErrorCollection(items=[])
+        fleet_errors_page.has_next_page = False
+        fleet_errors_page.next_page = None
+
+        mock_client.list_fleet_diagnoses.return_value = diagnoses_page
+        mock_client.list_fleet_errors.return_value = fleet_errors_page
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool("summarize_fleet_health", {"fleet_id": "fleet1"})
+            ).structured_content
+
+            assert result["overall_health_status"] == "HEALTHY"
+            assert result["recommended_next_checks"] == []
+            assert result["fleet_errors"] == []
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_get_fleet_health_diagnostics_paginates(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        diagnoses_page_1 = create_autospec(oci.response.Response)
+        diagnoses_page_1.data = oci.jms.models.FleetDiagnosisCollection(
+            items=[oci.jms.models.FleetDiagnosisSummary(resource_id="resource1")]
+        )
+        diagnoses_page_1.has_next_page = True
+        diagnoses_page_1.next_page = "token"
+
+        diagnoses_page_2 = create_autospec(oci.response.Response)
+        diagnoses_page_2.data = oci.jms.models.FleetDiagnosisCollection(
+            items=[oci.jms.models.FleetDiagnosisSummary(resource_id="resource2")]
+        )
+        diagnoses_page_2.has_next_page = False
+        diagnoses_page_2.next_page = None
+
+        fleet_errors_page = create_autospec(oci.response.Response)
+        fleet_errors_page.data = oci.jms.models.FleetErrorCollection(
+            items=[oci.jms.models.FleetErrorSummary(fleet_id="fleet1")]
+        )
+        fleet_errors_page.has_next_page = False
+        fleet_errors_page.next_page = None
+
+        mock_client.list_fleet_diagnoses.side_effect = [diagnoses_page_1, diagnoses_page_2]
+        mock_client.list_fleet_errors.return_value = fleet_errors_page
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool("get_fleet_health_diagnostics", {"fleet_id": "fleet1"})
+            ).structured_content
+
+            assert result["diagnosis_count"] == 2
+            assert result["fleet_error_count"] == 1
+            assert [item["resource_id"] for item in result["diagnoses"]] == [
+                "resource1",
+                "resource2",
+            ]
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_summarize_fleet_health_exception(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        mock_client.list_fleet_diagnoses.side_effect = oci.exceptions.ServiceError(
+            status=500,
+            code="InternalServerError",
+            message="Internal server error",
+            opc_request_id="req",
+            headers={},
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(fastmcp.exceptions.ToolError):
+                await client.call_tool("summarize_fleet_health", {"fleet_id": "fleet1"})
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_list_jms_notices_normalizes_sort_by_and_time_filters(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        response = create_autospec(oci.response.Response)
+        response.data = oci.jms.models.AnnouncementCollection(
+            items=[
+                oci.jms.models.AnnouncementSummary(
+                    key="announcement1",
+                    summary="Planned maintenance",
+                    time_released=datetime.now(UTC),
+                    url="https://example.com",
+                )
+            ]
+        )
+        response.has_next_page = False
+        response.next_page = None
+        mock_client.list_announcements.return_value = response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_jms_notices",
+                    {
+                        "summary_contains": "maintenance",
+                        "time_start": "2026-03-01T00:00:00Z",
+                        "time_end": "2026-03-02T00:00:00Z",
+                        "sort_order": "desc",
+                        "sort_by": "time_released",
+                    },
+                )
+            ).structured_content["result"]
+
+            assert result[0]["key"] == "announcement1"
+            assert mock_client.list_announcements.call_args.kwargs["sort_order"] == "DESC"
+            assert mock_client.list_announcements.call_args.kwargs["sort_by"] == "timeReleased"
+            assert (
+                mock_client.list_announcements.call_args.kwargs["time_start"].isoformat()
+                == "2026-03-01T00:00:00+00:00"
+            )
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_list_jms_notices_paginates_with_limit(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        page_1 = create_autospec(oci.response.Response)
+        page_1.data = oci.jms.models.AnnouncementCollection(
+            items=[
+                oci.jms.models.AnnouncementSummary(key="announcement1"),
+                oci.jms.models.AnnouncementSummary(key="announcement2"),
+            ]
+        )
+        page_1.has_next_page = True
+        page_1.next_page = "token"
+
+        page_2 = create_autospec(oci.response.Response)
+        page_2.data = oci.jms.models.AnnouncementCollection(
+            items=[oci.jms.models.AnnouncementSummary(key="announcement3")]
+        )
+        page_2.has_next_page = False
+        page_2.next_page = None
+
+        mock_client.list_announcements.side_effect = [page_1, page_2]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool("list_jms_notices", {"limit": 2})
+            ).structured_content["result"]
+
+            assert [item["key"] for item in result] == ["announcement1", "announcement2"]
+            assert mock_client.list_announcements.call_count == 1
 
 
 class TestServerMain:

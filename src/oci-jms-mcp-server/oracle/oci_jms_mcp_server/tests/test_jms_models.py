@@ -9,6 +9,9 @@ from datetime import datetime, UTC
 import oci
 
 from oracle.oci_jms_mcp_server.models import (
+    map_fleet_diagnosis,
+    map_fleet_error,
+    map_jms_notice,
     map_fleet,
     map_fleet_advanced_feature_configuration,
     map_fleet_agent_configuration,
@@ -141,3 +144,58 @@ def test_map_resource_inventory():
 
     assert result.active_fleet_count == 1
     assert result.application_count == 5
+
+
+def test_map_fleet_diagnosis():
+    diagnosis = oci.jms.models.FleetDiagnosisSummary(
+        resource_diagnosis="Inventory scan issue",
+        resource_id="resource1",
+        resource_state="FAILED",
+        resource_type="JMS_FLEET",
+    )
+
+    result = map_fleet_diagnosis(diagnosis)
+
+    assert result.resource_diagnosis == "Inventory scan issue"
+    assert result.resource_id == "resource1"
+    assert result.resource_state == "UNKNOWN_ENUM_VALUE"
+
+
+def test_map_fleet_error_with_nested_details():
+    now = datetime.now(UTC)
+    fleet_error = oci.jms.models.FleetErrorSummary(
+        fleet_id="fleet1",
+        fleet_name="Fleet 1",
+        time_first_seen=now,
+        errors=[
+            oci.jms.models.FleetErrorDetails(
+                reason="Agent connectivity failure",
+                details="Critical reporting failure",
+                time_last_seen=now,
+            )
+        ],
+    )
+
+    result = map_fleet_error(fleet_error)
+
+    assert result.fleet_id == "fleet1"
+    assert result.fleet_name == "Fleet 1"
+    assert result.time_first_seen == now
+    assert result.errors[0].reason == "UNKNOWN_ENUM_VALUE"
+    assert result.errors[0].details == "Critical reporting failure"
+
+
+def test_map_jms_notice():
+    now = datetime.now(UTC)
+    notice = oci.jms.models.AnnouncementSummary(
+        key="announcement1",
+        summary="Planned maintenance",
+        time_released=now,
+        url="https://example.com",
+    )
+
+    result = map_jms_notice(notice)
+
+    assert result.key == "announcement1"
+    assert result.summary == "Planned maintenance"
+    assert result.time_released == now

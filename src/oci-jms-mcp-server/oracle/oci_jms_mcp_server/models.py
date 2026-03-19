@@ -554,3 +554,120 @@ def map_resource_inventory(data: oci.jms.models.ResourceInventory) -> ResourceIn
         installation_count=getattr(data, "installation_count", None),
         application_count=getattr(data, "application_count", None),
     )
+
+
+class FleetDiagnosisRecord(BaseModel):
+    """Fleet diagnosis record returned by JMS health APIs."""
+    resource_diagnosis: Optional[str] = Field(None, description="Diagnosis message for the resource.")
+    resource_id: Optional[str] = Field(None, description="Affected resource OCID or identifier.")
+    resource_state: Optional[str] = Field(None, description="Lifecycle or health state of the resource.")
+    resource_type: Optional[str] = Field(None, description="Type of the affected resource.")
+
+
+def map_fleet_diagnosis(data: oci.jms.models.FleetDiagnosisSummary) -> FleetDiagnosisRecord | None:
+    """Convert `oci.jms.models.FleetDiagnosisSummary` into `FleetDiagnosisRecord`."""
+    if data is None:
+        return None
+    return FleetDiagnosisRecord(
+        resource_diagnosis=getattr(data, "resource_diagnosis", None),
+        resource_id=getattr(data, "resource_id", None),
+        resource_state=getattr(data, "resource_state", None),
+        resource_type=getattr(data, "resource_type", None),
+    )
+
+
+class FleetErrorDetail(BaseModel):
+    """Detailed fleet error entry nested inside a fleet error summary."""
+    details: Optional[str] = Field(None, description="Detailed description of the error.")
+    reason: Optional[str] = Field(None, description="High-level reason for the error.")
+    time_last_seen: Optional[datetime] = Field(None, description="Last time the error was seen.")
+
+
+def map_fleet_error_detail(data: oci.jms.models.FleetErrorDetails) -> FleetErrorDetail | None:
+    """Convert `oci.jms.models.FleetErrorDetails` into `FleetErrorDetail`."""
+    if data is None:
+        return None
+    return FleetErrorDetail(
+        details=getattr(data, "details", None),
+        reason=getattr(data, "reason", None),
+        time_last_seen=getattr(data, "time_last_seen", None),
+    )
+
+
+class FleetErrorRecord(BaseModel):
+    """Fleet-scoped error summary returned by JMS health APIs."""
+    compartment_id: Optional[str] = Field(None, description="Compartment OCID containing the fleet.")
+    fleet_id: Optional[str] = Field(None, description="Fleet OCID.")
+    fleet_name: Optional[str] = Field(None, description="Fleet display name.")
+    errors: Optional[List[FleetErrorDetail]] = Field(
+        None, description="Error detail entries associated with this fleet."
+    )
+    time_first_seen: Optional[datetime] = Field(None, description="First time the fleet error was seen.")
+    time_last_seen: Optional[datetime] = Field(None, description="Last time the fleet error was seen.")
+
+
+def map_fleet_error(data: oci.jms.models.FleetErrorSummary) -> FleetErrorRecord | None:
+    """Convert `oci.jms.models.FleetErrorSummary` into `FleetErrorRecord`."""
+    if data is None:
+        return None
+    errors = getattr(data, "errors", None)
+    return FleetErrorRecord(
+        compartment_id=getattr(data, "compartment_id", None),
+        fleet_id=getattr(data, "fleet_id", None),
+        fleet_name=getattr(data, "fleet_name", None),
+        errors=[map_fleet_error_detail(item) for item in errors] if errors else None,
+        time_first_seen=getattr(data, "time_first_seen", None),
+        time_last_seen=getattr(data, "time_last_seen", None),
+    )
+
+
+class FleetHealthSummary(BaseModel):
+    """Chat-friendly summary of the health posture of a JMS fleet."""
+    fleet_id: str = Field(..., description="Fleet OCID.")
+    diagnosis_count: int = Field(..., description="Number of diagnosis records for the fleet.")
+    fleet_errors: List[FleetErrorRecord] = Field(
+        default_factory=list, description="Fleet error records returned for the fleet."
+    )
+    top_issue_categories: List[str] = Field(
+        default_factory=list, description="Deduplicated high-signal issue categories."
+    )
+    overall_health_status: Literal["HEALTHY", "WARNING", "CRITICAL", "UNKNOWN"] = Field(
+        ..., description="Derived overall health status for the fleet."
+    )
+    recommended_next_checks: List[str] = Field(
+        default_factory=list,
+        description="MCP-generated follow-up checks derived from returned diagnoses and errors.",
+    )
+
+
+class FleetHealthDiagnostics(BaseModel):
+    """Detailed fleet health diagnostics for drill-down troubleshooting."""
+    fleet_id: str = Field(..., description="Fleet OCID.")
+    diagnoses: List[FleetDiagnosisRecord] = Field(
+        default_factory=list, description="Detailed diagnosis records for the fleet."
+    )
+    fleet_errors: List[FleetErrorRecord] = Field(
+        default_factory=list, description="Detailed fleet error records for the fleet."
+    )
+    diagnosis_count: int = Field(..., description="Number of diagnosis records returned.")
+    fleet_error_count: int = Field(..., description="Number of fleet error records returned.")
+
+
+class JmsNotice(BaseModel):
+    """Announcement or notice surfaced by the JMS service."""
+    key: Optional[str] = Field(None, description="Announcement key.")
+    summary: Optional[str] = Field(None, description="Announcement summary.")
+    time_released: Optional[datetime] = Field(None, description="Announcement release time.")
+    url: Optional[str] = Field(None, description="Announcement reference URL.")
+
+
+def map_jms_notice(data: oci.jms.models.AnnouncementSummary) -> JmsNotice | None:
+    """Convert `oci.jms.models.AnnouncementSummary` into `JmsNotice`."""
+    if data is None:
+        return None
+    return JmsNotice(
+        key=getattr(data, "key", None),
+        summary=getattr(data, "summary", None),
+        time_released=getattr(data, "time_released", None),
+        url=getattr(data, "url", None),
+    )

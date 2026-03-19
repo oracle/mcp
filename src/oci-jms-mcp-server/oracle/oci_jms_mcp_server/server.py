@@ -15,8 +15,13 @@ from oracle.oci_jms_mcp_server.models import (
     Fleet,
     FleetAdvancedFeatureConfiguration,
     FleetAgentConfiguration,
+    FleetDiagnosisRecord,
+    FleetErrorRecord,
+    FleetHealthDiagnostics,
+    FleetHealthSummary,
     FleetSummary,
     InstallationSiteSummary,
+    JmsNotice,
     JmsPlugin,
     JmsPluginSummary,
     ManagedInstanceUsage,
@@ -24,8 +29,11 @@ from oracle.oci_jms_mcp_server.models import (
     map_fleet,
     map_fleet_advanced_feature_configuration,
     map_fleet_agent_configuration,
+    map_fleet_diagnosis,
+    map_fleet_error,
     map_fleet_summary,
     map_installation_site_summary,
+    map_jms_notice,
     map_jms_plugin,
     map_jms_plugin_summary,
     map_managed_instance_usage,
@@ -107,6 +115,167 @@ def _parse_rfc3339(value: Optional[str]) -> Optional[datetime]:
     if not normalized:
         return None
     return datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+
+
+def _collect_paginated_items(method, **kwargs):
+    """Collect all items from a paginated OCI list operation."""
+    items = []
+    has_next_page = True
+    next_page: Optional[str] = None
+    limit = kwargs.get("limit")
+
+    while has_next_page and (limit is None or len(items) < limit):
+        response = method(**_omit_none(**kwargs, page=next_page))
+        response_items = list(getattr(response.data, "items", []))
+        if limit is not None:
+            remaining = limit - len(items)
+            response_items = response_items[:remaining]
+        items.extend(response_items)
+        has_next_page = getattr(response, "has_next_page", False)
+        next_page = response.next_page if hasattr(response, "next_page") else None
+
+    return items
+
+
+def _collect_text_fragments(*values) -> list[str]:
+    """Recursively gather non-empty strings from nested tool data."""
+    fragments: list[str] = []
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized and normalized != "UNKNOWN_ENUM_VALUE":
+                fragments.append(normalized)
+            continue
+        if isinstance(value, list):
+            fragments.extend(_collect_text_fragments(*value))
+            continue
+        if isinstance(value, dict):
+            fragments.extend(_collect_text_fragments(*value.values()))
+            continue
+        if hasattr(value, "model_dump"):
+            fragments.extend(_collect_text_fragments(value.model_dump()))
+    return fragments
+
+
+def _normalize_issue_category(value: str) -> str:
+    """Produce a stable issue category label from diagnosis or error text."""
+    normalized = " ".join(value.replace("_", " ").split())
+    return normalized[:1].upper() + normalized[1:] if normalized else normalized
+
+
+def _pick_issue_category(*values: Optional[str]) -> Optional[str]:
+    """Pick the first non-empty, non-sentinel issue text."""
+    for value in values:
+        if value and value.strip() and value != "UNKNOWN_ENUM_VALUE":
+            return value
+    return None
+
+
+def _derive_top_issue_categories(
+    diagnoses: list[FleetDiagnosisRecord], fleet_errors: list[FleetErrorRecord]
+) -> list[str]:
+    """Extract a stable, deduplicated list of high-signal issue categories."""
+    categories: list[str] = []
+    seen: set[str] = set()
+
+    for diagnosis in diagnoses:
+        candidate = diagnosis.resource_diagnosis
+        if candidate:
+            normalized = _normalize_issue_category(candidate)
+            key = normalized.casefold()
+            if key not in seen:
+                seen.add(key)
+                categories.append(normalized)
+
+    for fleet_error in fleet_errors:
+        for error in fleet_error.errors or []:
+            candidate = _pick_issue_category(error.reason, error.details)
+            if candidate:
+                normalized = _normalize_issue_category(candidate)
+                key = normalized.casefold()
+                if key not in seen:
+                    seen.add(key)
+                    categories.append(normalized)
+
+    return categories[:5]
+
+
+def _derive_overall_health_status(
+    diagnoses: list[FleetDiagnosisRecord], fleet_errors: list[FleetErrorRecord]
+) -> Literal["HEALTHY", "WARNING", "CRITICAL", "UNKNOWN"]:
+    """Collapse fleet diagnoses and errors into a single coarse health status."""
+    if not diagnoses and not fleet_errors:
+        return "HEALTHY"
+
+    fragments = _collect_text_fragments(diagnoses, fleet_errors)
+    if not fragments:
+        return "UNKNOWN"
+
+    severe_markers = (
+        "critical",
+        "failed",
+        "failure",
+        "error",
+        "severe",
+        "not available",
+        "unavailable",
+    )
+    warning_markers = (
+        "needs attention",
+        "warning",
+        "inventory",
+        "scan",
+        "plugin",
+        "agent",
+    )
+
+    lowered = [fragment.casefold() for fragment in fragments]
+    if any(marker in fragment for fragment in lowered for marker in severe_markers):
+        return "CRITICAL"
+    if any(marker in fragment for fragment in lowered for marker in warning_markers):
+        return "WARNING"
+    return "WARNING"
+
+
+def _derive_recommended_next_checks(
+    diagnoses: list[FleetDiagnosisRecord], fleet_errors: list[FleetErrorRecord]
+) -> list[str]:
+    """Generate deterministic next-step hints from returned diagnoses and errors."""
+    if not diagnoses and not fleet_errors:
+        return []
+
+    fragments = [fragment.casefold() for fragment in _collect_text_fragments(diagnoses, fleet_errors)]
+    recommendations: list[str] = []
+
+    def add_once(text: str):
+        if text not in recommendations:
+            recommendations.append(text)
+
+    if any(
+        marker in fragment
+        for fragment in fragments
+        for marker in ("inventory", "scan", "discovery", "collection")
+    ):
+        add_once("Review fleet agent configuration and inventory collection settings.")
+
+    if any(
+        marker in fragment
+        for fragment in fragments
+        for marker in ("agent", "plugin", "silent", "report", "heartbeat", "connect")
+    ):
+        add_once("Inspect detailed fleet health diagnostics and verify recent agent or plugin reporting.")
+
+    if any(
+        marker in fragment
+        for fragment in fragments
+        for marker in ("auth", "permission", "unauthorized", "forbidden", "region")
+    ):
+        add_once("Verify fleet visibility, OCI access, and region or compartment alignment.")
+
+    add_once("Check JMS notices for any known service-side issues or advisories.")
+    return recommendations
 
 
 def _warn_on_unsupported_env_aliases():
@@ -615,6 +784,103 @@ def summarize_managed_instance_usage(
         return usage
     except Exception as e:
         logger.error(f"Error in summarize_managed_instance_usage tool: {str(e)}")
+        raise
+
+
+@mcp.tool(description="Summarize fleet health using JMS fleet diagnoses and fleet errors.")
+def summarize_fleet_health(
+    fleet_id: str = Field(..., description="The OCID of the fleet.")
+) -> FleetHealthSummary:
+    """Return a chat-friendly health summary for a JMS fleet."""
+    try:
+        client = get_jms_client()
+        diagnoses = [
+            map_fleet_diagnosis(item)
+            for item in _collect_paginated_items(client.list_fleet_diagnoses, fleet_id=fleet_id)
+        ]
+        fleet_errors = [
+            map_fleet_error(item)
+            for item in _collect_paginated_items(client.list_fleet_errors, fleet_id=fleet_id)
+        ]
+        diagnoses = [item for item in diagnoses if item is not None]
+        fleet_errors = [item for item in fleet_errors if item is not None]
+
+        return FleetHealthSummary(
+            fleet_id=fleet_id,
+            diagnosis_count=len(diagnoses),
+            fleet_errors=fleet_errors,
+            top_issue_categories=_derive_top_issue_categories(diagnoses, fleet_errors),
+            overall_health_status=_derive_overall_health_status(diagnoses, fleet_errors),
+            recommended_next_checks=_derive_recommended_next_checks(diagnoses, fleet_errors),
+        )
+    except Exception as e:
+        logger.error(f"Error in summarize_fleet_health tool: {str(e)}")
+        raise
+
+
+@mcp.tool(description="Get detailed fleet health diagnostics using JMS diagnoses and fleet errors.")
+def get_fleet_health_diagnostics(
+    fleet_id: str = Field(..., description="The OCID of the fleet.")
+) -> FleetHealthDiagnostics:
+    """Return detailed fleet diagnoses and fleet errors for drill-down troubleshooting."""
+    try:
+        client = get_jms_client()
+        diagnoses = [
+            map_fleet_diagnosis(item)
+            for item in _collect_paginated_items(client.list_fleet_diagnoses, fleet_id=fleet_id)
+        ]
+        fleet_errors = [
+            map_fleet_error(item)
+            for item in _collect_paginated_items(client.list_fleet_errors, fleet_id=fleet_id)
+        ]
+        diagnoses = [item for item in diagnoses if item is not None]
+        fleet_errors = [item for item in fleet_errors if item is not None]
+
+        return FleetHealthDiagnostics(
+            fleet_id=fleet_id,
+            diagnoses=diagnoses,
+            fleet_errors=fleet_errors,
+            diagnosis_count=len(diagnoses),
+            fleet_error_count=len(fleet_errors),
+        )
+    except Exception as e:
+        logger.error(f"Error in get_fleet_health_diagnostics tool: {str(e)}")
+        raise
+
+
+@mcp.tool(description="List JMS announcements and notices.")
+def list_jms_notices(
+    summary_contains: Optional[str] = Field(
+        None,
+        description="Filter notices whose summary contains this value.",
+    ),
+    time_start: Optional[str] = Field(None, description="Search start time in RFC3339 format."),
+    time_end: Optional[str] = Field(None, description="Search end time in RFC3339 format."),
+    limit: Optional[int] = Field(None, description="Maximum number of notices to return.", ge=1),
+    sort_order: Optional[str] = Field(None, description="Sort order for notices: ASC or DESC."),
+    sort_by: Optional[str] = Field(
+        None,
+        description="Field to sort notices by: timeReleased or summary.",
+    ),
+) -> list[JmsNotice]:
+    """List JMS notices and announcements with optional text, time, and sort filters."""
+    try:
+        client = get_jms_client()
+        notices = [
+            map_jms_notice(item)
+            for item in _collect_paginated_items(
+                client.list_announcements,
+                summary_contains=summary_contains,
+                time_start=_parse_rfc3339(time_start),
+                time_end=_parse_rfc3339(time_end),
+                limit=limit,
+                sort_order=_normalize_enum(sort_order),
+                sort_by=_normalize_choice(sort_by, ["timeReleased", "summary"]),
+            )
+        ]
+        return [item for item in notices if item is not None]
+    except Exception as e:
+        logger.error(f"Error in list_jms_notices tool: {str(e)}")
         raise
 
 

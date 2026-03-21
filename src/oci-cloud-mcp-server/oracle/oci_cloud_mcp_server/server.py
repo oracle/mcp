@@ -36,6 +36,20 @@ mcp = FastMCP(
 
 _user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
 _ADDITIONAL_UA = f"{_user_agent_name}/{__version__}"
+_STATEFUL_OPERATION_PREFIXES = (
+    "create_",
+    "update_",
+    "delete_",
+    "launch_",
+    "terminate_",
+    "attach_",
+    "detach_",
+    "change_",
+    "start_",
+    "stop_",
+    "reboot_",
+    "reset_",
+)
 
 # Backwards-compat pagination allowlist for operations whose pagination support
 # is not always discoverable from signatures or generated source.
@@ -100,14 +114,53 @@ def _import_client(client_fqn: str) -> Any:
     """
     if "." not in client_fqn:
         raise ValueError("client_fqn must be a fully-qualified class name like 'oci.core.ComputeClient'")
-    module_name, class_name = client_fqn.rsplit(".", 1)
-    module = import_module(module_name)
-    cls = getattr(module, class_name)
+    cls = _load_client_class(client_fqn)
     if not inspect.isclass(cls):
         raise ValueError(f"{client_fqn} is not a class")
     config, signer = _get_config_and_signer()
     instance = cls(config, signer=signer)
     return instance
+
+
+def _load_client_class(client_fqn: str) -> type:
+    module_name, class_name = client_fqn.rsplit(".", 1)
+    module = import_module(module_name)
+    return getattr(module, class_name)
+
+
+def _details_alias_keys(operation: str) -> Tuple[Optional[str], Optional[str]]:
+    if not operation.startswith(("create_", "update_")):
+        return None, None
+    _, _, op_rest = operation.partition("_")
+    return f"{op_rest}_details", f"{operation}_details"
+
+
+def _apply_details_alias(
+    params: Dict[str, Any], operation: str, require_dst_in: Optional[set[str]] = None
+) -> Dict[str, Any]:
+    src, dst = _details_alias_keys(operation)
+    if not src or not dst or src not in params or dst in params:
+        return dict(params)
+    if require_dst_in is not None and dst not in require_dst_in:
+        return dict(params)
+    updated = dict(params)
+    updated[dst] = updated.pop(src)
+    return updated
+
+
+def _describe_callable(member: Callable[..., Any]) -> Tuple[str, str]:
+    try:
+        doc = (inspect.getdoc(member) or "").strip()
+        first_line = doc.splitlines()[0] if doc else ""
+    except Exception:
+        first_line = ""
+
+    try:
+        params = str(inspect.signature(member))
+    except Exception:
+        params = ""
+
+    return first_line, params
 
 
 def _validate_invoke_client_fqn(client_fqn: str) -> None:
@@ -125,24 +178,7 @@ def _classify_invoke_error(operation: str, error: Exception) -> Dict[str, str]:
     lower_message = message.lower()
     result = {"error": message}
 
-    is_stateful = operation.startswith(
-        (
-            "create_",
-            "update_",
-            "delete_",
-            "launch_",
-            "terminate_",
-            "attach_",
-            "detach_",
-            "change_",
-            "start_",
-            "stop_",
-            "reboot_",
-            "reset_",
-        )
-    )
-
-    if not is_stateful:
+    if not operation.startswith(_STATEFUL_OPERATION_PREFIXES):
         return result
 
     if "invalid typeid provided" in lower_message or "missing 1 required positional argument" in lower_message:
@@ -614,15 +650,9 @@ def _construct_model_from_mapping(
             if inspect.isclass(cls):
                 try:
                     clean = _apply_discriminator_defaults(cls_name, clean)
-                    normalized_clean = _to_model_attribute_keys(
-                        clean, cls, models_module
-                    )
-                    return _from_dict_if_available(cls, normalized_clean)
+                    return _build_model_instance(clean, cls, models_module)
                 except Exception:
-                    try:
-                        return cls(**normalized_clean)
-                    except Exception:
-                        pass
+                    pass
         except Exception:
             pass
     # try explicit simple class name within models module
@@ -630,38 +660,18 @@ def _construct_model_from_mapping(
         cls, clean = _resolve_model_class_with_payload(models_module, class_name, clean)
         if inspect.isclass(cls):
             try:
-                normalized_clean = _to_model_attribute_keys(clean, cls, models_module)
-                filtered_clean = normalized_clean
-                swagger_types, _ = _get_model_schema(cls)
-                if isinstance(swagger_types, dict):
-                    filtered_clean = {
-                        k: v for k, v in normalized_clean.items() if k in swagger_types
-                    }
-                return _from_dict_if_available(cls, filtered_clean)
+                return _build_model_instance(clean, cls, models_module)
             except Exception:
-                try:
-                    return cls(**filtered_clean)
-                except Exception:
-                    pass
+                pass
     # try candidates derived from param name
     if models_module:
         for cand in candidate_classnames:
             cls, clean = _resolve_model_class_with_payload(models_module, cand, clean)
             if inspect.isclass(cls):
                 try:
-                    normalized_clean = _to_model_attribute_keys(clean, cls, models_module)
-                    filtered_clean = normalized_clean
-                    swagger_types, _ = _get_model_schema(cls)
-                    if isinstance(swagger_types, dict):
-                        filtered_clean = {
-                            k: v for k, v in normalized_clean.items() if k in swagger_types
-                        }
-                    return _from_dict_if_available(cls, filtered_clean)
+                    return _build_model_instance(clean, cls, models_module)
                 except Exception:
-                    try:
-                        return cls(**filtered_clean)
-                    except Exception:
-                        continue
+                    continue
     # fall back to original mapping
     return mapping
 
@@ -680,7 +690,11 @@ def _construct_model_with_class(mapping: Dict[str, Any], cls: type, models_modul
         clean, models_module, parent_prefix=parent_prefix_hint
     )
 
-    normalized_clean = _to_model_attribute_keys(clean, cls, models_module)
+    return _build_model_instance(clean, cls, models_module)
+
+
+def _build_model_instance(mapping: Dict[str, Any], cls: type, models_module: Any):
+    normalized_clean = _to_model_attribute_keys(mapping, cls, models_module)
     filtered_clean = normalized_clean
     try:
         swagger_types, _ = _get_model_schema(cls)
@@ -725,14 +739,9 @@ def _coerce_params_to_oci_models(
                     if s == "_details":
                         # rename "<resource>_details" to the SDK's expected
                         # "create_<resource>_details"/"update_<resource>_details"
-                        if operation.startswith("create_") or operation.startswith("update_"):
-                            _, _, op_rest = operation.partition("_")
-                            if key == f"{op_rest}_details":
-                                # only rename to SDK-expected key when destination not already
-                                # provided by caller
-                                alt_key = f"{operation}_details"
-                                if alt_key not in params:
-                                    dest_key = alt_key
+                        src, dst = _details_alias_keys(operation)
+                        if key == src and dst and dst not in params:
+                            dest_key = dst
                     break
             if dest_key != key:
                 candidates.extend(op_hints.get(dest_key, []))
@@ -782,13 +791,7 @@ def _coerce_params_to_oci_models(
             out[key] = val
     # final aliasing: if caller used "<resource>_details" and op is create_/update_,
     # rename to the SDK-expected "create_<resource>_details"/"update_<resource>_details".
-    if operation.startswith("create_") or operation.startswith("update_"):
-        _, _, op_rest = operation.partition("_")
-        src = f"{op_rest}_details"
-        dst = f"{operation}_details"
-        if src in out and dst not in out:
-            out[dst] = out.pop(src)
-    return out
+    return _apply_details_alias(out, operation)
 
 
 def _align_params_to_signature(
@@ -807,12 +810,7 @@ def _align_params_to_signature(
     aligned = dict(params)
     sig_params = dict(sig.parameters)
     param_names = set(sig_params.keys())
-    if operation_name.startswith("create_") or operation_name.startswith("update_"):
-        _, _, op_rest = operation_name.partition("_")
-        src = f"{op_rest}_details"
-        dst = f"{operation_name}_details"
-        if src in aligned and dst not in aligned and dst in param_names:
-            aligned[dst] = aligned.pop(src)
+    aligned = _apply_details_alias(aligned, operation_name, require_dst_in=param_names)
 
     # General fallback for SDK operations that use abbreviated id parameters
     # (e.g., ig_id, rt_id). If exactly one caller *_id key does not match and
@@ -940,21 +938,7 @@ def _supports_pagination(method: Callable[..., Any], operation_name: str) -> boo
       - Method signature includes 'page' or 'limit' kwargs (explicit params).
       - Method accepts **kwargs and operation name indicates record/rrset style (DNS-like).
     """
-    non_paginated_prefixes = (
-        "create_",
-        "update_",
-        "delete_",
-        "launch_",
-        "terminate_",
-        "attach_",
-        "detach_",
-        "change_",
-        "start_",
-        "stop_",
-        "reboot_",
-        "reset_",
-    )
-    if operation_name.startswith(non_paginated_prefixes):
+    if operation_name.startswith(_STATEFUL_OPERATION_PREFIXES):
         return False
 
     try:
@@ -967,15 +951,6 @@ def _supports_pagination(method: Callable[..., Any], operation_name: str) -> boo
         ek = _extract_expected_kwargs_from_source(method)
         if ek and (("page" in ek) or ("limit" in ek)):
             return True
-
-        # docstring-only detection is intentionally restricted to list/summarize
-        # style methods to avoid false positives on create/get operations.
-        if operation_name.startswith("list_") or operation_name.startswith("summarize_"):
-            try:
-                if _docstring_mentions_pagination(method):
-                    return True
-            except Exception:
-                pass
 
         sig = inspect.signature(method)
         param_names = set(sig.parameters.keys())
@@ -1011,13 +986,7 @@ def _call_with_pagination_if_applicable(
             )
 
     # non-list operation; pre-alias known kwarg patterns and invoke, with fallback aliasing
-    call_params = dict(params)
-    if operation_name.startswith("create_") or operation_name.startswith("update_"):
-        _, _, op_rest = operation_name.partition("_")
-        src = f"{op_rest}_details"
-        dst = f"{operation_name}_details"
-        if src in call_params and dst not in call_params:
-            call_params[dst] = call_params.pop(src)
+    call_params = _apply_details_alias(params, operation_name)
 
     try:
         logger.debug(f"_call_with_pagination_if_applicable call_params keys: {list(call_params.keys())}")
@@ -1032,10 +1001,8 @@ def _call_with_pagination_if_applicable(
         ):
             try:
                 bad_kw = msg.split("'")[1]
-                _, _, op_rest = operation_name.partition("_")
-                expected_src = f"{op_rest}_details"
-                if bad_kw == expected_src and expected_src in call_params:
-                    alt_key = f"{operation_name}_details"
+                expected_src, alt_key = _details_alias_keys(operation_name)
+                if expected_src and alt_key and bad_kw == expected_src and expected_src in call_params:
                     new_params = dict(call_params)
                     new_params[alt_key] = new_params.pop(expected_src)
                     response = method(**new_params)
@@ -1064,9 +1031,9 @@ def invoke_oci_api(
     client_fqn: Annotated[str, "Fully-qualified client class, e.g. 'oci.core.ComputeClient'"],
     operation: Annotated[str, "Client method/operation name, e.g. 'list_instances' or 'get_instance'"],
     params: Annotated[
-        Dict[str, Any],
+        Optional[Dict[str, Any]],
         "Keyword arguments for the operation (JSON object). Use snake_case keys as in SDK.",
-    ] = {},
+    ] = None,
 ) -> dict:
     """
     Example:
@@ -1087,13 +1054,7 @@ def invoke_oci_api(
         params = params or {}
         # pre-normalize parameter key to the SDK-expected kw for create_/update_ ops,
         # so downstream coercion and invocation consistently use the correct key.
-        normalized_params = dict(params)
-        if operation.startswith("create_") or operation.startswith("update_"):
-            _, _, op_rest = operation.partition("_")
-            src = f"{op_rest}_details"
-            dst = f"{operation}_details"
-            if src in normalized_params and dst not in normalized_params:
-                normalized_params[dst] = normalized_params.pop(src)
+        normalized_params = _apply_details_alias(params, operation)
 
         coerced_params = _coerce_params_for_invoke(
             client_fqn, operation, normalized_params, method
@@ -1112,10 +1073,8 @@ def invoke_oci_api(
                 operation.startswith("create_") or operation.startswith("update_")
             ):
                 # last-chance aliasing retry at top level
-                _, _, op_rest = operation.partition("_")
-                src = f"{op_rest}_details"
-                dst = f"{operation}_details"
-                if src in final_params and dst not in final_params:
+                src, dst = _details_alias_keys(operation)
+                if src and dst and src in final_params and dst not in final_params:
                     alt_params = dict(final_params)
                     alt_params[dst] = alt_params.pop(src)
                     data, opc_request_id = _call_with_pagination_if_applicable(method, alt_params, operation)
@@ -1158,9 +1117,7 @@ def list_client_operations(
     ] = None,
 ) -> dict:
     try:
-        module_name, class_name = client_fqn.rsplit(".", 1)
-        module = import_module(module_name)
-        cls = getattr(module, class_name)
+        cls = _load_client_class(client_fqn)
         if not inspect.isclass(cls):
             raise ValueError(f"{client_fqn} is not a class")
 
@@ -1177,14 +1134,8 @@ def list_client_operations(
                 continue
             if compiled and not compiled.search(name):
                 continue
-            try:
-                doc = (inspect.getdoc(member) or "").strip()
-                first_line = doc.splitlines()[0] if doc else ""
-                params = inspect.signature(member)
-            except Exception:
-                first_line = ""
-                params = ""
-            ops.append({"name": name, "summary": first_line, "params": str(params)})
+            first_line, params = _describe_callable(member)
+            ops.append({"name": name, "summary": first_line, "params": params})
 
         logger.info(
             f"Found {len(ops)} operations on {client_fqn} (name_regex={name_regex!r})"
@@ -1209,9 +1160,7 @@ def get_client_operation_details(
     operation: Annotated[str, "Client method/operation name, e.g. 'list_instances'"],
 ) -> dict:
     try:
-        module_name, class_name = client_fqn.rsplit(".", 1)
-        module = import_module(module_name)
-        cls = getattr(module, class_name)
+        cls = _load_client_class(client_fqn)
         if not inspect.isclass(cls):
             raise ValueError(f"{client_fqn} is not a class")
 
@@ -1226,16 +1175,7 @@ def get_client_operation_details(
                 f"Attribute '{operation}' on client '{client_fqn}' is not callable"
             )
 
-        try:
-            doc = (inspect.getdoc(member) or "").strip()
-            first_line = doc.splitlines()[0] if doc else ""
-        except Exception:
-            first_line = ""
-
-        try:
-            params = str(inspect.signature(member))
-        except Exception:
-            params = ""
+        first_line, params = _describe_callable(member)
 
         expected_kwargs = _extract_expected_kwargs_from_source(member)
         if expected_kwargs is None:

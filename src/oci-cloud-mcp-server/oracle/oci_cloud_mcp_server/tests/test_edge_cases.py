@@ -124,7 +124,7 @@ class TestInvokePreNormalize:
                 await client.call_tool(
                     "invoke_oci_api",
                     {
-                        "client_fqn": "x.y.FakeClient",
+                        "client_fqn": "oci.fake.FakeClient",
                         "operation": "create_vcn",
                         "params": {"vcn_details": {"k": 42}},
                     },
@@ -386,7 +386,7 @@ class TestInvokePlainListReturn:
             res = (
                 await client.call_tool(
                     "invoke_oci_api",
-                    {"client_fqn": "x.y.FakeClient", "operation": "get_list"},
+                    {"client_fqn": "oci.fake.FakeClient", "operation": "get_list"},
                 )
             ).data
 
@@ -1506,7 +1506,7 @@ class TestInvokeTupleSerialization:
                 await client.call_tool(
                     "invoke_oci_api",
                     {
-                        "client_fqn": "x.y.FakeClient",
+                        "client_fqn": "oci.fake.FakeClient",
                         "operation": "get_tuple",
                         "params": {},
                     },
@@ -1572,7 +1572,7 @@ class TestInvokeGenericException:
                 await client.call_tool(
                     "invoke_oci_api",
                     {
-                        "client_fqn": "x.y.FakeClient",
+                        "client_fqn": "oci.fake.FakeClient",
                         "operation": "get_crash",
                         "params": {},
                     },
@@ -1584,66 +1584,60 @@ class TestInvokeGenericException:
 
 
 class TestInvokeErrorClassification:
-    def test_payload_shape_error_gets_hint(self, monkeypatch):
+    @pytest.mark.parametrize(
+        ("operation", "params", "error_message", "expected_category", "expected_hint"),
+        [
+            (
+                "launch_instance",
+                {"launch_instance_details": {"shape": "VM.Standard.A1.Flex"}},
+                "Invalid typeId provided ",
+                "payload_shape",
+                "may not match the SDK shape",
+            ),
+            (
+                "update_instance",
+                {"instance_id": "ocid1.instance.oc1..example"},
+                "InvalidParameter: shape_config ocpus must be between 1 and 4",
+                "invalid_shape_config",
+                "configuration values may be invalid",
+            ),
+            (
+                "terminate_instance",
+                {"instance_id": "ocid1.instance.oc1..example"},
+                "IncorrectState: Instance is not in the correct state for this operation",
+                "instance_lifecycle_state",
+                "may not be in a valid state",
+            ),
+        ],
+    )
+    def test_invoke_error_gets_expected_hint(
+        self,
+        monkeypatch,
+        operation,
+        params,
+        error_message,
+        expected_category,
+        expected_hint,
+    ):
         class FakeClient:
-            def launch_instance(self, **kwargs):  # noqa: ARG002
-                raise Exception("Invalid typeId provided ")
+            def __getattr__(self, name):
+                if name != operation:
+                    raise AttributeError(name)
+
+                def _op(**kwargs):  # noqa: ARG001
+                    raise Exception(error_message)
+
+                return _op
 
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._import_client",
             lambda client_fqn: FakeClient(),
         )
 
-        res = invoke_oci_api.fn(
-            "oci.core.ComputeClient",
-            "launch_instance",
-            {"launch_instance_details": {"shape": "VM.Standard.A1.Flex"}},
-        )
+        res = invoke_oci_api.fn("oci.core.ComputeClient", operation, params)
 
-        assert res["error_category"] == "payload_shape"
-        assert "may not match the SDK shape" in res["error_hint"]
-
-    def test_invalid_shape_config_error_gets_hint(self, monkeypatch):
-        class FakeClient:
-            def update_instance(self, **kwargs):  # noqa: ARG002
-                raise Exception(
-                    "InvalidParameter: shape_config ocpus must be between 1 and 4"
-                )
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._import_client",
-            lambda client_fqn: FakeClient(),
-        )
-
-        res = invoke_oci_api.fn(
-            "oci.core.ComputeClient",
-            "update_instance",
-            {"instance_id": "ocid1.instance.oc1..example"},
-        )
-
-        assert res["error_category"] == "invalid_shape_config"
-        assert "configuration values may be invalid" in res["error_hint"]
-
-    def test_lifecycle_state_error_gets_hint(self, monkeypatch):
-        class FakeClient:
-            def terminate_instance(self, **kwargs):  # noqa: ARG002
-                raise Exception(
-                    "IncorrectState: Instance is not in the correct state for this operation"
-                )
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._import_client",
-            lambda client_fqn: FakeClient(),
-        )
-
-        res = invoke_oci_api.fn(
-            "oci.core.ComputeClient",
-            "terminate_instance",
-            {"instance_id": "ocid1.instance.oc1..example"},
-        )
-
-        assert res["error_category"] == "instance_lifecycle_state"
-        assert "may not be in a valid state" in res["error_hint"]
+        assert res["error_category"] == expected_category
+        assert expected_hint in res["error_hint"]
 
 
 class TestListPaginatorHeadersMissing:
@@ -1713,7 +1707,7 @@ class TestInvokeDefaultParams:
             res = (
                 await client.call_tool(
                     "invoke_oci_api",
-                    {"client_fqn": "x.y.FakeClient", "operation": "get_plain"},
+                    {"client_fqn": "oci.fake.FakeClient", "operation": "get_plain"},
                 )
             ).data
 
@@ -1770,7 +1764,7 @@ class TestInvokeNonListHeadersNoGet:
             res = (
                 await client.call_tool(
                     "invoke_oci_api",
-                    {"client_fqn": "x.y.FakeClient", "operation": "get"},
+                    {"client_fqn": "oci.fake.FakeClient", "operation": "get"},
                 )
             ).data
 

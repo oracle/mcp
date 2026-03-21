@@ -54,7 +54,7 @@ class TestInvokeErrorPaths:
                 await client.call_tool(
                     "invoke_oci_api",
                     {
-                        "client_fqn": "x.y.FakeClient",
+                        "client_fqn": "oci.fake.FakeClient",
                         "operation": "does_not_exist",
                         "params": {},
                     },
@@ -84,7 +84,7 @@ class TestInvokeErrorPaths:
                 await client.call_tool(
                     "invoke_oci_api",
                     {
-                        "client_fqn": "x.y.FakeClient",
+                        "client_fqn": "oci.fake.FakeClient",
                         "operation": "get_thing",
                         "params": {},
                     },
@@ -222,7 +222,7 @@ class TestInvokeTypeErrorPropagation:
                 await client.call_tool(
                     "invoke_oci_api",
                     {
-                        "client_fqn": "x.y.FakeClient",
+                        "client_fqn": "oci.fake.FakeClient",
                         "operation": "create_vcn",
                         "params": {"vcn_details": {"x": 1}},
                     },

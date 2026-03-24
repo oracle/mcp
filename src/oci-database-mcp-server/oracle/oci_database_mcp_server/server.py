@@ -290,17 +290,23 @@ def get_database_client(region: str = None):
     )
     user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
     config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = config["security_token_file"]
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    if region is None:
-        return oci.database.DatabaseClient(config, signer=signer)
-    regional_config = config.copy()
-    regional_config["region"] = region
-    return oci.database.DatabaseClient(regional_config, signer=signer)
-
+    if "security_token_file" in config:
+        private_key = oci.signer.load_private_key_from_file(config["key_file"])
+        token_file = config["security_token_file"]
+        with open(token_file, "r") as f:
+            token = f.read()
+        signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
+        if region is None:
+            return oci.database.DatabaseClient(config, signer=signer)
+        regional_config = config.copy()
+        regional_config["region"] = region
+        return oci.database.DatabaseClient(regional_config, signer=signer)
+    else:
+        if region is None:
+            return oci.database.DatabaseClient(config)
+        regional_config = config.copy()
+        regional_config["region"] = region
+        return oci.database.DatabaseClient(regional_config)
 
 def call_create_pdb(client, details, opc_retry_token=None, opc_request_id=None):
     kwargs = {"create_pluggable_database_details": details.__dict__}

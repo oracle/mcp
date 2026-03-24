@@ -15,6 +15,7 @@ from mcp.server.fastmcp import FastMCP
 from oracle.oci_kafka_mcp_server.audit.logger import audit
 from oracle.oci_kafka_mcp_server.config import OciConfig
 from oracle.oci_kafka_mcp_server.oci.kafka_client import OciKafkaClient
+from oracle.oci_kafka_mcp_server.tools import wrap_untrusted
 
 
 def register_oci_metadata_tools(
@@ -63,7 +64,7 @@ def register_oci_metadata_tools(
                     entry.error_message = result["error"]
                 else:
                     entry.result_status = "success"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -110,7 +111,7 @@ def register_oci_metadata_tools(
                     entry.error_message = result["error"]
                 else:
                     entry.result_status = "success"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)

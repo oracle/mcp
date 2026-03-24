@@ -11,6 +11,7 @@ from oracle.oci_kafka_mcp_server.audit.logger import audit
 from oracle.oci_kafka_mcp_server.kafka.connection import CircuitBreaker
 from oracle.oci_kafka_mcp_server.kafka.consumer_client import KafkaConsumerClient
 from oracle.oci_kafka_mcp_server.security.policy_guard import PolicyGuard
+from oracle.oci_kafka_mcp_server.tools import wrap_untrusted
 
 CIRCUIT_OPEN_MSG = "Circuit breaker is open. Kafka may be unavailable."
 
@@ -21,6 +22,7 @@ def _check_write_preconditions(
     policy_guard: PolicyGuard,
     circuit_breaker: CircuitBreaker,
     confirmation_message: str,
+    confirmed: bool = False,
 ) -> str | None:
     """Check policy guard and circuit breaker before a write operation.
 
@@ -30,11 +32,11 @@ def _check_write_preconditions(
     if not check.allowed:
         return json.dumps({"error": check.reason})
 
-    if check.needs_confirmation:
+    if check.needs_confirmation and not confirmed:
         return json.dumps(
             {
                 "status": "confirmation_required",
-                "message": confirmation_message,
+                "message": confirmation_message + " Call again with confirmed=True to proceed.",
                 "risk_level": "HIGH",
             }
         )
@@ -78,7 +80,7 @@ def _register_consumer_read_tools(
                 result = consumer_client.list_consumer_groups()
                 entry.result_status = "success"
                 circuit_breaker.record_success()
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 circuit_breaker.record_failure()
                 entry.result_status = "error"
@@ -104,7 +106,7 @@ def _register_consumer_read_tools(
                 result = consumer_client.describe_consumer_group(group_id)
                 entry.result_status = "success"
                 circuit_breaker.record_success()
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 circuit_breaker.record_failure()
                 entry.result_status = "error"
@@ -130,7 +132,7 @@ def _register_consumer_read_tools(
                 result = consumer_client.get_consumer_lag(group_id)
                 entry.result_status = "success"
                 circuit_breaker.record_success()
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 circuit_breaker.record_failure()
                 entry.result_status = "error"
@@ -154,6 +156,7 @@ def _register_consumer_write_tools(
         topic_name: str,
         strategy: str = "latest",
         partition: int | None = None,
+        confirmed: bool = False,
     ) -> str:
         """Reset consumer group offsets for a topic. THIS IS A DESTRUCTIVE OPERATION.
 
@@ -167,6 +170,8 @@ def _register_consumer_write_tools(
             strategy: Reset strategy — 'earliest' (beginning), 'latest' (end),
                       or a specific integer offset.
             partition: Optional specific partition number. If omitted, resets all partitions.
+            confirmed: Must be True to execute. First call without this
+                returns a confirmation prompt.
 
         Returns the reset status and new offset positions for each partition.
         """
@@ -184,8 +189,8 @@ def _register_consumer_write_tools(
             circuit_breaker,
             f"Resetting offsets for group '{group_id}' on topic '{topic_name}' "
             f"to '{strategy}' is a HIGH RISK operation. This will change the "
-            "consumer's position and may cause messages to be reprocessed or skipped. "
-            "Please confirm by calling this tool again.",
+            "consumer's position and may cause messages to be reprocessed or skipped.",
+            confirmed=confirmed,
         )
         if blocked:
             return blocked
@@ -197,7 +202,7 @@ def _register_consumer_write_tools(
                 )
                 entry.result_status = result.get("status", "unknown")
                 circuit_breaker.record_success()
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 circuit_breaker.record_failure()
                 entry.result_status = "error"
@@ -205,7 +210,10 @@ def _register_consumer_write_tools(
                 return json.dumps({"error": f"Failed to reset offsets for group '{group_id}': {e}"})
 
     @mcp.tool()
-    def oci_kafka_delete_consumer_group(group_id: str) -> str:
+    def oci_kafka_delete_consumer_group(
+        group_id: str,
+        confirmed: bool = False,
+    ) -> str:
         """Delete a consumer group. THIS IS A DESTRUCTIVE OPERATION.
 
         The consumer group must have no active members (EMPTY state).
@@ -214,6 +222,8 @@ def _register_consumer_write_tools(
 
         Args:
             group_id: The consumer group ID to delete.
+            confirmed: Must be True to execute. First call without this
+                returns a confirmation prompt.
 
         Returns the deletion status.
         """
@@ -225,8 +235,8 @@ def _register_consumer_write_tools(
             policy_guard,
             circuit_breaker,
             f"Deleting consumer group '{group_id}' is a HIGH RISK operation. "
-            "This will permanently remove the group and all committed offsets. "
-            "Please confirm by calling this tool again.",
+            "This will permanently remove the group and all committed offsets.",
+            confirmed=confirmed,
         )
         if blocked:
             return blocked
@@ -236,7 +246,7 @@ def _register_consumer_write_tools(
                 result = consumer_client.delete_consumer_group(group_id)
                 entry.result_status = result.get("status", "unknown")
                 circuit_breaker.record_success()
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 circuit_breaker.record_failure()
                 entry.result_status = "error"

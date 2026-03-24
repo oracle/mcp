@@ -10,6 +10,7 @@ from oracle.oci_kafka_mcp_server.audit.logger import audit
 from oracle.oci_kafka_mcp_server.kafka.admin_client import KafkaAdminClient
 from oracle.oci_kafka_mcp_server.kafka.connection import CircuitBreaker
 from oracle.oci_kafka_mcp_server.security.policy_guard import PolicyGuard
+from oracle.oci_kafka_mcp_server.tools import wrap_untrusted
 
 
 def register_topic_tools(
@@ -35,7 +36,7 @@ def register_topic_tools(
                 result = admin_client.list_topics()
                 entry.result_status = "success"
                 circuit_breaker.record_success()
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 circuit_breaker.record_failure()
                 entry.result_status = "error"
@@ -61,7 +62,7 @@ def register_topic_tools(
                 result = admin_client.describe_topic(topic_name)
                 entry.result_status = "success"
                 circuit_breaker.record_success()
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 circuit_breaker.record_failure()
                 entry.result_status = "error"
@@ -101,7 +102,7 @@ def register_topic_tools(
                 result = admin_client.create_topic(topic_name, num_partitions, replication_factor)
                 entry.result_status = result.get("status", "unknown")
                 circuit_breaker.record_success()
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 circuit_breaker.record_failure()
                 entry.result_status = "error"
@@ -135,7 +136,7 @@ def register_topic_tools(
                 result = admin_client.update_topic_config(topic_name, configs)
                 entry.result_status = result.get("status", "unknown")
                 circuit_breaker.record_success()
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 circuit_breaker.record_failure()
                 entry.result_status = "error"
@@ -145,7 +146,10 @@ def register_topic_tools(
                 )
 
     @mcp.tool()
-    def oci_kafka_delete_topic(topic_name: str) -> str:
+    def oci_kafka_delete_topic(
+        topic_name: str,
+        confirmed: bool = False,
+    ) -> str:
         """Delete a Kafka topic. THIS IS A DESTRUCTIVE OPERATION.
 
         Requires --allow-writes to be enabled.
@@ -153,6 +157,8 @@ def register_topic_tools(
 
         Args:
             topic_name: Name of the topic to delete.
+            confirmed: Must be True to execute. First call without this
+                returns a confirmation prompt.
 
         Returns the deletion status.
         """
@@ -162,13 +168,13 @@ def register_topic_tools(
         if not check.allowed:
             return json.dumps({"error": check.reason})
 
-        if check.needs_confirmation:
+        if check.needs_confirmation and not confirmed:
             return json.dumps(
                 {
                     "status": "confirmation_required",
                     "message": f"Deleting topic '{topic_name}' is a HIGH RISK operation. "
                     "This will permanently delete the topic and all its data. "
-                    "Please confirm by calling this tool again with confirmation.",
+                    "Call again with confirmed=True to proceed.",
                     "risk_level": "HIGH",
                 }
             )
@@ -181,7 +187,7 @@ def register_topic_tools(
                 result = admin_client.delete_topic(topic_name)
                 entry.result_status = result.get("status", "unknown")
                 circuit_breaker.record_success()
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 circuit_breaker.record_failure()
                 entry.result_status = "error"

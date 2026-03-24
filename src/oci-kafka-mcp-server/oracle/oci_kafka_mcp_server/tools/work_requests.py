@@ -15,6 +15,7 @@ from oracle.oci_kafka_mcp_server.audit.logger import audit
 from oracle.oci_kafka_mcp_server.config import OciConfig
 from oracle.oci_kafka_mcp_server.oci.kafka_client import OciKafkaClient
 from oracle.oci_kafka_mcp_server.security.policy_guard import PolicyGuard
+from oracle.oci_kafka_mcp_server.tools import wrap_untrusted
 
 
 def register_work_request_tools(
@@ -44,7 +45,7 @@ def register_work_request_tools(
             try:
                 result = kafka_client.get_work_request(work_request_id=work_request_id)
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -82,7 +83,7 @@ def register_work_request_tools(
                     resource_id=resource_id,
                 )
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -106,7 +107,7 @@ def register_work_request_tools(
             try:
                 result = kafka_client.cancel_work_request(work_request_id=work_request_id)
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -130,7 +131,7 @@ def register_work_request_tools(
             try:
                 result = kafka_client.get_work_request_errors(work_request_id=work_request_id)
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -154,7 +155,7 @@ def register_work_request_tools(
             try:
                 result = kafka_client.get_work_request_logs(work_request_id=work_request_id)
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -183,7 +184,7 @@ def register_work_request_tools(
             try:
                 result = kafka_client.list_node_shapes(compartment_id=effective_compartment)
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)

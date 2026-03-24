@@ -258,3 +258,167 @@ class TestConnectionTools:
             assert "pass" in content
         finally:
             conn_module._DEFAULT_PERSIST_PATH = original_path
+
+
+class TestSanitizeEnvValue:
+    """Test _sanitize_env_value rejects adversarial inputs."""
+
+    def test_rejects_dollar_sign(self) -> None:
+        from oracle.oci_kafka_mcp_server.tools.connection import _sanitize_env_value
+
+        with pytest.raises(ValueError, match="unsafe characters"):
+            _sanitize_env_value("$(rm -rf /)")
+
+    def test_rejects_backticks(self) -> None:
+        from oracle.oci_kafka_mcp_server.tools.connection import _sanitize_env_value
+
+        with pytest.raises(ValueError, match="unsafe characters"):
+            _sanitize_env_value("`whoami`")
+
+    def test_rejects_double_quotes(self) -> None:
+        from oracle.oci_kafka_mcp_server.tools.connection import _sanitize_env_value
+
+        with pytest.raises(ValueError, match="unsafe characters"):
+            _sanitize_env_value('"; rm -rf / #')
+
+    def test_rejects_single_quotes(self) -> None:
+        from oracle.oci_kafka_mcp_server.tools.connection import _sanitize_env_value
+
+        with pytest.raises(ValueError, match="unsafe characters"):
+            _sanitize_env_value("pass'word")
+
+    def test_rejects_newlines(self) -> None:
+        from oracle.oci_kafka_mcp_server.tools.connection import _sanitize_env_value
+
+        with pytest.raises(ValueError, match="unsafe characters"):
+            _sanitize_env_value("pass\nword")
+
+    def test_rejects_backslash(self) -> None:
+        from oracle.oci_kafka_mcp_server.tools.connection import _sanitize_env_value
+
+        with pytest.raises(ValueError, match="unsafe characters"):
+            _sanitize_env_value("pass\\word")
+
+    def test_accepts_safe_value(self) -> None:
+        from oracle.oci_kafka_mcp_server.tools.connection import _sanitize_env_value
+
+        assert _sanitize_env_value("my-safe-password-123") == "my-safe-password-123"
+
+    def test_accepts_empty_string(self) -> None:
+        from oracle.oci_kafka_mcp_server.tools.connection import _sanitize_env_value
+
+        assert _sanitize_env_value("") == ""
+
+    def test_env_file_not_shell_sourceable(self, tmp_path: pytest.FixtureRequest) -> None:
+        """Verify the written file uses non-executable .env format."""
+        from oracle.oci_kafka_mcp_server.tools.connection import _write_env_file
+
+        path = tmp_path / "test.env"  # type: ignore[operator]
+        config = KafkaConfig(
+            bootstrap_servers="broker:9092",
+            sasl_username="user",
+            sasl_password="safe-pass",
+        )
+        _write_env_file(path, config)
+        content = path.read_text()
+        assert "export " not in content
+        assert content.startswith("# OCI Kafka MCP")
+        # File warns against sourcing but does not use 'export' directives
+        assert "\nexport " not in content
+        assert "KAFKA_BOOTSTRAP_SERVERS=broker:9092" in content
+
+    def test_persist_rejects_adversarial_password(self, tmp_path: pytest.FixtureRequest) -> None:
+        """Verify that adversarial passwords are rejected during persist."""
+        from oracle.oci_kafka_mcp_server.tools.connection import _write_env_file
+
+        path = tmp_path / "test.env"  # type: ignore[operator]
+        config = KafkaConfig(
+            bootstrap_servers="broker:9092",
+            sasl_password="$(echo pwned)",
+        )
+        with pytest.raises(ValueError, match="unsafe characters"):
+            _write_env_file(path, config)
+
+
+class TestConfirmationFlow:
+    """Test that HIGH-risk tools require confirmed=True to execute."""
+
+    def test_delete_topic_requires_confirmation(self) -> None:
+        from mcp.server.fastmcp import FastMCP
+
+        from oracle.oci_kafka_mcp_server.security.policy_guard import PolicyGuard
+        from oracle.oci_kafka_mcp_server.tools.topics import register_topic_tools
+
+        mcp = FastMCP("test")
+        admin = KafkaAdminClient(KafkaConfig(bootstrap_servers="broker:9092"))
+        pg = PolicyGuard(allow_writes=True)
+        cb = CircuitBreaker()
+        register_topic_tools(mcp, admin, pg, cb)
+
+        tool_fn = mcp._tool_manager._tools["oci_kafka_delete_topic"].fn
+
+        # First call without confirmed → confirmation_required
+        result = json.loads(tool_fn(topic_name="test-topic"))
+        assert result["status"] == "confirmation_required"
+        assert "confirmed=True" in result["message"]
+
+    def test_enable_superuser_requires_confirmation(self) -> None:
+        from mcp.server.fastmcp import FastMCP
+
+        from oracle.oci_kafka_mcp_server.config import OciConfig
+        from oracle.oci_kafka_mcp_server.oci.kafka_client import OciKafkaClient
+        from oracle.oci_kafka_mcp_server.security.policy_guard import PolicyGuard
+        from oracle.oci_kafka_mcp_server.tools.cluster_management import (
+            register_cluster_management_tools,
+        )
+
+        mcp = FastMCP("test")
+        oci_config = OciConfig()
+        kafka_client = OciKafkaClient(config_file="/nonexistent")
+        pg = PolicyGuard(allow_writes=True)
+        register_cluster_management_tools(mcp, kafka_client, oci_config, pg)
+
+        tool_fn = mcp._tool_manager._tools["oci_kafka_enable_superuser"].fn
+
+        # First call without confirmed → confirmation_required
+        result = json.loads(tool_fn(cluster_id="ocid1.kafkacluster.test"))
+        assert result["status"] == "confirmation_required"
+        assert result["risk_level"] == "HIGH"
+
+    def test_enable_superuser_rejects_invalid_duration(self) -> None:
+        from mcp.server.fastmcp import FastMCP
+
+        from oracle.oci_kafka_mcp_server.config import OciConfig
+        from oracle.oci_kafka_mcp_server.oci.kafka_client import OciKafkaClient
+        from oracle.oci_kafka_mcp_server.security.policy_guard import PolicyGuard
+        from oracle.oci_kafka_mcp_server.tools.cluster_management import (
+            register_cluster_management_tools,
+        )
+
+        mcp = FastMCP("test")
+        oci_config = OciConfig()
+        kafka_client = OciKafkaClient(config_file="/nonexistent")
+        pg = PolicyGuard(allow_writes=True)
+        register_cluster_management_tools(mcp, kafka_client, oci_config, pg)
+
+        tool_fn = mcp._tool_manager._tools["oci_kafka_enable_superuser"].fn
+
+        # Duration too long
+        result = json.loads(tool_fn(cluster_id="ocid1.kafkacluster.test", duration_in_hours=48))
+        assert "error" in result
+        assert "between 1 and 24" in result["error"]
+
+        # Duration too short
+        result = json.loads(tool_fn(cluster_id="ocid1.kafkacluster.test", duration_in_hours=0))
+        assert "error" in result
+
+
+class TestTrustBoundary:
+    """Test that tool outputs include trust boundary markers."""
+
+    def test_wrap_untrusted_adds_markers(self) -> None:
+        from oracle.oci_kafka_mcp_server.tools import wrap_untrusted
+
+        result = json.loads(wrap_untrusted({"foo": "bar"}))
+        assert result["_trust_boundary"] == "untrusted_external_data"
+        assert "untrusted" in result["_trust_notice"].lower()

@@ -17,6 +17,7 @@ from oracle.oci_kafka_mcp_server.audit.logger import audit
 from oracle.oci_kafka_mcp_server.kafka.admin_client import KafkaAdminClient
 from oracle.oci_kafka_mcp_server.kafka.connection import CircuitBreaker
 from oracle.oci_kafka_mcp_server.kafka.consumer_client import KafkaConsumerClient
+from oracle.oci_kafka_mcp_server.tools import wrap_untrusted
 
 CIRCUIT_OPEN_MSG = "Circuit breaker is open. Kafka may be unavailable."
 
@@ -54,7 +55,7 @@ def register_diagnostic_tools(
                 report = _build_scaling_report(admin_client)
                 entry.result_status = "success"
                 circuit_breaker.record_success()
-                return json.dumps(report, indent=2)
+                return wrap_untrusted(report)
             except Exception as e:
                 circuit_breaker.record_failure()
                 entry.result_status = "error"
@@ -90,7 +91,7 @@ def register_diagnostic_tools(
                 report = _build_lag_report(admin_client, consumer_client, group_id)
                 entry.result_status = "success"
                 circuit_breaker.record_success()
-                return json.dumps(report, indent=2)
+                return wrap_untrusted(report)
             except Exception as e:
                 circuit_breaker.record_failure()
                 entry.result_status = "error"

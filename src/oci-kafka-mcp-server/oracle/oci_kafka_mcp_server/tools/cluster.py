@@ -10,6 +10,7 @@ from oracle.oci_kafka_mcp_server.audit.logger import audit
 from oracle.oci_kafka_mcp_server.kafka.admin_client import KafkaAdminClient
 from oracle.oci_kafka_mcp_server.kafka.connection import CircuitBreaker
 from oracle.oci_kafka_mcp_server.security.policy_guard import PolicyGuard
+from oracle.oci_kafka_mcp_server.tools import wrap_untrusted
 
 
 def register_cluster_tools(
@@ -35,7 +36,7 @@ def register_cluster_tools(
                 result = admin_client.get_cluster_health()
                 entry.result_status = "success"
                 circuit_breaker.record_success()
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 circuit_breaker.record_failure()
                 entry.result_status = "error"
@@ -57,7 +58,7 @@ def register_cluster_tools(
                 result = admin_client.get_cluster_config()
                 entry.result_status = "success"
                 circuit_breaker.record_success()
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 circuit_breaker.record_failure()
                 entry.result_status = "error"

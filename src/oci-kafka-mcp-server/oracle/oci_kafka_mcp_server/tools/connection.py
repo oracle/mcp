@@ -18,25 +18,49 @@ from oracle.oci_kafka_mcp_server.kafka.consumer_client import KafkaConsumerClien
 _DEFAULT_PERSIST_PATH = Path.home() / ".oci" / "kafka-mcp-connection.env"
 
 
+def _sanitize_env_value(value: str) -> str:
+    """Sanitize a value for safe inclusion in a .env file.
+
+    Rejects values containing characters that could be dangerous
+    if the file is accidentally sourced as a shell script.
+    """
+    # Reject values with shell-dangerous characters
+    dangerous_chars = set("`$\\\"'\n\r")
+    found = dangerous_chars.intersection(value)
+    if found:
+        escaped_chars = ", ".join(repr(c) for c in sorted(found))
+        raise ValueError(
+            f"Value contains unsafe characters ({escaped_chars}) "
+            "that are not allowed in .env files."
+        )
+    return value
+
+
 def _write_env_file(path: Path, config: KafkaConfig) -> None:
-    """Write connection details to a shell-sourceable env file."""
+    """Write connection details to a .env file (non-executable format).
+
+    Uses plain KEY=VALUE format without shell 'export' directives.
+    This file should be loaded by application code (e.g. python-dotenv),
+    NOT sourced as a shell script.
+    """
     lines = [
         "# OCI Kafka MCP — connection configuration",
-        f'export KAFKA_BOOTSTRAP_SERVERS="{config.bootstrap_servers}"',
-        f'export KAFKA_SECURITY_PROTOCOL="{config.security_protocol}"',
+        "# Load with python-dotenv or pass to Docker/Podman — do NOT source in shell.",
+        f"KAFKA_BOOTSTRAP_SERVERS={_sanitize_env_value(config.bootstrap_servers)}",
+        f"KAFKA_SECURITY_PROTOCOL={_sanitize_env_value(config.security_protocol)}",
     ]
     if config.sasl_mechanism:
-        lines.append(f'export KAFKA_SASL_MECHANISM="{config.sasl_mechanism}"')
+        lines.append(f"KAFKA_SASL_MECHANISM={_sanitize_env_value(config.sasl_mechanism)}")
     if config.sasl_username:
-        lines.append(f'export KAFKA_SASL_USERNAME="{config.sasl_username}"')
+        lines.append(f"KAFKA_SASL_USERNAME={_sanitize_env_value(config.sasl_username)}")
     if config.sasl_password:
-        lines.append(f'export KAFKA_SASL_PASSWORD="{config.sasl_password}"')
+        lines.append(f"KAFKA_SASL_PASSWORD={_sanitize_env_value(config.sasl_password)}")
     if config.ssl_ca_location:
-        lines.append(f'export KAFKA_SSL_CA_LOCATION="{config.ssl_ca_location}"')
+        lines.append(f"KAFKA_SSL_CA_LOCATION={_sanitize_env_value(config.ssl_ca_location)}")
     if config.ssl_cert_location:
-        lines.append(f'export KAFKA_SSL_CERT_LOCATION="{config.ssl_cert_location}"')
+        lines.append(f"KAFKA_SSL_CERT_LOCATION={_sanitize_env_value(config.ssl_cert_location)}")
     if config.ssl_key_location:
-        lines.append(f'export KAFKA_SSL_KEY_LOCATION="{config.ssl_key_location}"')
+        lines.append(f"KAFKA_SSL_KEY_LOCATION={_sanitize_env_value(config.ssl_key_location)}")
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n")
@@ -84,7 +108,7 @@ def register_connection_tools(
                 default CA bundle is used.
             persist: If True, save the connection details to
                 ~/.oci/kafka-mcp-connection.env so they survive server restarts.
-                Load them with: source ~/.oci/kafka-mcp-connection.env
+                Load them with python-dotenv or pass to Docker/Podman.
         """
         new_config = KafkaConfig(
             bootstrap_servers=bootstrap_servers,
@@ -113,8 +137,8 @@ def register_connection_tools(
                 _write_env_file(_DEFAULT_PERSIST_PATH, new_config)
                 result["persisted_to"] = str(_DEFAULT_PERSIST_PATH)
                 result["persist_note"] = (
-                    f"Run 'source {_DEFAULT_PERSIST_PATH}' before starting the "
-                    "server to restore this connection automatically."
+                    f"Connection saved to {_DEFAULT_PERSIST_PATH}. "
+                    "Load with python-dotenv or --env-file in Docker/Podman."
                 )
             except OSError as e:
                 result["persist_error"] = f"Could not write env file: {e}"

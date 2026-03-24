@@ -15,6 +15,7 @@ from oracle.oci_kafka_mcp_server.audit.logger import audit
 from oracle.oci_kafka_mcp_server.config import OciConfig
 from oracle.oci_kafka_mcp_server.oci.kafka_client import OciKafkaClient
 from oracle.oci_kafka_mcp_server.security.policy_guard import PolicyGuard
+from oracle.oci_kafka_mcp_server.tools import wrap_untrusted
 
 
 def register_cluster_config_tools(
@@ -54,7 +55,7 @@ def register_cluster_config_tools(
                     freeform_tags=freeform_tags,
                 )
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -80,7 +81,7 @@ def register_cluster_config_tools(
                     kafka_cluster_config_id=cluster_config_id
                 )
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -119,7 +120,7 @@ def register_cluster_config_tools(
                     compartment_id=effective_compartment
                 )
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -153,14 +154,17 @@ def register_cluster_config_tools(
                     freeform_tags=freeform_tags,
                 )
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
                 return json.dumps({"error": f"Failed to update cluster config: {e}"})
 
     @mcp.tool()
-    def oci_kafka_delete_cluster_config(cluster_config_id: str) -> str:
+    def oci_kafka_delete_cluster_config(
+        cluster_config_id: str,
+        confirmed: bool = False,
+    ) -> str:
         """Delete an OCI Kafka cluster configuration permanently.
 
         Requires --allow-writes. This is a HIGH RISK operation that requires
@@ -169,17 +173,20 @@ def register_cluster_config_tools(
 
         Args:
             cluster_config_id: OCI cluster config OCID to delete (ocid1.kafkaclusterconfig.*).
+            confirmed: Must be True to execute. First call without this
+                returns a confirmation prompt.
         """
         params = {"cluster_config_id": cluster_config_id}
         check = policy_guard.check("oci_kafka_delete_cluster_config", params)
         if not check.allowed:
             return json.dumps({"error": check.reason})
-        if check.needs_confirmation:
+        if check.needs_confirmation and not confirmed:
             return json.dumps(
                 {
                     "status": "confirmation_required",
                     "message": f"Deleting cluster config '{cluster_config_id}' is IRREVERSIBLE. "
-                    "All config versions will be permanently deleted. Confirm to proceed.",
+                    "All config versions will be permanently deleted. "
+                    "Call again with confirmed=True to proceed.",
                     "risk_level": "HIGH",
                 }
             )
@@ -189,7 +196,7 @@ def register_cluster_config_tools(
                     kafka_cluster_config_id=cluster_config_id
                 )
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -223,7 +230,7 @@ def register_cluster_config_tools(
                     compartment_id=target_compartment_id,
                 )
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -251,7 +258,7 @@ def register_cluster_config_tools(
                     version_number=version_number,
                 )
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -278,7 +285,7 @@ def register_cluster_config_tools(
                     kafka_cluster_config_id=cluster_config_id
                 )
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -309,7 +316,7 @@ def register_cluster_config_tools(
                     version_number=version_number,
                 )
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)

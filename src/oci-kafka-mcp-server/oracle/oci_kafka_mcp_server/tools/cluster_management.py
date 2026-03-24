@@ -15,6 +15,7 @@ from oracle.oci_kafka_mcp_server.audit.logger import audit
 from oracle.oci_kafka_mcp_server.config import OciConfig
 from oracle.oci_kafka_mcp_server.oci.kafka_client import OciKafkaClient
 from oracle.oci_kafka_mcp_server.security.policy_guard import PolicyGuard
+from oracle.oci_kafka_mcp_server.tools import wrap_untrusted
 
 
 def register_cluster_management_tools(
@@ -36,6 +37,7 @@ def register_cluster_management_tools(
         ocpu_count: int = 2,
         storage_size_in_gbs: int = 50,
         cluster_config_id: str | None = None,
+        confirmed: bool = False,
     ) -> str:
         """Create a new OCI Streaming with Apache Kafka cluster.
 
@@ -52,6 +54,8 @@ def register_cluster_management_tools(
             ocpu_count: OCPUs per broker node (default: 2).
             storage_size_in_gbs: Storage per broker in GB (default: 50).
             cluster_config_id: Optional OCID of a cluster configuration to apply.
+            confirmed: Must be True to execute. First call without this
+                returns a confirmation prompt.
         """
         params = {
             "display_name": display_name,
@@ -62,12 +66,13 @@ def register_cluster_management_tools(
         check = policy_guard.check("oci_kafka_create_cluster", params)
         if not check.allowed:
             return json.dumps({"error": check.reason})
-        if check.needs_confirmation:
+        if check.needs_confirmation and not confirmed:
             return json.dumps(
                 {
                     "status": "confirmation_required",
                     "message": f"Creating cluster '{display_name}' with {broker_count} brokers "
-                    "will provision new OCI infrastructure and incur costs. Confirm to proceed.",
+                    "will provision new OCI infrastructure and incur costs. "
+                    "Call again with confirmed=True to proceed.",
                     "risk_level": "HIGH",
                 }
             )
@@ -85,7 +90,7 @@ def register_cluster_management_tools(
                     cluster_config_id=cluster_config_id,
                 )
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -125,7 +130,7 @@ def register_cluster_management_tools(
                     freeform_tags=freeform_tags,
                 )
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -135,6 +140,7 @@ def register_cluster_management_tools(
     def oci_kafka_scale_cluster(
         cluster_id: str,
         broker_count: int,
+        confirmed: bool = False,
     ) -> str:
         """Scale an OCI Kafka cluster to a different broker count.
 
@@ -144,18 +150,20 @@ def register_cluster_management_tools(
         Args:
             cluster_id: OCI Kafka cluster OCID to scale.
             broker_count: Target number of broker nodes.
+            confirmed: Must be True to execute. First call without this
+                returns a confirmation prompt.
         """
         params = {"cluster_id": cluster_id, "broker_count": broker_count}
         check = policy_guard.check("oci_kafka_scale_cluster", params)
         if not check.allowed:
             return json.dumps({"error": check.reason})
-        if check.needs_confirmation:
+        if check.needs_confirmation and not confirmed:
             return json.dumps(
                 {
                     "status": "confirmation_required",
                     "message": f"Scaling cluster to {broker_count} brokers will modify live "
                     "infrastructure and may cause temporary partition rebalancing. "
-                    "Confirm to proceed.",
+                    "Call again with confirmed=True to proceed.",
                     "risk_level": "HIGH",
                 }
             )
@@ -187,14 +195,17 @@ def register_cluster_management_tools(
 
                 result = _serialize_work_request(response.data)
                 entry.result_status = "success"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
                 return json.dumps({"error": f"Failed to scale cluster: {e}"})
 
     @mcp.tool()
-    def oci_kafka_delete_cluster(cluster_id: str) -> str:
+    def oci_kafka_delete_cluster(
+        cluster_id: str,
+        confirmed: bool = False,
+    ) -> str:
         """Delete an OCI Kafka cluster permanently.
 
         Requires --allow-writes. This is a HIGH RISK operation that requires confirmation.
@@ -203,17 +214,20 @@ def register_cluster_management_tools(
 
         Args:
             cluster_id: OCI Kafka cluster OCID to delete (ocid1.kafkacluster.*).
+            confirmed: Must be True to execute. First call without this
+                returns a confirmation prompt.
         """
         params = {"cluster_id": cluster_id}
         check = policy_guard.check("oci_kafka_delete_cluster", params)
         if not check.allowed:
             return json.dumps({"error": check.reason})
-        if check.needs_confirmation:
+        if check.needs_confirmation and not confirmed:
             return json.dumps(
                 {
                     "status": "confirmation_required",
                     "message": f"Deleting cluster '{cluster_id}' is IRREVERSIBLE. "
-                    "All topics and data will be permanently lost. Confirm to proceed.",
+                    "All topics and data will be permanently lost. "
+                    "Call again with confirmed=True to proceed.",
                     "risk_level": "HIGH",
                 }
             )
@@ -221,7 +235,7 @@ def register_cluster_management_tools(
             try:
                 result = kafka_client.delete_kafka_cluster(kafka_cluster_id=cluster_id)
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -231,6 +245,7 @@ def register_cluster_management_tools(
     def oci_kafka_change_cluster_compartment(
         cluster_id: str,
         target_compartment_id: str,
+        confirmed: bool = False,
     ) -> str:
         """Move an OCI Kafka cluster to a different OCI compartment.
 
@@ -240,17 +255,20 @@ def register_cluster_management_tools(
         Args:
             cluster_id: OCI Kafka cluster OCID to move.
             target_compartment_id: Target OCI compartment OCID.
+            confirmed: Must be True to execute. First call without this
+                returns a confirmation prompt.
         """
         params = {"cluster_id": cluster_id, "target_compartment_id": target_compartment_id}
         check = policy_guard.check("oci_kafka_change_cluster_compartment", params)
         if not check.allowed:
             return json.dumps({"error": check.reason})
-        if check.needs_confirmation:
+        if check.needs_confirmation and not confirmed:
             return json.dumps(
                 {
                     "status": "confirmation_required",
                     "message": f"Moving cluster to compartment '{target_compartment_id}' "
-                    "will change which IAM policies control access. Confirm to proceed.",
+                    "will change which IAM policies control access. "
+                    "Call again with confirmed=True to proceed.",
                     "risk_level": "HIGH",
                 }
             )
@@ -261,7 +279,7 @@ def register_cluster_management_tools(
                     compartment_id=target_compartment_id,
                 )
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -270,22 +288,39 @@ def register_cluster_management_tools(
     @mcp.tool()
     def oci_kafka_enable_superuser(
         cluster_id: str,
-        duration_in_hours: int | None = None,
+        duration_in_hours: int = 1,
+        confirmed: bool = False,
     ) -> str:
         """Enable the superuser for an OCI Kafka cluster.
 
-        Requires --allow-writes. The superuser has full administrative access
-        to all Kafka resources. Use sparingly and with a time limit.
+        Requires --allow-writes. This is a HIGH RISK operation that requires
+        confirmation. The superuser has full administrative access to all
+        Kafka resources. Use sparingly and with a bounded time limit.
 
         Args:
             cluster_id: OCI Kafka cluster OCID.
-            duration_in_hours: Optional duration (hours) to keep superuser enabled.
-                If not set, superuser stays enabled until explicitly disabled.
+            duration_in_hours: Duration (hours) to keep superuser enabled.
+                Default: 1 hour. Maximum: 24 hours.
+            confirmed: Must be True to execute. First call without this
+                returns a confirmation prompt.
         """
+        max_duration = 24
+        if duration_in_hours < 1 or duration_in_hours > max_duration:
+            return json.dumps({"error": f"duration_in_hours must be between 1 and {max_duration}."})
         params = {"cluster_id": cluster_id, "duration_in_hours": duration_in_hours}
         check = policy_guard.check("oci_kafka_enable_superuser", params)
         if not check.allowed:
             return json.dumps({"error": check.reason})
+        if check.needs_confirmation and not confirmed:
+            return json.dumps(
+                {
+                    "status": "confirmation_required",
+                    "message": f"Enabling superuser on cluster '{cluster_id}' grants "
+                    f"full administrative access for {duration_in_hours} hour(s). "
+                    "Call again with confirmed=True to proceed.",
+                    "risk_level": "HIGH",
+                }
+            )
         with audit.audit_tool("oci_kafka_enable_superuser", params) as entry:
             try:
                 result = kafka_client.enable_superuser(
@@ -293,7 +328,7 @@ def register_cluster_management_tools(
                     duration_in_hours=duration_in_hours,
                 )
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)
@@ -317,7 +352,7 @@ def register_cluster_management_tools(
             try:
                 result = kafka_client.disable_superuser(kafka_cluster_id=cluster_id)
                 entry.result_status = "success" if "error" not in result else "error"
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 entry.result_status = "error"
                 entry.error_message = str(e)

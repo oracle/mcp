@@ -9,6 +9,7 @@ from mcp.server.fastmcp import FastMCP
 from oracle.oci_kafka_mcp_server.audit.logger import audit
 from oracle.oci_kafka_mcp_server.kafka.admin_client import KafkaAdminClient
 from oracle.oci_kafka_mcp_server.kafka.connection import CircuitBreaker
+from oracle.oci_kafka_mcp_server.tools import wrap_untrusted
 
 
 def register_observability_tools(
@@ -40,7 +41,7 @@ def register_observability_tools(
                 result = admin_client.get_partition_skew(topic_name)
                 entry.result_status = "success"
                 circuit_breaker.record_success()
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 circuit_breaker.record_failure()
                 entry.result_status = "error"
@@ -65,7 +66,7 @@ def register_observability_tools(
                 result = admin_client.detect_under_replicated_partitions()
                 entry.result_status = "success"
                 circuit_breaker.record_success()
-                return json.dumps(result, indent=2)
+                return wrap_untrusted(result)
             except Exception as e:
                 circuit_breaker.record_failure()
                 entry.result_status = "error"

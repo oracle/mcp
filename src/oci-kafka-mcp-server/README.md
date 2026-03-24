@@ -226,7 +226,7 @@ Async operations — returns a work request OCID; use `oci_kafka_get_work_reques
 | `oci_kafka_scale_cluster` | Scale broker count for an existing cluster (requires confirmation) | HIGH |
 | `oci_kafka_delete_cluster` | Permanently delete a cluster and all its data (requires confirmation) | HIGH |
 | `oci_kafka_change_cluster_compartment` | Move a cluster to a different OCI compartment (requires confirmation) | HIGH |
-| `oci_kafka_enable_superuser` | Grant full administrative access to the cluster's superuser | MEDIUM |
+| `oci_kafka_enable_superuser` | Grant full administrative access (bounded duration, requires confirmation) | HIGH |
 | `oci_kafka_disable_superuser` | Revoke superuser access to restore least-privilege | MEDIUM |
 
 ### Cluster Configuration (OCI Control Plane)
@@ -288,7 +288,7 @@ All tool outputs that contain data from Kafka brokers or OCI APIs are tagged wit
 ## Development
 
 ```bash
-# Run tests (92 tests, all unit — no Kafka broker needed)
+# Run tests (135 tests, all unit — no Kafka broker needed)
 uv run pytest
 
 # Run tests with coverage

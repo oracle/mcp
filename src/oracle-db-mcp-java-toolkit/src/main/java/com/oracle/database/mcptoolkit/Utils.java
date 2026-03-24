@@ -488,11 +488,7 @@ public class Utils {
   }
 
   private static boolean isToolEnabled(ServerConfig config, String toolName) {
-    if (config.toolsFilter == null) {
-      return true;
-    }
-    String key = toolName.toLowerCase(Locale.ROOT);
-    return config.toolsFilter.contains(key);
+    return ServerConfig.isToolEnabled(config, toolName);
   }
 
   /**

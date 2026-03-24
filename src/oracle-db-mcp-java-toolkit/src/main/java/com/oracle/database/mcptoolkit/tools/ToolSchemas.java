@@ -226,6 +226,7 @@ public class ToolSchemas {
           "name":        { "type": "string", "description": "Tool name (YAML key). Required for upsert or delete." },
           "remove":      { "type": "boolean", "description": "If true, remove this tool from the YAML config. Other fields are ignored." },
           "description": { "type": "string", "description": "Human-friendly description of the tool" },
+          "enabled":     { "type": "boolean", "description": "Optional switch. true/omitted = enabled, false = disabled." },
           "dataSource":  { "type": "string", "description": "Reference key from dataSources to use for this tool" },
           "statement":   { "type": "string", "description": "SQL statement to execute (SELECT or DML)" },
           "parameters":  {

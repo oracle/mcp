@@ -17,14 +17,21 @@ public class ConfigRoot {
   public Map<String, DataSourceConfig> dataSources;
   public Map<String, ToolConfig> tools;
   /**
-   * Optional named toolsets allowing users to group custom tools and enable them with -Dtools.
-   * Example YAML:
+   * Optional named toolsets allowing users to group custom tools.
+   *
+   * <p>Supported YAML forms:</p>
    * <pre>
    * toolsets:
    *   reporting: [top_customers, sales_by_region]
+   *
+   *   finance:
+   *     tools: [pnl_report, balance_sheet]
+   *     enabled: false
    * </pre>
+   *
+   * <p>Each toolset is enabled by default unless {@code enabled: false} is specified.</p>
    */
-  public Map<String, List<String>> toolsets;
+  public Map<String, Object> toolsets;
 
   /**
    * Substitutes environment variables in the source and tool configurations.

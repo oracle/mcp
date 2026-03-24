@@ -121,10 +121,13 @@ public class McpAdminTools {
             }
           }
 
-          // 3) Custom YAML tools (always listed if present in config)
+          // 3) Custom YAML tools
           if (current.tools != null) {
             for (Map.Entry<String, com.oracle.database.mcptoolkit.config.ToolConfig> e : current.tools.entrySet()) {
               var tc = e.getValue();
+              if (!isEnabled(current, tc.name)) {
+                continue;
+              }
               tools.add(Map.of(
                       "name", tc.name,
                       "title", tc.name,
@@ -278,6 +281,7 @@ public class McpAdminTools {
 
           // Optional fields
           putIfPresent(t, callReq.arguments(), "description");
+          putIfPresent(t, callReq.arguments(), "enabled");
           putIfPresent(t, callReq.arguments(), "dataSource");
           putIfPresent(t, callReq.arguments(), "statement");
 
@@ -334,9 +338,7 @@ public class McpAdminTools {
   }
 
   private static boolean isEnabled(ServerConfig config, String toolName) {
-    if (config.toolsFilter == null) return true;
-    String key = toolName.toLowerCase(Locale.ROOT);
-    return config.toolsFilter.contains(key);
+    return ServerConfig.isToolEnabled(config, toolName);
   }
 
   private static String asString(Object v) {

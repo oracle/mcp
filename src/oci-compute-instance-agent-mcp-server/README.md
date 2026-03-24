@@ -4,18 +4,57 @@
 
 This server provides tools for interacting with Oracle Cloud Infrastructure (OCI) Compute Instance Agent service.
 
-## Running the server
+## MCP client configuration (recommended)
 
-### STDIO transport mode
+Most users should configure their MCP client to launch the server, rather than starting it manually.
 
-```sh
-uvx oracle.oci-compute-instance-agent-mcp-server
+Add a stanza like this to your MCP client config (often called `mcp.json`; example shown is **stdio**):
+
+```json
+{
+  "mcpServers": {
+    "oci-compute-instance-agent": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "oracle.oci-compute-instance-agent-mcp-server"
+      ],
+      "env": {
+        "OCI_CONFIG_PROFILE": "DEFAULT"
+      }
+    }
+  }
+}
 ```
 
-### HTTP streaming transport mode
+## Run the server locally (HTTP transport)
 
-```sh
-ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.oci-compute-instance-agent-mcp-server
+Most MCP clients run this server for you over **stdio** (see above). If you want to run the server as a standalone
+service and connect to it over HTTP (**streamable HTTP**), you can.
+
+1) Start the server in HTTP mode (choose host/port):
+
+```bash
+ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8000 uvx oracle.oci-compute-instance-agent-mcp-server
+```
+
+This will expose the MCP endpoint at:
+
+`http://127.0.0.1:8000/mcp`
+
+2) Configure your MCP client to connect via `streamableHttp`:
+
+> Note: MCP client configuration varies by client/tooling. Some clients refer to streamable HTTP as just `http`.
+
+```json
+{
+  "mcpServers": {
+    "oci-compute-instance-agent": {
+      "type": "streamableHttp",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
 ```
 
 ## Tools

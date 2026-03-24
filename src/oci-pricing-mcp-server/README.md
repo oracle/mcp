@@ -151,6 +151,34 @@ Test-only helpers (used by functional tests; **not needed** for normal use):
 }
 ```
 
+## Run the server locally (HTTP transport)
+
+Most MCP clients run this server for you over **stdio** (see above). If you want to run the server as a standalone
+service and connect to it over HTTP (**streamable HTTP**), you can.
+
+1) Start the server in HTTP mode (choose host/port):
+
+```bash
+ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8000 uvx oracle.oci-pricing-mcp-server
+```
+
+This will expose the MCP endpoint at:
+
+`http://127.0.0.1:8000/mcp`
+
+2) Configure your MCP client to connect via `streamableHttp`:
+
+```json
+{
+  "mcpServers": {
+    "oci-pricing": {
+      "type": "streamableHttp",
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
+
 ## API Tools
 
 1. **`pricing_get_sku(part_number, currency=None, max_pages=None)`**

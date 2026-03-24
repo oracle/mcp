@@ -71,11 +71,12 @@ Or use the OCI template file:
 ```bash
 cp .env.oci.example .env.oci
 # edit .env.oci with your cluster values
-source .env.oci
-uv run oci-kafka-mcp
+env $(grep -v '^#' .env.oci | xargs) uv run oci-kafka-mcp
 ```
 
-> Note: `KAFKA_*` variables are **not mandatory** at server startup. If not set, tools will guide the agent/user to provide connection details and use `oci_kafka_configure_connection` before data-plane operations.
+> **Security note:** The `.env.oci` file uses plain `KEY=VALUE` format (no `export` directives). Do **not** `source` it in a shell — use `env ... xargs`, `python-dotenv`, or Docker/Podman `--env-file` instead. This prevents shell injection if a credential contains special characters.
+>
+> **Note:** `KAFKA_*` variables are **not mandatory** at server startup. If not set, tools will guide the agent/user to provide connection details and use `oci_kafka_configure_connection` before data-plane operations.
 
 ### Use with an MCP Client
 

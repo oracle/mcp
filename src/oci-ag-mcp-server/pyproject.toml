@@ -1,0 +1,25 @@
+[project]
+name = "oracle.oci-ag-mcp-server"
+version = "0.1.0"
+description = "Access Governance MCP server"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp>=3.13.3",
+    "fastmcp>=3.1.1",
+    "pydantic>=2.12.5",
+    "python-dotenv>=1.2.2",
+]
+
+[project.scripts]
+"oracle.oci-ag-mcp-server" = "oracle.oci_ag_mcp_server.server:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

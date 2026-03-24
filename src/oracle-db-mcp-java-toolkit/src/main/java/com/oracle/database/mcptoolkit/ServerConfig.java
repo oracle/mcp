@@ -318,9 +318,6 @@ public final class ServerConfig {
       }
 
       Object toolsObj = map.get("tools");
-      if (!(toolsObj instanceof List<?>)) {
-        toolsObj = map.get("members");
-      }
       if (toolsObj instanceof List<?> list) {
         for (Object m : list) {
           if (m == null) continue;

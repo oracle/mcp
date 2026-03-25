@@ -81,67 +81,65 @@ public class ToolSchemas {
           "required":["sql"]
       }""";
 
-  /**
-   * JSON schema for file path operations.
-   * <p>
-   * This schema requires a "filePath" property, which should be an absolute path or a URL to an Oracle JDBC log file.
-   */
-  static final String FILE_PATH_SCHEMA = """
-            {
-              "type": "object",
-              "properties": {
-                "filePath": {
-                  "type": "string",
-                  "description": "Absolute path or an URL to the Oracle JDBC log file."
-                }
-              },
-              "required": ["filePath"]
-            }
-            """;
+  static final String JDBC_ANALYZER_SCHEMA = """
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["stats", "queries", "errors", "connection-events", "list-files", "compare"],
+          "description": "Operation to perform on JDBC logs."
+        },
+        "filePath": {
+          "type": "string",
+          "description": "Absolute path or URL to an Oracle JDBC thin log file."
+        },
+        "secondFilePath": {
+          "type": "string",
+          "description": "Absolute path or URL to the second Oracle JDBC thin log file (compare only)."
+        },
+        "directoryPath": {
+          "type": "string",
+          "description": "Absolute path to a directory containing log files (list-files only)."
+        }
+      },
+      "required": ["action"],
+      "oneOf": [
+        { "properties": { "action": { "const": "compare" } }, "required": ["filePath", "secondFilePath"] },
+        { "properties": { "action": { "const": "list-files" } }, "required": ["directoryPath"] },
+        { "properties": { "action": { "const": "stats" } }, "required": ["filePath"] },
+        { "properties": { "action": { "const": "queries" } }, "required": ["filePath"] },
+        { "properties": { "action": { "const": "errors" } }, "required": ["filePath"] },
+        { "properties": { "action": { "const": "connection-events" } }, "required": ["filePath"] }
+      ]
+    }
+    """;
 
-  /**
-   * JSON schema for file comparison operations.
-   * <p>
-   * This schema requires "filePath" and "secondFilePath" properties, which should be absolute paths or URLs to Oracle JDBC log files.
-   */
-  static final String FILE_COMPARISON_SCHEMA = """
-            {
-              "type": "object",
-              "properties": {
-                "filePath": {
-                  "type": "string",
-                  "description": "Absolute path or an URL to the 1st Oracle JDBC log file"
-                },
-                "secondFilePath": {
-                  "type": "string",
-                  "description": "Absolute path or an URL to the 2nd Oracle JDBC log file"
-                }
-              },
-              "required": ["filePath", "secondFilePath"]
-            }
-            """;
-
-  /**
-   * JSON schema for RDBMS tools operations.
-   * <p>
-   * This schema requires "filePath" and "connectionId" properties, where "filePath" is an absolute path or a URL to an RDBMS/SQLNet trace file, and "connectionId" is a connection ID string.
-   */
-  static final String RDBMS_TOOLS_SCHEMA = """
-            {
-              "type": "object",
-              "properties": {
-                "filePath": {
-                  "type": "string",
-                  "description": "Absolute path or an URL to the RDBMS/SQLNet trace file"
-                },
-                "connectionId": {
-                  "type": "string",
-                  "description": "Connection ID string"
-                }
-              },
-              "required": ["filePath", "connectionId"]
-            }
-            """;
+  static final String RDBMS_ANALYZER_SCHEMA = """
+    {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["errors", "packet-dumps"],
+          "description": "Operation to perform on an RDBMS/SQLNet trace file."
+        },
+        "filePath": {
+          "type": "string",
+          "description": "Absolute path or URL to the RDBMS/SQLNet trace file."
+        },
+        "connectionId": {
+          "type": "string",
+          "description": "Connection ID string (required for packet-dumps)."
+        }
+      },
+      "required": ["action", "filePath"],
+      "oneOf": [
+        { "properties": { "action": { "const": "packet-dumps" } }, "required": ["connectionId"] },
+        { "properties": { "action": { "const": "errors" } } }
+      ]
+    }
+    """;
 
   /**
    * JSON schema for similarity search operations.

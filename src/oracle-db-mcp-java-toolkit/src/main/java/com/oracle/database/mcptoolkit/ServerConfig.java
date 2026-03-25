@@ -67,16 +67,7 @@ public final class ServerConfig {
 
   /** Built-in toolsets covering predefined tools. Lowercase keys and members. */
   private static final Map<String, Set<String>> BUILTIN_TOOLSETS = Map.of(
-      "log-analyzer", Set.of(
-          "get-jdbc-stats",
-          "get-jdbc-queries",
-          "get-jdbc-errors",
-          "list-log-files-from-directory",
-          "jdbc-log-comparison",
-          "get-jdbc-connection-events",
-          "get-rdbms-errors",
-          "get-rdbms-packet-dumps"
-      ),
+      "log-analyzer", Set.of("jdbc-analyzer", "rdbms-analyzer"),
       "rag", Set.of("similarity-search"),
       "database-operator", Set.of(
               "read-query", "write-query", "transaction", "table", "db-ping", "db-metrics-range",

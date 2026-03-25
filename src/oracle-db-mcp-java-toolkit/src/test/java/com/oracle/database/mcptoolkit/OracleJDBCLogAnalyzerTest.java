@@ -29,14 +29,8 @@ class OracleJDBCLogAnalyzerTest {
 
   @ParameterizedTest
   @ValueSource(strings = {
-    "get-jdbc-stats",
-    "get-jdbc-queries",
-    "get-jdbc-errors",
-    "list-log-files-from-directory",
-    "get-jdbc-connection-events",
-    "jdbc-log-comparison",
-    "get-rdbms-errors",
-    "get-rdbms-packet-dumps"
+    "jdbc-analyzer",
+    "rdbms-analyzer"
   })
   void testToolPresence(final String toolName) {
     final var isToolPresent = tools.containsKey(toolName);
@@ -55,35 +49,4 @@ class OracleJDBCLogAnalyzerTest {
     }
   }
 
-  @Test
-  void testSecondFilePathParameterInLogComparisonTool() {
-    final var toolProperties = tools.get("jdbc-log-comparison")
-      .inputSchema()
-      .properties();
-
-    final var isSecondFileParameterPresent = toolProperties.containsKey("filePath");
-    assertTrue(isSecondFileParameterPresent, "log-comparison tool " +
-      "should have 'secondFilePath' parameter.");
-
-    final var secondFilePathProperty = (Map<String, String>) toolProperties.get("secondFilePath");
-
-    assertEquals("string", secondFilePathProperty.get("type"),
-      "The type of 'filePath' and 'secondFilePath' parameters should be 'string'");
-  }
-
-  @Test
-  void testConnectionIdParameterInGetPacketDumpsTool() {
-    final var toolProperties = tools.get("get-rdbms-packet-dumps")
-      .inputSchema()
-      .properties();
-
-    final var isConnectionIdPresent = toolProperties.containsKey("connectionId");
-    assertTrue(isConnectionIdPresent, "log-comparison tool " +
-      "should have 'connectionId' parameter.");
-
-    var connectionIdProperty = (Map<String, String>) toolProperties.get("connectionId");
-
-    assertEquals("string", connectionIdProperty.get("type"),
-      "The type of 'filePath' and 'secondFilePath' parameters should be 'string'");
-  }
 }

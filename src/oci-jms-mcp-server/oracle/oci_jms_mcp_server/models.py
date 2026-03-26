@@ -655,7 +655,7 @@ class FleetHealthDiagnostics(BaseModel):
 
 class JmsNotice(BaseModel):
     """Announcement or notice surfaced by the JMS service."""
-    key: Optional[str] = Field(None, description="Announcement key.")
+    key: Optional[int] = Field(None, description="Announcement key.")
     summary: Optional[str] = Field(None, description="Announcement summary.")
     time_released: Optional[datetime] = Field(None, description="Announcement release time.")
     url: Optional[str] = Field(None, description="Announcement reference URL.")
@@ -670,4 +670,66 @@ def map_jms_notice(data: oci.jms.models.AnnouncementSummary) -> JmsNotice | None
         summary=getattr(data, "summary", None),
         time_released=getattr(data, "time_released", None),
         url=getattr(data, "url", None),
+    )
+
+
+class JavaRuntimeComplianceBucket(BaseModel):
+    """Compliance summary for one runtime version or version/vendor/distribution tuple."""
+    version: Optional[str] = Field(None, description="Java runtime version.")
+    vendor: Optional[str] = Field(None, description="Java runtime vendor.")
+    distribution: Optional[str] = Field(None, description="Java runtime distribution.")
+    security_status: Optional[str] = Field(None, description="Security status of the runtime.")
+    runtime_count: int = Field(..., description="Approximate count of runtimes/installations in this bucket.")
+    approximate_managed_instance_count: Optional[int] = Field(
+        None, description="Approximate number of managed instances for this runtime."
+    )
+    approximate_application_count: Optional[int] = Field(
+        None, description="Approximate number of applications for this runtime."
+    )
+    release_date: Optional[datetime] = Field(None, description="Java release date when available.")
+    days_under_security_baseline: Optional[int] = Field(
+        None, description="Days the release is under the security baseline when available."
+    )
+    license_type: Optional[str] = Field(None, description="License type for the Java release.")
+    release_type: Optional[str] = Field(None, description="Release type for the Java release.")
+    release_notes_url: Optional[str] = Field(None, description="Release notes URL when available.")
+
+
+class JavaRuntimeCountBreakdown(BaseModel):
+    """Simple count breakdown by one grouping key such as vendor or distribution."""
+    key: str = Field(..., description="Grouping key label.")
+    runtime_count: int = Field(..., description="Approximate count of runtimes/installations in this group.")
+
+
+class OutdatedJavaInstallation(BaseModel):
+    """Drill-down row for one outdated installation site."""
+    installation_key: Optional[str] = Field(None, description="Unique installation identifier.")
+    managed_instance_id: Optional[str] = Field(None, description="Managed instance OCID.")
+    path: Optional[str] = Field(None, description="Installation path.")
+    version: Optional[str] = Field(None, description="Java runtime version.")
+    vendor: Optional[str] = Field(None, description="Java runtime vendor.")
+    distribution: Optional[str] = Field(None, description="Java runtime distribution.")
+    security_status: Optional[str] = Field(None, description="Security status of the runtime.")
+    time_last_seen: Optional[datetime] = Field(None, description="Last seen time for the installation.")
+
+
+class JavaRuntimeComplianceReport(BaseModel):
+    """Fleet-level runtime compliance report built from JMS usage and release metadata APIs."""
+    fleet_id: str = Field(..., description="Fleet OCID.")
+    total_runtimes_in_fleet: int = Field(..., description="Approximate total number of runtimes in the fleet.")
+    up_to_date_runtimes: int = Field(..., description="Approximate count of up-to-date runtimes.")
+    runtimes_requiring_update: int = Field(..., description="Approximate count of runtimes requiring update.")
+    runtimes_requiring_upgrade: int = Field(..., description="Approximate count of runtimes requiring upgrade.")
+    unknown_runtimes: int = Field(..., description="Approximate count of runtimes with unknown status.")
+    version_breakdown: List[JavaRuntimeComplianceBucket] = Field(
+        default_factory=list, description="Compliance breakdown by runtime version."
+    )
+    vendor_breakdown: List[JavaRuntimeCountBreakdown] = Field(
+        default_factory=list, description="Compliance breakdown by vendor."
+    )
+    distribution_breakdown: List[JavaRuntimeCountBreakdown] = Field(
+        default_factory=list, description="Compliance breakdown by distribution."
+    )
+    outdated_installations: List[OutdatedJavaInstallation] = Field(
+        default_factory=list, description="Bounded drill-down rows for outdated installations."
     )

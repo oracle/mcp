@@ -7,11 +7,16 @@ https://oss.oracle.com/licenses/upl.
 from _common import oci_res
 from flask import Blueprint, jsonify, request
 from jms_data import (
+    FLEET_DIAGNOSES,
     FLEET_ADVANCED_FEATURE_CONFIGURATIONS,
     FLEET_AGENT_CONFIGURATIONS,
+    FLEET_ERRORS,
     FLEETS,
     INSTALLATION_SITES,
+    JAVA_RELEASES,
+    JMS_NOTICES,
     JMS_PLUGINS,
+    JRE_USAGE,
     MANAGED_INSTANCE_USAGE,
     RESOURCE_INVENTORY,
 )
@@ -37,6 +42,14 @@ def _find_fleet(fleet_id):
 
 def _find_plugin(plugin_id):
     return next((plugin for plugin in JMS_PLUGINS if plugin.get("id") == plugin_id), None)
+
+
+def _find_java_release(release_version):
+    return JAVA_RELEASES.get(release_version)
+
+
+def _sort_items(items, sort_key, descending=False):
+    return sorted(items, key=lambda item: item.get(sort_key) or "", reverse=descending)
 
 
 @jms_bp.route("/fleets", methods=["GET"])
@@ -131,6 +144,20 @@ def list_installation_sites(fleet_id):
     if jre_version:
         items = [item for item in items if item.get("jre", {}).get("version") == jre_version]
 
+    jre_vendor = request.args.get("jreVendor")
+    if jre_vendor:
+        items = [item for item in items if item.get("jre", {}).get("vendor") == jre_vendor]
+
+    jre_distribution = request.args.get("jreDistribution")
+    if jre_distribution:
+        items = [
+            item for item in items if item.get("jre", {}).get("distribution") == jre_distribution
+        ]
+
+    jre_security_status = request.args.get("jreSecurityStatus")
+    if jre_security_status:
+        items = [item for item in items if item.get("securityStatus") == jre_security_status]
+
     return oci_res({"items": _apply_limit(items)})
 
 
@@ -187,3 +214,78 @@ def summarize_managed_instance_usage(fleet_id):
         items = [item for item in items if needle in item.get("hostname", "").lower()]
 
     return oci_res({"items": _apply_limit(items)})
+
+
+@jms_bp.route("/fleets/<fleet_id>/diagnoses", methods=["GET"])
+def list_fleet_diagnoses(fleet_id):
+    if not _find_fleet(fleet_id):
+        return jsonify({"code": "NotAuthorizedOrNotFound"}), 404
+    items = FLEET_DIAGNOSES.get(fleet_id, [])
+    return oci_res({"items": _apply_limit(items)})
+
+
+@jms_bp.route("/fleetErrors", methods=["GET"])
+def list_fleet_errors():
+    items = FLEET_ERRORS
+
+    compartment_id = request.args.get("compartmentId")
+    if compartment_id:
+        items = [item for item in items if item.get("compartmentId") == compartment_id]
+
+    fleet_id = request.args.get("fleetId")
+    if fleet_id:
+        items = [item for item in items if item.get("fleetId") == fleet_id]
+
+    return oci_res({"items": _apply_limit(items)})
+
+
+@jms_bp.route("/announcements", methods=["GET"])
+def list_announcements():
+    items = JMS_NOTICES
+
+    summary_contains = request.args.get("summaryContains")
+    if summary_contains:
+        needle = summary_contains.lower()
+        items = [item for item in items if needle in item.get("summary", "").lower()]
+
+    sort_by = request.args.get("sortBy")
+    if sort_by == "summary":
+        items = _sort_items(items, "summary", request.args.get("sortOrder") == "DESC")
+    else:
+        items = _sort_items(items, "timeReleased", request.args.get("sortOrder") == "DESC")
+
+    return oci_res({"items": _apply_limit(items)})
+
+
+@jms_bp.route("/fleets/<fleet_id>/actions/summarizeJreUsage", methods=["GET"])
+def summarize_jre_usage(fleet_id):
+    if not _find_fleet(fleet_id):
+        return jsonify({"code": "NotAuthorizedOrNotFound"}), 404
+
+    items = JRE_USAGE.get(fleet_id, [])
+
+    jre_version = request.args.get("jreVersion")
+    if jre_version:
+        items = [item for item in items if item.get("version") == jre_version]
+
+    jre_vendor = request.args.get("jreVendor")
+    if jre_vendor:
+        items = [item for item in items if item.get("vendor") == jre_vendor]
+
+    jre_distribution = request.args.get("jreDistribution")
+    if jre_distribution:
+        items = [item for item in items if item.get("distribution") == jre_distribution]
+
+    jre_security_status = request.args.get("jreSecurityStatus")
+    if jre_security_status:
+        items = [item for item in items if item.get("securityStatus") == jre_security_status]
+
+    return oci_res({"items": _apply_limit(items)})
+
+
+@jms_bp.route("/javaReleases/<release_version>", methods=["GET"])
+def get_java_release(release_version):
+    release = _find_java_release(release_version)
+    if not release:
+        return jsonify({"code": "NotAuthorizedOrNotFound"}), 404
+    return oci_res(release)

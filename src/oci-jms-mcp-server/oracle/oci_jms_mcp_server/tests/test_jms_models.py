@@ -188,7 +188,7 @@ def test_map_fleet_error_with_nested_details():
 def test_map_jms_notice():
     now = datetime.now(UTC)
     notice = oci.jms.models.AnnouncementSummary(
-        key="announcement1",
+        key=1001,
         summary="Planned maintenance",
         time_released=now,
         url="https://example.com",
@@ -196,6 +196,6 @@ def test_map_jms_notice():
 
     result = map_jms_notice(notice)
 
-    assert result.key == "announcement1"
+    assert result.key == 1001
     assert result.summary == "Planned maintenance"
     assert result.time_released == now

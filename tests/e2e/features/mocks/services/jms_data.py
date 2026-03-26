@@ -47,6 +47,22 @@ JMS_PLUGINS = [
         "pluginVersion": "1.2.3",
         "timeRegistered": "2026-02-11T10:30:00Z",
         "timeLastSeen": "2026-02-12T09:45:00Z",
+    },
+    {
+        "id": "ocid1.jmsplugin.oc1..mock-plugin-2",
+        "agentId": "ocid1.managementagent.oc1..mock-agent-2",
+        "agentType": "OCA",
+        "lifecycleState": "ACTIVE",
+        "availabilityStatus": "SILENT",
+        "fleetId": "ocid1.jmsfleet.oc1..mock-fleet-1",
+        "compartmentId": "ocid1.tenancy.oc1..mock",
+        "hostname": "archive-host-2",
+        "osFamily": "LINUX",
+        "osArchitecture": "X86_64",
+        "osDistribution": "Oracle Linux",
+        "pluginVersion": "1.1.8",
+        "timeRegistered": "2026-02-10T08:15:00Z",
+        "timeLastSeen": "2026-02-10T08:45:00Z",
     }
 ]
 
@@ -73,6 +89,29 @@ INSTALLATION_SITES = {
             },
             "approximateApplicationCount": 2,
             "timeLastSeen": "2026-02-12T09:45:00Z",
+            "lifecycleState": "ACTIVE",
+        },
+        {
+            "installationKey": "installation-beta",
+            "managedInstanceId": "managed-instance-2",
+            "jre": {
+                "version": "17.0.10",
+                "vendor": "Oracle",
+                "distribution": "JDK",
+                "jreKey": "jre-17-10-oracle",
+            },
+            "securityStatus": "UPDATE_REQUIRED",
+            "path": "/opt/java/jdk-17.0.10",
+            "operatingSystem": {
+                "family": "LINUX",
+                "name": "Oracle Linux",
+                "distribution": "Oracle Linux",
+                "version": "8",
+                "architecture": "X86_64",
+                "managedInstanceCount": 1,
+            },
+            "approximateApplicationCount": 1,
+            "timeLastSeen": "2026-02-13T08:45:00Z",
             "lifecycleState": "ACTIVE",
         }
     ]
@@ -149,4 +188,101 @@ MANAGED_INSTANCE_USAGE = {
             "timeLastSeen": "2026-02-12T09:45:00Z",
         }
     ]
+}
+
+FLEET_DIAGNOSES = {
+    "ocid1.jmsfleet.oc1..mock-fleet-1": [
+        {
+            "resourceDiagnosis": "Inventory scan issue",
+            "resourceId": "ocid1.jmsfleet.oc1..mock-fleet-1",
+            "resourceState": "FAILED",
+            "resourceType": "JMS_FLEET",
+        },
+        {
+            "resourceDiagnosis": "Plugin heartbeat warning",
+            "resourceId": "ocid1.jmsplugin.oc1..mock-plugin-1",
+            "resourceState": "NEEDS_ATTENTION",
+            "resourceType": "JMS_PLUGIN",
+        },
+    ]
+}
+
+FLEET_ERRORS = [
+    {
+        "compartmentId": "ocid1.tenancy.oc1..mock",
+        "fleetId": "ocid1.jmsfleet.oc1..mock-fleet-1",
+        "fleetName": "mock-jms-fleet",
+        "errors": [
+            {
+                "reason": "Agent connectivity failure",
+                "details": "Critical agent reporting failure for plugin-host-1",
+                "timeLastSeen": "2026-02-13T10:30:00Z",
+            }
+        ],
+        "timeFirstSeen": "2026-02-13T09:00:00Z",
+        "timeLastSeen": "2026-02-13T10:30:00Z",
+    }
+]
+
+JMS_NOTICES = [
+    {
+        "key": 1001,
+        "summary": "Planned JMS maintenance window",
+        "timeReleased": "2026-02-14T11:00:00Z",
+        "url": "https://example.oracle.test/jms/maintenance",
+    },
+    {
+        "key": 1002,
+        "summary": "JMS advisory for plugin telemetry delays",
+        "timeReleased": "2026-02-12T06:00:00Z",
+        "url": "https://example.oracle.test/jms/advisory",
+    },
+]
+
+JRE_USAGE = {
+    "ocid1.jmsfleet.oc1..mock-fleet-1": [
+        {
+            "id": "jre-usage-1",
+            "fleetId": "ocid1.jmsfleet.oc1..mock-fleet-1",
+            "version": "21.0.2",
+            "vendor": "Oracle",
+            "distribution": "JDK",
+            "securityStatus": "UP_TO_DATE",
+            "approximateInstallationCount": 4,
+            "approximateManagedInstanceCount": 2,
+            "approximateApplicationCount": 3,
+        },
+        {
+            "id": "jre-usage-2",
+            "fleetId": "ocid1.jmsfleet.oc1..mock-fleet-1",
+            "version": "17.0.10",
+            "vendor": "Oracle",
+            "distribution": "JDK",
+            "securityStatus": "UPDATE_REQUIRED",
+            "approximateInstallationCount": 3,
+            "approximateManagedInstanceCount": 1,
+            "approximateApplicationCount": 1,
+        },
+    ]
+}
+
+JAVA_RELEASES = {
+    "21.0.2": {
+        "releaseVersion": "21.0.2",
+        "releaseDate": "2026-01-16T00:00:00Z",
+        "daysUnderSecurityBaseline": 0,
+        "licenseType": "NFTC",
+        "releaseType": "CPU",
+        "releaseNotesUrl": "https://example.oracle.test/jms/releases/21.0.2",
+        "securityStatus": "UP_TO_DATE",
+    },
+    "17.0.10": {
+        "releaseVersion": "17.0.10",
+        "releaseDate": "2025-10-15T00:00:00Z",
+        "daysUnderSecurityBaseline": 30,
+        "licenseType": "NFTC",
+        "releaseType": "CPU",
+        "releaseNotesUrl": "https://example.oracle.test/jms/releases/17.0.10",
+        "securityStatus": "UPDATE_REQUIRED",
+    },
 }

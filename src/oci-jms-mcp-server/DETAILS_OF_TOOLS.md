@@ -1,6 +1,6 @@
 # JMS Tool Details
 
-This file documents the 12 tools exposed by `oracle.oci-jms-mcp-server`.
+This file documents the 13 tools exposed by `oracle.oci-jms-mcp-server`.
 
 Use this as a quick reference for:
 
@@ -668,6 +668,87 @@ Call the `list_jms_notices` tool with:
   "sort_order": "DESC",
   "sort_by": "timeReleased",
   "limit": 10
+}
+```
+
+---
+
+## 13. `java_runtime_compliance`
+
+Summarizes Java runtime compliance for a JMS fleet.
+
+### Inputs
+
+```json
+{
+  "fleet_id": "ocid1.jmsfleet..."
+}
+```
+
+### Output
+
+Returns a `JavaRuntimeComplianceReport` object:
+
+```json
+{
+  "fleet_id": "ocid1.jmsfleet...",
+  "total_runtimes_in_fleet": 7,
+  "up_to_date_runtimes": 4,
+  "runtimes_requiring_update": 2,
+  "runtimes_requiring_upgrade": 1,
+  "unknown_runtimes": 0,
+  "version_breakdown": [
+    {
+      "version": "21.0.2",
+      "vendor": "Oracle",
+      "distribution": "JDK",
+      "security_status": "UP_TO_DATE",
+      "runtime_count": 4,
+      "release_type": "CPU",
+      "license_type": "NFTC"
+    },
+    {
+      "version": "17.0.10",
+      "vendor": "Oracle",
+      "distribution": "JDK",
+      "security_status": "UPDATE_REQUIRED",
+      "runtime_count": 3,
+      "release_type": "CPU",
+      "license_type": "NFTC"
+    }
+  ],
+  "vendor_breakdown": [
+    {
+      "key": "Oracle",
+      "runtime_count": 7
+    }
+  ],
+  "distribution_breakdown": [
+    {
+      "key": "JDK",
+      "runtime_count": 7
+    }
+  ],
+  "outdated_installations": [
+    {
+      "installation_key": "install1",
+      "managed_instance_id": "mi1",
+      "path": "/usr/java/jdk-17",
+      "version": "17.0.10",
+      "vendor": "Oracle",
+      "distribution": "JDK",
+      "security_status": "UPDATE_REQUIRED"
+    }
+  ]
+}
+```
+
+### Demo Query
+
+```text
+Call the `java_runtime_compliance` tool with:
+{
+  "fleet_id": "ocid1.jmsfleet.oc1.iad.example"
 }
 ```
 

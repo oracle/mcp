@@ -45,10 +45,18 @@ _STATEFUL_OPERATION_PREFIXES = (
     "attach_",
     "detach_",
     "change_",
+    "move_",
+    "copy_",
+    "cancel_",
+    "restore_",
+    "export_",
+    "import_",
     "start_",
     "stop_",
     "reboot_",
     "reset_",
+    "patch_",
+    "bulk_",
 )
 
 # Backwards-compat pagination allowlist for operations whose pagination support
@@ -132,6 +140,19 @@ def _details_alias_keys(operation: str) -> Tuple[Optional[str], Optional[str]]:
     if not operation.startswith(("create_", "update_")):
         return None, None
     _, _, op_rest = operation.partition("_")
+    if not op_rest:
+        return None, None
+    return f"{op_rest}_details", f"{operation}_details"
+
+
+def _operation_suffix_details_alias_keys(
+    operation: str,
+) -> Tuple[Optional[str], Optional[str]]:
+    if "_" not in operation:
+        return None, None
+    _, _, op_rest = operation.partition("_")
+    if not op_rest:
+        return None, None
     return f"{op_rest}_details", f"{operation}_details"
 
 
@@ -708,8 +729,6 @@ def _build_model_instance(mapping: Dict[str, Any], cls: type, models_module: Any
         return _from_dict_if_available(cls, filtered_clean)
     except Exception:
         return cls(**filtered_clean)
-
-
 def _coerce_params_to_oci_models(
     client_fqn: str,
     operation: str,
@@ -726,10 +745,15 @@ def _coerce_params_to_oci_models(
     if not params:
         return {}
     models_module = _import_models_module_from_client_fqn(client_fqn)
+    source_params = (
+        _align_params_to_signature(method, operation, params)
+        if method is not None
+        else _apply_details_alias(params, operation)
+    )
     op_hints = _operation_param_model_candidates(method, operation)
     suffixes = ("_details", "_config", "_configuration", "_source_details")
     out: Dict[str, Any] = {}
-    for key, val in params.items():
+    for key, val in source_params.items():
         if isinstance(val, dict):
             candidates: List[str] = list(op_hints.get(key, []))
             dest_key = key
@@ -812,6 +836,16 @@ def _align_params_to_signature(
     param_names = set(sig_params.keys())
     aligned = _apply_details_alias(aligned, operation_name, require_dst_in=param_names)
 
+    expected_src, expected_dst = _operation_suffix_details_alias_keys(operation_name)
+    if (
+        expected_src
+        and expected_dst
+        and expected_src in aligned
+        and expected_dst in param_names
+        and expected_dst not in aligned
+    ):
+        aligned[expected_dst] = aligned.pop(expected_src)
+
     # General fallback for SDK operations that use abbreviated id parameters
     # (e.g., ig_id, rt_id). If exactly one caller *_id key does not match and
     # exactly one signature *_id parameter is missing, remap it.
@@ -834,7 +868,6 @@ def _align_params_to_signature(
         src_id = unknown_id_keys[0]
         dst_id = missing_id_params[0]
         aligned[dst_id] = aligned.pop(src_id)
-
     return aligned
 
 
@@ -952,6 +985,14 @@ def _supports_pagination(method: Callable[..., Any], operation_name: str) -> boo
         if ek and (("page" in ek) or ("limit" in ek)):
             return True
 
+        try:
+            if _docstring_mentions_pagination(method):
+                return True
+        except Exception:
+            pass
+
+        if operation_name in known_paginated:
+            return True
         sig = inspect.signature(method)
         param_names = set(sig.parameters.keys())
         if "page" in param_names or "limit" in param_names:
@@ -993,19 +1034,15 @@ def _call_with_pagination_if_applicable(
         logger.debug(f"op: {operation_name}")
         response = method(**call_params)
     except TypeError as e:
-        # fallback: if user passed "<resource>_details" for a create_/update_ op,
-        # retry with "create_<resource>_details"/"update_<resource>_details"
         msg = str(e)
-        if "unexpected keyword argument" in msg and (
-            operation_name.startswith("create_") or operation_name.startswith("update_")
-        ):
+        if "unexpected keyword argument" in msg:
             try:
                 bad_kw = msg.split("'")[1]
-                expected_src, alt_key = _details_alias_keys(operation_name)
-                if expected_src and alt_key and bad_kw == expected_src and expected_src in call_params:
-                    new_params = dict(call_params)
-                    new_params[alt_key] = new_params.pop(expected_src)
-                    response = method(**new_params)
+                expected_src, _ = _details_alias_keys(operation_name)
+                if expected_src and bad_kw == expected_src and bad_kw in call_params:
+                    retry_params = dict(call_params)
+                    retry_params.pop(bad_kw, None)
+                    response = method(**retry_params)
                 else:
                     raise
             except Exception:
@@ -1052,36 +1089,15 @@ def invoke_oci_api(
             raise AttributeError(f"Attribute '{operation}' on client '{client_fqn}' is not callable")
 
         params = params or {}
-        # pre-normalize parameter key to the SDK-expected kw for create_/update_ ops,
-        # so downstream coercion and invocation consistently use the correct key.
-        normalized_params = _apply_details_alias(params, operation)
-
         coerced_params = _coerce_params_for_invoke(
-            client_fqn, operation, normalized_params, method
+            client_fqn, operation, params, method
         )
-        # final kwarg aliasing at the top-level prior to invocation to ensure correct SDK kw
-        final_params = dict(coerced_params)
-
-        final_params = _align_params_to_signature(method, operation, final_params)
+        final_params = _align_params_to_signature(method, operation, coerced_params)
         logger.debug(f"invoke_oci_api final_params keys: {list(final_params.keys())}")
         logger.debug(f"op: {operation}")
-        try:
-            data, opc_request_id = _call_with_pagination_if_applicable(method, final_params, operation)
-        except TypeError as e:
-            msg = str(e)
-            if "unexpected keyword argument" in msg and (
-                operation.startswith("create_") or operation.startswith("update_")
-            ):
-                # last-chance aliasing retry at top level
-                src, dst = _details_alias_keys(operation)
-                if src and dst and src in final_params and dst not in final_params:
-                    alt_params = dict(final_params)
-                    alt_params[dst] = alt_params.pop(src)
-                    data, opc_request_id = _call_with_pagination_if_applicable(method, alt_params, operation)
-                else:
-                    raise
-            else:
-                raise
+        data, opc_request_id = _call_with_pagination_if_applicable(
+            method, final_params, operation
+        )
 
         result = {
             "client": client_fqn,

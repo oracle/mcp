@@ -1877,6 +1877,18 @@ class TestSupportsPaginationHeuristics:
 
         assert _supports_pagination(create_vcn, "create_vcn") is False
 
+    def test_supports_pagination_docstring_only_false_for_unlisted_mutation_verbs(self):
+        def move_compartment(**kwargs):  # noqa: ARG001
+            """
+            Move compartment.
+
+            :param str page: mentioned in docs but not applicable
+            :param int limit: mentioned in docs but not applicable
+            """
+            return None
+
+        assert _supports_pagination(move_compartment, "move_compartment") is False
+
 
 class TestPaginationFallback:
     def test_paginator_failure_falls_back_to_direct_call(self, monkeypatch):

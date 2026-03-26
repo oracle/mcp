@@ -21,10 +21,14 @@ from oracle.oci_jms_mcp_server.models import (
     FleetHealthSummary,
     FleetSummary,
     InstallationSiteSummary,
+    JavaRuntimeComplianceBucket,
+    JavaRuntimeComplianceReport,
+    JavaRuntimeCountBreakdown,
     JmsNotice,
     JmsPlugin,
     JmsPluginSummary,
     ManagedInstanceUsage,
+    OutdatedJavaInstallation,
     ResourceInventory,
     map_fleet,
     map_fleet_advanced_feature_configuration,
@@ -53,6 +57,7 @@ _UNSUPPORTED_ENV_ALIASES = {
     "OCI_CONFIG": "OCI_CONFIG_FILE",
     "OCI_PROFILE": "OCI_CONFIG_PROFILE",
 }
+_MAX_OUTDATED_INSTALLATIONS = 25
 
 # Input Normalization Helpers
 def _normalize_enum(value: Optional[str]) -> Optional[str]:
@@ -276,6 +281,37 @@ def _derive_recommended_next_checks(
 
     add_once("Check JMS notices for any known service-side issues or advisories.")
     return recommendations
+
+
+def _normalize_count(value: Optional[int]) -> int:
+    """Treat missing approximate counts as zero for aggregation purposes."""
+    return int(value or 0)
+
+
+def _safe_get_java_release(client, release_version: Optional[str]):
+    """Best-effort Java release lookup; ignore not-found style misses for enrichment."""
+    if not release_version:
+        return None
+    try:
+        response: oci.response.Response = client.get_java_release(release_version=release_version)
+        return response.data
+    except oci.exceptions.ServiceError as exc:
+        if exc.status in (400, 404):
+            return None
+        raise
+
+
+def _build_runtime_count_breakdowns(values: list[tuple[Optional[str], int]]) -> list[JavaRuntimeCountBreakdown]:
+    """Aggregate runtime counts by a single string key such as vendor or distribution."""
+    counts: dict[str, int] = {}
+    for raw_key, count in values:
+        key = raw_key or "UNKNOWN"
+        counts[key] = counts.get(key, 0) + count
+
+    return [
+        JavaRuntimeCountBreakdown(key=key, runtime_count=runtime_count)
+        for key, runtime_count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
 
 
 def _warn_on_unsupported_env_aliases():
@@ -881,6 +917,140 @@ def list_jms_notices(
         return [item for item in notices if item is not None]
     except Exception as e:
         logger.error(f"Error in list_jms_notices tool: {str(e)}")
+        raise
+
+
+@mcp.tool(description="Summarize Java runtime compliance for a JMS fleet.")
+def java_runtime_compliance(
+    fleet_id: str = Field(..., description="The OCID of the fleet.")
+) -> JavaRuntimeComplianceReport:
+    """Return a fleet-level Java runtime compliance report enriched with release metadata."""
+    try:
+        client = get_jms_client()
+        usage_rows = _collect_paginated_items(
+            client.summarize_jre_usage,
+            fleet_id=fleet_id,
+            fields=[
+                "approximateInstallationCount",
+                "approximateApplicationCount",
+                "approximateManagedInstanceCount",
+            ],
+        )
+
+        release_cache: dict[str, object | None] = {}
+        version_breakdown: list[JavaRuntimeComplianceBucket] = []
+        total_runtimes = 0
+        up_to_date_runtimes = 0
+        runtimes_requiring_update = 0
+        runtimes_requiring_upgrade = 0
+        unknown_runtimes = 0
+        vendor_values: list[tuple[Optional[str], int]] = []
+        distribution_values: list[tuple[Optional[str], int]] = []
+        outdated_installations: list[OutdatedJavaInstallation] = []
+
+        for row in usage_rows:
+            version = getattr(row, "version", None)
+            vendor = getattr(row, "vendor", None)
+            distribution = getattr(row, "distribution", None)
+            security_status = getattr(row, "security_status", None)
+            runtime_count = _normalize_count(getattr(row, "approximate_installation_count", None))
+            total_runtimes += runtime_count
+
+            if security_status == "UP_TO_DATE":
+                up_to_date_runtimes += runtime_count
+            elif security_status == "UPDATE_REQUIRED":
+                runtimes_requiring_update += runtime_count
+            elif security_status == "UPGRADE_REQUIRED":
+                runtimes_requiring_upgrade += runtime_count
+            else:
+                unknown_runtimes += runtime_count
+
+            vendor_values.append((vendor, runtime_count))
+            distribution_values.append((distribution, runtime_count))
+
+            if version not in release_cache:
+                release_cache[version] = _safe_get_java_release(client, version)
+            release = release_cache[version]
+
+            version_breakdown.append(
+                JavaRuntimeComplianceBucket(
+                    version=version,
+                    vendor=vendor,
+                    distribution=distribution,
+                    security_status=security_status,
+                    runtime_count=runtime_count,
+                    approximate_managed_instance_count=getattr(
+                        row, "approximate_managed_instance_count", None
+                    ),
+                    approximate_application_count=getattr(
+                        row, "approximate_application_count", None
+                    ),
+                    release_date=getattr(release, "release_date", None) if release else None,
+                    days_under_security_baseline=getattr(
+                        release, "days_under_security_baseline", None
+                    )
+                    if release
+                    else None,
+                    license_type=getattr(release, "license_type", None) if release else None,
+                    release_type=getattr(release, "release_type", None) if release else None,
+                    release_notes_url=getattr(release, "release_notes_url", None) if release else None,
+                )
+            )
+
+            if (
+                security_status in {"UPDATE_REQUIRED", "UPGRADE_REQUIRED"}
+                and len(outdated_installations) < _MAX_OUTDATED_INSTALLATIONS
+            ):
+                remaining = _MAX_OUTDATED_INSTALLATIONS - len(outdated_installations)
+                sites = _collect_paginated_items(
+                    client.list_installation_sites,
+                    fleet_id=fleet_id,
+                    jre_version=version,
+                    jre_vendor=vendor,
+                    jre_distribution=distribution,
+                    jre_security_status=security_status,
+                    limit=remaining,
+                )
+                for site in sites:
+                    mapped_site = map_installation_site_summary(site)
+                    if mapped_site is None:
+                        continue
+                    outdated_installations.append(
+                        OutdatedJavaInstallation(
+                            installation_key=mapped_site.installation_key,
+                            managed_instance_id=mapped_site.managed_instance_id,
+                            path=mapped_site.path,
+                            version=mapped_site.jre.version if mapped_site.jre else None,
+                            vendor=mapped_site.jre.vendor if mapped_site.jre else None,
+                            distribution=mapped_site.jre.distribution if mapped_site.jre else None,
+                            security_status=mapped_site.security_status,
+                            time_last_seen=mapped_site.time_last_seen,
+                        )
+                    )
+
+        version_breakdown.sort(
+            key=lambda item: (
+                -(item.runtime_count or 0),
+                item.version or "",
+                item.vendor or "",
+                item.distribution or "",
+            )
+        )
+
+        return JavaRuntimeComplianceReport(
+            fleet_id=fleet_id,
+            total_runtimes_in_fleet=total_runtimes,
+            up_to_date_runtimes=up_to_date_runtimes,
+            runtimes_requiring_update=runtimes_requiring_update,
+            runtimes_requiring_upgrade=runtimes_requiring_upgrade,
+            unknown_runtimes=unknown_runtimes,
+            version_breakdown=version_breakdown,
+            vendor_breakdown=_build_runtime_count_breakdowns(vendor_values),
+            distribution_breakdown=_build_runtime_count_breakdowns(distribution_values),
+            outdated_installations=outdated_installations,
+        )
+    except Exception as e:
+        logger.error(f"Error in java_runtime_compliance tool: {str(e)}")
         raise
 
 

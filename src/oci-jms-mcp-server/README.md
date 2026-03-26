@@ -168,6 +168,7 @@ Prefer verifying `get_fleet` only with an OCID returned by `list_fleets`. If `ge
 | summarize_fleet_health | Summarize fleet health using diagnoses and fleet errors |
 | get_fleet_health_diagnostics | Get detailed fleet health diagnoses and fleet errors |
 | list_jms_notices | List JMS announcements and notices |
+| java_runtime_compliance | Summarize Java runtime compliance for a fleet |
 
 ⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 

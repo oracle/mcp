@@ -756,7 +756,7 @@ class TestJmsTools:
         response.data = oci.jms.models.AnnouncementCollection(
             items=[
                 oci.jms.models.AnnouncementSummary(
-                    key="announcement1",
+                    key=1001,
                     summary="Planned maintenance",
                     time_released=datetime.now(UTC),
                     url="https://example.com",
@@ -781,7 +781,7 @@ class TestJmsTools:
                 )
             ).structured_content["result"]
 
-            assert result[0]["key"] == "announcement1"
+            assert result[0]["key"] == 1001
             assert mock_client.list_announcements.call_args.kwargs["sort_order"] == "DESC"
             assert mock_client.list_announcements.call_args.kwargs["sort_by"] == "timeReleased"
             assert (
@@ -798,8 +798,8 @@ class TestJmsTools:
         page_1 = create_autospec(oci.response.Response)
         page_1.data = oci.jms.models.AnnouncementCollection(
             items=[
-                oci.jms.models.AnnouncementSummary(key="announcement1"),
-                oci.jms.models.AnnouncementSummary(key="announcement2"),
+                oci.jms.models.AnnouncementSummary(key=1001),
+                oci.jms.models.AnnouncementSummary(key=1002),
             ]
         )
         page_1.has_next_page = True
@@ -807,7 +807,7 @@ class TestJmsTools:
 
         page_2 = create_autospec(oci.response.Response)
         page_2.data = oci.jms.models.AnnouncementCollection(
-            items=[oci.jms.models.AnnouncementSummary(key="announcement3")]
+            items=[oci.jms.models.AnnouncementSummary(key=1003)]
         )
         page_2.has_next_page = False
         page_2.next_page = None
@@ -819,8 +819,199 @@ class TestJmsTools:
                 await client.call_tool("list_jms_notices", {"limit": 2})
             ).structured_content["result"]
 
-            assert [item["key"] for item in result] == ["announcement1", "announcement2"]
+            assert [item["key"] for item in result] == [1001, 1002]
             assert mock_client.list_announcements.call_count == 1
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_java_runtime_compliance_with_release_enrichment_and_drilldown(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        usage_response = create_autospec(oci.response.Response)
+        usage_response.data = oci.jms.models.JreUsageCollection(
+            items=[
+                oci.jms.models.JreUsage(
+                    id="jre1",
+                    fleet_id="fleet1",
+                    version="17.0.10",
+                    vendor="Oracle",
+                    distribution="JDK",
+                    security_status="UPDATE_REQUIRED",
+                    approximate_installation_count=3,
+                    approximate_managed_instance_count=2,
+                    approximate_application_count=5,
+                ),
+                oci.jms.models.JreUsage(
+                    id="jre2",
+                    fleet_id="fleet1",
+                    version="21.0.2",
+                    vendor="Oracle",
+                    distribution="JDK",
+                    security_status="UP_TO_DATE",
+                    approximate_installation_count=4,
+                    approximate_managed_instance_count=2,
+                    approximate_application_count=6,
+                ),
+            ]
+        )
+        usage_response.has_next_page = False
+        usage_response.next_page = None
+        mock_client.summarize_jre_usage.return_value = usage_response
+
+        release_update = create_autospec(oci.response.Response)
+        release_update.data = oci.jms.models.JavaRelease(
+            release_version="17.0.10",
+            security_status="UPDATE_REQUIRED",
+            release_type="CPU",
+            license_type="NFTC",
+        )
+        release_current = create_autospec(oci.response.Response)
+        release_current.data = oci.jms.models.JavaRelease(
+            release_version="21.0.2",
+            security_status="UP_TO_DATE",
+            release_type="CPU",
+            license_type="NFTC",
+        )
+        mock_client.get_java_release.side_effect = [release_update, release_current]
+
+        site_response = create_autospec(oci.response.Response)
+        site_response.data = oci.jms.models.InstallationSiteCollection(
+            items=[
+                oci.jms.models.InstallationSiteSummary(
+                    installation_key="install1",
+                    managed_instance_id="mi1",
+                    path="/usr/java/jdk-17",
+                    jre=oci.jms.models.JavaRuntimeId(
+                        version="17.0.10", vendor="Oracle", distribution="JDK"
+                    ),
+                    security_status="UPDATE_REQUIRED",
+                    time_last_seen=datetime.now(UTC),
+                )
+            ]
+        )
+        site_response.has_next_page = False
+        site_response.next_page = None
+        mock_client.list_installation_sites.return_value = site_response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool("java_runtime_compliance", {"fleet_id": "fleet1"})
+            ).structured_content
+
+            assert result["fleet_id"] == "fleet1"
+            assert result["total_runtimes_in_fleet"] == 7
+            assert result["up_to_date_runtimes"] == 4
+            assert result["runtimes_requiring_update"] == 3
+            assert result["runtimes_requiring_upgrade"] == 0
+            assert result["version_breakdown"][0]["license_type"] == "NFTC"
+            assert result["outdated_installations"][0]["installation_key"] == "install1"
+            assert mock_client.list_installation_sites.call_count == 1
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_java_runtime_compliance_paginates_usage(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        page_1 = create_autospec(oci.response.Response)
+        page_1.data = oci.jms.models.JreUsageCollection(
+            items=[
+                oci.jms.models.JreUsage(
+                    id="jre1",
+                    fleet_id="fleet1",
+                    version="17.0.10",
+                    vendor="Oracle",
+                    distribution="JDK",
+                    security_status="UPDATE_REQUIRED",
+                    approximate_installation_count=1,
+                )
+            ]
+        )
+        page_1.has_next_page = True
+        page_1.next_page = "token"
+
+        page_2 = create_autospec(oci.response.Response)
+        page_2.data = oci.jms.models.JreUsageCollection(
+            items=[
+                oci.jms.models.JreUsage(
+                    id="jre2",
+                    fleet_id="fleet1",
+                    version="21.0.2",
+                    vendor="Oracle",
+                    distribution="JDK",
+                    security_status="UP_TO_DATE",
+                    approximate_installation_count=2,
+                )
+            ]
+        )
+        page_2.has_next_page = False
+        page_2.next_page = None
+
+        mock_client.summarize_jre_usage.side_effect = [page_1, page_2]
+        release_1 = create_autospec(oci.response.Response)
+        release_1.data = oci.jms.models.JavaRelease(
+            release_version="17.0.10"
+        )
+        release_2 = create_autospec(oci.response.Response)
+        release_2.data = oci.jms.models.JavaRelease(
+            release_version="21.0.2"
+        )
+        mock_client.get_java_release.side_effect = [release_1, release_2]
+        empty_sites = create_autospec(oci.response.Response)
+        empty_sites.data = oci.jms.models.InstallationSiteCollection(items=[])
+        empty_sites.has_next_page = False
+        empty_sites.next_page = None
+        mock_client.list_installation_sites.return_value = empty_sites
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool("java_runtime_compliance", {"fleet_id": "fleet1"})
+            ).structured_content
+
+            assert result["total_runtimes_in_fleet"] == 3
+            assert len(result["version_breakdown"]) == 2
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_java_runtime_compliance_ignores_missing_release_metadata(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        usage_response = create_autospec(oci.response.Response)
+        usage_response.data = oci.jms.models.JreUsageCollection(
+            items=[
+                oci.jms.models.JreUsage(
+                    id="jre1",
+                    fleet_id="fleet1",
+                    version="11.0.0-custom",
+                    vendor="Oracle",
+                    distribution="JDK",
+                    security_status="UNKNOWN",
+                    approximate_installation_count=1,
+                )
+            ]
+        )
+        usage_response.has_next_page = False
+        usage_response.next_page = None
+        mock_client.summarize_jre_usage.return_value = usage_response
+        mock_client.get_java_release.side_effect = oci.exceptions.ServiceError(
+            status=404,
+            code="NotAuthorizedOrNotFound",
+            message="Not found",
+            opc_request_id="req",
+            headers={},
+        )
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool("java_runtime_compliance", {"fleet_id": "fleet1"})
+            ).structured_content
+
+            assert result["unknown_runtimes"] == 1
+            assert result["version_breakdown"][0]["release_type"] is None
 
 
 class TestServerMain:

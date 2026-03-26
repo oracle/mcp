@@ -39,6 +39,24 @@ class TestImportModelsModuleFromClientFqn:
         mod = _import_models_module_from_client_fqn("x.y.ClientClass")
         assert mod is None
 
+    def test_oci_client_fqn_resolves_service_models_module(self, monkeypatch):
+        calls = []
+
+        def fake_import(name):
+            calls.append(name)
+            if name == "oci.core.models":
+                return SimpleNamespace(ok=True)
+            raise ImportError("nope")
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module", fake_import
+        )
+        mod = _import_models_module_from_client_fqn(
+            "oci.core.compute_client.ComputeClient"
+        )
+        assert mod is not None
+        assert calls[0] == "oci.core.models"
+
 
 class TestResolveModelClass:
     def test_not_found_returns_none(self):

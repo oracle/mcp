@@ -239,6 +239,25 @@ class TestAlignParamsToSignature:
         out = _align_params_to_signature(create_vcn, "create_vcn", params)
         assert out == params
 
+    def test_does_not_remap_unrelated_details_key(self):
+        def create_vcn(create_vcn_details):  # noqa: ARG001
+            return None
+
+        params = {"subnet_details": {"x": 1}}
+        out = _align_params_to_signature(create_vcn, "create_vcn", params)
+        assert out == params
+
+    def test_remaps_non_create_update_operation_details_from_operation_suffix(self):
+        def move_compartment(move_compartment_details):  # noqa: ARG001
+            return None
+
+        params = {"compartment_details": {"x": 1}}
+        out = _align_params_to_signature(
+            move_compartment, "move_compartment", params
+        )
+        assert "move_compartment_details" in out
+        assert "compartment_details" not in out
+
 
 class TestGetConfigAndSignerMoreBranches:
     def test_token_signer_build_failure_falls_back_to_api_key(self, monkeypatch):

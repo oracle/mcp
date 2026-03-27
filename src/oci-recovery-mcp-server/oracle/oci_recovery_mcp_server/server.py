@@ -613,6 +613,21 @@ def _build_signer_for_session(config: dict):
     return oci.auth.signers.SecurityTokenSigner(token, private_key)
 
 
+def _get_oci_client_kwargs(signer=None):
+    kwargs = {
+        "circuit_breaker_strategy": oci.circuit_breaker.CircuitBreakerStrategy(
+            failure_threshold=int(os.getenv("OCI_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "10")),
+            recovery_timeout=int(os.getenv("OCI_CIRCUIT_BREAKER_RECOVERY_TIMEOUT", "30")),
+        ),
+        "circuit_breaker_callback": lambda exc: logger.warning(
+            "Circuit breaker triggered: %s", exc
+        ),
+    }
+    if signer is not None:
+        kwargs["signer"] = signer
+    return kwargs
+
+
 # Create the FastMCP app that exposes the functions decorated with @mcp.tool
 mcp = FastMCP(name=__project__)
 
@@ -630,10 +645,12 @@ def get_recovery_client(
 
     method = _effective_auth_method()
     if method == "apikey":
-        client = oci.recovery.DatabaseRecoveryClient(regional_config)
+        client = oci.recovery.DatabaseRecoveryClient(regional_config, **_get_oci_client_kwargs())
     else:
         signer = _build_signer_for_session(regional_config)
-        client = oci.recovery.DatabaseRecoveryClient(regional_config, signer=signer)
+        client = oci.recovery.DatabaseRecoveryClient(
+            regional_config, **_get_oci_client_kwargs(signer)
+        )
 
     rid = request_id or uuid.uuid4().hex
     return _wrap_oci_client(client, request_id=rid, client_name="recovery")
@@ -643,10 +660,10 @@ def get_identity_client(*, request_id: Optional[str] = None):
     config = _load_oci_config_for_server()
     method = _effective_auth_method()
     if method == "apikey":
-        client = oci.identity.IdentityClient(config)
+        client = oci.identity.IdentityClient(config, **_get_oci_client_kwargs())
     else:
         signer = _build_signer_for_session(config)
-        client = oci.identity.IdentityClient(config, signer=signer)
+        client = oci.identity.IdentityClient(config, **_get_oci_client_kwargs(signer))
 
     rid = request_id or uuid.uuid4().hex
     return _wrap_oci_client(client, request_id=rid, client_name="identity")
@@ -657,10 +674,10 @@ def get_database_client(region: str = None, *, request_id: Optional[str] = None)
     regional_config = config if region is None else {**config, "region": region}
     method = _effective_auth_method()
     if method == "apikey":
-        client = oci.database.DatabaseClient(regional_config)
+        client = oci.database.DatabaseClient(regional_config, **_get_oci_client_kwargs())
     else:
         signer = _build_signer_for_session(regional_config)
-        client = oci.database.DatabaseClient(regional_config, signer=signer)
+        client = oci.database.DatabaseClient(regional_config, **_get_oci_client_kwargs(signer))
 
     rid = request_id or uuid.uuid4().hex
     return _wrap_oci_client(client, request_id=rid, client_name="database")
@@ -672,10 +689,12 @@ def get_monitoring_client(region: str | None = None, *, request_id: Optional[str
     regional_config = config if region is None else {**config, "region": region}
     method = _effective_auth_method()
     if method == "apikey":
-        client = oci.monitoring.MonitoringClient(regional_config)
+        client = oci.monitoring.MonitoringClient(regional_config, **_get_oci_client_kwargs())
     else:
         signer = _build_signer_for_session(regional_config)
-        client = oci.monitoring.MonitoringClient(regional_config, signer=signer)
+        client = oci.monitoring.MonitoringClient(
+            regional_config, **_get_oci_client_kwargs(signer)
+        )
 
     rid = request_id or uuid.uuid4().hex
     return _wrap_oci_client(client, request_id=rid, client_name="monitoring")
@@ -3078,4 +3097,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

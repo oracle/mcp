@@ -7,8 +7,9 @@ Pydantic models.  All tests are asynchronous and marked with ``@pytest.mark.asyn
 """
 
 import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, mock_open, patch
 
+import oci
 import pytest
 
 # Import the server module where the tools are defined
@@ -29,8 +30,12 @@ class MockResponse:
 
 
 @pytest.fixture(autouse=True)
-def mock_client(monkeypatch):
+def mock_client(monkeypatch, request):
     """Patch ``get_load_balancer_client`` to return a MagicMock client and stub OCI model classes."""
+    if request.node.cls is TestGetClient:
+        yield None
+        return
+
     # Stub OCI SDK model constructors to accept any kwargs (avoid strict validations during tests)
     import oci
 
@@ -73,6 +78,44 @@ def mock_client(monkeypatch):
         mock = MagicMock()
         get_client.return_value = mock
         yield mock
+
+
+class TestGetClient:
+    @patch("oracle.oci_load_balancer_mcp_server.server.oci.load_balancer.LoadBalancerClient")
+    @patch("oracle.oci_load_balancer_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
+    @patch("oracle.oci_load_balancer_mcp_server.server.oci.signer.load_private_key_from_file")
+    @patch(
+        "oracle.oci_load_balancer_mcp_server.server.open",
+        new_callable=mock_open,
+        read_data="SECURITY_TOKEN",
+    )
+    @patch("oracle.oci_load_balancer_mcp_server.server.oci.config.from_file")
+    @patch("oracle.oci_load_balancer_mcp_server.server.os.getenv")
+    def test_get_load_balancer_client_passes_circuit_breaker(
+        self,
+        mock_getenv,
+        mock_from_file,
+        mock_open_file,
+        mock_load_private_key,
+        mock_security_token_signer,
+        mock_client,
+    ):
+        mock_getenv.side_effect = lambda k, default=None: default
+        config = {"key_file": "/key.pem", "security_token_file": "/token"}
+        mock_from_file.return_value = config
+        private_key_obj = object()
+        mock_load_private_key.return_value = private_key_obj
+
+        result = server.get_load_balancer_client()
+
+        mock_open_file.assert_called_once_with("/token", "r")
+        mock_security_token_signer.assert_called_once_with("SECURITY_TOKEN", private_key_obj)
+        args, kwargs = mock_client.call_args
+        assert args[0] is config
+        assert kwargs["signer"] is mock_security_token_signer.return_value
+        assert isinstance(kwargs["circuit_breaker_strategy"], oci.circuit_breaker.CircuitBreakerStrategy)
+        assert callable(kwargs["circuit_breaker_callback"])
+        assert result is mock_client.return_value
 
 
 # ----------------------------------------------------------------------

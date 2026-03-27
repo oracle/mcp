@@ -357,6 +357,8 @@ This section will help you set up your environment to prepare it for local devel
     make build
     make install
     ```
+**Note**: If you want to run commands in a single server project, you can add the `project` variable to only run commands for that specific project
+For example: `make project=oci-compute-mcp-server build` will only build the compute mcp server
 
 3. Add desired servers to your MCP client configuration, but run them using the locally installed server package instead
 

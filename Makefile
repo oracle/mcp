@@ -1,4 +1,12 @@
-SUBDIRS ?= $(filter-out src/dbtools-mcp-server src/mysql-mcp-server src/oci-pricing-mcp-server src/oracle-db-doc-mcp-server src/oracle-db-mcp-java-toolkit,$(wildcard src/*))
+SOURCE_FOLDER := src
+# These directories will be excluded from common cmds like build, install, test etc
+EXCLUDED_PROJECTS := dbtools-mcp-server mysql-mcp-server oci-pricing-mcp-server oracle-db-doc-mcp-server oracle-db-mcp-java-toolkit
+EXCLUDED_PROJECT_PATHS = $(addprefix $(SOURCE_FOLDER)/, $(EXCLUDED_PROJECTS))
+# This matches all paths by default. If you want to run a command on a specific package you can specify the `project` variable
+project ?= *
+# These are the directories that will be built
+DIRS := $(wildcard $(SOURCE_FOLDER)/$(project))
+SUBDIRS := $(filter-out $(EXCLUDED_PROJECT_PATHS), $(DIRS))
 
 .PHONY: test format
 

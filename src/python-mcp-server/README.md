@@ -2,7 +2,7 @@
 
 Python code execution MCP server that runs arbitrary Python code inside a WebAssembly (WASM) sandbox.
 
-The sandbox provides complete isolation: no host filesystem access, no network access, and a fuel-based instruction budget to prevent runaway execution. The Python standard library is available inside the sandbox.
+The sandbox provides no writable host filesystem access, no network access, and a fuel-based instruction budget to prevent runaway execution. A substantial pure-Python subset of the standard library is available inside the sandbox through a read-only runtime mount.
 
 ## Running the Server
 
@@ -25,6 +25,8 @@ The first run downloads CPython 3.13 WASM (~30 MB zip) from GitHub, verifies the
 ```bash
 PYTHON_WASM_PATH=/path/to/python.wasm uv run oracle.python-mcp-server
 ```
+
+When `PYTHON_WASM_PATH` is set, the server expects a sibling `lib/` directory next to the `python.wasm` file.
 
 ## Tools
 
@@ -52,7 +54,7 @@ flowchart TD
 
     subgraph Request["Per request"]
         Store["New Store\nnew fuel budget"]
-        Wasi["New WasiConfig\ncapped stdout/stderr capture\n/lib stdlib mount"]
+        Wasi["New WasiConfig\ncapped stdout/stderr capture\nread-only /usr/local/lib stdlib mount"]
         Linker["New Linker"]
         Instance["New WASM instance\n_start execution"]
     end
@@ -70,11 +72,13 @@ The server does not keep one long-lived sandbox and reuse it for later execution
 
 ## Sandbox Properties
 
-- Python stdlib available via `/lib` mount (read-only)
+- Pure-Python stdlib modules available via read-only `/usr/local/lib` mount
+- Modules that depend on native extension modules in the bundled WASI runtime are unavailable (for example `sqlite3`, `ssl`, `ctypes`, `bz2`)
 - No other host filesystem access
 - No network access
 - Fuel-based timeout: each WASM instruction consumes 1 fuel unit
 - Guest linear memory capped at 256 MiB per execution
+- Stdin payload capped at 1 MiB per execution
 - Captured stdout capped at 1 MiB per execution
 - Captured stderr capped at 1 MiB per execution
 - Downloaded `python.wasm` verified against a pinned SHA-256 digest before use
@@ -82,14 +86,14 @@ The server does not keep one long-lived sandbox and reuse it for later execution
 
 ## Security
 
-This server executes arbitrary code. The WASM sandbox ensures that executed code cannot access the host filesystem (beyond the read-only stdlib), make network calls, or run indefinitely. However, operators should review their deployment environment and apply additional controls as appropriate.
+This server executes arbitrary code. The WASM sandbox ensures that executed code cannot access the host filesystem beyond the read-only stdlib mount, make network calls, or run indefinitely. However, operators should review their deployment environment and apply additional controls as appropriate.
 
 ## Security Model And Limitations
 
 Security model:
 
 - Isolation boundary: untrusted Python runs inside a fresh WASM instance for each request, while the Wasmtime `Engine` and compiled `Module` are reused only as immutable runtime artifacts.
-- Filesystem scope: only the extracted stdlib is mounted into the guest at `/lib`; no other host paths are preopened.
+- Filesystem scope: only the extracted stdlib is mounted into the guest at `/usr/local/lib` with read-only permissions; no other host paths are preopened.
 - Network scope: the guest only receives WASI imports and no host network capability is intentionally exposed.
 - CPU control: each execution gets a fresh fuel budget derived from the requested timeout.
 - Memory control: each execution runs with a 256 MiB Wasmtime store memory limit.
@@ -100,6 +104,8 @@ Limitations:
 
 - The integrity check is pinned to the extracted `python.wasm` artifact from the configured release, not to the entire downloaded zip archive.
 - If `PYTHON_WASM_PATH` is set, the server trusts that user-supplied runtime path and does not apply the pinned digest check automatically.
+- The Python Wasmtime bindings used here require stdin to be provided via a file-backed WASI handle, so stdin is staged through a temporary file before execution.
+- Modules that require native extension modules from the bundled runtime are unavailable; for example `sqlite3`, `ssl`, `ctypes`, and `bz2` currently fail to import.
 - A guest that exceeds the stdout or stderr cap will typically see an I/O error from the WASI stream; output is blocked rather than silently discarded.
 - This is still a single-process sandbox design. It is stronger than executing untrusted Python directly on the host, but weaker than layering WASM isolation inside a container or microVM.
 - The security boundary depends on the correctness of Wasmtime, WASI, and the bundled CPython WASM runtime.

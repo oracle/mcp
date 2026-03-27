@@ -35,6 +35,21 @@ mcp = FastMCP(
 _user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
 _ADDITIONAL_UA = f"{_user_agent_name}/{__version__}"
 
+
+def _get_oci_client_kwargs(signer=None):
+    kwargs = {
+        "circuit_breaker_strategy": oci.circuit_breaker.CircuitBreakerStrategy(
+            failure_threshold=int(os.getenv("OCI_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "10")),
+            recovery_timeout=int(os.getenv("OCI_CIRCUIT_BREAKER_RECOVERY_TIMEOUT", "30")),
+        ),
+        "circuit_breaker_callback": lambda exc: logger.warning(
+            "Circuit breaker triggered: %s", exc
+        ),
+    }
+    if signer is not None:
+        kwargs["signer"] = signer
+    return kwargs
+
 # Backwards-compat pagination allowlist placeholder.
 # Heuristic detection handles most cases; keep an empty set to avoid NameError
 # in any residual fallback checks.
@@ -103,7 +118,23 @@ def _import_client(client_fqn: str) -> Any:
     if not inspect.isclass(cls):
         raise ValueError(f"{client_fqn} is not a class")
     config, signer = _get_config_and_signer()
-    instance = cls(config, signer=signer)
+    client_kwargs = _get_oci_client_kwargs(signer)
+    try:
+        init_signature = inspect.signature(cls.__init__)
+        supports_kwargs = any(
+            param.kind == inspect.Parameter.VAR_KEYWORD
+            for param in init_signature.parameters.values()
+        )
+    except (TypeError, ValueError):
+        supports_kwargs = True
+
+    if supports_kwargs:
+        instance = cls(config, **client_kwargs)
+    else:
+        filtered_kwargs = {
+            key: value for key, value in client_kwargs.items() if key in init_signature.parameters
+        }
+        instance = cls(config, **filtered_kwargs)
     return instance
 
 

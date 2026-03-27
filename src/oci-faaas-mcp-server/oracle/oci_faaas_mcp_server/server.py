@@ -27,6 +27,21 @@ logger = Logger(__name__, level="INFO")
 mcp = FastMCP(name=__project__)
 
 
+def _get_oci_client_kwargs(signer=None):
+    kwargs = {
+        "circuit_breaker_strategy": oci.circuit_breaker.CircuitBreakerStrategy(
+            failure_threshold=int(os.getenv("OCI_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "10")),
+            recovery_timeout=int(os.getenv("OCI_CIRCUIT_BREAKER_RECOVERY_TIMEOUT", "30")),
+        ),
+        "circuit_breaker_callback": lambda exc: logger.warning(
+            "Circuit breaker triggered: %s", exc
+        ),
+    }
+    if signer is not None:
+        kwargs["signer"] = signer
+    return kwargs
+
+
 def get_faaas_client():
     """Initialize and return an OCI Fusion Applications client using security token auth."""
     logger.info("entering get_faaas_client")
@@ -46,7 +61,7 @@ def get_faaas_client():
         token = f.read()
     signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
 
-    return oci.fusion_apps.FusionApplicationsClient(config, signer=signer)
+    return oci.fusion_apps.FusionApplicationsClient(config, **_get_oci_client_kwargs(signer))
 
 
 @mcp.tool(description="Returns a list of Fusion Environment Families in the specified compartment.")

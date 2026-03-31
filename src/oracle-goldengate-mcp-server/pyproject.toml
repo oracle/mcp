@@ -1,0 +1,73 @@
+[project]
+name = "oracle.oracle-goldengate-mcp-server"
+version = "1.0.0"
+description = "Oracle GoldenGate MCP server"
+readme = "README.md"
+authors = [
+    {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
+]
+requires-python = ">=3.10"
+dependencies = [
+  "mcp>=1.0.0",
+  "pydantic>=2.7.0",
+  "requests>=2.32.0",
+  "cryptography>=43.0.0",
+]
+
+classifiers = [
+    "License :: OSI Approved :: Universal Permissive License (UPL)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+]
+
+[project.scripts]
+"oracle.oracle-goldengate-mcp-server" = "oracle.oracle_goldengate_mcp_server.server:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["oracle*"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+    "pytest-asyncio>=1.2.0",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.13.0",
+    "mypy>=1.18.2",
+    "types-requests>=2.32.4.20250913",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501", "B008"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = false
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+show_error_codes = true
+exclude = ["oracle/oracle_goldengate_mcp_server/tests/"]
+
+[tool.coverage.run]
+omit = [
+    "**/__init__.py",
+    "**/tests/*",
+    "dist/*",
+    ".venv/*",
+]
+
+[tool.coverage.report]
+precision = 2
+fail_under = 80

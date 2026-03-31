@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.github/
+
+logs/
+oracle-goldengate-mcp-server.env
+
+# Keep dependency lockfile for reproducible installs
+!uv.lock

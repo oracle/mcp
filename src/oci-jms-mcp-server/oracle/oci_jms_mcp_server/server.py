@@ -237,6 +237,7 @@ def _derive_overall_health_status(
     )
 
     lowered = [fragment.casefold() for fragment in fragments]
+    # Prefer a stable coarse status over surfacing raw provider-specific states.
     if any(marker in fragment for fragment in lowered for marker in severe_markers):
         return "CRITICAL"
     if any(marker in fragment for fragment in lowered for marker in warning_markers):
@@ -258,6 +259,8 @@ def _derive_recommended_next_checks(
         if text not in recommendations:
             recommendations.append(text)
 
+    # These recommendations intentionally trade completeness for deterministic,
+    # chat-friendly next steps derived from recurring diagnosis/error keywords.
     if any(
         marker in fragment
         for fragment in fragments
@@ -969,6 +972,8 @@ def java_runtime_compliance(
             distribution_values.append((distribution, runtime_count))
 
             if version not in release_cache:
+                # Reuse release lookups across identical versions so the report
+                # stays bounded even when multiple usage rows share a release.
                 release_cache[version] = _safe_get_java_release(client, version)
             release = release_cache[version]
 
@@ -1001,6 +1006,8 @@ def java_runtime_compliance(
                 security_status in {"UPDATE_REQUIRED", "UPGRADE_REQUIRED"}
                 and len(outdated_installations) < _MAX_OUTDATED_INSTALLATIONS
             ):
+                # Drill down only for outdated buckets and cap the sample so the
+                # tool remains readable while still surfacing concrete fixes.
                 remaining = _MAX_OUTDATED_INSTALLATIONS - len(outdated_installations)
                 sites = _collect_paginated_items(
                     client.list_installation_sites,

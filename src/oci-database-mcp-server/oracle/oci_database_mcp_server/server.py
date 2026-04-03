@@ -4,11 +4,23 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
+import argparse
+import base64
+import datetime
+import hashlib
+import hmac
+import json
 import os
+import sys
 from logging import Logger
+from pathlib import Path
 from typing import Annotated, Any, Optional
+from urllib.parse import quote_plus, urlparse
 
 import oci
+import requests
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from fastmcp import FastMCP
 from oci.database.models import (
     CreatePluggableDatabaseFromLocalCloneDetails,
@@ -283,38 +295,298 @@ logger = Logger(__name__, level="INFO")
 mcp = FastMCP(name=__project__)
 
 
-def _get_oci_client_kwargs(signer=None):
-    kwargs = {
-        "circuit_breaker_strategy": oci.circuit_breaker.CircuitBreakerStrategy(
-            failure_threshold=int(os.getenv("OCI_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "10")),
-            recovery_timeout=int(os.getenv("OCI_CIRCUIT_BREAKER_RECOVERY_TIMEOUT", "30")),
-        ),
-        "circuit_breaker_callback": lambda exc: logger.warning(
-            "Circuit breaker triggered: %s", exc
-        ),
+# --- Global Variables for Auth ---
+AUTH_METHOD = "token"
+RPST_SIGNER = None
+CUSTOM_DATABASE_ENDPOINT = None
+DATABASE_ENDPOINT = None
+IMDS_INSTANCE_ENDPOINT = "http://169.254.169.254/opc/v2/instance/"
+
+# --- Custom RPST Authentication Functions ---
+
+
+def load_private_key(path):
+    return serialization.load_pem_private_key(Path(path).read_bytes(), password=None)
+
+
+def build_java_style_auth_header(key_id, signature, headers_list):
+    return (
+        f'Signature headers="{headers_list}",'
+        f'keyId="{key_id}",'
+        f'algorithm="rsa-sha256",'
+        f'signature="{signature}",'
+        f'version="1"'
+    )
+
+
+def build_security_context(rci, t0, security_context_version, key_type):
+    t0_dt = datetime.datetime.fromisoformat(t0.replace("Z", "+00:00"))
+    now_dt = datetime.datetime.now(datetime.timezone.utc)
+
+    rci_key = base64.b64decode(rci)
+    t0_ms = int(t0_dt.timestamp() * 1000)
+    tn_ms = int(now_dt.timestamp() * 1000)
+    delta_ms = tn_ms - t0_ms
+    msg = delta_ms.to_bytes(8, byteorder="big", signed=False)
+
+    digest = hmac.new(rci_key, msg, hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    binary = (
+        ((digest[offset] & 0x7F) << 24)
+        | ((digest[offset + 1] & 0xFF) << 16)
+        | ((digest[offset + 2] & 0xFF) << 8)
+        | (digest[offset + 3] & 0xFF)
+    )
+    signature_code = f"{binary % 100000000:08d}"
+    current_utc_time = now_dt.isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+    return json.dumps(
+        {
+            "RPTSecurityContext": {
+                "contextVersion": security_context_version,
+                "keyType": key_type,
+                "securitySignature": {
+                    "currentUTCTime": current_utc_time,
+                    "Signature": signature_code,
+                },
+            }
+        },
+        indent=2,
+    )
+
+
+def fetch_tokens_v212(
+    database_endpoint, resource_ocid, tenancy_ocid, private_key, security_context
+):
+    key_id = f"resource/v2.1.2/{tenancy_ocid}/{resource_ocid}"
+    url = f"{database_endpoint}/20180711/resourcePrincipalTokenV212/{resource_ocid}"
+    host = urlparse(url).netloc
+    date_str = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
+
+    headers = {
+        "date": date_str,
+        "host": host,
+        "security-context": quote_plus(security_context),
     }
-    if signer is not None:
-        kwargs["signer"] = signer
-    return kwargs
+
+    signing_string = (
+        f"date: {date_str}\n(request-target): get {urlparse(url).path}\nhost: {host}"
+    )
+    sig_bytes = private_key.sign(
+        signing_string.encode("utf-8"), padding.PKCS1v15(), hashes.SHA256()
+    )
+    headers["Authorization"] = build_java_style_auth_header(
+        key_id, base64.b64encode(sig_bytes).decode(), "date (request-target) host"
+    )
+
+    resp = requests.get(url, headers=headers)
+
+    if resp.status_code != 200:
+        params = {"securityContext": security_context}
+        req = requests.Request(
+            "GET", url, params=params, headers={"date": date_str, "host": host}
+        )
+        prep = req.prepare()
+
+        signing_string_query = (
+            f"date: {date_str}\n(request-target): get {prep.path_url}\nhost: {host}"
+        )
+        sig_query = private_key.sign(
+            signing_string_query.encode("utf-8"), padding.PKCS1v15(), hashes.SHA256()
+        )
+        prep.headers["Authorization"] = build_java_style_auth_header(
+            key_id, base64.b64encode(sig_query).decode(), "date (request-target) host"
+        )
+
+        resp = requests.Session().send(prep)
+
+    if resp.status_code != 200:
+        raise Exception(f"Token fetch failed: {resp.status_code} {resp.text}")
+
+    data = resp.json()
+    return data["resourcePrincipalToken"], data["servicePrincipalSessionToken"]
+
+
+def fetch_rpst_from_auth(
+    auth_endpoint, tenancy_ocid, resource_ocid, private_key, rpt, spst
+):
+    key_id = f"resource/v2.1.2/{tenancy_ocid}/{resource_ocid}"
+    url = f"{auth_endpoint}/v1/resourcePrincipalSessionToken"
+
+    session_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    session_public_der = session_private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+
+    body = json.dumps(
+        {
+            "resourcePrincipalToken": rpt,
+            "servicePrincipalSessionToken": spst,
+            "sessionPublicKey": base64.b64encode(session_public_der).decode(),
+        },
+        separators=(",", ":"),
+    ).encode()
+
+    date_str = datetime.datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT")
+    content_sha = base64.b64encode(hashlib.sha256(body).digest()).decode()
+
+    headers = {
+        "date": date_str,
+        "host": urlparse(url).netloc,
+        "content-type": "application/json",
+        "content-length": str(len(body)),
+        "x-content-sha256": content_sha,
+    }
+
+    signing_string = f"date: {date_str}\n(request-target): post {urlparse(url).path}\nhost: {headers['host']}\ncontent-length: {len(body)}\ncontent-type: application/json\nx-content-sha256: {content_sha}"
+    sig = private_key.sign(signing_string.encode(), padding.PKCS1v15(), hashes.SHA256())
+    headers["Authorization"] = build_java_style_auth_header(
+        key_id,
+        base64.b64encode(sig).decode(),
+        "date (request-target) host content-length content-type x-content-sha256",
+    )
+
+    resp = requests.post(url, data=body, headers=headers)
+    if resp.status_code != 200:
+        raise Exception(f"RPST exchange failed: {resp.status_code} {resp.text}")
+
+    return resp.json()["token"], session_private_key
+
+
+def get_region_from_imds() -> str:
+    headers = {"Authorization": "Bearer Oracle"}
+    response = requests.get(IMDS_INSTANCE_ENDPOINT, headers=headers, timeout=5)
+    if response.status_code != 200:
+        raise Exception(f"IMDS lookup failed: {response.status_code} {response.text}")
+
+    payload = response.json()
+    region = payload.get("canonicalRegionName") or payload.get("region")
+    if not region:
+        raise Exception(
+            "Unable to determine region from IMDS payload (missing canonicalRegionName/region)"
+        )
+
+    return region
+
+
+def build_default_rp_endpoints(region: str) -> tuple[str, str]:
+    database_endpoint = f"https://database.{region}.oraclecloud.com"
+    auth_endpoint = f"https://auth.{region}.oraclecloud.com"
+    return database_endpoint, auth_endpoint
+
+
+def initialize_rpst_auth_from_env(
+    database_endpoint: Optional[str] = None,
+    tenancy_ocid: Optional[str] = None,
+    private_key_path: Optional[str] = None,
+    resource_ocid: Optional[str] = None,
+    rci: Optional[str] = None,
+    t0: Optional[str] = None,
+):
+    global RPST_SIGNER, DATABASE_ENDPOINT
+
+    resolved_values = {
+        "TENANCY_OCID": tenancy_ocid or os.getenv("TENANCY_OCID"),
+        "PRIVATE_KEY_PATH": private_key_path or os.getenv("PRIVATE_KEY_PATH"),
+        "RESOURCE_OCID": resource_ocid or os.getenv("RESOURCE_OCID"),
+        "RCI": rci or os.getenv("RCI"),
+        "T0": t0 or os.getenv("T0"),
+    }
+    missing_env_vars = [name for name, value in resolved_values.items() if not value]
+    if missing_env_vars:
+        print(
+            "Error: Missing required environment variables when using AUTH_METHOD=resource_principal:",
+            file=sys.stderr,
+        )
+        for name in missing_env_vars:
+            print(f"  {name}", file=sys.stderr)
+        sys.exit(1)
+
+    database_endpoint = database_endpoint or os.getenv("DATABASE_ENDPOINT")
+
+    try:
+        imds_region = get_region_from_imds()
+        default_database_endpoint, auth_endpoint = build_default_rp_endpoints(
+            imds_region
+        )
+    except Exception as e:
+        print(f"Failed to resolve RP endpoints from IMDS: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    database_endpoint = database_endpoint or default_database_endpoint
+    tenancy_ocid = resolved_values["TENANCY_OCID"]
+    private_key_path = resolved_values["PRIVATE_KEY_PATH"]
+    resource_ocid = resolved_values["RESOURCE_OCID"]
+    rci = resolved_values["RCI"]
+    t0 = resolved_values["T0"]
+
+    print("--- Initializing RPST Authentication ---", file=sys.stderr)
+    try:
+        DATABASE_ENDPOINT = database_endpoint
+        private_key = load_private_key(private_key_path)
+        sec_ctx = build_security_context(rci, t0, "V1", "REGULAR_RPT")
+        rpt, spst = fetch_tokens_v212(
+            database_endpoint, resource_ocid, tenancy_ocid, private_key, sec_ctx
+        )
+        rpst, session_key = fetch_rpst_from_auth(
+            auth_endpoint, tenancy_ocid, resource_ocid, private_key, rpt, spst
+        )
+        RPST_SIGNER = oci.auth.signers.SecurityTokenSigner(rpst, session_key)
+        print("--- RPST Authentication Successful ---", file=sys.stderr)
+    except Exception as e:
+        print(f"Failed to initialize RPST Auth: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 def get_database_client(region: str = None):
-    config = oci.config.from_file(
-        file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
-    )
+
     user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = config["security_token_file"]
-    with open(token_file, "r") as f:
-        token = f.read()
-    signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    if region is None:
-        return oci.database.DatabaseClient(config, **_get_oci_client_kwargs(signer))
-    regional_config = config.copy()
-    regional_config["region"] = region
-    return oci.database.DatabaseClient(regional_config, **_get_oci_client_kwargs(signer))
+
+    additional_user_agent = f"{user_agent_name}/{__version__}"
+
+    if AUTH_METHOD == "resource_principal":
+        client_config = {"additional_user_agent": additional_user_agent}
+
+        if region is not None:
+            logger.info(f"Using custom RPST authentication (Region: {region})")
+            client_config["region"] = region
+            return oci.database.DatabaseClient(config=client_config, signer=RPST_SIGNER)
+        else:
+            logger.info(
+                f"Using custom RPST authentication (Fallback Database Endpoint: {DATABASE_ENDPOINT})"
+            )
+            return oci.database.DatabaseClient(
+                config=client_config,
+                signer=RPST_SIGNER,
+                service_endpoint=DATABASE_ENDPOINT,
+            )
+    elif AUTH_METHOD == "instance_principal":
+        logger.info("Using Instance Principal authentication")
+        signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
+        client_config = {"additional_user_agent": additional_user_agent}
+        if region is not None:
+            client_config["region"] = region
+        return oci.database.DatabaseClient(client_config, signer=signer)
+    else:
+        # Security Token / Config File Authentication
+        logger.info("Using standard Security Token authentication")
+        config = oci.config.from_file(
+            file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+            profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
+        )
+        config["additional_user_agent"] = additional_user_agent
+        private_key = oci.signer.load_private_key_from_file(config["key_file"])
+        token_file = config["security_token_file"]
+        with open(token_file, "r") as f:
+            token = f.read()
+        signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
+
+        client_config = config.copy()
+        if region is not None:
+            client_config["region"] = region
+
+        return oci.database.DatabaseClient(client_config, signer=signer)
 
 
 def call_create_pdb(client, details, opc_retry_token=None, opc_request_id=None):
@@ -7597,6 +7869,34 @@ def get_vm_cluster_update_history_entry(
 
 
 def main():
+    global AUTH_METHOD
+
+    parser = argparse.ArgumentParser(description="OCI Database MCP Server")
+    parser.add_argument(
+        "--auth-method",
+        choices=["token", "instance_principal", "resource_principal"],
+        help="Authentication method",
+    )
+    parser.add_argument("--database-endpoint", help="Database endpoint for RP auth")
+    parser.add_argument("--tenancy-ocid", help="Tenancy OCID for RP auth")
+    parser.add_argument("--private-key-path", help="Private key path for RP auth")
+    parser.add_argument("--resource-ocid", help="Resource OCID for RP auth")
+    parser.add_argument("--rci", help="RCI for RP auth")
+    parser.add_argument("--t0", help="T0 timestamp for RP auth")
+    args = parser.parse_args()
+
+    AUTH_METHOD = args.auth_method or os.getenv("AUTH_METHOD", "token")
+
+    if AUTH_METHOD == "resource_principal":
+        initialize_rpst_auth_from_env(
+            database_endpoint=args.database_endpoint,
+            tenancy_ocid=args.tenancy_ocid,
+            private_key_path=args.private_key_path,
+            resource_ocid=args.resource_ocid,
+            rci=args.rci,
+            t0=args.t0,
+        )
+
     mcp.run()
 
 

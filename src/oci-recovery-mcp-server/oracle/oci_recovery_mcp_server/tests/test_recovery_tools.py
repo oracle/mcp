@@ -10,7 +10,58 @@ from unittest.mock import MagicMock, create_autospec, patch
 import oci
 import pytest
 from fastmcp import Client
+import oracle.oci_recovery_mcp_server.server as server
 from oracle.oci_recovery_mcp_server.server import mcp
+
+
+class TestGetClientFactories:
+    @patch("oracle.oci_recovery_mcp_server.server._wrap_oci_client", side_effect=lambda client, **_: client)
+    @patch("oracle.oci_recovery_mcp_server.server.oci.recovery.DatabaseRecoveryClient")
+    @patch("oracle.oci_recovery_mcp_server.server._effective_auth_method", return_value="apikey")
+    @patch("oracle.oci_recovery_mcp_server.server._load_oci_config_for_server")
+    def test_get_recovery_client_apikey_passes_circuit_breaker(
+        self,
+        mock_load_config,
+        _mock_auth_method,
+        mock_client,
+        _mock_wrap,
+    ):
+        mock_load_config.return_value = {"region": "us-ashburn-1"}
+
+        result = server.get_recovery_client(region="us-phoenix-1", request_id="rid")
+
+        args, kwargs = mock_client.call_args
+        assert args[0]["region"] == "us-phoenix-1"
+        assert "signer" not in kwargs
+        assert isinstance(kwargs["circuit_breaker_strategy"], oci.circuit_breaker.CircuitBreakerStrategy)
+        assert callable(kwargs["circuit_breaker_callback"])
+        assert result is mock_client.return_value
+
+    @patch("oracle.oci_recovery_mcp_server.server._wrap_oci_client", side_effect=lambda client, **_: client)
+    @patch("oracle.oci_recovery_mcp_server.server._build_signer_for_session")
+    @patch("oracle.oci_recovery_mcp_server.server.oci.monitoring.MonitoringClient")
+    @patch("oracle.oci_recovery_mcp_server.server._effective_auth_method", return_value="session")
+    @patch("oracle.oci_recovery_mcp_server.server._load_oci_config_for_server")
+    def test_get_monitoring_client_session_passes_circuit_breaker(
+        self,
+        mock_load_config,
+        _mock_auth_method,
+        mock_client,
+        mock_build_signer,
+        _mock_wrap,
+    ):
+        mock_load_config.return_value = {"region": "us-ashburn-1"}
+        signer = object()
+        mock_build_signer.return_value = signer
+
+        result = server.get_monitoring_client(region="us-phoenix-1", request_id="rid")
+
+        args, kwargs = mock_client.call_args
+        assert args[0]["region"] == "us-phoenix-1"
+        assert kwargs["signer"] is signer
+        assert isinstance(kwargs["circuit_breaker_strategy"], oci.circuit_breaker.CircuitBreakerStrategy)
+        assert callable(kwargs["circuit_breaker_callback"])
+        assert result is mock_client.return_value
 
 
 class TestRecoveryTools:

@@ -7,6 +7,7 @@ Licensed under the UPL v1.0 https://oss.oracle.com/licenses/upl
 from types import SimpleNamespace
 from unittest.mock import mock_open, patch
 
+import oci
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
@@ -293,6 +294,27 @@ class TestImportClientInstantiation:
             m_cfg.return_value = ({"k": "v"}, object())
             inst = _import_client("x.y.FakeClient")
             assert isinstance(inst, FakeClient)
+
+    def test_import_client_passes_circuit_breaker_to_kwargs_capable_client(self):
+        class FakeClient:
+            def __init__(self, config, **kwargs):
+                self.config = config
+                self.kwargs = kwargs
+
+        fake_module = SimpleNamespace(FakeClient=FakeClient)
+
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.import_module") as m_import,
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as m_cfg,
+        ):
+            signer = object()
+            m_import.return_value = fake_module
+            m_cfg.return_value = ({"k": "v"}, signer)
+            inst = _import_client("x.y.FakeClient")
+
+        assert isinstance(inst.kwargs["circuit_breaker_strategy"], oci.circuit_breaker.CircuitBreakerStrategy)
+        assert callable(inst.kwargs["circuit_breaker_callback"])
+        assert inst.kwargs["signer"] is signer
 
 
 class TestInvokeErrors:

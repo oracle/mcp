@@ -3,8 +3,17 @@
 ## Overview
 
 This server provides tools to interact with Oracle Cloud Infrastructure (OCI) services using the official OCI Python SDK directly (no OCI CLI subprocess calls). It exposes generic tools that let you:
+- List OCI SDK clients available in the current environment
+- Search for the right OCI client operation by keyword
+- Inspect the exact contract of an operation before calling it
 - Invoke any OCI SDK client operation by fully-qualified client class and method name
 - Discover available operations for a given OCI client
+
+Recommended low-token workflow:
+1. Call `list_oci_clients` if you need to discover available clients in the installed OCI SDK.
+2. Call `find_oci_api` with a short query like `"list instances"` or `"create vcn"`.
+3. Call `describe_oci_operation` for the chosen `client_fqn` + `operation`.
+4. Call `invoke_oci_api`, using `max_results` and/or `result_mode="summary"` when you only need a concise answer.
 
 ## Running the server
 
@@ -24,14 +33,66 @@ ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.o
 
 | Tool Name | Description |
 | --- | --- |
+| list_oci_clients | List OCI SDK clients discoverable in the current environment. |
+| find_oci_api | Search OCI SDK client operations by keyword and return compact matches with `client_fqn` + `operation`. |
+| describe_oci_operation | Describe a specific operation, including required params, optional params, pagination behavior, aliases, and request model hints. |
 | invoke_oci_api | Invoke an OCI Python SDK API via client and operation name. Example: client_fqn="oci.core.ComputeClient", operation="list_instances", params={"compartment_id": "ocid1.compartment.oc1..."} |
-| list_client_operations | List public callable operations for a given OCI client class (by fully-qualified name). |
+| list_client_operations | List public callable operations for a given OCI client class (by fully-qualified name), with optional filtering and compact mode. |
+
+### list_oci_clients
+
+Returns a stable list of OCI SDK client classes available in the installed `oci` Python SDK.
+
+Example usage:
+```json
+{}
+```
+
+Response (shape):
+```json
+{
+  "count": 2,
+  "clients": [
+    { "client_fqn": "oci.core.ComputeClient", "module": "oci.core", "class": "ComputeClient" },
+    { "client_fqn": "oci.identity.IdentityClient", "module": "oci.identity", "class": "IdentityClient" }
+  ]
+}
+```
+
+### find_oci_api
+
+- query: Short keyword query such as `instance list`, `vcn create`, or `bucket`
+- client_fqn: Optional client filter when you already know the client
+- limit: Maximum matches to return
+- include_params: Include compact method signatures in the response
+
+Example usage:
+```json
+{
+  "query": "list instances",
+  "limit": 5
+}
+```
+
+### describe_oci_operation
+
+- client_fqn: Fully-qualified client class, e.g. `oci.core.VirtualNetworkClient`
+- operation: Operation name, e.g. `create_vcn`
+- max_model_fields: Maximum number of request-model fields to return per model hint
+
+This is the fastest way to learn:
+- which params are required
+- whether pagination applies
+- whether `vcn_details` aliases to `create_vcn_details`
+- which top-level fields exist on a request model such as `CreateVcnDetails`
 
 ### invoke_oci_api
 
 - client_fqn: Fully-qualified client class name, e.g. `oci.core.ComputeClient`
 - operation: Client method/operation, e.g. `list_instances`, `get_instance`, `launch_instance`, etc.
 - params: JSON object of keyword arguments as expected by the SDK method (snake_case). For list operations, the server automatically paginates to return all results.
+- max_results: Optional total result cap for paginated operations, or top-level list trim for non-paginated responses.
+- result_mode: `full` (default) or `summary`. `summary` returns a compact structural summary instead of the full payload.
 
 Example usage:
 ```json
@@ -40,7 +101,9 @@ Example usage:
   "operation": "list_instances",
   "params": {
     "compartment_id": "ocid1.compartment.oc1..exampleuniqueID"
-  }
+  },
+  "max_results": 10,
+  "result_mode": "summary"
 }
 ```
 
@@ -51,15 +114,39 @@ Response (shape):
   "operation": "list_instances",
   "params": { "...": "..." },
   "opc_request_id": "abcd-efgh-....",
-  "data": [ /* JSON-serialized OCI SDK response data */ ]
+  "data": { /* full payload or compact summary */ },
+  "result_meta": {
+    "result_mode": "summary",
+    "pagination_used": true,
+    "max_results": 10
+  }
 }
 ```
+
+Notes:
+- When `max_results` is set and pagination applies, the server uses the OCI SDK's bounded paginator instead of fetching the full result set first.
+- When `result_mode="summary"`, the server returns a compact shape that keeps counts, representative samples, and key names while avoiding large payloads.
+- The server now normalizes common type mistakes when SDK metadata is clear, such as `"3"` to `3`, `"true"` to `true`, and simple request-model field coercions based on OCI `swagger_types`.
+- On invocation errors, the server now includes repair hints such as similar operation names, expected params, accepted kwargs, aliases, and request model information when it can infer them.
+- Exposed tools only accept OCI SDK client classes under the `oci.` namespace whose class name ends in `Client`.
 
 ### list_client_operations
 
 - client_fqn: Fully-qualified client class name, e.g. `oci.identity.IdentityClient`
-
+- query: Optional filter to avoid returning the full operation list
+- limit: Optional maximum number of operations to return
+- include_params: Set to `false` for a smaller response
 Returns a list of operations with a short summary extracted from docstrings when available.
+
+Example compact usage:
+```json
+{
+  "client_fqn": "oci.core.ComputeClient",
+  "query": "instance",
+  "limit": 10,
+  "include_params": false
+}
+```
 
 ## Passing complex model parameters
 

@@ -15,6 +15,7 @@ from oracle.oci_cloud_mcp_server.server import (
     _ADDITIONAL_UA,
     _align_params_to_signature,
     _coerce_params_to_oci_models,
+    _describe_model_class,
     _get_config_and_signer,
     _import_client,
     _import_models_module_from_client_fqn,
@@ -93,11 +94,11 @@ class TestImportClientAndModels:
         with patch("oracle.oci_cloud_mcp_server.server.import_module") as m_import:
             m_import.return_value = SimpleNamespace(Fake=123)  # not a class
             with pytest.raises(ValueError):
-                _import_client("x.y.Fake")
+                _import_client("oci.fake.Fake")
 
     def test_import_models_module_from_client_fqn_returns_none_on_failure(self):
         def import_side_effect(name):
-            if name == "x.y.models":
+            if name == "oci.fake.models":
                 raise ImportError("no models")
             return object()
 
@@ -105,8 +106,30 @@ class TestImportClientAndModels:
             "oracle.oci_cloud_mcp_server.server.import_module",
             side_effect=import_side_effect,
         ):
-            mod = _import_models_module_from_client_fqn("x.y.FakeClient")
+            mod = _import_models_module_from_client_fqn("oci.fake.FakeClient")
             assert mod is None
+
+    def test_import_models_module_from_client_fqn_falls_back_to_parent_package(self):
+        sentinel = object()
+
+        def import_side_effect(name):
+            if name == "oci.fake.compute_client.models":
+                raise ImportError("no client-local models")
+            if name == "oci.fake.models":
+                return sentinel
+            raise ImportError(name)
+
+        with patch(
+            "oracle.oci_cloud_mcp_server.server.import_module",
+            side_effect=import_side_effect,
+        ):
+            mod = _import_models_module_from_client_fqn("oci.fake.compute_client.FakeClient")
+            assert mod is sentinel
+
+    def test_import_models_module_from_real_client_uses_service_models(self):
+        mod = _import_models_module_from_client_fqn("oci.core.compute_client.ComputeClient")
+        assert mod is not None
+        assert mod.__name__ == "oci.core.models"
 
 
 class TestAlignParamsSignature:
@@ -151,7 +174,7 @@ class TestSerializeFallback:
                     await client.call_tool(
                         "invoke_oci_api",
                         {
-                            "client_fqn": "x.y.FakeClient",
+                            "client_fqn": "oci.fake.FakeClient",
                             "operation": "get_weird",
                             "params": {"id": "abc"},
                         },
@@ -174,10 +197,10 @@ class TestListClientOperationsErrors:
     @pytest.mark.asyncio
     async def test_list_client_operations_raises_on_not_class(self):
         with patch("oracle.oci_cloud_mcp_server.server.import_module") as m_import:
-            m_import.return_value = SimpleNamespace(NotAClass=42)
+            m_import.return_value = SimpleNamespace(NotAClient=42)
             async with Client(mcp) as client:
                 with pytest.raises(ToolError):
-                    await client.call_tool("list_client_operations", {"client_fqn": "x.y.NotAClass"})
+                    await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.NotAClient"})
 
 
 class TestModelCoercionAdvanced:
@@ -200,7 +223,7 @@ class TestModelCoercionAdvanced:
             m_models.return_value = fake_models
 
             coerced = _coerce_params_to_oci_models(
-                "x.y.FakeClient",
+                "oci.fake.FakeClient",
                 "launch_instance",  # non-create op to keep key as 'instance_details'
                 {
                     "instance_details": {
@@ -214,6 +237,43 @@ class TestModelCoercionAdvanced:
             assert isinstance(inst._data["shape_config"], InstanceShapeConfigDetails)
             assert inst._data["shape_config"]._data["ocpus"] == 2
             assert inst._data["shape_config"]._data["memory_in_gbs"] == 16
+
+    def test_real_oci_model_resolution_for_launch_instance_details(self):
+        from oci.core import models
+
+        coerced = _coerce_params_to_oci_models(
+            "oci.core.compute_client.ComputeClient",
+            "launch_instance",
+            {
+                "launch_instance_details": {
+                    "availability_domain": "AD-1",
+                    "compartment_id": "ocid1.compartment.oc1..exampleuniqueID",
+                    "shape": "VM.Standard.E2.1.Micro",
+                    "source_details": {
+                        "source_type": "image",
+                        "image_id": "ocid1.image.oc1..exampleuniqueID",
+                    },
+                    "create_vnic_details": {
+                        "subnet_id": "ocid1.subnet.oc1..exampleuniqueID",
+                        "assign_public_ip": True,
+                    },
+                }
+            },
+        )
+
+        details = coerced["launch_instance_details"]
+        assert isinstance(details, models.LaunchInstanceDetails)
+        assert isinstance(details.source_details, models.InstanceSourceViaImageDetails)
+        assert details.source_details.image_id == "ocid1.image.oc1..exampleuniqueID"
+        assert isinstance(details.create_vnic_details, models.CreateVnicDetails)
+        assert details.create_vnic_details.subnet_id == "ocid1.subnet.oc1..exampleuniqueID"
+
+    def test_describe_model_class_uses_real_instance_swagger_types(self):
+        from oci.core import models
+
+        desc = _describe_model_class(models.LaunchInstanceDetails, max_fields=10)
+        assert desc["field_count"] > 0
+        assert "availability_domain" in desc["fields"]
 
     def test_construct_model_with_explicit_name_and_swagger_filter(self):
         # fake models module where the class has swagger_types filtering unknown keys
@@ -292,7 +352,7 @@ class TestImportClientInstantiation:
         ):
             m_import.return_value = fake_module
             m_cfg.return_value = ({"k": "v"}, object())
-            inst = _import_client("x.y.FakeClient")
+            inst = _import_client("oci.fake.FakeClient")
             assert isinstance(inst, FakeClient)
 
     def test_import_client_passes_circuit_breaker_to_kwargs_capable_client(self):
@@ -310,7 +370,7 @@ class TestImportClientInstantiation:
             signer = object()
             m_import.return_value = fake_module
             m_cfg.return_value = ({"k": "v"}, signer)
-            inst = _import_client("x.y.FakeClient")
+            inst = _import_client("oci.fake.FakeClient")
 
         assert isinstance(inst.kwargs["circuit_breaker_strategy"], oci.circuit_breaker.CircuitBreakerStrategy)
         assert callable(inst.kwargs["circuit_breaker_callback"])
@@ -338,14 +398,14 @@ class TestInvokeErrors:
                     await client.call_tool(
                         "invoke_oci_api",
                         {
-                            "client_fqn": "x.y.FakeClient",
+                            "client_fqn": "oci.fake.FakeClient",
                             "operation": "does_not_exist",
                             "params": {},
                         },
                     )
                 ).data
 
-        assert res["client"] == "x.y.FakeClient"
+        assert res["client"] == "oci.fake.FakeClient"
         assert res["operation"] == "does_not_exist"
         assert "error" in res
         assert "not found" in res["error"].lower()
@@ -372,14 +432,14 @@ class TestInvokeErrors:
                     await client.call_tool(
                         "invoke_oci_api",
                         {
-                            "client_fqn": "x.y.FakeClient",
+                            "client_fqn": "oci.fake.FakeClient",
                             "operation": "get_thing",
                             "params": {},
                         },
                     )
                 ).data
 
-        assert res["client"] == "x.y.FakeClient"
+        assert res["client"] == "oci.fake.FakeClient"
         assert res["operation"] == "get_thing"
         assert "error" in res
         assert "not callable" in res["error"].lower()
@@ -444,7 +504,7 @@ class TestParamCoercionAndAlignmentExtras:
             "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
             return_value=None,
         ):
-            out = _coerce_params_to_oci_models("x.y.Fake", "create_vcn", {"vcn_details": {"x": 1}})
+            out = _coerce_params_to_oci_models("oci.fake.Fake", "create_vcn", {"vcn_details": {"x": 1}})
             assert "create_vcn_details" in out
             assert "vcn_details" not in out
 
@@ -467,12 +527,13 @@ class TestCallWithPaginationFallback:
         def create_vcn(create_vcn_details):  # noqa: ARG001
             return FakeResponse()
 
-        data, opc = __import__(
+        data, opc, has_more = __import__(
             "oracle.oci_cloud_mcp_server.server",
             fromlist=["_call_with_pagination_if_applicable"],
         )._call_with_pagination_if_applicable(create_vcn, {"vcn_details": {}}, "create_vcn")
         assert data == {"ok": True}
         assert opc is None
+        assert has_more is False
 
 
 class TestConstructModelFQN:
@@ -506,7 +567,7 @@ class TestListAndCandidates:
         with patch("oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn") as m_models:
             m_models.return_value = fake_models
             out = _coerce_params_to_oci_models(
-                "x.y.Fake",
+                "oci.fake.Fake",
                 "op",
                 {"items": [{"__model": "MyModel", "a": 1}, {"a": 2}]},
             )
@@ -522,7 +583,7 @@ class TestListAndCandidates:
         fake_models = SimpleNamespace(SourceDetails=SourceDetails)
         with patch("oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn") as m_models:
             m_models.return_value = fake_models
-            out = _coerce_params_to_oci_models("x.y.Fake", "op", {"source_details": {"foo": "bar"}})
+            out = _coerce_params_to_oci_models("oci.fake.Fake", "op", {"source_details": {"foo": "bar"}})
             assert isinstance(out["source_details"], SourceDetails)
             assert out["source_details"].kw["foo"] == "bar"
 
@@ -559,7 +620,7 @@ class TestImportModelsAndResolve:
         fake_models = SimpleNamespace()
 
         def fake_import(name):
-            assert name == "x.y.models"
+            assert name == "oci.fake.models"
             return fake_models
 
         monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", fake_import)
@@ -567,7 +628,7 @@ class TestImportModelsAndResolve:
             _import_models_module_from_client_fqn,
         )
 
-        mod = _import_models_module_from_client_fqn("x.y.Client")
+        mod = _import_models_module_from_client_fqn("oci.fake.Client")
         assert mod is fake_models
 
     def test_resolve_model_class_missing_returns_none(self):
@@ -599,7 +660,7 @@ class TestInvokePlainReturnNoHeaders:
                     await client.call_tool(
                         "invoke_oci_api",
                         {
-                            "client_fqn": "x.y.FakeClient",
+                            "client_fqn": "oci.fake.FakeClient",
                             "operation": "get_plain",
                             "params": {"id": "1"},
                         },
@@ -625,7 +686,7 @@ class TestInvokeImportFailure:
                     await client.call_tool(
                         "invoke_oci_api",
                         {
-                            "client_fqn": "x.y.Nope",
+                            "client_fqn": "oci.fake.NopeClient",
                             "operation": "get_thing",
                             "params": {},
                         },
@@ -694,7 +755,7 @@ class TestListClientOperationsDirect:
     @pytest.mark.asyncio
     async def test_direct_success_and_signature_error_path(self, monkeypatch):
         # create a fake module with a Python-defined class and function to inspect
-        class Klass:
+        class KlassClient:
             def foo(self, a, b):  # noqa: ARG002
                 """Doc first line."""
                 return 1
@@ -702,12 +763,12 @@ class TestListClientOperationsDirect:
             def _hidden(self):
                 pass
 
-        fake_module = SimpleNamespace(Klass=Klass)
+        fake_module = SimpleNamespace(KlassClient=KlassClient)
 
         # first run with normal behavior
         monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
         async with Client(mcp) as client:
-            res = (await client.call_tool("list_client_operations", {"client_fqn": "x.y.Klass"})).data
+            res = (await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.KlassClient"})).data
         assert isinstance(res, dict)
         assert "operations" in res
         names = [op["name"] for op in res["operations"]]
@@ -720,7 +781,7 @@ class TestListClientOperationsDirect:
 
         monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.inspect.signature", sig_raises)
         async with Client(mcp) as client:
-            res2 = (await client.call_tool("list_client_operations", {"client_fqn": "x.y.Klass"})).data
+            res2 = (await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.KlassClient"})).data
         # should still succeed with empty/summary fallback
         assert isinstance(res2, dict)
         assert "operations" in res2
@@ -754,9 +815,10 @@ class TestCallWithPaginationHeadersError:
         def fn_ok():
             return Resp()
 
-        data, opc = _call_with_pagination_if_applicable(lambda: fn_ok(), {}, "get_thing")
+        data, opc, has_more = _call_with_pagination_if_applicable(lambda: fn_ok(), {}, "get_thing")
         assert data == {"val": 1}
         assert opc is None
+        assert has_more is False
 
 
 class TestInvokeTypeErrorNonUnexpected:
@@ -781,7 +843,7 @@ class TestInvokeTypeErrorNonUnexpected:
                     await client.call_tool(
                         "invoke_oci_api",
                         {
-                            "client_fqn": "x.y.FakeClient",
+                            "client_fqn": "oci.fake.FakeClient",
                             "operation": "get_thing",
                             "params": {"id": "1"},
                         },
@@ -798,7 +860,7 @@ class TestCoerceUpdateAlias:
             "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
             return_value=None,
         ):
-            out = _coerce_params_to_oci_models("x.y.Fake", "update_vcn", {"vcn_details": {"x": 1}})
+            out = _coerce_params_to_oci_models("oci.fake.Fake", "update_vcn", {"vcn_details": {"x": 1}})
             assert "update_vcn_details" in out
             assert "vcn_details" not in out
 
@@ -810,10 +872,10 @@ class TestListClientOperationsErrorsDirect:
             list_client_operations("InvalidFqn")
 
     def test_not_class_raises_direct(self, monkeypatch):
-        fake_module = SimpleNamespace(NotAClass=42)
+        fake_module = SimpleNamespace(NotAClient=42)
         monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
         with pytest.raises(Exception):
-            list_client_operations("x.y.NotAClass")
+            list_client_operations("oci.fake.NotAClient")
 
 
 class TestSignerApiKeyFailure:
@@ -843,15 +905,15 @@ class TestSignerApiKeyFailure:
 class TestListClientOperationsDetails:
     @pytest.mark.asyncio
     async def test_operation_entries_have_expected_fields(self, monkeypatch):
-        class Klass:
+        class KlassClient:
             def foo(self, a, b=1):  # noqa: ARG002
                 """Doc first line."""
                 return 1
 
-        fake_module = SimpleNamespace(Klass=Klass)
+        fake_module = SimpleNamespace(KlassClient=KlassClient)
         monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
         async with Client(mcp) as client:
-            res = (await client.call_tool("list_client_operations", {"client_fqn": "x.y.Klass"})).data
+            res = (await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.KlassClient"})).data
         ops = res["operations"]
         assert isinstance(ops, list) and ops
         entry = next(o for o in ops if o["name"] == "foo")
@@ -945,11 +1007,12 @@ class TestPaginationListPath:
         def list_things(compartment_id=None):  # noqa: ARG001
             return Resp([{"n": 9}])
 
-        data, opc = _call_with_pagination_if_applicable(
+        data, opc, has_more = _call_with_pagination_if_applicable(
             list_things, {"compartment_id": "ocid1"}, "list_things"
         )
         assert isinstance(data, list) and len(data) == 2
         assert opc is None
+        assert has_more is False
 
 
 class TestListOpcRequestIdPropagation:
@@ -986,7 +1049,7 @@ class TestListOpcRequestIdPropagation:
                 await client.call_tool(
                     "invoke_oci_api",
                     {
-                        "client_fqn": "x.y.FakeClient",
+                        "client_fqn": "oci.fake.FakeClient",
                         "operation": "list_things",
                         "params": {"compartment_id": "ocid1.compartment..zzz"},
                     },
@@ -999,7 +1062,7 @@ class TestListOpcRequestIdPropagation:
 
 class TestCoerceParamsCornerCases:
     def test_empty_params_returns_empty(self):
-        out = _coerce_params_to_oci_models("x.y.Fake", "op", {})
+        out = _coerce_params_to_oci_models("oci.fake.Fake", "op", {})
         assert out == {}
 
     def test_configuration_suffix_constructs(self, monkeypatch):
@@ -1012,7 +1075,7 @@ class TestCoerceParamsCornerCases:
             "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
             lambda fqn: fake_models,
         )
-        out = _coerce_params_to_oci_models("x.y.Fake", "op", {"source_configuration": {"a": 1}})
+        out = _coerce_params_to_oci_models("oci.fake.Fake", "op", {"source_configuration": {"a": 1}})
         assert isinstance(out["source_configuration"], SourceConfiguration)
         assert out["source_configuration"].kw["a"] == 1
 
@@ -1041,14 +1104,14 @@ class TestConstructModelClassFqn:
 class TestListClientOperationsNoDoc:
     @pytest.mark.asyncio
     async def test_no_docstring_summary_empty(self, monkeypatch):
-        class Klass:
+        class KlassClient:
             def foo(self):  # no docstring
                 return 1
 
-        fake_module = SimpleNamespace(Klass=Klass)
+        fake_module = SimpleNamespace(KlassClient=KlassClient)
         monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
         async with Client(mcp) as client:
-            res = (await client.call_tool("list_client_operations", {"client_fqn": "x.y.Klass"})).data
+            res = (await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.KlassClient"})).data
         ops = res["operations"]
         entry = next(o for o in ops if o["name"] == "foo")
         assert entry["summary"] == ""
@@ -1067,7 +1130,7 @@ class TestAlignParamsUpdateSignature:
 class TestCoerceParamsBothKeysProvided:
     def test_no_double_rename_when_dst_already_present(self):
         out = _coerce_params_to_oci_models(
-            "x.y.Fake",
+            "oci.fake.Fake",
             "create_vcn",
             {"vcn_details": {"x": 1}, "create_vcn_details": {"y": 2}},
         )
@@ -1139,7 +1202,7 @@ class TestInvokeLastChanceAlias:
                 await client.call_tool(
                     "invoke_oci_api",
                     {
-                        "client_fqn": "x.y.FakeClient",
+                        "client_fqn": "oci.fake.FakeClient",
                         "operation": "create_vcn",
                         "params": {"vcn_details": {"ignored": True}},
                     },
@@ -1194,7 +1257,7 @@ class TestInvokeUnexpectedKwOther:
                 await client.call_tool(
                     "invoke_oci_api",
                     {
-                        "client_fqn": "x.y.FakeClient",
+                        "client_fqn": "oci.fake.FakeClient",
                         "operation": "get_thing",
                         # wrong kw 'uuid' should produce an error
                         "params": {"uuid": "x"},

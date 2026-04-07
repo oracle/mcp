@@ -52,7 +52,7 @@ class TestCoerceTopLevelConfigSuffix:
         )
 
         out = _coerce_params_to_oci_models(
-            "x.y.Client",
+            "oci.fake.Client",
             "op",
             {"shape_config": {"x": 1}},
         )
@@ -98,7 +98,7 @@ class TestInvokePreNormalize:
                 await client.call_tool(
                     "invoke_oci_api",
                     {
-                        "client_fqn": "x.y.FakeClient",
+                        "client_fqn": "oci.fake.FakeClient",
                         "operation": "create_vcn",
                         "params": {"vcn_details": {"k": 42}},
                     },
@@ -121,7 +121,7 @@ class TestListClientOperationsImportErrorTool:
 
         async with Client(mcp) as client:
             with pytest.raises(ToolError):
-                await client.call_tool("list_client_operations", {"client_fqn": "x.y.Klass"})
+                await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.KlassClient"})
 
 
 class TestInvokePlainListReturn:
@@ -148,7 +148,7 @@ class TestInvokePlainListReturn:
             res = (
                 await client.call_tool(
                     "invoke_oci_api",
-                    {"client_fqn": "x.y.FakeClient", "operation": "get_list"},
+                    {"client_fqn": "oci.fake.FakeClient", "operation": "get_list"},
                 )
             ).data
 
@@ -209,12 +209,12 @@ class TestConstructModelSimpleNameNotClass:
 class TestListClientOperationsGetdocRaises:
     @pytest.mark.asyncio
     async def test_getdoc_raises_summary_empty(self, monkeypatch):
-        class Klass:
+        class KlassClient:
             def foo(self, a):  # noqa: ARG002
                 """Doc first line."""
                 return 1
 
-        fake_module = SimpleNamespace(Klass=Klass)
+        fake_module = SimpleNamespace(KlassClient=KlassClient)
         monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
 
         # force inspect.getdoc to raise to hit exception path for summary extraction
@@ -223,14 +223,14 @@ class TestListClientOperationsGetdocRaises:
         orig_getdoc = _inspect.getdoc
 
         def boom_getdoc(obj):
-            if obj is Klass.foo:
+            if obj is KlassClient.foo:
                 raise Exception("doc boom")
             return orig_getdoc(obj)
 
         monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.inspect.getdoc", boom_getdoc)
 
         async with Client(mcp) as client:
-            res = (await client.call_tool("list_client_operations", {"client_fqn": "x.y.Klass"})).data
+            res = (await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.KlassClient"})).data
 
         ops = res["operations"]
         entry = next(o for o in ops if o["name"] == "foo")
@@ -276,7 +276,7 @@ class TestCreateUpdateCandidateClasses:
             lambda fqn: fake_models,
         )
         out = _coerce_params_to_oci_models(
-            "x.y.Client",
+            "oci.fake.Client",
             "create_vcn",
             {"vcn_details": {"a": 1}},
         )
@@ -295,7 +295,7 @@ class TestCreateUpdateCandidateClasses:
             lambda fqn: fake_models,
         )
         out = _coerce_params_to_oci_models(
-            "x.y.Client",
+            "oci.fake.Client",
             "update_vcn",
             {"vcn_details": {"a": 2}},
         )
@@ -325,7 +325,7 @@ class TestListElementClassFqn:
         )
 
         out = _coerce_params_to_oci_models(
-            "x.y.Client",
+            "oci.fake.Client",
             "op",
             {"items": [{"__class_fqn": "mymod4.Bar", "z": 9}, {"plain": True}]},
         )
@@ -336,7 +336,7 @@ class TestListElementClassFqn:
 
 class TestListPassThroughNonDict:
     def test_list_of_scalars_passthrough(self):
-        out = _coerce_params_to_oci_models("x.y.Client", "op", {"items": [1, 2, 3]})
+        out = _coerce_params_to_oci_models("oci.fake.Client", "op", {"items": [1, 2, 3]})
         assert out["items"] == [1, 2, 3]
 
 
@@ -380,26 +380,27 @@ class TestPreAliasCreatePath:
         def create_vcn(create_vcn_details):  # noqa: ARG001
             return Resp({"ok": True})
 
-        data, opc = _call_with_pagination_if_applicable(
+        data, opc, has_more = _call_with_pagination_if_applicable(
             create_vcn,
             {"vcn_details": {"x": 1}},
             "create_vcn",
         )
         assert data == {"ok": True}
         assert opc is None
+        assert has_more is False
 
 
 class TestListClientOpsHiddenOnly:
     @pytest.mark.asyncio
     async def test_class_with_only_hidden_methods_returns_empty(self, monkeypatch):
-        class Klass:
+        class KlassClient:
             def _private(self):
                 return 1
 
-        fake_module = SimpleNamespace(Klass=Klass)
+        fake_module = SimpleNamespace(KlassClient=KlassClient)
         monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
         async with Client(mcp) as client:
-            res = (await client.call_tool("list_client_operations", {"client_fqn": "x.y.Klass"})).data
+            res = (await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.KlassClient"})).data
         assert res == {"operations": []}
 
 
@@ -434,7 +435,7 @@ class TestParentPrefixAlt:
             lambda fqn: fake_models,
         )
         out = _coerce_params_to_oci_models(
-            "x.y.Fake",
+            "oci.fake.Fake",
             "launch_instance",
             {"instance_details": {"shape_config": {"ocpus": 1}}},
         )
@@ -527,7 +528,7 @@ class TestSourceDetailsSuffixCoercion:
             "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
             lambda fqn: fake_models,
         )
-        out = _coerce_params_to_oci_models("x.y.Client", "op", {"source_details": {"a": 1}})
+        out = _coerce_params_to_oci_models("oci.fake.Client", "op", {"source_details": {"a": 1}})
         assert isinstance(out["source_details"], SourceDetails)
         assert out["source_details"].kw == {"a": 1}
 
@@ -545,7 +546,7 @@ class TestListItemWithModelNameHint:
         )
 
         out = _coerce_params_to_oci_models(
-            "x.y.Client",
+            "oci.fake.Client",
             "op",
             {"items": [{"__model": "Foo", "a": 5}, {"b": 6}]},
         )
@@ -563,7 +564,7 @@ class TestFinalAliasingNonDict:
             "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
             lambda fqn: None,
         )
-        out = _coerce_params_to_oci_models("x.y.Client", "create_vcn", {"vcn_details": [1, 2]})
+        out = _coerce_params_to_oci_models("oci.fake.Client", "create_vcn", {"vcn_details": [1, 2]})
         assert "create_vcn_details" in out and "vcn_details" not in out
         assert out["create_vcn_details"] == [1, 2]
 
@@ -597,7 +598,7 @@ class TestInvokeTupleSerialization:
                 await client.call_tool(
                     "invoke_oci_api",
                     {
-                        "client_fqn": "x.y.FakeClient",
+                        "client_fqn": "oci.fake.FakeClient",
                         "operation": "get_tuple",
                         "params": {},
                     },
@@ -650,7 +651,7 @@ class TestInvokeGenericException:
                 await client.call_tool(
                     "invoke_oci_api",
                     {
-                        "client_fqn": "x.y.FakeClient",
+                        "client_fqn": "oci.fake.FakeClient",
                         "operation": "get_crash",
                         "params": {},
                     },
@@ -680,9 +681,10 @@ class TestListPaginatorHeadersMissing:
         def list_things():
             return Resp([9])
 
-        data, opc = _call_with_pagination_if_applicable(list_things, {}, "list_things")
+        data, opc, has_more = _call_with_pagination_if_applicable(list_things, {}, "list_things")
         assert data == [1, 2]
         assert opc is None
+        assert has_more is False
 
 
 class TestImportClientBadCtor:
@@ -702,7 +704,7 @@ class TestImportClientBadCtor:
         )
 
         with pytest.raises(TypeError):
-            _import_client("x.y.BadClient")
+            _import_client("oci.fake.BadClient")
 
 
 class TestInvokeDefaultParams:
@@ -728,7 +730,7 @@ class TestInvokeDefaultParams:
             res = (
                 await client.call_tool(
                     "invoke_oci_api",
-                    {"client_fqn": "x.y.FakeClient", "operation": "get_plain"},
+                    {"client_fqn": "oci.fake.FakeClient", "operation": "get_plain"},
                 )
             ).data
 
@@ -785,7 +787,7 @@ class TestInvokeNonListHeadersNoGet:
             res = (
                 await client.call_tool(
                     "invoke_oci_api",
-                    {"client_fqn": "x.y.FakeClient", "operation": "get"},
+                    {"client_fqn": "oci.fake.FakeClient", "operation": "get"},
                 )
             ).data
 
@@ -824,11 +826,11 @@ class TestListClientOperationsScanError:
     @pytest.mark.asyncio
     async def test_member_scan_error_raises_tool_error(self, monkeypatch):
         # force inspect.getmembers to raise inside list_client_operations try block.
-        class Klass:
+        class KlassClient:
             def foo(self):
                 return 1
 
-        fake_module = SimpleNamespace(Klass=Klass)
+        fake_module = SimpleNamespace(KlassClient=KlassClient)
         monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
 
         def boom(*args, **kwargs):
@@ -838,7 +840,7 @@ class TestListClientOperationsScanError:
 
         async with Client(mcp) as client:
             with pytest.raises(ToolError):
-                await client.call_tool("list_client_operations", {"client_fqn": "x.y.Klass"})
+                await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.KlassClient"})
 
 
 class TestSupportsPaginationHeuristics:

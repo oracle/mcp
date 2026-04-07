@@ -54,7 +54,7 @@ class TestInvokeErrorPaths:
                 await client.call_tool(
                     "invoke_oci_api",
                     {
-                        "client_fqn": "x.y.FakeClient",
+                        "client_fqn": "oci.fake.FakeClient",
                         "operation": "does_not_exist",
                         "params": {},
                     },
@@ -84,7 +84,7 @@ class TestInvokeErrorPaths:
                 await client.call_tool(
                     "invoke_oci_api",
                     {
-                        "client_fqn": "x.y.FakeClient",
+                        "client_fqn": "oci.fake.FakeClient",
                         "operation": "get_thing",
                         "params": {},
                     },
@@ -114,7 +114,7 @@ class TestImportClientHappyPath:
             lambda: ({"x": 1}, object()),
         )
 
-        inst = _import_client("x.y.GoodClient")
+        inst = _import_client("oci.fake.GoodClient")
         assert isinstance(inst, GoodClient)
         assert constructed["called"] is True
         assert constructed["args"][0] == {"x": 1}
@@ -144,9 +144,10 @@ class TestPaginatorHeadersWithGet:
         def list_things():
             return Resp([9])
 
-        data, opc = _call_with_pagination_if_applicable(list_things, {}, "list_things")
+        data, opc, has_more = _call_with_pagination_if_applicable(list_things, {}, "list_things")
         assert data == [1, 2, 3]
         assert opc == "req-123"
+        assert has_more is False
 
 
 class TestCallWithPaginationTypeErrorFallback:
@@ -163,13 +164,14 @@ class TestCallWithPaginationTypeErrorFallback:
             return Resp({"ok": True})
 
         # include both src and dst to force the TypeError path first, then fallback retry
-        data, opc = _call_with_pagination_if_applicable(
+        data, opc, has_more = _call_with_pagination_if_applicable(
             create_vcn,
             {"vcn_details": {"x": 1}, "create_vcn_details": {"x": 1}},
             "create_vcn",
         )
         assert data == {"ok": True}
         assert opc is None
+        assert has_more is False
 
 
 class TestSupportsPaginationAdditional:
@@ -222,7 +224,7 @@ class TestInvokeTypeErrorPropagation:
                 await client.call_tool(
                     "invoke_oci_api",
                     {
-                        "client_fqn": "x.y.FakeClient",
+                        "client_fqn": "oci.fake.FakeClient",
                         "operation": "create_vcn",
                         "params": {"vcn_details": {"x": 1}},
                     },

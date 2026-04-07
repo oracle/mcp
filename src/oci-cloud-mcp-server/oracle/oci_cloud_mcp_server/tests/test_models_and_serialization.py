@@ -23,12 +23,12 @@ class TestImportModelsModuleFromClientFqn:
     def test_success_returns_module(self, monkeypatch):
         # only return a module-like object for the specific ".models" path
         def fake_import(name):
-            if name == "x.y.models":
+            if name == "oci.fake.models":
                 return SimpleNamespace()
             raise ImportError("nope")
 
         monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", fake_import)
-        mod = _import_models_module_from_client_fqn("x.y.ClientClass")
+        mod = _import_models_module_from_client_fqn("oci.fake.ClientClass")
         assert mod is not None
 
     def test_failure_returns_none(self, monkeypatch):
@@ -36,7 +36,7 @@ class TestImportModelsModuleFromClientFqn:
             "oracle.oci_cloud_mcp_server.server.import_module",
             lambda name: (_ for _ in ()).throw(ImportError("boom")),
         )
-        mod = _import_models_module_from_client_fqn("x.y.ClientClass")
+        mod = _import_models_module_from_client_fqn("oci.fake.ClientClass")
         assert mod is None
 
 

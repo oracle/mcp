@@ -14,6 +14,8 @@ from typing import Annotated, Any, Callable, Dict, List, Optional, Tuple
 
 import oci
 from fastmcp import FastMCP
+from fastmcp.server.auth.providers.oci import OCIProvider
+from fastmcp.server.dependencies import AuthenticatedUser, get_http_request
 
 from . import __project__, __version__
 from .utils import initAuditLogger
@@ -22,18 +24,9 @@ logger = Logger(__name__, level="INFO")
 
 initAuditLogger(logger)
 
-mcp = FastMCP(
-    name=__project__,
-    instructions="""
-        This server provides tools to interact directly with the OCI Python SDK,
-        invoking API clients and operations in-process (no CLI).
-        - invoke_oci_api: Call any OCI SDK client operation by FQN and method.
-        - list_client_operations: Discover available operations on a client.
-    """,
-)
-
 _user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
 _ADDITIONAL_UA = f"{_user_agent_name}/{__version__}"
+_DISCOVERY_SUFFIX = "/.well-known/openid-configuration"
 
 
 def _get_oci_client_kwargs(signer=None):
@@ -55,19 +48,73 @@ def _get_oci_client_kwargs(signer=None):
 # in any residual fallback checks.
 known_paginated: set = set()
 
+_HTTP_AUTH_ENV_VARS = (
+    "IDCS_DOMAIN",
+    "IDCS_CLIENT_ID",
+    "IDCS_CLIENT_SECRET",
+)
+_HTTP_REQUIRED_ENV_VARS = (
+    *_HTTP_AUTH_ENV_VARS,
+    "ORACLE_MCP_HOST",
+    "ORACLE_MCP_PORT",
+)
 
-def _get_config_and_signer() -> Tuple[Dict[str, Any], Any]:
-    """
-    Load OCI config and build an appropriate signer.
 
-    Preference order:
-    - If a security_token_file exists, use SecurityTokenSigner (session auth).
-    - Otherwise, fall back to API key Signer from config.
-    """
-    config = oci.config.from_file(profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE))
+def _build_auth_provider(*, required: bool = False) -> Optional[OCIProvider]:
+    identity_domain, client_id, client_secret, host, port = [
+        os.getenv(name) for name in _HTTP_REQUIRED_ENV_VARS
+    ]
+    if not (identity_domain and client_id and client_secret and host and port):
+        if required:
+            raise RuntimeError(
+                "HTTP transport requires IDCS authentication configuration. "
+                f"Set {', '.join(_HTTP_REQUIRED_ENV_VARS)}."
+            )
+        return None
+
+    logger.info("Enabling OCI OIDC auth provider for HTTP transport.")
+    return OCIProvider(
+        config_url=f"https://{identity_domain}{_DISCOVERY_SUFFIX}",
+        client_id=client_id,
+        client_secret=client_secret,
+        base_url=f"http://{host}:{port}",
+    )
+
+
+mcp = FastMCP(
+    name=__project__,
+    instructions="""
+    This server provides tools to interact directly with the OCI Python SDK,
+    invoking API clients and operations in-process (no CLI).
+    - invoke_oci_api: Call any OCI SDK client operation by FQN and method.
+    - list_client_operations: Discover available operations on a client.
+""",
+    auth=_build_auth_provider(),
+)
+
+
+def _load_oci_config(*, require_file: bool) -> Dict[str, Any]:
+    try:
+        config = oci.config.from_file(
+            file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+            profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
+        )
+    except oci.exceptions.ConfigFileNotFound:
+        if require_file:
+            raise
+        region = os.getenv("OCI_REGION")
+        if not region:
+            raise RuntimeError(
+                "OIDC-authenticated requests require OCI region configuration. "
+                "Set OCI_REGION or provide an OCI config file."
+            )
+        config = {"region": region}
+
     config["additional_user_agent"] = _ADDITIONAL_UA
+    return config
 
-    # try security token
+
+def _build_config_signer(config: Dict[str, Any]) -> Any:
     token_file = os.path.expanduser(config.get("security_token_file", "") or "")
     try:
         private_key = oci.signer.load_private_key_from_file(config["key_file"])
@@ -88,7 +135,6 @@ def _get_config_and_signer() -> Tuple[Dict[str, Any], Any]:
             )
 
     if signer is None:
-        # fall back to API key signer
         try:
             signer = oci.signer.Signer(
                 tenancy=config["tenancy"],
@@ -101,8 +147,51 @@ def _get_config_and_signer() -> Tuple[Dict[str, Any], Any]:
         except Exception as e:
             logger.error(f"Failed to build API key Signer: {e}")
             raise
+    return signer
 
-    return config, signer
+
+def _get_config_and_signer() -> Tuple[Dict[str, Any], Any]:
+    """
+    Load OCI client config and build an appropriate signer.
+
+    Preference order:
+    - If the current HTTP request is authenticated through OIDC, use the OCI SDK's
+      TokenExchangeSigner to exchange that JWT for a UPST.
+    - Otherwise, load the local OCI config and prefer security-token file auth,
+      falling back to API key auth.
+    """
+    try:
+        request = get_http_request()
+    except RuntimeError:
+        request = None
+
+    if request is not None:
+        identity_domain, client_id, client_secret = [os.getenv(name) for name in _HTTP_AUTH_ENV_VARS]
+        if not (identity_domain and client_id and client_secret):
+            raise RuntimeError(
+                "HTTP requests require IDCS authentication configuration. "
+                "Set IDCS_DOMAIN, IDCS_CLIENT_ID, and IDCS_CLIENT_SECRET."
+            )
+
+        user = request.scope.get("user")
+        if not isinstance(user, AuthenticatedUser):
+            raise RuntimeError("HTTP requests require an authenticated IDCS access token.")
+
+        config = _load_oci_config(require_file=False)
+        subject_token = getattr(user.access_token, "token", None)
+        if not subject_token:
+            raise RuntimeError("Authenticated HTTP request is missing an access token value.")
+        logger.info("Using OIDC token exchange signer.")
+        return config, oci.auth.signers.TokenExchangeSigner(
+            subject_token,
+            identity_domain.split(".", 1)[0],
+            client_id,
+            client_secret,
+            region=config.get("region"),
+        )
+
+    config = _load_oci_config(require_file=True)
+    return config, _build_config_signer(config)
 
 
 def _import_client(client_fqn: str) -> Any:
@@ -648,8 +737,10 @@ def main():
     port = os.getenv("ORACLE_MCP_PORT")
 
     if host and port:
+        mcp.auth = _build_auth_provider(required=True)
         mcp.run(transport="http", host=host, port=int(port))
     else:
+        mcp.auth = None
         mcp.run()
 
 

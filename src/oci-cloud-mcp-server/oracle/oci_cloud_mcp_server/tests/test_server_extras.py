@@ -239,6 +239,7 @@ class TestModelCoercionAdvanced:
 class TestMainEntrypoint:
     def test_main_runs_http_with_env(self, monkeypatch):
         called = {}
+        provider = object()
 
         def fake_run(*args, **kwargs):
             called["args"] = args
@@ -247,7 +248,10 @@ class TestMainEntrypoint:
         monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("ORACLE_MCP_PORT", "9999")
 
-        with patch("oracle.oci_cloud_mcp_server.server.mcp.run", side_effect=fake_run):
+        with (
+            patch("oracle.oci_cloud_mcp_server.server._build_auth_provider", return_value=provider),
+            patch("oracle.oci_cloud_mcp_server.server.mcp.run", side_effect=fake_run),
+        ):
             main()
 
         assert called["kwargs"] == {

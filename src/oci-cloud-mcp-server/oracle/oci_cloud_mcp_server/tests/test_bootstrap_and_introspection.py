@@ -155,13 +155,21 @@ class TestMainHttpRun:
 
         called = {"args": None, "kwargs": None}
 
+        class FakeProvider:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
         def fake_run(self, *args, **kwargs):
             called["args"] = args
             called["kwargs"] = kwargs
 
         # patch FastMCP.run
         monkeypatch.setattr(_FastMCP, "run", fake_run, raising=False)
+        monkeypatch.setattr("fastmcp.server.auth.providers.oci.OCIProvider", FakeProvider)
         # set env for HTTP
+        monkeypatch.setenv("IDCS_DOMAIN", "sample.identity.oraclecloud.com")
+        monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+        monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
         monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("ORACLE_MCP_PORT", "8081")
 

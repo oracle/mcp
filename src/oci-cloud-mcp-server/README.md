@@ -20,6 +20,60 @@ uvx oracle.oci-cloud-mcp-server
 ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.oci-cloud-mcp-server
 ```
 
+## Quick start
+
+### Easiest working setup: local OCI config
+
+If you already have a working OCI CLI config in `~/.oci/config`, this is the fastest path.
+
+1. Make sure your OCI profile works.
+2. Start the server:
+
+```sh
+uvx oracle.oci-cloud-mcp-server
+```
+
+3. Call a simple tool such as:
+
+```json
+{
+  "client_fqn": "oci.identity.IdentityClient",
+  "operation": "list_regions",
+  "params": {}
+}
+```
+
+If your profile is not `DEFAULT`, set it first:
+
+```sh
+export OCI_CONFIG_PROFILE=MY_PROFILE
+uvx oracle.oci-cloud-mcp-server
+```
+
+If your config file is not in the default location:
+
+```sh
+export OCI_CONFIG_FILE=/full/path/to/config
+uvx oracle.oci-cloud-mcp-server
+```
+
+### Easy HTTP + OIDC example
+
+Use this when your MCP client connects over HTTP. HTTP mode requires IDCS-backed OIDC authentication for every OCI tool call.
+
+```sh
+export IDCS_DOMAIN="example.identity.oraclecloud.com"
+export IDCS_CLIENT_ID="<client-id>"
+export IDCS_CLIENT_SECRET="<client-secret>"
+export ORACLE_MCP_HOST="127.0.0.1"
+export ORACLE_MCP_PORT="5000"
+export OCI_REGION="us-phoenix-1"  # only needed when you are not using ~/.oci/config
+
+uvx oracle.oci-cloud-mcp-server
+```
+
+Then connect your MCP client to `http://127.0.0.1:5000` and authenticate through IDCS before invoking OCI tools.
+
 ## Tools
 
 | Tool Name | Description |
@@ -123,12 +177,50 @@ Note:
 
 ## Authentication and configuration
 
-This server uses the same configuration as the OCI CLI:
-- Loads configuration from the default `~/.oci/config` (or the profile specified by `OCI_CONFIG_PROFILE`)
+This server supports two outbound OCI auth flows:
+
+### 1. Local OCI config flow
+
+This is the default behavior for stdio usage.
+
+- Loads OCI configuration from `OCI_CONFIG_FILE` when set, otherwise from `~/.oci/config`
+- Uses `OCI_CONFIG_PROFILE` when set, otherwise `DEFAULT`
 - Adds an additional user-agent suffix for MCP telemetry
 - Prefers a Security Token Signer when `security_token_file` is available; otherwise falls back to API key signer
 
-Ensure your configured principal has the necessary permissions (least privilege recommended).
+### 2. OIDC token exchange flow
+
+For authenticated HTTP requests, the server uses the OCI Python SDK's `TokenExchangeSigner` to exchange the caller's OIDC JWT for an OCI UPST and sign OCI SDK calls. This matches the Oracle sample flow in `oracle-samples/mcp-examples/server`.
+
+HTTP transport is only available when the IDCS variables below are configured. Unauthenticated HTTP requests are rejected and do not fall back to the local OCI config flow.
+
+Required variables:
+
+- `IDCS_DOMAIN`
+- `IDCS_CLIENT_ID`
+- `IDCS_CLIENT_SECRET`
+- `ORACLE_MCP_HOST`
+- `ORACLE_MCP_PORT`
+
+Optional helpers:
+
+- `OCI_REGION` when you want to use OIDC auth without relying on an OCI config file for region settings
+
+Example OIDC setup:
+
+```sh
+export IDCS_DOMAIN="example.identity.oraclecloud.com"
+export IDCS_CLIENT_ID="<client-id>"
+export IDCS_CLIENT_SECRET="<client-secret>"
+export ORACLE_MCP_HOST="127.0.0.1"
+export ORACLE_MCP_PORT="5000"
+export OCI_REGION="us-phoenix-1"  # only needed when not using ~/.oci/config
+uv run oracle.oci-cloud-mcp-server
+```
+
+In this mode, authenticated OIDC HTTP requests use token exchange automatically. Local OCI config remains available for stdio only.
+
+Ensure the effective principal for either path has the necessary permissions (least privilege recommended).
 
 ## Security and privacy
 

@@ -13,7 +13,7 @@ import os
 import sys
 import traceback
 from datetime import datetime
-from typing import Any, Literal, cast
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
@@ -442,7 +442,11 @@ def create_distribution_path(
     sourceTrailName: str = Field(..., description="Source two-character trail name", min_length=2, max_length=2),
     targetURI: str = Field(..., description="Target deployment hostname (no protocol)"),
     targetPort: int | None = Field(None, description="Target port for distribution path", ge=1, le=65535),
-    targetAuthenticationMethod: Literal["OAuth", "Alias"] | None = Field(None, description="Authentication method for target deployment"),
+    targetAuthenticationMethod: str | None = Field(
+        None,
+        description="Authentication method for target deployment",
+        pattern="^(OAuth|Alias)$",
+    ),
     targetDomain: str | None = Field(None, description="Target credential domain when authentication method is Alias"),
     targetAlias: str | None = Field(None, description="Target credential alias when authentication method is Alias"),
 ) -> str:
@@ -479,7 +483,11 @@ def create_distribution_path(
 def create_data_stream(
     dataStreamName: str = Field(..., description="Data stream name"),
     trailName: str = Field(..., description="Two-character trail name", min_length=2, max_length=2),
-    qualityOfService: Literal["exactlyOnce", "atLeastOnce", "atMostOnce"] | None = Field(None, description="Delivery quality of service for the data stream"),
+    qualityOfService: str | None = Field(
+        None,
+        description="Delivery quality of service for the data stream",
+        pattern="^(exactlyOnce|atLeastOnce|atMostOnce)$",
+    ),
     cloudEventsFormat: bool | None = Field(None, description="Whether to emit records in CloudEvents format"),
     bufferSize: int | None = Field(None, description="Data stream buffer size in bytes", ge=1024),
 ) -> str:
@@ -579,8 +587,7 @@ def get_replicat_details(replicatName: str = Field(..., description="Replicat pr
 
 
 def main() -> None:
-    """Start the FastMCP server with the configured transport."""
-    transport = cast(Literal["stdio", "sse", "streamable-http"], os.getenv("MCP_TRANSPORT", "stdio"))
+    """Start the FastMCP server using stdio transport."""
     try:
         _verify_deployment_connectivity()
     except Exception:
@@ -591,7 +598,7 @@ def main() -> None:
         if os.getenv("OGG_MCP_DEBUG", "false").strip().lower() == "true":
             traceback.print_exc(file=sys.stderr)
         raise SystemExit(1) from None
-    mcp.run(transport=transport)
+    mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

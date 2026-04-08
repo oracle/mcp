@@ -94,36 +94,62 @@ python -m uv lock
 
 Copy template and fill values:
 
-- `oracle-goldengate-mcp-server.env.empty` → `oracle-goldengate-mcp-server.env`
+- `oracle-goldengate-mcp-server.env.example` → `oracle-goldengate-mcp-server.env`
 
 ### 4) Run the server
 
-From `oracle-goldengate-mcp-server`, use launcher scripts:
+The MCP server entry point is:
 
-- Windows (cmd.exe / PowerShell / Windows Terminal): `run_goldengate_mcp_server_windows.bat`
-- Linux: `./run_goldengate_mcp_server_linux.sh`
-- macOS: `./run_goldengate_mcp_server_macos.sh`
+- `oracle.oracle-goldengate-mcp-server`
 
-Launcher scripts load environment variables from:
+Before starting, make sure your environment variables are loaded from:
 
-- `oracle-goldengate-mcp-server/oracle-goldengate-mcp-server.env`
+- `oracle-goldengate-mcp-server.env`
 
-Starter template:
+using this template:
 
-- `oracle-goldengate-mcp-server/oracle-goldengate-mcp-server.env.empty`
+- `oracle-goldengate-mcp-server.env.example`
 
-Launcher scripts write install/startup/runtime logs to `logs/` under `oracle-goldengate-mcp-server`.
-Each server run creates a new timestamped log file:
-- Windows: `logs/run_goldengate_mcp_server_windows_YYYYMMDD_HHMMSS.log`
-- Linux: `logs/run_goldengate_mcp_server_linux_YYYYMMDD_HHMMSS.log`
-- macOS: `logs/run_goldengate_mcp_server_macos_YYYYMMDD_HHMMSS.log`
+#### Windows (PowerShell)
 
-Each log entry is prefixed with a timestamp.
-Launchers also apply log retention and keep only the 10 most recent log files per OS pattern.
+```powershell
+# From oracle-goldengate-mcp-server
+.\.venv\Scripts\Activate.ps1
+Get-Content .\oracle-goldengate-mcp-server.env | ForEach-Object {
+  if ($_ -match '^\s*#' -or $_ -match '^\s*$') { return }
+  $name, $value = $_ -split '=', 2
+  [Environment]::SetEnvironmentVariable($name.Trim(), $value.Trim(), 'Process')
+}
+uv run oracle.oracle-goldengate-mcp-server
+```
+
+#### Windows (cmd.exe)
+
+```bat
+:: From oracle-goldengate-mcp-server
+call .venv\Scripts\activate.bat
+for /f "usebackq tokens=* delims=" %i in ("oracle-goldengate-mcp-server.env") do @echo %i| findstr /r "^[ ]*# ^[ ]*$" >nul || set %i
+uv run oracle.oracle-goldengate-mcp-server
+```
+
+#### Linux / macOS (bash/zsh)
+
+```sh
+# From oracle-goldengate-mcp-server
+source .venv/bin/activate
+set -a
+source ./oracle-goldengate-mcp-server.env
+set +a
+uv run oracle.oracle-goldengate-mcp-server
+```
+
+Notes:
+- Transport is `stdio`.
+- For troubleshooting, set `OGG_MCP_DEBUG=true`.
 
 ### Environment configuration
 
-Copy `oracle-goldengate-mcp-server.env.empty` to `oracle-goldengate-mcp-server.env` and set:
+Copy `oracle-goldengate-mcp-server.env.example` to `oracle-goldengate-mcp-server.env` and set:
 
 - `OGG_BASE_URL` (required)
 - `OGG_USERNAME` (required for basic authentication)

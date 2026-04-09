@@ -13,7 +13,14 @@ from pathlib import Path
 import pytest
 import requests
 
-from oracle.oracle_goldengate_mcp_server import config, extract_config, http_client, map_statement, replicat_config, table_statement
+from oracle.oracle_goldengate_mcp_server import (
+    config,
+    extract_config,
+    http_client,
+    map_statement,
+    replicat_config,
+    table_statement,
+)
 
 
 def test_map_statement_normalize_and_build() -> None:

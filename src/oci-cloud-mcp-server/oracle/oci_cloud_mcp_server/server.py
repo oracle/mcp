@@ -25,23 +25,56 @@ from .utils import initAuditLogger
 logger = Logger(__name__, level="INFO")
 initAuditLogger(logger)
 
+_SERVER_INSTRUCTIONS = inspect.cleandoc(
+    """
+    This server is a thin MCP wrapper over the OCI Python SDK without arbitrary Python execution.
+    Think in SDK terms: client_fqn -> operation -> params.
+    Primary rule: do not search first.
+    Your default behavior should be:
+    1. Infer the most likely OCI Python SDK client class and method you would write in code.
+    2. Use describe_oci_operation if you need exact parameter or model details before invoking.
+    3. Use invoke_oci_api once the call shape is clear.
+    Use find_oci_api only as an escape hatch when you genuinely cannot infer the client class or method.
+    It is not the normal first step.
+    Recommended workflow:
+    - If you already know the OCI Python SDK client class and method, call
+      describe_oci_operation or invoke_oci_api directly.
+    - If the service family is obvious but the exact method is fuzzy, prefer list_client_operations
+      on that client class before using find_oci_api.
+    - find_oci_api is thin fallback discovery for compact resource/action phrases only when the
+      client family or method is still unclear after reasoning in SDK terms.
+      Reduce requests to terse search terms like 'list regions', 'launch instance', or 'vcn create';
+      do not pass full user sentences. Keep limit small (3-5) on initial discovery calls.
+      This is lightweight keyword search over OCI SDK metadata, not free-form natural language search.
+    Examples:
+    - "list all OCI regions" -> think "oci.identity.IdentityClient.list_regions()"
+    - "list compute instances in a compartment" -> think
+      "oci.core.ComputeClient.list_instances(compartment_id='...')"
+    - "launch a VM" -> think "oci.core.ComputeClient.launch_instance(...)"
+    - "resolve a compartment then list its instances" -> think through the needed SDK calls in order,
+      then invoke them deliberately.
+    - describe_oci_operation: Inspect the exact SDK method contract, required params,
+      pagination behavior, and request model hints before invoking.
+    - invoke_oci_api: Call the OCI SDK method. The contract is the same shape as the SDK call
+      you would write in Python: `oci.core.ComputeClient.list_instances(compartment_id='...')`
+      becomes `client_fqn='oci.core.ComputeClient', operation='list_instances',
+      params={'compartment_id': '...'}`. It defaults to compact behavior for list, summarize,
+      and paginated operations.
+      Use result_mode="full" only when you truly need the full payload, and prefer fields=[...]
+      when you only need a few exact top-level fields.
+    - list_client_operations: Browse methods on a known client class.
+    - list_oci_clients: Fallback for capability discovery/debugging when search is
+      ambiguous or you need to inspect installed clients. Prefer query/limit to keep
+      results compact.
+    The server automatically normalizes common scalar and model-field type mistakes
+    (for example "3" -> 3 or "true" -> True when the SDK metadata is clear),
+    so prefer one clean call over trial-and-error retries.
+    """
+)
+
 mcp = FastMCP(
     name=__project__,
-    instructions="""
-        This server provides isolated, in-process access to the OCI Python SDK
-        without arbitrary Python execution.
-        Recommended workflow:
-        - list_oci_clients: Discover available OCI SDK clients in the current environment.
-        - find_oci_api: Search for the right client + operation by keyword.
-        - describe_oci_operation: Inspect the exact operation contract, required params,
-          pagination behavior, and request model hints before invoking.
-        - invoke_oci_api: Call the OCI SDK operation. Prefer result_mode="summary" or
-          max_results=... when you only need a concise answer.
-        - list_client_operations: List or filter operations on a known client.
-        The server automatically normalizes common scalar and model-field type mistakes
-        (for example "3" -> 3 or "true" -> True when the SDK metadata is clear),
-        so prefer one clean call over trial-and-error retries.
-    """,
+    instructions=_SERVER_INSTRUCTIONS,
 )
 
 _user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
@@ -50,6 +83,37 @@ known_paginated: set = {"get_rr_set"}
 _MODEL_SUFFIXES = ("_details", "_config", "_configuration", "_source_details")
 _DEFAULT_SUMMARY_ITEMS = 5
 _DEFAULT_MODEL_FIELDS = 20
+_SEARCH_QUERY_STOPWORDS = {
+    "a",
+    "an",
+    "all",
+    "cloud",
+    "for",
+    "in",
+    "infrastructure",
+    "oci",
+    "of",
+    "on",
+    "oracle",
+    "please",
+    "the",
+    "to",
+    "with",
+}
+_FALLBACK_CLIENT_PREFERENCES = {
+    "compartment": ("oci.identity.IdentityClient",),
+    "compartments": ("oci.identity.IdentityClient",),
+    "instance": ("oci.core.ComputeClient",),
+    "instances": ("oci.core.ComputeClient",),
+    "region": ("oci.identity.IdentityClient",),
+    "regions": ("oci.identity.IdentityClient",),
+    "shape": ("oci.core.ComputeClient",),
+    "shapes": ("oci.core.ComputeClient",),
+    "subnet": ("oci.core.VirtualNetworkClient",),
+    "subnets": ("oci.core.VirtualNetworkClient",),
+    "vcn": ("oci.core.VirtualNetworkClient",),
+    "vcns": ("oci.core.VirtualNetworkClient",),
+}
 
 
 def _validate_client_fqn(client_fqn: str, *, require_client_class: bool = False) -> None:
@@ -270,25 +334,97 @@ def _supports_pagination(method: Callable[..., Any], operation_name: str) -> boo
     return operation_name in known_paginated
 
 
-def _score_query_match(query: str, *texts: str) -> int:
+def _score_query_match(
+    query: str,
+    *texts: str,
+    query_tokens: Optional[List[str]] = None,
+    normalized_query: Optional[str] = None,
+) -> int:
     if not query:
         return 1
     haystack = " ".join(texts).lower()
     q = query.lower().strip()
     if not q:
         return 1
-    tokens = [token for token in re.split(r"[\s._/-]+", q) if token]
-    if q not in haystack and not any(token in haystack for token in tokens):
+    if query_tokens is None:
+        raw_tokens = [token for token in re.split(r"[\s._/-]+", q) if token]
+        tokens = [token for token in raw_tokens if token not in _SEARCH_QUERY_STOPWORDS] or raw_tokens
+    else:
+        tokens = query_tokens
+    matched_tokens = [token for token in tokens if token in haystack]
+    if q not in haystack and len(matched_tokens) < min(2, len(tokens)):
         return 0
     score = 0
     if q in haystack:
         score += 100
-    for token in tokens:
-        if token in haystack:
-            score += 20
-    if tokens and all(token in haystack for token in tokens):
+    score += 20 * len(matched_tokens)
+    if tokens and len(matched_tokens) == len(tokens):
         score += 20
-    score += int(difflib.SequenceMatcher(None, q, haystack).ratio() * 10)
+    score += int(difflib.SequenceMatcher(None, normalized_query or " ".join(tokens) or q, haystack).ratio() * 10)
+    return score
+
+
+def _inspect_method(method: Callable[..., Any]) -> Tuple[Optional[inspect.Signature], str]:
+    try:
+        signature = inspect.signature(method)
+    except Exception:
+        signature = None
+    try:
+        doc = inspect.getdoc(method) or ""
+    except Exception:
+        doc = ""
+    return signature, doc
+
+
+def _normalized_query_tokens(text: str) -> List[str]:
+    raw_tokens = [token for token in re.split(r"[\s._/-]+", text.lower().strip()) if token]
+    return [token for token in raw_tokens if token not in _SEARCH_QUERY_STOPWORDS] or raw_tokens
+
+
+def _normalized_operation_phrase(operation_name: str) -> str:
+    return " ".join(_normalized_query_tokens(operation_name))
+
+
+def _fallback_client_preference_bonus(query_tokens: List[str], client_fqn: str) -> int:
+    for token in query_tokens:
+        preferred_clients = _FALLBACK_CLIENT_PREFERENCES.get(token)
+        if preferred_clients and client_fqn in preferred_clients:
+            return 12
+    return 0
+
+
+def _score_discovery_match(
+    query: str,
+    client_fqn: str,
+    operation_name: str,
+    summary: str,
+    *,
+    query_tokens: Optional[List[str]] = None,
+    normalized_query: Optional[str] = None,
+) -> int:
+    # Reserved for future search tuning if the thin fallback search needs extra help.
+    # TODO(rg): Tradeoff note: because fallback search is intentionally thin now, some ambiguous
+    # queries may resolve less helpfully than the heavier heuristic version did.
+    # Revisit only if translator-first discovery adoption is insufficient or search
+    # quality becomes a real user-facing issue.
+    # The main discovery flow is translator-first and does not currently rely on this.
+    query_tokens = query_tokens if query_tokens is not None else _normalized_query_tokens(query)
+    normalized_query = normalized_query if normalized_query is not None else " ".join(query_tokens)
+    score = _score_query_match(
+        query,
+        client_fqn,
+        operation_name,
+        summary,
+        query_tokens=query_tokens,
+        normalized_query=normalized_query,
+    )
+    if score <= 0:
+        return 0
+
+    if normalized_query and normalized_query == _normalized_operation_phrase(operation_name):
+        score += 40
+
+    score += _fallback_client_preference_bonus(query_tokens, client_fqn)
     return score
 
 
@@ -498,14 +634,7 @@ def _coerce_params_to_method_types(client_fqn: str, method: Callable[..., Any], 
     if not params:
         return {}
     models_module = _import_models_module_from_client_fqn(client_fqn)
-    try:
-        signature = inspect.signature(method)
-    except Exception:
-        signature = None
-    try:
-        doc = inspect.getdoc(method) or ""
-    except Exception:
-        doc = ""
+    signature, doc = _inspect_method(method)
     doc_param_types = {
         name: type_name
         for type_name, name in re.findall(r":param\s+([^\s:]+)\s+([A-Za-z0-9_]+)\s*:", doc)
@@ -673,15 +802,9 @@ def _describe_operation(
     if not callable(method):
         raise AttributeError(f"Attribute '{operation_name}' on client '{client_fqn}' is not callable")
 
-    try:
-        signature = inspect.signature(method)
-    except Exception:
-        signature = None
-    try:
-        doc = inspect.getdoc(method) or ""
-    except Exception:
-        doc = ""
+    signature, doc = _inspect_method(method)
     summary = doc.strip().partition("\n")[0] if doc else ""
+    signature_display = _signature_to_display(operation_name, signature)
     expected_kwargs = sorted(_extract_expected_kwargs_from_source(method) or [])
     required_params: List[Dict[str, Any]] = []
     optional_params: List[Dict[str, Any]] = []
@@ -734,7 +857,7 @@ def _describe_operation(
         "client": client_fqn,
         "operation": operation_name,
         "summary": summary,
-        "signature": _signature_to_display(operation_name, signature),
+        "signature": signature_display,
         "supports_pagination": _supports_pagination(method, operation_name),
         "required_params": required_params,
         "optional_params": optional_params,
@@ -742,6 +865,7 @@ def _describe_operation(
         "request_models": request_models,
         "parameter_aliases": param_aliases,
     }
+
 
 def _extract_paginated_items(response_data: Any) -> Tuple[Any, Optional[str], Any]:
     if isinstance(response_data, oci.dns.models.RecordCollection) or isinstance(response_data, oci.dns.models.RRSet):
@@ -808,6 +932,49 @@ def _serialize_oci_data(data: Any) -> Any:
     except Exception:
         converted = data
     return ensure_jsonable(converted)
+
+
+def _project_top_level_fields(
+    serialized_data: Any, fields: Optional[List[str]]
+) -> Tuple[Any, List[str], List[str]]:
+    if fields is None:
+        return serialized_data, [], []
+
+    if isinstance(serialized_data, dict):
+        available_fields = sorted(serialized_data.keys())
+        matched_fields = [field for field in fields if field in serialized_data]
+        if not matched_fields:
+            raise ValueError(
+                "None of the requested fields matched top-level response fields. "
+                f"Requested: {fields}. Available: {available_fields[:20]}"
+            )
+        projected_data = {field: serialized_data[field] for field in matched_fields}
+        unmatched_fields = [field for field in fields if field not in serialized_data]
+        return projected_data, matched_fields, unmatched_fields
+
+    if isinstance(serialized_data, list):
+        available_fields = sorted(
+            {
+                key
+                for item in serialized_data
+                if isinstance(item, dict)
+                for key in item.keys()
+            }
+        )
+        matched_fields = [field for field in fields if field in available_fields]
+        if not matched_fields:
+            raise ValueError(
+                "None of the requested fields matched top-level response fields. "
+                f"Requested: {fields}. Available: {available_fields[:20]}"
+            )
+        projected_data = [
+            {field: item[field] for field in matched_fields if field in item} if isinstance(item, dict) else item
+            for item in serialized_data
+        ]
+        unmatched_fields = [field for field in fields if field not in available_fields]
+        return projected_data, matched_fields, unmatched_fields
+
+    raise ValueError("fields can only be used with object responses or lists of objects")
 
 
 def _align_params_to_signature(
@@ -947,10 +1114,7 @@ def _call_with_pagination_if_applicable(
 def _build_param_error_hints(
     method: Callable[..., Any], operation_name: str, params: Dict[str, Any], error_text: str
 ) -> Dict[str, Any]:
-    try:
-        signature = inspect.signature(method)
-    except Exception:
-        signature = None
+    signature, _ = _inspect_method(method)
     expected_param_names = []
     if signature is not None:
         expected_param_names = [
@@ -988,23 +1152,31 @@ def _build_param_error_hints(
 
 @mcp.tool(
     description=(
-        "Search OCI SDK client operations by keyword so you can find the right client_fqn and operation "
-        "without dumping large operation lists into context."
+        "Thin keyword/resource-action fallback search across OCI Python SDK client methods. "
+        "Use this only when you cannot infer a plausible client class or method well enough to call "
+        "list_client_operations or describe_oci_operation first."
     )
 )
 def find_oci_api(
-    query: Annotated[str, "Keywords such as 'instance list', 'vcn create', or 'object storage bucket'."],
+    query: Annotated[
+        str,
+        "Short SDK-oriented resource/action query such as 'list regions', 'launch instance', or 'vcn create'. "
+        "Reduce requests to concise search terms; do not pass full sentences. This is an escape hatch, not the "
+        "normal first step.",
+    ],
     client_fqn: Annotated[
         Optional[str],
         "Optional fully-qualified client class to narrow the search, e.g. 'oci.core.ComputeClient'.",
     ] = None,
-    limit: Annotated[int, "Maximum number of matches to return."] = 10,
+    limit: Annotated[int, "Maximum matches to return. Keep this small (3-5) for initial discovery."] = 5,
     include_params: Annotated[bool, "Include compact signatures for each match."] = False,
 ) -> dict:
     if limit < 1:
         raise ValueError("limit must be >= 1")
     if not query or not query.strip():
         raise ValueError("query must be non-empty")
+    query_tokens = _normalized_query_tokens(query)
+    normalized_query = " ".join(query_tokens)
 
     if client_fqn:
         _validate_client_fqn(client_fqn, require_client_class=True)
@@ -1015,12 +1187,16 @@ def find_oci_api(
     matches: List[Tuple[int, Dict[str, Any]]] = []
     for current_client_fqn, cls in client_entries:
         for name, member in _get_public_client_methods(cls):
-            try:
-                doc = inspect.getdoc(member) or ""
-            except Exception:
-                doc = ""
+            signature, doc = _inspect_method(member)
             summary = doc.strip().partition("\n")[0] if doc else ""
-            score = _score_query_match(query, current_client_fqn, name, summary)
+            score = _score_discovery_match(
+                query,
+                current_client_fqn,
+                name,
+                summary,
+                query_tokens=query_tokens,
+                normalized_query=normalized_query,
+            )
             if score <= 0:
                 continue
 
@@ -1030,10 +1206,6 @@ def find_oci_api(
                 "summary": summary,
             }
             if include_params:
-                try:
-                    signature = inspect.signature(member)
-                except Exception:
-                    signature = None
                 entry["params"] = _signature_to_display(name, signature)
             matches.append((score, entry))
 
@@ -1050,8 +1222,8 @@ def find_oci_api(
 
 @mcp.tool(
     description=(
-        "Describe a specific OCI SDK operation, including required params, optional params, "
-        "pagination behavior, aliases, and request model hints."
+        "Describe a specific OCI Python SDK client method, including required params, "
+        "optional params, pagination behavior, aliases, and request model hints."
     )
 )
 def describe_oci_operation(
@@ -1067,26 +1239,58 @@ def describe_oci_operation(
     return _describe_operation(client_fqn, operation, max_model_fields=max_model_fields)
 
 
-@mcp.tool(description="Invoke an OCI Python SDK API via client and operation name.")
+@mcp.tool(
+    description=(
+        "Invoke an OCI Python SDK client method by fully-qualified client class and operation name. "
+        "This is a thin wrapper over the OCI Python SDK call. Equivalent Python "
+        "`oci.core.ComputeClient.list_instances(compartment_id='...')` maps to "
+        "`client_fqn='oci.core.ComputeClient', operation='list_instances', "
+        "params={'compartment_id': '...'}`. The default result_mode='auto' keeps list, summarize, and paginated results compact."
+    )
+)
 def invoke_oci_api(
     client_fqn: Annotated[str, "Fully-qualified client class, e.g. 'oci.core.ComputeClient'"],
     operation: Annotated[str, "Client method/operation name, e.g. 'list_instances' or 'get_instance'"],
     params: Annotated[
-        Dict[str, Any],
-        "Keyword arguments for the operation (JSON object). Use snake_case keys as in SDK.",
-    ] = {},
+        Optional[Dict[str, Any]],
+        "Keyword arguments for the SDK method (JSON object). These are the snake_case kwargs you would pass in Python.",
+    ] = None,
+    fields: Annotated[
+        Optional[List[str]],
+        "Optional top-level response fields to project after serialization, e.g. "
+        "['id', 'display_name', 'lifecycle_state']. This shapes the returned payload only; "
+        "it does not change the SDK call contract.",
+    ] = None,
     max_results: Annotated[
         Optional[int],
         "Optionally limit returned records for paginated operations, or trim top-level lists after serialization.",
     ] = None,
     result_mode: Annotated[
-        Literal["full", "summary"],
-        "Use 'summary' for a compact structural summary instead of the full response payload.",
-    ] = "full",
+        Literal["auto", "full", "summary"],
+        "Use 'auto' for compact defaults, 'summary' for a compact structural summary, or 'full' for the full payload.",
+    ] = "auto",
 ) -> dict:
     try:
         if max_results is not None and max_results < 1:
             raise ValueError("max_results must be >= 1")
+        if fields is None:
+            normalized_fields = None
+        else:
+            if not isinstance(fields, list):
+                raise ValueError("fields must be a list of non-empty strings")
+            raw_fields = fields
+            normalized_fields = []
+            seen = set()
+            for field in raw_fields:
+                if not isinstance(field, str) or not field.strip():
+                    raise ValueError("fields must contain only non-empty strings")
+                cleaned = field.strip()
+                if cleaned not in seen:
+                    normalized_fields.append(cleaned)
+                    seen.add(cleaned)
+
+            if not normalized_fields:
+                raise ValueError("fields must contain at least one non-empty string")
         _validate_client_fqn(client_fqn, require_client_class=True)
         client = _import_client(client_fqn)
         if not hasattr(client, operation):
@@ -1105,9 +1309,9 @@ def invoke_oci_api(
         if not callable(method):
             raise AttributeError(f"Attribute '{operation}' on client '{client_fqn}' is not callable")
 
-        params = params or {}
+        input_params = params or {}
         uses_pagination = _supports_pagination(method, operation)
-        typed_params = _coerce_params_to_method_types(client_fqn, method, params)
+        typed_params = _coerce_params_to_method_types(client_fqn, method, input_params)
         final_params = _align_params_to_signature(
             method,
             operation,
@@ -1124,32 +1328,48 @@ def invoke_oci_api(
         )
 
         serialized_data = _serialize_oci_data(data)
-        result_meta: Dict[str, Any] = {"result_mode": result_mode, "pagination_used": uses_pagination}
+        projected_data, matched_fields, unmatched_fields = _project_top_level_fields(serialized_data, normalized_fields)
+
+        effective_result_mode = result_mode
+        if result_mode == "auto":
+            effective_result_mode = (
+                "summary"
+                if uses_pagination or operation.startswith("list_") or operation.startswith("summarize_")
+                else "full"
+            )
+
+        result_meta: Dict[str, Any] = {"result_mode": effective_result_mode, "pagination_used": uses_pagination}
         if max_results is not None:
             result_meta["max_results"] = max_results
+        if normalized_fields is not None:
+            result_meta["fields"] = matched_fields
+            if unmatched_fields:
+                result_meta["unmatched_fields"] = unmatched_fields
+        if result_mode == "auto":
+            result_meta["requested_result_mode"] = "auto"
 
-        if result_mode == "summary":
-            rendered_data = _summarize_serialized_data(serialized_data, max_results or _DEFAULT_SUMMARY_ITEMS)
+        if effective_result_mode == "summary":
+            rendered_data = _summarize_serialized_data(projected_data, max_results or _DEFAULT_SUMMARY_ITEMS)
         else:
             trim_limit = None if uses_pagination else max_results
-            if trim_limit is not None and isinstance(serialized_data, list):
-                rendered_data = serialized_data[:trim_limit]
-                truncated = len(serialized_data) > trim_limit
+            if trim_limit is not None and isinstance(projected_data, list):
+                rendered_data = projected_data[:trim_limit]
+                truncated = len(projected_data) > trim_limit
             else:
-                rendered_data = serialized_data
+                rendered_data = projected_data
                 truncated = False
-            if isinstance(serialized_data, list):
+            if isinstance(projected_data, list):
                 result_meta["returned_items"] = len(rendered_data)
                 if uses_pagination and has_more_results:
                     result_meta["truncated"] = True
                 else:
-                    result_meta["total_items"] = len(serialized_data)
+                    result_meta["total_items"] = len(projected_data)
                     result_meta["truncated"] = truncated
 
         result = {
             "client": client_fqn,
             "operation": operation,
-            "params": params,
+            "params": input_params,
             "opc_request_id": opc_request_id,
             "data": rendered_data,
             "result_meta": result_meta,
@@ -1192,12 +1412,17 @@ def invoke_oci_api(
         return error_result
 
 
-@mcp.tool(description="List public callable operations for a given OCI client class.")
+@mcp.tool(
+    description=(
+        "List public callable OCI Python SDK methods for a given client class. Prefer this over find_oci_api when "
+        "you already know the likely client family."
+    )
+)
 def list_client_operations(
     client_fqn: Annotated[str, "Fully-qualified client class, e.g. 'oci.core.ComputeClient'"],
     query: Annotated[
         Optional[str],
-        "Optional substring/keyword filter to keep the result compact, e.g. 'instance' or 'create'.",
+        "Optional keyword/resource filter to keep the result compact, e.g. 'instance' or 'launch'.",
     ] = None,
     limit: Annotated[Optional[int], "Optional maximum number of operations to return."] = None,
     include_params: Annotated[bool, "Include compact method signatures in the response."] = True,
@@ -1207,25 +1432,30 @@ def list_client_operations(
 
     _validate_client_fqn(client_fqn, require_client_class=True)
     cls = _get_client_class(client_fqn)
+    query_tokens = _normalized_query_tokens(query or "")
+    normalized_query = " ".join(query_tokens)
     matched_ops: List[Tuple[int, Dict[str, Any]]] = []
     total_operations = 0
     for name, member in _get_public_client_methods(cls):
         total_operations += 1
-        try:
-            doc = inspect.getdoc(member) or ""
-        except Exception:
-            doc = ""
+        signature, doc = _inspect_method(member)
         summary = doc.strip().partition("\n")[0] if doc else ""
-        score = _score_query_match(query or "", name, summary)
+        score = _score_discovery_match(
+            query or "",
+            client_fqn,
+            name,
+            summary,
+            query_tokens=query_tokens,
+            normalized_query=normalized_query,
+        )
         if query and score <= 0:
             continue
 
-        entry: Dict[str, Any] = {"name": name, "summary": summary}
+        entry: Dict[str, Any] = {
+            "name": name,
+            "summary": summary,
+        }
         if include_params:
-            try:
-                signature = inspect.signature(member)
-            except Exception:
-                signature = None
             entry["params"] = _signature_to_display(name, signature)
         matched_ops.append((score, entry))
 
@@ -1238,8 +1468,6 @@ def list_client_operations(
     operations = [entry for _, entry in selected_ops]
 
     logger.info(f"Found {len(operations)} operations on {client_fqn}")
-    if query is None and limit is None and include_params:
-        return {"operations": operations}
     return {
         "client": client_fqn,
         "query": query,
@@ -1249,17 +1477,64 @@ def list_client_operations(
     }
 
 
-@mcp.tool(description="List OCI SDK clients discoverable in the current environment.")
-def list_oci_clients() -> dict:
-    clients = []
+@mcp.tool(
+    description=(
+        "List or filter OCI Python SDK client classes discoverable in the current environment. "
+        "Prefer direct SDK-shaped calls or find_oci_api for task-oriented requests; use this for capability "
+        "discovery or debugging."
+    )
+)
+def list_oci_clients(
+    query: Annotated[
+        Optional[str],
+        "Optional substring/keyword filter to keep the result compact, e.g. 'identity' or 'compute'.",
+    ] = None,
+    limit: Annotated[Optional[int], "Optional maximum number of clients to return."] = None,
+) -> dict:
+    if limit is not None and limit < 1:
+        raise ValueError("limit must be >= 1")
+
+    normalized_query = query.strip() if query and query.strip() else None
+    query_tokens = _normalized_query_tokens(normalized_query or "")
+    query_phrase = " ".join(query_tokens)
+
+    matched_clients: List[Tuple[int, Dict[str, Any]]] = []
     for client_fqn, cls in _discover_client_classes():
-        clients.append(
-            {
-                "client_fqn": client_fqn,
-                "module": client_fqn.rsplit(".", 1)[0],
-                "class": getattr(cls, "__name__", client_fqn.rsplit(".", 1)[-1]),
-            }
+        module_name = client_fqn.rsplit(".", 1)[0]
+        class_name = getattr(cls, "__name__", client_fqn.rsplit(".", 1)[-1])
+
+        if normalized_query:
+            score = _score_query_match(
+                normalized_query,
+                client_fqn,
+                module_name,
+                class_name,
+                query_tokens=query_tokens,
+                normalized_query=query_phrase,
+            )
+            if score <= 0:
+                continue
+        else:
+            score = 0
+
+        matched_clients.append(
+            (
+                score,
+                {
+                    "client_fqn": client_fqn,
+                    "module": module_name,
+                    "class": class_name,
+                },
+            )
         )
+
+    if normalized_query:
+        matched_clients.sort(key=lambda item: (-item[0], item[1]["client_fqn"]))
+    else:
+        matched_clients.sort(key=lambda item: item[1]["client_fqn"])
+
+    selected_clients = matched_clients[:limit] if limit is not None else matched_clients
+    clients = [entry for _, entry in selected_clients]
     return {"count": len(clients), "clients": clients}
 
 

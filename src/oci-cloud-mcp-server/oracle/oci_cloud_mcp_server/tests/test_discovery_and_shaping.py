@@ -7,6 +7,26 @@ import oracle.oci_cloud_mcp_server.server as server_mod
 from oracle.oci_cloud_mcp_server.server import mcp
 
 
+def _fake_tool_response(data, request_id):
+    return SimpleNamespace(data=data, headers={"opc-request-id": request_id})
+
+
+def _patch_fake_invoke_client(monkeypatch, client_cls, *, pager_response=None):
+    monkeypatch.setattr(
+        "oracle.oci_cloud_mcp_server.server.import_module",
+        lambda name: SimpleNamespace(FakeClient=client_cls),
+    )
+    monkeypatch.setattr(
+        "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
+        lambda: ({}, object()),
+    )
+    if pager_response is not None:
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results",
+            lambda method, **kwargs: pager_response,
+        )
+
+
 class TestDiscoveryTools:
     def test_discover_client_classes_skips_internal_and_base_clients(self, monkeypatch):
         class ComputeClient:
@@ -96,6 +116,38 @@ class TestDiscoveryTools:
         assert res["total_matches"] >= 1
         assert res["matches"][0]["client_fqn"] == "oci.core.ComputeClient"
         assert res["matches"][0]["operation"] == "list_instances"
+
+    @pytest.mark.asyncio
+    async def test_find_oci_api_prefers_compute_list_shapes_for_ambiguous_shapes_query(self, monkeypatch):
+        class ComputeClient:
+            def list_shapes(self, compartment_id):  # noqa: ARG002
+                """Lists the shapes that can be used to launch an instance within the specified compartment."""
+                return None
+
+        class ShapeClient:
+            def list_shapes(self, compartment_id):  # noqa: ARG002
+                """Returns a list of Shapes."""
+                return None
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._discover_client_classes",
+            lambda: [
+                ("oci.rover.ShapeClient", ShapeClient),
+                ("oci.core.ComputeClient", ComputeClient),
+            ],
+        )
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "find_oci_api",
+                    {"query": "list shapes", "limit": 3},
+                )
+            ).data
+
+        assert res["matches"][0]["client_fqn"] == "oci.core.ComputeClient"
+        assert res["matches"][0]["operation"] == "list_shapes"
+        assert any(match["client_fqn"] == "oci.rover.ShapeClient" for match in res["matches"])
 
     @pytest.mark.asyncio
     async def test_describe_oci_operation_returns_model_hints(self, monkeypatch):
@@ -207,6 +259,45 @@ class TestDiscoveryTools:
         }
 
     @pytest.mark.asyncio
+    async def test_list_oci_clients_filters_and_limits_results(self, monkeypatch):
+        class ComputeClient:
+            pass
+
+        class IdentityClient:
+            pass
+
+        class MonitoringClient:
+            pass
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._discover_client_classes",
+            lambda: [
+                ("oci.core.ComputeClient", ComputeClient),
+                ("oci.identity.IdentityClient", IdentityClient),
+                ("oci.monitoring.MonitoringClient", MonitoringClient),
+            ],
+        )
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "list_oci_clients",
+                    {"query": "identity", "limit": 1},
+                )
+            ).data
+
+        assert res == {
+            "count": 1,
+            "clients": [
+                {
+                    "client_fqn": "oci.identity.IdentityClient",
+                    "module": "oci.identity",
+                    "class": "IdentityClient",
+                }
+            ],
+        }
+
+    @pytest.mark.asyncio
     async def test_tool_rejects_non_oci_client_fqn(self):
         async with Client(mcp) as client:
             with pytest.raises(ToolError, match="OCI SDK client under the 'oci\\.' namespace"):
@@ -269,6 +360,7 @@ class TestInvokeShaping:
                         "operation": "list_things",
                         "params": {"compartment_id": "ocid1.compartment.oc1..example"},
                         "max_results": 2,
+                        "result_mode": "full",
                     },
                 )
             ).data
@@ -347,6 +439,7 @@ class TestInvokeShaping:
                             "limit": 2,
                         },
                         "max_results": 3,
+                        "result_mode": "full",
                     },
                 )
             ).data
@@ -415,6 +508,185 @@ class TestInvokeShaping:
         assert res["data"]["kind"] == "object"
         assert "items" in res["data"]["sample"]
         assert res["data"]["sample"]["items"]["kind"] == "list"
+
+    @pytest.mark.asyncio
+    async def test_invoke_oci_api_auto_mode_defaults_list_results_to_summary(self, monkeypatch):
+        class FakeClient:
+            def __init__(self, config, signer):  # noqa: ARG002
+                pass
+
+            def list_things(self, compartment_id):  # noqa: ARG002
+                return _fake_tool_response([{"id": "a"}, {"id": "b"}], "req-333b")
+
+        _patch_fake_invoke_client(monkeypatch, FakeClient, pager_response=_fake_tool_response([{"id": "a"}, {"id": "b"}], "req-333b"))
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "invoke_oci_api",
+                    {
+                        "client_fqn": "oci.fake.FakeClient",
+                        "operation": "list_things",
+                        "params": {"compartment_id": "ocid1.compartment.oc1..example"},
+                    },
+                )
+            ).data
+
+        assert res["result_meta"]["result_mode"] == "summary"
+        assert res["result_meta"]["requested_result_mode"] == "auto"
+        assert res["data"]["kind"] == "list"
+
+    @pytest.mark.asyncio
+    async def test_invoke_oci_api_fields_projection_returns_only_requested_top_level_fields(self, monkeypatch):
+        class FakeClient:
+            def __init__(self, config, signer):  # noqa: ARG002
+                pass
+
+            def get_thing(self, thing_id):  # noqa: ARG002
+                return _fake_tool_response(
+                    {
+                        "id": "thing-1",
+                        "display_name": "demo",
+                        "lifecycle_state": "ACTIVE",
+                        "shape": "VM.Standard.A1.Flex",
+                    },
+                    "req-334",
+                )
+
+        _patch_fake_invoke_client(monkeypatch, FakeClient)
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "invoke_oci_api",
+                    {
+                        "client_fqn": "oci.fake.FakeClient",
+                        "operation": "get_thing",
+                        "params": {"thing_id": "thing-1"},
+                        "fields": ["id", "display_name", "lifecycle_state"],
+                    },
+                )
+            ).data
+
+        assert res["data"] == {
+            "id": "thing-1",
+            "display_name": "demo",
+            "lifecycle_state": "ACTIVE",
+        }
+        assert res["result_meta"]["fields"] == ["id", "display_name", "lifecycle_state"]
+
+    @pytest.mark.asyncio
+    async def test_invoke_oci_api_fields_projection_reports_unmatched_fields(self, monkeypatch):
+        class FakeClient:
+            def __init__(self, config, signer):  # noqa: ARG002
+                pass
+
+            def get_thing(self, thing_id):  # noqa: ARG002
+                return _fake_tool_response(
+                    {
+                        "id": "thing-1",
+                        "display_name": "demo",
+                        "lifecycle_state": "ACTIVE",
+                        "shape": "VM.Standard.A1.Flex",
+                    },
+                    "req-334b",
+                )
+
+        _patch_fake_invoke_client(monkeypatch, FakeClient)
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "invoke_oci_api",
+                    {
+                        "client_fqn": "oci.fake.FakeClient",
+                        "operation": "get_thing",
+                        "params": {"thing_id": "thing-1"},
+                        "fields": ["id", "display_name", "displayName"],
+                    },
+                )
+            ).data
+
+        assert res["data"] == {
+            "id": "thing-1",
+            "display_name": "demo",
+        }
+        assert res["result_meta"]["fields"] == ["id", "display_name"]
+        assert res["result_meta"]["unmatched_fields"] == ["displayName"]
+
+    @pytest.mark.asyncio
+    async def test_invoke_oci_api_summary_mode_respects_fields_projection(self, monkeypatch):
+        class FakeClient:
+            def __init__(self, config, signer):  # noqa: ARG002
+                pass
+
+            def list_things(self, compartment_id):  # noqa: ARG002
+                return _fake_tool_response(
+                    [
+                        {"id": "thing-1", "display_name": "alpha", "shape": "A1"},
+                        {"id": "thing-2", "display_name": "beta", "shape": "E5"},
+                    ],
+                    "req-335",
+                )
+
+        _patch_fake_invoke_client(
+            monkeypatch,
+            FakeClient,
+            pager_response=_fake_tool_response(
+                [
+                    {"id": "thing-1", "display_name": "alpha", "shape": "A1"},
+                    {"id": "thing-2", "display_name": "beta", "shape": "E5"},
+                ],
+                "req-335",
+            ),
+        )
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "invoke_oci_api",
+                    {
+                        "client_fqn": "oci.fake.FakeClient",
+                        "operation": "list_things",
+                        "params": {"compartment_id": "ocid1.compartment.oc1..example"},
+                        "fields": ["id", "display_name"],
+                        "result_mode": "summary",
+                    },
+                )
+            ).data
+
+        assert res["result_meta"]["result_mode"] == "summary"
+        assert res["result_meta"]["fields"] == ["id", "display_name"]
+        assert res["data"]["kind"] == "list"
+        assert res["data"]["sample"][0] == {"id": "thing-1", "display_name": "alpha"}
+        assert res["data"]["sample_item_keys"] == ["display_name", "id"]
+
+    @pytest.mark.asyncio
+    async def test_invoke_oci_api_fields_projection_errors_when_no_fields_match(self, monkeypatch):
+        class FakeClient:
+            def __init__(self, config, signer):  # noqa: ARG002
+                pass
+
+            def get_thing(self, thing_id):  # noqa: ARG002
+                return _fake_tool_response({"id": "thing-1", "display_name": "demo"}, "req-335b")
+
+        _patch_fake_invoke_client(monkeypatch, FakeClient)
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "invoke_oci_api",
+                    {
+                        "client_fqn": "oci.fake.FakeClient",
+                        "operation": "get_thing",
+                        "params": {"thing_id": "thing-1"},
+                        "fields": ["displayName"],
+                    },
+                )
+            ).data
+
+        assert "error" in res
+        assert "None of the requested fields matched" in res["error"]
 
     @pytest.mark.asyncio
     async def test_invoke_oci_api_errors_include_repair_hints(self, monkeypatch):

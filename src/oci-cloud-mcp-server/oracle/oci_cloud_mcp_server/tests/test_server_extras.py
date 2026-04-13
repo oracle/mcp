@@ -1052,6 +1052,7 @@ class TestListOpcRequestIdPropagation:
                         "client_fqn": "oci.fake.FakeClient",
                         "operation": "list_things",
                         "params": {"compartment_id": "ocid1.compartment..zzz"},
+                        "result_mode": "full",
                     },
                 )
             ).data

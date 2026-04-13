@@ -17,6 +17,7 @@ from oracle.oci_cloud_mcp_server.server import (
     _import_client,
     _resolve_model_class_from_type_name,
     _resolve_polymorphic_model_class,
+    _score_discovery_match,
     _score_query_match,
     _serialize_oci_data,
     _summarize_serialized_data,
@@ -48,6 +49,54 @@ class TestValidationAndFormattingHelpers:
         assert _score_query_match("   ", "anything") == 1
         assert _score_query_match("nope", "something else") == 0
 
+    def test_score_query_match_ignores_generic_tokens_and_requires_multiple_hits(self):
+        assert _score_query_match(
+            "list all OCI regions",
+            "oci.identity.IdentityClient",
+            "list_regions",
+            "Lists all the regions offered by Oracle Cloud Infrastructure.",
+        ) > 0
+        assert (
+            _score_query_match(
+                "list all OCI regions",
+                "oci.core.ComputeClient",
+                "list_instances",
+                "Lists compute instances in a compartment.",
+            )
+            == 0
+        )
+
+    def test_score_discovery_match_prefers_exact_operation_name(self):
+        exact_match = _score_discovery_match(
+            "launch instance",
+            "oci.core.ComputeClient",
+            "launch_instance",
+            "Creates a new instance in the specified compartment and availability domain.",
+        )
+        related_match = _score_discovery_match(
+            "launch instance",
+            "oci.core.ComputeClient",
+            "list_instances",
+            "Lists the compute instances in a compartment.",
+        )
+
+        assert exact_match > related_match
+
+    def test_score_discovery_match_prefers_compute_shapes_for_ambiguous_list_shapes(self):
+        compute_score = _score_discovery_match(
+            "list shapes",
+            "oci.core.ComputeClient",
+            "list_shapes",
+            "Lists the shapes that can be used to launch an instance within the specified compartment.",
+        )
+        rover_score = _score_discovery_match(
+            "list shapes",
+            "oci.rover.ShapeClient",
+            "list_shapes",
+            "Returns a list of Shapes.",
+        )
+
+        assert compute_score > rover_score
 
 class TestDiscoveryAndImportHelpers:
     def test_discover_client_classes_covers_skip_paths(self, monkeypatch):
@@ -369,6 +418,12 @@ class TestPaginationHelperBranches:
 
 class TestToolValidationBranches:
     @pytest.mark.asyncio
+    async def test_translate_tools_are_not_exposed(self):
+        tools = await mcp.get_tools()
+        assert "translate_oci_sdk_call" not in tools
+        assert "translate_oci_sdk_procedure" not in tools
+
+    @pytest.mark.asyncio
     async def test_find_oci_api_validates_limit_and_query(self):
         async with Client(mcp) as client:
             with pytest.raises(Exception):
@@ -427,4 +482,32 @@ class TestToolValidationBranches:
                 await client.call_tool(
                     "list_client_operations",
                     {"client_fqn": "oci.core.ComputeClient", "limit": 0},
+                )
+            with pytest.raises(Exception):
+                await client.call_tool("list_oci_clients", {"limit": 0})
+
+    @pytest.mark.asyncio
+    async def test_invoke_oci_api_validates_fields_input(self):
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "invoke_oci_api",
+                    {
+                        "client_fqn": "oci.core.ComputeClient",
+                        "operation": "list_instances",
+                        "fields": ["id", ""],
+                    },
+                )
+            ).data
+
+            assert res["error"] == "fields must contain only non-empty strings"
+
+            with pytest.raises(Exception):
+                await client.call_tool(
+                    "invoke_oci_api",
+                    {
+                        "client_fqn": "oci.core.ComputeClient",
+                        "operation": "list_instances",
+                        "fields": "id,display_name",
+                    },
                 )

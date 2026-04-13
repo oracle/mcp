@@ -401,7 +401,13 @@ class TestListClientOpsHiddenOnly:
         monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
         async with Client(mcp) as client:
             res = (await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.KlassClient"})).data
-        assert res == {"operations": []}
+        assert res == {
+            "client": "oci.fake.KlassClient",
+            "query": None,
+            "total_operations": 0,
+            "returned_operations": 0,
+            "operations": [],
+        }
 
 
 class TestResolveModelClassSuccess:

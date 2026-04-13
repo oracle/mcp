@@ -45,11 +45,10 @@ class TestCloudSdkTools:
                         {"client_fqn": "oci.fake.FakeClient"},
                     )
                 ).data
-                ops = result.get("operations", result) if isinstance(result, dict) else result or []
+                ops = result["operations"]
 
                 # only public callable functions should be listed
-                names = [op["name"] if isinstance(op, dict) else getattr(op, "name", None) for op in ops]
-                names = [n for n in names if n]
+                names = [op["name"] for op in ops]
                 assert "get_thing" in names
                 assert "_hidden" not in names
 
@@ -139,8 +138,10 @@ class TestCloudSdkTools:
 
                 assert result["client"] == "oci.fake.FakeClient"
                 assert result["operation"] == "list_things"
-                assert isinstance(result["data"], list)
-                assert len(result["data"]) == 3
+                assert result["result_meta"]["result_mode"] == "summary"
+                assert result["result_meta"]["requested_result_mode"] == "auto"
+                assert result["data"]["kind"] == "list"
+                assert result["data"]["item_count"] == 3
 
     @pytest.mark.asyncio
     async def test_invoke_oci_api_dns_get_zone_records_uses_paginator(self):
@@ -181,6 +182,7 @@ class TestCloudSdkTools:
                             "client_fqn": "oci.fake.FakeClient",
                             "operation": "get_zone_records",
                             "params": {"zone_name": "do-not-delete-me-testing-zone.example"},
+                            "result_mode": "full",
                         },
                     )
                 ).data
@@ -227,6 +229,7 @@ class TestCloudSdkTools:
                             "client_fqn": "oci.fake.FakeClient",
                             "operation": "summarize_metrics",
                             "params": {"compartment_id": "ocid1.compartment..abc"},
+                            "result_mode": "full",
                         },
                     )
                 ).data
@@ -277,6 +280,7 @@ class TestCloudSdkTools:
                                 "domain": "www.do-not-delete-me-testing-zone.example",
                                 "rtype": "A",
                             },
+                            "result_mode": "full",
                         },
                     )
                 ).data

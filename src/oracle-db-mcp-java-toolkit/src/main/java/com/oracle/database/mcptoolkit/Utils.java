@@ -36,6 +36,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -455,17 +456,44 @@ public class Utils {
       Map<String, Object> row = new LinkedHashMap<>();
       for (int i = 1; i <= cols; i++) {
         String colName = md.getColumnLabel(i);
-        Object value = rs.getObject(i);
-
-        if (value instanceof Clob clob) {
-          value = clobToString(clob);
-        }
-
+        Object value = normalizeResultSetValueForJson(rs, i);
         row.put(colName, value);
       }
       out.add(row);
     }
     return out;
+  }
+
+  /**
+   * Converts JDBC cell values into JSON-safe values for MCP responses.
+   * Handles Oracle-specific wrappers (e.g., oracle.sql.TIMESTAMP) and CLOBs.
+   *
+   * @param rs the source {@link ResultSet}
+   * @param colIndex the column index of the value to read from the current row
+   * @return a JSON-safe value
+   * @throws SQLException if JDBC access fails while reading or converting the value
+   */
+  private static Object normalizeResultSetValueForJson(ResultSet rs, int colIndex) throws SQLException {
+    Object value = rs.getObject(colIndex);
+    if (value == null) {
+      return null;
+    }
+
+    if (value instanceof Clob clob) {
+      return clobToString(clob);
+    }
+
+    if (value instanceof Timestamp ts) {
+      return ts.toString();
+    }
+
+    String className = value.getClass().getName();
+    if ("oracle.sql.TIMESTAMP".equals(className)) {
+      Timestamp ts = rs.getTimestamp(colIndex);
+      return ts != null ? ts.toString() : null;
+    }
+
+    return value;
   }
 
   /**

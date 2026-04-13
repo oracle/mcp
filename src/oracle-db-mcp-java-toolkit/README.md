@@ -12,7 +12,7 @@ Oracle Database MCP Toolkit is a Model Context Protocol (MCP) server that lets y
   * Admin tools for runtime discovery and configuration: list available tools and live-edit YAML-defined tools with hot reload.
 * Deploy locally or remotely - optionally as a container - with support for TLS and OAuth2
 
-![MCP Toolkit Architecture Diagram](./images/MCPToolkitArchitectureDiagram.svg)
+![MCP Toolkit Architecture Diagram](./images/MCPToolkitArchitecture.svg)
 
 _Note_: The [Oracle SQLcl MCP Server](https://docs.oracle.com/en/database/oracle/sql-developer-command-line/25.4/sqcug/using-oracle-sqlcl-mcp-server.html) is a fully supported product
 with MCP capabilities for the Oracle Database.

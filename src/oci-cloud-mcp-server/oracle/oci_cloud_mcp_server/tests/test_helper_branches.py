@@ -274,6 +274,16 @@ class TestPaginationHelperBranches:
         monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.inspect.signature", lambda obj: (_ for _ in ()).throw(RuntimeError("bad sig")))
         assert _supports_pagination(get_widget, "get_widget") is False
 
+    def test_supports_pagination_ignores_docstrings_that_only_mention_limits(self):
+        def create_widget(name, **kwargs):  # noqa: ARG001
+            """Create a widget.
+
+            The service enforces a limit of 10 widgets per compartment.
+            """
+            return None
+
+        assert _supports_pagination(create_widget, "create_widget") is False
+
     def test_call_with_pagination_covers_dns_and_object_storage_paths(self, monkeypatch):
         class FakeResponse:
             def __init__(self, data, has_next_page=False, next_page=None):

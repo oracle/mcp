@@ -876,7 +876,7 @@ class TestSupportsPaginationHeuristics:
 
         assert _supports_pagination(get_zone_records, "get_zone_records") is True
 
-    def test_supports_pagination_docstring_mentions_page_limit_true(self):
+    def test_supports_pagination_docstring_mentions_page_limit_false(self):
         def get_zone_records(**kwargs):  # noqa: ARG001
             """
             Retrieve zone records.
@@ -886,4 +886,4 @@ class TestSupportsPaginationHeuristics:
             """
             return None
 
-        assert _supports_pagination(get_zone_records, "get_zone_records") is True
+        assert _supports_pagination(get_zone_records, "get_zone_records") is False

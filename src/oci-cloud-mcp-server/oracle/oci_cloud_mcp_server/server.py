@@ -249,14 +249,6 @@ def _extract_expected_kwargs_from_source(method: Callable[..., Any]) -> Optional
         return None
 
 
-def _docstring_mentions_pagination(method: Callable[..., Any]) -> bool:
-    try:
-        doc = inspect.getdoc(method) or ""
-    except Exception:
-        return False
-    return bool(re.search(r"\b(page|limit)\b", doc))
-
-
 def _supports_pagination(method: Callable[..., Any], operation_name: str) -> bool:
     try:
         if operation_name.startswith("list_"):
@@ -267,12 +259,6 @@ def _supports_pagination(method: Callable[..., Any], operation_name: str) -> boo
         expected_kwargs = _extract_expected_kwargs_from_source(method)
         if expected_kwargs and (("page" in expected_kwargs) or ("limit" in expected_kwargs)):
             return True
-
-        try:
-            if _docstring_mentions_pagination(method):
-                return True
-        except Exception:
-            pass
 
         sig = inspect.signature(method)
         param_names = set(sig.parameters.keys())
@@ -695,6 +681,7 @@ def _describe_operation(
         doc = inspect.getdoc(method) or ""
     except Exception:
         doc = ""
+    summary = doc.strip().partition("\n")[0] if doc else ""
     expected_kwargs = sorted(_extract_expected_kwargs_from_source(method) or [])
     required_params: List[Dict[str, Any]] = []
     optional_params: List[Dict[str, Any]] = []
@@ -716,13 +703,7 @@ def _describe_operation(
             info: Dict[str, Any] = {
                 "name": param.name,
                 "kind": param.kind.name.lower(),
-                "type": (
-                    "Any"
-                    if param.annotation is inspect.Signature.empty
-                    else param.annotation
-                    if isinstance(param.annotation, str)
-                    else getattr(param.annotation, "__name__", str(param.annotation).replace("typing.", ""))
-                ),
+                "type": _annotation_to_type_name(param.annotation) or "Any",
             }
             if param.default is inspect.Signature.empty:
                 required_params.append(info)
@@ -752,7 +733,7 @@ def _describe_operation(
     return {
         "client": client_fqn,
         "operation": operation_name,
-        "summary": doc.strip().partition("\n")[0] if doc else "",
+        "summary": summary,
         "signature": _signature_to_display(operation_name, signature),
         "supports_pagination": _supports_pagination(method, operation_name),
         "required_params": required_params,
@@ -1036,12 +1017,13 @@ def find_oci_api(
         for name, member in _get_public_client_methods(cls):
             try:
                 doc = inspect.getdoc(member) or ""
-                summary = doc.strip().partition("\n")[0] if doc else ""
             except Exception:
-                summary = ""
+                doc = ""
+            summary = doc.strip().partition("\n")[0] if doc else ""
             score = _score_query_match(query, current_client_fqn, name, summary)
             if score <= 0:
                 continue
+
             entry: Dict[str, Any] = {
                 "client_fqn": current_client_fqn,
                 "operation": name,
@@ -1231,14 +1213,14 @@ def list_client_operations(
         total_operations += 1
         try:
             doc = inspect.getdoc(member) or ""
-            first_line = doc.strip().partition("\n")[0] if doc else ""
         except Exception:
-            first_line = ""
-        score = _score_query_match(query or "", name, first_line)
+            doc = ""
+        summary = doc.strip().partition("\n")[0] if doc else ""
+        score = _score_query_match(query or "", name, summary)
         if query and score <= 0:
             continue
 
-        entry: Dict[str, Any] = {"name": name, "summary": first_line}
+        entry: Dict[str, Any] = {"name": name, "summary": summary}
         if include_params:
             try:
                 signature = inspect.signature(member)

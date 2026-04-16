@@ -32,6 +32,16 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["oracle"]
 
+[tool.hatch.build.targets.sdist]
+include = [
+    "/LICENSE.txt",
+    "/README.md",
+    "/pyproject.toml",
+    "/scripts",
+    "/oracle",
+    "/uv.lock",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.4.2",

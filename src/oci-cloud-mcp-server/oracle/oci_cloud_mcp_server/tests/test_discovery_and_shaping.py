@@ -259,45 +259,6 @@ class TestDiscoveryTools:
         }
 
     @pytest.mark.asyncio
-    async def test_list_oci_clients_filters_and_limits_results(self, monkeypatch):
-        class ComputeClient:
-            pass
-
-        class IdentityClient:
-            pass
-
-        class MonitoringClient:
-            pass
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._discover_client_classes",
-            lambda: [
-                ("oci.core.ComputeClient", ComputeClient),
-                ("oci.identity.IdentityClient", IdentityClient),
-                ("oci.monitoring.MonitoringClient", MonitoringClient),
-            ],
-        )
-
-        async with Client(mcp) as client:
-            res = (
-                await client.call_tool(
-                    "list_oci_clients",
-                    {"query": "identity", "limit": 1},
-                )
-            ).data
-
-        assert res == {
-            "count": 1,
-            "clients": [
-                {
-                    "client_fqn": "oci.identity.IdentityClient",
-                    "module": "oci.identity",
-                    "class": "IdentityClient",
-                }
-            ],
-        }
-
-    @pytest.mark.asyncio
     async def test_tool_rejects_non_oci_client_fqn(self):
         async with Client(mcp) as client:
             with pytest.raises(ToolError, match="OCI SDK client under the 'oci\\.' namespace"):
@@ -533,7 +494,6 @@ class TestInvokeShaping:
             ).data
 
         assert res["result_meta"]["result_mode"] == "summary"
-        assert res["result_meta"]["requested_result_mode"] == "auto"
         assert res["data"]["kind"] == "list"
 
     @pytest.mark.asyncio

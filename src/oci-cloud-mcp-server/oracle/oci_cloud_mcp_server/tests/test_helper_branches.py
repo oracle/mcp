@@ -483,8 +483,6 @@ class TestToolValidationBranches:
                     "list_client_operations",
                     {"client_fqn": "oci.core.ComputeClient", "limit": 0},
                 )
-            with pytest.raises(Exception):
-                await client.call_tool("list_oci_clients", {"limit": 0})
 
     @pytest.mark.asyncio
     async def test_invoke_oci_api_validates_fields_input(self):

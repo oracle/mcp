@@ -139,7 +139,6 @@ class TestCloudSdkTools:
                 assert result["client"] == "oci.fake.FakeClient"
                 assert result["operation"] == "list_things"
                 assert result["result_meta"]["result_mode"] == "summary"
-                assert result["result_meta"]["requested_result_mode"] == "auto"
                 assert result["data"]["kind"] == "list"
                 assert result["data"]["item_count"] == 3
 

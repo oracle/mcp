@@ -29,43 +29,23 @@ _SERVER_INSTRUCTIONS = inspect.cleandoc(
     """
     This server is a thin MCP wrapper over the OCI Python SDK without arbitrary Python execution.
     Think in SDK terms: client_fqn -> operation -> params.
-    Primary rule: do not search first.
-    Your default behavior should be:
-    1. Infer the most likely OCI Python SDK client class and method you would write in code.
-    2. Use describe_oci_operation if you need exact parameter or model details before invoking.
+    Do not search first.
+    Default workflow:
+    1. Infer the SDK client class and method you would write in Python.
+    2. Use describe_oci_operation if the contract is unclear.
     3. Use invoke_oci_api once the call shape is clear.
-    Use find_oci_api only as an escape hatch when you genuinely cannot infer the client class or method.
-    It is not the normal first step.
-    Recommended workflow:
-    - If you already know the OCI Python SDK client class and method, call
-      describe_oci_operation or invoke_oci_api directly.
-    - If the service family is obvious but the exact method is fuzzy, prefer list_client_operations
-      on that client class before using find_oci_api.
-    - find_oci_api is thin fallback discovery for compact resource/action phrases only when the
-      client family or method is still unclear after reasoning in SDK terms.
-      Reduce requests to terse search terms like 'list regions', 'launch instance', or 'vcn create';
-      do not pass full user sentences. Keep limit small (3-5) on initial discovery calls.
-      This is lightweight keyword search over OCI SDK metadata, not free-form natural language search.
-    Examples:
-    - "list all OCI regions" -> think "oci.identity.IdentityClient.list_regions()"
-    - "list compute instances in a compartment" -> think
-      "oci.core.ComputeClient.list_instances(compartment_id='...')"
-    - "launch a VM" -> think "oci.core.ComputeClient.launch_instance(...)"
-    - "resolve a compartment then list its instances" -> think through the needed SDK calls in order,
-      then invoke them deliberately.
-    - describe_oci_operation: Inspect the exact SDK method contract, required params,
-      pagination behavior, and request model hints before invoking.
-    - invoke_oci_api: Call the OCI SDK method. The contract is the same shape as the SDK call
-      you would write in Python: `oci.core.ComputeClient.list_instances(compartment_id='...')`
-      becomes `client_fqn='oci.core.ComputeClient', operation='list_instances',
-      params={'compartment_id': '...'}`. It defaults to compact behavior for list, summarize,
-      and paginated operations.
-      Use result_mode="full" only when you truly need the full payload, and prefer fields=[...]
-      when you only need a few exact top-level fields.
-    - list_client_operations: Browse methods on a known client class.
-    - list_oci_clients: Fallback for capability discovery/debugging when search is
-      ambiguous or you need to inspect installed clients. Prefer query/limit to keep
-      results compact.
+    Prefer direct describe/invoke when you already know the method.
+    If the client family is obvious but the method is fuzzy, use list_client_operations first.
+    Use find_oci_api only as a fallback with short resource/action phrases like
+    'list regions', 'launch instance', or 'vcn create'; not full user sentences.
+    invoke_oci_api maps directly from the Python SDK call shape:
+    `oci.core.ComputeClient.list_instances(compartment_id='...')` becomes
+    `client_fqn='oci.core.ComputeClient', operation='list_instances',
+    params={'compartment_id': '...'}`.
+    It defaults to compact results for list, summarize, and paginated operations.
+    Use result_mode="full" only when needed, and prefer fields=[...] when you only need
+    a few exact top-level fields.
+    list_oci_clients is for capability discovery/debugging.
     The server automatically normalizes common scalar and model-field type mistakes
     (for example "3" -> 3 or "true" -> True when the SDK metadata is clear),
     so prefer one clean call over trial-and-error retries.
@@ -1345,8 +1325,6 @@ def invoke_oci_api(
             result_meta["fields"] = matched_fields
             if unmatched_fields:
                 result_meta["unmatched_fields"] = unmatched_fields
-        if result_mode == "auto":
-            result_meta["requested_result_mode"] = "auto"
 
         if effective_result_mode == "summary":
             rendered_data = _summarize_serialized_data(projected_data, max_results or _DEFAULT_SUMMARY_ITEMS)
@@ -1384,6 +1362,15 @@ def invoke_oci_api(
             "params": params or {},
             "error": str(exc),
         }
+        needs_param_hints = any(
+            clue in str(exc)
+            for clue in (
+                "unexpected keyword argument",
+                "missing 1 required positional argument",
+                "missing required positional argument",
+                "required positional arguments",
+            )
+        )
         try:
             cls = _get_client_class(client_fqn)
             if not hasattr(cls, operation):
@@ -1395,7 +1382,7 @@ def invoke_oci_api(
                 )
                 if suggestions:
                     error_result["suggested_operations"] = suggestions
-            else:
+            elif needs_param_hints:
                 method = getattr(cls, operation)
                 if callable(method):
                     operation_help = _describe_operation(client_fqn, operation)
@@ -1479,62 +1466,21 @@ def list_client_operations(
 
 @mcp.tool(
     description=(
-        "List or filter OCI Python SDK client classes discoverable in the current environment. "
+        "List OCI Python SDK client classes discoverable in the current environment. "
         "Prefer direct SDK-shaped calls or find_oci_api for task-oriented requests; use this for capability "
         "discovery or debugging."
     )
 )
-def list_oci_clients(
-    query: Annotated[
-        Optional[str],
-        "Optional substring/keyword filter to keep the result compact, e.g. 'identity' or 'compute'.",
-    ] = None,
-    limit: Annotated[Optional[int], "Optional maximum number of clients to return."] = None,
-) -> dict:
-    if limit is not None and limit < 1:
-        raise ValueError("limit must be >= 1")
-
-    normalized_query = query.strip() if query and query.strip() else None
-    query_tokens = _normalized_query_tokens(normalized_query or "")
-    query_phrase = " ".join(query_tokens)
-
-    matched_clients: List[Tuple[int, Dict[str, Any]]] = []
+def list_oci_clients() -> dict:
+    clients = []
     for client_fqn, cls in _discover_client_classes():
-        module_name = client_fqn.rsplit(".", 1)[0]
-        class_name = getattr(cls, "__name__", client_fqn.rsplit(".", 1)[-1])
-
-        if normalized_query:
-            score = _score_query_match(
-                normalized_query,
-                client_fqn,
-                module_name,
-                class_name,
-                query_tokens=query_tokens,
-                normalized_query=query_phrase,
-            )
-            if score <= 0:
-                continue
-        else:
-            score = 0
-
-        matched_clients.append(
-            (
-                score,
-                {
-                    "client_fqn": client_fqn,
-                    "module": module_name,
-                    "class": class_name,
-                },
-            )
+        clients.append(
+            {
+                "client_fqn": client_fqn,
+                "module": client_fqn.rsplit(".", 1)[0],
+                "class": getattr(cls, "__name__", client_fqn.rsplit(".", 1)[-1]),
+            }
         )
-
-    if normalized_query:
-        matched_clients.sort(key=lambda item: (-item[0], item[1]["client_fqn"]))
-    else:
-        matched_clients.sort(key=lambda item: item[1]["client_fqn"])
-
-    selected_clients = matched_clients[:limit] if limit is not None else matched_clients
-    clients = [entry for _, entry in selected_clients]
     return {"count": len(clients), "clients": clients}
 
 

@@ -18,7 +18,7 @@ Recommended low-token workflow:
 3. Otherwise, call `find_oci_api` only as a thin escape-hatch fallback with a short SDK-oriented resource/action query like `"list regions"` or `"create vcn"` rather than a full sentence. Keep `limit` small (`3-5`) on the first discovery call.
 4. Call `describe_oci_operation` for the chosen `client_fqn` + `operation` when you need parameter details.
 5. Call `invoke_oci_api`. Its default `result_mode="auto"` keeps list, summarize, and paginated results compact. Use `result_mode="full"` only when you need the full payload, and prefer `fields` when you only need a few exact top-level values.
-6. Call `list_oci_clients` only for capability discovery/debugging, or when search is ambiguous; prefer `query` and `limit` to keep results compact.
+6. Call `list_oci_clients` only for capability discovery/debugging, or when search is ambiguous.
 
 ## Architecture
 
@@ -53,7 +53,7 @@ ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.o
 
 | Tool Name | Description |
 | --- | --- |
-| list_oci_clients | List or filter OCI SDK clients discoverable in the current environment; best for capability discovery/debugging. |
+| list_oci_clients | List OCI SDK clients discoverable in the current environment; best for capability discovery/debugging. |
 | find_oci_api | Thin fallback keyword/resource-action search across OCI SDK client methods and return compact matches with `client_fqn` + `operation`. |
 | describe_oci_operation | Describe a specific OCI SDK method, including required params, optional params, pagination behavior, aliases, and request model hints. |
 | invoke_oci_api | Invoke an OCI Python SDK client method via `client_fqn` + `operation`. Example: client_fqn="oci.core.ComputeClient", operation="list_instances", params={"compartment_id": "ocid1.compartment.oc1..."} |
@@ -64,22 +64,17 @@ ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.o
 Returns a stable list of OCI SDK client classes available in the installed `oci` Python SDK.
 Prefer `find_oci_api` for task-oriented requests; use this tool when you need to inspect capabilities or debug SDK availability.
 
-- query: Optional substring/keyword filter such as `identity` or `compute`
-- limit: Optional maximum number of clients to return
-
 Example usage:
 ```json
-{
-  "query": "identity",
-  "limit": 5
-}
+{}
 ```
 
 Response (shape):
 ```json
 {
-  "count": 1,
+  "count": 2,
   "clients": [
+    { "client_fqn": "oci.core.ComputeClient", "module": "oci.core", "class": "ComputeClient" },
     { "client_fqn": "oci.identity.IdentityClient", "module": "oci.identity", "class": "IdentityClient" }
   ]
 }
@@ -166,7 +161,7 @@ Notes:
 - When `result_mode="summary"`, the server returns a compact shape that keeps counts, representative samples, and key names while avoiding large payloads.
 - When `fields` is set, the server applies a top-level field projection after serialization. This changes only the returned payload shape, not the SDK call itself; unmatched field selections now surface as errors instead of silently returning empty objects.
 - The server now normalizes common type mistakes when SDK metadata is clear, such as `"3"` to `3`, `"true"` to `true`, and simple request-model field coercions based on OCI `swagger_types`.
-- On invocation errors, the server now includes repair hints such as similar operation names, expected params, accepted kwargs, aliases, and request model information when it can infer them.
+- On likely parameter-shape invocation errors, the server includes repair hints such as similar operation names, expected params, accepted kwargs, aliases, and request model information when it can infer them.
 - Exposed tools only accept OCI SDK client classes under the `oci.` namespace whose class name ends in `Client`.
 
 ### list_client_operations

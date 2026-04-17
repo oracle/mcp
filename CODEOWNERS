@@ -6,7 +6,7 @@ CODEOWNERS @krisrice
 
 .git*/ @krisrice @AlaaShaker @gebhardtr
 scripts/ @krisrice @AlaaShaker @gebhardtr
-src/oci-* @AlaaShaker @gebhardtr
+src/oci-* @krisrice @AlaaShaker @gebhardtr
 tests/ @krisrice @AlaaShaker @gebhardtr
 Makefile @krisrice @AlaaShaker @gebhardtr
 *.md @krisrice @AlaaShaker @gebhardtr

@@ -25,6 +25,21 @@ logger = Logger(__name__, level="INFO")
 mcp = FastMCP(name=__project__)
 
 
+def _get_oci_client_kwargs(signer=None):
+    kwargs = {
+        "circuit_breaker_strategy": oci.circuit_breaker.CircuitBreakerStrategy(
+            failure_threshold=int(os.getenv("OCI_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "10")),
+            recovery_timeout=int(os.getenv("OCI_CIRCUIT_BREAKER_RECOVERY_TIMEOUT", "30")),
+        ),
+        "circuit_breaker_callback": lambda exc: logger.warning(
+            "Circuit breaker triggered: %s", exc
+        ),
+    }
+    if signer is not None:
+        kwargs["signer"] = signer
+    return kwargs
+
+
 def get_cloud_guard_client():
     config = oci.config.from_file(
         file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
@@ -40,7 +55,7 @@ def get_cloud_guard_client():
     with open(token_file, "r") as f:
         token = f.read()
     signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-    return CloudGuardClient(config, signer=signer)
+    return CloudGuardClient(config, **_get_oci_client_kwargs(signer))
 
 
 @mcp.tool(

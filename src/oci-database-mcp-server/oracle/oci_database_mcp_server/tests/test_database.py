@@ -1,9 +1,48 @@
-from unittest.mock import MagicMock, create_autospec, patch
+from unittest.mock import MagicMock, create_autospec, mock_open, patch
 
 import oci
 import pytest
 from fastmcp import Client
+import oracle.oci_database_mcp_server.server as server
 from oracle.oci_database_mcp_server.server import mcp
+
+
+class TestGetDatabaseClient:
+    @patch("oracle.oci_database_mcp_server.server.oci.database.DatabaseClient")
+    @patch("oracle.oci_database_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
+    @patch("oracle.oci_database_mcp_server.server.oci.signer.load_private_key_from_file")
+    @patch(
+        "oracle.oci_database_mcp_server.server.open",
+        new_callable=mock_open,
+        read_data="SECURITY_TOKEN",
+    )
+    @patch("oracle.oci_database_mcp_server.server.oci.config.from_file")
+    @patch("oracle.oci_database_mcp_server.server.os.getenv")
+    def test_get_database_client_passes_circuit_breaker_and_region(
+        self,
+        mock_getenv,
+        mock_from_file,
+        mock_open_file,
+        mock_load_private_key,
+        mock_security_token_signer,
+        mock_client,
+    ):
+        mock_getenv.side_effect = lambda k, default=None: default
+        config = {"key_file": "/key.pem", "security_token_file": "/token", "region": "us-ashburn-1"}
+        mock_from_file.return_value = config
+        private_key_obj = object()
+        mock_load_private_key.return_value = private_key_obj
+
+        result = server.get_database_client(region="us-phoenix-1")
+
+        mock_open_file.assert_called_once_with("/token", "r")
+        mock_security_token_signer.assert_called_once_with("SECURITY_TOKEN", private_key_obj)
+        args, kwargs = mock_client.call_args
+        assert args[0]["region"] == "us-phoenix-1"
+        assert kwargs["signer"] is mock_security_token_signer.return_value
+        assert isinstance(kwargs["circuit_breaker_strategy"], oci.circuit_breaker.CircuitBreakerStrategy)
+        assert callable(kwargs["circuit_breaker_callback"])
+        assert result is mock_client.return_value
 
 
 @pytest.mark.asyncio

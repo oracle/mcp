@@ -1,7 +1,7 @@
 [project]
 name = "oracle.oci-load-balancer-mcp-server"
 
-version = "0.0.1"
+version = "0.0.2"
 description = "An OCI Model Context Protocol server for load-balancer"
 readme = "README.md"
 requires-python = ">=3.13"

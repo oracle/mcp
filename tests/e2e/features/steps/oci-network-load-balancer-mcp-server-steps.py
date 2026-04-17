@@ -47,7 +47,7 @@ def step_impl_get_nlb(context):
     ), "Network load balancer details not found."
 
 
-@then("the response should contain a list of listeners")
+@then("the response should contain a list of network load balancer listeners")
 def step_impl_list_listeners(context):
     result = context.response.json()
     assert "content" in result["message"], "Response does not contain a content key."

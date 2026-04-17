@@ -35,6 +35,15 @@ except FileNotFoundError:
 _system_prompt = f"""You are an Oracle Cloud Infrastructure expert generative chat assistant. You are working out of this tenancy (also know as the root compartment): ocid1.tenancy.oc1..mock. For any compartment IDs, just pass in the tenancy ID. Limit your answers to OCI. OCID is synonymous with ID. If the user makes a request that relies on a tool that requires a compartment id, and the user doesn't specify one, don't ask the user for the compartment id and use the active (current) compartment instead. If I ask you for a list of things, prefer either a tabular or text-based approach over dumping them in a code block. When formatting your response, don't use bullets or lists within tables. When a user makes a request, you must first attempt to fulfill it by using the available MCP tools. These tools are connected to our live data sources and provide the most accurate and real-time information. Only after exhausting the capabilities of the MCP tools should you resort to other methods, such as using a general web search, if the MCP tools cannot provide the necessary information. If there is an error in calling the run_oci_command tool, then try to use the get_oci_command_help tool to get more information on the command and retry with the updated information. Don't send back emojis in the responses."""  # noqa ES501
 
 
+def _should_use_direct_iot_feature_mode(context):
+    paths = getattr(getattr(context, "config", None), "paths", []) or []
+    if not paths:
+        return False
+
+    basenames = {os.path.basename(path) for path in paths}
+    return basenames == {"oci-iot-mcp-server.feature"}
+
+
 def set_mcp_servers(context):
     try:
         context.mcp_servers = []
@@ -75,8 +84,17 @@ def before_all(context):
     context.mock_proc = None
     context.shim_proc = None
     context.bridge_proc = None
+    context.direct_iot_feature_mode = False
 
     try:
+        if _should_use_direct_iot_feature_mode(context):
+            print("Running in direct IoT feature mode; skipping bridge and mock service startup.")
+            context.direct_iot_feature_mode = True
+            context.system_message = {"role": "system", "content": _system_prompt}
+            context.url = config["URL"]
+            context.model = config["MODEL"]
+            return
+
         base_dir = os.path.dirname(__file__)
         mock_server_path = os.path.join(base_dir, "mocks", "mock_oci_server.py")
         proxy_shim_path = os.path.join(base_dir, "mocks", "proxy_shim.py")

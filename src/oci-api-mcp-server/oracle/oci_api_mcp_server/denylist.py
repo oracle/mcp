@@ -5,6 +5,7 @@ https://oss.oracle.com/licenses/upl.
 """
 
 import os
+import shlex
 
 
 class Denylist:
@@ -24,7 +25,7 @@ class Denylist:
         try:
             with open(self.denylist_path, "r") as denylist_file:
                 return [
-                    line.strip()
+                    self.remove_params_from_command(line.strip())
                     for line in denylist_file.read().splitlines()
                     if line.strip() and not line.strip().startswith("#")
                 ]
@@ -34,16 +35,31 @@ class Denylist:
 
     def remove_params_from_command(self, command: str) -> str:
         """Removes parameters from an OCI CLI command."""
-        command_parts = command.split()
+        try:
+            command_parts = shlex.split(command)
+        except ValueError:
+            self.logger.warning("Unable to parse command: %s", command)
+            command_parts = command.split()
+
+        for i, part in enumerate(command_parts):
+            if part.lower() == "oci":
+                command_parts = command_parts[i + 1 :]
+                break
+
         filtered_parts = []
         i = 0
         while i < len(command_parts):
             if command_parts[i].startswith("--"):
-                i += 1 if i + 1 >= len(command_parts) or command_parts[i + 1].startswith("--") else 2
-            else:
-                filtered_parts.append(command_parts[i])
+                if "=" in command_parts[i]:
+                    i += 1
+                else:
+                    i += 1 if i + 1 >= len(command_parts) or command_parts[i + 1].startswith("-") else 2
+            elif command_parts[i].startswith("-"):
                 i += 1
-        return " ".join(filtered_parts)
+            else:
+                filtered_parts.append(command_parts[i].lower())
+                i += 1
+        return " ".join(filtered_parts[:3])
 
     def isCommandInDenyList(self, command: str) -> bool:
         command_without_params = self.remove_params_from_command(command.strip())

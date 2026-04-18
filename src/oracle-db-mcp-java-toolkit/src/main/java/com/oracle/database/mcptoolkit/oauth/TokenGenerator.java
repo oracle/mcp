@@ -32,7 +32,7 @@ public class TokenGenerator {
    */
   private TokenGenerator() {
     generatedToken = ORACLE_DB_TOOLKIT_AUTH_TOKEN != null ? ORACLE_DB_TOOLKIT_AUTH_TOKEN : UUID.randomUUID().toString() ;
-    LOG.log(Level.INFO, "Authorization token generated (for testing and development use only): {0}", generatedToken);
+    LOG.log(Level.INFO, "Authorization token generated (for testing and development use only)");
   }
 
   /**

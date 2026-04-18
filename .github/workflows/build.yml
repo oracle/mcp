@@ -74,11 +74,37 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Get directories
         id: get-directories
         run: |
-          directories=$(ls src | grep -v dbtools-mcp-server | grep -v mysql-mcp-server | grep -v oci-pricing-mcp-server | grep -v oracle-db-doc-mcp-server | grep -v oracle-db-mcp-java-toolkit | jq -R -s -c 'split("\n")[:-1]')
+          EXCLUDED="dbtools-mcp-server|mysql-mcp-server|oci-pricing-mcp-server|oracle-db-doc-mcp-server|oracle-db-mcp-java-toolkit"
+          ALL=$(ls src | grep -vE "$EXCLUDED")
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE=${{ github.event.pull_request.base.sha }}
+
+            # If build infrastructure changed, test everything
+            INFRA=$(git diff --name-only "$BASE" HEAD | grep -E '^(requirements.*\.txt|\.github/|Makefile)' | head -1 || true)
+
+            if [ -n "$INFRA" ]; then
+              DIRS="$ALL"
+            else
+              # Only build servers with changed files under src/<server>/
+              DIRS=$(git diff --name-only "$BASE" HEAD \
+                | grep '^src/' \
+                | cut -d'/' -f2 \
+                | sort -u \
+                | grep -vE "$EXCLUDED" || true)
+            fi
+          else
+            # Push to main — build everything
+            DIRS="$ALL"
+          fi
+
+          directories=$(echo "$DIRS" | jq -R -s -c 'split("\n") | map(select(length > 0))')
           echo "directories=$directories" >> $GITHUB_OUTPUT
 
   combined-coverage:

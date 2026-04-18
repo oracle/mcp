@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-cloud-mcp-server"
-version = "1.2.1"
+version = "2.0.0"
 description = "OCI Python SDK MCP server"
 readme = "README.md"
 requires-python = ">=3.13"

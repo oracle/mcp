@@ -5,4 +5,4 @@ https://oss.oracle.com/licenses/upl.
 """
 
 __project__ = "oracle.oci-api-mcp-server"
-__version__ = "1.1.5"
+__version__ = "2.0.0"

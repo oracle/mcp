@@ -306,9 +306,21 @@ class TestMainEntrypoint:
 
         monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("ORACLE_MCP_PORT", "9999")
+        monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
+        monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+        monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
 
-        with patch("oracle.oci_cloud_mcp_server.server.mcp.run", side_effect=fake_run):
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.OCIProvider", return_value=object()) as mock_provider,
+            patch("oracle.oci_cloud_mcp_server.server.mcp.run", side_effect=fake_run),
+        ):
             main()
+        mock_provider.assert_called_once_with(
+            config_url="https://idcs.example.com/.well-known/openid-configuration",
+            client_id="client-id",
+            client_secret="client-secret",
+            base_url="http://127.0.0.1:9999",
+        )
 
         assert called["kwargs"] == {
             "transport": "http",

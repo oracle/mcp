@@ -6,6 +6,7 @@ https://oss.oracle.com/licenses/upl.
 
 from unittest.mock import MagicMock, patch
 
+import oracle.oci_support_mcp_server.server as server
 import pytest
 from fastmcp import Client
 from oracle.oci_support_mcp_server.models import (
@@ -126,3 +127,15 @@ class TestSupportTools:
             result = call_tool_result.structured_content
             assert "is_valid_user" in result
             assert result["is_valid_user"]
+
+
+def test_http_signer_requires_region(monkeypatch):
+    monkeypatch.setattr(server, "get_access_token", lambda: MagicMock(token="token"))
+    monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+    monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
+    monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
+    monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+    monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+
+    with pytest.raises(RuntimeError, match="OCI_REGION"):
+        server._get_http_config_and_signer()

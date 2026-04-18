@@ -70,17 +70,39 @@ class TestMigrationTools:
 
 
 class TestServer:
+    def test_http_signer_requires_region(self, monkeypatch):
+        monkeypatch.setattr(server, "get_access_token", lambda: MagicMock(token="token"))
+        monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
+        monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
+        monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+        monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+
+        with pytest.raises(RuntimeError, match="OCI_REGION"):
+            server._get_http_config_and_signer()
+
+    @patch("oracle.oci_migration_mcp_server.server.OCIProvider")
     @patch("oracle.oci_migration_mcp_server.server.mcp.run")
     @patch("os.getenv")
-    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run):
+    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run, mock_provider):
         mock_env = {
             "ORACLE_MCP_HOST": "1.2.3.4",
             "ORACLE_MCP_PORT": "8888",
+            "IDCS_DOMAIN": "idcs.example.com",
+            "IDCS_CLIENT_ID": "client-id",
+            "IDCS_CLIENT_SECRET": "client-secret",
         }
 
         mock_getenv.side_effect = lambda x: mock_env.get(x)
+        mock_provider.return_value = MagicMock()
 
         server.main()
+        mock_provider.assert_called_once_with(
+            config_url="https://idcs.example.com/.well-known/openid-configuration",
+            client_id="client-id",
+            client_secret="client-secret",
+            base_url="http://1.2.3.4:8888",
+        )
         mock_mcp_run.assert_called_once_with(
             transport="http",
             host=mock_env["ORACLE_MCP_HOST"],

@@ -761,7 +761,7 @@ wheels = [
 
 [[package]]
 name = "oracle-oci-load-balancer-mcp-server"
-version = "0.0.3"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },

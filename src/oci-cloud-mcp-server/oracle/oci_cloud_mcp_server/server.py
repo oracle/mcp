@@ -18,6 +18,8 @@ from typing import Annotated, Any, Callable, Dict, List, Literal, Optional, Tupl
 
 import oci
 from fastmcp import FastMCP
+from fastmcp.server.auth.providers.oci import OCIProvider
+from fastmcp.server.dependencies import get_access_token
 
 from . import __project__, __version__
 from .utils import initAuditLogger
@@ -445,6 +447,41 @@ def _discover_client_classes() -> List[Tuple[str, Any]]:
 
 
 def _get_config_and_signer() -> Tuple[Dict[str, Any], Any]:
+    """
+    Load OCI config and build an appropriate signer.
+
+    Preference order:
+    - If a security_token_file exists, use SecurityTokenSigner (session auth).
+    - Otherwise, fall back to API key Signer from config.
+    """
+    domain = os.getenv("IDCS_DOMAIN")
+    client_id = os.getenv("IDCS_CLIENT_ID")
+    client_secret = os.getenv("IDCS_CLIENT_SECRET")
+    host = os.getenv("ORACLE_MCP_HOST")
+    port = os.getenv("ORACLE_MCP_PORT")
+    token = None
+    if host and port:
+        token = get_access_token()
+        if token is None:
+            raise RuntimeError("HTTP requests require an authenticated IDCS access token.")
+    if token is not None:
+        if not all((domain, client_id, client_secret)):
+            raise RuntimeError(
+                "HTTP requests require IDCS authentication. Set IDCS_DOMAIN, IDCS_CLIENT_ID, and IDCS_CLIENT_SECRET."
+            )
+        region = os.getenv("OCI_REGION")
+        if not region:
+            raise RuntimeError("HTTP requests require OCI_REGION.")
+        config = {"region": region}
+        config["additional_user_agent"] = _ADDITIONAL_UA
+        return config, oci.auth.signers.TokenExchangeSigner(
+            token.token,
+            f"https://{domain}",
+            client_id,
+            client_secret,
+            region=config.get("region"),
+        )
+
     config = oci.config.from_file(
         file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
         profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
@@ -1488,10 +1525,24 @@ def main():
     host = os.getenv("ORACLE_MCP_HOST")
     port = os.getenv("ORACLE_MCP_PORT")
 
-    if host and port:
-        mcp.run(transport="http", host=host, port=int(port))
-    else:
+    if not (host and port):
         mcp.run()
+        return
+    domain = os.getenv("IDCS_DOMAIN")
+    client_id = os.getenv("IDCS_CLIENT_ID")
+    client_secret = os.getenv("IDCS_CLIENT_SECRET")
+    if not all((domain, client_id, client_secret)):
+        raise RuntimeError(
+            "HTTP transport requires IDCS authentication. "
+            "Set IDCS_DOMAIN, IDCS_CLIENT_ID, IDCS_CLIENT_SECRET, ORACLE_MCP_HOST, and ORACLE_MCP_PORT."
+        )
+    mcp.auth = OCIProvider(
+        config_url=f"https://{domain}/.well-known/openid-configuration",
+        client_id=client_id,
+        client_secret=client_secret,
+        base_url=f"http://{host}:{port}",
+    )
+    mcp.run(transport="http", host=host, port=int(port))
 
 
 if __name__ == "__main__":

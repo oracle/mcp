@@ -5,6 +5,33 @@
 This server provides tools to interact with Oracle GoldenGate deployments through the GoldenGate Administration REST APIs.
 It includes tools for administration, process lifecycle management, and operational monitoring.
 
+## MCP client configuration (recommended)
+
+Most users should configure their MCP client to launch the server, rather than starting it manually.
+
+GoldenGate requires several environment variables for connectivity. Add a stanza like this to your MCP client config (often called `mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "oracle-goldengate": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "oracle.oracle-goldengate-mcp-server"
+      ],
+      "env": {
+        "OGG_BASE_URL": "https://<your-goldengate-host>",
+        "OGG_USERNAME": "<your-username>",
+        "OGG_PASSWORD": "<your-password>"
+      }
+    }
+  }
+}
+```
+
+See [Environment configuration](#environment-configuration) below for all supported variables, including OCI Vault-based password retrieval.
+
 ## Running the server
 
 ### 1) Obtain the code

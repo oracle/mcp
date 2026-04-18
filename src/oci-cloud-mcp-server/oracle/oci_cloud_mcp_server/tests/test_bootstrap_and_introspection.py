@@ -11,6 +11,51 @@ from oracle.oci_cloud_mcp_server.server import (
 
 
 class TestGetConfigAndSigner:
+    def test_respects_config_file_and_profile_env(self, monkeypatch):
+        called = {}
+
+        monkeypatch.setenv("OCI_CONFIG_FILE", "~/custom/config")
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "TEAM")
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.oci.config.from_file",
+            lambda **kwargs: called.update(kwargs) or {
+                "tenancy": "t",
+                "user": "u",
+                "fingerprint": "f",
+                "key_file": "/path/to/key.pem",
+                "security_token_file": "/no/token",
+            },
+        )
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.os.path.exists", lambda p: False)
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file",
+            lambda p: "PK",
+        )
+
+        class FakeSigner:
+            def __init__(
+                self,
+                tenancy,
+                user,
+                fingerprint,
+                private_key_file_location,
+                pass_phrase=None,
+            ):  # noqa: ARG002
+                self.tenancy = tenancy
+                self.user = user
+                self.fingerprint = fingerprint
+                self.private_key_file_location = private_key_file_location
+
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.oci.signer.Signer", FakeSigner)
+
+        config, signer = _get_config_and_signer()
+
+        assert called["file_location"] == "~/custom/config"
+        assert called["profile_name"] == "TEAM"
+        assert isinstance(signer, FakeSigner)
+        assert config["additional_user_agent"]
+
     def test_prefers_security_token_signer_when_token_file_present(self, monkeypatch):
         # fake config with token file
         cfg = {
@@ -188,7 +233,7 @@ class TestImportClientValidation:
         fake_mod = SimpleNamespace(NotClass=42)
         monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_mod)
         with pytest.raises(ValueError):
-            _import_client("x.y.NotClass")
+            _import_client("oci.fake.NotClass")
 
 
 class TestExtractExpectedKwargs:

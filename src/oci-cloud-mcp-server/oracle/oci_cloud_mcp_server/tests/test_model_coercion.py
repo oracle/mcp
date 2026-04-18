@@ -44,9 +44,9 @@ class TestModelCoercion:
 
         def import_side_effect(name):
             # return appropriate fake module depending on requested import
-            if name == "x.y":
+            if name == "oci.fake":
                 return fake_client_module
-            if name == "x.y.models":
+            if name == "oci.fake.models":
                 return fake_models_module
             raise ImportError(name)
 
@@ -62,7 +62,7 @@ class TestModelCoercion:
             # note: We intentionally pass "vcn_details" (missing the "create_")
             # the server should rename it to "create_vcn_details" and coerce dict to model.
             payload = {
-                "client_fqn": "x.y.FakeClient",
+                "client_fqn": "oci.fake.FakeClient",
                 "operation": "create_vcn",
                 "params": {
                     "vcn_details": {
@@ -79,7 +79,7 @@ class TestModelCoercion:
             result = asyncio.run(run())
             print("TOOL RESULT:", result)
 
-            assert result["client"] == "x.y.FakeClient"
+            assert result["client"] == "oci.fake.FakeClient"
             assert result["operation"] == "create_vcn"
             # original params echoed back
             assert "vcn_details" in result["params"]

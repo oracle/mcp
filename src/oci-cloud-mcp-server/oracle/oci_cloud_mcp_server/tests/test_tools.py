@@ -42,14 +42,13 @@ class TestCloudSdkTools:
                 result = (
                     await client.call_tool(
                         "list_client_operations",
-                        {"client_fqn": "x.y.FakeClient"},
+                        {"client_fqn": "oci.fake.FakeClient"},
                     )
                 ).data
-                ops = result.get("operations", result) if isinstance(result, dict) else result or []
+                ops = result["operations"]
 
                 # only public callable functions should be listed
-                names = [op["name"] if isinstance(op, dict) else getattr(op, "name", None) for op in ops]
-                names = [n for n in names if n]
+                names = [op["name"] for op in ops]
                 assert "get_thing" in names
                 assert "_hidden" not in names
 
@@ -83,14 +82,14 @@ class TestCloudSdkTools:
                     await client.call_tool(
                         "invoke_oci_api",
                         {
-                            "client_fqn": "x.y.FakeClient",
+                            "client_fqn": "oci.fake.FakeClient",
                             "operation": "get_thing",
                             "params": {"id": "abc"},
                         },
                     )
                 ).data
 
-                assert result["client"] == "x.y.FakeClient"
+                assert result["client"] == "oci.fake.FakeClient"
                 assert result["operation"] == "get_thing"
                 assert result["params"] == {"id": "abc"}
                 assert result["opc_request_id"] == "req-123"
@@ -130,17 +129,18 @@ class TestCloudSdkTools:
                     await client.call_tool(
                         "invoke_oci_api",
                         {
-                            "client_fqn": "x.y.FakeClient",
+                            "client_fqn": "oci.fake.FakeClient",
                             "operation": "list_things",
                             "params": {"compartment_id": "ocid1.compartment..xyz"},
                         },
                     )
                 ).data
 
-                assert result["client"] == "x.y.FakeClient"
+                assert result["client"] == "oci.fake.FakeClient"
                 assert result["operation"] == "list_things"
-                assert isinstance(result["data"], list)
-                assert len(result["data"]) == 3
+                assert result["result_meta"]["result_mode"] == "summary"
+                assert result["data"]["kind"] == "list"
+                assert result["data"]["item_count"] == 3
 
     @pytest.mark.asyncio
     async def test_invoke_oci_api_dns_get_zone_records_uses_paginator(self):
@@ -178,14 +178,15 @@ class TestCloudSdkTools:
                     await client.call_tool(
                         "invoke_oci_api",
                         {
-                            "client_fqn": "x.y.FakeClient",
+                            "client_fqn": "oci.fake.FakeClient",
                             "operation": "get_zone_records",
                             "params": {"zone_name": "do-not-delete-me-testing-zone.example"},
+                            "result_mode": "full",
                         },
                     )
                 ).data
 
-                assert result["client"] == "x.y.FakeClient"
+                assert result["client"] == "oci.fake.FakeClient"
                 assert result["operation"] == "get_zone_records"
                 assert isinstance(result["data"], list)
                 assert len(result["data"]) == 4
@@ -224,14 +225,15 @@ class TestCloudSdkTools:
                     await client.call_tool(
                         "invoke_oci_api",
                         {
-                            "client_fqn": "x.y.FakeClient",
+                            "client_fqn": "oci.fake.FakeClient",
                             "operation": "summarize_metrics",
                             "params": {"compartment_id": "ocid1.compartment..abc"},
+                            "result_mode": "full",
                         },
                     )
                 ).data
 
-                assert result["client"] == "x.y.FakeClient"
+                assert result["client"] == "oci.fake.FakeClient"
                 assert result["operation"] == "summarize_metrics"
                 assert isinstance(result["data"], list)
                 assert len(result["data"]) == 2
@@ -270,18 +272,19 @@ class TestCloudSdkTools:
                     await client.call_tool(
                         "invoke_oci_api",
                         {
-                            "client_fqn": "x.y.FakeClient",
+                            "client_fqn": "oci.fake.FakeClient",
                             "operation": "get_rr_set",
                             "params": {
                                 "zone_name_or_id": "do-not-delete-me-testing-zone.example",
                                 "domain": "www.do-not-delete-me-testing-zone.example",
                                 "rtype": "A",
                             },
+                            "result_mode": "full",
                         },
                     )
                 ).data
 
-                assert result["client"] == "x.y.FakeClient"
+                assert result["client"] == "oci.fake.FakeClient"
                 assert result["operation"] == "get_rr_set"
                 assert isinstance(result["data"], list)
                 assert len(result["data"]) == 3
@@ -319,7 +322,7 @@ class TestCloudSdkTools:
                     await client.call_tool(
                         "invoke_oci_api",
                         {
-                            "client_fqn": "x.y.FakeClient",
+                            "client_fqn": "oci.fake.FakeClient",
                             "operation": "get_config",
                             "params": {"id": "abc"},
                         },
@@ -328,7 +331,7 @@ class TestCloudSdkTools:
 
                 # ensure paginator was not invoked
                 mock_pager.assert_not_called()
-                assert result["client"] == "x.y.FakeClient"
+                assert result["client"] == "oci.fake.FakeClient"
                 assert result["operation"] == "get_config"
                 assert result["data"] == {"ok": True, "id": "abc"}
 
@@ -370,7 +373,7 @@ class TestCloudSdkTools:
                     await client.call_tool(
                         "invoke_oci_api",
                         {
-                            "client_fqn": "x.y.FakeClient",
+                            "client_fqn": "oci.fake.FakeClient",
                             "operation": "get_widget",
                             "params": {"widget_id": "w1"},
                         },
@@ -379,6 +382,6 @@ class TestCloudSdkTools:
 
                 # ensure paginator was not invoked for **kwargs-only non-DNS-like method
                 mock_pager.assert_not_called()
-                assert result["client"] == "x.y.FakeClient"
+                assert result["client"] == "oci.fake.FakeClient"
                 assert result["operation"] == "get_widget"
                 assert result["data"] == {"id": "w1", "ok": True}

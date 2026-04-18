@@ -1,0 +1,43 @@
+name: Label conflicting PRs
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 6 * * *'  # daily at 06:00 UTC
+
+jobs:
+  label-conflicts:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Label or unlabel conflicting PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO="${{ github.repository }}"
+
+          # Get all open non-draft PRs
+          PRS=$(gh api "repos/$REPO/pulls?state=open&per_page=100" --jq '.[] | select(.draft == false) | .number')
+
+          for PR in $PRS; do
+            MERGEABLE=$(gh api "repos/$REPO/pulls/$PR" --jq '.mergeable')
+
+            # mergeable can be null while GitHub is computing it — skip those
+            if [ "$MERGEABLE" = "false" ]; then
+              echo "PR #$PR has conflicts — applying 'needs rebase'"
+              gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=needs rebase" > /dev/null
+            elif [ "$MERGEABLE" = "true" ]; then
+              # Remove the label if conflict is resolved
+              HAS_LABEL=$(gh api "repos/$REPO/issues/$PR/labels" --jq '[.[].name] | contains(["needs rebase"])')
+              if [ "$HAS_LABEL" = "true" ]; then
+                echo "PR #$PR conflicts resolved — removing 'needs rebase'"
+                gh api -X DELETE "repos/$REPO/issues/$PR/labels/needs%20rebase" > /dev/null
+              fi
+            fi
+          done

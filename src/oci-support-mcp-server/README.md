@@ -4,18 +4,27 @@
 
 This MCP server provides tools to interact with Oracle Cloud Infrastructure (OCI) Support resources via the CIMS API. The server enables listing and managing support tickets, validating users making it easy to automate and monitor support operations.
 
-## Running the server
+## MCP client configuration (recommended)
 
-### STDIO transport mode (for local testing)
+Most users should configure their MCP client to launch the server, rather than starting it manually.
 
-```sh
-uv oracle.oci-support-mcp-server
-```
+Add a stanza like this to your MCP client config (often called `mcp.json`; example shown is **stdio**):
 
-### HTTP streaming transport mode
-
-```sh
-ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uv oracle.oci-support-mcp-server
+```json
+{
+  "mcpServers": {
+    "oci-support": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "oracle.oci-support-mcp-server"
+      ],
+      "env": {
+        "OCI_CONFIG_PROFILE": "DEFAULT"
+      }
+    }
+  }
+}
 ```
 
 ## Tools
@@ -43,15 +52,15 @@ You must provide credentials in the standard OCI CLI config file (see [OCI docs]
 ```json
 {
   "mcpServers": {
-    "oracle-oci-support-mcp-server": {
+    "oci-support": {
       "type": "stdio",
-      "command": "uv",
+      "command": "uvx",
       "args": [
         "oracle.oci-support-mcp-server"
       ],
       "env": {
-        "OCI_CONFIG_PROFILE": "<profile>",        // OCI CLI profile with private key & fingerprint
-        "OCI_CONFIG_FILE": "/.oci/config"        // Path to the OCI CLI config file (typically ~/.oci/config)
+        "OCI_CONFIG_PROFILE": "DEFAULT",
+        "OCI_CONFIG_FILE": "~/.oci/config"
       }
     }
   }

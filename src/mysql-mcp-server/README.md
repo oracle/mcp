@@ -56,41 +56,44 @@ see the [OCI SDK documentation](https://docs.oracle.com/en-us/iaas/Content/API/C
 - `MySQL AI`
 - `HeatWave`
 
-## MCP Server Configuration
+## MCP client configuration (recommended)
 
-Installation is dependent on the MCP Client being used, it usually consists of adding the MCP Server invocation in a json config file, for example with Claude UI on Windows it looks like this:
+Most users should configure their MCP client to launch the server, rather than starting it manually.
+
+Add a stanza like this to your MCP client config (often called `mcp.json`; example shown is **stdio**):
+
 ```json
 {
   "mcpServers": {
-    "mysqltools": {
-      "command": "uv",
+    "mysql": {
+      "type": "stdio",
+      "command": "uvx",
       "args": [
-        "--directory",
-        "C:\\ABSOLUTE\\PATH\\TO\\PARENT\\FOLDER\\mysql-mcp-server",
-        "run",
-        "oracle.mysql_mcp_server"
-      ]
+        "oracle.mysql-mcp-server"
+      ],
+      "env": {
+        "OCI_CONFIG_PROFILE": "DEFAULT",
+        "MYSQL_MCP_CONFIG": "/path/to/your/config.json"
+      }
     }
   }
 }
 ```
-**Note**: On Windows you may have to provide the suffix *.exe* to "oracle.mysql_mcp_server".
 
+Example with `TENANCY_ID_OVERRIDE`:
 
-
-Example with TENANCY_ID_OVERRIDE::
 ```json
 {
   "mcpServers": {
-    "mysqltools": {
-      "command": "uv",
+    "mysql": {
+      "type": "stdio",
+      "command": "uvx",
       "args": [
-        "--directory",
-        "C:\\ABSOLUTE\\PATH\\TO\\PARENT\\FOLDER\\mysql-mcp-server",
-        "run",
-        "oracle.mysql_mcp_server"
+        "oracle.mysql-mcp-server"
       ],
       "env": {
+        "OCI_CONFIG_PROFILE": "DEFAULT",
+        "MYSQL_MCP_CONFIG": "/path/to/your/config.json",
         "TENANCY_ID_OVERRIDE": "ocid1.tenancy.oc1..deadbeef"
       }
     }

@@ -7,6 +7,29 @@ OCI Model Context Protocol (MCP) server exposing Oracle Cloud Recovery Service o
 - List Protected Databases with rich filtering (compartment, lifecycle_state, display_name, id, protection_policy_id, recovery_service_subnet_id, limit, page, sort_order, sort_by, opc_request_id, region).
 - Mapping of OCI SDK models to Pydantic for safe, serializable responses.
 
+## MCP client configuration (recommended)
+
+Most users should configure their MCP client to launch the server, rather than starting it manually.
+
+Add a stanza like this to your MCP client config (often called `mcp.json`; example shown is **stdio**):
+
+```json
+{
+  "mcpServers": {
+    "oci-recovery": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "oracle.oci-recovery-mcp-server"
+      ],
+      "env": {
+        "OCI_CONFIG_PROFILE": "DEFAULT"
+      }
+    }
+  }
+}
+```
+
 ## Install
 
 From this repository root:
@@ -23,23 +46,6 @@ cd src/oci-recovery-mcp-server
 uv build
 uv pip install .
 ```
-
-## Usage
-
-Run the MCP server (HTTP transport is optional):
-
-```
-# environment variables (optional)
-export ORACLE_MCP_HOST=127.0.0.1
-export ORACLE_MCP_PORT=7337
-
-# run
-uv run oracle.oci-recovery-mcp-server
-```
-
-The server reads OCI auth from your OCI CLI config/profile:
-- Uses the profile in $OCI_CONFIG_PROFILE (defaults to DEFAULT)
-- Uses security token file signer with the private key specified in config
 
 ## Tools
 

@@ -4,11 +4,27 @@
 
 This MCP server exposes Oracle Cloud Infrastructure Limits APIs through tools mirroring public endpoints.
 
-## Running the Server
+## MCP client configuration (recommended)
 
-To run the server:
-```sh
-uv run oracle.oci-limits-mcp-server
+Most users should configure their MCP client to launch the server, rather than starting it manually.
+
+Add a stanza like this to your MCP client config (often called `mcp.json`; example shown is **stdio**):
+
+```json
+{
+  "mcpServers": {
+    "oci-limits": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "oracle.oci-limits-mcp-server"
+      ],
+      "env": {
+        "OCI_CONFIG_PROFILE": "DEFAULT"
+      }
+    }
+  }
+}
 ```
 
 ## Tools

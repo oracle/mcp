@@ -18,7 +18,9 @@ os.environ.setdefault("OGG_PASSWORD", "pass")
 
 from oracle.oracle_goldengate_mcp_server import server  # noqa: E402
 from oracle.oracle_goldengate_mcp_server.models import (  # noqa: E402
+    CreateExtractBegin,
     CreateExtractSource,
+    CreateReplicatBegin,
     ExtractAdvancedParameters,
 )
 
@@ -63,6 +65,12 @@ class TestGoldenGateTools(unittest.TestCase):
             m.assert_called_once_with(server.api.list_distribution_paths())
             self._assert_json(out, {"ok": True})
 
+    def test_list_data_streams(self):
+        with patch.object(server.client, "get", return_value={"ok": True}) as m:
+            out = server.list_data_streams()
+            m.assert_called_once_with(server.api.list_data_streams())
+            self._assert_json(out, {"ok": True})
+
     def test_list_trails(self):
         with patch.object(server.client, "get", return_value={"ok": True}) as m:
             out = server.list_trails()
@@ -97,6 +105,37 @@ class TestGoldenGateTools(unittest.TestCase):
             )
             self._assert_json(out, {"ok": True})
 
+    def test_create_extract_defaults_begin_to_now(self):
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            server.create_extract("E1", "AA", "D", "C", tableStatement="TABLE S.T;", advanced=None)
+            self.assertEqual(m.call_args.args[1]["begin"], "now")
+
+    def test_create_extract_accepts_timestamp_begin(self):
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            server.create_extract(
+                "E1",
+                "AA",
+                "D",
+                "C",
+                tableStatement="TABLE S.T;",
+                begin="2026-04-21T10:33:00+02:00",
+                advanced=None,
+            )
+            self.assertEqual(m.call_args.args[1]["begin"], "2026-04-21T10:33:00+02:00")
+
+    def test_create_extract_accepts_csn_begin(self):
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            server.create_extract(
+                "E1",
+                "AA",
+                "D",
+                "C",
+                tableStatement="TABLE S.T;",
+                begin=CreateExtractBegin(at={"csn": 11}),
+                advanced=None,
+            )
+            self.assertEqual(m.call_args.args[1]["begin"], {"at": {"csn": 11}})
+
     def test_update_extract(self):
         with patch.object(server.client, "patch", return_value={"ok": True}) as m:
             out = server.update_extract("E1", trailName="AA", domainName="D", connectionName="C", tableStatement="TABLE S.T;", advanced=None)
@@ -116,6 +155,37 @@ class TestGoldenGateTools(unittest.TestCase):
                 server.DEFAULT_MANAGED_PROCESS_SETTINGS,
             )
             self._assert_json(out, {"ok": True})
+
+    def test_create_replicat_defaults_begin_to_now(self):
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            server.create_replicat("R1", "AA", "D", "C", mapStatement="MAP S.T, TARGET S2.T2;", advanced=None)
+            self.assertEqual(m.call_args.args[1]["begin"], "now")
+
+    def test_create_replicat_accepts_timestamp_begin(self):
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            server.create_replicat(
+                "R1",
+                "AA",
+                "D",
+                "C",
+                mapStatement="MAP S.T, TARGET S2.T2;",
+                begin="2026-04-21T10:33:00+02:00",
+                advanced=None,
+            )
+            self.assertEqual(m.call_args.args[1]["begin"], "2026-04-21T10:33:00+02:00")
+
+    def test_create_replicat_accepts_trail_position_begin(self):
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            server.create_replicat(
+                "R1",
+                "AA",
+                "D",
+                "C",
+                mapStatement="MAP S.T, TARGET S2.T2;",
+                begin=CreateReplicatBegin(sequence=145, offset=5),
+                advanced=None,
+            )
+            self.assertEqual(m.call_args.args[1]["begin"], {"sequence": 145, "offset": 5})
 
     def test_update_replicat(self):
         with patch.object(server.client, "patch", return_value={"ok": True}) as m:

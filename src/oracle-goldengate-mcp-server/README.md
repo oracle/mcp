@@ -44,7 +44,7 @@ If you are using Git (recommended to get updates and pull additional required fi
 Clone:
 
 ```sh
-git clone https://github.com/julientestut/mcp.git
+git clone https://github.com/oracle/mcp.git
 cd mcp/src/oracle-goldengate-mcp-server
 ```
 
@@ -206,6 +206,7 @@ Optional variables are also supported:
 | list_extracts | Return the list of Extract processes. |
 | list_replicats | Return the list of Replicat processes. |
 | list_distribution_paths | Return the list of Distribution Paths. |
+| list_data_streams | Return the list of Data Streams. |
 | list_trails | Return the list of trails. |
 | get_extract_status | Return the status of an Extract. |
 | get_replicat_status | Return the status of a Replicat. |

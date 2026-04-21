@@ -67,6 +67,14 @@ class CreateExtractOptions(CamelModel):
     where: str | None = Field(None, description="WHERE clause")
 
 
+class ExtractBeginAtCsn(CamelModel):
+    csn: int = Field(..., ge=0, description="Start Extract at the specified CSN")
+
+
+class CreateExtractBegin(CamelModel):
+    at: ExtractBeginAtCsn = Field(..., description="Structured begin position for Extract, such as a CSN")
+
+
 class CreateReplicatSource(CamelModel):
     container: str | None = Field(None, description="Optional source container or PDB")
     schema_name: str = Field(..., alias="schema", min_length=1, description="Source schema name")
@@ -101,6 +109,11 @@ class CreateReplicatOptions(CamelModel):
     trim_spaces: bool | None = Field(None, alias="trimSpaces", description="TRIMSPACES option")
     trim_var_spaces: bool | None = Field(None, alias="trimVarSpaces", description="TRIMVARSPACES option")
     where: str | None = Field(None, description="WHERE clause")
+
+
+class CreateReplicatBegin(CamelModel):
+    sequence: int = Field(..., ge=0, description="Trail sequence number to start reading from")
+    offset: int = Field(..., ge=0, description="Trail RBA offset to start reading from")
 
 
 class IntegratedParamsObject(CamelModel):

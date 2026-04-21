@@ -26,8 +26,10 @@ from .extract_config import build_advanced_extract_parameters
 from .http_client import HttpClient
 from .map_statement import build_map_statement, normalize_map_statement
 from .models import (
+    CreateExtractBegin,
     CreateExtractOptions,
     CreateExtractSource,
+    CreateReplicatBegin,
     CreateReplicatOptions,
     CreateReplicatSource,
     ExtractAdvancedParameters,
@@ -71,6 +73,12 @@ def _verify_deployment_connectivity() -> None:
         client.get(api.list_domains())
     except Exception as exc:
         _log_startup("ERROR", f"Failed to connect to GoldenGate deployment: {deployment_url} ({exc})")
+        exc_message = str(exc)
+        if " 401 " in exc_message or "401 {" in exc_message or "401" in exc_message:
+            _log_startup(
+                "ERROR",
+                "Authentication to the GoldenGate deployment failed. Verify OGG_USERNAME and the configured password source. If using OGG_PASSWORD_SECRET_OCID, ensure the OCI Secret contains the current GoldenGate password.",
+            )
         raise
     _log_startup("INFO", f"Successfully connected to GoldenGate deployment: {deployment_url}")
 
@@ -85,6 +93,18 @@ def _serialize_model(model: Any | None) -> dict[str, Any] | None:
 def _none_if_fieldinfo(value: Any) -> Any:
     """Convert undecorated FastMCP default FieldInfo values to None for direct Python calls."""
     return None if isinstance(value, FieldInfo) else value
+
+
+def _resolve_begin_value(begin: Any, default: Any = "now") -> Any:
+    """Normalize begin parameter values for GoldenGate payloads."""
+    begin = _none_if_fieldinfo(begin)
+    if begin is None:
+        return default
+    if isinstance(begin, str):
+        return begin.strip() or default
+    if hasattr(begin, "model_dump"):
+        return begin.model_dump(by_alias=True, exclude_none=True)
+    return begin
 
 
 @mcp.tool(description="Return the list of GoldenGate domains available in OCI GoldenGate deployment. Domains group connections in GoldenGate.")
@@ -133,6 +153,12 @@ def list_replicats() -> str:
 def list_distribution_paths() -> str:
     """Return the list of Distribution Paths available in OCI GoldenGate deployment. A Distribution Path is used to send data to another GoldenGate deployment."""
     return _ok(client.get(api.list_distribution_paths()))
+
+
+@mcp.tool(description="Return the list of Data Streams available in OCI GoldenGate deployment. A Data Stream exposes GoldenGate data for downstream consumers over AsyncAPI channels.")
+def list_data_streams() -> str:
+    """Return the list of Data Streams available in OCI GoldenGate deployment. A Data Stream exposes GoldenGate data for downstream consumers over AsyncAPI channels."""
+    return _ok(client.get(api.list_data_streams()))
 
 
 @mcp.tool(description="Retrieve a collection of all known trails available in OCI GoldenGate deployment. A trail is a file that stores the captured data. A trail can only have two alphanumeric characters.")
@@ -219,12 +245,17 @@ def create_extract(
     tableStatement: str | None = Field(None, description="Raw TABLE statement(s) for Extract"),
     source: CreateExtractSource | None = Field(None, description="Structured source mapping used to build TABLE statements"),
     options: CreateExtractOptions | None = Field(None, description="Optional structured TABLE statement options"),
+    begin: str | CreateExtractBegin | None = Field(
+        None,
+        description="Optional start position for Extract. Defaults to 'now'. Accepts an ISO-8601 timestamp string or structured CSN payload like {at: {csn: 11}}.",
+    ),
     advanced: ExtractAdvancedParameters | None = Field(None, description="Advanced GoldenGate Extract parameters"),
 ) -> str:
     """Creates a new Extract in OCI GoldenGate deployment to capture data from schemas and tables. The Extract name can have, at most, 8 alphanumeric characters."""
     tableStatement = _none_if_fieldinfo(tableStatement)
     source = _none_if_fieldinfo(source)
     options = _none_if_fieldinfo(options)
+    begin = _none_if_fieldinfo(begin)
     advanced = _none_if_fieldinfo(advanced)
 
     if tableStatement and tableStatement.strip():
@@ -251,7 +282,7 @@ def create_extract(
         "credentials": {"domain": domainName, "alias": connectionName},
         "managedProcessSettings": DEFAULT_MANAGED_PROCESS_SETTINGS,
         "registration": {"optimized": False},
-        "begin": "now",
+        "begin": _resolve_begin_value(begin),
         "targets": [{"name": trailName}],
     }
     return _ok(client.post(api.create_extract(extractName), payload))
@@ -321,12 +352,17 @@ def create_replicat(
     mapStatement: str | None = Field(None, description="Raw MAP statement(s) for Replicat"),
     source: CreateReplicatSource | None = Field(None, description="Structured source mapping used to build MAP statements"),
     options: CreateReplicatOptions | None = Field(None, description="Optional structured MAP statement options"),
+    begin: str | CreateReplicatBegin | None = Field(
+        None,
+        description="Optional start position for Replicat. Defaults to 'now'. Accepts an ISO-8601 timestamp string or structured trail position like {sequence: 145, offset: 5}.",
+    ),
     advanced: ReplicatAdvancedParameters | None = Field(None, description="Advanced GoldenGate Replicat parameters"),
 ) -> str:
     """Creates a new Replicat in OCI GoldenGate deployment to replicate data into a target. Supports raw mapStatement or structured source/options. Optionally accepts a checkpointTable, otherwise use list_checkpoint_tables to find a checkpoint table."""
     mapStatement = _none_if_fieldinfo(mapStatement)
     source = _none_if_fieldinfo(source)
     options = _none_if_fieldinfo(options)
+    begin = _none_if_fieldinfo(begin)
     advanced = _none_if_fieldinfo(advanced)
 
     if mapStatement and mapStatement.strip():
@@ -360,6 +396,7 @@ def create_replicat(
         "mode": adv.get("mode") or {"type": "nonintegrated", "parallel": True},
         "registration": "none",
         "status": "stopped",
+        "begin": _resolve_begin_value(begin),
     }
     mode_type = (payload["mode"] or {}).get("type", "nonintegrated")
     if mode_type != "parallel":
@@ -593,7 +630,7 @@ def main() -> None:
     except Exception:
         _log_startup(
             "ERROR",
-            "Startup aborted. Verify the deployment is started and the configured baseUrl is reachable.",
+            "Startup aborted. Verify the deployment is started, the configured baseUrl is reachable, and if you received HTTP 401, check OGG_USERNAME and the password or OGG_PASSWORD_SECRET_OCID secret value.",
         )
         if os.getenv("OGG_MCP_DEBUG", "false").strip().lower() == "true":
             traceback.print_exc(file=sys.stderr)

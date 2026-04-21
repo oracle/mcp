@@ -38,6 +38,10 @@ def list_distribution_paths() -> str:
     return "/services/v2/sources"
 
 
+def list_data_streams() -> str:
+    return "/services/distsrvr/v2/stream"
+
+
 def list_trails() -> str:
     return "/services/adminsrvr/v2/trails"
 

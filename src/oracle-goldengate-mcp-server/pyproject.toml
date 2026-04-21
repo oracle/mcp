@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oracle-goldengate-mcp-server"
-version = "1.0.0"
+version = "1.0.1"
 description = "Oracle GoldenGate MCP server"
 readme = "README.md"
 authors = [
@@ -8,9 +8,9 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-  "mcp>=1.0.0",
+  "mcp>=1.27.0",
   "pydantic>=2.7.0",
-  "requests>=2.33.0",
+  "requests>=2.33.1",
   "cryptography>=46.0.7",
 ]
 

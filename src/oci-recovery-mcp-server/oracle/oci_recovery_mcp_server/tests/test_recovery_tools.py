@@ -439,6 +439,8 @@ class TestServer:
             "IDCS_DOMAIN": "idcs.example.com",
             "IDCS_CLIENT_ID": "client-id",
             "IDCS_CLIENT_SECRET": "client-secret",
+            "IDCS_AUDIENCE": "mcp-audience",
+            "ORACLE_MCP_BASE_URL": "http://127.0.0.1:8080",
         }
         # Return configured values for known keys, and default for others
         mock_getenv.side_effect = lambda k, d=None: mock_env.get(k, d)
@@ -451,6 +453,8 @@ class TestServer:
             config_url="https://idcs.example.com/.well-known/openid-configuration",
             client_id="client-id",
             client_secret="client-secret",
+            audience="mcp-audience",
+            required_scopes=f"openid profile email oci_mcp.{server.__project__.removeprefix('oracle.oci-').removesuffix('-mcp-server').replace('-', '_')}.invoke".split(),
             base_url="http://127.0.0.1:8080",
         )
         mock_mcp_run.assert_called_once_with(

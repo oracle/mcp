@@ -224,8 +224,10 @@ class TestMainHttpRun:
         monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
         monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
         monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+        monkeypatch.setenv("IDCS_AUDIENCE", "mcp-audience")
         monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("ORACLE_MCP_PORT", "8081")
+        monkeypatch.setenv("ORACLE_MCP_BASE_URL", "http://127.0.0.1:8081")
         monkeypatch.setattr(
             "fastmcp.server.auth.providers.oci.OCIProvider", lambda *args, **kwargs: object()
         )

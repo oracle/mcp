@@ -180,8 +180,10 @@ class TestServer:
             "IDCS_DOMAIN": "idcs.example.com",
             "IDCS_CLIENT_ID": "client-id",
             "IDCS_CLIENT_SECRET": "client-secret",
+            "IDCS_AUDIENCE": "mcp-audience",
+            "ORACLE_MCP_BASE_URL": "https://mcp.example.com",
         }
-        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        mock_getenv.side_effect = lambda x, d=None: mock_env.get(x, d)
         mock_provider.return_value = MagicMock()
 
         server.main()
@@ -190,7 +192,9 @@ class TestServer:
             config_url="https://idcs.example.com/.well-known/openid-configuration",
             client_id="client-id",
             client_secret="client-secret",
-            base_url="http://1.2.3.4:8888",
+            audience="mcp-audience",
+            required_scopes=f"openid profile email oci_mcp.{server.__project__.removeprefix('oracle.oci-').removesuffix('-mcp-server').replace('-', '_')}.invoke".split(),
+            base_url="https://mcp.example.com",
         )
         mock_mcp_run.assert_called_once_with(
             transport="http",
@@ -210,7 +214,7 @@ class TestServer:
     @patch("oracle.oci_load_balancer_mcp_server.server.mcp.run")
     @patch("os.getenv")
     def test_main_with_only_host(self, mock_getenv, mock_mcp_run):
-        mock_getenv.side_effect = lambda x: {"ORACLE_MCP_HOST": "1.2.3.4"}.get(x)
+        mock_getenv.side_effect = lambda x, d=None: {"ORACLE_MCP_HOST": "1.2.3.4"}.get(x, d)
 
         server.main()
 
@@ -219,7 +223,7 @@ class TestServer:
     @patch("oracle.oci_load_balancer_mcp_server.server.mcp.run")
     @patch("os.getenv")
     def test_main_with_only_port(self, mock_getenv, mock_mcp_run):
-        mock_getenv.side_effect = lambda x: {"ORACLE_MCP_PORT": "8888"}.get(x)
+        mock_getenv.side_effect = lambda x, d=None: {"ORACLE_MCP_PORT": "8888"}.get(x, d)
 
         server.main()
 
@@ -231,7 +235,7 @@ class TestServer:
             "ORACLE_MCP_HOST": "1.2.3.4",
             "ORACLE_MCP_PORT": "8888",
         }
-        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        mock_getenv.side_effect = lambda x, d=None: mock_env.get(x, d)
 
         with pytest.raises(RuntimeError, match="HTTP transport requires IDCS authentication"):
             server.main()

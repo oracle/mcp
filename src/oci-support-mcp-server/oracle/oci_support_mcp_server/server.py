@@ -12,6 +12,7 @@ import oci
 from fastmcp import FastMCP
 from fastmcp.server.auth.providers.oci import OCIProvider
 from fastmcp.server.dependencies import get_access_token
+from fastmcp.utilities.auth import parse_scopes
 from oracle.oci_support_mcp_server.models import (
     CreateIncident,
     Incident,
@@ -626,16 +627,21 @@ def main():
     domain = os.getenv("IDCS_DOMAIN")
     client_id = os.getenv("IDCS_CLIENT_ID")
     client_secret = os.getenv("IDCS_CLIENT_SECRET")
-    if not all((domain, client_id, client_secret)):
+    base_url = os.getenv("ORACLE_MCP_BASE_URL", "")
+    audience = os.getenv("IDCS_AUDIENCE")
+    if not all((domain, client_id, client_secret, audience, base_url)):
         raise RuntimeError(
             "HTTP transport requires IDCS authentication. "
-            "Set IDCS_DOMAIN, IDCS_CLIENT_ID, IDCS_CLIENT_SECRET, ORACLE_MCP_HOST, and ORACLE_MCP_PORT."
+            "Set IDCS_DOMAIN, IDCS_CLIENT_ID, IDCS_CLIENT_SECRET, IDCS_AUDIENCE, "
+            "ORACLE_MCP_BASE_URL, ORACLE_MCP_HOST, and ORACLE_MCP_PORT."
         )
     mcp.auth = OCIProvider(
         config_url=f"https://{domain}/.well-known/openid-configuration",
         client_id=client_id,
         client_secret=client_secret,
-        base_url=f"http://{host}:{port}",
+        audience=audience,
+        required_scopes=parse_scopes(os.getenv("IDCS_REQUIRED_SCOPES")) or f"openid profile email oci_mcp.{__project__.removeprefix('oracle.oci-').removesuffix('-mcp-server').replace('-', '_')}.invoke".split(),
+        base_url=base_url,
     )
     mcp.run(transport="http", host=host, port=int(port))
 

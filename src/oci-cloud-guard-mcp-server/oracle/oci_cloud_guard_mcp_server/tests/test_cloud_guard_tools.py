@@ -197,9 +197,11 @@ class TestServer:
             "IDCS_DOMAIN": "idcs.example.com",
             "IDCS_CLIENT_ID": "client-id",
             "IDCS_CLIENT_SECRET": "client-secret",
+            "IDCS_AUDIENCE": "mcp-audience",
+            "ORACLE_MCP_BASE_URL": "https://mcp.example.com",
         }
 
-        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        mock_getenv.side_effect = lambda x, d=None: mock_env.get(x, d)
         mock_provider.return_value = MagicMock()
 
         server.main()
@@ -207,7 +209,9 @@ class TestServer:
             config_url="https://idcs.example.com/.well-known/openid-configuration",
             client_id="client-id",
             client_secret="client-secret",
-            base_url="http://1.2.3.4:8888",
+            audience="mcp-audience",
+            required_scopes=f"openid profile email oci_mcp.{server.__project__.removeprefix('oracle.oci-').removesuffix('-mcp-server').replace('-', '_')}.invoke".split(),
+            base_url="https://mcp.example.com",
         )
         mock_mcp_run.assert_called_once_with(
             transport="http",
@@ -229,7 +233,7 @@ class TestServer:
         mock_env = {
             "ORACLE_MCP_HOST": "1.2.3.4",
         }
-        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        mock_getenv.side_effect = lambda x, d=None: mock_env.get(x, d)
 
         server.main()
         mock_mcp_run.assert_called_once_with()
@@ -240,7 +244,7 @@ class TestServer:
         mock_env = {
             "ORACLE_MCP_PORT": "8888",
         }
-        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        mock_getenv.side_effect = lambda x, d=None: mock_env.get(x, d)
 
         server.main()
         mock_mcp_run.assert_called_once_with()
@@ -251,7 +255,7 @@ class TestServer:
             "ORACLE_MCP_HOST": "1.2.3.4",
             "ORACLE_MCP_PORT": "8888",
         }
-        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        mock_getenv.side_effect = lambda x, d=None: mock_env.get(x, d)
 
         with pytest.raises(RuntimeError, match="HTTP transport requires IDCS authentication"):
             server.main()

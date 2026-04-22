@@ -27,6 +27,22 @@ Add a stanza like this to your MCP client config (often called `mcp.json`; examp
 }
 ```
 
+For HTTP transport, start the server with:
+
+```sh
+ORACLE_MCP_HOST=<bind_host> \
+ORACLE_MCP_PORT=<port> \
+ORACLE_MCP_BASE_URL=<public_base_url> \
+OCI_REGION=<region> \
+IDCS_DOMAIN=<idcs_domain> \
+IDCS_CLIENT_ID=<client_id> \
+IDCS_CLIENT_SECRET=<client_secret> \
+IDCS_AUDIENCE=<audience> \
+uvx oracle.oci-support-mcp-server
+```
+
+Register `${ORACLE_MCP_BASE_URL}/auth/callback` in the OCI IAM confidential application. If `IDCS_REQUIRED_SCOPES` is unset, the default is `openid profile email oci_mcp.support.invoke`.
+
 ## Tools
 
 | Tool Name | Description |
@@ -37,15 +53,11 @@ Add a stanza like this to your MCP client config (often called `mcp.json`; examp
 | list_incident_resource_types | List available incident resource types (products, services, service categories) for OCI support requests. |
 | validate_user | Validate if a user (by OCID/CSI and credentials) is permitted for OCI support operations. |
 
-⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
+⚠️ **NOTE**: `stdio` uses OCI config-file credentials. HTTP uses the authenticated OCI IAM user and does not use the local OCI CLI profile for request authentication.
 
 ## Authentication
 
-> **Important:**  
-> The OCI Support MCP Server does NOT support `oci session authenticate` or token-based authentication.  
-> Instead, it authenticates exclusively using the OCI config file with a private key and fingerprint.
-
-You must provide credentials in the standard OCI CLI config file (see [OCI docs](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdkconfig.htm)).
+For `stdio`, provide credentials in the standard OCI config file (see [OCI docs](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdkconfig.htm)). Use API key credentials with a private key and fingerprint.
 
 **Example environment configuration for Cline or compatible clients:**
 
@@ -69,7 +81,7 @@ You must provide credentials in the standard OCI CLI config file (see [OCI docs]
 - `OCI_CONFIG_PROFILE` — This is the name of your OCI config CLI profile that includes the correct private key and fingerprint.
 - `OCI_CONFIG_FILE` — Path to the OCI CLI config file (default: `~/.oci/config`).
 
-⚠️ **NOTE:** Session-based or ephemeral authentication (e.g., using `oci session authenticate`) is **not supported** for the Support MCP Server. Only config-file-based authentication is supported.
+`oci session authenticate` is not supported for `stdio`. For HTTP, use the OCI IAM confidential application settings shown above; HTTP does not use the local OCI config for request authentication.
 
 ## Third-Party APIs
 

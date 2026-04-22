@@ -16,8 +16,18 @@ uvx oracle.oci-usage-mcp-server
 ### HTTP streaming transport mode
 
 ```sh
-ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.oci-usage-mcp-server
+ORACLE_MCP_HOST=<bind_host> \
+ORACLE_MCP_PORT=<port> \
+ORACLE_MCP_BASE_URL=<public_base_url> \
+OCI_REGION=<region> \
+IDCS_DOMAIN=<idcs_domain> \
+IDCS_CLIENT_ID=<client_id> \
+IDCS_CLIENT_SECRET=<client_secret> \
+IDCS_AUDIENCE=<audience> \
+uvx oracle.oci-usage-mcp-server
 ```
+
+Register `${ORACLE_MCP_BASE_URL}/auth/callback` in the OCI IAM confidential application. If `IDCS_REQUIRED_SCOPES` is unset, the default is `openid profile email oci_mcp.usage.invoke`.
 
 ## Tools
 
@@ -26,7 +36,7 @@ ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.o
 | list_usage_reports | List usage reports in the tenancy |
 | get_usage_report | Get usage report by ID |
 
-⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
+⚠️ **NOTE**: `stdio` uses the configured OCI CLI profile. HTTP uses the authenticated OCI IAM user and does not use the local OCI CLI profile for request authentication.
 
 ## Third-Party APIs
 

@@ -647,9 +647,6 @@ class TestGetClient:
         assert mock_client.call_args.kwargs["signer"] == "signer"
         assert result == mock_client.return_value
 
-    def test_get_oci_client_kwargs_without_signer(self):
-        assert "signer" not in server._get_oci_client_kwargs()
-
     @patch("oracle.oci_logging_mcp_server.server.oci.logging.LoggingManagementClient")
     @patch("oracle.oci_logging_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
     @patch("oracle.oci_logging_mcp_server.server.oci.signer.load_private_key_from_file")

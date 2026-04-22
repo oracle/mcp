@@ -15,9 +15,7 @@ uvx oracle.oci-api-mcp-server
 
 ### HTTP streaming transport mode
 
-```sh
-ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.oci-api-mcp-server
-```
+`oracle.oci-api-mcp-server` supports `stdio` only.
 
 ## Tools
 
@@ -27,7 +25,7 @@ ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uvx oracle.o
 | run_oci_command | Runs an OCI CLI command. This tool allows you to run OCI CLI commands on the user's behalf. Only provide the command after 'oci', do not include the string 'oci' in your command. |
 | get_oci_commands (Resource) | Returns helpful information on various OCI services and related commands. |
 
-⚠️ **NOTE**: All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
+⚠️ **NOTE**: All actions use the configured OCI CLI profile. Use least-privilege IAM and protect secrets.
 
 ## Third-Party APIs
 

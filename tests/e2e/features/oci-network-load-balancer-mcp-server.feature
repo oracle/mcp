@@ -25,7 +25,7 @@ Feature: OCI Network Load Balancer MCP Server
     Given the MCP server is running with OCI tools
     And the ollama model with the tools is properly working
     When I send a request with the prompt "list my network load balancers and list the listeners on the first network load balancer in the list"
-    Then the response should contain a list of listeners
+    Then the response should contain a list of network load balancer listeners
 
   Scenario: Get listener details
     Given the MCP server is running with OCI tools

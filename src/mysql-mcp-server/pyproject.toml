@@ -1,6 +1,6 @@
 [project]
 name = "oracle.mysql-mcp-server"
-version = "1.0.5"
+version = "1.0.6"
 description = "MySql Service MCP server"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -8,9 +8,9 @@ license = "UPL-1.0"
 license-files = ["LICENSE.txt"]
 
 dependencies = [
-    "fastmcp==2.14.2",
+    "fastmcp==2.14.7",
     "mysql-connector-python==9.5.0",
-    "oci==2.160.0"
+    "oci==2.171.0"
 ]
 
 classifiers = [
@@ -29,4 +29,3 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["oracle"]
-

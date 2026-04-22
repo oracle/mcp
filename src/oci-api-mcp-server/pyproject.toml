@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-api-mcp-server"
-version = "1.1.4"
+version = "1.1.5"
 description = "OCI CLI MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -10,8 +10,8 @@ authors = [
     {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
 ]
 dependencies = [
-    "fastmcp==2.14.2",
-    "oci-cli==3.71.1"
+    "fastmcp==2.14.7",
+    "oci-cli==3.79.0"
 ]
 
 classifiers = [
@@ -33,7 +33,7 @@ packages = ["oracle"]
 
 [dependency-groups]
 dev = [
-    "pytest>=8.4.2",
+    "pytest>=9.0.3",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=7.0.0",
 ]

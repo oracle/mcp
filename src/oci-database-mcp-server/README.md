@@ -14,7 +14,116 @@ uv run oracle.oci-database-mcp-server
 
 The server supports the following environment variables:
 
-- `OCI_CONFIG_PROFILE`: OCI configuration profile name (default: "DEFAULT")
+- `OCI_CONFIG_PROFILE`: OCI configuration profile name (default: `DEFAULT`) used with `AUTH_METHOD=token`
+- `OCI_CONFIG_FILE`: Path to OCI config file (default: OCI SDK/CLI default location) used with `AUTH_METHOD=token`
+
+When running from an MCP client (Cline/Cursor/MCPHost), these values can be set in the server's `env` block for **local/direct** launches.
+
+For **SSH-based remote execution** (for example: MCP server runs on a DB System, while Cline runs locally), pass the auth values as runtime args in the remote command.
+
+## Authentication Methods
+
+### 1) Security Token authentication (default)
+
+When `AUTH_METHOD` is unset or set to `token`, the server uses Security Token authentication from your OCI config profile.
+
+Expected config/profile contents include `security_token_file` and `key_file` (along with standard OCI config values such as tenancy and region).
+
+(Run `oci session authenticate` with your required profile to fetch this token)
+
+Example:
+
+```json
+{
+  "mcpServers": {
+    "oracle-oci-database-mcp-server": {
+      "command": "uvx",
+      "args": ["oracle.oci-database-mcp-server"],
+      "env": {
+        "OCI_CONFIG_PROFILE": "DEFAULT",
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    }
+  }
+}
+```
+
+### 2) Instance Principal authentication
+
+Use `--auth-method instance_principal` to select instance principal signer-based auth. This mode is intended for workloads running on OCI compute resources with appropriate dynamic group and IAM policies.
+
+> For SSH remote execution, do not rely only on `env.AUTH_METHOD`; pass `--auth-method instance_principal` in the launched command args.
+
+Example:
+
+```json
+{
+  "mcpServers": {
+    "oci-database-mcp-on-instance": {
+      "command": "ssh",
+      "args": [
+        "-i",
+        "/path/to/ssh-key.pem",
+        "opc@<instance-public-ip>",
+        "uvx oracle.oci-database-mcp-server",
+        " --auth-method instance_principal"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    }
+  }
+}
+```
+
+### 3) Resource Principal authentication
+
+Use `--auth-method resource_principal` to use the server's RPST flow.
+
+#### RP values
+The following values are used for RP auth:
+
+| Runtime arg | Environment variable | Description                                                                                            |
+| --- | --- |--------------------------------------------------------------------------------------------------------|
+| `--database-endpoint` | `DATABASE_ENDPOINT` | OPTIONAL override for Database service endpoint used to obtain v2.1.2 resource principal tokens.       |
+| `--tenancy-ocid` | `TENANCY_OCID` | Tenancy OCID associated with the resource principal.                                                   |
+| `--private-key-path` | `PRIVATE_KEY_PATH` | Path to PEM private key used for request signing in the RPST bootstrap flow.                           |
+| `--resource-ocid` | `RESOURCE_OCID` | OCID of the resource acting as principal.                                                              |
+| `--rci` | `RCI` | Resource context identifier used to build the security context.                                        |
+| `--t0` | `T0` | Base timestamp (ISO-8601 UTC, for example `2025-01-01T00:00:00Z`) used in security context generation. |
+
+If any required RP value is missing, the server exits during startup with an error.
+
+#### SSH / DB System configuration (local Cline -> remote DB System)
+
+Pass RP auth selection and RP values as runtime args in your SSH MCP config:
+
+```json
+{
+  "mcpServers": {
+    "oci-database-mcp-on-dbsystem": {
+      "command": "ssh",
+      "args": [
+        "-i",
+        "/path/to/ssh-key.pem",
+        "opc@<db-system-public-ip>",
+        "uvx oracle.oci-database-mcp-server",
+        " --auth-method resource_principal",
+        " --tenancy-ocid ocid1.tenancy.oc1..<example_unique_id>",
+        " --private-key-path /path/to/wallet_PrivateKey.pem",
+        " --resource-ocid ocid1.dbsystem.oc1.<region>.<example_unique_id>",
+        " --rci <base64_resource_context_identifier>",
+        " --t0 2026-01-01T00:00:00.000Z"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    }
+  }
+}
+```
+
+> In SSH mode, passing only `env.AUTH_METHOD`/RP env vars is not sufficient for the remote command context. Use runtime args as shown above.
 
 ## Tools
 

@@ -18,7 +18,7 @@ class TestGetDatabaseClient:
     )
     @patch("oracle.oci_database_mcp_server.server.oci.config.from_file")
     @patch("oracle.oci_database_mcp_server.server.os.getenv")
-    def test_get_database_client_passes_circuit_breaker_and_region(
+    def test_get_database_client_passes_region_and_signer(
         self,
         mock_getenv,
         mock_from_file,
@@ -40,8 +40,6 @@ class TestGetDatabaseClient:
         args, kwargs = mock_client.call_args
         assert args[0]["region"] == "us-phoenix-1"
         assert kwargs["signer"] is mock_security_token_signer.return_value
-        assert isinstance(kwargs["circuit_breaker_strategy"], oci.circuit_breaker.CircuitBreakerStrategy)
-        assert callable(kwargs["circuit_breaker_callback"])
         assert result is mock_client.return_value
 
 

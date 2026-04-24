@@ -33,3 +33,5 @@ htmlcov/
 # GoldenGate MCP local runtime artifacts
 **/logs/
 **/oracle-goldengate-mcp-server.env
+**/build/**
+

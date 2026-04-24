@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-cloud-guard-mcp-server"
-version = "1.1.6"
+version = "2.0.0"
 description = "OCI Cloud Guard Service MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -24,6 +24,9 @@ classifiers = [
 
 [project.scripts]
 "oracle.oci-cloud-guard-mcp-server" = "oracle.oci_cloud_guard_mcp_server.server:main"
+
+[project.urls]
+Changelog = "https://github.com/oracle/mcp/blob/main/src/oci-cloud-guard-mcp-server/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]

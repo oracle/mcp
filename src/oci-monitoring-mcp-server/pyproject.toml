@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-monitoring-mcp-server"
-version = "1.1.6"
+version = "2.0.0"
 description = "OCI Monitoring Service MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -23,6 +23,9 @@ classifiers = [
 
 [project.scripts]
 "oracle.oci-monitoring-mcp-server" = "oracle.oci_monitoring_mcp_server.server:main"
+
+[project.urls]
+Changelog = "https://github.com/oracle/mcp/blob/main/src/oci-monitoring-mcp-server/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]

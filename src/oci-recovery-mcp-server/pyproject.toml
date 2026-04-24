@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-recovery-mcp-server"
-version = "1.0.2"
+version = "2.0.0"
 description = "OCI Recovery Service MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -26,6 +26,9 @@ classifiers = [
 
 [project.scripts]
 "oracle.oci-recovery-mcp-server" = "oracle.oci_recovery_mcp_server.server:main"
+
+[project.urls]
+Changelog = "https://github.com/oracle/mcp/blob/main/src/oci-recovery-mcp-server/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]

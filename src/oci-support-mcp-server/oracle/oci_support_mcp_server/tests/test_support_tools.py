@@ -6,6 +6,7 @@ https://oss.oracle.com/licenses/upl.
 
 from unittest.mock import MagicMock, patch
 
+import oracle.oci_support_mcp_server.server as server
 import pytest
 from fastmcp import Client
 from oracle.oci_support_mcp_server.models import (
@@ -126,3 +127,41 @@ class TestSupportTools:
             result = call_tool_result.structured_content
             assert "is_valid_user" in result
             assert result["is_valid_user"]
+
+
+def test_http_signer_requires_region(monkeypatch):
+    monkeypatch.setattr(server, "get_access_token", lambda: MagicMock(token="token"))
+    monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+    monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
+    monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
+    monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+    monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+
+    with pytest.raises(RuntimeError, match="OCI_REGION"):
+        server._get_http_config_and_signer()
+
+
+def test_main_with_host_and_port(monkeypatch):
+    monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+    monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
+    monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
+    monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+    monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+    monkeypatch.setenv("IDCS_AUDIENCE", "mcp-audience")
+    monkeypatch.setenv("ORACLE_MCP_BASE_URL", "http://127.0.0.1:8888")
+
+    with (
+        patch("oracle.oci_support_mcp_server.server.OCIProvider", return_value=object()) as mock_provider,
+        patch("oracle.oci_support_mcp_server.server.mcp.run") as mock_run,
+    ):
+        server.main()
+
+    mock_provider.assert_called_once_with(
+        config_url="https://idcs.example.com/.well-known/openid-configuration",
+        client_id="client-id",
+        client_secret="client-secret",
+        audience="mcp-audience",
+        required_scopes=f"openid profile email oci_mcp.{server.__project__.removeprefix('oracle.oci-').removesuffix('-mcp-server').replace('-', '_')}.invoke".split(),
+        base_url="http://127.0.0.1:8888",
+    )
+    mock_run.assert_called_once_with(transport="http", host="127.0.0.1", port=8888)

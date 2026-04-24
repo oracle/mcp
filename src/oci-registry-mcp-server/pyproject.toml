@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-registry-mcp-server"
-version = "2.1.6"
+version = "3.0.0"
 description = "OCI Registry Service MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -23,6 +23,9 @@ classifiers = [
 
 [project.scripts]
 "oracle.oci-registry-mcp-server" = "oracle.oci_registry_mcp_server.server:main"
+
+[project.urls]
+Changelog = "https://github.com/oracle/mcp/blob/main/src/oci-registry-mcp-server/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]

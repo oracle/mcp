@@ -1,12 +1,13 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## 1.0.0
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Breaking Changes
 
-## Unreleased
+- HTTP transport now requires OCI IAM/IDCS authentication and no longer uses local OCI CLI profile credentials for request authentication.
+- HTTP deployments must set `ORACLE_MCP_BASE_URL`, `OCI_REGION`, `IDCS_DOMAIN`, `IDCS_CLIENT_ID`, `IDCS_CLIENT_SECRET`, and `IDCS_AUDIENCE`, and register `${ORACLE_MCP_BASE_URL}/auth/callback`.
+- The default required scopes are `openid profile email oci_mcp.load_balancer.invoke`; set `IDCS_REQUIRED_SCOPES` to override.
 
 ### Added
 
-- Initial project setup
+- Initial project setup.

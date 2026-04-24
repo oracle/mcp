@@ -306,9 +306,25 @@ class TestMainEntrypoint:
 
         monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("ORACLE_MCP_PORT", "9999")
+        monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
+        monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+        monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+        monkeypatch.setenv("IDCS_AUDIENCE", "mcp-audience")
+        monkeypatch.setenv("ORACLE_MCP_BASE_URL", "http://127.0.0.1:9999")
 
-        with patch("oracle.oci_cloud_mcp_server.server.mcp.run", side_effect=fake_run):
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.OCIProvider", return_value=object()) as mock_provider,
+            patch("oracle.oci_cloud_mcp_server.server.mcp.run", side_effect=fake_run),
+        ):
             main()
+        mock_provider.assert_called_once_with(
+            config_url="https://idcs.example.com/.well-known/openid-configuration",
+            client_id="client-id",
+            client_secret="client-secret",
+            audience="mcp-audience",
+            required_scopes=["openid", "profile", "email", "oci_mcp.cloud.invoke"],
+            base_url="http://127.0.0.1:9999",
+        )
 
         assert called["kwargs"] == {
             "transport": "http",
@@ -316,6 +332,29 @@ class TestMainEntrypoint:
             "port": 9999,
         }
         assert called["args"] == ()
+
+    def test_main_falls_back_for_empty_json_scope_override(self, monkeypatch):
+        monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ORACLE_MCP_PORT", "9999")
+        monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
+        monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+        monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+        monkeypatch.setenv("IDCS_AUDIENCE", "mcp-audience")
+        monkeypatch.setenv("ORACLE_MCP_BASE_URL", "http://127.0.0.1:9999")
+        monkeypatch.setenv("IDCS_REQUIRED_SCOPES", "[]")
+
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.OCIProvider", return_value=object()) as mock_provider,
+            patch("oracle.oci_cloud_mcp_server.server.mcp.run"),
+        ):
+            main()
+
+        assert mock_provider.call_args.kwargs["required_scopes"] == [
+            "openid",
+            "profile",
+            "email",
+            "oci_mcp.cloud.invoke",
+        ]
 
     def test_main_runs_default_without_env(self, monkeypatch):
         called = {}

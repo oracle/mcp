@@ -31,6 +31,7 @@ https://oss.oracle.com/licenses/upl.
 #   wherever possible, especially for pagination and nested model fields.
 # - We log key milestones and counts for better operability and diagnostics.
 
+import configparser
 import json
 import logging
 import os
@@ -42,6 +43,9 @@ from typing import Annotated, Any, Callable, Literal, Optional
 
 import oci
 from fastmcp import FastMCP
+from fastmcp.server.auth.providers.oci import OCIProvider
+from fastmcp.server.dependencies import get_access_token
+from fastmcp.utilities.auth import parse_scopes
 from oci.monitoring.models import SummarizeMetricsDataDetails
 
 # Database Service models and mappers
@@ -605,6 +609,40 @@ def _load_oci_config_for_server() -> dict:
     return config
 
 
+def _get_profile_value(key: str):
+    parser = configparser.ConfigParser()
+    parser.read(os.path.expanduser(os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION)))
+    profile = _effective_profile_name()
+    return (parser[profile].get(key) if profile in parser else None) or parser.defaults().get(key)
+
+
+def _get_http_config_and_signer(region: str | None = None):
+    if not (os.getenv("ORACLE_MCP_HOST") and os.getenv("ORACLE_MCP_PORT")):
+        return None, None
+    token = get_access_token()
+    if token is None:
+        raise RuntimeError("HTTP requests require an authenticated IDCS access token.")
+    domain = os.getenv("IDCS_DOMAIN")
+    client_id = os.getenv("IDCS_CLIENT_ID")
+    client_secret = os.getenv("IDCS_CLIENT_SECRET")
+    if not all((domain, client_id, client_secret)):
+        raise RuntimeError(
+            "HTTP requests require IDCS authentication. Set IDCS_DOMAIN, IDCS_CLIENT_ID, and IDCS_CLIENT_SECRET."
+        )
+    base_region = region or os.getenv("OCI_REGION")
+    if not base_region:
+        raise RuntimeError("HTTP requests require OCI_REGION.")
+    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
+    config = {"region": base_region, "additional_user_agent": f"{user_agent_name}/{__version__}"}
+    return config, oci.auth.signers.TokenExchangeSigner(
+        token.token,
+        f"https://{domain}",
+        client_id,
+        client_secret,
+        region=config.get("region"),
+    )
+
+
 def _build_signer_for_session(config: dict):
     private_key = oci.signer.load_private_key_from_file(config["key_file"])
     token_file = config["security_token_file"]
@@ -630,21 +668,21 @@ def _get_oci_client_kwargs(signer=None):
 
 # Create the FastMCP app that exposes the functions decorated with @mcp.tool
 mcp = FastMCP(name=__project__)
-
-
 def get_recovery_client(
     region: str | None = None,
     *,
     request_id: Optional[str] = None,
 ) -> oci.recovery.DatabaseRecoveryClient:
     """Create a Recovery Service client using auth selected via env vars."""
-    config = _load_oci_config_for_server()
-
-    # Region-aware client construction
-    regional_config = config if region is None else {**config, "region": region}
+    regional_config, signer = _get_http_config_and_signer(region)
+    if signer is None:
+        config = _load_oci_config_for_server()
+        regional_config = config if region is None else {**config, "region": region}
 
     method = _effective_auth_method()
-    if method == "apikey":
+    if signer is not None:
+        client = oci.recovery.DatabaseRecoveryClient(regional_config, **_get_oci_client_kwargs(signer))
+    elif method == "apikey":
         client = oci.recovery.DatabaseRecoveryClient(regional_config, **_get_oci_client_kwargs())
     else:
         signer = _build_signer_for_session(regional_config)
@@ -657,9 +695,13 @@ def get_recovery_client(
 
 
 def get_identity_client(*, request_id: Optional[str] = None):
-    config = _load_oci_config_for_server()
+    config, signer = _get_http_config_and_signer()
+    if signer is None:
+        config = _load_oci_config_for_server()
     method = _effective_auth_method()
-    if method == "apikey":
+    if signer is not None:
+        client = oci.identity.IdentityClient(config, **_get_oci_client_kwargs(signer))
+    elif method == "apikey":
         client = oci.identity.IdentityClient(config, **_get_oci_client_kwargs())
     else:
         signer = _build_signer_for_session(config)
@@ -670,10 +712,14 @@ def get_identity_client(*, request_id: Optional[str] = None):
 
 
 def get_database_client(region: str = None, *, request_id: Optional[str] = None):
-    config = _load_oci_config_for_server()
-    regional_config = config if region is None else {**config, "region": region}
+    regional_config, signer = _get_http_config_and_signer(region)
+    if signer is None:
+        config = _load_oci_config_for_server()
+        regional_config = config if region is None else {**config, "region": region}
     method = _effective_auth_method()
-    if method == "apikey":
+    if signer is not None:
+        client = oci.database.DatabaseClient(regional_config, **_get_oci_client_kwargs(signer))
+    elif method == "apikey":
         client = oci.database.DatabaseClient(regional_config, **_get_oci_client_kwargs())
     else:
         signer = _build_signer_for_session(regional_config)
@@ -685,10 +731,14 @@ def get_database_client(region: str = None, *, request_id: Optional[str] = None)
 
 def get_monitoring_client(region: str | None = None, *, request_id: Optional[str] = None):
     logger.info("entering get_monitoring_client")
-    config = _load_oci_config_for_server()
-    regional_config = config if region is None else {**config, "region": region}
+    regional_config, signer = _get_http_config_and_signer(region)
+    if signer is None:
+        config = _load_oci_config_for_server()
+        regional_config = config if region is None else {**config, "region": region}
     method = _effective_auth_method()
-    if method == "apikey":
+    if signer is not None:
+        client = oci.monitoring.MonitoringClient(regional_config, **_get_oci_client_kwargs(signer))
+    elif method == "apikey":
         client = oci.monitoring.MonitoringClient(regional_config, **_get_oci_client_kwargs())
     else:
         signer = _build_signer_for_session(regional_config)
@@ -702,8 +752,10 @@ def get_monitoring_client(region: str | None = None, *, request_id: Optional[str
 
 def get_tenancy():
     # Return the tenancy OCID from config unless overridden by TENANCY_ID_OVERRIDE
-    config = _load_oci_config_for_server()
-    return os.getenv("TENANCY_ID_OVERRIDE", config["tenancy"])
+    tenancy_id = os.getenv("TENANCY_ID_OVERRIDE") or _get_profile_value("tenancy")
+    if not tenancy_id:
+        raise RuntimeError("Tenancy lookup requires TENANCY_ID_OVERRIDE or an OCI config file tenancy.")
+    return tenancy_id
 
 
 def list_all_compartments_internal(only_one_page: bool, limit=100):
@@ -3087,12 +3139,31 @@ def main():
     logger.info("Starting %s v%s", __project__, __version__)
     logger.info("Logs will be written to: %s", os.path.abspath(log_file))
 
-    if host and port:
-        logger.info("Running FastMCP over HTTP at http://%s:%s", host, port)
-        mcp.run(transport="http", host=host, port=int(port))
-    else:
+    if not (host and port):
         logger.info("Running FastMCP over stdio transport")
         mcp.run()
+        return
+    logger.info("Running FastMCP over HTTP at http://%s:%s", host, port)
+    domain = os.getenv("IDCS_DOMAIN")
+    client_id = os.getenv("IDCS_CLIENT_ID")
+    client_secret = os.getenv("IDCS_CLIENT_SECRET")
+    base_url = os.getenv("ORACLE_MCP_BASE_URL", "")
+    audience = os.getenv("IDCS_AUDIENCE")
+    if not all((domain, client_id, client_secret, audience, base_url)):
+        raise RuntimeError(
+            "HTTP transport requires IDCS authentication. "
+            "Set IDCS_DOMAIN, IDCS_CLIENT_ID, IDCS_CLIENT_SECRET, IDCS_AUDIENCE, "
+            "ORACLE_MCP_BASE_URL, ORACLE_MCP_HOST, and ORACLE_MCP_PORT."
+        )
+    mcp.auth = OCIProvider(
+        config_url=f"https://{domain}/.well-known/openid-configuration",
+        client_id=client_id,
+        client_secret=client_secret,
+        audience=audience,
+        required_scopes=parse_scopes(os.getenv("IDCS_REQUIRED_SCOPES")) or f"openid profile email oci_mcp.{__project__.removeprefix('oracle.oci-').removesuffix('-mcp-server').replace('-', '_')}.invoke".split(),
+        base_url=base_url,
+    )
+    mcp.run(transport="http", host=host, port=int(port))
 
 
 if __name__ == "__main__":

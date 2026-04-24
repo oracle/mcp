@@ -55,11 +55,12 @@ For macOS/Linux:
 }
 ```
 
-To connect to an MCP server running in HTTP streaming mode:
+To connect to an OCI MCP server running in HTTP streaming mode:
 Assuming you started the server by running:
 ```bash
-ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8888 uvx oracle.oci-api-mcp-server
+ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8888 ORACLE_MCP_BASE_URL=http://127.0.0.1:8888 OCI_REGION=us-phoenix-1 IDCS_DOMAIN=<idcs_domain> IDCS_CLIENT_ID=<client_id> IDCS_CLIENT_SECRET=<client_secret> IDCS_AUDIENCE=<audience> uvx oracle.oci-cloud-mcp-server
 ```
+Register `${ORACLE_MCP_BASE_URL}/auth/callback` as a redirect URI in the OCI IAM confidential application for the server.
 then place the following in your MCP client configuration:
 :warning: NOTE: the `type` attribute differs across MCP clients; some use `http` as the
 transport value while others (like Cline) expect `streamableHttp`.
@@ -67,13 +68,15 @@ transport value while others (like Cline) expect `streamableHttp`.
 ```json
 {
   "mcpServers": {
-    "oracle-oci-api-mcp-server": {
+    "oracle-oci-cloud-mcp-server": {
       "type": "streamableHttp",
       "url": "http://127.0.0.1:8888/mcp"
     }
   }
 }
 ```
+
+`oracle.oci-api-mcp-server` is `stdio`-only. For OCI HTTP servers, `IDCS_REQUIRED_SCOPES` is optional; if unset, the default is `openid profile email oci_mcp.<server_name>.invoke`, where `<server_name>` is the package name without `oracle.oci-` and `-mcp-server`, with `-` replaced by `_`. For example, `oracle.oci-cloud-mcp-server` defaults to `openid profile email oci_mcp.cloud.invoke`.
 
 ## Running with podman
 
@@ -95,21 +98,17 @@ The above command builds the container image tagged as `oracle.oci-api-mcp-serve
 
 ### MCP Client Configuration
 
-For examples of configuring MCP clients to run the server using podman, see the client-specific sections below. Configurations typically involve using `podman run` as the command, with appropriate flags and volume mounts for credentials if needed (e.g., mounting `~/.oci` for OCI servers).
+For examples of configuring MCP clients to run the server using podman, see the client-specific sections below. Configurations typically involve using `podman run` as the command, with appropriate flags and volume mounts for credentials if needed (e.g., mounting `~/.oci` for OCI servers running over `stdio` transport).
 
-Alternatively, if you want to use HTTP transport using the podman container, then start the MCP server using the following command and configure your client as mentioned in Quickstart section above.
+Alternatively, if you want to use HTTP transport using the podman container, then start an OCI HTTP-capable MCP server using the following command and configure your client as mentioned in Quickstart section above.
 ```bash
-podman run -v "/path/to/your/.oci:/app/.oci" -e ORACLE_MCP_HOST=0.0.0.0 -e ORACLE_MCP_PORT=8888 -p 8888:8888 oracle.oci-api-mcp-server:latest
+podman run -e ORACLE_MCP_HOST=0.0.0.0 -e ORACLE_MCP_PORT=8888 -e ORACLE_MCP_BASE_URL=http://127.0.0.1:8888 -e OCI_REGION=us-phoenix-1 -e IDCS_DOMAIN=<idcs_domain> -e IDCS_CLIENT_ID=<client_id> -e IDCS_CLIENT_SECRET=<client_secret> -e IDCS_AUDIENCE=<audience> -p 127.0.0.1:8888:8888 oracle.oci-cloud-mcp-server:latest
 ```
-⚠️ **NOTE**: Ensure that all the fields that are paths to files in `/path/to/your/.oci/config` uses the **~** character so that the path resolves both inside and outside the container; for example: 
-```bash
-key_file=~/.oci/sessions/DEFAULT/oci_api_key.pem
-security_token_file=~/.oci/sessions/DEFAULT/token
-```
+For local development, keep `-p 127.0.0.1:8888:8888`. Changing it to `-p 8888:8888` exposes the server beyond localhost.
 
 ## Authentication
 
-For OCI MCP servers, you'll need to install and authenticate using the OCI CLI.
+For OCI MCP servers running over stdio transport:
 
 1. Install the [OCI CLI](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm)
 2. Configure your OCI CLI profile
@@ -122,7 +121,7 @@ where:
 
 Some MCP servers may not work with token-based authentication alone. See more about API key-based authentication [here](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/clitoken.htm).
 
-All actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
+All stdio actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 
 Remember to refresh the session once it expires with:
 ```bash
@@ -130,6 +129,8 @@ oci session authenticate --profile-name <profile_name> --region <region> --auth 
 ```
 
 `<profile_name>` is the profile that you set up in the steps above. You can view a list of your profiles by running `cat ~/.oci/config` on macOS/Linux if you forget which profile you have set up.
+
+For OCI MCP servers running over HTTP transport, use an OCI IAM confidential application and set `IDCS_DOMAIN`, `IDCS_CLIENT_ID`, `IDCS_CLIENT_SECRET`, `IDCS_AUDIENCE`, `ORACLE_MCP_BASE_URL`, `ORACLE_MCP_HOST`, `ORACLE_MCP_PORT`, and `OCI_REGION`. Register `${ORACLE_MCP_BASE_URL}/auth/callback` as a redirect URI in that application. HTTP requests run as the authenticated OCI IAM user and do not use the local OCI CLI profile for request authentication. `IDCS_REQUIRED_SCOPES` is optional; if unset, the server defaults to `openid profile email oci_mcp.<server_name>.invoke`. Create and grant that custom scope in your confidential application, or override it with `IDCS_REQUIRED_SCOPES`.
 
 ## Client configuration
 

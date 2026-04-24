@@ -761,7 +761,7 @@ wheels = [
 
 [[package]]
 name = "oracle-oci-registry-mcp-server"
-version = "2.1.6"
+version = "3.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },

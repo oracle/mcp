@@ -4,8 +4,6 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
-import base64
-import json
 import os
 from unittest.mock import MagicMock, create_autospec, mock_open, patch
 
@@ -14,15 +12,15 @@ import oracle.oci_identity_mcp_server.server as server
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
+from fastmcp.server.auth import AccessToken
 from oracle.oci_identity_mcp_server.server import mcp
 
 
 class TestIdentityTools:
     @pytest.mark.asyncio
     @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
-    @patch("oracle.oci_identity_mcp_server.server.oci.config.from_file")
-    async def test_list_compartments(self, mock_config_from_file, mock_get_client):
-        mock_config_from_file.return_value = {"tenancy": "test_tenancy"}
+    @patch("oracle.oci_identity_mcp_server.server._get_profile_value", return_value="test_tenancy")
+    async def test_list_compartments(self, _mock_get_profile_value, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -104,10 +102,9 @@ class TestIdentityTools:
             assert result[0]["id"] == "compartment1"
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_identity_mcp_server.server.oci.config.from_file")
     @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
-    async def test_list_compartments_pagination_without_limit(self, mock_get_client, mock_config_from_file):
-        mock_config_from_file.return_value = {"tenancy": "test_tenancy"}
+    @patch("oracle.oci_identity_mcp_server.server._get_profile_value", return_value="test_tenancy")
+    async def test_list_compartments_pagination_without_limit(self, _mock_get_profile_value, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -181,10 +178,9 @@ class TestIdentityTools:
         assert second_kwargs["limit"] is None
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_identity_mcp_server.server.oci.config.from_file")
     @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
-    async def test_list_compartments_limit_stops_pagination(self, mock_get_client, mock_config_from_file):
-        mock_config_from_file.return_value = {"tenancy": "test_tenancy"}
+    @patch("oracle.oci_identity_mcp_server.server._get_profile_value", return_value="test_tenancy")
+    async def test_list_compartments_limit_stops_pagination(self, _mock_get_profile_value, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -329,9 +325,8 @@ class TestIdentityTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
-    @patch("oracle.oci_identity_mcp_server.server.oci.config.from_file")
-    async def test_get_current_tenancy(self, mock_config_from_file, mock_get_client):
-        mock_config_from_file.return_value = {"tenancy": "test_tenancy"}
+    @patch("oracle.oci_identity_mcp_server.server._get_profile_value", return_value="test_tenancy")
+    async def test_get_current_tenancy(self, _mock_get_profile_value, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -378,9 +373,8 @@ class TestIdentityTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
-    @patch("oracle.oci_identity_mcp_server.server.oci.config.from_file")
-    async def test_get_current_user_from_config_user(self, mock_config_from_file, mock_get_client):
-        mock_config_from_file.return_value = {"user": "test_user"}
+    @patch("oracle.oci_identity_mcp_server.server._get_profile_value", return_value="test_user")
+    async def test_get_current_user_from_config_user(self, _mock_get_profile_value, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -397,77 +391,34 @@ class TestIdentityTools:
 
             assert result["id"] == "user1"
 
-    def _make_jwt(self, payload_dict: dict) -> str:
-        header_b64 = base64.urlsafe_b64encode(json.dumps({"alg": "none"}).encode()).decode().rstrip("=")
-        payload_b64 = base64.urlsafe_b64encode(json.dumps(payload_dict).encode()).decode().rstrip("=")
-        return f"{header_b64}.{payload_b64}.signature"
+    @pytest.mark.asyncio
+    @patch("oracle.oci_identity_mcp_server.server.get_access_token")
+    async def test_get_current_user_from_http_sub(self, mock_get_access_token):
+        mock_get_access_token.return_value = AccessToken(
+            token="token", client_id="client", scopes=[], claims={"sub": "ocid1.user.oc1..sub"}
+        )
+
+        async with Client(mcp) as client:
+            result = (await client.call_tool("get_current_user", {})).structured_content
+            assert result["id"] == "ocid1.user.oc1..sub"
+            assert result["name"] == "ocid1.user.oc1..sub"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_identity_mcp_server.server.get_access_token")
+    async def test_get_current_user_from_http_opc_user_id(self, mock_get_access_token):
+        mock_get_access_token.return_value = AccessToken(
+            token="token", client_id="client", scopes=[], claims={"opc-user-id": "ocid1.user.oc1..opc"}
+        )
+
+        async with Client(mcp) as client:
+            result = (await client.call_tool("get_current_user", {})).structured_content
+            assert result["id"] == "ocid1.user.oc1..opc"
+            assert result["name"] == "ocid1.user.oc1..opc"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
-    @patch("oracle.oci_identity_mcp_server.server.os.path.exists")
-    @patch("oracle.oci_identity_mcp_server.server.oci.config.from_file")
-    async def test_get_current_user_fallback_from_token_sub(
-        self, mock_config_from_file, mock_path_exists, mock_get_client
-    ):
-        # No user in config, but provide a token file with JWT 'sub'
-        token = self._make_jwt({"sub": "ocid1.user.oc1..sub"})
-        mock_config_from_file.return_value = {
-            "security_token_file": "/tmp/token.txt",
-        }
-        mock_path_exists.return_value = True
-
-        m = mock_open(read_data=token)
-        mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
-
-        mock_resp = create_autospec(oci.response.Response)
-        mock_resp.data = oci.identity.models.User(id="user-sub", name="User From Sub")
-        mock_client.get_user.return_value = mock_resp
-
-        with patch("builtins.open", m):
-            async with Client(mcp) as client:
-                result = (await client.call_tool("get_current_user", {})).structured_content
-                assert result["id"] == "user-sub"
-                # Ensure client.get_user called with derived OCID
-                mock_client.get_user.assert_called_once_with("ocid1.user.oc1..sub")
-
-    @pytest.mark.asyncio
-    @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
-    @patch("oracle.oci_identity_mcp_server.server.os.path.exists")
-    @patch("oracle.oci_identity_mcp_server.server.oci.config.from_file")
-    async def test_get_current_user_fallback_from_token_opc_user_id(
-        self, mock_config_from_file, mock_path_exists, mock_get_client
-    ):
-        token = self._make_jwt({"opc-user-id": "ocid1.user.oc1..opc"})
-        mock_config_from_file.return_value = {
-            "security_token_file": "/tmp/token.txt",
-        }
-        mock_path_exists.return_value = True
-
-        m = mock_open(read_data=token)
-        mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
-
-        mock_resp = create_autospec(oci.response.Response)
-        mock_resp.data = oci.identity.models.User(id="user-opc", name="User From OPC")
-        mock_client.get_user.return_value = mock_resp
-
-        with patch("builtins.open", m):
-            async with Client(mcp) as client:
-                result = (await client.call_tool("get_current_user", {})).structured_content
-                assert result["id"] == "user-opc"
-                mock_client.get_user.assert_called_once_with("ocid1.user.oc1..opc")
-
-    @pytest.mark.asyncio
-    @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
-    @patch("oracle.oci_identity_mcp_server.server.os.path.exists")
-    @patch("oracle.oci_identity_mcp_server.server.oci.config.from_file")
-    async def test_get_current_user_raises_when_no_user(
-        self, mock_config_from_file, mock_path_exists, mock_get_client
-    ):
-        # No user in config, token file missing -> KeyError should propagate as ToolError
-        mock_config_from_file.return_value = {"security_token_file": "/tmp/token.txt"}
-        mock_path_exists.return_value = False
+    @patch("oracle.oci_identity_mcp_server.server._get_profile_value", return_value=None)
+    async def test_get_current_user_raises_when_no_user(self, _mock_get_profile_value, mock_get_client):
 
         async with Client(mcp) as client:
             with pytest.raises(ToolError):
@@ -590,17 +541,81 @@ class TestIdentityTools:
 
 
 class TestServer:
+    @patch("oracle.oci_identity_mcp_server.server.oci.auth.signers.TokenExchangeSigner", return_value="signer")
+    @patch("oracle.oci_identity_mcp_server.server.get_access_token")
+    def test_http_signer_uses_region_without_loading_config(self, mock_get_access_token, mock_signer, monkeypatch):
+        mock_get_access_token.return_value = AccessToken(token="token", client_id="client", scopes=[], claims={})
+        monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
+        monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
+        monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+        monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+        monkeypatch.setenv("OCI_REGION", "us-phoenix-1")
+
+        config, signer = server._get_http_config_and_signer()
+
+        assert config["region"] == "us-phoenix-1"
+        assert signer == "signer"
+        mock_signer.assert_called_once()
+
+    @patch("oracle.oci_identity_mcp_server.server.get_access_token", return_value=None)
+    def test_http_signer_requires_authenticated_token(self, _mock_get_access_token, monkeypatch):
+        monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
+
+        with pytest.raises(RuntimeError, match="authenticated IDCS access token"):
+            server._get_http_config_and_signer()
+
+    def test_http_signer_requires_region(self, monkeypatch):
+        monkeypatch.setattr(
+            server,
+            "get_access_token",
+            lambda: AccessToken(token="token", client_id="client", scopes=[], claims={}),
+        )
+        monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
+        monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
+        monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+        monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+
+        with pytest.raises(RuntimeError, match="OCI_REGION"):
+            server._get_http_config_and_signer()
+
+    def test_get_profile_value_reads_profile_and_defaults(self, monkeypatch, tmp_path):
+        config_path = tmp_path / "config"
+        config_path.write_text("[DEFAULT]\ntenancy=ocid1.tenancy.oc1..default\n[ALT]\ntenancy=ocid1.tenancy.oc1..alt\n")
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(config_path))
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "ALT")
+        assert server._get_profile_value("tenancy") == "ocid1.tenancy.oc1..alt"
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "MISSING")
+        assert server._get_profile_value("tenancy") == "ocid1.tenancy.oc1..default"
+
+    @patch("oracle.oci_identity_mcp_server.server.OCIProvider")
     @patch("oracle.oci_identity_mcp_server.server.mcp.run")
     @patch("os.getenv")
-    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run):
+    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run, mock_provider):
         mock_env = {
             "ORACLE_MCP_HOST": "1.2.3.4",
             "ORACLE_MCP_PORT": "8888",
+            "IDCS_DOMAIN": "idcs.example.com",
+            "IDCS_CLIENT_ID": "client-id",
+            "IDCS_CLIENT_SECRET": "client-secret",
+            "IDCS_AUDIENCE": "mcp-audience",
+            "ORACLE_MCP_BASE_URL": "https://mcp.example.com",
         }
 
-        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        mock_getenv.side_effect = lambda x, d=None: mock_env.get(x, d)
+        mock_provider.return_value = MagicMock()
 
         server.main()
+        mock_provider.assert_called_once_with(
+            config_url="https://idcs.example.com/.well-known/openid-configuration",
+            client_id="client-id",
+            client_secret="client-secret",
+            audience="mcp-audience",
+            required_scopes=f"openid profile email oci_mcp.{server.__project__.removeprefix('oracle.oci-').removesuffix('-mcp-server').replace('-', '_')}.invoke".split(),
+            base_url="https://mcp.example.com",
+        )
         mock_mcp_run.assert_called_once_with(
             transport="http",
             host=mock_env["ORACLE_MCP_HOST"],
@@ -621,7 +636,7 @@ class TestServer:
         mock_env = {
             "ORACLE_MCP_HOST": "1.2.3.4",
         }
-        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        mock_getenv.side_effect = lambda x, d=None: mock_env.get(x, d)
 
         server.main()
         mock_mcp_run.assert_called_once_with()
@@ -632,17 +647,26 @@ class TestServer:
         mock_env = {
             "ORACLE_MCP_PORT": "8888",
         }
-        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        mock_getenv.side_effect = lambda x, d=None: mock_env.get(x, d)
 
         server.main()
         mock_mcp_run.assert_called_once_with()
 
+    @patch("os.getenv")
+    def test_main_with_http_missing_idcs_env(self, mock_getenv):
+        mock_env = {
+            "ORACLE_MCP_HOST": "1.2.3.4",
+            "ORACLE_MCP_PORT": "8888",
+        }
+        mock_getenv.side_effect = lambda x, d=None: mock_env.get(x, d)
+
+        with pytest.raises(RuntimeError, match="HTTP transport requires IDCS authentication"):
+            server.main()
+
 
 @pytest.mark.asyncio
 @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
-@patch("oracle.oci_identity_mcp_server.server.oci.config.from_file")
-async def test_get_current_tenancy_with_env_override(mock_from_file, mock_get_client):
-    mock_from_file.return_value = {"tenancy": "base-tenancy"}
+async def test_get_current_tenancy_with_env_override(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
 
@@ -661,6 +685,22 @@ async def test_get_current_tenancy_with_env_override(mock_from_file, mock_get_cl
             assert result["id"] == "tenancy1"
 
     mock_client.get_tenancy.assert_called_once_with("ocid1.tenancy.oc1..override")
+
+
+@pytest.mark.asyncio
+@patch("oracle.oci_identity_mcp_server.server._get_profile_value", return_value=None)
+async def test_list_compartments_include_root_requires_tenancy(_mock_get_profile_value):
+    async with Client(mcp) as client:
+        with pytest.raises(ToolError):
+            await client.call_tool("list_compartments", {"compartment_id": "ocid1.tenancy", "include_root": True})
+
+
+@pytest.mark.asyncio
+@patch("oracle.oci_identity_mcp_server.server._get_profile_value", return_value=None)
+async def test_get_current_tenancy_raises_without_tenancy(_mock_get_profile_value):
+    async with Client(mcp) as client:
+        with pytest.raises(ToolError):
+            await client.call_tool("get_current_tenancy", {})
 
 
 @pytest.mark.asyncio
@@ -688,22 +728,27 @@ async def test_list_availability_domains_exception_propagates(mock_get_client):
 
 
 @pytest.mark.asyncio
-@patch("oracle.oci_identity_mcp_server.server.get_identity_client")
-@patch("oracle.oci_identity_mcp_server.server.os.path.exists")
-@patch("oracle.oci_identity_mcp_server.server.oci.config.from_file")
-async def test_get_current_user_invalid_token_decode_raises(mock_from_file, mock_exists, mock_get_client):
-    mock_from_file.return_value = {"security_token_file": "/tmp/token.txt"}
-    mock_exists.return_value = True
-    invalid_token = "a.b.c"  # invalid base64 payload to trigger decode error
+@patch("oracle.oci_identity_mcp_server.server.get_access_token")
+async def test_get_current_user_raises_when_http_claims_missing(mock_get_access_token):
+    mock_get_access_token.return_value = AccessToken(token="token", client_id="client", scopes=[], claims={})
 
-    m = mock_open(read_data=invalid_token)
-    with patch("builtins.open", m):
-        async with Client(mcp) as client:
-            with pytest.raises(ToolError):
-                await client.call_tool("get_current_user", {})
+    async with Client(mcp) as client:
+        with pytest.raises(ToolError):
+            await client.call_tool("get_current_user", {})
 
 
 class TestGetClient:
+    @patch("oracle.oci_identity_mcp_server.server.oci.identity.IdentityClient")
+    @patch("oracle.oci_identity_mcp_server.server._get_http_config_and_signer")
+    def test_get_identity_client_http(self, mock_http_config_and_signer, mock_client):
+        mock_http_config_and_signer.return_value = ({"region": "us-phoenix-1"}, "signer")
+
+        result = server.get_identity_client()
+
+        mock_client.assert_called_once()
+        assert mock_client.call_args.kwargs["signer"] == "signer"
+        assert result == mock_client.return_value
+
     @patch("oracle.oci_identity_mcp_server.server.oci.identity.IdentityClient")
     @patch("oracle.oci_identity_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
     @patch("oracle.oci_identity_mcp_server.server.oci.signer.load_private_key_from_file")

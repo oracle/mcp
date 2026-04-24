@@ -11,6 +11,20 @@ from oracle.oci_cloud_mcp_server.server import (
 
 
 class TestGetConfigAndSigner:
+    def test_http_requires_region(self, monkeypatch):
+        monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
+        monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
+        monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+        monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.get_access_token",
+            lambda: SimpleNamespace(token="token"),
+        )
+
+        with pytest.raises(RuntimeError, match="OCI_REGION"):
+            _get_config_and_signer()
+
     def test_respects_config_file_and_profile_env(self, monkeypatch):
         called = {}
 
@@ -207,8 +221,16 @@ class TestMainHttpRun:
         # patch FastMCP.run
         monkeypatch.setattr(_FastMCP, "run", fake_run, raising=False)
         # set env for HTTP
+        monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
+        monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+        monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+        monkeypatch.setenv("IDCS_AUDIENCE", "mcp-audience")
         monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("ORACLE_MCP_PORT", "8081")
+        monkeypatch.setenv("ORACLE_MCP_BASE_URL", "http://127.0.0.1:8081")
+        monkeypatch.setattr(
+            "fastmcp.server.auth.providers.oci.OCIProvider", lambda *args, **kwargs: object()
+        )
 
         # ensure module __main__ executes with our patched run
         import runpy

@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-migration-mcp-server"
-version = "2.1.6"
+version = "3.0.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -23,6 +23,9 @@ classifiers = [
 
 [project.scripts]
 "oracle.oci-migration-mcp-server" = "oracle.oci_migration_mcp_server.server:main"
+
+[project.urls]
+Changelog = "https://github.com/oracle/mcp/blob/main/src/oci-migration-mcp-server/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]

@@ -418,19 +418,45 @@ class TestRecoveryTools:
             assert result[0]["datapoints"][0]["value"] == 1.0
 
 class TestServer:
+    def test_http_signer_requires_region(self, monkeypatch):
+        monkeypatch.setattr(server, "get_access_token", lambda: SimpleNamespace(token="token"))
+        monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ORACLE_MCP_PORT", "8080")
+        monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
+        monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+        monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+
+        with pytest.raises(RuntimeError, match="OCI_REGION"):
+            server._get_http_config_and_signer()
+
+    @patch("oracle.oci_recovery_mcp_server.server.OCIProvider")
     @patch("oracle.oci_recovery_mcp_server.server.mcp.run")
     @patch("os.getenv")
-    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run):
+    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run, mock_provider):
         mock_env = {
             "ORACLE_MCP_HOST": "127.0.0.1",
             "ORACLE_MCP_PORT": "8080",
+            "IDCS_DOMAIN": "idcs.example.com",
+            "IDCS_CLIENT_ID": "client-id",
+            "IDCS_CLIENT_SECRET": "client-secret",
+            "IDCS_AUDIENCE": "mcp-audience",
+            "ORACLE_MCP_BASE_URL": "http://127.0.0.1:8080",
         }
         # Return configured values for known keys, and default for others
         mock_getenv.side_effect = lambda k, d=None: mock_env.get(k, d)
+        mock_provider.return_value = MagicMock()
 
         import oracle.oci_recovery_mcp_server.server as server
 
         server.main()
+        mock_provider.assert_called_once_with(
+            config_url="https://idcs.example.com/.well-known/openid-configuration",
+            client_id="client-id",
+            client_secret="client-secret",
+            audience="mcp-audience",
+            required_scopes=f"openid profile email oci_mcp.{server.__project__.removeprefix('oracle.oci-').removesuffix('-mcp-server').replace('-', '_')}.invoke".split(),
+            base_url="http://127.0.0.1:8080",
+        )
         mock_mcp_run.assert_called_once_with(
             transport="http",
             host=mock_env["ORACLE_MCP_HOST"],

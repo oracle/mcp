@@ -11,6 +11,7 @@ import oci
 import oracle.oci_compute_mcp_server.server as server
 import pytest
 from fastmcp import Client
+from fastmcp.server.auth import AccessToken
 from oracle.oci_compute_mcp_server.server import mcp
 
 
@@ -572,18 +573,76 @@ class TestComputeTools:
 
 
 class TestServer:
+    @patch("oracle.oci_compute_mcp_server.server.oci.auth.signers.TokenExchangeSigner", return_value="signer")
+    @patch("oracle.oci_compute_mcp_server.server.oci.config.from_file", side_effect=AssertionError)
+    @patch("oracle.oci_compute_mcp_server.server.get_access_token")
+    def test_http_signer_uses_region_without_loading_config(
+        self, mock_get_access_token, _mock_from_file, mock_token_exchange_signer, monkeypatch
+    ):
+        mock_get_access_token.return_value = AccessToken(token="token", client_id="client", scopes=[], claims={})
+        monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
+        monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
+        monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+        monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+        monkeypatch.setenv("OCI_REGION", "us-phoenix-1")
+
+        config, signer = server._get_http_config_and_signer()
+
+        assert config["region"] == "us-phoenix-1"
+        assert signer == "signer"
+        mock_token_exchange_signer.assert_called_once()
+
+    @patch("oracle.oci_compute_mcp_server.server.get_access_token", return_value=None)
+    def test_http_signer_requires_authenticated_token(self, _mock_get_access_token, monkeypatch):
+        monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
+
+        with pytest.raises(RuntimeError, match="authenticated IDCS access token"):
+            server._get_http_config_and_signer()
+
+    def test_http_signer_requires_region(self, monkeypatch):
+        monkeypatch.setattr(
+            server,
+            "get_access_token",
+            lambda: AccessToken(token="token", client_id="client", scopes=[], claims={}),
+        )
+        monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
+        monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
+        monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+        monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+
+        with pytest.raises(RuntimeError, match="OCI_REGION"):
+            server._get_http_config_and_signer()
+
+    @patch("oracle.oci_compute_mcp_server.server.OCIProvider")
     @patch("oracle.oci_compute_mcp_server.server.mcp.run")
     @patch("os.getenv")
-    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run):
+    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run, mock_provider):
         mock_env = {
             "ORACLE_MCP_HOST": "1.2.3.4",
             "ORACLE_MCP_PORT": "8888",
+            "IDCS_DOMAIN": "idcs.example.com",
+            "IDCS_CLIENT_ID": "client-id",
+            "IDCS_CLIENT_SECRET": "client-secret",
+            "IDCS_AUDIENCE": "mcp-audience",
+            "ORACLE_MCP_BASE_URL": "https://mcp.example.com",
         }
 
-        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        mock_getenv.side_effect = lambda x, d=None: mock_env.get(x, d)
+        mock_provider.return_value = MagicMock()
         import oracle.oci_compute_mcp_server.server as server
 
         server.main()
+        mock_provider.assert_called_once_with(
+            config_url="https://idcs.example.com/.well-known/openid-configuration",
+            client_id="client-id",
+            client_secret="client-secret",
+            audience="mcp-audience",
+            required_scopes=f"openid profile email oci_mcp.{server.__project__.removeprefix('oracle.oci-').removesuffix('-mcp-server').replace('-', '_')}.invoke".split(),
+            base_url="https://mcp.example.com",
+        )
         mock_mcp_run.assert_called_once_with(
             transport="http",
             host=mock_env["ORACLE_MCP_HOST"],
@@ -605,7 +664,7 @@ class TestServer:
         mock_env = {
             "ORACLE_MCP_HOST": "1.2.3.4",
         }
-        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        mock_getenv.side_effect = lambda x, d=None: mock_env.get(x, d)
         import oracle.oci_compute_mcp_server.server as server
 
         server.main()
@@ -617,7 +676,7 @@ class TestServer:
         mock_env = {
             "ORACLE_MCP_PORT": "8888",
         }
-        mock_getenv.side_effect = lambda x: mock_env.get(x)
+        mock_getenv.side_effect = lambda x, d=None: mock_env.get(x, d)
         import oracle.oci_compute_mcp_server.server as server
 
         server.main()

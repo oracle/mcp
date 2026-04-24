@@ -18,8 +18,6 @@ from oracle.oci_api_mcp_server.utils import initAuditLogger
 
 logger = Logger(__project__, level="INFO")
 
-mcp = FastMCP(name=__project__)
-
 # setup user agent
 user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
 USER_AGENT = f"{user_agent_name}/{__version__}"
@@ -52,7 +50,6 @@ def get_oci_commands() -> str:
     env_copy["OCI_SDK_APPEND_USER_AGENT"] = USER_AGENT
 
     try:
-        # Run OCI CLI command using subprocess
         result = subprocess.run(
             ["oci", "--help"],
             env=env_copy,
@@ -112,7 +109,6 @@ def get_oci_command_help(command: str) -> str:
     env_copy["OCI_SDK_APPEND_USER_AGENT"] = USER_AGENT
 
     try:
-        # Run OCI CLI command using subprocess
         result = subprocess.run(
             ["oci"] + command.split() + ["--help"],
             env=env_copy,
@@ -154,7 +150,6 @@ def run_oci_command(
     profile = os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
     logger.info(f"run_oci_command called with command: {command} --profile {profile}")
 
-    # Check if command is in denylist
     if denylist_manager.isCommandInDenyList(command):
         error_message = (
             f"Command '{command}' is denied by denylist. This command is found in the "
@@ -166,10 +161,9 @@ def run_oci_command(
         logger.error(error_message)
         return {"error": error_message}
 
-    # Run OCI CLI command using subprocess
     try:
         result = subprocess.run(
-            ["oci", "--profile"] + [profile] + ["--auth", "security_token"] + command.split(),
+            ["oci", "--profile", profile, "--auth", "security_token"] + command.split(),
             env=env_copy,
             capture_output=True,
             text=True,
@@ -188,9 +182,7 @@ def run_oci_command(
 
         try:
             response["output"] = json.loads(result.stdout)
-        except TypeError:
-            pass
-        except json.JSONDecodeError:
+        except (TypeError, json.JSONDecodeError):
             pass
 
         return response
@@ -204,14 +196,9 @@ def run_oci_command(
 
 
 def main():
-
-    host = os.getenv("ORACLE_MCP_HOST")
-    port = os.getenv("ORACLE_MCP_PORT")
-
-    if host and port:
-        mcp.run(transport="http", host=host, port=int(port))
-    else:
-        mcp.run()
+    if os.getenv("ORACLE_MCP_HOST") or os.getenv("ORACLE_MCP_PORT"):
+        raise RuntimeError("oracle.oci-api-mcp-server supports stdio transport only.")
+    mcp.run()
 
 
 if __name__ == "__main__":

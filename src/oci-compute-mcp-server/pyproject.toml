@@ -25,6 +25,9 @@ classifiers = [
 [project.scripts]
 "oracle.oci-compute-mcp-server" = "oracle.oci_compute_mcp_server.server:main"
 
+[project.urls]
+Changelog = "https://github.com/oracle/mcp/blob/main/src/oci-compute-mcp-server/CHANGELOG.md"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

@@ -24,6 +24,9 @@ classifiers = [
 [project.scripts]
 "oracle.oci-network-load-balancer-mcp-server" = "oracle.oci_network_load_balancer_mcp_server.server:main"
 
+[project.urls]
+Changelog = "https://github.com/oracle/mcp/blob/main/src/oci-network-load-balancer-mcp-server/CHANGELOG.md"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

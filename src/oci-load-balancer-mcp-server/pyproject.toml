@@ -26,6 +26,9 @@ classifiers = [
 [project.scripts]
 "oracle.oci-load-balancer-mcp-server" = "oracle.oci_load_balancer_mcp_server.server:main"
 
+[project.urls]
+Changelog = "https://github.com/oracle/mcp/blob/main/src/oci-load-balancer-mcp-server/CHANGELOG.md"
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",

@@ -27,6 +27,9 @@ classifiers = [
 [project.scripts]
 "oracle.oci-recovery-mcp-server" = "oracle.oci_recovery_mcp_server.server:main"
 
+[project.urls]
+Changelog = "https://github.com/oracle/mcp/blob/main/src/oci-recovery-mcp-server/CHANGELOG.md"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

@@ -1063,7 +1063,7 @@ def java_runtime_compliance(
 
 def main():
     """Run the JMS MCP server over stdio."""
-    mcp.run()
+    mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

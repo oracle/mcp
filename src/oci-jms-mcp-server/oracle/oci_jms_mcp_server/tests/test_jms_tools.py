@@ -1018,7 +1018,7 @@ class TestServerMain:
     @patch("oracle.oci_jms_mcp_server.server.mcp.run")
     def test_main_uses_stdio_transport(self, mock_mcp_run):
         server.main()
-        mock_mcp_run.assert_called_once_with()
+        mock_mcp_run.assert_called_once_with(transport="stdio")
 
 
 class TestGetJmsClient:

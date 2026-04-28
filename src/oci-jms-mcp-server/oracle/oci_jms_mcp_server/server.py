@@ -1062,14 +1062,8 @@ def java_runtime_compliance(
 
 
 def main():
-    """Run the JMS MCP server over stdio by default or HTTP when host and port are provided."""
-    host = os.getenv("ORACLE_MCP_HOST")
-    port = os.getenv("ORACLE_MCP_PORT")
-
-    if host and port:
-        mcp.run(transport="http", host=host, port=int(port))
-    else:
-        mcp.run()
+    """Run the JMS MCP server over stdio."""
+    mcp.run()
 
 
 if __name__ == "__main__":

@@ -1016,33 +1016,7 @@ class TestJmsTools:
 
 class TestServerMain:
     @patch("oracle.oci_jms_mcp_server.server.mcp.run")
-    @patch("os.getenv")
-    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run):
-        mock_env = {"ORACLE_MCP_HOST": "1.2.3.4", "ORACLE_MCP_PORT": "8888"}
-        mock_getenv.side_effect = lambda key: mock_env.get(key)
-        server.main()
-        mock_mcp_run.assert_called_once_with(transport="http", host="1.2.3.4", port=8888)
-
-    @patch("oracle.oci_jms_mcp_server.server.mcp.run")
-    @patch("os.getenv")
-    def test_main_without_host_and_port(self, mock_getenv, mock_mcp_run):
-        mock_getenv.return_value = None
-        server.main()
-        mock_mcp_run.assert_called_once_with()
-
-    @patch("oracle.oci_jms_mcp_server.server.mcp.run")
-    @patch("os.getenv")
-    def test_main_with_only_host(self, mock_getenv, mock_mcp_run):
-        mock_env = {"ORACLE_MCP_HOST": "1.2.3.4"}
-        mock_getenv.side_effect = lambda key: mock_env.get(key)
-        server.main()
-        mock_mcp_run.assert_called_once_with()
-
-    @patch("oracle.oci_jms_mcp_server.server.mcp.run")
-    @patch("os.getenv")
-    def test_main_with_only_port(self, mock_getenv, mock_mcp_run):
-        mock_env = {"ORACLE_MCP_PORT": "8888"}
-        mock_getenv.side_effect = lambda key: mock_env.get(key)
+    def test_main_uses_stdio_transport(self, mock_mcp_run):
         server.main()
         mock_mcp_run.assert_called_once_with()
 

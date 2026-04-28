@@ -4,6 +4,7 @@
 
 This server provides tools to interact with Oracle Cloud Infrastructure Java Management Service (JMS).
 It focuses on fleet inventory, discovery, and health troubleshooting workflows.
+It runs over stdio only.
 
 ## Authentication
 
@@ -73,24 +74,6 @@ Non-prod example:
 OCI_CONFIG_FILE=~/.oci/config OCI_CONFIG_PROFILE=DEFAULT JMS_TEST_ENVIRONMENT=DEV UV_CACHE_DIR=/tmp/uv-cache uv run oracle.oci-jms-mcp-server
 ```
 
-### HTTP streaming transport mode
-
-```sh
-OCI_CONFIG_FILE=~/.oci/config OCI_CONFIG_PROFILE=DEFAULT UV_CACHE_DIR=/tmp/uv-cache ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8888 uv run oracle.oci-jms-mcp-server
-```
-
-Non-prod example:
-
-```sh
-OCI_CONFIG_FILE=~/.oci/config OCI_CONFIG_PROFILE=DEFAULT JMS_TEST_ENVIRONMENT=TEST UV_CACHE_DIR=/tmp/uv-cache ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8888 uv run oracle.oci-jms-mcp-server
-```
-
-The HTTP endpoint is:
-
-```text
-http://127.0.0.1:8888/mcp
-```
-
 ## MCP Client Configuration
 
 ### Cline / stdio
@@ -113,21 +96,6 @@ http://127.0.0.1:8888/mcp
 }
 ```
 
-### Cline / HTTP
-
-Run the server manually, then configure:
-
-```json
-{
-  "mcpServers": {
-    "oracle-oci-jms-mcp-server": {
-      "type": "streamableHttp",
-      "url": "http://127.0.0.1:8888/mcp"
-    }
-  }
-}
-```
-
 ## Verification
 
 Verify the server through an MCP agent in this order:
@@ -140,7 +108,6 @@ Prefer verifying `get_fleet` only with an OCID returned by `list_fleets`. If `ge
 
 ## Troubleshooting
 
-- If startup falls back to stdio, make sure both `ORACLE_MCP_HOST` and `ORACLE_MCP_PORT` are set.
 - If `uv` fails with `Failed to initialize cache`, create a writable cache directory and run with `UV_CACHE_DIR=/tmp/uv-cache`.
 - If `get_fleet` returns `NotAuthorizedOrNotFound`, verify:
   - the active `OCI_CONFIG_PROFILE`

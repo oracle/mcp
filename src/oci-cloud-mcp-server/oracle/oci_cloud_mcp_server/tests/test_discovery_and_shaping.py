@@ -219,7 +219,7 @@ class TestDiscoveryTools:
                 )
             ).data
 
-        assert res["returned_operations"] == 1
+        assert len(res["operations"]) == 1
         assert res["operations"][0]["name"] == "create_thing"
         assert "params" not in res["operations"][0]
 
@@ -573,6 +573,7 @@ class TestInvokeShaping:
         }
         assert res["result_meta"]["fields"] == ["id", "display_name"]
         assert res["result_meta"]["unmatched_fields"] == ["displayName"]
+        assert res["result_meta"]["available_fields"] == ["display_name", "id", "lifecycle_state", "shape"]
 
     @pytest.mark.asyncio
     async def test_invoke_oci_api_summary_mode_respects_fields_projection(self, monkeypatch):
@@ -647,6 +648,41 @@ class TestInvokeShaping:
 
         assert "error" in res
         assert "None of the requested fields matched" in res["error"]
+        assert res["requested_fields"] == ["displayName"]
+        assert res["available_fields"] == ["display_name", "id"]
+
+    @pytest.mark.asyncio
+    async def test_invoke_oci_api_fields_projection_allows_empty_list_results(self, monkeypatch):
+        class FakeClient:
+            def __init__(self, config, signer):  # noqa: ARG002
+                pass
+
+            def list_things(self, compartment_id):  # noqa: ARG002
+                return _fake_tool_response([], "req-empty-fields")
+
+        _patch_fake_invoke_client(
+            monkeypatch,
+            FakeClient,
+            pager_response=_fake_tool_response([], "req-empty-fields"),
+        )
+
+        async with Client(mcp) as client:
+            res = (
+                await client.call_tool(
+                    "invoke_oci_api",
+                    {
+                        "client_fqn": "oci.fake.FakeClient",
+                        "operation": "list_things",
+                        "params": {"compartment_id": "ocid1.compartment.oc1..example"},
+                        "fields": ["id", "display_name"],
+                        "result_mode": "full",
+                    },
+                )
+            ).data
+
+        assert "error" not in res
+        assert res["data"] == []
+        assert res["result_meta"]["fields"] == ["id", "display_name"]
 
     @pytest.mark.asyncio
     async def test_invoke_oci_api_errors_include_repair_hints(self, monkeypatch):
@@ -683,7 +719,44 @@ class TestInvokeShaping:
         assert res["invalid_param"] == "compartment"
         assert "compartment_id" in res["parameter_suggestions"]
         assert res["expected_params"] == ["compartment_id"]
-        assert res["operation_help"]["signature"].startswith("get_thing(")
+        assert res["signature"].startswith("get_thing(")
+
+    @pytest.mark.asyncio
+    async def test_invoke_oci_api_rejects_non_public_operations(self, monkeypatch):
+        class FakeClient:
+            def __init__(self, config, signer):  # noqa: ARG002
+                pass
+
+            def list_things(self):
+                return _fake_tool_response([], "req-public")
+
+            def _private_helper(self):
+                return _fake_tool_response({"secret": True}, "req-private")
+
+        _patch_fake_invoke_client(monkeypatch, FakeClient)
+
+        async with Client(mcp) as client:
+            private_res = (
+                await client.call_tool(
+                    "invoke_oci_api",
+                    {
+                        "client_fqn": "oci.fake.FakeClient",
+                        "operation": "_private_helper",
+                    },
+                )
+            ).data
+            dunder_res = (
+                await client.call_tool(
+                    "invoke_oci_api",
+                    {
+                        "client_fqn": "oci.fake.FakeClient",
+                        "operation": "__repr__",
+                    },
+                )
+            ).data
+
+        assert "not public" in private_res["error"]
+        assert "not public" in dunder_res["error"]
 
     @pytest.mark.asyncio
     async def test_invoke_oci_api_coerces_top_level_docstring_types(self, monkeypatch):
@@ -733,6 +806,83 @@ class TestInvokeShaping:
 
 
 class TestModelTypeCoercion:
+    def test_construct_model_accepts_oci_model_fqn(self, monkeypatch):
+        class MyModel:
+            swagger_types = {"name": "str"}
+            attribute_map = {"name": "name"}
+
+            def __init__(self, **kwargs):
+                self._data = dict(kwargs)
+
+        MyModel.__module__ = "oci.fake.models"
+        fake_models = SimpleNamespace(MyModel=MyModel)
+
+        from oracle.oci_cloud_mcp_server.server import _construct_model_from_mapping
+        from oracle.oci_cloud_mcp_server.server import oci as _oci
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module",
+            lambda name: SimpleNamespace(MyModel=MyModel) if name == "oci.fake.models" else fake_models,
+        )
+        monkeypatch.setattr(_oci.util, "from_dict", lambda cls, data: cls(**data), raising=False)
+
+        inst = _construct_model_from_mapping(
+            {
+                "__model_fqn": "oci.fake.models.MyModel",
+                "name": 123,
+            },
+            fake_models,
+            [],
+        )
+
+        assert inst._data["name"] == "123"
+
+        alias_inst = _construct_model_from_mapping(
+            {
+                "__class_fqn": "oci.fake.models.MyModel",
+                "name": 456,
+            },
+            fake_models,
+            [],
+        )
+
+        assert alias_inst._data["name"] == "456"
+
+    def test_construct_model_rejects_non_oci_model_fqn(self):
+        from oracle.oci_cloud_mcp_server.server import _construct_model_from_mapping
+
+        with pytest.raises(ValueError, match="under the 'oci\\.\\*\\.models' namespace"):
+            _construct_model_from_mapping(
+                {
+                    "__model_fqn": "subprocess.Popen",
+                    "args": ["/bin/sh", "-c", "id"],
+                },
+                SimpleNamespace(),
+                [],
+            )
+
+    def test_construct_model_rejects_oci_fqn_that_is_not_model_class(self, monkeypatch):
+        class NotModel:
+            pass
+
+        NotModel.__module__ = "oci.fake.models"
+
+        from oracle.oci_cloud_mcp_server.server import _construct_model_from_mapping
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module",
+            lambda name: SimpleNamespace(NotModel=NotModel),
+        )
+
+        with pytest.raises(ValueError, match="OCI SDK model class"):
+            _construct_model_from_mapping(
+                {
+                    "__model_fqn": "oci.fake.models.NotModel",
+                },
+                SimpleNamespace(),
+                [],
+            )
+
     def test_construct_model_coerces_swagger_primitives(self, monkeypatch):
         class MyModel:
             swagger_types = {

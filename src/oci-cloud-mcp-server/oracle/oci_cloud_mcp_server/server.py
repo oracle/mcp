@@ -30,28 +30,16 @@ initAuditLogger(logger)
 
 _SERVER_INSTRUCTIONS = inspect.cleandoc(
     """
-    This server is a thin MCP wrapper over the OCI Python SDK without arbitrary Python execution.
+    Thin MCP wrapper over the OCI Python SDK.
     Think in SDK terms: client_fqn -> operation -> params.
-    Do not search first.
-    Default workflow:
-    1. Infer the SDK client class and method you would write in Python.
-    2. Use describe_oci_operation if the contract is unclear.
-    3. Use invoke_oci_api once the call shape is clear.
-    Prefer direct describe/invoke when you already know the method.
+    Prefer direct describe_oci_operation / invoke_oci_api when you already know the call shape.
     If the client family is obvious but the method is fuzzy, use list_client_operations first.
     Use find_oci_api only as a fallback with short resource/action phrases like
-    'list regions', 'launch instance', or 'vcn create'; not full user sentences.
-    invoke_oci_api maps directly from the Python SDK call shape:
-    `oci.core.ComputeClient.list_instances(compartment_id='...')` becomes
-    `client_fqn='oci.core.ComputeClient', operation='list_instances',
-    params={'compartment_id': '...'}`.
-    It defaults to compact results for list, summarize, and paginated operations.
-    Use result_mode="full" only when needed, and prefer fields=[...] when you only need
-    a few exact top-level fields.
-    list_oci_clients is for capability discovery/debugging.
-    The server automatically normalizes common scalar and model-field type mistakes
-    (for example "3" -> 3 or "true" -> True when the SDK metadata is clear),
-    so prefer one clean call over trial-and-error retries.
+    'list regions', 'launch instance', or 'vcn create', not full sentences.
+    `oci.core.ComputeClient.list_instances(compartment_id='...')` maps to
+    `client_fqn='oci.core.ComputeClient', operation='list_instances', params={'compartment_id': '...'}`.
+    invoke_oci_api defaults to compact results for list, summarize, and paginated operations.
+    Use result_mode="full" only when needed, and prefer fields=[...] for a few exact top-level fields.
     """
 )
 
@@ -102,8 +90,6 @@ _FALLBACK_CLIENT_PREFERENCES = {
 def _validate_client_fqn(client_fqn: str, *, require_client_class: bool = False) -> None:
     if not isinstance(client_fqn, str) or not client_fqn:
         raise ValueError("client_fqn must be a non-empty string")
-    if "." not in client_fqn:
-        raise ValueError("client_fqn must be a fully-qualified class name like 'oci.core.ComputeClient'")
     if not client_fqn.startswith("oci."):
         raise ValueError("client_fqn must reference an OCI SDK client under the 'oci.' namespace")
     if require_client_class and not client_fqn.rsplit(".", 1)[-1].endswith("Client"):
@@ -205,6 +191,34 @@ def _get_public_client_methods(cls: Any) -> List[Tuple[str, Callable[..., Any]]]
     ]
 
 
+def _public_client_operation_names(cls: Any) -> List[str]:
+    return [name for name, _ in _get_public_client_methods(cls)]
+
+
+def _resolve_public_client_method(target: Any, client_fqn: str, operation_name: str) -> Callable[..., Any]:
+    cls = target if inspect.isclass(target) else target.__class__
+    public_operation_names = _public_client_operation_names(cls)
+    if operation_name not in public_operation_names:
+        existing_attr = getattr(target, operation_name, None)
+        if not operation_name.startswith("_") and existing_attr is not None and not callable(existing_attr):
+            raise AttributeError(f"Attribute '{operation_name}' on client '{client_fqn}' is not callable")
+        suggestions = difflib.get_close_matches(
+            operation_name,
+            public_operation_names,
+            n=5,
+            cutoff=0.4,
+        )
+        raise AttributeError(
+            f"Operation '{operation_name}' not found or is not public on client '{client_fqn}'"
+            + (f". Similar operations: {', '.join(suggestions)}" if suggestions else "")
+        )
+
+    method = getattr(target, operation_name)
+    if not callable(method):
+        raise AttributeError(f"Attribute '{operation_name}' on client '{client_fqn}' is not callable")
+    return method
+
+
 def _signature_to_display(operation_name: str, signature) -> str:
     if signature is None:
         return f"{operation_name}(...)"
@@ -258,6 +272,29 @@ def _get_model_schema_maps(model_class: Any) -> Tuple[Optional[Dict[str, Any]], 
         swagger_types if isinstance(swagger_types, dict) else None,
         attribute_map if isinstance(attribute_map, dict) else None,
     )
+
+
+def _is_oci_sdk_model_class(model_class: Any) -> bool:
+    if not inspect.isclass(model_class):
+        return False
+    if not getattr(model_class, "__module__", "").startswith("oci."):
+        return False
+    swagger_types, attribute_map = _get_model_schema_maps(model_class)
+    return isinstance(swagger_types, dict) and isinstance(attribute_map, dict)
+
+
+def _resolve_model_class_from_fqn(fqn: str) -> Any:
+    if not isinstance(fqn, str) or "." not in fqn:
+        raise ValueError("__model_fqn must be a fully-qualified OCI SDK model class name")
+    mod_name, cls_name = fqn.rsplit(".", 1)
+    is_models_module = mod_name.endswith(".models") or ".models." in mod_name
+    if not mod_name.startswith("oci.") or mod_name.startswith("oci._") or not is_models_module:
+        raise ValueError("__model_fqn must reference an OCI SDK model class under the 'oci.*.models' namespace")
+    mod = import_module(mod_name)
+    cls = getattr(mod, cls_name)
+    if not _is_oci_sdk_model_class(cls):
+        raise ValueError("__model_fqn must resolve to an OCI SDK model class")
+    return cls
 
 
 def _resolve_polymorphic_model_class(model_class: Any, mapping: Dict[str, Any], models_module: Any) -> Any:
@@ -323,28 +360,21 @@ def _score_query_match(
     query_tokens: Optional[List[str]] = None,
     normalized_query: Optional[str] = None,
 ) -> int:
-    if not query:
-        return 1
-    haystack = " ".join(texts).lower()
     q = query.lower().strip()
     if not q:
         return 1
-    if query_tokens is None:
-        raw_tokens = [token for token in re.split(r"[\s._/-]+", q) if token]
-        tokens = [token for token in raw_tokens if token not in _SEARCH_QUERY_STOPWORDS] or raw_tokens
-    else:
-        tokens = query_tokens
+    tokens = query_tokens or _normalized_query_tokens(q)
+    normalized_query = normalized_query or " ".join(tokens) or q
+    haystack = " ".join(texts).lower()
     matched_tokens = [token for token in tokens if token in haystack]
     if q not in haystack and len(matched_tokens) < min(2, len(tokens)):
         return 0
-    score = 0
-    if q in haystack:
-        score += 100
-    score += 20 * len(matched_tokens)
-    if tokens and len(matched_tokens) == len(tokens):
-        score += 20
-    score += int(difflib.SequenceMatcher(None, normalized_query or " ".join(tokens) or q, haystack).ratio() * 10)
-    return score
+    return (
+        (100 if q in haystack else 0)
+        + (20 * len(matched_tokens))
+        + (20 if tokens and len(matched_tokens) == len(tokens) else 0)
+        + int(difflib.SequenceMatcher(None, normalized_query, haystack).ratio() * 10)
+    )
 
 
 def _inspect_method(method: Callable[..., Any]) -> Tuple[Optional[inspect.Signature], str]:
@@ -362,18 +392,6 @@ def _inspect_method(method: Callable[..., Any]) -> Tuple[Optional[inspect.Signat
 def _normalized_query_tokens(text: str) -> List[str]:
     raw_tokens = [token for token in re.split(r"[\s._/-]+", text.lower().strip()) if token]
     return [token for token in raw_tokens if token not in _SEARCH_QUERY_STOPWORDS] or raw_tokens
-
-
-def _normalized_operation_phrase(operation_name: str) -> str:
-    return " ".join(_normalized_query_tokens(operation_name))
-
-
-def _fallback_client_preference_bonus(query_tokens: List[str], client_fqn: str) -> int:
-    for token in query_tokens:
-        preferred_clients = _FALLBACK_CLIENT_PREFERENCES.get(token)
-        if preferred_clients and client_fqn in preferred_clients:
-            return 12
-    return 0
 
 
 def _score_discovery_match(
@@ -404,10 +422,11 @@ def _score_discovery_match(
     if score <= 0:
         return 0
 
-    if normalized_query and normalized_query == _normalized_operation_phrase(operation_name):
+    if normalized_query and normalized_query == " ".join(_normalized_query_tokens(operation_name)):
         score += 40
 
-    score += _fallback_client_preference_bonus(query_tokens, client_fqn)
+    if any(client_fqn in _FALLBACK_CLIENT_PREFERENCES.get(token, ()) for token in query_tokens):
+        score += 12
     return score
 
 
@@ -713,19 +732,16 @@ def _construct_model_from_mapping(
                 parent_prefix_hint = cand
     clean = _coerce_mapping_values(clean, models_module, parent_prefix_hint)
     if isinstance(fqn, str):
+        cls = _resolve_model_class_from_fqn(fqn)
+        cls = _resolve_polymorphic_model_class(cls, clean, models_module)
+        coerced_clean = _coerce_mapping_for_model_class(clean, models_module, cls)
         try:
-            mod_name, cls_name = fqn.rsplit(".", 1)
-            mod = import_module(mod_name)
-            cls = getattr(mod, cls_name)
-            if inspect.isclass(cls):
-                cls = _resolve_polymorphic_model_class(cls, clean, models_module)
-                coerced_clean = _coerce_mapping_for_model_class(clean, models_module, cls)
-                try:
-                    return oci.util.from_dict(cls, coerced_clean)
-                except Exception:
-                    return cls(**coerced_clean)
+            return oci.util.from_dict(cls, coerced_clean)
         except Exception:
-            pass
+            try:
+                return cls(**coerced_clean)
+            except Exception:
+                return mapping
     if models_module and isinstance(class_name, str):
         cls = _resolve_model_class(models_module, class_name)
         if inspect.isclass(cls):
@@ -804,21 +820,7 @@ def _describe_operation(
     client_fqn: str, operation_name: str, *, max_model_fields: int = _DEFAULT_MODEL_FIELDS
 ) -> Dict[str, Any]:
     cls = _get_client_class(client_fqn)
-    if not hasattr(cls, operation_name):
-        suggestions = difflib.get_close_matches(
-            operation_name,
-            [name for name, _ in _get_public_client_methods(cls)],
-            n=5,
-            cutoff=0.4,
-        )
-        raise AttributeError(
-            f"Operation '{operation_name}' not found on client '{client_fqn}'."
-            + (f" Similar operations: {', '.join(suggestions)}" if suggestions else "")
-        )
-
-    method = getattr(cls, operation_name)
-    if not callable(method):
-        raise AttributeError(f"Attribute '{operation_name}' on client '{client_fqn}' is not callable")
+    method = _resolve_public_client_method(cls, client_fqn, operation_name)
 
     signature, doc = _inspect_method(method)
     summary = doc.strip().partition("\n")[0] if doc else ""
@@ -952,47 +954,47 @@ def _serialize_oci_data(data: Any) -> Any:
     return ensure_jsonable(converted)
 
 
+class FieldProjectionError(ValueError):
+    def __init__(self, message: str, requested_fields: List[str], available_fields: List[str]):
+        super().__init__(message)
+        self.requested_fields = requested_fields
+        self.available_fields = available_fields
+
+
 def _project_top_level_fields(
     serialized_data: Any, fields: Optional[List[str]]
-) -> Tuple[Any, List[str], List[str]]:
+) -> Tuple[Any, List[str], List[str], List[str]]:
     if fields is None:
-        return serialized_data, [], []
+        return serialized_data, [], [], []
 
     if isinstance(serialized_data, dict):
-        available_fields = sorted(serialized_data.keys())
-        matched_fields = [field for field in fields if field in serialized_data]
-        if not matched_fields:
-            raise ValueError(
-                "None of the requested fields matched top-level response fields. "
-                f"Requested: {fields}. Available: {available_fields[:20]}"
-            )
-        projected_data = {field: serialized_data[field] for field in matched_fields}
-        unmatched_fields = [field for field in fields if field not in serialized_data]
-        return projected_data, matched_fields, unmatched_fields
+        available_fields = sorted(serialized_data)
+        is_list = False
+    elif isinstance(serialized_data, list):
+        if not serialized_data:
+            return [], fields, [], []
+        available_fields = sorted({key for item in serialized_data if isinstance(item, dict) for key in item})
+        is_list = True
+    else:
+        raise ValueError("fields can only be used with object responses or lists of objects")
 
-    if isinstance(serialized_data, list):
-        available_fields = sorted(
-            {
-                key
-                for item in serialized_data
-                if isinstance(item, dict)
-                for key in item.keys()
-            }
+    matched_fields = [field for field in fields if field in available_fields]
+    if not matched_fields:
+        raise FieldProjectionError(
+            "None of the requested fields matched top-level response fields. "
+            f"Requested: {fields}. Available: {available_fields[:20]}",
+            requested_fields=fields,
+            available_fields=available_fields,
         )
-        matched_fields = [field for field in fields if field in available_fields]
-        if not matched_fields:
-            raise ValueError(
-                "None of the requested fields matched top-level response fields. "
-                f"Requested: {fields}. Available: {available_fields[:20]}"
-            )
+    unmatched_fields = [field for field in fields if field not in available_fields]
+    if is_list:
         projected_data = [
             {field: item[field] for field in matched_fields if field in item} if isinstance(item, dict) else item
             for item in serialized_data
         ]
-        unmatched_fields = [field for field in fields if field not in available_fields]
-        return projected_data, matched_fields, unmatched_fields
-
-    raise ValueError("fields can only be used with object responses or lists of objects")
+    else:
+        projected_data = {field: serialized_data[field] for field in matched_fields}
+    return projected_data, matched_fields, unmatched_fields, available_fields
 
 
 def _align_params_to_signature(
@@ -1133,16 +1135,18 @@ def _build_param_error_hints(
     method: Callable[..., Any], operation_name: str, params: Dict[str, Any], error_text: str
 ) -> Dict[str, Any]:
     signature, _ = _inspect_method(method)
-    expected_param_names = []
-    if signature is not None:
-        expected_param_names = [
+    expected_param_names = (
+        [
             param.name
             for param in signature.parameters.values()
             if param.name != "self" and param.kind != inspect.Parameter.VAR_KEYWORD
         ]
+        if signature is not None
+        else []
+    )
 
     accepted_kwargs = sorted(_extract_expected_kwargs_from_source(method) or [])
-    hints: Dict[str, Any] = {}
+    hints: Dict[str, Any] = {"signature": _signature_to_display(operation_name, signature)}
     bad_kw_match = re.search(r"unexpected keyword argument '([^']+)'", error_text)
     if bad_kw_match:
         bad_kw = bad_kw_match.group(1)
@@ -1291,41 +1295,17 @@ def invoke_oci_api(
     try:
         if max_results is not None and max_results < 1:
             raise ValueError("max_results must be >= 1")
-        if fields is None:
-            normalized_fields = None
-        else:
-            if not isinstance(fields, list):
-                raise ValueError("fields must be a list of non-empty strings")
-            raw_fields = fields
-            normalized_fields = []
-            seen = set()
-            for field in raw_fields:
-                if not isinstance(field, str) or not field.strip():
-                    raise ValueError("fields must contain only non-empty strings")
-                cleaned = field.strip()
-                if cleaned not in seen:
-                    normalized_fields.append(cleaned)
-                    seen.add(cleaned)
-
+        if fields is not None:
+            if not isinstance(fields, list) or not all(isinstance(field, str) and field.strip() for field in fields):
+                raise ValueError("fields must contain only non-empty strings")
+            normalized_fields = list(dict.fromkeys(field.strip() for field in fields))
             if not normalized_fields:
                 raise ValueError("fields must contain at least one non-empty string")
+        else:
+            normalized_fields = None
         _validate_client_fqn(client_fqn, require_client_class=True)
         client = _import_client(client_fqn)
-        if not hasattr(client, operation):
-            suggestions = difflib.get_close_matches(
-                operation,
-                [name for name, _ in _get_public_client_methods(client.__class__)],
-                n=5,
-                cutoff=0.4,
-            )
-            raise AttributeError(
-                f"Operation '{operation}' not found on client '{client_fqn}'"
-                + (f". Similar operations: {', '.join(suggestions)}" if suggestions else "")
-            )
-
-        method = getattr(client, operation)
-        if not callable(method):
-            raise AttributeError(f"Attribute '{operation}' on client '{client_fqn}' is not callable")
+        method = _resolve_public_client_method(client, client_fqn, operation)
 
         input_params = params or {}
         uses_pagination = _supports_pagination(method, operation)
@@ -1346,7 +1326,9 @@ def invoke_oci_api(
         )
 
         serialized_data = _serialize_oci_data(data)
-        projected_data, matched_fields, unmatched_fields = _project_top_level_fields(serialized_data, normalized_fields)
+        projected_data, matched_fields, unmatched_fields, available_fields = _project_top_level_fields(
+            serialized_data, normalized_fields
+        )
 
         effective_result_mode = result_mode
         if result_mode == "auto":
@@ -1363,6 +1345,7 @@ def invoke_oci_api(
             result_meta["fields"] = matched_fields
             if unmatched_fields:
                 result_meta["unmatched_fields"] = unmatched_fields
+                result_meta["available_fields"] = available_fields
 
         if effective_result_mode == "summary":
             rendered_data = _summarize_serialized_data(projected_data, max_results or _DEFAULT_SUMMARY_ITEMS)
@@ -1400,38 +1383,27 @@ def invoke_oci_api(
             "params": params or {},
             "error": str(exc),
         }
-        needs_param_hints = any(
-            clue in str(exc)
-            for clue in (
-                "unexpected keyword argument",
-                "missing 1 required positional argument",
-                "missing required positional argument",
-                "required positional arguments",
-            )
-        )
+        if isinstance(exc, FieldProjectionError):
+            error_result["requested_fields"] = exc.requested_fields
+            error_result["available_fields"] = exc.available_fields
+        error_text = str(exc)
+        needs_param_hints = any(clue in error_text for clue in ("unexpected keyword argument", "required positional argument"))
         try:
             cls = _get_client_class(client_fqn)
-            if not hasattr(cls, operation):
+            try:
+                method = _resolve_public_client_method(cls, client_fqn, operation)
+            except AttributeError:
                 suggestions = difflib.get_close_matches(
                     operation,
-                    [name for name, _ in _get_public_client_methods(cls)],
+                    _public_client_operation_names(cls),
                     n=5,
                     cutoff=0.4,
                 )
                 if suggestions:
                     error_result["suggested_operations"] = suggestions
-            elif needs_param_hints:
-                method = getattr(cls, operation)
-                if callable(method):
-                    operation_help = _describe_operation(client_fqn, operation)
-                    error_result["operation_help"] = {
-                        "signature": operation_help["signature"],
-                        "required_params": [param["name"] for param in operation_help["required_params"]],
-                        "accepted_kwargs": operation_help["accepted_kwargs"],
-                        "parameter_aliases": operation_help["parameter_aliases"],
-                        "request_models": operation_help["request_models"],
-                    }
-                    error_result.update(_build_param_error_hints(method, operation, params or {}, str(exc)))
+            else:
+                if needs_param_hints and callable(method):
+                    error_result.update(_build_param_error_hints(method, operation, params or {}, error_text))
         except Exception:
             pass
         return error_result
@@ -1459,10 +1431,8 @@ def list_client_operations(
     cls = _get_client_class(client_fqn)
     query_tokens = _normalized_query_tokens(query or "")
     normalized_query = " ".join(query_tokens)
-    matched_ops: List[Tuple[int, Dict[str, Any]]] = []
-    total_operations = 0
+    matched_ops: List[Tuple[int, str, str, Optional[inspect.Signature]]] = []
     for name, member in _get_public_client_methods(cls):
-        total_operations += 1
         signature, doc = _inspect_method(member)
         summary = doc.strip().partition("\n")[0] if doc else ""
         score = _score_discovery_match(
@@ -1475,31 +1445,21 @@ def list_client_operations(
         )
         if query and score <= 0:
             continue
+        matched_ops.append((score, name, summary, signature))
 
-        entry: Dict[str, Any] = {
+    matched_ops.sort(key=(lambda item: (-item[0], item[1])) if query else (lambda item: item[1]))
+    selected_ops = matched_ops[:limit] if limit is not None else matched_ops
+    operations = [
+        {
             "name": name,
             "summary": summary,
+            **({"params": _signature_to_display(name, signature)} if include_params else {}),
         }
-        if include_params:
-            entry["params"] = _signature_to_display(name, signature)
-        matched_ops.append((score, entry))
-
-    if query:
-        matched_ops.sort(key=lambda item: (-item[0], item[1]["name"]))
-    else:
-        matched_ops.sort(key=lambda item: item[1]["name"])
-
-    selected_ops = matched_ops[:limit] if limit is not None else matched_ops
-    operations = [entry for _, entry in selected_ops]
+        for _, name, summary, signature in selected_ops
+    ]
 
     logger.info(f"Found {len(operations)} operations on {client_fqn}")
-    return {
-        "client": client_fqn,
-        "query": query,
-        "total_operations": total_operations,
-        "returned_operations": len(operations),
-        "operations": operations,
-    }
+    return {"client": client_fqn, "operations": operations}
 
 
 @mcp.tool(
@@ -1510,15 +1470,14 @@ def list_client_operations(
     )
 )
 def list_oci_clients() -> dict:
-    clients = []
-    for client_fqn, cls in _discover_client_classes():
-        clients.append(
-            {
-                "client_fqn": client_fqn,
-                "module": client_fqn.rsplit(".", 1)[0],
-                "class": getattr(cls, "__name__", client_fqn.rsplit(".", 1)[-1]),
-            }
-        )
+    clients = [
+        {
+            "client_fqn": client_fqn,
+            "module": client_fqn.rsplit(".", 1)[0],
+            "class": getattr(cls, "__name__", client_fqn.rsplit(".", 1)[-1]),
+        }
+        for client_fqn, cls in _discover_client_classes()
+    ]
     return {"count": len(clients), "clients": clients}
 
 

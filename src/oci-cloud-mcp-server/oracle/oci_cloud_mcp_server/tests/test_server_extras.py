@@ -575,27 +575,6 @@ class TestCallWithPaginationFallback:
         assert has_more is False
 
 
-class TestConstructModelFQN:
-    def test_construct_model_from_fqn(self):
-        import sys as _sys
-        from types import ModuleType
-
-        mod = ModuleType("mymod")
-
-        class Banana:
-            def __init__(self, **kwargs):
-                self.kwargs = dict(kwargs)
-
-        setattr(mod, "Banana", Banana)
-        _sys.modules["mymod"] = mod
-
-        from oracle.oci_cloud_mcp_server.server import _construct_model_from_mapping
-
-        inst = _construct_model_from_mapping({"__model_fqn": "mymod.Banana", "a": 1}, None, [])
-        assert isinstance(inst, Banana)
-        assert inst.kwargs["a"] == 1
-
-
 class TestListAndCandidates:
     def test_list_items_model_hint_and_passthrough(self):
         class MyModel:
@@ -998,31 +977,6 @@ class TestFromDictSuccess:
         assert isinstance(inst, VcnDetails)
         assert inst._data == {"a": 2}
 
-    def test_construct_model_from_fqn_from_dict_success(self, monkeypatch):
-        # ensure success path for __model_fqn using from_dict
-        import sys as _sys
-        from types import ModuleType
-
-        mod = ModuleType("mymod2")
-
-        class Pear:
-            def __init__(self, **kwargs):
-                self.kw = dict(kwargs)
-
-        setattr(mod, "Pear", Pear)
-        _sys.modules["mymod2"] = mod
-
-        from oracle.oci_cloud_mcp_server.server import oci as _oci
-
-        monkeypatch.setattr(_oci.util, "from_dict", lambda cls, data: cls(**data), raising=False)
-
-        from oracle.oci_cloud_mcp_server.server import _construct_model_from_mapping
-
-        inst = _construct_model_from_mapping({"__model_fqn": "mymod2.Pear", "a": 3}, None, [])
-        assert isinstance(inst, Pear)
-        assert inst.kw == {"a": 3}
-
-
 class TestPaginationListPath:
     def test_list_operation_uses_paginator_direct(self, monkeypatch):
         # exercise list_* branch in _call_with_pagination_if_applicable directly
@@ -1118,27 +1072,6 @@ class TestCoerceParamsCornerCases:
         out = _coerce_params_to_oci_models("oci.fake.Fake", "op", {"source_configuration": {"a": 1}})
         assert isinstance(out["source_configuration"], SourceConfiguration)
         assert out["source_configuration"].kw["a"] == 1
-
-
-class TestConstructModelClassFqn:
-    def test_construct_model_from_class_fqn_key(self, monkeypatch):
-        import sys as _sys
-        from types import ModuleType
-
-        mod = ModuleType("mymod3")
-
-        class Grape:
-            def __init__(self, **kwargs):
-                self.kw = dict(kwargs)
-
-        setattr(mod, "Grape", Grape)
-        _sys.modules["mymod3"] = mod
-
-        from oracle.oci_cloud_mcp_server.server import _construct_model_from_mapping
-
-        inst = _construct_model_from_mapping({"__class_fqn": "mymod3.Grape", "v": 7}, None, [])
-        assert isinstance(inst, Grape)
-        assert inst.kw == {"v": 7}
 
 
 class TestListClientOperationsNoDoc:

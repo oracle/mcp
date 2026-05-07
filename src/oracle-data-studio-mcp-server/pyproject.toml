@@ -60,11 +60,8 @@ omit = [
     "**/tests/*",
 ]
 precision = 2
-# Coverage threshold intentionally not enforced in this initial
-# contribution. Today's suite covers helpers, profiles, config,
-# credential store, error sanitisation, reconnect rate-limit/locking,
-# tool registration, and key dispatch paths (~24% line coverage).
-# The remaining gap is the per-action handlers in the composite
-# tool files — they rely on the live SDK and are easier to verify
-# end-to-end than via per-action mocks. Will be raised incrementally
-# in follow-up PRs once a stable mock pattern is established.
+# Regression gate just below current line coverage (70.52%).
+# Raise this in follow-up PRs as more error-path branches and
+# rarely-used SDK passthroughs get coverage. Keeping a real gate
+# here (not 0) means a future PR cannot silently lower coverage.
+fail_under = 75

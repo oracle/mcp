@@ -220,6 +220,20 @@ Pick one with `--profile`:
 | `analyst` | Read + query / execute — no create / delete / manage | ~23 |
 | `admin` (default) | All tools | 60 |
 
+## About the `oracle-data-studio` dependency
+
+This server depends on the
+[`oracle-data-studio`](https://pypi.org/project/oracle-data-studio/)
+PyPI package — the official Python SDK for Oracle Data Studio,
+maintained by the same Oracle team contributing this server. It
+provides the underlying REST clients for Essbase, ADP (Autonomous
+Database Data Platform), and Data Transforms; this MCP server is
+a thin task-oriented layer on top of those clients.
+
+Pinned to `>=1.0.26` in `pyproject.toml` — version 1.0.26 added the
+Oracle 23ai annotation guidance and reconnect-safety improvements
+that this server relies on.
+
 ## Local development
 
 ```sh

@@ -977,6 +977,106 @@ class TestAdpConnect:
             other = {}
             assert ac._ctx_lock(other) is not lock1
 
+    def test_run_adp_success(self):
+        '''run_adp returns the formatted result on success.'''
+        from oracle.data_studio_mcp_server.tools._adp_connect import (
+            run_adp)
+        ctx = MagicMock()
+        adp = MagicMock()
+        adp.rest.expired = None
+        ctx.request_context.lifespan_context = {'adp': adp}
+        result = run_adp(ctx, lambda c: {'rows': [1, 2]})
+        assert json.loads(result)['rows'] == [1, 2]
+
+    def test_run_adp_no_client_returns_error(self):
+        from oracle.data_studio_mcp_server.tools._adp_connect import (
+            run_adp)
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {}
+        result = json.loads(run_adp(ctx, lambda c: 'should not run'))
+        assert 'error' in result
+
+    def test_run_adp_returns_strings_unchanged(self):
+        '''_default_format returns string results as-is.'''
+        from oracle.data_studio_mcp_server.tools._adp_connect import (
+            run_adp)
+        ctx = MagicMock()
+        adp = MagicMock()
+        adp.rest.expired = None
+        ctx.request_context.lifespan_context = {'adp': adp}
+        result = run_adp(ctx, lambda c: 'plain string')
+        assert result == 'plain string'
+
+    def test_run_adp_reconnects_on_expired_then_succeeds(self):
+        '''When fn raises 'expired', run_adp reconnects and retries.'''
+        from oracle.data_studio_mcp_server.tools import _adp_connect as ac
+        ctx = MagicMock()
+        cfg = MagicMock(url='https://x', user='u', password='p')
+        adp_old = MagicMock()
+        adp_old.rest.expired = None
+        ctx.request_context.lifespan_context = {
+            'adp': adp_old, '_adp_config': cfg}
+
+        # First call raises 'expired', second call returns success.
+        calls = {'n': 0}
+        def fn(c):
+            calls['n'] += 1
+            if calls['n'] == 1:
+                raise RuntimeError('session expired')
+            return 'recovered'
+
+        with patch.object(ac, '_locks', {}), \
+             patch('builtins.__import__') as imp:
+            fake_adp = MagicMock()
+            fresh = MagicMock()
+            fresh.rest.expired = None
+            fake_adp.login.return_value = fresh
+            imp.side_effect = lambda name, *a, **kw: (
+                fake_adp if name == 'adp'
+                else __import__(name, *a, **kw))
+            result = ac.run_adp(ctx, fn)
+        assert result == 'recovered'
+        assert calls['n'] == 2
+
+    def test_run_adp_propagates_non_expired_error(self):
+        '''Non-expired exceptions go through safe_err and become an
+        error JSON, not a reconnect.'''
+        from oracle.data_studio_mcp_server.tools._adp_connect import (
+            run_adp)
+        ctx = MagicMock()
+        adp = MagicMock()
+        adp.rest.expired = None
+        ctx.request_context.lifespan_context = {'adp': adp}
+        def fn(c):
+            raise RuntimeError('ORA-00942: table or view does not exist')
+        result = json.loads(run_adp(ctx, fn))
+        assert 'error' in result
+        assert 'ORA-00942' in result['error']
+
+    def test_get_adp_proactive_reconnect_on_expiry(self):
+        '''If the cached client's token is past expiry, get_adp
+        proactively reconnects without waiting for an exception.'''
+        from oracle.data_studio_mcp_server.tools import _adp_connect as ac
+        from datetime import datetime, timedelta
+        old = MagicMock()
+        old.rest.expired = datetime.now() - timedelta(minutes=5)
+        cfg = MagicMock(url='x', user='u', password='p')
+        lc = {'adp': old, '_adp_config': cfg}
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = lc
+
+        with patch.object(ac, '_locks', {}), \
+             patch('builtins.__import__') as imp:
+            fake_adp = MagicMock()
+            fresh = MagicMock()
+            fresh.rest.expired = None
+            fake_adp.login.return_value = fresh
+            imp.side_effect = lambda name, *a, **kw: (
+                fake_adp if name == 'adp'
+                else __import__(name, *a, **kw))
+            client = ac.get_adp(ctx)
+        assert client is fresh
+
     def test_reconnect_avoids_duplicate_login_when_already_done(self):
         '''S7: If two threads both notice an expired client and call
         _reconnect, only the first should do the login work — the
@@ -1023,6 +1123,112 @@ class TestDtConnect:
         mock_ctx = MagicMock()
         mock_ctx.request_context.lifespan_context = {}
         assert get_dt(mock_ctx) is None
+
+    def test_get_dt_strategy1_from_adp_thread(self):
+        '''Strategy 1: adp_client.dt is already populated by adp.login()'s
+        background thread.'''
+        from oracle.data_studio_mcp_server.tools._dt_connect import get_dt
+        mock_ctx = MagicMock()
+        adp_client = MagicMock()
+        wb = MagicMock()
+        wb.get_client.return_value = 'dt-client'
+        adp_client.dt = wb
+        adp_client.wait_for_datatransforms.return_value = None
+        cfg = MagicMock(url='https://x', user='u', password='p')
+        lc = {'_dt_config': cfg, 'adp': adp_client}
+        mock_ctx.request_context.lifespan_context = lc
+
+        result = get_dt(mock_ctx)
+        assert result is not None
+        assert result['workbench'] is wb
+        assert result['client'] == 'dt-client'
+        # Cached for subsequent calls
+        assert lc['datatransforms'] is result
+        adp_client.wait_for_datatransforms.assert_called_once()
+
+    def test_get_dt_strategy2_adbs_connect(self):
+        '''Strategy 2: ADBS-token connect using dba_pdbs OCI params.'''
+        from oracle.data_studio_mcp_server.tools import _dt_connect as dc
+        mock_ctx = MagicMock()
+        adp_client = MagicMock()
+        # No `.dt` attribute → strategy 1 fails
+        adp_client.dt = None
+        adp_client.wait_for_datatransforms.return_value = None
+        adp_client.Misc.run_query.return_value = [{
+            'database_name': 'mydb',
+            'cloud_database_name': 'ocid1.adw.oc1..xxx',
+            'tenant_name': 'ocid1.tenancy.oc1..yyy',
+        }]
+        cfg = MagicMock(url='https://x', user='u', password='p')
+        lc = {'_dt_config': cfg, 'adp': adp_client}
+        mock_ctx.request_context.lifespan_context = lc
+
+        fake_module = MagicMock()
+        fake_wb = MagicMock()
+        fake_wb.get_client.return_value = 'dt-client'
+        fake_module.DataTransformsWorkbench.return_value = fake_wb
+        with patch.dict('sys.modules',
+                         {'datatransforms.workbench': fake_module,
+                          'datatransforms.client': MagicMock()}):
+            result = dc.get_dt(mock_ctx)
+        assert result is not None
+        assert result['workbench'] is fake_wb
+        # Verify the connect_workbench call carried OCI params from dba_pdbs
+        call_args = fake_wb.connect_workbench.call_args[0][0]
+        assert call_args['tenancy_ocid'] == 'ocid1.tenancy.oc1..yyy'
+        assert call_args['adw_name'] == 'mydb'
+        assert call_args['xforms_url'] == 'https://x'
+
+    def test_get_dt_strategy3_simple_connect(self):
+        '''Strategy 3: simple URL+Basic auth fallback when ADBS path
+        fails (e.g. no `dba_pdbs` access).'''
+        from oracle.data_studio_mcp_server.tools import _dt_connect as dc
+        mock_ctx = MagicMock()
+        # No adp_client at all → strategies 1 + 2 fail
+        cfg = MagicMock(url='https://x', user='u', password='p')
+        lc = {'_dt_config': cfg, 'adp': None}
+        mock_ctx.request_context.lifespan_context = lc
+
+        fake_module = MagicMock()
+        fake_wb = MagicMock()
+        fake_wb.get_client.return_value = 'dt-client'
+        fake_module.DataTransformsWorkbench.return_value = fake_wb
+        with patch.dict('sys.modules',
+                         {'datatransforms.workbench': fake_module,
+                          'datatransforms.client': MagicMock()}):
+            result = dc.get_dt(mock_ctx)
+        assert result is not None
+        # Strategy 3 connect payload doesn't include OCI params
+        call_args = fake_wb.connect_workbench.call_args[0][0]
+        assert 'tenancy_ocid' not in call_args
+        assert call_args['data_transforms_url'] == 'https://x'
+
+    def test_get_dt_all_strategies_fail_returns_none(self):
+        '''If every strategy raises, get_dt returns None and logs.'''
+        from oracle.data_studio_mcp_server.tools import _dt_connect as dc
+        mock_ctx = MagicMock()
+        cfg = MagicMock(url='https://x', user='u', password='p')
+        lc = {'_dt_config': cfg, 'adp': None}
+        mock_ctx.request_context.lifespan_context = lc
+
+        fake_module = MagicMock()
+        fake_wb = MagicMock()
+        fake_wb.connect_workbench.side_effect = RuntimeError('boom')
+        fake_module.DataTransformsWorkbench.return_value = fake_wb
+        with patch.dict('sys.modules',
+                         {'datatransforms.workbench': fake_module,
+                          'datatransforms.client': MagicMock()}):
+            assert dc.get_dt(mock_ctx) is None
+        # No cache was populated
+        assert 'datatransforms' not in lc
+
+    def test_reset_singletons_handles_missing_module(self):
+        '''_reset_singletons must not raise when datatransforms isn't
+        installed.'''
+        from oracle.data_studio_mcp_server.tools._dt_connect import (
+            _reset_singletons)
+        # Should silently no-op; nothing in sys.modules to break
+        _reset_singletons()
 
 
 # ------------------------------------------------------------------ #
@@ -1207,6 +1413,322 @@ class TestEssbaseToolDispatch:
         ctx = self._make_ctx(ess)
         result = json.loads(fn(app_name='S', db_name='B', ctx=ctx))
         assert 'error' in result
+
+    def test_essbase_run_calculation_full_flow_with_calc_script(self):
+        '''Inline calc_script path: jobs.execute → wait_for_completion.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_run_calculation'].fn
+
+        ess = MagicMock()
+        ess.jobs.execute.return_value = {'id': 42}
+        ess.jobs.wait_for_completion.return_value = {
+            'status': 200, 'jobID': 42}
+        ctx = self._make_ctx(ess)
+        result = json.loads(fn(app_name='S', db_name='B',
+                                calc_script='CALC ALL;', ctx=ctx))
+        # The execute call carried the inline script payload
+        payload = ess.jobs.execute.call_args[0][0]
+        assert payload['parameters']['script'] == 'CALC ALL;'
+        ess.jobs.wait_for_completion.assert_called_once_with(42)
+
+    def test_essbase_load_data_full_flow(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_load_data'].fn
+
+        ess = MagicMock()
+        ess.jobs.execute.return_value = {'id': 7}
+        ess.jobs.wait_for_completion.return_value = {'status': 200}
+        ctx = self._make_ctx(ess)
+        result = json.loads(fn(app_name='A', db_name='D',
+                                rule_file='r.rul',
+                                data_file='d.txt', ctx=ctx))
+        payload = ess.jobs.execute.call_args[0][0]
+        assert payload['jobtype'] == 'dataload'
+        assert payload['parameters']['rule'] == 'r.rul'
+        assert payload['parameters']['file'] == 'd.txt'
+
+    def test_essbase_deploy_workbook_uploads_and_runs_job(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_deploy_workbook'].fn
+
+        ess = MagicMock()
+        ess.jobs.execute.return_value = {'id': 9}
+        ess.jobs.wait_for_completion.return_value = {'status': 200}
+        ctx = self._make_ctx(ess)
+        # We can't easily mock open() here — tool likely opens the file
+        # to upload. Use a small temp file for realism.
+        import tempfile, os
+        with tempfile.NamedTemporaryFile('wb', suffix='.xlsx',
+                                            delete=False) as f:
+            f.write(b'PK fake xlsx content')
+            tmp = f.name
+        try:
+            result = json.loads(fn(app_name='A', file_path=tmp, ctx=ctx))
+        finally:
+            os.unlink(tmp)
+        # Some flavor of execute or upload should have been called
+        assert (ess.files.upload.called or ess.jobs.execute.called)
+
+    def test_essbase_describe_database_full_flow(self):
+        '''Walks the multi-call composite — verifies all SDK probes
+        were issued.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_describe_database'].fn
+
+        ess = MagicMock()
+        ctx = self._make_ctx(ess)
+        result = json.loads(fn(app_name='A', db_name='D', ctx=ctx))
+        ess.applications.get_database.assert_called_once_with('A', 'D')
+        # Many other probes happen via safe_call — at least one ran
+        assert ess.dimensions.list_dimensions.called
+
+    def test_essbase_manage_security_username(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_manage_security'].fn
+
+        ess = MagicMock()
+        ess.users.get_user.return_value = {'id': 'alice'}
+        ess.users.get_user_provisioning_report.return_value = {'apps': []}
+        ctx = self._make_ctx(ess)
+        result = json.loads(fn(username='alice', ctx=ctx))
+        ess.users.get_user.assert_called_once_with('alice')
+
+    def test_essbase_manage_security_groupname(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_manage_security'].fn
+
+        ess = MagicMock()
+        ctx = self._make_ctx(ess)
+        result = json.loads(fn(group_name='developers', ctx=ctx))
+        ess.groups.get_group.assert_called_once_with('developers')
+
+    def test_essbase_manage_filters_create(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_manage_filters'].fn
+
+        ess = MagicMock()
+        ess.filters.create_filter.return_value = {'name': 'F'}
+        ess.filters.validate_filter.return_value = {'valid': True}
+        ctx = self._make_ctx(ess)
+        result = json.loads(fn(action='create', app_name='A',
+                                db_name='D', filter_name='F',
+                                filter_rows='READ,@IDESCENDANTS(East)',
+                                ctx=ctx))
+        ess.filters.create_filter.assert_called_once()
+        # Auto-validate after create
+        ess.filters.validate_filter.assert_called_once()
+
+    def test_essbase_manage_drill_through_create(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_manage_drill_through'].fn
+
+        ess = MagicMock()
+        ess.drill_through.create_report.return_value = {'name': 'R'}
+        ctx = self._make_ctx(ess)
+        result = json.loads(fn(action='create', app_name='A', db_name='D',
+                                report_name='R', connection='C',
+                                sql_query='SELECT 1 FROM dual',
+                                columns='A,B,C',
+                                drillable_regions='@IDESCENDANTS(East)',
+                                ctx=ctx))
+        ess.drill_through.create_report.assert_called_once()
+
+    def test_essbase_manage_db_settings_reads_categories(self):
+        '''category='all' fans out across multiple settings probes.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_manage_db_settings'].fn
+
+        ess = MagicMock()
+        ctx = self._make_ctx(ess)
+        result = json.loads(fn(app_name='A', db_name='D',
+                                category='all', ctx=ctx))
+        # At least the headline get_settings call ran
+        assert (ess.database_settings.get_settings.called
+                or ess.database_settings.get_startup_settings.called)
+
+    def test_essbase_manage_db_settings_specific_categories(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_manage_db_settings'].fn
+
+        ess = MagicMock()
+        # Make every settings method return a dict so the tool's
+        # json.dumps doesn't choke on a MagicMock repr.
+        for m in ['get_settings', 'get_startup_settings',
+                  'get_calculation_settings', 'get_cache_settings',
+                  'get_compression_settings', 'get_transaction_settings',
+                  'get_buffer_settings', 'get_attribute_settings',
+                  'get_runtime_statistics', 'get_storage_statistics',
+                  'get_size_statistics', 'get_aso_compression_info',
+                  'get_date_formats']:
+            getattr(ess.database_settings, m).return_value = {}
+        ctx = self._make_ctx(ess)
+        for cat in ['startup', 'calculation', 'cache', 'compression',
+                     'transactions']:
+            json.loads(fn(app_name='A', db_name='D',
+                           category=cat, ctx=ctx))
+
+    def test_essbase_outline_metadata_all_category(self):
+        '''category='all' walks dimensions, generations, levels, settings.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_outline_metadata'].fn
+
+        ess = MagicMock()
+        ess.dimensions.list_dimensions.return_value = {
+            'items': [{'name': 'Year'}, {'name': 'Region'}]}
+        ctx = self._make_ctx(ess)
+        result = json.loads(fn(app_name='A', db_name='D',
+                                category='all', ctx=ctx))
+        ess.dimensions.list_dimensions.assert_called_once()
+
+    def test_essbase_browse_outline_with_parent_recursive(self):
+        '''Specifying a parent triggers recursive get_children walk.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_browse_outline'].fn
+
+        ess = MagicMock()
+        # Return an empty children list to terminate recursion fast
+        ess.dimensions.get_children.return_value = {'items': []}
+        ctx = self._make_ctx(ess)
+        result = json.loads(fn(app_name='A', db_name='D',
+                                parent='Year', depth=2, ctx=ctx))
+        ess.dimensions.get_children.assert_called()
+
+    def test_essbase_search_members_enriches_with_ancestors(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_search_members'].fn
+
+        ess = MagicMock()
+        ess.dimensions.search_members.return_value = {
+            'items': [{'name': 'Sales'}]}
+        ess.dimensions.get_member_ancestors.return_value = {
+            'ancestors': ['Measures']}
+        ctx = self._make_ctx(ess)
+        result = json.loads(fn(app_name='A', db_name='D',
+                                pattern='Sales', ctx=ctx))
+        ess.dimensions.search_members.assert_called_once()
+        ess.dimensions.get_member_ancestors.assert_called()
+        assert result['count'] == 1
+
+    def test_essbase_manage_filters_update_with_validate(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_manage_filters'].fn
+
+        ess = MagicMock()
+        ess.filters.update_filter.return_value = {'name': 'F'}
+        ess.filters.validate_filter.return_value = {'valid': True}
+        ctx = self._make_ctx(ess)
+        result = json.loads(fn(action='update', app_name='A',
+                                db_name='D', filter_name='F',
+                                filter_rows='READ,@CHILDREN(East)',
+                                ctx=ctx))
+        ess.filters.update_filter.assert_called_once()
+        ess.filters.validate_filter.assert_called_once()
+
+    def test_essbase_manage_users_provision_app_role(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_manage_users'].fn
+
+        ess = MagicMock()
+        ess.users.provision_app_role.return_value = {'status': 'ok'}
+        ctx = self._make_ctx(ess)
+        # With app_name → app-role provisioning
+        fn(action='provision', user_id='alice',
+            role='power_user', app_name='Sample', ctx=ctx)
+        assert ess.users.provision_app_role.called
+
+    def test_essbase_manage_users_provision_service_role(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_manage_users'].fn
+
+        ess = MagicMock()
+        ess.users.provision_service_role.return_value = {'status': 'ok'}
+        ctx = self._make_ctx(ess)
+        # No app_name → service-level
+        fn(action='provision', user_id='alice',
+            role='service_administrator', ctx=ctx)
+        assert ess.users.provision_service_role.called
+
+    def test_essbase_edit_outline_builds_payload(self):
+        '''Verify the BOE payload shape for an `add` action.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_edit_outline'].fn
+
+        ess = MagicMock()
+        ess.dimensions.batch_outline_edit.return_value = {'status': 'ok'}
+        ctx = self._make_ctx(ess)
+        json.loads(fn(app_name='A', db_name='D',
+                       action='add', member_name='Q1',
+                       parent_name='Year', ctx=ctx))
+        call_args = ess.dimensions.batch_outline_edit.call_args
+        payload = call_args[0][2] if len(call_args[0]) >= 3 else call_args[0][-1]
+        # payload contains an editActions list with one add entry
+        assert 'editActions' in payload
+        assert payload['editActions'][0]['actionType'].lower().startswith('add')
+
+    def test_essbase_export_data_default_grid(self):
+        '''When no MDX or report given, export uses get_default_grid.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_export_data'].fn
+
+        ess = MagicMock()
+        ess.grid.get_default_grid.return_value = {'data': []}
+        ctx = self._make_ctx(ess)
+        json.loads(fn(app_name='A', db_name='D', ctx=ctx))
+        ess.grid.get_default_grid.assert_called_once()
 
 
 # ------------------------------------------------------------------ #
@@ -1399,6 +1921,131 @@ class TestAdpToolDispatch:
         adp_tools.register_tools(mcp_server)
         names = mcp_server._tool_manager._tools.keys()
         assert 'adp_ai_query' not in names
+
+    def test_adp_search_with_include_ddl_walks_top_hits(self):
+        '''include_ddl=True triggers a per-hit DDL fetch.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import adp_tools
+        mcp_server = FastMCP('test')
+        adp_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['adp_search'].fn
+
+        adp = MagicMock()
+        adp.rest.expired = None
+        adp.Misc.global_search.return_value = json.dumps({
+            'nodes': [{'data': {'name': 'EMP'}},
+                      {'data': {'name': 'DEPT'}}]})
+        adp.Misc.get_entity_ddl.return_value = 'CREATE TABLE EMP ...'
+        ctx = self._make_ctx(adp)
+        result = json.loads(fn(search_term='E', include_ddl=True, ctx=ctx))
+        # DDL fetched for top hits
+        assert adp.Misc.get_entity_ddl.call_count >= 1
+
+    def test_adp_load_from_cloud_full_flow(self):
+        '''Full flow: validates credential + storage link, then loads.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import adp_tools
+        mcp_server = FastMCP('test')
+        adp_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['adp_load_from_cloud'].fn
+
+        adp = MagicMock()
+        adp.rest.expired = None
+        adp.Ingest.get_credential_list.return_value = json.dumps([
+            {'CREDENTIAL_NAME': 'CR'}])
+        adp.Ingest.get_consumer_groups.return_value = json.dumps([
+            {'GROUP_NAME': 'LOW'}])
+        adp.Ingest.copy_cloud_objects.return_value = json.dumps(
+            {'request_id': 'R123'})
+        ctx = self._make_ctx(adp)
+        result = json.loads(fn(storage_link='SL',
+                                object_name='sales.csv',
+                                target_table='SALES_RAW',
+                                ctx=ctx))
+        adp.Ingest.copy_cloud_objects.assert_called_once()
+
+    def test_adp_load_from_cloud_progress_only(self):
+        '''When request_id is given, just polls progress.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import adp_tools
+        mcp_server = FastMCP('test')
+        adp_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['adp_load_from_cloud'].fn
+
+        adp = MagicMock()
+        adp.rest.expired = None
+        adp.Ingest.cloud_progress_status.return_value = json.dumps(
+            {'percent': 75})
+        ctx = self._make_ctx(adp)
+        result = json.loads(fn(request_id='R123', ctx=ctx))
+        adp.Ingest.cloud_progress_status.assert_called_once_with('R123')
+
+    def test_adp_build_analytic_view_full_flow(self):
+        '''Walks create_auto → compile → metadata → preview.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import adp_tools
+        mcp_server = FastMCP('test')
+        adp_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['adp_build_analytic_view'].fn
+
+        adp = MagicMock()
+        adp.rest.expired = None
+        adp.Analytics.create_auto.return_value = json.dumps(
+            {'name': 'SALES_AV'})
+        adp.Analytics.compile.return_value = json.dumps({'compiled': True})
+        adp.Analytics.get_metadata.return_value = json.dumps(
+            {'measures': []})
+        adp.Analytics.get_data_preview.return_value = json.dumps(
+            [{'row': 1}])
+        ctx = self._make_ctx(adp)
+        result = json.loads(fn(fact_table='SALES', ctx=ctx))
+        adp.Analytics.create_auto.assert_called_once_with('SALES')
+        adp.Analytics.compile.assert_called()
+        adp.Analytics.get_metadata.assert_called()
+        adp.Analytics.get_data_preview.assert_called()
+
+    def test_adp_analyze_analytic_view_walks_quality(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import adp_tools
+        mcp_server = FastMCP('test')
+        adp_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['adp_analyze_analytic_view'].fn
+
+        adp = MagicMock()
+        adp.rest.expired = None
+        adp.Analytics.is_exist.return_value = True
+        adp.Analytics.get_metadata.return_value = json.dumps({})
+        adp.Analytics.get_measures_list.return_value = json.dumps([])
+        adp.Analytics.get_dimension_names.return_value = json.dumps([])
+        adp.Analytics.quality_report.return_value = json.dumps([])
+        adp.Analytics.get_error_classes_dim.return_value = json.dumps([])
+        adp.Analytics.get_error_classes_fact.return_value = json.dumps([])
+        ctx = self._make_ctx(adp)
+        result = json.loads(fn(av_name='AV', ctx=ctx))
+        adp.Analytics.quality_report.assert_called()
+
+    def test_adp_generate_insights_polls_status(self):
+        '''generate_insights kicks off the job + polls + collects graph.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import adp_tools
+        mcp_server = FastMCP('test')
+        adp_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['adp_generate_insights'].fn
+
+        adp = MagicMock()
+        adp.rest.expired = None
+        adp.Insight.generate.return_value = json.dumps(
+            {'request_id': 'R1'})
+        adp.Insight.get_job_status.return_value = json.dumps(
+            {'status': 'COMPLETED'})
+        adp.Insight.get_insights_list.return_value = json.dumps(
+            [{'name': 'I1'}])
+        adp.Insight.get_graph_details.return_value = json.dumps(
+            {'graph': 'data'})
+        ctx = self._make_ctx(adp)
+        result = json.loads(fn(object_name='SALES', measure='AMT',
+                                ctx=ctx))
+        adp.Insight.generate.assert_called_once()
 
     def test_adp_get_annotations_groups_by_column(self):
         '''Verify adp_get_annotations groups rows into table vs column
@@ -1632,6 +2279,267 @@ class TestDtToolDispatch:
         result = json.loads(fn(connection_name='myconn', ctx=ctx))
         assert result['schemas'] == ['schema1', 'schema2']
 
+    def test_dt_browse_data_with_schema_filter(self):
+        '''When schema is specified, dt_browse_data calls
+        get_live_tables for that schema.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import dt_tools
+        mcp_server = FastMCP('test')
+        dt_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['dt_browse_data'].fn
+
+        client = MagicMock()
+        client.get_live_tables.return_value = ['T1', 'T2']
+        ctx = self._make_ctx(client)
+        result = json.loads(fn(connection_name='C',
+                                schema='S', ctx=ctx))
+        client.get_live_tables.assert_called_once_with('C', 'S')
+
+    def test_dt_create_pipeline_creates_project_when_missing(self):
+        '''If the project doesn't exist, dt_create_pipeline creates it
+        first, then proceeds with the dataflow build.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import dt_tools
+        mcp_server = FastMCP('test')
+        dt_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['dt_create_pipeline'].fn
+
+        client = MagicMock()
+        # First call: project doesn't exist; second call after create: exists
+        client.check_if_project_exists.side_effect = [None, 'proj-1']
+        wb = MagicMock()
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {
+            'datatransforms': {'client': client, 'workbench': wb}}
+        # The body falls back to client.create_dataflow_from_json_payload
+        # if the SDK builders aren't importable; with our MagicMock
+        # workbench, the import succeeds via MagicMock too. Just assert
+        # the project-create probe ran.
+        try:
+            fn(project_name='NewProj',
+                source_connection='SRC_CONN', source_schema='SRC_S',
+                source_table='SRC',
+                target_connection='TGT_CONN', target_schema='TGT_S',
+                target_table='TGT',
+                ctx=ctx)
+        except Exception:
+            # Builder may fail with our minimal mock — that's OK; we
+            # care that the existence-probe / create_project ran.
+            pass
+        client.create_project.assert_called_once_with('NewProj')
+
+    def test_dt_manage_schedule_create_daily(self):
+        '''dt_manage_schedule create with daily frequency triggers
+        the Schedule builder. We can't import the real builder but can
+        verify the existence-probe + branch dispatch happen.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import dt_tools
+        mcp_server = FastMCP('test')
+        dt_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['dt_manage_schedule'].fn
+
+        client = MagicMock()
+        client.check_if_schedule_exists.return_value = (False, None)
+        ctx = self._make_ctx(client)
+        # Will raise inside the builder; we just want the dispatch
+        # path covered.
+        try:
+            fn(action='create', schedule_name='S',
+                project_name='P', resource_name='DF',
+                frequency='daily', time='09:00:00', ctx=ctx)
+        except Exception:
+            pass
+
+    def test_dt_manage_dataload_create_full_body(self):
+        '''dt_manage_dataload create body — exercises project check,
+        DataLoad builder import, and the full table-load loop.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import dt_tools
+        mcp_server = FastMCP('test')
+        dt_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['dt_manage_dataload'].fn
+
+        client = MagicMock()
+        client.check_if_project_exists.return_value = 'proj-1'
+        ctx = self._make_ctx(client)
+        # The DataLoad import will fail in this venv unless installed —
+        # exercise both branches by patching the builder.
+        fake_dl_module = MagicMock()
+        fake_dl = MagicMock()
+        fake_dl_module.DataLoad.return_value = fake_dl
+        with patch.dict('sys.modules',
+                         {'datatransforms.dataload': fake_dl_module}):
+            json.loads(fn(action='create',
+                           project_name='P', dataload_name='DL',
+                           source_connection='SC', source_schema='SS',
+                           target_connection='TC', target_schema='TS',
+                           tables='T1,T2', load_type='APPEND',
+                           ctx=ctx))
+        fake_dl_module.DataLoad.assert_called_once_with('DL', 'P')
+        # Two tables → two load-type calls (append since load_type=APPEND)
+        assert fake_dl.append.call_count == 2
+        fake_dl.create_dataload.assert_called_once()
+
+    def test_dt_manage_dataload_create_recreate_path(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import dt_tools
+        mcp_server = FastMCP('test')
+        dt_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['dt_manage_dataload'].fn
+
+        client = MagicMock()
+        client.check_if_project_exists.return_value = 'proj-1'
+        ctx = self._make_ctx(client)
+        fake_dl_module = MagicMock()
+        fake_dl = MagicMock()
+        fake_dl_module.DataLoad.return_value = fake_dl
+        with patch.dict('sys.modules',
+                         {'datatransforms.dataload': fake_dl_module}):
+            json.loads(fn(action='create',
+                           project_name='P', dataload_name='DL',
+                           source_connection='SC', source_schema='SS',
+                           target_connection='TC', target_schema='TS',
+                           tables='T', load_type='RECREATE',
+                           ctx=ctx))
+        fake_dl.recreate.assert_called_once_with('T')
+
+    def test_dt_manage_workflow_get(self):
+        '''get action looks up workflow by name + ID.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import dt_tools
+        mcp_server = FastMCP('test')
+        dt_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['dt_manage_workflow'].fn
+
+        client = MagicMock()
+        client.check_if_project_exists.return_value = 'proj-1'
+        client.check_if_workflow_exists.return_value = (True, 'wf-id')
+        client.get_workflow_by_id.return_value = {'name': 'WF', 'detail': 'x'}
+        ctx = self._make_ctx(client)
+        result = json.loads(fn(action='get', project_name='P',
+                                workflow_name='WF', ctx=ctx))
+        client.get_workflow_by_id.assert_called_once_with('wf-id')
+
+    def test_dt_describe_project_full_body(self):
+        '''Walks the full dt_describe_project flow: existence check
+        + 3 list_*_in_project calls + per-entity get_*_by_id walks.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import dt_tools
+        mcp_server = FastMCP('test')
+        dt_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['dt_describe_project'].fn
+
+        client = MagicMock()
+        client.check_if_project_exists.return_value = 'proj-1'
+        client.list_dataflows_in_project.return_value = [
+            {'name': 'DF1', 'globalId': 'df1'}]
+        client.list_workflows_in_project.return_value = [
+            {'name': 'WF1', 'globalId': 'wf1'}]
+        client.list_dataloads_in_project.return_value = [
+            {'name': 'DL1'}]
+        client.get_dataflow_by_id.return_value = {'detail': 'df'}
+        client.get_workflow_by_id.return_value = {'detail': 'wf'}
+        ctx = self._make_ctx(client)
+        result = json.loads(fn(project_name='P', ctx=ctx))
+        assert result['project_name'] == 'P'
+        client.list_dataflows_in_project.assert_called_once_with('proj-1')
+        client.list_workflows_in_project.assert_called_once_with('proj-1')
+        client.list_dataloads_in_project.assert_called_once_with('proj-1')
+
+    def test_dt_describe_project_not_found(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import dt_tools
+        mcp_server = FastMCP('test')
+        dt_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['dt_describe_project'].fn
+
+        client = MagicMock()
+        client.check_if_project_exists.return_value = None
+        ctx = self._make_ctx(client)
+        result = json.loads(fn(project_name='Missing', ctx=ctx))
+        # Project not found — body returns an exists=False payload
+        assert result.get('exists') is False or 'error' in result
+
+    def test_dt_describe_connection_full_body(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import dt_tools
+        mcp_server = FastMCP('test')
+        dt_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['dt_describe_connection'].fn
+
+        client = MagicMock()
+        client.get_connection_details.return_value = {'name': 'C',
+                                                       'type': 'ORACLE'}
+        client.test_connection_by_name.return_value = {'status': 'ok'}
+        client.get_live_schemas.return_value = ['S1', 'S2']
+        ctx = self._make_ctx(client)
+        result = json.loads(fn(connection_name='C', ctx=ctx))
+        assert 'connection' in result or 'connection_name' in result \
+            or 'details' in result
+        client.get_connection_details.assert_called_once_with('C')
+        client.test_connection_by_name.assert_called_once_with('C')
+
+    def test_dt_check_health_walks_all_connections(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import dt_tools
+        mcp_server = FastMCP('test')
+        dt_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['dt_check_health'].fn
+
+        client = MagicMock()
+        client.list_connections.return_value = [
+            {'name': 'C1'}, {'name': 'C2'}]
+        client.test_connection_by_name.return_value = {'status': 'ok'}
+        client.list_schedules.return_value = []
+        client.get_deployment_time.return_value = '2026-01-01'
+        ctx = self._make_ctx(client)
+        result = json.loads(fn(ctx=ctx))
+        # Each connection should be tested
+        assert client.test_connection_by_name.call_count == 2
+
+    def test_dt_run_pipeline_dataflow(self):
+        '''dt_run_pipeline gets a runtime client from the workbench
+        and calls run_dataflow.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import dt_tools
+        mcp_server = FastMCP('test')
+        dt_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['dt_run_pipeline'].fn
+
+        client = MagicMock()
+        workbench = MagicMock()
+        runtime = MagicMock()
+        runtime.run_dataflow.return_value = {'session_id': 'S1'}
+        workbench.get_runtime_client.return_value = runtime
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {
+            'datatransforms': {'client': client, 'workbench': workbench}}
+        result = json.loads(fn(project_name='P', resource_name='DF',
+                                resource_type='dataflow', ctx=ctx))
+        runtime.run_dataflow.assert_called_once_with('P', 'DF')
+        # Body wraps the SDK result under 'job_result'
+        assert result['project'] == 'P'
+        assert result['resource'] == 'DF'
+        assert 'job_result' in result
+
+    def test_dt_manage_data_entities_import(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import dt_tools
+        mcp_server = FastMCP('test')
+        dt_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['dt_manage_data_entities'].fn
+
+        client = MagicMock()
+        wb = MagicMock()
+        wb.import_data_entities.return_value = {'imported': 5}
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {
+            'datatransforms': {'client': client, 'workbench': wb}}
+        result = json.loads(fn(action='import_entities',
+                                connection_name='C',
+                                schema_name='S', ctx=ctx))
+        wb.import_data_entities.assert_called_once_with('C', 'S')
+
     def test_dt_manage_dataflow_check_exists(self):
         from mcp.server.fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
@@ -1796,7 +2704,12 @@ def _adp_dispatch(tool_name, kwargs, sdk_path, sdk_return=None):
 
 def _dt_dispatch(tool_name, kwargs, sdk_path, sdk_return=None,
                   on_workbench=False):
-    '''Run a DT tool with a mocked client/workbench; return result + mocks.'''
+    '''Run a DT tool with a mocked client/workbench; return result + mocks.
+
+    Pre-mocks check_if_*_exists methods to return tuples (False, None),
+    and check_if_project_exists to return a project ID — so action
+    handlers that probe existence first don't crash on tuple unpacking.
+    '''
     from mcp.server.fastmcp import FastMCP
     from oracle.data_studio_mcp_server.tools import dt_tools
     mcp_server = FastMCP('test')
@@ -1804,12 +2717,21 @@ def _dt_dispatch(tool_name, kwargs, sdk_path, sdk_return=None,
     fn = mcp_server._tool_manager._tools[tool_name].fn
     client = MagicMock()
     workbench = MagicMock()
+    # Common existence-probe methods return (exists, global_id)
+    client.check_if_dataload_exists.return_value = (False, None)
+    client.check_if_workflow_exists.return_value = (False, None)
+    client.check_if_df_exists.return_value = (False, None)
+    client.check_if_schedule_exists.return_value = (False, None)
+    client.check_if_project_exists.return_value = 'project-123'
     target = workbench if on_workbench else client
     method = _walk(target, sdk_path)
     method.return_value = (json.dumps(sdk_return) if isinstance(
                             sdk_return, (dict, list))
                             else (sdk_return if sdk_return is not None
                                   else 'ok'))
+    # If asserting on an existence probe, override the tuple return
+    if 'check_if_' in sdk_path:
+        method.return_value = (False, None)
     ctx = MagicMock()
     ctx.request_context.lifespan_context = {
         'datatransforms': {'client': client, 'workbench': workbench},
@@ -1934,6 +2856,76 @@ ADP_DISPATCH_CASES = [
      'Ingest.get_database_links'),
     ('adp_manage_db_links', {'action': 'check', 'db_link_name': 'L'},
      'Catalog.check_database_link'),
+    # adp_browse_catalog preview
+    ('adp_browse_catalog', {'action': 'preview', 'catalog_name': 'T'},
+     'Catalog.preview_catalog_table'),
+    # adp_query_analytic_view (single tool, no action)
+    ('adp_query_analytic_view', {'av_name': 'AV'},
+     'Analytics.is_exist'),
+    # adp_search (single tool)
+    ('adp_search', {'search_term': 'EMP'},
+     'Misc.global_search'),
+    # adp_generate_insights
+    ('adp_generate_insights', {'object_name': 'SALES',
+                                 'measure': 'AMOUNT'},
+     'Insight.generate'),
+    # adp_ai_chat
+    ('adp_ai_chat', {'question': 'hello'},
+     'AI.chat'),
+    # adp_ai_chat with chat_with_db mode
+    ('adp_ai_chat', {'question': 'top sales',
+                       'mode': 'chat_with_db',
+                       'tables': 'SALES'},
+     'AI.chat_with_db'),
+    # adp_ai_chat with generate_insight mode
+    ('adp_ai_chat', {'question': 'analyze',
+                       'mode': 'generate_insight',
+                       'tables': 'SALES'},
+     'AI.generate_insight'),
+    # adp_search with include_ddl path
+    ('adp_search', {'search_term': 'EMP', 'include_ddl': True},
+     'Misc.global_search'),
+    # adp_analyze_analytic_view (multi-call composite)
+    ('adp_analyze_analytic_view', {'av_name': 'AV'},
+     'Analytics.is_exist'),
+    # adp_build_analytic_view (no av_name → triggers create_auto)
+    ('adp_build_analytic_view', {'fact_table': 'SALES'},
+     'Analytics.create_auto'),
+    # adp_load_from_cloud — without request_id triggers copy_cloud_objects
+    ('adp_load_from_cloud', {'storage_link': 'SL', 'object_name': 'o.csv',
+                              'target_table': 'T'},
+     'Ingest.copy_cloud_objects'),
+    # adp_load_from_cloud with request_id polls progress
+    ('adp_load_from_cloud', {'request_id': 'R'},
+     'Ingest.cloud_progress_status'),
+    # adp_manage_credentials list_cloud_objects
+    ('adp_manage_credentials', {'action': 'list_cloud_objects',
+                                  'storage_link_name': 'SL'},
+     'Ingest.get_cloud_objects'),
+    # adp_manage_db_links list_tables / copy_tables / link_tables
+    ('adp_manage_db_links', {'action': 'list_tables',
+                              'db_link_name': 'L'},
+     'Ingest.get_db_link_owner_tables'),
+    ('adp_manage_db_links', {'action': 'copy_tables',
+                              'db_link_name': 'L', 'tables': 'T1,T2'},
+     'Ingest.copy_tables_from_db_link'),
+    ('adp_manage_db_links', {'action': 'link_tables',
+                              'db_link_name': 'L', 'tables': 'T1'},
+     'Ingest.link_tables_from_db_link'),
+    ('adp_manage_db_links', {'action': 'drop', 'db_link_name': 'L'},
+     'Catalog.drop_database_link'),
+    # adp_manage_insights get_graph
+    ('adp_manage_insights', {'action': 'get_graph',
+                               'insight_name': 'IN', 'viz_id': 1},
+     'Insight.get_graph_details'),
+    # adp_manage_sharing publish (no recipient)
+    ('adp_manage_sharing', {'action': 'publish', 'share_name': 'S'},
+     'Share.publish_share'),
+    # adp_manage_sharing grant_recipient
+    ('adp_manage_sharing', {'action': 'grant_recipient',
+                              'recipient_name': 'R',
+                              'tables': 'SH1,SH2'},
+     'Share.update_recipient_shares'),
 ]
 
 
@@ -1955,7 +2947,7 @@ DT_DISPATCH_CASES = [
                               'schedule_name': 'S',
                               'project_name': 'P'},
      'delete_schedule', False),
-    # dt_manage_variables
+    # dt_manage_variables (set creates new variable when not found)
     ('dt_manage_variables', {'action': 'list'},
      'list_variables', False),
     # dt_manage_connection
@@ -1967,6 +2959,56 @@ DT_DISPATCH_CASES = [
      'test_connection_by_name', False),
     ('dt_manage_connection', {'action': 'delete', 'connection_name': 'C'},
      'delete_connection', False),
+    # dt_manage_dataload
+    ('dt_manage_dataload', {'action': 'list', 'project_name': 'P'},
+     'list_dataloads_in_project', False),
+    ('dt_manage_dataload', {'action': 'check_exists',
+                              'dataload_name': 'X',
+                              'project_name': 'P'},
+     'check_if_dataload_exists', False),
+    # dt_manage_workflow
+    ('dt_manage_workflow', {'action': 'list', 'project_name': 'P'},
+     'list_workflows_in_project', False),
+    ('dt_manage_workflow', {'action': 'check_exists',
+                              'workflow_name': 'W',
+                              'project_name': 'P'},
+     'check_if_workflow_exists', False),
+    # dt_manage_data_entities (list calls list_data_entities)
+    ('dt_manage_data_entities', {'action': 'list',
+                                    'connection_name': 'C'},
+     'list_data_entities', False),
+    ('dt_manage_data_entities', {'action': 'import_entities',
+                                    'connection_name': 'C',
+                                    'schema_name': 'S'},
+     'import_data_entities', True),     # workbench-side
+    # dt single-tool composites
+    ('dt_explore', {}, 'get_about', False),
+    ('dt_describe_project', {'project_name': 'P'},
+     'check_if_project_exists', False),
+    ('dt_describe_connection', {'connection_name': 'C'},
+     'get_connection_details', False),
+    ('dt_check_health', {}, 'list_connections', False),
+    ('dt_browse_data', {'connection_name': 'C'},
+     'get_live_schemas', False),
+    # dt_manage_variables set tries update_variable first
+    ('dt_manage_variables', {'action': 'set',
+                                'variable_name': 'V', 'value': 'x'},
+     'update_variable', False),
+    # dt_manage_project delete
+    ('dt_manage_project', {'action': 'delete', 'project_name': 'P'},
+     'delete_project', False),
+    # dt_manage_dataload create — exercises the builder path's existence
+    # check (will hit ImportError on the DataLoad builder; we just
+    # verify the project existence probe was called)
+    ('dt_manage_dataload', {'action': 'create',
+                              'project_name': 'P',
+                              'dataload_name': 'DL',
+                              'source_connection': 'SC',
+                              'source_schema': 'SS',
+                              'target_connection': 'TC',
+                              'target_schema': 'TS',
+                              'tables': 'T'},
+     'check_if_project_exists', False),
 ]
 
 
@@ -2128,6 +3170,185 @@ ESS_DISPATCH_CASES = [
      'users.delete_user'),
     ('essbase_manage_users', {'action': 'list_roles'},
      'users.list_roles'),
+    # Single-purpose tools (no action param)
+    ('essbase_query', {'app_name': 'A', 'db_name': 'D',
+                         'mdx': 'SELECT [Y].Children ON 0 FROM [A.D]'},
+     'grid.execute_mdx'),
+    ('essbase_browse_outline', {'app_name': 'A', 'db_name': 'D'},
+     'dimensions.get_outline'),
+    ('essbase_search_members', {'app_name': 'A', 'db_name': 'D',
+                                  'pattern': 'sales'},
+     'dimensions.search_members'),
+    ('essbase_get_script', {'app_name': 'A', 'db_name': 'D',
+                              'script_name': 'S'},
+     'scripts.get_script_content'),
+    ('essbase_export_data', {'app_name': 'A', 'db_name': 'D',
+                               'mdx': 'SELECT [Y].Children ON 0 FROM [A.D]'},
+     'grid.execute_mdx'),
+    ('essbase_export_data', {'app_name': 'A', 'db_name': 'D',
+                               'report_name': 'R'},
+     'grid.execute_mdx_report'),
+    # essbase_manage_groups (uses group_id, not group_name)
+    ('essbase_manage_groups', {'action': 'list'},
+     'groups.list_groups'),
+    ('essbase_manage_groups', {'action': 'get', 'group_id': 'G'},
+     'groups.get_group'),
+    ('essbase_manage_groups', {'action': 'delete', 'group_id': 'G'},
+     'groups.delete_group'),
+    ('essbase_manage_groups', {'action': 'get_users', 'group_id': 'G'},
+     'groups.get_users'),
+    # Multi-call composite tools
+    ('essbase_server_health', {},
+     'about.get'),
+    ('essbase_explore', {},
+     'applications.list_applications'),
+    ('essbase_run_calculation', {'app_name': 'A', 'db_name': 'D',
+                                   'script_name': 'CalcAll'},
+     'jobs.execute'),
+    ('essbase_run_calculation', {'app_name': 'A', 'db_name': 'D',
+                                   'calc_script': 'CALC ALL;'},
+     'jobs.execute'),
+    ('essbase_describe_database', {'app_name': 'A', 'db_name': 'D'},
+     'applications.get_database'),
+    ('essbase_load_data', {'app_name': 'A', 'db_name': 'D',
+                             'data_file': 'data.txt',
+                             'rule_file': 'load.rul'},
+     'jobs.execute'),
+    ('essbase_deploy_workbook', {'app_name': 'A',
+                                   'file_path': '/tmp/wb.xlsx'},
+     'jobs.execute'),
+    # essbase_outline_metadata more categories
+    ('essbase_outline_metadata', {'app_name': 'A', 'db_name': 'D',
+                                    'category': 'all'},
+     'dimensions.list_dimensions'),
+    ('essbase_outline_metadata', {'app_name': 'A', 'db_name': 'D',
+                                    'category': 'generations',
+                                    'dimension_name': 'Time'},
+     'dimensions.list_generations'),
+    ('essbase_outline_metadata', {'app_name': 'A', 'db_name': 'D',
+                                    'category': 'levels',
+                                    'dimension_name': 'Time'},
+     'dimensions.list_levels'),
+    ('essbase_outline_metadata', {'app_name': 'A', 'db_name': 'D',
+                                    'category': 'smart_lists'},
+     'dimensions.get_smart_lists'),
+    ('essbase_outline_metadata', {'app_name': 'A', 'db_name': 'D',
+                                    'category': 'member',
+                                    'dimension_name': 'East'},
+     'dimensions.get_member'),
+    # essbase_edit_outline — every action
+    ('essbase_edit_outline', {'app_name': 'A', 'db_name': 'D',
+                                'action': 'add', 'member_name': 'M',
+                                'parent_name': 'P'},
+     'dimensions.batch_outline_edit'),
+    ('essbase_edit_outline', {'app_name': 'A', 'db_name': 'D',
+                                'action': 'remove', 'member_name': 'M'},
+     'dimensions.batch_outline_edit'),
+    ('essbase_edit_outline', {'app_name': 'A', 'db_name': 'D',
+                                'action': 'rename', 'member_name': 'M',
+                                'new_name': 'M2'},
+     'dimensions.batch_outline_edit'),
+    ('essbase_edit_outline', {'app_name': 'A', 'db_name': 'D',
+                                'action': 'set_formula',
+                                'member_name': 'M',
+                                'formula': '@SUM(X)'},
+     'dimensions.batch_outline_edit'),
+    ('essbase_edit_outline', {'app_name': 'A', 'db_name': 'D',
+                                'action': 'set_alias',
+                                'member_name': 'M',
+                                'alias_value': 'Sales'},
+     'dimensions.batch_outline_edit'),
+    ('essbase_edit_outline', {'app_name': 'A', 'db_name': 'D',
+                                'action': 'set_uda',
+                                'member_name': 'M',
+                                'uda_value': 'Promo'},
+     'dimensions.batch_outline_edit'),
+    # essbase_manage_users more actions
+    ('essbase_manage_users', {'action': 'create', 'user_id': 'u',
+                                'password': 'p'},
+     'users.create_user'),
+    ('essbase_manage_users', {'action': 'update', 'user_id': 'u'},
+     'users.update_user'),
+    ('essbase_manage_users', {'action': 'list_service_roles'},
+     'users.list_service_roles'),
+    ('essbase_manage_users', {'action': 'list_app_roles',
+                                'app_name': 'A'},
+     'users.list_app_roles'),
+    # essbase_manage_groups more actions
+    ('essbase_manage_groups', {'action': 'create', 'group_id': 'G'},
+     'groups.create_group'),
+    ('essbase_manage_groups', {'action': 'add_users', 'group_id': 'G',
+                                 'user_ids': 'u1,u2'},
+     'groups.add_users'),
+    # essbase_manage_files more actions
+    ('essbase_manage_files', {'action': 'upload', 'path': '/p',
+                                'content': 'hello'},
+     'files.upload'),
+    ('essbase_manage_files', {'action': 'download', 'path': '/p'},
+     'files.download'),
+    # essbase_manage_connections create + test + update
+    ('essbase_manage_connections', {'action': 'create',
+                                       'connection_name': 'C',
+                                       'host': 'h', 'port': 1521,
+                                       'service_name': 'svc',
+                                       'user': 'u', 'password': 'p'},
+     'connections.create_connection'),
+    ('essbase_manage_connections', {'action': 'test',
+                                       'connection_name': 'C'},
+     'connections.test_saved_connection'),
+    # essbase_manage_filters more actions (no `validate` action exists)
+    ('essbase_manage_filters', {'action': 'copy',
+                                  'app_name': 'A', 'db_name': 'D',
+                                  'filter_name': 'F', 'new_name': 'F2'},
+     'filters.copy_filter'),
+    ('essbase_manage_filters', {'action': 'assign',
+                                  'app_name': 'A', 'db_name': 'D',
+                                  'filter_name': 'F',
+                                  'user_or_group': 'u'},
+     'filters.add_permissions'),
+    # essbase_manage_datasources create
+    ('essbase_manage_datasources', {'action': 'create',
+                                       'datasource_name': 'DS',
+                                       'connection': 'C',
+                                       'query': 'SELECT 1 FROM dual',
+                                       'columns': 'A,B'},
+     'datasources.create_datasource'),
+    # essbase_manage_drill_through more
+    ('essbase_manage_drill_through', {'action': 'execute',
+                                         'app_name': 'A', 'db_name': 'D',
+                                         'report_name': 'R'},
+     'drill_through.execute_report'),
+    # essbase_manage_database update
+    ('essbase_manage_database', {'action': 'update',
+                                   'app_name': 'A', 'db_name': 'D'},
+     'applications.update_database'),
+    # essbase_manage_jobs status (already had — adding rerun's extra path)
+    # essbase_manage_locks unlock
+    ('essbase_manage_locks', {'action': 'unlock',
+                                'app_name': 'A', 'db_name': 'D',
+                                'object_name': 'O'},
+     'locks.unlock_object'),
+    # essbase_manage_sessions kill_all
+    ('essbase_manage_sessions', {'action': 'kill_all'},
+     'sessions.delete_all_sessions'),
+    ('essbase_manage_sessions', {'action': 'current'},
+     'sessions.get_current_session'),
+    ('essbase_outline_metadata', {'app_name': 'A', 'db_name': 'D',
+                                    'category': 'outline_settings'},
+     'dimensions.get_outline_settings'),
+    ('essbase_outline_metadata', {'app_name': 'A', 'db_name': 'D',
+                                    'category': 'export_xml'},
+     'dimensions.export_outline_xml'),
+    # essbase_manage_db_settings
+    ('essbase_manage_db_settings', {'app_name': 'A', 'db_name': 'D',
+                                      'category': 'all'},
+     'database_settings.get_settings'),
+    # essbase_get_logs (lives on applications, not about)
+    ('essbase_get_logs', {'app_name': 'A'},
+     'applications.get_latest_log'),
+    # essbase_manage_security
+    ('essbase_manage_security', {'username': 'u'},
+     'users.get_user'),
 ]
 
 

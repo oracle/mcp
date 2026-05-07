@@ -189,6 +189,104 @@ class TestCredentialStore:
         from oracle.data_studio_mcp_server.credential_store import load_config_file
         assert load_config_file() == {}
 
+    def test_store_credentials_writes_config_and_keyring(self, tmp_path,
+                                                          monkeypatch):
+        '''store_credentials writes URL/user to config and password
+        to keyring.'''
+        cfg_file = tmp_path / 'config'
+        from oracle.data_studio_mcp_server import credential_store as cs
+        monkeypatch.setattr(cs, 'CONFIG_DIR', tmp_path)
+        monkeypatch.setattr(cs, 'CONFIG_FILE', cfg_file)
+        with patch.object(cs, '_set_keyring_password',
+                           return_value=True) as mock_set:
+            result = cs.store_credentials('adp', url='https://x',
+                                            user='ADMIN',
+                                            password='secret')
+        assert result['status'] == 'success'
+        assert result['keyring_stored'] is True
+        # Password never lands on disk
+        assert 'secret' not in cfg_file.read_text()
+        assert 'url = https://x' in cfg_file.read_text()
+        mock_set.assert_called_once_with('adp', 'ADMIN', 'secret')
+
+    def test_store_credentials_rejects_unknown_service(self):
+        from oracle.data_studio_mcp_server.credential_store import (
+            store_credentials)
+        with pytest.raises(ValueError, match='Unknown service'):
+            store_credentials('nonexistent')
+
+    def test_store_credentials_extras_written_to_file(self, tmp_path,
+                                                      monkeypatch):
+        from oracle.data_studio_mcp_server import credential_store as cs
+        cfg_file = tmp_path / 'config'
+        monkeypatch.setattr(cs, 'CONFIG_DIR', tmp_path)
+        monkeypatch.setattr(cs, 'CONFIG_FILE', cfg_file)
+        with patch.object(cs, '_set_keyring_password', return_value=True):
+            cs.store_credentials('server', transport='stdio', port=9000)
+        text = cfg_file.read_text()
+        assert 'transport = stdio' in text
+        assert 'port = 9000' in text
+
+    def test_remove_credentials_removes_section(self, tmp_path, monkeypatch):
+        from oracle.data_studio_mcp_server import credential_store as cs
+        cfg_file = tmp_path / 'config'
+        monkeypatch.setattr(cs, 'CONFIG_DIR', tmp_path)
+        monkeypatch.setattr(cs, 'CONFIG_FILE', cfg_file)
+        with patch.object(cs, '_set_keyring_password', return_value=True), \
+             patch.object(cs, '_delete_keyring_password', return_value=True):
+            cs.store_credentials('adp', url='https://x', user='ADMIN',
+                                  password='p')
+            result = cs.remove_credentials('adp')
+        assert result['removed_config'] is True
+        assert result['removed_keyring'] is True
+        assert 'adp' not in cfg_file.read_text()
+
+    def test_list_credentials_returns_sections(self, tmp_path, monkeypatch):
+        from oracle.data_studio_mcp_server import credential_store as cs
+        cfg_file = tmp_path / 'config'
+        monkeypatch.setattr(cs, 'CONFIG_DIR', tmp_path)
+        monkeypatch.setattr(cs, 'CONFIG_FILE', cfg_file)
+        with patch.object(cs, '_set_keyring_password', return_value=True):
+            cs.store_credentials('adp', url='https://x', user='ADMIN',
+                                  password='p')
+        result = cs.list_credentials()
+        assert 'adp' in result
+        assert result['adp']['url'] == 'https://x'
+        # Password is NOT in the listed result
+        assert 'password' not in result['adp']
+
+    def test_load_config_file_returns_dict(self, tmp_path, monkeypatch):
+        from oracle.data_studio_mcp_server import credential_store as cs
+        cfg_file = tmp_path / 'config'
+        monkeypatch.setattr(cs, 'CONFIG_DIR', tmp_path)
+        monkeypatch.setattr(cs, 'CONFIG_FILE', cfg_file)
+        with patch.object(cs, '_set_keyring_password', return_value=True):
+            cs.store_credentials('essbase', url='https://e', user='admin',
+                                  password='p')
+        loaded = cs.load_config_file()
+        assert loaded['essbase']['url'] == 'https://e'
+
+    def test_set_keyring_password_succeeds(self):
+        '''_set_keyring_password returns True when the keyring module accepts.'''
+        from oracle.data_studio_mcp_server.credential_store import (
+            _set_keyring_password)
+        with patch.dict('sys.modules', {'keyring': MagicMock()}):
+            assert _set_keyring_password('adp', 'u', 'p') is True
+
+    def test_set_keyring_password_falls_back_when_keyring_missing(self):
+        from oracle.data_studio_mcp_server.credential_store import (
+            _set_keyring_password)
+        import builtins
+        _real = builtins.__import__
+
+        def _no_keyring(name, *a, **kw):
+            if name == 'keyring':
+                raise ImportError('no keyring')
+            return _real(name, *a, **kw)
+
+        with patch('builtins.__import__', side_effect=_no_keyring):
+            assert _set_keyring_password('adp', 'u', 'p') is False
+
     def test_get_keyring_password_no_keyring(self):
         '''get_keyring_password returns None when keyring is unavailable.'''
         from oracle.data_studio_mcp_server.credential_store import get_keyring_password
@@ -1552,6 +1650,496 @@ class TestDtToolDispatch:
 
 
 # ------------------------------------------------------------------ #
+#  cli_config tests                                                    #
+# ------------------------------------------------------------------ #
+
+class TestCliConfig:
+
+    def test_build_parser_set_subcommand(self):
+        from oracle.data_studio_mcp_server.cli_config import _build_parser
+        parser = _build_parser()
+        # Parse a complete `set` command
+        args = parser.parse_args(['set', 'essbase',
+                                   '--url', 'https://h',
+                                   '--user', 'admin',
+                                   '--password', 'p'])
+        assert args.command == 'set'
+        assert args.service == 'essbase'
+        assert args.url == 'https://h'
+        assert args.user == 'admin'
+
+    def test_build_parser_list_subcommand(self):
+        from oracle.data_studio_mcp_server.cli_config import _build_parser
+        parser = _build_parser()
+        args = parser.parse_args(['list'])
+        assert args.command == 'list'
+
+    def test_build_parser_remove_subcommand(self):
+        from oracle.data_studio_mcp_server.cli_config import _build_parser
+        parser = _build_parser()
+        args = parser.parse_args(['remove', 'adp'])
+        assert args.command == 'remove'
+        assert args.service == 'adp'
+
+    def test_build_parser_invalid_service_rejected(self):
+        from oracle.data_studio_mcp_server.cli_config import _build_parser
+        parser = _build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(['set', 'nonexistent_service'])
+
+    @patch('oracle.data_studio_mcp_server.cli_config.store_credentials')
+    def test_cmd_set_stores_with_password(self, mock_store, capsys):
+        from oracle.data_studio_mcp_server.cli_config import _cmd_set
+        mock_store.return_value = {'service': 'adp', 'keyring_stored': True}
+        args = MagicMock(service='adp', url='https://h', user='ADMIN',
+                          password='Welcome2025#', token=None,
+                          transport=None, port=None)
+        _cmd_set(args)
+        mock_store.assert_called_once()
+        call_kwargs = mock_store.call_args.kwargs
+        assert call_kwargs['password'] == 'Welcome2025#'
+        assert call_kwargs['url'] == 'https://h'
+
+    @patch('oracle.data_studio_mcp_server.cli_config.store_credentials')
+    @patch('oracle.data_studio_mcp_server.cli_config.getpass.getpass',
+           return_value='prompted_pw')
+    def test_cmd_set_prompts_for_password_when_user_set(self, mock_prompt,
+                                                          mock_store):
+        '''If --user given but no --password, prompt interactively.'''
+        from oracle.data_studio_mcp_server.cli_config import _cmd_set
+        mock_store.return_value = {'service': 'adp', 'keyring_stored': True}
+        args = MagicMock(service='adp', url='https://h', user='ADMIN',
+                          password=None, token=None,
+                          transport=None, port=None)
+        _cmd_set(args)
+        mock_prompt.assert_called_once()
+        assert mock_store.call_args.kwargs['password'] == 'prompted_pw'
+
+    @patch('oracle.data_studio_mcp_server.cli_config.store_credentials')
+    def test_cmd_set_server_no_password(self, mock_store, capsys):
+        '''The "server" service should never trigger a password prompt.'''
+        from oracle.data_studio_mcp_server.cli_config import _cmd_set
+        mock_store.return_value = {'service': 'server'}
+        args = MagicMock(service='server', url=None, user=None,
+                          password=None, token=None,
+                          transport='stdio', port='8000')
+        _cmd_set(args)
+        # No password kwarg in the call
+        assert mock_store.call_args.kwargs.get('password') is None
+        assert mock_store.call_args.kwargs['transport'] == 'stdio'
+        assert mock_store.call_args.kwargs['port'] == '8000'
+
+    @patch('oracle.data_studio_mcp_server.cli_config.list_credentials')
+    def test_cmd_list_with_creds(self, mock_list, capsys):
+        from oracle.data_studio_mcp_server.cli_config import _cmd_list
+        mock_list.return_value = {
+            'adp': {'url': 'https://h', 'user': 'ADMIN'}}
+        _cmd_list(MagicMock())
+        out = capsys.readouterr().out
+        assert '[adp]' in out
+        assert 'url = https://h' in out
+
+    @patch('oracle.data_studio_mcp_server.cli_config.list_credentials',
+           return_value={})
+    def test_cmd_list_empty(self, mock_list, capsys):
+        from oracle.data_studio_mcp_server.cli_config import _cmd_list
+        _cmd_list(MagicMock())
+        out = capsys.readouterr().out
+        assert 'No credentials configured.' in out
+
+    @patch('oracle.data_studio_mcp_server.cli_config.remove_credentials')
+    def test_cmd_remove(self, mock_remove, capsys):
+        from oracle.data_studio_mcp_server.cli_config import _cmd_remove
+        mock_remove.return_value = {'service': 'essbase', 'removed': True}
+        args = MagicMock(service='essbase')
+        _cmd_remove(args)
+        mock_remove.assert_called_once_with('essbase')
+        assert 'essbase' in capsys.readouterr().out
+
+
+# ------------------------------------------------------------------ #
+#  Bulk action dispatch — parametrised over many tool/action combos    #
+# ------------------------------------------------------------------ #
+#
+# Every composite manage_* tool has a per-action elif chain that
+# routes to a specific SDK call. These tests exercise each branch
+# with a mocked SDK and assert the correct SDK method was invoked
+# with the expected primary arg. They prevent the param-leak class
+# of bug (B1, B2, M7 in the audit) and lift line coverage by
+# touching every action branch.
+
+def _walk(obj, path):
+    '''Walk a dotted attr path on a mock and return the final attr.'''
+    for part in path.split('.'):
+        obj = getattr(obj, part)
+    return obj
+
+
+def _adp_dispatch(tool_name, kwargs, sdk_path, sdk_return=None):
+    '''Run an ADP tool with a mocked SDK; return (result, mock_adp).'''
+    from mcp.server.fastmcp import FastMCP
+    from oracle.data_studio_mcp_server.tools import adp_tools
+    mcp_server = FastMCP('test')
+    adp_tools.register_tools(mcp_server)
+    fn = mcp_server._tool_manager._tools[tool_name].fn
+    adp = MagicMock()
+    adp.rest.expired = None
+    adp.rest.username = 'ADMIN'
+    method = _walk(adp, sdk_path)
+    method.return_value = json.dumps(sdk_return if sdk_return is not None
+                                      else {'status': 'ok'})
+    ctx = MagicMock()
+    ctx.request_context.lifespan_context = {'adp': adp}
+    result = fn(ctx=ctx, **kwargs)
+    return result, adp
+
+
+def _dt_dispatch(tool_name, kwargs, sdk_path, sdk_return=None,
+                  on_workbench=False):
+    '''Run a DT tool with a mocked client/workbench; return result + mocks.'''
+    from mcp.server.fastmcp import FastMCP
+    from oracle.data_studio_mcp_server.tools import dt_tools
+    mcp_server = FastMCP('test')
+    dt_tools.register_tools(mcp_server)
+    fn = mcp_server._tool_manager._tools[tool_name].fn
+    client = MagicMock()
+    workbench = MagicMock()
+    target = workbench if on_workbench else client
+    method = _walk(target, sdk_path)
+    method.return_value = (json.dumps(sdk_return) if isinstance(
+                            sdk_return, (dict, list))
+                            else (sdk_return if sdk_return is not None
+                                  else 'ok'))
+    ctx = MagicMock()
+    ctx.request_context.lifespan_context = {
+        'datatransforms': {'client': client, 'workbench': workbench},
+    }
+    result = fn(ctx=ctx, **kwargs)
+    return result, client, workbench
+
+
+def _ess_dispatch(tool_name, kwargs, sdk_path, sdk_return=None):
+    '''Run an Essbase tool with a mocked SDK; return (result, mock_ess).'''
+    from mcp.server.fastmcp import FastMCP
+    from oracle.data_studio_mcp_server.tools import essbase_tools
+    mcp_server = FastMCP('test')
+    essbase_tools.register_tools(mcp_server)
+    fn = mcp_server._tool_manager._tools[tool_name].fn
+    ess = MagicMock()
+    method = _walk(ess, sdk_path)
+    method.return_value = (sdk_return if sdk_return is not None
+                            else {'status': 'ok'})
+    ctx = MagicMock()
+    ctx.request_context.lifespan_context = {'essbase': ess}
+    result = fn(ctx=ctx, **kwargs)
+    return result, ess
+
+
+# Each tuple: (tool_name, kwargs, sdk_path_to_assert)
+ADP_DISPATCH_CASES = [
+    # adp_browse_catalog
+    ('adp_browse_catalog', {'action': 'list'},
+     'Catalog.get_catalogs'),
+    ('adp_browse_catalog', {'action': 'entities', 'catalog_name': 'C'},
+     'Catalog.get_catalog_entities'),
+    ('adp_browse_catalog', {'action': 'db_links',
+                              'catalog_name': 'L'},
+     'Catalog.get_database_links'),
+    ('adp_browse_catalog', {'action': 'list_databases'},
+     'Catalog.get_autonomous_databases'),
+    ('adp_browse_catalog', {'action': 'check_db_link', 'catalog_name': 'L'},
+     'Catalog.check_database_link'),
+    # adp_manage_catalog
+    ('adp_manage_catalog', {'action': 'enable', 'catalog_name': 'C'},
+     'Catalog.enable_catalog'),
+    ('adp_manage_catalog', {'action': 'disable', 'catalog_name': 'C'},
+     'Catalog.disable_catalog'),
+    ('adp_manage_catalog', {'action': 'unmount', 'catalog_name': 'C'},
+     'Catalog.unmount_catalog'),
+    # adp_manage_sharing
+    ('adp_manage_sharing', {'action': 'list'},
+     'Share.get_shares'),
+    ('adp_manage_sharing', {'action': 'get', 'share_name': 'S'},
+     'Share.get_share'),
+    ('adp_manage_sharing', {'action': 'create', 'share_name': 'S'},
+     'Share.create_share'),
+    ('adp_manage_sharing', {'action': 'delete', 'share_name': 'S'},
+     'Share.delete_share'),
+    ('adp_manage_sharing', {'action': 'unpublish', 'share_name': 'S'},
+     'Share.unpublish_share'),
+    ('adp_manage_sharing', {'action': 'create_recipient',
+                             'recipient_name': 'R'},
+     'Share.create_recipient'),
+    ('adp_manage_sharing', {'action': 'list_recipients'},
+     'Share.get_recipients'),
+    ('adp_manage_sharing', {'action': 'delete_recipient',
+                             'recipient_name': 'R'},
+     'Share.delete_recipient'),
+    ('adp_manage_sharing', {'action': 'get_objects', 'share_name': 'S'},
+     'Share.get_share_objects'),
+    ('adp_manage_sharing', {'action': 'rename', 'share_name': 'S',
+                             'new_name': 'S2'},
+     'Share.rename_share'),
+    ('adp_manage_sharing', {'action': 'list_providers'},
+     'Share.get_providers'),
+    ('adp_manage_sharing', {'action': 'create_provider',
+                             'recipient_name': 'P'},
+     'Share.create_provider'),
+    ('adp_manage_sharing', {'action': 'delete_provider',
+                             'recipient_name': 'P'},
+     'Share.delete_provider'),
+    # adp_manage_analytic_views
+    ('adp_manage_analytic_views', {'action': 'list'},
+     'Analytics.get_list'),
+    ('adp_manage_analytic_views', {'action': 'drop', 'av_name': 'AV'},
+     'Analytics.drop'),
+    # adp_manage_credentials
+    ('adp_manage_credentials', {'action': 'list'},
+     'Ingest.get_credential_list'),
+    ('adp_manage_credentials', {'action': 'create',
+                                  'credential_name': 'C',
+                                  'username': 'u', 'password': 'p'},
+     'Ingest.create_credential'),
+    ('adp_manage_credentials', {'action': 'create_ocid',
+                                  'credential_name': 'C',
+                                  'user_ocid': 'u',
+                                  'tenancy_ocid': 't',
+                                  'private_key': 'k',
+                                  'fingerprint': 'f'},
+     'Ingest.create_ocid_credential'),
+    ('adp_manage_credentials', {'action': 'drop', 'credential_name': 'C'},
+     'Ingest.drop_credential'),
+    ('adp_manage_credentials', {'action': 'list_storage_links'},
+     'Ingest.get_cloud_storage_link_list'),
+    ('adp_manage_credentials', {'action': 'create_storage_link',
+                                  'storage_link_name': 'SL',
+                                  'uri': 'https://x',
+                                  'credential_name': 'C'},
+     'Ingest.create_cloud_storage_link'),
+    ('adp_manage_credentials', {'action': 'drop_storage_link',
+                                  'storage_link_name': 'SL'},
+     'Ingest.drop_cloud_storage_link'),
+    # adp_manage_insights
+    ('adp_manage_insights', {'action': 'list_requests'},
+     'Insight.get_request_list'),
+    ('adp_manage_insights', {'action': 'list_insights',
+                               'request_name': 'R'},
+     'Insight.get_insights_list'),
+    ('adp_manage_insights', {'action': 'status', 'request_name': 'R'},
+     'Insight.get_job_status'),
+    ('adp_manage_insights', {'action': 'drop', 'request_name': 'R'},
+     'Insight.drop'),
+    # adp_manage_db_links
+    ('adp_manage_db_links', {'action': 'list'},
+     'Ingest.get_database_links'),
+    ('adp_manage_db_links', {'action': 'check', 'db_link_name': 'L'},
+     'Catalog.check_database_link'),
+]
+
+
+@mcp_required
+@pytest.mark.parametrize('tool,kwargs,sdk_path', ADP_DISPATCH_CASES)
+def test_adp_action_dispatch(tool, kwargs, sdk_path):
+    '''Each ADP composite action routes to its expected SDK method.'''
+    _, adp = _adp_dispatch(tool, kwargs, sdk_path)
+    _walk(adp, sdk_path).assert_called()
+
+
+# ------------------------------------------------------------------ #
+
+DT_DISPATCH_CASES = [
+    # dt_manage_schedule
+    ('dt_manage_schedule', {'action': 'list'},
+     'list_schedules', False),
+    ('dt_manage_schedule', {'action': 'delete',
+                              'schedule_name': 'S',
+                              'project_name': 'P'},
+     'delete_schedule', False),
+    # dt_manage_variables
+    ('dt_manage_variables', {'action': 'list'},
+     'list_variables', False),
+    # dt_manage_connection
+    ('dt_manage_connection', {'action': 'list'},
+     'list_connections', False),
+    ('dt_manage_connection', {'action': 'get_types'},
+     'get_connection_types', False),
+    ('dt_manage_connection', {'action': 'test', 'connection_name': 'C'},
+     'test_connection_by_name', False),
+    ('dt_manage_connection', {'action': 'delete', 'connection_name': 'C'},
+     'delete_connection', False),
+]
+
+
+@mcp_required
+@pytest.mark.parametrize('tool,kwargs,sdk_path,on_wb', DT_DISPATCH_CASES)
+def test_dt_action_dispatch(tool, kwargs, sdk_path, on_wb):
+    '''Each DT composite action routes to its expected SDK method.'''
+    _, client, wb = _dt_dispatch(tool, kwargs, sdk_path,
+                                  on_workbench=on_wb)
+    target = wb if on_wb else client
+    _walk(target, sdk_path).assert_called()
+
+
+# ------------------------------------------------------------------ #
+
+ESS_DISPATCH_CASES = [
+    # essbase_manage_application
+    ('essbase_manage_application', {'action': 'create', 'app_name': 'A',
+                                      'db_name': 'D'},
+     'applications.create_application'),
+    ('essbase_manage_application', {'action': 'delete', 'app_name': 'A'},
+     'applications.delete_application'),
+    ('essbase_manage_application', {'action': 'copy', 'app_name': 'A',
+                                      'new_name': 'B'},
+     'applications.copy_application'),
+    ('essbase_manage_application', {'action': 'rename', 'app_name': 'A',
+                                      'new_name': 'B'},
+     'applications.rename_application'),
+    # start/stop go through update_application, not start/stop_application
+    ('essbase_manage_application', {'action': 'start', 'app_name': 'A'},
+     'applications.update_application'),
+    ('essbase_manage_application', {'action': 'stop', 'app_name': 'A'},
+     'applications.update_application'),
+    # essbase_manage_database (no create — only delete/copy/rename/update)
+    ('essbase_manage_database', {'action': 'delete',
+                                   'app_name': 'A', 'db_name': 'D'},
+     'applications.delete_database'),
+    ('essbase_manage_database', {'action': 'copy',
+                                   'app_name': 'A', 'db_name': 'D',
+                                   'target_app': 'A', 'target_db': 'D2'},
+     'applications.copy_database'),
+    ('essbase_manage_database', {'action': 'rename',
+                                   'app_name': 'A', 'db_name': 'D',
+                                   'new_name': 'D2'},
+     'applications.rename_database'),
+    # essbase_manage_files (uses path, not app_name)
+    ('essbase_manage_files', {'action': 'list', 'path': 'applications/A'},
+     'files.list_files'),
+    ('essbase_manage_files', {'action': 'create_folder', 'path': '/p'},
+     'files.create_folder'),
+    ('essbase_manage_files', {'action': 'delete', 'path': '/x'},
+     'files.delete_file'),
+    ('essbase_manage_files', {'action': 'copy', 'path': '/a',
+                                'target_path': '/b'},
+     'files.copy'),
+    ('essbase_manage_files', {'action': 'move', 'path': '/a',
+                                'target_path': '/b'},
+     'files.move'),
+    # essbase_manage_locks (only list / unlock)
+    ('essbase_manage_locks', {'action': 'list',
+                                'app_name': 'A', 'db_name': 'D'},
+     'locks.list_locks'),
+    # essbase_manage_sessions
+    ('essbase_manage_sessions', {'action': 'list'},
+     'sessions.list_sessions'),
+    # essbase_manage_variables (scope: server / application / database)
+    ('essbase_manage_variables', {'action': 'list', 'scope': 'server'},
+     'variables.list_server_variables'),
+    ('essbase_manage_variables', {'action': 'list', 'scope': 'application',
+                                    'app_name': 'A'},
+     'variables.list_app_variables'),
+    ('essbase_manage_variables', {'action': 'list', 'scope': 'database',
+                                    'app_name': 'A', 'db_name': 'D'},
+     'variables.list_db_variables'),
+    # essbase_manage_script (script_name is required positional even for list)
+    ('essbase_manage_script', {'action': 'list',
+                                 'app_name': 'A', 'db_name': 'D',
+                                 'script_name': ''},
+     'scripts.list_scripts'),
+    ('essbase_manage_script', {'action': 'create',
+                                 'app_name': 'A', 'db_name': 'D',
+                                 'script_name': 'S', 'content': 'CALC ALL;'},
+     'scripts.create_script'),
+    ('essbase_manage_script', {'action': 'update',
+                                 'app_name': 'A', 'db_name': 'D',
+                                 'script_name': 'S', 'content': 'CALC ALL;'},
+     'scripts.update_script'),
+    ('essbase_manage_script', {'action': 'delete',
+                                 'app_name': 'A', 'db_name': 'D',
+                                 'script_name': 'S'},
+     'scripts.delete_script'),
+    ('essbase_manage_script', {'action': 'validate',
+                                 'app_name': 'A', 'db_name': 'D',
+                                 'script_name': 'S',
+                                 'content': 'CALC ALL;'},
+     'scripts.validate_script'),
+    # essbase_manage_connections
+    ('essbase_manage_connections', {'action': 'list'},
+     'connections.list_connections'),
+    ('essbase_manage_connections', {'action': 'get',
+                                       'connection_name': 'C'},
+     'connections.get_connection'),
+    ('essbase_manage_connections', {'action': 'delete',
+                                       'connection_name': 'C'},
+     'connections.delete_connection'),
+    # essbase_manage_filters
+    ('essbase_manage_filters', {'action': 'list',
+                                  'app_name': 'A', 'db_name': 'D'},
+     'filters.list_filters'),
+    ('essbase_manage_filters', {'action': 'get',
+                                  'app_name': 'A', 'db_name': 'D',
+                                  'filter_name': 'F'},
+     'filters.get_filter'),
+    ('essbase_manage_filters', {'action': 'delete',
+                                  'app_name': 'A', 'db_name': 'D',
+                                  'filter_name': 'F'},
+     'filters.delete_filter'),
+    ('essbase_manage_filters', {'action': 'rename',
+                                  'app_name': 'A', 'db_name': 'D',
+                                  'filter_name': 'F', 'new_name': 'F2'},
+     'filters.rename_filter'),
+    # essbase_manage_jobs (SDK: get_status / rerun / purge — not _job)
+    ('essbase_manage_jobs', {'action': 'list'},
+     'jobs.list_jobs'),
+    ('essbase_manage_jobs', {'action': 'status', 'job_id': 1},
+     'jobs.get_status'),
+    # rerun also calls wait_for_completion — assert on rerun
+    ('essbase_manage_jobs', {'action': 'rerun', 'job_id': 1},
+     'jobs.rerun'),
+    ('essbase_manage_jobs', {'action': 'purge'},
+     'jobs.purge'),
+    # essbase_manage_datasources (no app_name / db_name params)
+    ('essbase_manage_datasources', {'action': 'list'},
+     'datasources.list_datasources'),
+    ('essbase_manage_datasources', {'action': 'get',
+                                       'datasource_name': 'DS'},
+     'datasources.get_datasource'),
+    ('essbase_manage_datasources', {'action': 'delete',
+                                       'datasource_name': 'DS'},
+     'datasources.delete_datasource'),
+    # essbase_manage_drill_through
+    ('essbase_manage_drill_through', {'action': 'list',
+                                         'app_name': 'A', 'db_name': 'D'},
+     'drill_through.list_reports'),
+    ('essbase_manage_drill_through', {'action': 'get',
+                                         'app_name': 'A', 'db_name': 'D',
+                                         'report_name': 'R'},
+     'drill_through.get_report'),
+    ('essbase_manage_drill_through', {'action': 'delete',
+                                         'app_name': 'A', 'db_name': 'D',
+                                         'report_name': 'R'},
+     'drill_through.delete_report'),
+    # essbase_manage_users
+    ('essbase_manage_users', {'action': 'list'},
+     'users.list_users'),
+    ('essbase_manage_users', {'action': 'get', 'user_id': 'u'},
+     'users.get_user'),
+    ('essbase_manage_users', {'action': 'delete', 'user_id': 'u'},
+     'users.delete_user'),
+    ('essbase_manage_users', {'action': 'list_roles'},
+     'users.list_roles'),
+]
+
+
+@mcp_required
+@pytest.mark.parametrize('tool,kwargs,sdk_path', ESS_DISPATCH_CASES)
+def test_essbase_action_dispatch(tool, kwargs, sdk_path):
+    '''Each Essbase composite action routes to its expected SDK method.'''
+    _, ess = _ess_dispatch(tool, kwargs, sdk_path)
+    _walk(ess, sdk_path).assert_called()
+
+
+# ------------------------------------------------------------------ #
 #  Server module tests                                                 #
 # ------------------------------------------------------------------ #
 
@@ -1562,6 +2150,106 @@ class TestServer:
         from oracle.data_studio_mcp_server.server import mcp
         assert mcp is not None
         assert mcp.name == 'oracle-data-studio'
+
+    def test_lifespan_no_config_yields_empty_context(self):
+        '''When no service is configured, lifespan yields {} and only
+        warning/info logs happen — no SDK imports.'''
+        import asyncio
+        from oracle.data_studio_mcp_server import server as srv
+
+        async def _run():
+            async with srv.app_lifespan(MagicMock()) as ctx:
+                return ctx
+
+        with patch.object(srv, '_config',
+                           MagicMock(essbase=None, adp=None,
+                                      datatransforms=None)):
+            ctx = asyncio.run(_run())
+        assert 'essbase' not in ctx
+        assert 'adp' not in ctx
+
+    def test_lifespan_essbase_login_token(self):
+        '''Lifespan uses login_token() when EssbaseConfig.token is set.'''
+        import asyncio
+        from oracle.data_studio_mcp_server import server as srv
+
+        async def _run():
+            async with srv.app_lifespan(MagicMock()) as ctx:
+                return ctx
+
+        fake_essbase = MagicMock()
+        fake_essbase.login_token.return_value = 'ess-client'
+        ess_cfg = MagicMock(token='tok', url='https://e')
+        with patch.object(srv, '_config',
+                           MagicMock(essbase=ess_cfg, adp=None,
+                                      datatransforms=None)), \
+             patch.dict('sys.modules', {'essbase': fake_essbase}):
+            ctx = asyncio.run(_run())
+        fake_essbase.login_token.assert_called_once_with('https://e', 'tok')
+        assert ctx.get('essbase') == 'ess-client'
+
+    def test_lifespan_essbase_login_user_password(self):
+        '''No token → login(url, user, password) flow.'''
+        import asyncio
+        from oracle.data_studio_mcp_server import server as srv
+
+        async def _run():
+            async with srv.app_lifespan(MagicMock()) as ctx:
+                return ctx
+
+        fake_essbase = MagicMock()
+        fake_essbase.login.return_value = 'ess-client'
+        ess_cfg = MagicMock(token=None, url='https://e',
+                             user='admin', password='p')
+        with patch.object(srv, '_config',
+                           MagicMock(essbase=ess_cfg, adp=None,
+                                      datatransforms=None)), \
+             patch.dict('sys.modules', {'essbase': fake_essbase}):
+            ctx = asyncio.run(_run())
+        fake_essbase.login.assert_called_once()
+        assert ctx.get('essbase') == 'ess-client'
+
+    def test_lifespan_adp_caches_config_and_logs_in(self):
+        '''ADP path stores _adp_config + tries adp.login.'''
+        import asyncio
+        from oracle.data_studio_mcp_server import server as srv
+
+        async def _run():
+            async with srv.app_lifespan(MagicMock()) as ctx:
+                return ctx
+
+        fake_adp = MagicMock()
+        fake_adp.login.return_value = 'adp-client'
+        adp_cfg = MagicMock(url='https://a', user='ADMIN', password='p')
+        with patch.object(srv, '_config',
+                           MagicMock(essbase=None, adp=adp_cfg,
+                                      datatransforms=None)), \
+             patch.dict('sys.modules', {'adp': fake_adp}):
+            ctx = asyncio.run(_run())
+        assert ctx.get('_adp_config') is adp_cfg
+        assert ctx.get('adp') == 'adp-client'
+
+    def test_lifespan_adp_login_failure_is_caught(self):
+        '''ADP login that throws is logged but doesn't break startup.'''
+        import asyncio
+        from oracle.data_studio_mcp_server import server as srv
+
+        async def _run():
+            async with srv.app_lifespan(MagicMock()) as ctx:
+                return ctx
+
+        fake_adp = MagicMock()
+        fake_adp.login.side_effect = RuntimeError('boom')
+        adp_cfg = MagicMock(url='https://a', user='ADMIN', password='p')
+        with patch.object(srv, '_config',
+                           MagicMock(essbase=None, adp=adp_cfg,
+                                      datatransforms=None)), \
+             patch.dict('sys.modules', {'adp': fake_adp}):
+            ctx = asyncio.run(_run())
+        # Config still cached for later retry
+        assert ctx.get('_adp_config') is adp_cfg
+        # No client because login failed
+        assert 'adp' not in ctx
 
     def test_server_instructions_mention_annotations(self):
         '''Server instructions should nudge the LLM toward the

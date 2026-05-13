@@ -70,6 +70,32 @@ class TestMigrationTools:
 
 
 class TestServer:
+    def test_oci_client_kwargs_omits_signer_when_absent(self):
+        kwargs = server._get_oci_client_kwargs()
+
+        assert "signer" not in kwargs
+        assert "circuit_breaker_strategy" in kwargs
+        assert "circuit_breaker_callback" in kwargs
+
+    def test_http_signer_requires_access_token(self, monkeypatch):
+        monkeypatch.setattr(server, "get_access_token", lambda: None)
+        monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
+
+        with pytest.raises(RuntimeError, match="authenticated IDCS access token"):
+            server._get_http_config_and_signer()
+
+    def test_http_signer_requires_idcs_credentials(self, monkeypatch):
+        monkeypatch.setattr(server, "get_access_token", lambda: MagicMock(token="token"))
+        monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
+        monkeypatch.delenv("IDCS_DOMAIN", raising=False)
+        monkeypatch.delenv("IDCS_CLIENT_ID", raising=False)
+        monkeypatch.delenv("IDCS_CLIENT_SECRET", raising=False)
+
+        with pytest.raises(RuntimeError, match="IDCS authentication"):
+            server._get_http_config_and_signer()
+
     def test_http_signer_requires_region(self, monkeypatch):
         monkeypatch.setattr(server, "get_access_token", lambda: MagicMock(token="token"))
         monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
@@ -80,6 +106,31 @@ class TestServer:
 
         with pytest.raises(RuntimeError, match="OCI_REGION"):
             server._get_http_config_and_signer()
+
+    @patch("oracle.oci_migration_mcp_server.server.oci.auth.signers.TokenExchangeSigner")
+    def test_http_signer_returns_config_and_token_exchange_signer(self, mock_signer, monkeypatch):
+        monkeypatch.setattr(server, "get_access_token", lambda: MagicMock(token="token"))
+        monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
+        monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
+        monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+        monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+        monkeypatch.setenv("OCI_REGION", "us-phoenix-1")
+
+        config, signer = server._get_http_config_and_signer()
+
+        assert config == {
+            "region": "us-phoenix-1",
+            "additional_user_agent": f"oci-migration-mcp/{server.__version__}",
+        }
+        mock_signer.assert_called_once_with(
+            "token",
+            "https://idcs.example.com",
+            "client-id",
+            "client-secret",
+            region="us-phoenix-1",
+        )
+        assert signer is mock_signer.return_value
 
     @patch("oracle.oci_migration_mcp_server.server.OCIProvider")
     @patch("oracle.oci_migration_mcp_server.server.mcp.run")
@@ -142,6 +193,17 @@ class TestServer:
 
         server.main()
         mock_mcp_run.assert_called_once_with()
+
+    @patch("os.getenv")
+    def test_main_with_http_transport_requires_auth_config(self, mock_getenv):
+        mock_env = {
+            "ORACLE_MCP_HOST": "1.2.3.4",
+            "ORACLE_MCP_PORT": "8888",
+        }
+        mock_getenv.side_effect = lambda x, d=None: mock_env.get(x, d)
+
+        with pytest.raises(RuntimeError, match="HTTP transport requires IDCS authentication"):
+            server.main()
 
 
 @pytest.mark.asyncio
@@ -274,6 +336,26 @@ async def test_list_migrations_exception_propagates(mock_get_client):
 
 
 class TestGetClient:
+    @patch("oracle.oci_migration_mcp_server.server.oci.cloud_migrations.MigrationClient")
+    @patch("oracle.oci_migration_mcp_server.server._get_oci_client_kwargs")
+    @patch("oracle.oci_migration_mcp_server.server._get_http_config_and_signer")
+    def test_get_migration_client_with_http_signer(
+        self,
+        mock_http_config,
+        mock_client_kwargs,
+        mock_client,
+    ):
+        config = {"region": "us-phoenix-1"}
+        signer = object()
+        mock_http_config.return_value = config, signer
+        mock_client_kwargs.return_value = {"signer": signer}
+
+        result = server.get_migration_client()
+
+        mock_client_kwargs.assert_called_once_with(signer)
+        mock_client.assert_called_once_with(config, signer=signer)
+        assert result is mock_client.return_value
+
     @patch("oracle.oci_migration_mcp_server.server.oci.cloud_migrations.MigrationClient")
     @patch("oracle.oci_migration_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
     @patch("oracle.oci_migration_mcp_server.server.oci.signer.load_private_key_from_file")

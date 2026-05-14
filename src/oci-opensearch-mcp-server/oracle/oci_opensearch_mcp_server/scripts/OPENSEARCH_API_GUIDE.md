@@ -56,9 +56,7 @@ The `update_opensearch_cluster`, `resize_opensearch_cluster_vertical`, `resize_o
 - the server validates those bodies with explicit typed schemas
 - the server converts them into OCI SDK model objects before calling the client
 
-For `update_opensearch_cluster`, provide `update_details` with at least:
-
-- `display_name`
+For `update_opensearch_cluster`, provide `update_details` with at least one field. `display_name` is optional and only needed when renaming a cluster; software-version, tag, backup-policy, maintenance, certificate, load-balancer, and security updates do not require a rename field.
 
 Security updates require `security_mode`. To update the local security master-user password hash, provide all of:
 
@@ -66,7 +64,7 @@ Security updates require `security_mode`. To update the local security master-us
 - `security_master_user_name` (the current master username from `get_opensearch_cluster`)
 - `security_master_user_password_hash`
 
-Do not send `security_master_user_password_hash` by itself; include `security_mode` so OCI treats the request as a security configuration update. For easier rollback and work-request triage, submit security-credential updates separately from software-version updates.
+Do not send `security_master_user_password_hash` by itself; include `security_mode` so OCI treats the request as a security configuration update. OCI does not allow software-version and security-config updates in the same request. For easier rollback and work-request triage, submit one update family per request.
 
 For `resize_opensearch_cluster_vertical` and `resize_opensearch_cluster_horizontal`, provide at least one field inside `resize_details`.
 

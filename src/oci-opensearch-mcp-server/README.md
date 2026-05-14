@@ -16,9 +16,15 @@ IAM permissions determine which OpenSearch operations are allowed.
 
 ## Running the server
 
-### Local development
+### STDIO transport mode
 
-Use one of these commands to run from the project directory:
+```sh
+uvx oracle.oci-opensearch-mcp-server
+```
+
+### Local development from source
+
+From this project directory, use one of these commands:
 
 ```sh
 uv run oracle.oci-opensearch-mcp-server
@@ -26,18 +32,6 @@ uv run oracle.oci-opensearch-mcp-server
 
 ```sh
 uvx --from . oracle.oci-opensearch-mcp-server
-```
-
-### STDIO transport mode
-
-```sh
-uv run oracle.oci-opensearch-mcp-server
-```
-
-### HTTP streaming transport mode
-
-```sh
-ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uv run oracle.oci-opensearch-mcp-server
 ```
 
 ## Tools
@@ -69,6 +63,9 @@ ORACLE_MCP_HOST=<hostname/IP address> ORACLE_MCP_PORT=<port number> uv run oracl
 Mutation tools use OCI Python SDK-style request bodies with **snake_case** field names.
 For detailed payload conventions and examples, read the bundled
 `resource://oci-opensearch-api-guide` resource from your MCP client.
+
+`update_opensearch_cluster` accepts a non-empty partial `update_details` body.
+`display_name` is optional and only needed when renaming a cluster.
 
 To discover existing clusters, use `list_opensearch_clusters` rather than `create_opensearch_cluster`.
 

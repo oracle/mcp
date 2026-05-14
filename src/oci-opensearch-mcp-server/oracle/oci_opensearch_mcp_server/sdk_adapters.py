@@ -11,7 +11,9 @@ import oci
 
 def _build_security_saml_config(payload: dict[str, Any]) -> dict[str, Any]:
     if isinstance(payload.get("security_saml_config"), dict):
-        payload["security_saml_config"] = oci.opensearch.models.SecuritySamlConfig(**payload["security_saml_config"])
+        payload["security_saml_config"] = oci.opensearch.models.SecuritySamlConfig(
+            **payload["security_saml_config"]
+        )
     return payload
 
 
@@ -27,22 +29,30 @@ def _build_outbound_cluster_config(payload: dict[str, Any]) -> dict[str, Any]:
         outbound_clusters = outbound_cluster_config.get("outbound_clusters")
         if isinstance(outbound_clusters, list):
             outbound_cluster_config["outbound_clusters"] = [
-                oci.opensearch.models.OutboundClusterSummary(**cluster) if isinstance(cluster, dict) else cluster
+                oci.opensearch.models.OutboundClusterSummary(**cluster)
+                if isinstance(cluster, dict)
+                else cluster
                 for cluster in outbound_clusters
             ]
-        payload["outbound_cluster_config"] = oci.opensearch.models.OutboundClusterConfig(**outbound_cluster_config)
+        payload["outbound_cluster_config"] = oci.opensearch.models.OutboundClusterConfig(
+            **outbound_cluster_config
+        )
     return payload
 
 
 def _build_create_maintenance_details(payload: dict[str, Any]) -> dict[str, Any]:
     if isinstance(payload.get("maintenance_details"), dict):
-        payload["maintenance_details"] = oci.opensearch.models.CreateMaintenanceDetails(**payload["maintenance_details"])
+        payload["maintenance_details"] = oci.opensearch.models.CreateMaintenanceDetails(
+            **payload["maintenance_details"]
+        )
     return payload
 
 
 def _build_update_maintenance_details(payload: dict[str, Any]) -> dict[str, Any]:
     if isinstance(payload.get("maintenance_details"), dict):
-        payload["maintenance_details"] = oci.opensearch.models.UpdateMaintenanceDetails(**payload["maintenance_details"])
+        payload["maintenance_details"] = oci.opensearch.models.UpdateMaintenanceDetails(
+            **payload["maintenance_details"]
+        )
     return payload
 
 

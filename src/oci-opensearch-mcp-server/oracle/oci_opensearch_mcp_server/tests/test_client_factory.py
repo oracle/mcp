@@ -33,7 +33,9 @@ class TestClientFactory:
         mock_security_token_signer,
         mock_client,
     ):
-        mock_getenv.side_effect = lambda k, default=None: ("MYPROFILE" if k == "OCI_CONFIG_PROFILE" else default)
+        mock_getenv.side_effect = lambda k, default=None: (
+            "MYPROFILE" if k == "OCI_CONFIG_PROFILE" else default
+        )
         mock_exists.return_value = True
         config = {
             "key_file": "/abs/path/to/key.pem",

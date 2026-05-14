@@ -80,7 +80,9 @@ class CreateOpensearchClusterDetailsInput(BaseModel):
     software_version: Optional[str] = Field(None, description="OpenSearch software version.")
     master_node_count: Optional[int] = Field(None, description="Master node count.")
     master_node_host_type: Optional[str] = Field(None, description="Master node host type.")
-    master_node_host_bare_metal_shape: Optional[str] = Field(None, description="Master node bare metal shape.")
+    master_node_host_bare_metal_shape: Optional[str] = Field(
+        None, description="Master node bare metal shape."
+    )
     master_node_host_shape: Optional[str] = Field(
         None,
         description=f"Master node VM shape. {SHAPE_CATALOG_GUIDANCE}",
@@ -102,8 +104,12 @@ class CreateOpensearchClusterDetailsInput(BaseModel):
         description=f"OpenDashboard node VM shape. {SHAPE_CATALOG_GUIDANCE}",
     )
     opendashboard_node_count: Optional[int] = Field(None, description="OpenDashboard node count.")
-    opendashboard_node_host_ocpu_count: Optional[int] = Field(None, description="OpenDashboard node OCPU count.")
-    opendashboard_node_host_memory_gb: Optional[int] = Field(None, description="OpenDashboard node memory in GB.")
+    opendashboard_node_host_ocpu_count: Optional[int] = Field(
+        None, description="OpenDashboard node OCPU count."
+    )
+    opendashboard_node_host_memory_gb: Optional[int] = Field(
+        None, description="OpenDashboard node memory in GB."
+    )
     search_node_count: Optional[int] = Field(None, description="Search node count.")
     search_node_host_type: Optional[str] = Field(None, description="Search node host type.")
     search_node_host_shape: Optional[str] = Field(
@@ -142,17 +148,27 @@ class CreateOpensearchClusterDetailsInput(BaseModel):
             "Generate it externally as documented by OCI before calling this tool."
         ),
     )
-    security_saml_config: Optional["SecuritySamlConfigInput"] = Field(None, description="SAML security configuration.")
+    security_saml_config: Optional["SecuritySamlConfigInput"] = Field(
+        None, description="SAML security configuration."
+    )
     backup_policy: Optional["BackupPolicyInput"] = Field(None, description="Backup policy configuration.")
     reverse_connection_endpoint_customer_ips: Optional[list[str]] = Field(
         None,
         description="Customer IPs for reverse connection endpoint.",
     )
     inbound_cluster_ids: Optional[list[str]] = Field(None, description="Inbound cluster OCIDs.")
-    outbound_cluster_config: Optional["OutboundClusterConfigInput"] = Field(None, description="Outbound cluster configuration.")
-    maintenance_details: Optional["CreateMaintenanceDetailsInput"] = Field(None, description="Maintenance settings.")
-    load_balancer_config: Optional["LoadBalancerConfigInput"] = Field(None, description="Load balancer configuration.")
-    certificate_config: Optional["CertificateConfigInput"] = Field(None, description="Certificate configuration.")
+    outbound_cluster_config: Optional["OutboundClusterConfigInput"] = Field(
+        None, description="Outbound cluster configuration."
+    )
+    maintenance_details: Optional["CreateMaintenanceDetailsInput"] = Field(
+        None, description="Maintenance settings."
+    )
+    load_balancer_config: Optional["LoadBalancerConfigInput"] = Field(
+        None, description="Load balancer configuration."
+    )
+    certificate_config: Optional["CertificateConfigInput"] = Field(
+        None, description="Certificate configuration."
+    )
     freeform_tags: Optional[dict[str, str]] = Field(None, description="Freeform tags.")
     defined_tags: Optional[dict[str, dict[str, Any]]] = Field(None, description="Defined tags.")
     system_tags: Optional[dict[str, dict[str, Any]]] = Field(None, description="System tags.")
@@ -184,7 +200,9 @@ class OutboundClusterSummaryInput(BaseModel):
 
     display_name: Optional[str] = Field(None, description="Display name for the outbound cluster link.")
     ping_schedule: Optional[str] = Field(None, description="Ping schedule for the outbound cluster.")
-    is_skip_unavailable: Optional[bool] = Field(None, description="Whether to skip unavailable outbound clusters.")
+    is_skip_unavailable: Optional[bool] = Field(
+        None, description="Whether to skip unavailable outbound clusters."
+    )
     seed_cluster_id: Optional[str] = Field(None, description="Seed cluster OCID.")
     mode: Optional[str] = Field(None, description="Outbound cluster mode.")
 
@@ -202,13 +220,17 @@ class OutboundClusterConfigInput(BaseModel):
 class CreateMaintenanceDetailsInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    notification_email_ids: Optional[list[str]] = Field(None, description="Maintenance notification email IDs.")
+    notification_email_ids: Optional[list[str]] = Field(
+        None, description="Maintenance notification email IDs."
+    )
 
 
 class UpdateMaintenanceDetailsInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    notification_email_ids: Optional[list[str]] = Field(None, description="Maintenance notification email IDs.")
+    notification_email_ids: Optional[list[str]] = Field(
+        None, description="Maintenance notification email IDs."
+    )
 
 
 class LoadBalancerConfigInput(BaseModel):
@@ -278,8 +300,12 @@ class UpdateOpensearchClusterDetailsInput(BaseModel):
             "Requires `security_mode` and `security_master_user_name`."
         ),
     )
-    security_saml_config: Optional[SecuritySamlConfigInput] = Field(None, description="Updated SAML security configuration.")
-    backup_policy: Optional[BackupPolicyInput] = Field(None, description="Updated backup policy configuration.")
+    security_saml_config: Optional[SecuritySamlConfigInput] = Field(
+        None, description="Updated SAML security configuration."
+    )
+    backup_policy: Optional[BackupPolicyInput] = Field(
+        None, description="Updated backup policy configuration."
+    )
     reverse_connection_endpoint_customer_ips: Optional[list[str]] = Field(
         None,
         description="Updated customer IPs for reverse connection endpoint.",
@@ -292,8 +318,12 @@ class UpdateOpensearchClusterDetailsInput(BaseModel):
         None,
         description="Updated maintenance settings.",
     )
-    load_balancer_config: Optional[LoadBalancerConfigInput] = Field(None, description="Updated load balancer configuration.")
-    certificate_config: Optional[CertificateConfigInput] = Field(None, description="Updated certificate configuration.")
+    load_balancer_config: Optional[LoadBalancerConfigInput] = Field(
+        None, description="Updated load balancer configuration."
+    )
+    certificate_config: Optional[CertificateConfigInput] = Field(
+        None, description="Updated certificate configuration."
+    )
     security_attributes: Optional[dict[str, dict[str, Any]]] = Field(
         None,
         description="Updated security attributes.",
@@ -438,7 +468,9 @@ class ResizeOpensearchClusterHorizontalDetailsInput(BaseModel):
 class BackupOpensearchClusterDetailsInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    compartment_id: Optional[str] = Field(None, description="Compartment OCID where the cluster backup is located.")
+    compartment_id: Optional[str] = Field(
+        None, description="Compartment OCID where the cluster backup is located."
+    )
     display_name: Optional[str] = Field(None, description="Display name for the cluster backup.")
 
 

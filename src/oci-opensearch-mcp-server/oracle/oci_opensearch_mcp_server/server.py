@@ -21,7 +21,6 @@ from .client_factory import get_opensearch_cluster_client
 from .models import (
     BACKUP_CLUSTER_MINIMAL_EXAMPLE,
     CREATE_CLUSTER_NON_SHAPE_DEFAULT_DETAILS,
-    CREATE_CLUSTER_MINIMAL_DETAILS_EXAMPLE,
     CREATE_CLUSTER_MINIMAL_EXAMPLE,
     CREATE_CLUSTER_REQUIRED_FIELDS,
     HOST_TYPE_ALLOWED_VALUES,
@@ -235,8 +234,10 @@ def _validate_create_opensearch_cluster_details(
         raise ValueError("`security_master_user_name` cannot be `admin`; OCI reserves this username.")
 
     password_hash = payload.get("security_master_user_password_hash")
-    if not isinstance(password_hash, str) or not password_hash.strip() or not password_hash.startswith(
-        "pbkdf2_stretch_1000"
+    if (
+        not isinstance(password_hash, str)
+        or not password_hash.strip()
+        or not password_hash.startswith("pbkdf2_stretch_1000")
     ):
         raise ValueError(
             "`security_master_user_password_hash` is required and must be a non-empty OCI-compatible hash in "
@@ -253,9 +254,7 @@ def _validate_create_opensearch_cluster_details(
     for field_name in ("master_node_host_type", "data_node_host_type"):
         host_type = payload.get(field_name)
         if host_type is not None and host_type not in HOST_TYPE_ALLOWED_VALUES:
-            raise ValueError(
-                f"`{field_name}` must be one of: " + ", ".join(HOST_TYPE_ALLOWED_VALUES)
-            )
+            raise ValueError(f"`{field_name}` must be one of: " + ", ".join(HOST_TYPE_ALLOWED_VALUES))
 
     for field_name in ("search_node_host_type", "ml_node_host_type"):
         host_type = payload.get(field_name)
@@ -267,7 +266,9 @@ def _validate_create_opensearch_cluster_details(
     return payload
 
 
-def _build_create_opensearch_cluster_payload(details: CreateOpensearchClusterDetailsInput) -> dict[str, Any]:
+def _build_create_opensearch_cluster_payload(
+    details: CreateOpensearchClusterDetailsInput,
+) -> dict[str, Any]:
     payload = dict(CREATE_CLUSTER_NON_SHAPE_DEFAULT_DETAILS)
     payload.update(_validate_create_opensearch_cluster_details(details))
     _validate_certificate_config(payload.get("certificate_config"))
@@ -348,9 +349,13 @@ def _validate_update_opensearch_cluster_details(payload: dict[str, Any]) -> None
         if username.lower() == "admin":
             raise ValueError("`security_master_user_name` cannot be `admin`; OCI reserves this username.")
         if payload.get("security_mode") == "DISABLED":
-            raise ValueError("Do not provide security master-user credentials when `security_mode` is `DISABLED`.")
-        if not isinstance(password_hash, str) or not password_hash.strip() or not password_hash.startswith(
-            "pbkdf2_stretch_1000"
+            raise ValueError(
+                "Do not provide security master-user credentials when `security_mode` is `DISABLED`."
+            )
+        if (
+            not isinstance(password_hash, str)
+            or not password_hash.strip()
+            or not password_hash.startswith("pbkdf2_stretch_1000")
         ):
             raise ValueError(
                 "`security_master_user_password_hash` must be a non-empty OCI-compatible hash in "
@@ -358,7 +363,12 @@ def _validate_update_opensearch_cluster_details(payload: dict[str, Any]) -> None
             )
 
 
-def _paginated_list(method: Callable[..., Response], *args: Any, limit: Optional[int] = None, **kwargs: Any) -> list[Any]:
+def _paginated_list(
+    method: Callable[..., Response],
+    *args: Any,
+    limit: Optional[int] = None,
+    **kwargs: Any,
+) -> list[Any]:
     results: list[Any] = []
     next_page: Optional[str] = None
 
@@ -541,8 +551,6 @@ def update_opensearch_cluster(
     serialized_update_details = update_details.model_dump(exclude_none=True)
     if not serialized_update_details:
         raise ValueError("Provide at least one update_details field.")
-    if not serialized_update_details.get("display_name"):
-        raise ValueError("`update_details.display_name` is required by UpdateOpensearchClusterDetails.")
     _validate_update_opensearch_cluster_details(serialized_update_details)
     _validate_certificate_config(serialized_update_details.get("certificate_config"))
 
@@ -551,7 +559,9 @@ def update_opensearch_cluster(
     optional_kwargs = _optional_kwargs(if_match=if_match, opc_request_id=opc_request_id)
     return _async_operation_response(
         "Update OpenSearch cluster",
-        lambda: client.update_opensearch_cluster(opensearch_cluster_id, sdk_update_details, **optional_kwargs),
+        lambda: client.update_opensearch_cluster(
+            opensearch_cluster_id, sdk_update_details, **optional_kwargs
+        ),
     )
 
 
@@ -607,7 +617,9 @@ def resize_opensearch_cluster_vertical(
     )
     return _async_operation_response(
         "Vertical resize OpenSearch cluster",
-        lambda: client.resize_opensearch_cluster_vertical(opensearch_cluster_id, sdk_resize_details, **optional_kwargs),
+        lambda: client.resize_opensearch_cluster_vertical(
+            opensearch_cluster_id, sdk_resize_details, **optional_kwargs
+        ),
         opc_retry_token=effective_retry_token,
         opc_retry_token_source=retry_token_source,
     )
@@ -646,7 +658,9 @@ def resize_opensearch_cluster_horizontal(
     )
     return _async_operation_response(
         "Horizontal resize OpenSearch cluster",
-        lambda: client.resize_opensearch_cluster_horizontal(opensearch_cluster_id, sdk_resize_details, **optional_kwargs),
+        lambda: client.resize_opensearch_cluster_horizontal(
+            opensearch_cluster_id, sdk_resize_details, **optional_kwargs
+        ),
         opc_retry_token=effective_retry_token,
         opc_retry_token_source=retry_token_source,
     )
@@ -667,7 +681,9 @@ def backup_opensearch_cluster(
     opc_request_id: Optional[str] = Field(None, description="Optional request ID for tracing."),
 ) -> dict[str, Any]:
     serialized_backup_details = backup_details.model_dump(exclude_none=True)
-    missing_fields = [field for field in ("compartment_id", "display_name") if field not in serialized_backup_details]
+    missing_fields = [
+        field for field in ("compartment_id", "display_name") if field not in serialized_backup_details
+    ]
     if missing_fields:
         raise ValueError(
             "Missing required backup_details field(s): "
@@ -694,7 +710,9 @@ def backup_opensearch_cluster(
     )
     return _async_operation_response(
         "Backup OpenSearch cluster",
-        lambda: client.backup_opensearch_cluster(opensearch_cluster_id, sdk_backup_details, **optional_kwargs),
+        lambda: client.backup_opensearch_cluster(
+            opensearch_cluster_id, sdk_backup_details, **optional_kwargs
+        ),
         opc_retry_token=effective_retry_token,
         opc_retry_token_source=retry_token_source,
     )
@@ -743,26 +761,17 @@ def get_work_request(
     return _serialize(response.data)
 
 
-def _parse_http_port(port: str) -> int:
-    try:
-        parsed_port = int(port)
-    except ValueError as exc:
-        raise ValueError("ORACLE_MCP_PORT must be an integer") from exc
-
-    if parsed_port < 1 or parsed_port > 65535:
-        raise ValueError("ORACLE_MCP_PORT must be between 1 and 65535")
-
-    return parsed_port
-
-
 def main() -> None:
     host = os.getenv("ORACLE_MCP_HOST")
     port = os.getenv("ORACLE_MCP_PORT")
 
-    if host and port:
-        mcp.run(transport="http", host=host, port=_parse_http_port(port))
-    else:
-        mcp.run()
+    if host or port:
+        raise RuntimeError(
+            "oracle.oci-opensearch-mcp-server supports stdio transport only. "
+            "Unset ORACLE_MCP_HOST and ORACLE_MCP_PORT, then run the server again."
+        )
+
+    mcp.run()
 
 
 if __name__ == "__main__":

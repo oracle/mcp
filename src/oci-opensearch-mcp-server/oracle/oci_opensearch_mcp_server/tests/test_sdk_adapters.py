@@ -30,7 +30,10 @@ class TestSdkAdapters:
                 "subnet_compartment_id": "ocid1.compartment.oc1..network1",
                 "security_master_user_name": "admin1",
                 "security_master_user_password_hash": "pbkdf2_stretch_1000$SALT$HASH",
-                "security_saml_config": {"is_enabled": True, "idp_entity_id": "entity-id"},
+                "security_saml_config": {
+                    "is_enabled": True,
+                    "idp_entity_id": "entity-id",
+                },
                 "maintenance_details": {"notification_email_ids": ["admin@example.com"]},
             }
         )
@@ -47,7 +50,10 @@ class TestSdkAdapters:
             {
                 "display_name": "cluster-one-updated",
                 "backup_policy": {"is_enabled": True, "retention_in_days": 7},
-                "security_saml_config": {"is_enabled": True, "idp_entity_id": "entity-id"},
+                "security_saml_config": {
+                    "is_enabled": True,
+                    "idp_entity_id": "entity-id",
+                },
                 "maintenance_details": {"notification_email_ids": ["admin@example.com"]},
                 "load_balancer_config": {
                     "load_balancer_service_type": "LOAD_BALANCER",

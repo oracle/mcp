@@ -20,6 +20,22 @@ from oracle.oci_opensearch_mcp_server.scripts import (
 from oracle.oci_opensearch_mcp_server.server import mcp
 
 
+async def _tools_by_name():
+    return {tool.name: tool for tool in await mcp.list_tools()}
+
+
+def _object_schema(schema: dict, property_name: str) -> dict:
+    property_schema = schema["properties"][property_name]
+    candidates = property_schema.get("anyOf") or [property_schema]
+    for candidate in candidates:
+        ref = candidate.get("$ref")
+        if ref:
+            return schema["$defs"][ref.split("/")[-1]]
+        if candidate.get("type") == "object":
+            return candidate
+    raise AssertionError(f"No object schema found for {property_name}")
+
+
 class TestOpenSearchTools:
     @pytest.mark.asyncio
     @patch("oracle.oci_opensearch_mcp_server.server.get_opensearch_cluster_client")
@@ -159,7 +175,10 @@ class TestOpenSearchTools:
                 {"compartment_id": "ocid1.compartment.oc1..compartment1"},
             )
 
-        assert result.structured_content["shapes"] == ["VM.Standard.A1.Flex", "VM.Standard.E4.Flex"]
+        assert result.structured_content["shapes"] == [
+            "VM.Standard.A1.Flex",
+            "VM.Standard.E4.Flex",
+        ]
         mock_client.list_opensearch_cluster_shapes.assert_called_once_with(
             "ocid1.compartment.oc1..compartment1"
         )
@@ -189,7 +208,7 @@ class TestOpenSearchTools:
 
     @pytest.mark.asyncio
     async def test_shape_tool_and_shape_fields_are_discoverable_for_agents(self):
-        tools = await mcp._tool_manager.get_tools()
+        tools = await _tools_by_name()
 
         shape_tool = tools["list_opensearch_cluster_shapes"].model_dump()
         create_tool = tools["create_opensearch_cluster"].model_dump()
@@ -200,10 +219,11 @@ class TestOpenSearchTools:
         assert "list_opensearch_cluster_shapes" in resize_tool["description"]
 
         create_schema = create_tool["parameters"]
-        payload_schema = create_schema["properties"]["create_opensearch_cluster_details"]
-        detail_ref = payload_schema["anyOf"][0]["$ref"].split("/")[-1]
-        detail_schema = create_schema["$defs"][detail_ref]
-        assert "list_opensearch_cluster_shapes" in detail_schema["properties"]["master_node_host_shape"]["description"]
+        detail_schema = _object_schema(create_schema, "create_opensearch_cluster_details")
+        assert (
+            "list_opensearch_cluster_shapes"
+            in detail_schema["properties"]["master_node_host_shape"]["description"]
+        )
 
     @pytest.mark.asyncio
     @patch("oracle.oci_opensearch_mcp_server.server.get_opensearch_cluster_client")
@@ -359,7 +379,10 @@ class TestOpenSearchTools:
     def test_generated_retry_token_is_deterministic_for_identical_payloads(self):
         payload = {
             "operation": "create_opensearch_cluster",
-            "payload": {"display_name": "cluster-one", "compartment_id": "ocid1.compartment.oc1..compartment1"},
+            "payload": {
+                "display_name": "cluster-one",
+                "compartment_id": "ocid1.compartment.oc1..compartment1",
+            },
         }
 
         first = server._deterministic_retry_token("mcp-create-", payload)
@@ -395,7 +418,9 @@ class TestOpenSearchTools:
         mock_get_client.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_create_opensearch_cluster_rejects_plain_security_password_input(self):
+    async def test_create_opensearch_cluster_rejects_plain_security_password_input(
+        self,
+    ):
         async with Client(mcp) as client:
             with pytest.raises(Exception, match="Extra inputs are not permitted"):
                 await client.call_tool(
@@ -416,7 +441,9 @@ class TestOpenSearchTools:
                 )
 
     @pytest.mark.asyncio
-    async def test_create_opensearch_cluster_rejects_invalid_security_password_hash(self):
+    async def test_create_opensearch_cluster_rejects_invalid_security_password_hash(
+        self,
+    ):
         async with Client(mcp) as client:
             with pytest.raises(Exception, match="pbkdf2_stretch_1000"):
                 await client.call_tool(
@@ -437,7 +464,9 @@ class TestOpenSearchTools:
                 )
 
     @pytest.mark.asyncio
-    async def test_create_opensearch_cluster_rejects_missing_security_master_user_name(self):
+    async def test_create_opensearch_cluster_rejects_missing_security_master_user_name(
+        self,
+    ):
         async with Client(mcp) as client:
             with pytest.raises(Exception, match="security_master_user_name"):
                 await client.call_tool(
@@ -481,7 +510,9 @@ class TestOpenSearchTools:
         mock_get_client.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_create_opensearch_cluster_rejects_missing_security_master_user_password_hash(self):
+    async def test_create_opensearch_cluster_rejects_missing_security_master_user_password_hash(
+        self,
+    ):
         async with Client(mcp) as client:
             with pytest.raises(Exception, match="security_master_user_password_hash"):
                 await client.call_tool(
@@ -541,7 +572,9 @@ class TestOpenSearchTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_opensearch_mcp_server.server.get_opensearch_cluster_client")
-    async def test_create_opensearch_cluster_applies_non_shape_defaults_and_allows_partial_overrides(self, mock_get_client):
+    async def test_create_opensearch_cluster_applies_non_shape_defaults_and_allows_partial_overrides(
+        self, mock_get_client
+    ):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -647,7 +680,9 @@ class TestOpenSearchTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_opensearch_mcp_server.server.get_opensearch_cluster_client")
-    async def test_create_opensearch_cluster_passes_optional_sdk_supported_network_and_security_fields(self, mock_get_client):
+    async def test_create_opensearch_cluster_passes_optional_sdk_supported_network_and_security_fields(
+        self, mock_get_client
+    ):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -724,7 +759,11 @@ class TestOpenSearchTools:
                         "subnet_compartment_id": "ocid1.compartment.oc1..network1",
                         "security_master_user_name": "admin1",
                         "security_master_user_password_hash": "pbkdf2_stretch_1000$SALT$HASH",
-                        "backup_policy": {"is_enabled": True, "retention_in_days": 14, "frequency_in_hours": 24},
+                        "backup_policy": {
+                            "is_enabled": True,
+                            "retention_in_days": 14,
+                            "frequency_in_hours": 24,
+                        },
                         "security_saml_config": {
                             "is_enabled": True,
                             "idp_entity_id": "https://idp.example.com/entity",
@@ -766,18 +805,27 @@ class TestOpenSearchTools:
         assert sdk_payload.security_saml_config.roles_key == "roles"
         assert sdk_payload.reverse_connection_endpoint_customer_ips == ["203.0.113.10"]
         assert sdk_payload.inbound_cluster_ids == ["ocid1.opensearchcluster.oc1..inbound1"]
-        assert isinstance(sdk_payload.outbound_cluster_config, oci.opensearch.models.OutboundClusterConfig)
+        assert isinstance(
+            sdk_payload.outbound_cluster_config,
+            oci.opensearch.models.OutboundClusterConfig,
+        )
         assert sdk_payload.outbound_cluster_config.is_enabled is True
         assert isinstance(
             sdk_payload.outbound_cluster_config.outbound_clusters[0],
             oci.opensearch.models.OutboundClusterSummary,
         )
-        assert sdk_payload.outbound_cluster_config.outbound_clusters[0].seed_cluster_id == "ocid1.opensearchcluster.oc1..remote1"
+        assert (
+            sdk_payload.outbound_cluster_config.outbound_clusters[0].seed_cluster_id
+            == "ocid1.opensearchcluster.oc1..remote1"
+        )
         assert isinstance(sdk_payload.certificate_config, oci.opensearch.models.CertificateConfig)
         assert sdk_payload.certificate_config.cluster_certificate_mode == "OCI_CERTIFICATES_SERVICE"
         assert sdk_payload.certificate_config.dashboard_certificate_mode == "OCI_CERTIFICATES_SERVICE"
         assert sdk_payload.certificate_config.open_search_api_certificate_id == "ocid1.certificate.oc1..api1"
-        assert isinstance(sdk_payload.maintenance_details, oci.opensearch.models.CreateMaintenanceDetails)
+        assert isinstance(
+            sdk_payload.maintenance_details,
+            oci.opensearch.models.CreateMaintenanceDetails,
+        )
         assert sdk_payload.freeform_tags == {"env": "qa"}
         assert sdk_payload.defined_tags == {"Operations": {"CostCenter": "42"}}
 
@@ -827,7 +875,9 @@ class TestOpenSearchTools:
         assert "data_node_host_shape" not in payload
         assert "opendashboard_node_host_shape" not in payload
 
-    def test_build_create_payload_defaults_flex_host_type_when_optional_shapes_are_present(self):
+    def test_build_create_payload_defaults_flex_host_type_when_optional_shapes_are_present(
+        self,
+    ):
         payload = server._build_create_opensearch_cluster_payload(
             server.CreateOpensearchClusterDetailsInput(
                 display_name="cluster-one",
@@ -905,7 +955,9 @@ class TestOpenSearchTools:
                 await client.call_tool("create_opensearch_cluster", {"opc_retry_token": "retry-token"})
 
     @pytest.mark.asyncio
-    async def test_create_opensearch_cluster_missing_required_fields_has_actionable_error(self):
+    async def test_create_opensearch_cluster_missing_required_fields_has_actionable_error(
+        self,
+    ):
         async with Client(mcp) as client:
             with pytest.raises(Exception, match="display_name"):
                 await client.call_tool(
@@ -985,12 +1037,10 @@ class TestOpenSearchTools:
 
     @pytest.mark.asyncio
     async def test_create_opensearch_cluster_schema_is_explicit(self):
-        tools = await mcp._tool_manager.get_tools()
+        tools = await _tools_by_name()
         create_tool = tools["create_opensearch_cluster"]
         schema = create_tool.model_dump()["parameters"]
-        payload_schema = schema["properties"]["create_opensearch_cluster_details"]
-        detail_ref = payload_schema["anyOf"][0]["$ref"].split("/")[-1]
-        detail_schema = schema["$defs"][detail_ref]
+        detail_schema = _object_schema(schema, "create_opensearch_cluster_details")
 
         assert detail_schema["type"] == "object"
         assert "properties" in detail_schema
@@ -1033,7 +1083,9 @@ class TestOpenSearchTools:
         assert update_payload.display_name == "cluster-one-updated"
 
     @pytest.mark.asyncio
-    async def test_update_opensearch_cluster_rejects_security_hash_without_security_mode(self):
+    async def test_update_opensearch_cluster_rejects_security_hash_without_security_mode(
+        self,
+    ):
         async with Client(mcp) as client:
             with pytest.raises(Exception, match="security_mode"):
                 await client.call_tool(
@@ -1041,14 +1093,15 @@ class TestOpenSearchTools:
                     {
                         "opensearch_cluster_id": "ocid1.opensearchcluster.oc1..cluster1",
                         "update_details": {
-                            "display_name": "cluster-one-updated",
                             "security_master_user_password_hash": "pbkdf2_stretch_1000$SALT$HASH",
                         },
                     },
                 )
 
     @pytest.mark.asyncio
-    async def test_update_opensearch_cluster_rejects_incomplete_security_master_user_pair(self):
+    async def test_update_opensearch_cluster_rejects_incomplete_security_master_user_pair(
+        self,
+    ):
         async with Client(mcp) as client:
             with pytest.raises(Exception, match="security_master_user_name"):
                 await client.call_tool(
@@ -1056,7 +1109,6 @@ class TestOpenSearchTools:
                     {
                         "opensearch_cluster_id": "ocid1.opensearchcluster.oc1..cluster1",
                         "update_details": {
-                            "display_name": "cluster-one-updated",
                             "security_mode": "ENFORCING",
                             "security_master_user_password_hash": "pbkdf2_stretch_1000$SALT$HASH",
                         },
@@ -1064,7 +1116,9 @@ class TestOpenSearchTools:
                 )
 
     @pytest.mark.asyncio
-    async def test_update_opensearch_cluster_rejects_reserved_security_master_user(self):
+    async def test_update_opensearch_cluster_rejects_reserved_security_master_user(
+        self,
+    ):
         async with Client(mcp) as client:
             with pytest.raises(Exception, match="admin"):
                 await client.call_tool(
@@ -1072,7 +1126,6 @@ class TestOpenSearchTools:
                     {
                         "opensearch_cluster_id": "ocid1.opensearchcluster.oc1..cluster1",
                         "update_details": {
-                            "display_name": "cluster-one-updated",
                             "security_mode": "ENFORCING",
                             "security_master_user_name": "admin",
                             "security_master_user_password_hash": "pbkdf2_stretch_1000$SALT$HASH",
@@ -1098,7 +1151,6 @@ class TestOpenSearchTools:
                 {
                     "opensearch_cluster_id": "ocid1.opensearchcluster.oc1..cluster1",
                     "update_details": {
-                        "display_name": "cluster-one-updated",
                         "security_mode": "ENFORCING",
                         "security_master_user_name": "master-user",
                         "security_master_user_password_hash": "pbkdf2_stretch_1000$SALT$HASH",
@@ -1108,13 +1160,16 @@ class TestOpenSearchTools:
 
         assert result.structured_content["opc_work_request_id"] == "ocid1.workrequest.oc1..wr-security"
         update_payload = mock_client.update_opensearch_cluster.call_args.args[1]
+        assert update_payload.display_name is None
         assert update_payload.security_mode == "ENFORCING"
         assert update_payload.security_master_user_name == "master-user"
         assert update_payload.security_master_user_password_hash == "pbkdf2_stretch_1000$SALT$HASH"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_opensearch_mcp_server.server.get_opensearch_cluster_client")
-    async def test_update_opensearch_cluster_passes_advanced_optional_configs(self, mock_get_client):
+    async def test_update_opensearch_cluster_passes_advanced_optional_configs_without_display_name(
+        self, mock_get_client
+    ):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -1130,8 +1185,6 @@ class TestOpenSearchTools:
                 {
                     "opensearch_cluster_id": "ocid1.opensearchcluster.oc1..cluster1",
                     "update_details": {
-                        "display_name": "cluster-one-updated",
-                        "software_version": "3.2.1",
                         "security_mode": "ENFORCING",
                         "security_saml_config": {
                             "is_enabled": True,
@@ -1142,7 +1195,11 @@ class TestOpenSearchTools:
                             "subject_key": "nameid",
                             "roles_key": "roles",
                         },
-                        "backup_policy": {"is_enabled": True, "retention_in_days": 30, "frequency_in_hours": 12},
+                        "backup_policy": {
+                            "is_enabled": True,
+                            "retention_in_days": 30,
+                            "frequency_in_hours": 12,
+                        },
                         "reverse_connection_endpoint_customer_ips": ["203.0.113.20"],
                         "outbound_cluster_config": {
                             "is_enabled": True,
@@ -1172,24 +1229,40 @@ class TestOpenSearchTools:
 
         assert result.structured_content["opc_work_request_id"] == "ocid1.workrequest.oc1..wr-update-advanced"
         update_payload = mock_client.update_opensearch_cluster.call_args.args[1]
-        assert update_payload.software_version == "3.2.1"
+        assert update_payload.display_name is None
+        assert update_payload.software_version is None
         assert update_payload.security_mode == "ENFORCING"
-        assert isinstance(update_payload.security_saml_config, oci.opensearch.models.SecuritySamlConfig)
+        assert isinstance(
+            update_payload.security_saml_config,
+            oci.opensearch.models.SecuritySamlConfig,
+        )
         assert update_payload.security_saml_config.admin_backend_role == "opensearch-admins"
         assert isinstance(update_payload.backup_policy, oci.opensearch.models.BackupPolicy)
         assert update_payload.backup_policy.retention_in_days == 30
         assert update_payload.reverse_connection_endpoint_customer_ips == ["203.0.113.20"]
-        assert isinstance(update_payload.outbound_cluster_config, oci.opensearch.models.OutboundClusterConfig)
+        assert isinstance(
+            update_payload.outbound_cluster_config,
+            oci.opensearch.models.OutboundClusterConfig,
+        )
         assert isinstance(
             update_payload.outbound_cluster_config.outbound_clusters[0],
             oci.opensearch.models.OutboundClusterSummary,
         )
-        assert update_payload.outbound_cluster_config.outbound_clusters[0].seed_cluster_id == "ocid1.opensearchcluster.oc1..remote1"
+        assert (
+            update_payload.outbound_cluster_config.outbound_clusters[0].seed_cluster_id
+            == "ocid1.opensearchcluster.oc1..remote1"
+        )
         assert isinstance(update_payload.certificate_config, oci.opensearch.models.CertificateConfig)
         assert update_payload.certificate_config.cluster_certificate_mode == "OCI_CERTIFICATES_SERVICE"
         assert update_payload.certificate_config.dashboard_certificate_mode == "OCI_CERTIFICATES_SERVICE"
-        assert update_payload.certificate_config.open_search_dashboard_certificate_id == "ocid1.certificate.oc1..dashboard1"
-        assert isinstance(update_payload.maintenance_details, oci.opensearch.models.UpdateMaintenanceDetails)
+        assert (
+            update_payload.certificate_config.open_search_dashboard_certificate_id
+            == "ocid1.certificate.oc1..dashboard1"
+        )
+        assert isinstance(
+            update_payload.maintenance_details,
+            oci.opensearch.models.UpdateMaintenanceDetails,
+        )
         assert update_payload.defined_tags == {"Operations": {"CostCenter": "42"}}
         assert update_payload.freeform_tags == {"env": "qa"}
         assert update_payload.security_attributes == {"oracle-zpr": {"sensitivity": "internal"}}
@@ -1203,7 +1276,6 @@ class TestOpenSearchTools:
                     {
                         "opensearch_cluster_id": "ocid1.opensearchcluster.oc1..cluster1",
                         "update_details": {
-                            "display_name": "cluster-one-updated",
                             "certificate_config": {
                                 "cluster_certificate_mode": "CUSTOMER_MANAGED",
                                 "dashboard_certificate_mode": "CUSTOMER_MANAGED",
@@ -1215,7 +1287,9 @@ class TestOpenSearchTools:
                 )
 
     @pytest.mark.asyncio
-    async def test_update_opensearch_cluster_rejects_byoc_mode_without_certificate_id(self):
+    async def test_update_opensearch_cluster_rejects_byoc_mode_without_certificate_id(
+        self,
+    ):
         async with Client(mcp) as client:
             with pytest.raises(Exception, match="open_search_api_certificate_id"):
                 await client.call_tool(
@@ -1223,14 +1297,15 @@ class TestOpenSearchTools:
                     {
                         "opensearch_cluster_id": "ocid1.opensearchcluster.oc1..cluster1",
                         "update_details": {
-                            "display_name": "cluster-one-updated",
                             "certificate_config": {"cluster_certificate_mode": "OCI_CERTIFICATES_SERVICE"},
                         },
                     },
                 )
 
     @pytest.mark.asyncio
-    async def test_update_opensearch_cluster_rejects_service_managed_mode_with_certificate_id(self):
+    async def test_update_opensearch_cluster_rejects_service_managed_mode_with_certificate_id(
+        self,
+    ):
         async with Client(mcp) as client:
             with pytest.raises(Exception, match="must be omitted"):
                 await client.call_tool(
@@ -1238,7 +1313,6 @@ class TestOpenSearchTools:
                     {
                         "opensearch_cluster_id": "ocid1.opensearchcluster.oc1..cluster1",
                         "update_details": {
-                            "display_name": "cluster-one-updated",
                             "certificate_config": {
                                 "cluster_certificate_mode": "OPENSEARCH_SERVICE",
                                 "open_search_api_certificate_id": "ocid1.certificate.oc1..api1",
@@ -1248,7 +1322,9 @@ class TestOpenSearchTools:
                 )
 
     @pytest.mark.asyncio
-    async def test_update_opensearch_cluster_rejects_saml_config_without_security_mode(self):
+    async def test_update_opensearch_cluster_rejects_saml_config_without_security_mode(
+        self,
+    ):
         async with Client(mcp) as client:
             with pytest.raises(Exception, match="security_mode"):
                 await client.call_tool(
@@ -1256,14 +1332,18 @@ class TestOpenSearchTools:
                     {
                         "opensearch_cluster_id": "ocid1.opensearchcluster.oc1..cluster1",
                         "update_details": {
-                            "display_name": "cluster-one-updated",
-                            "security_saml_config": {"is_enabled": True, "idp_entity_id": "entity-id"},
+                            "security_saml_config": {
+                                "is_enabled": True,
+                                "idp_entity_id": "entity-id",
+                            },
                         },
                     },
                 )
 
     @pytest.mark.asyncio
-    async def test_update_opensearch_cluster_rejects_unknown_nested_saml_config_fields(self):
+    async def test_update_opensearch_cluster_rejects_unknown_nested_saml_config_fields(
+        self,
+    ):
         async with Client(mcp) as client:
             with pytest.raises(Exception, match="Extra inputs are not permitted"):
                 await client.call_tool(
@@ -1271,16 +1351,20 @@ class TestOpenSearchTools:
                     {
                         "opensearch_cluster_id": "ocid1.opensearchcluster.oc1..cluster1",
                         "update_details": {
-                            "display_name": "cluster-one-updated",
                             "security_mode": "ENFORCING",
-                            "security_saml_config": {"is_enabled": True, "unknown_field": "value"},
+                            "security_saml_config": {
+                                "is_enabled": True,
+                                "unknown_field": "value",
+                            },
                         },
                     },
                 )
 
     @pytest.mark.asyncio
     @patch("oracle.oci_opensearch_mcp_server.server.get_opensearch_cluster_client")
-    async def test_update_opensearch_cluster_converts_nested_load_balancer_and_certificate_configs(self, mock_get_client):
+    async def test_update_opensearch_cluster_converts_nested_load_balancer_and_certificate_configs(
+        self, mock_get_client
+    ):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -1296,7 +1380,6 @@ class TestOpenSearchTools:
                 {
                     "opensearch_cluster_id": "ocid1.opensearchcluster.oc1..cluster1",
                     "update_details": {
-                        "display_name": "cluster-one-updated",
                         "load_balancer_config": {
                             "load_balancer_service_type": "LOAD_BALANCER",
                             "load_balancer_min_bandwidth_in_mbps": 10,
@@ -1311,13 +1394,18 @@ class TestOpenSearchTools:
             )
 
         update_payload = mock_client.update_opensearch_cluster.call_args.args[1]
-        assert isinstance(update_payload.load_balancer_config, oci.opensearch.models.LoadBalancerConfig)
+        assert isinstance(
+            update_payload.load_balancer_config,
+            oci.opensearch.models.LoadBalancerConfig,
+        )
         assert update_payload.load_balancer_config.load_balancer_max_bandwidth_in_mbps == 100
         assert isinstance(update_payload.certificate_config, oci.opensearch.models.CertificateConfig)
         assert update_payload.certificate_config.dashboard_certificate_mode == "OPENSEARCH_SERVICE"
 
     @pytest.mark.asyncio
-    async def test_update_opensearch_cluster_rejects_unknown_nested_load_balancer_config_fields(self):
+    async def test_update_opensearch_cluster_rejects_unknown_nested_load_balancer_config_fields(
+        self,
+    ):
         async with Client(mcp) as client:
             with pytest.raises(Exception, match="Extra inputs are not permitted"):
                 await client.call_tool(
@@ -1325,32 +1413,122 @@ class TestOpenSearchTools:
                     {
                         "opensearch_cluster_id": "ocid1.opensearchcluster.oc1..cluster1",
                         "update_details": {
-                            "display_name": "cluster-one-updated",
                             "load_balancer_config": {"is_enabled": True},
                         },
                     },
                 )
 
     @pytest.mark.asyncio
-    async def test_update_opensearch_cluster_requires_display_name(self):
+    @patch("oracle.oci_opensearch_mcp_server.server.get_opensearch_cluster_client")
+    async def test_update_opensearch_cluster_accepts_software_version_without_display_name(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_response = create_autospec(oci.response.Response)
+        mock_response.status = 202
+        mock_response.data = None
+        mock_response.headers = {"opc-work-request-id": "ocid1.workrequest.oc1..wr-update-version"}
+        mock_client.update_opensearch_cluster.return_value = mock_response
+
         async with Client(mcp) as client:
-            with pytest.raises(Exception, match="display_name"):
+            result = await client.call_tool(
+                "update_opensearch_cluster",
+                {
+                    "opensearch_cluster_id": "ocid1.opensearchcluster.oc1..cluster1",
+                    "update_details": {"software_version": "3.2.0"},
+                },
+            )
+
+        assert result.structured_content["opc_work_request_id"] == "ocid1.workrequest.oc1..wr-update-version"
+        update_payload = mock_client.update_opensearch_cluster.call_args.args[1]
+        assert update_payload.display_name is None
+        assert update_payload.software_version == "3.2.0"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_opensearch_mcp_server.server.get_opensearch_cluster_client")
+    async def test_update_opensearch_cluster_accepts_tags_without_display_name(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_response = create_autospec(oci.response.Response)
+        mock_response.status = 202
+        mock_response.data = None
+        mock_response.headers = {"opc-work-request-id": "ocid1.workrequest.oc1..wr-update-tags"}
+        mock_client.update_opensearch_cluster.return_value = mock_response
+
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "update_opensearch_cluster",
+                {
+                    "opensearch_cluster_id": "ocid1.opensearchcluster.oc1..cluster1",
+                    "update_details": {
+                        "freeform_tags": {"env": "prod"},
+                        "defined_tags": {"Operations": {"CostCenter": "42"}},
+                    },
+                },
+            )
+
+        assert result.structured_content["opc_work_request_id"] == "ocid1.workrequest.oc1..wr-update-tags"
+        update_payload = mock_client.update_opensearch_cluster.call_args.args[1]
+        assert update_payload.display_name is None
+        assert update_payload.freeform_tags == {"env": "prod"}
+        assert update_payload.defined_tags == {"Operations": {"CostCenter": "42"}}
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_opensearch_mcp_server.server.get_opensearch_cluster_client")
+    async def test_update_opensearch_cluster_accepts_backup_policy_without_display_name(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_response = create_autospec(oci.response.Response)
+        mock_response.status = 202
+        mock_response.data = None
+        mock_response.headers = {"opc-work-request-id": "ocid1.workrequest.oc1..wr-update-backup"}
+        mock_client.update_opensearch_cluster.return_value = mock_response
+
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "update_opensearch_cluster",
+                {
+                    "opensearch_cluster_id": "ocid1.opensearchcluster.oc1..cluster1",
+                    "update_details": {
+                        "backup_policy": {
+                            "is_enabled": True,
+                            "retention_in_days": 30,
+                            "frequency_in_hours": 12,
+                        },
+                    },
+                },
+            )
+
+        assert result.structured_content["opc_work_request_id"] == "ocid1.workrequest.oc1..wr-update-backup"
+        update_payload = mock_client.update_opensearch_cluster.call_args.args[1]
+        assert update_payload.display_name is None
+        assert isinstance(update_payload.backup_policy, oci.opensearch.models.BackupPolicy)
+        assert update_payload.backup_policy.retention_in_days == 30
+
+    @pytest.mark.asyncio
+    async def test_update_opensearch_cluster_rejects_empty_update_details(self):
+        async with Client(mcp) as client:
+            with pytest.raises(Exception, match="at least one update_details field"):
                 await client.call_tool(
                     "update_opensearch_cluster",
                     {
                         "opensearch_cluster_id": "ocid1.opensearchcluster.oc1..cluster1",
-                        "update_details": {"software_version": "3.2.0"},
+                        "update_details": {},
                     },
                 )
 
     @pytest.mark.asyncio
     async def test_update_opensearch_cluster_schema_is_explicit(self):
-        tools = await mcp._tool_manager.get_tools()
+        tools = await _tools_by_name()
         update_tool = tools["update_opensearch_cluster"]
         schema = update_tool.model_dump()["parameters"]
-        payload_schema = schema["properties"]["update_details"]
-        detail_ref = payload_schema["$ref"].split("/")[-1]
-        detail_schema = schema["$defs"][detail_ref]
+        detail_schema = _object_schema(schema, "update_details")
 
         assert detail_schema["type"] == "object"
         assert "display_name" in detail_schema["properties"]
@@ -1362,6 +1540,7 @@ class TestOpenSearchTools:
         assert "outbound_cluster_config" in detail_schema["properties"]
         assert "reverse_connection_endpoint_customer_ips" in detail_schema["properties"]
         assert "certificate_config" in detail_schema["properties"]
+        assert "display_name" not in detail_schema.get("required", [])
 
     @pytest.mark.asyncio
     @patch("oracle.oci_opensearch_mcp_server.server.get_opensearch_cluster_client")
@@ -1463,7 +1642,9 @@ class TestOpenSearchTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_opensearch_mcp_server.server.get_opensearch_cluster_client")
-    async def test_resize_opensearch_cluster_vertical_service_error_returns_clean_payload(self, mock_get_client):
+    async def test_resize_opensearch_cluster_vertical_service_error_returns_clean_payload(
+        self, mock_get_client
+    ):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
         mock_client.resize_opensearch_cluster_vertical.side_effect = oci.exceptions.ServiceError(
@@ -1501,12 +1682,10 @@ class TestOpenSearchTools:
 
     @pytest.mark.asyncio
     async def test_resize_opensearch_cluster_vertical_schema_is_explicit(self):
-        tools = await mcp._tool_manager.get_tools()
+        tools = await _tools_by_name()
         resize_tool = tools["resize_opensearch_cluster_vertical"]
         schema = resize_tool.model_dump()["parameters"]
-        payload_schema = schema["properties"]["resize_details"]
-        detail_ref = payload_schema["$ref"].split("/")[-1]
-        detail_schema = schema["$defs"][detail_ref]
+        detail_schema = _object_schema(schema, "resize_details")
 
         assert detail_schema["type"] == "object"
         assert "master_node_host_ocpu_count" in detail_schema["properties"]
@@ -1546,12 +1725,17 @@ class TestOpenSearchTools:
             == result.structured_content["opc_retry_token"]
         )
         resize_payload = mock_client.resize_opensearch_cluster_horizontal.call_args.args[1]
-        assert isinstance(resize_payload, oci.opensearch.models.ResizeOpensearchClusterHorizontalDetails)
+        assert isinstance(
+            resize_payload,
+            oci.opensearch.models.ResizeOpensearchClusterHorizontalDetails,
+        )
         assert resize_payload.data_node_count == 6
 
     @pytest.mark.asyncio
     @patch("oracle.oci_opensearch_mcp_server.server.get_opensearch_cluster_client")
-    async def test_resize_opensearch_cluster_horizontal_service_error_returns_clean_payload(self, mock_get_client):
+    async def test_resize_opensearch_cluster_horizontal_service_error_returns_clean_payload(
+        self, mock_get_client
+    ):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
         mock_client.resize_opensearch_cluster_horizontal.side_effect = oci.exceptions.ServiceError(
@@ -1589,12 +1773,10 @@ class TestOpenSearchTools:
 
     @pytest.mark.asyncio
     async def test_resize_opensearch_cluster_horizontal_schema_is_explicit(self):
-        tools = await mcp._tool_manager.get_tools()
+        tools = await _tools_by_name()
         resize_tool = tools["resize_opensearch_cluster_horizontal"]
         schema = resize_tool.model_dump()["parameters"]
-        payload_schema = schema["properties"]["resize_details"]
-        detail_ref = payload_schema["$ref"].split("/")[-1]
-        detail_schema = schema["$defs"][detail_ref]
+        detail_schema = _object_schema(schema, "resize_details")
 
         assert detail_schema["type"] == "object"
         assert "data_node_count" in detail_schema["properties"]
@@ -1672,7 +1854,9 @@ class TestOpenSearchTools:
         assert result.structured_content["message"] == "cluster is updating"
 
     @pytest.mark.asyncio
-    async def test_backup_opensearch_cluster_missing_required_fields_has_actionable_error(self):
+    async def test_backup_opensearch_cluster_missing_required_fields_has_actionable_error(
+        self,
+    ):
         async with Client(mcp) as client:
             with pytest.raises(Exception, match="compartment_id"):
                 await client.call_tool(
@@ -1685,12 +1869,10 @@ class TestOpenSearchTools:
 
     @pytest.mark.asyncio
     async def test_backup_opensearch_cluster_schema_is_explicit(self):
-        tools = await mcp._tool_manager.get_tools()
+        tools = await _tools_by_name()
         backup_tool = tools["backup_opensearch_cluster"]
         schema = backup_tool.model_dump()["parameters"]
-        payload_schema = schema["properties"]["backup_details"]
-        detail_ref = payload_schema["$ref"].split("/")[-1]
-        detail_schema = schema["$defs"][detail_ref]
+        detail_schema = _object_schema(schema, "backup_details")
 
         assert detail_schema["type"] == "object"
         assert "compartment_id" in detail_schema["properties"]
@@ -1752,7 +1934,10 @@ class TestOpenSearchTools:
                 {"compartment_id": "ocid1.compartment.oc1..compartment1"},
             )
 
-        assert result.structured_content == {"items": [{"id": "ocid1.workrequest.oc1..wr1"}], "count": 1}
+        assert result.structured_content == {
+            "items": [{"id": "ocid1.workrequest.oc1..wr1"}],
+            "count": 1,
+        }
 
     @pytest.mark.asyncio
     @patch("oracle.oci_opensearch_mcp_server.server.get_opensearch_cluster_client")
@@ -1867,48 +2052,20 @@ class TestServer:
         assert "get_work_request at most once" in server.mcp.instructions
         assert "instead of polling continuously" in server.mcp.instructions
 
+    @pytest.mark.parametrize(
+        "mock_env",
+        [
+            {"ORACLE_MCP_HOST": "127.0.0.1", "ORACLE_MCP_PORT": "8888"},
+            {"ORACLE_MCP_HOST": "127.0.0.1"},
+            {"ORACLE_MCP_PORT": "8888"},
+        ],
+    )
     @patch("oracle.oci_opensearch_mcp_server.server.mcp.run")
     @patch("oracle.oci_opensearch_mcp_server.server.os.getenv")
-    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run):
-        mock_env = {
-            "ORACLE_MCP_HOST": "127.0.0.1",
-            "ORACLE_MCP_PORT": "8888",
-        }
+    def test_main_rejects_http_transport_env(self, mock_getenv, mock_mcp_run, mock_env):
         mock_getenv.side_effect = lambda key: mock_env.get(key)
 
-        server.main()
-
-        mock_mcp_run.assert_called_once_with(
-            transport="http",
-            host="127.0.0.1",
-            port=8888,
-        )
-
-    @patch("oracle.oci_opensearch_mcp_server.server.mcp.run")
-    @patch("oracle.oci_opensearch_mcp_server.server.os.getenv")
-    def test_main_with_malformed_port_has_actionable_error(self, mock_getenv, mock_mcp_run):
-        mock_env = {
-            "ORACLE_MCP_HOST": "127.0.0.1",
-            "ORACLE_MCP_PORT": "not-a-port",
-        }
-        mock_getenv.side_effect = lambda key: mock_env.get(key)
-
-        with pytest.raises(ValueError, match="ORACLE_MCP_PORT must be an integer"):
-            server.main()
-
-        mock_mcp_run.assert_not_called()
-
-    @pytest.mark.parametrize("invalid_port", ["0", "-1", "65536"])
-    @patch("oracle.oci_opensearch_mcp_server.server.mcp.run")
-    @patch("oracle.oci_opensearch_mcp_server.server.os.getenv")
-    def test_main_with_out_of_range_port_has_actionable_error(self, mock_getenv, mock_mcp_run, invalid_port):
-        mock_env = {
-            "ORACLE_MCP_HOST": "127.0.0.1",
-            "ORACLE_MCP_PORT": invalid_port,
-        }
-        mock_getenv.side_effect = lambda key: mock_env.get(key)
-
-        with pytest.raises(ValueError, match="ORACLE_MCP_PORT must be between 1 and 65535"):
+        with pytest.raises(RuntimeError, match="supports stdio transport only"):
             server.main()
 
         mock_mcp_run.assert_not_called()
@@ -1940,4 +2097,3 @@ class TestRuntimeGuides:
         assert "do not poll continuously" in api_guide
         assert "get_work_request` once" in work_request_guide
         assert "list_opensearch_cluster_shapes" in tool_summary
-

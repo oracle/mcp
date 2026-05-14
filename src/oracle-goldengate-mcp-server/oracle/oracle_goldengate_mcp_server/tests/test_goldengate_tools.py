@@ -6,7 +6,9 @@ https://oss.oracle.com/licenses/upl.
 
 import json
 import os
+import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from pydantic import ValidationError
@@ -19,15 +21,58 @@ os.environ.setdefault("OGG_PASSWORD", "pass")
 from oracle.oracle_goldengate_mcp_server import server  # noqa: E402
 from oracle.oracle_goldengate_mcp_server.models import (  # noqa: E402
     CreateExtractBegin,
+    CreateExtractOptions,
     CreateExtractSource,
     CreateReplicatBegin,
+    CreateReplicatOptions,
+    CreateReplicatSource,
     ExtractAdvancedParameters,
+    ReplicatAdvancedParameters,
 )
 
 
 class TestGoldenGateTools(unittest.TestCase):
     def _assert_json(self, actual: str, expected: dict):
         self.assertEqual(json.loads(actual), expected)
+
+    def test_log_startup_writes_file_and_ignores_file_errors(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_file = os.path.join(tmpdir, "startup.log")
+            with patch.dict(os.environ, {"GG_MCP_LOG_FILE": log_file}):
+                server._log_startup("INFO", "hello")
+            with open(log_file, encoding="utf-8") as f:
+                self.assertIn("[INFO] hello", f.read())
+
+        with patch.dict(os.environ, {"GG_MCP_LOG_FILE": "/no/such/dir/startup.log"}):
+            server._log_startup("INFO", "ignored")
+
+    def test_verify_deployment_connectivity_success(self):
+        with patch.object(server.client, "get", return_value={"ok": True}) as get, patch.object(
+            server, "_log_startup"
+        ) as log:
+            server._verify_deployment_connectivity()
+
+        get.assert_called_once_with(server.api.list_domains())
+        self.assertEqual(log.call_args_list[-1].args[0], "INFO")
+        self.assertIn("Successfully connected", log.call_args_list[-1].args[1])
+
+    def test_verify_deployment_connectivity_logs_401_details(self):
+        with (
+            patch.object(server.client, "get", side_effect=RuntimeError("401 Unauthorized")),
+            patch.object(server, "_log_startup") as log,
+            self.assertRaises(RuntimeError),
+        ):
+            server._verify_deployment_connectivity()
+
+        messages = [call.args[1] for call in log.call_args_list]
+        self.assertTrue(any("Authentication to the GoldenGate deployment failed" in msg for msg in messages))
+
+    def test_resolve_begin_value_variants(self):
+        self.assertEqual(server._resolve_begin_value(None), "now")
+        self.assertEqual(server._resolve_begin_value("  "), "now")
+        self.assertEqual(server._resolve_begin_value("2026-04-21T10:33:00Z"), "2026-04-21T10:33:00Z")
+        self.assertEqual(server._resolve_begin_value(CreateReplicatBegin(sequence=2, offset=9)), {"sequence": 2, "offset": 9})
+        self.assertEqual(server._resolve_begin_value({"sequence": 1}), {"sequence": 1})
 
     def test_list_domains(self):
         with patch.object(server.client, "get", return_value={"ok": True}) as m:
@@ -95,6 +140,43 @@ class TestGoldenGateTools(unittest.TestCase):
             self.assertEqual(m.call_args.args[0], server.api.create_connection("OracleGoldenGate", "conn", "user", "pwd"))
             self._assert_json(out, {"ok": True})
 
+    def test_create_connection_defaults_domain(self):
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            out = server.create_connection("conn", "user", "pwd", " ")
+            self.assertEqual(m.call_args.args[0], server.api.create_connection(server.DEFAULT_DOMAIN, "conn", "user", "pwd"))
+            self._assert_json(out, {"ok": True})
+
+    def test_add_trandata_schema_and_table_payloads(self):
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            out = server.add_trandata_schema("D", "C", "HR")
+            m.assert_called_once_with(
+                server.api.add_trandata_schema("D", "C"),
+                {
+                    "schemaName": "HR",
+                    "nonvalidatedKeysAllowed": False,
+                    "schedulingColumns": True,
+                    "allColumns": False,
+                    "prepareCsnMode": "nowait",
+                    "operation": "add",
+                },
+            )
+            self._assert_json(out, {"ok": True})
+
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            out = server.add_trandata_table("D", "C", "HR", "EMP")
+            m.assert_called_once_with(
+                server.api.add_trandata_table("D", "C"),
+                {
+                    "tableName": "HR.EMP",
+                    "primaryKey": True,
+                    "schedulingColumns": True,
+                    "allColumns": False,
+                    "prepareCsnMode": "nowait",
+                    "operation": "add",
+                },
+            )
+            self._assert_json(out, {"ok": True})
+
     def test_create_extract(self):
         with patch.object(server.client, "post", return_value={"ok": True}) as m:
             out = server.create_extract("E1", "AA", "D", "C", tableStatement="TABLE S.T;", advanced=None)
@@ -146,6 +228,25 @@ class TestGoldenGateTools(unittest.TestCase):
             )
             self._assert_json(out, {"ok": True})
 
+    def test_update_extract_builds_structured_source_and_exttrail_target(self):
+        with patch.object(server.client, "patch", return_value={"ok": True}) as m:
+            out = server.update_extract(
+                "E1",
+                trailName="AA",
+                domainName="D",
+                connectionName="C",
+                source=CreateExtractSource(schema="S", table="T"),
+                options=CreateExtractOptions(targetDef="target.def"),
+                advanced=ExtractAdvancedParameters(extTrail="BB"),
+            )
+
+        self._assert_json(out, {"ok": True})
+        payload = m.call_args.args[1]
+        self.assertIn("TABLE S.T, TARGETDEF target.def;", payload["config"])
+        self.assertEqual(payload["targets"], [{"name": "BB"}])
+        self.assertEqual(payload["begin"], "now")
+        self.assertEqual(payload["credentials"], {"domain": "D", "alias": "C"})
+
     def test_create_replicat(self):
         with patch.object(server.client, "post", return_value={"ok": True}) as m:
             out = server.create_replicat("R1", "AA", "D", "C", mapStatement="MAP S.T, TARGET S2.T2;", advanced=None)
@@ -155,6 +256,36 @@ class TestGoldenGateTools(unittest.TestCase):
                 server.DEFAULT_MANAGED_PROCESS_SETTINGS,
             )
             self._assert_json(out, {"ok": True})
+
+    def test_create_replicat_requires_map_statement_or_source(self):
+        with self.assertRaises(ValueError):
+            server.create_replicat("R1", "AA", "D", "C")
+
+    def test_create_replicat_with_structured_source_checkpoint_and_parallel_mode(self):
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            out = server.create_replicat(
+                "R1",
+                "AA",
+                "D",
+                "C",
+                source=CreateReplicatSource(schema="S", table="T", targetTable="D.T"),
+                options=CreateReplicatOptions(targetDef="target.def"),
+                advanced=ReplicatAdvancedParameters(
+                    credential="USERIDALIAS TARGET DOMAIN D",
+                    checkpointTable="D.CHKPT",
+                    modeType="parallel",
+                    modeParallel=True,
+                    additionalParameters=["ASSUMETARGETDEFS"],
+                ),
+            )
+
+        self._assert_json(out, {"ok": True})
+        payload = m.call_args.args[1]
+        self.assertIn("USERIDALIAS TARGET DOMAIN D", payload["config"])
+        self.assertIn("MAP S.T, TARGET D.T, TARGETDEF target.def;", payload["config"])
+        self.assertEqual(payload["checkpoint"], {"table": "D.CHKPT"})
+        self.assertEqual(payload["mode"], {"type": "parallel", "parallel": True})
+        self.assertNotIn("source", payload)
 
     def test_create_replicat_defaults_begin_to_now(self):
         with patch.object(server.client, "post", return_value={"ok": True}) as m:
@@ -197,17 +328,78 @@ class TestGoldenGateTools(unittest.TestCase):
             )
             self._assert_json(out, {"ok": True})
 
+    def test_update_replicat_structured_source_requires_target_table(self):
+        source_without_target = SimpleNamespace(
+            model_dump=lambda **_kwargs: {"schema": "S", "table": "T"}
+        )
+
+        with self.assertRaises(ValueError):
+            server.update_replicat("R1", source=source_without_target)
+
+    def test_update_replicat_uses_advanced_credentials_and_parallel_mode(self):
+        with patch.object(server.client, "patch", return_value={"ok": True}) as m:
+            out = server.update_replicat(
+                "R1",
+                trailName="AA",
+                source=CreateReplicatSource(schema="S", table="T", targetTable="D.T"),
+                advanced=ReplicatAdvancedParameters(
+                    credential="USERIDALIAS TARGET DOMAIN D",
+                    modeType="parallel",
+                    modeParallel=False,
+                ),
+            )
+
+        self._assert_json(out, {"ok": True})
+        payload = m.call_args.args[1]
+        self.assertIn("USERIDALIAS TARGET DOMAIN D", payload["config"])
+        self.assertEqual(payload["mode"], {"type": "parallel", "parallel": False})
+        self.assertNotIn("source", payload)
+        self.assertNotIn("credentials", payload)
+
     def test_create_distribution_path(self):
         with patch.object(server.client, "post", return_value={"ok": True}) as m:
             out = server.create_distribution_path("P1", "src.example.com", "AA", "tgt.example.com", targetAuthenticationMethod=None)
             self.assertEqual(m.call_args.args[0], server.api.create_distribution_path("P1", "src.example.com", "AA", "tgt.example.com", 443, "OAuth", None, None))
             self._assert_json(out, {"ok": True})
 
+    def test_create_distribution_path_with_alias_authentication(self):
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            out = server.create_distribution_path(
+                "P1",
+                "src.example.com",
+                "AA",
+                "tgt.example.com",
+                targetPort=9443,
+                targetAuthenticationMethod="Alias",
+                targetDomain="D",
+                targetAlias="A",
+            )
+
+        self.assertEqual(m.call_args.args[0], server.api.create_distribution_path("P1", "src.example.com", "AA", "tgt.example.com", 9443, "Alias", "D", "A"))
+        self.assertEqual(m.call_args.args[1]["target"]["authenticationMethod"], {"domain": "D", "alias": "A"})
+        self._assert_json(out, {"ok": True})
+
     def test_create_data_stream(self):
         with patch.object(server.client, "post", return_value={"ok": True}) as m:
             out = server.create_data_stream("DS1", "AA")
             self.assertEqual(m.call_args.args[0], server.api.create_data_stream("DS1", "AA", None, None, None))
             self._assert_json(out, {"ok": True})
+
+    def test_create_data_stream_with_custom_options(self):
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            out = server.create_data_stream(
+                "DS1",
+                "AA",
+                qualityOfService="atLeastOnce",
+                cloudEventsFormat=True,
+                bufferSize=2048,
+            )
+
+        payload = m.call_args.args[1]
+        self.assertEqual(payload["qualityOfService"], "atLeastOnce")
+        self.assertTrue(payload["cloudEventsFormat"])
+        self.assertEqual(payload["bufferSize"], 2048)
+        self._assert_json(out, {"ok": True})
 
     def test_start(self):
         with patch.object(server.client, "post", return_value={"ok": True}) as m:
@@ -330,6 +522,27 @@ class TestGoldenGateTools(unittest.TestCase):
             self.assertEqual(arg_payload["source"]["table"], "T")
             sent_payload = m.call_args.args[1]
             self.assertIn("EXTTRAIL AB", sent_payload["config"])
+
+    def test_main_runs_after_successful_connectivity(self):
+        with patch.object(server, "_verify_deployment_connectivity") as verify, patch.object(server.mcp, "run") as run:
+            server.main()
+
+        verify.assert_called_once_with()
+        run.assert_called_once_with(transport="stdio")
+
+    def test_main_exits_after_failed_connectivity_and_debug_trace(self):
+        with (
+            patch.object(server, "_verify_deployment_connectivity", side_effect=RuntimeError("boom")),
+            patch.object(server, "_log_startup") as log,
+            patch.object(server.traceback, "print_exc") as print_exc,
+            patch.dict(os.environ, {"OGG_MCP_DEBUG": "true"}),
+            self.assertRaises(SystemExit) as exc,
+        ):
+            server.main()
+
+        self.assertEqual(exc.exception.code, 1)
+        self.assertTrue(any("Startup aborted" in call.args[1] for call in log.call_args_list))
+        print_exc.assert_called_once()
 
 
 class TestModelValidation(unittest.TestCase):

@@ -7,6 +7,7 @@ https://oss.oracle.com/licenses/upl.
 from __future__ import annotations
 
 import base64
+import http.client
 import json
 from pathlib import Path
 
@@ -25,6 +26,12 @@ from oracle.oracle_goldengate_mcp_server import (
 
 def test_map_statement_normalize_and_build() -> None:
     assert map_statement.normalize_map_statement("S.T, TARGET D.T") == "MAP S.T, TARGET D.T;"
+    assert map_statement.normalize_map_statement("MAP S.T, TARGET D.T;") == "MAP S.T, TARGET D.T;"
+
+    minimal = map_statement.build_map_statement(
+        {"source": {"schema": "S", "table": "T", "targetTable": "D.T"}}
+    )
+    assert minimal == "MAP S.T, TARGET D.T;"
 
     built = map_statement.build_map_statement(
         {
@@ -69,6 +76,28 @@ def test_map_statement_normalize_and_build() -> None:
     assert "NOHANDLECOLLISIONS" in built
     assert built.endswith(";")
 
+    alternatives = map_statement.build_map_statement(
+        {
+            "source": {"schema": "S", "table": "T", "targetTable": "D.T"},
+            "options": {
+                "targetDef": "target.def",
+                "handleCollisions": True,
+                "insertAppend": False,
+                "mapAllColumns": True,
+                "mapInvisibleColumns": False,
+                "trimSpaces": False,
+                "trimVarSpaces": True,
+            },
+        }
+    )
+    assert "TARGETDEF target.def" in alternatives
+    assert "HANDLECOLLISIONS" in alternatives
+    assert "NOINSERTAPPEND" in alternatives
+    assert "MAPALLCOLUMNS" in alternatives
+    assert "NOMAPINVISIBLECOLUMNS" in alternatives
+    assert "NOTRIMSPACES" in alternatives
+    assert "TRIMVARSPACES" in alternatives
+
 
 @pytest.mark.parametrize(
     "payload,error",
@@ -90,6 +119,10 @@ def test_map_statement_validation_errors(payload: dict, error: str) -> None:
 
 def test_table_statement_normalize_and_build() -> None:
     assert table_statement.normalize_table_statement("S.T") == "TABLE S.T;"
+    assert table_statement.normalize_table_statement("TABLE S.T;") == "TABLE S.T;"
+
+    minimal = table_statement.build_table_statement({"source": {"schema": "S", "table": "T"}})
+    assert minimal == "TABLE S.T;"
 
     built = table_statement.build_table_statement(
         {
@@ -131,6 +164,24 @@ def test_table_statement_normalize_and_build() -> None:
     assert "NOTRIMSPACES" in built
     assert "TRIMVARSPACES" in built
 
+    alternatives = table_statement.build_table_statement(
+        {
+            "source": {"schema": "S", "table": "T"},
+            "options": {
+                "colsExcept": ["SECRET"],
+                "targetDef": "target.def",
+                "getBeforeCols": ["ID", "NAME"],
+                "trimSpaces": True,
+                "trimVarSpaces": False,
+            },
+        }
+    )
+    assert "COLSEXCEPT (SECRET)" in alternatives
+    assert "TARGETDEF target.def" in alternatives
+    assert "GETBEFORECOLS (ID, NAME)" in alternatives
+    assert "TRIMSPACES" in alternatives
+    assert "NOTRIMVARSPACES" in alternatives
+
 
 @pytest.mark.parametrize(
     "payload,error",
@@ -148,6 +199,22 @@ def test_table_statement_validation_errors(payload: dict, error: str) -> None:
 
 
 def test_extract_config_builders() -> None:
+    assert extract_config._normalize_boolean(False) == "FALSE"
+    assert extract_config._normalize_boolean(0) == "0"
+    assert extract_config._build_integrated_params_clause(None) is None
+    assert extract_config._build_integrated_params_clause(" parallelism 2 ") == "INTEGRATEDPARAMS (parallelism 2)"
+    assert extract_config._build_integrated_params_clause([" wait ", " "]) == "INTEGRATEDPARAMS (wait)"
+    assert extract_config._build_integrated_params_clause({"keyValues": {"trace": False}}) == "INTEGRATEDPARAMS (trace FALSE)"
+    assert extract_config._build_tranlog_options_clause(None) is None
+    assert extract_config._build_tranlog_options_clause(" archivedlogonly ") == "TRANLOGOPTIONS archivedlogonly"
+    assert extract_config._build_tranlog_options_clause([" alt ", " "]) == "TRANLOGOPTIONS alt"
+    assert extract_config._build_report_count_clause({"every": " 5 MINUTES "}) == "REPORTCOUNT EVERY 5 MINUTES"
+    assert extract_config._build_report_count_clause({}) is None
+    assert extract_config._build_bounded_recovery_clause({}) is None
+    assert extract_config._build_db_options_clause(" integratedparams ") == "DBOPTIONS integratedparams"
+    assert extract_config._build_db_options_clause([" a ", " "]) == "DBOPTIONS a"
+    assert extract_config._build_db_options_clause({}) is None
+
     lines = extract_config.build_advanced_extract_parameters(
         {
             "disableHeartbeatTable": True,
@@ -174,9 +241,21 @@ def test_extract_config_builders() -> None:
     assert "DYNAMICRESOLUTION" in lines
 
     assert extract_config.build_advanced_extract_parameters(None) == []
+    assert extract_config.build_advanced_extract_parameters({"ddl": "INCLUDE ALL"}) == ["DDL INCLUDE ALL"]
 
 
 def test_replicat_config_builders_and_errors() -> None:
+    assert replicat_config._build_db_options(None) is None
+    assert replicat_config._build_db_options(" allowduptargetmap ") == "DBOPTIONS allowduptargetmap"
+    assert replicat_config._build_db_options([" a ", " "]) == "DBOPTIONS a"
+    assert replicat_config._build_db_options({"entries": [" one "], "additional": [" two "]}) == "DBOPTIONS one, two"
+    assert replicat_config._build_batch_sql(None) == []
+    assert replicat_config._build_batch_sql(" mode ops ") == ["BATCHSQL mode ops"]
+    assert replicat_config.build_advanced_replicat_parameters(None) == {
+        "lines": [],
+        "mode": {"type": "nonintegrated", "parallel": True},
+    }
+
     payload = {
         "credential": ["USERIDALIAS C DOMAIN D"],
         "applyParallelism": 3,
@@ -266,6 +345,56 @@ def test_config_read_from_secret_ocid(monkeypatch: pytest.MonkeyPatch, tmp_path:
     assert cfg["password"] == "secretpass"
 
 
+def test_password_file_decoding_and_errors(tmp_path: Path) -> None:
+    utf16_file = tmp_path / "pwd-utf16.txt"
+    utf16_file.write_bytes(b"\xff\xfe" + " secret ".encode("utf-16-le"))
+    assert config._read_password_from_file(str(utf16_file)) == "secret"
+
+    invalid_file = tmp_path / "invalid.txt"
+    invalid_file.write_bytes(b"\xff")
+    with pytest.raises(ValueError, match="Unable to decode"):
+        config._read_password_from_file(str(invalid_file))
+
+    with pytest.raises(ValueError, match="Unable to read"):
+        config._read_password_from_file(str(tmp_path / "missing.txt"))
+
+
+def test_signed_get_success_and_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config, "sign_oci_request", lambda *_args, **_kwargs: {"authorization": "sig"})
+
+    class _Response:
+        def __init__(self, status: int, body: str):
+            self.status = status
+            self._body = body
+
+        def read(self):
+            return self._body.encode("utf-8")
+
+    class _Connection:
+        next_response = _Response(200, '{"ok": true}')
+        requests = []
+
+        def __init__(self, hostname: str):
+            self.hostname = hostname
+
+        def request(self, method: str, path: str, headers: dict):
+            self.requests.append((self.hostname, method, path, headers))
+
+        def getresponse(self):
+            return self.next_response
+
+    monkeypatch.setattr(http.client, "HTTPSConnection", _Connection)
+
+    assert config._signed_get({}, "secrets.example.com", "/secret") == {"ok": True}
+    assert _Connection.requests == [
+        ("secrets.example.com", "GET", "/secret", {"authorization": "sig"})
+    ]
+
+    _Connection.next_response = _Response(404, "missing")
+    with pytest.raises(RuntimeError, match="HTTP 404: missing"):
+        config._signed_get({}, "secrets.example.com", "/missing")
+
+
 def test_config_validation_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OGG_BASE_URL", raising=False)
     with pytest.raises(ValueError, match="OGG_BASE_URL"):
@@ -279,12 +408,40 @@ def test_config_validation_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ValueError, match="Basic auth requires"):
         config.read_config()
 
+    monkeypatch.setenv("OGG_USERNAME", "user")
+    monkeypatch.setenv("OGG_PASSWORD_SECRET_OCID", "ocid1.secret.oc1..x")
+    with pytest.raises(ValueError, match="OCI_REGION"):
+        config.read_config()
+
+    monkeypatch.setenv("OCI_REGION", "us-phoenix-1")
+    with pytest.raises(ValueError, match="OCI signer credentials"):
+        config.read_config()
+
 
 def test_http_client_helpers_and_request_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     assert http_client._classify_request_error(requests.exceptions.ConnectTimeout()) == "Connection timed out"
     assert http_client._classify_request_error(requests.exceptions.ReadTimeout()) == "Request timed out while waiting for response"
     assert http_client._classify_request_error(requests.exceptions.ConnectionError("connection refused")) == "Connection refused"
+    assert http_client._classify_request_error(requests.exceptions.ConnectionError("other")) == "Network connection error"
     assert http_client._classify_request_error(requests.exceptions.InvalidURL()) == "Invalid deployment URL"
+    assert http_client._classify_request_error(requests.exceptions.RequestException()) == "HTTP request failed"
+
+    with pytest.raises(ValueError, match="OCI signer is not fully configured"):
+        http_client.sign_oci_request({}, "GET", "/x", "example.com")
+
+    monkeypatch.setattr(http_client, "load_pem_private_key", lambda *args, **kwargs: object())
+    with pytest.raises(ValueError, match="RSA private key"):
+        http_client.sign_oci_request(
+            {
+                "tenancyOCID": "tenancy",
+                "userOCID": "user",
+                "keyFingerprint": "fp",
+                "privateKeyPEM": "pem",
+            },
+            "GET",
+            "/x",
+            "example.com",
+        )
 
     class _FakeKey:
         def sign(self, *_args, **_kwargs):
@@ -309,6 +466,20 @@ def test_http_client_helpers_and_request_paths(monkeypatch: pytest.MonkeyPatch) 
     assert headers["host"] == "example.com"
     assert "authorization" in headers
     assert headers["content-type"] == "application/json"
+
+    headers_without_body = http_client.sign_oci_request(
+        {
+            "tenancyOCID": "tenancy",
+            "userOCID": "user",
+            "keyFingerprint": "fp",
+            "privateKeyPEM": "pem",
+            "passphrase": "",
+        },
+        "GET",
+        "/x",
+        "example.com",
+    )
+    assert "content-length" not in headers_without_body
 
     class _Resp:
         def __init__(self, status_code: int, text: str, json_payload=None):
@@ -349,3 +520,28 @@ def test_http_client_helpers_and_request_paths(monkeypatch: pytest.MonkeyPatch) 
     fake.next = requests.exceptions.ConnectionError("name or service not known")
     with pytest.raises(RuntimeError, match="DNS resolution failed"):
         client.get("/conn")
+
+    captured = []
+
+    class _CapturingSession:
+        def request(self, **kwargs):
+            captured.append(kwargs)
+            return _Resp(200, "ok", {"ok": True})
+
+    client = http_client.HttpClient({"baseUrl": "https://example.com/", "authMode": "none"})
+    client.session = _CapturingSession()
+
+    assert client.get("https://override.example.com/ok", headers={"X-Test": "1"}) == {"ok": True}
+    assert captured[-1]["url"] == "https://override.example.com/ok"
+    assert captured[-1]["headers"]["X-Test"] == "1"
+    assert captured[-1]["auth"] is None
+
+    assert client.post("/post", {"x": 1}) == {"ok": True}
+    assert captured[-1]["method"] == "POST"
+    assert captured[-1]["data"] == '{"x": 1}'
+
+    assert client.patch("/patch", {"y": 2}) == {"ok": True}
+    assert captured[-1]["method"] == "PATCH"
+
+    assert client.delete("/delete") == {"ok": True}
+    assert captured[-1]["method"] == "DELETE"

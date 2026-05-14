@@ -156,44 +156,17 @@ class TestInvokePlainListReturn:
         assert res["data"] == [10, 20, 30]
 
 
-class TestConstructFqnSuccess:
-    def test_construct_model_from_fqn_success_via_from_dict(self, monkeypatch):
-        import sys as _sys
-        from types import ModuleType
-
-        # create a module with a class and ensure from_dict returns instance
-        mod = ModuleType("mymod9")
-
-        class Kiwi:
-            def __init__(self, **kwargs):
-                self.kw = dict(kwargs)
-
-        setattr(mod, "Kiwi", Kiwi)
-        _sys.modules["mymod9"] = mod
-
-        from oracle.oci_cloud_mcp_server.server import oci as _oci
-
-        # make from_dict call the constructor successfully
-        monkeypatch.setattr(_oci.util, "from_dict", lambda cls, data: cls(**data), raising=False)
-
-        inst = _construct_model_from_mapping({"__class_fqn": "mymod9.Kiwi", "a": 7}, None, [])
-        assert isinstance(inst, Kiwi)
-        assert inst.kw == {"a": 7}
+class TestConstructFqnValidation:
+    def test_construct_model_from_fqn_rejects_non_oci_namespace(self):
+        with pytest.raises(ValueError, match="under the 'oci\\.\\*\\.models' namespace"):
+            _construct_model_from_mapping({"__class_fqn": "mymod9.Kiwi", "a": 7}, None, [])
 
 
 class TestConstructModelFqnAttrNotClass:
-    def test_fqn_points_to_non_class_returns_mapping(self, monkeypatch):
-        import sys as _sys
-        from types import ModuleType
-
-        mod = ModuleType("mymod8")
-        # attribute exists but is not a class
-        setattr(mod, "Const", 42)
-        _sys.modules["mymod8"] = mod
-
+    def test_fqn_points_to_non_oci_class_is_rejected(self):
         mapping = {"__model_fqn": "mymod8.Const", "a": 1}
-        out = _construct_model_from_mapping(mapping, None, [])
-        assert out is mapping
+        with pytest.raises(ValueError, match="under the 'oci\\.\\*\\.models' namespace"):
+            _construct_model_from_mapping(mapping, None, [])
 
 
 class TestConstructModelSimpleNameNotClass:
@@ -305,33 +278,19 @@ class TestCreateUpdateCandidateClasses:
 
 
 class TestListElementClassFqn:
-    def test_list_item_with_class_fqn_constructs(self, monkeypatch):
-        import sys as _sys
-        from types import ModuleType
-
-        mod = ModuleType("mymod4")
-
-        class Bar:
-            def __init__(self, **kwargs):
-                self.kw = dict(kwargs)
-
-        setattr(mod, "Bar", Bar)
-        _sys.modules["mymod4"] = mod
-
+    def test_list_item_with_non_oci_class_fqn_is_rejected(self, monkeypatch):
         # models module not needed for FQN-based construction
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
             lambda fqn: None,
         )
 
-        out = _coerce_params_to_oci_models(
-            "oci.fake.Client",
-            "op",
-            {"items": [{"__class_fqn": "mymod4.Bar", "z": 9}, {"plain": True}]},
-        )
-        assert isinstance(out["items"][0], Bar)
-        assert out["items"][0].kw == {"z": 9}
-        assert out["items"][1] == {"plain": True}
+        with pytest.raises(ValueError, match="under the 'oci\\.\\*\\.models' namespace"):
+            _coerce_params_to_oci_models(
+                "oci.fake.Client",
+                "op",
+                {"items": [{"__class_fqn": "mymod4.Bar", "z": 9}, {"plain": True}]},
+            )
 
 
 class TestListPassThroughNonDict:
@@ -342,18 +301,14 @@ class TestListPassThroughNonDict:
 
 class TestFqnCtorFallback:
     def test_construct_model_from_fqn_from_dict_failure_uses_ctor(self, monkeypatch):
-        # module and class available by FQN
-        import sys as _sys
-        from types import ModuleType
-
-        mod = ModuleType("mymod5")
-
         class Apple:
+            swagger_types = {"a": "int"}
+            attribute_map = {"a": "a"}
+
             def __init__(self, **kwargs):
                 self.kw = dict(kwargs)
 
-        setattr(mod, "Apple", Apple)
-        _sys.modules["mymod5"] = mod
+        Apple.__module__ = "oci.fake.models"
 
         # force from_dict to fail so ctor is used
         from oracle.oci_cloud_mcp_server.server import oci as _oci
@@ -362,8 +317,12 @@ class TestFqnCtorFallback:
             raise Exception("from_dict fail")
 
         monkeypatch.setattr(_oci.util, "from_dict", raising_from_dict, raising=False)
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module",
+            lambda name: SimpleNamespace(Apple=Apple),
+        )
 
-        inst = _construct_model_from_mapping({"__model_fqn": "mymod5.Apple", "a": 10}, None, [])
+        inst = _construct_model_from_mapping({"__model_fqn": "oci.fake.models.Apple", "a": 10}, None, [])
         assert isinstance(inst, Apple)
         assert inst.kw == {"a": 10}
 
@@ -403,9 +362,6 @@ class TestListClientOpsHiddenOnly:
             res = (await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.KlassClient"})).data
         assert res == {
             "client": "oci.fake.KlassClient",
-            "query": None,
-            "total_operations": 0,
-            "returned_operations": 0,
             "operations": [],
         }
 
@@ -803,18 +759,14 @@ class TestInvokeNonListHeadersNoGet:
 
 class TestFqnCtorBothFail:
     def test_fqn_from_dict_and_ctor_fail_returns_mapping(self, monkeypatch):
-        # valid module/class path where both from_dict and ctor raise; should fall back to mapping.
-        import sys as _sys
-        from types import ModuleType
-
-        mod = ModuleType("mymod7")
-
         class Boom:
+            swagger_types = {"a": "int"}
+            attribute_map = {"a": "a"}
+
             def __init__(self, **kwargs):
                 raise Exception("ctor fail")
 
-        setattr(mod, "Boom", Boom)
-        _sys.modules["mymod7"] = mod
+        Boom.__module__ = "oci.fake.models"
 
         from oracle.oci_cloud_mcp_server.server import oci as _oci
 
@@ -822,8 +774,12 @@ class TestFqnCtorBothFail:
             raise Exception("from_dict fail")
 
         monkeypatch.setattr(_oci.util, "from_dict", raising_from_dict, raising=False)
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module",
+            lambda name: SimpleNamespace(Boom=Boom),
+        )
 
-        mapping = {"__model_fqn": "mymod7.Boom", "a": 1}
+        mapping = {"__model_fqn": "oci.fake.models.Boom", "a": 1}
         out = _construct_model_from_mapping(mapping, None, [])
         assert out is mapping
 

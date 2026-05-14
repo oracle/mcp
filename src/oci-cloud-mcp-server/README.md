@@ -169,9 +169,9 @@ Notes:
 - When `max_results` is set and pagination applies, the server uses the OCI SDK's bounded paginator instead of fetching the full result set first.
 - When `result_mode="auto"`, list, summarize, and paginated operations default to compact summary output while other operations stay full by default.
 - When `result_mode="summary"`, the server returns a compact shape that keeps counts, representative samples, and key names while avoiding large payloads.
-- When `fields` is set, the server applies a top-level field projection after serialization. This changes only the returned payload shape, not the SDK call itself; unmatched field selections now surface as errors instead of silently returning empty objects.
+- When `fields` is set, the server applies a top-level field projection after serialization. This changes only the returned payload shape, not the SDK call itself; unmatched field selections include `available_fields` metadata, and fully unmatched selections surface as errors instead of silently returning empty objects.
 - The server now normalizes common type mistakes when SDK metadata is clear, such as `"3"` to `3`, `"true"` to `true`, and simple request-model field coercions based on OCI `swagger_types`.
-- On likely parameter-shape invocation errors, the server includes repair hints such as similar operation names, expected params, accepted kwargs, aliases, and request model information when it can infer them.
+- On likely parameter-shape invocation errors, the server includes repair hints such as similar operation names, method signatures, expected params, accepted kwargs, and aliases when it can infer them.
 - Exposed tools only accept OCI SDK client classes under the `oci.` namespace whose class name ends in `Client`.
 
 ### list_client_operations

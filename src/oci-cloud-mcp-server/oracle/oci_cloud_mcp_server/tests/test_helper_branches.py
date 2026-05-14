@@ -31,7 +31,7 @@ class TestValidationAndFormattingHelpers:
     def test_validate_client_fqn_rejects_invalid_values(self):
         with pytest.raises(ValueError, match="non-empty"):
             _validate_client_fqn("")
-        with pytest.raises(ValueError, match="fully-qualified"):
+        with pytest.raises(ValueError, match="oci."):
             _validate_client_fqn("oci")
         with pytest.raises(ValueError, match="oci."):
             _validate_client_fqn("fake.module.Client")

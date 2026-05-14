@@ -71,7 +71,7 @@ Include license headers at the top of each source file:
 
 ```python
 """
-Copyright (c) 2025, Oracle and/or its affiliates.
+Copyright (c) 2026, Oracle and/or its affiliates.
 Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
@@ -210,3 +210,9 @@ def list_instances(
 3. **Descriptions**: Write clear, informative descriptions for each parameter
 4. **Validation**: Use Field constraints like `ge`, `le`, `min_length`, `max_length`
 5. **Literals**: Use `Literal` for parameters with a fixed set of valid values
+
+## Test cases
+
+Target 90% coverage for unit tests on the MCP server itself.
+
+End-to-end tests under `e2e/` are not required, but good to add if they can be created without impacting other tests.

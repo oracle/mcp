@@ -36,11 +36,25 @@ uvx oracle.data-studio-mcp-server
   "mcpServers": {
     "oracle-data-studio": {
       "command": "uvx",
-      "args": ["oracle.data-studio-mcp-server", "--profile", "admin"]
+      "args": ["oracle.data-studio-mcp-server"]
     }
   }
 }
 ```
+
+By default the server runs in the safe **viewer** profile — metadata
+browsing only, no execution or modification. To unlock query/execute
+operations, opt into a higher profile **explicitly**:
+
+```json
+"args": ["oracle.data-studio-mcp-server", "--profile", "analyst"]
+```
+
+```json
+"args": ["oracle.data-studio-mcp-server", "--profile", "admin"]
+```
+
+See the *Profiles* section below for what each tier exposes.
 
 ## Authentication
 
@@ -212,13 +226,35 @@ metrics), join key (which FK to use), and PII avoidance.
 ## Access profiles
 
 Every tool is filtered by access profile at registration time.
-Pick one with `--profile`:
+**Default is `viewer`** — the safe metadata-only surface. Higher
+profiles require explicit opt-in via `--profile`:
 
 | Profile | Capability | Tool count |
 | --- | --- | --- |
-| `viewer` | Read-only — explore, describe, browse, search | ~17 |
+| **`viewer` (default)** | Read-only — explore, describe, browse, search, annotations | ~15 |
 | `analyst` | Read + query / execute — no create / delete / manage | ~23 |
-| `admin` (default) | All tools | 60 |
+| `admin` | All tools (explicit opt-in only) | 60 |
+
+This follows the
+[BEST_PRACTICES.md](https://github.com/oracle/mcp/blob/main/BEST_PRACTICES.md)
+guidance on scope minimisation and safe defaults: an MCP client
+that connects with no extra configuration gets the smallest, least
+destructive tool surface. Operators consciously upgrade.
+
+### Credential safety
+
+- **Passwords** are stored in the OS keyring (macOS Keychain,
+  Windows Credential Manager, Linux Secret Service).
+- **Bearer tokens** (e.g. Essbase token-based auth) are likewise
+  stored in the OS keyring under a `__token__` pseudo-user. **They
+  are never written to the plaintext INI config file**, even if you
+  pass them as `--token …` to `oracle-data-studio-config set`.
+- **URL / username / transport / port / host** are non-secret and
+  go to `~/.oracle-data-studio/config` (chmod 600).
+- A reserved set of key names (`password`, `token`, `bearer`,
+  `secret`, `api_key`, …) is always routed to keyring regardless of
+  how it's spelt in the call — defence-in-depth against
+  accidentally configuring a secret as a "regular" extra field.
 
 ## About the `oracle-data-studio` dependency
 

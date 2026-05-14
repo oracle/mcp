@@ -53,7 +53,11 @@ class ServerConfig:
     transport: str = 'stdio'
     host: str = '127.0.0.1'   # streamable-http bind address; loopback by default
     port: int = 8000
-    profile: str = 'admin'
+    # Default profile is `viewer` — safe metadata-only access. The
+    # full admin surface requires explicit `--profile admin` (or
+    # MCP_PROFILE=admin). This follows oracle/mcp BEST_PRACTICES on
+    # scope minimisation and safe defaults.
+    profile: str = 'viewer'
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -138,12 +142,17 @@ def load_config() -> ServerConfig:
     port_str = _val(args.port, 'MCP_PORT', 'server', 'port')
     port = int(port_str) if port_str else 8000
     profile = (_val(args.profile, 'MCP_PROFILE', 'server', 'profile')
-               or 'admin')
+               or 'viewer')
 
     # -- Essbase --
+    # Tokens are NEVER read from the INI file (would be plaintext on
+    # disk). Resolve from CLI > env > keyring only.
+    from .credential_store import get_keyring_token
     ess_url = _val(args.essbase_url, 'ESSBASE_URL', 'essbase', 'url')
     ess_user = _val(args.essbase_user, 'ESSBASE_USER', 'essbase', 'user')
-    ess_token = _val(args.essbase_token, 'ESSBASE_TOKEN', 'essbase', 'token')
+    ess_token = (args.essbase_token
+                 or os.environ.get('ESSBASE_TOKEN')
+                 or get_keyring_token('essbase'))
     ess_password = (args.essbase_password
                     or os.environ.get('ESSBASE_PASSWORD')
                     or get_keyring_password('essbase', ess_user))

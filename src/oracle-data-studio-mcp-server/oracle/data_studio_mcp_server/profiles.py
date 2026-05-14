@@ -5,14 +5,25 @@
 '''MCP tool access profiles.
 
 Profiles control which tools are exposed to AI assistants.
-Three tiers: viewer < analyst < admin (default).
+Three tiers (least → most privilege):
+
+  - viewer  (default) — metadata browsing only, no execution.
+  - analyst — read + query/execute (MDX, run_calculation, AV reads,
+              insights). No create/delete/manage.
+  - admin   — full surface. EXPLICIT OPT-IN ONLY.
+
+Default is `viewer` for safety. Per the oracle/mcp BEST_PRACTICES
+guidance on scope minimisation, admin access is never granted
+implicitly.
 
 Usage:
+    oracle.data-studio-mcp-server                       # viewer (default)
     oracle.data-studio-mcp-server --profile analyst
-    MCP_PROFILE=viewer oracle.data-studio-mcp-server
+    oracle.data-studio-mcp-server --profile admin       # explicit opt-in
+    MCP_PROFILE=admin oracle.data-studio-mcp-server
     # or in ~/.oracle-data-studio/config:
     # [server]
-    # profile = analyst
+    # profile = admin
 
 Upleveled tool naming conventions:
     essbase_explore           — read-only server overview

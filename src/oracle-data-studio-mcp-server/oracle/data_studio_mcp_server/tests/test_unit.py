@@ -41,7 +41,9 @@ class TestServerConfig:
         assert cfg.datatransforms is None
         assert cfg.transport == 'stdio'
         assert cfg.port == 8000
-        assert cfg.profile == 'admin'
+        # Safe default: viewer. Admin requires explicit opt-in.
+        # See oracle/mcp BEST_PRACTICES on scope minimisation.
+        assert cfg.profile == 'viewer'
         # S8: bind address defaults to loopback (no auth → no
         # external exposure unless explicit).
         assert cfg.host == '127.0.0.1'
@@ -188,6 +190,73 @@ class TestCredentialStore:
         mock_path.exists.return_value = False
         from oracle.data_studio_mcp_server.credential_store import load_config_file
         assert load_config_file() == {}
+
+    def test_store_credentials_never_writes_token_to_file(self, tmp_path,
+                                                          monkeypatch):
+        '''Hardening: bearer tokens / api keys passed to store_credentials
+        must end up in the OS keyring, NEVER in the plaintext INI file.
+        This is the reviewer-blocking fix for the prior behaviour where
+        `--token foo` ended up written to ~/.oracle-data-studio/config.
+        '''
+        from oracle.data_studio_mcp_server import credential_store as cs
+        cfg_file = tmp_path / 'config'
+        monkeypatch.setattr(cs, 'CONFIG_DIR', tmp_path)
+        monkeypatch.setattr(cs, 'CONFIG_FILE', cfg_file)
+
+        calls = []
+        def fake_set(svc, user, secret):
+            calls.append((svc, user, secret))
+            return True
+        with patch.object(cs, '_set_keyring_password', side_effect=fake_set):
+            result = cs.store_credentials(
+                'essbase',
+                url='https://e',
+                user='admin',
+                token='ghp_REDACTED_TOKEN_VALUE_xyz789')
+        # Token went to keyring
+        assert ('essbase', '__token__',
+                'ghp_REDACTED_TOKEN_VALUE_xyz789') in calls
+        # Token is NOT on disk anywhere
+        body = cfg_file.read_text()
+        assert 'ghp_REDACTED_TOKEN_VALUE_xyz789' not in body
+        assert 'token' not in body.lower() or '_token_' not in body
+        # URL + user still on disk (those are not secrets)
+        assert 'url = https://e' in body
+        assert 'user = admin' in body
+        # Result reports the token was stored
+        assert 'token' in result['secret_extras_stored']
+
+    def test_store_credentials_extras_renamed_to_secret_keys_routed_to_keyring(
+            self, tmp_path, monkeypatch):
+        '''Even if a caller renames a field to one of the SECRET_KEYS
+        (e.g. bearer, api_key, secret), it must NOT land on disk.'''
+        from oracle.data_studio_mcp_server import credential_store as cs
+        cfg_file = tmp_path / 'config'
+        monkeypatch.setattr(cs, 'CONFIG_DIR', tmp_path)
+        monkeypatch.setattr(cs, 'CONFIG_FILE', cfg_file)
+        with patch.object(cs, '_set_keyring_password', return_value=True):
+            cs.store_credentials('adp', url='https://x', user='u',
+                                  bearer='BEARER_TOKEN',
+                                  api_key='AK',
+                                  secret='S')
+        body = cfg_file.read_text()
+        for sensitive in ('BEARER_TOKEN', 'AK', 'S'):
+            # The bare value must not appear on disk
+            assert sensitive not in body, \
+                f'secret {sensitive!r} leaked to config file'
+
+    def test_get_keyring_token_round_trips(self):
+        '''Round-trip: set a token, then retrieve it via the public
+        get_keyring_token() helper.'''
+        from oracle.data_studio_mcp_server.credential_store import (
+            _set_keyring_password, get_keyring_token)
+        fake_keyring = MagicMock()
+        fake_keyring.get_password.return_value = 'ghp_xyz'
+        with patch.dict('sys.modules', {'keyring': fake_keyring}):
+            assert get_keyring_token('essbase') == 'ghp_xyz'
+        # Lookup was scoped to the right service + pseudo-user
+        fake_keyring.get_password.assert_called_with(
+            'oracle-data-studio/essbase', '__token__')
 
     def test_store_credentials_writes_config_and_keyring(self, tmp_path,
                                                           monkeypatch):
@@ -520,6 +589,108 @@ class TestProfiles:
         assert _get_verb_suffix('unknown_tool') == 'unknown_tool'
 
     @mcp_required
+    @mcp_required
+    def test_default_profile_removes_high_risk_tools(self):
+        '''Reviewer-blocking guarantee: with NO --profile flag, the
+        server must default to a low-privilege profile that does NOT
+        expose destructive, modify, or execute-arbitrary-code tools.
+
+        Walks the full registered tool catalog through the actual
+        default profile (whatever ServerConfig() sets) and asserts
+        the high-risk tool surface is not exposed.'''
+        from oracle.data_studio_mcp_server.config import ServerConfig
+        from oracle.data_studio_mcp_server.profiles import apply_profile
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import (
+            adp_tools, dt_tools, essbase_tools)
+
+        default_profile = ServerConfig().profile
+        # Sanity — the default must not be admin
+        assert default_profile != 'admin', \
+            'default profile must not be admin per BEST_PRACTICES'
+
+        mcp_server = FastMCP('test')
+        for mod in (essbase_tools, adp_tools, dt_tools):
+            mod.register_tools(mcp_server)
+
+        apply_profile(mcp_server, default_profile)
+        names = set(mcp_server._tool_manager._tools.keys())
+
+        # None of the following tools may be visible under the default:
+        BANNED_UNDER_DEFAULT = {
+            # Destructive / modifying
+            'essbase_manage_application',     # create/delete/copy/rename
+            'essbase_manage_database',        # delete/copy/rename
+            'essbase_manage_script',          # CRUD scripts
+            'essbase_manage_files',           # upload/delete/move
+            'essbase_manage_filters',         # CRUD filters
+            'essbase_manage_users',           # CRUD users + role provisioning
+            'essbase_manage_groups',          # CRUD groups
+            'essbase_manage_connections',     # CRUD connections
+            'essbase_manage_datasources',     # CRUD datasources
+            'essbase_manage_drill_through',   # CRUD drill-through reports
+            'essbase_manage_variables',       # CRUD variables
+            'essbase_manage_db_settings',     # writeable settings
+            'essbase_manage_sessions',        # can kill sessions
+            'essbase_edit_outline',           # add/remove/move members
+            'essbase_load_data',              # data load jobs
+            'essbase_deploy_workbook',        # creates / overwrites cube
+            'essbase_run_calculation',        # executes calc scripts
+            # Direct MDX (we verified S1 — viewer must not run MDX)
+            'essbase_query',
+            'essbase_export_data',
+            # Calc-script source code / log content (S2)
+            'essbase_get_script',
+            'essbase_get_logs',
+            # ADP destructive / modifying
+            'adp_build_analytic_view',
+            'adp_manage_analytic_views',
+            'adp_manage_catalog',
+            'adp_manage_sharing',
+            'adp_manage_credentials',
+            'adp_manage_insights',
+            'adp_manage_db_links',
+            'adp_load_from_cloud',
+            'adp_generate_insights',
+            'adp_ai_chat',
+            # DT destructive / modifying
+            'dt_manage_project',
+            'dt_manage_dataflow',
+            'dt_manage_schedule',
+            'dt_manage_variables',
+            'dt_manage_connection',
+            'dt_create_pipeline',
+            'dt_run_pipeline',
+        }
+        leaked = BANNED_UNDER_DEFAULT & names
+        assert not leaked, (
+            f'Default profile ({default_profile!r}) leaked high-risk '
+            f'tools: {sorted(leaked)}')
+
+        # Sanity: the default still exposes basic discovery tools.
+        # Without these, the server is useless even for browsing.
+        EXPECTED_UNDER_DEFAULT = {
+            'essbase_explore',
+            'essbase_describe_database',
+            'essbase_browse_outline',
+            'essbase_search_members',
+            'essbase_server_health',
+            'adp_search',
+            'adp_browse_catalog',
+            'adp_query_analytic_view',
+            'adp_analyze_analytic_view',
+            'adp_get_annotations',
+            'dt_explore',
+            'dt_describe_project',
+            'dt_describe_connection',
+            'dt_check_health',
+            'dt_browse_data',
+        }
+        missing = EXPECTED_UNDER_DEFAULT - names
+        assert not missing, (
+            f'Default profile is too restrictive — missing safe '
+            f'metadata tools: {sorted(missing)}')
+
     def test_viewer_profile_filtering(self):
         '''Viewer profile: only read-only tools.'''
         from oracle.data_studio_mcp_server.profiles import apply_profile

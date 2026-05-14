@@ -52,6 +52,26 @@ class TestMigrationModels:
         res = models._oci_to_dict(Dummy())
         assert res == {"a": 1}
 
+    def test_oci_to_dict_dict_fallback_when_oci_to_dict_raises(self, monkeypatch):
+        def raising(_):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(models.oci.util, "to_dict", raising, raising=False)
+
+        data = {"a": 1}
+        assert models._oci_to_dict(data) == data
+
+    def test_oci_to_dict_returns_none_without_dict_fallback(self, monkeypatch):
+        class Slotted:
+            __slots__ = ()
+
+        def raising(_):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(models.oci.util, "to_dict", raising, raising=False)
+
+        assert models._oci_to_dict(Slotted()) is None
+
     def test_map_migration_full(self):
         src = SimpleNamespace(
             id="mig1",

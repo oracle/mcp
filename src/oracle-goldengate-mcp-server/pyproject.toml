@@ -3,6 +3,8 @@ name = "oracle.oracle-goldengate-mcp-server"
 version = "1.0.1"
 description = "Oracle GoldenGate MCP server"
 readme = "README.md"
+license = "UPL-1.0"
+license-files = ["LICENSE.txt"]
 authors = [
     {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
 ]
@@ -15,7 +17,6 @@ dependencies = [
 ]
 
 classifiers = [
-    "License :: OSI Approved :: Universal Permissive License (UPL)",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
 ]
@@ -28,10 +29,12 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-include-package-data = true
+include-package-data = false
 
 [tool.setuptools.packages.find]
 include = ["oracle*"]
+exclude = ["oracle.*.tests", "oracle.*.tests.*"]
+namespaces = false
 
 [dependency-groups]
 dev = [

@@ -14,7 +14,6 @@ dependencies = [
 ]
 
 classifiers = [
-    "License :: OSI Approved :: Universal Permissive License (UPL)",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3.13",
@@ -29,3 +28,4 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["oracle"]
+exclude = ["/oracle/**/tests/**"]

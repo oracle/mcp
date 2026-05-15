@@ -12,7 +12,7 @@ jobs:
     needs: get-directories
     strategy:
       matrix:
-        directory: ${{ fromJson(needs.get-directories.outputs.directories) }}
+        include: ${{ fromJson(needs.get-directories.outputs.projects) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,35 +25,17 @@ jobs:
       - name: Install requirements
         run: pip install -r requirements-dev.txt
 
-      - name: Update __init__.py
-        working-directory: src/${{ matrix.directory }}
-        run: |
-          name=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['name'])")
-          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
-          if [ -d oracle/*_mcp_server ]; then
-            init_py_file=oracle/*_mcp_server/__init__.py
-            echo "\"\"\"\nCopyright (c) 2025, Oracle and/or its affiliates.\nLicensed under the Universal Permissive License v1.0 as shown at\nhttps://oss.oracle.com/licenses/upl.\n\"\"\"\n" > $$init_py_file; \
-            echo "__project__ = \"$name\"" >> $init_py_file
-            echo "__version__ = \"$version\"" >> $init_py_file
-          fi
-
       - name: Sync
-        working-directory: src/${{ matrix.directory }}
-        run: uv sync --locked --all-extras --dev
+        run: python -m joist run sync ${{ matrix.project }}
 
       - name: Test and Coverage
-        working-directory: src/${{ matrix.directory }}
-        run: uv run pytest --cov=. --cov-branch --cov-report=html:htmlcov/${{ matrix.directory }} --cov-report=term-missing
-        env:
-          COVERAGE_FILE: .coverage.${{ matrix.directory }}
+        run: python -m joist run test ${{ matrix.project }} --no-cache
 
       - name: Build
-        working-directory: src/${{ matrix.directory }}
-        run: uv build
+        run: python -m joist run build ${{ matrix.project }} --no-cache
 
       - name: Test install
-        working-directory: src/${{ matrix.directory }}
-        run: uv pip install .
+        run: python -m joist run install ${{ matrix.project }}
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
@@ -61,22 +43,43 @@ jobs:
           name: ${{ matrix.directory }}-coverage-report
           path: |
             src/${{ matrix.directory }}/htmlcov/*
-            src/${{ matrix.directory }}/.coverage.${{ matrix.directory }}
+            .coverage.${{ matrix.project }}
           include-hidden-files: true
 
   get-directories:
     runs-on: ubuntu-latest
     outputs:
-      directories: ${{ steps.get-directories.outputs.directories }}
+      projects: ${{ steps.get-projects.outputs.projects }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Get directories
-        id: get-directories
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install requirements
+        run: pip install -r requirements-dev.txt
+
+      - name: Get Joist projects
+        id: get-projects
         run: |
-          directories=$(ls src | grep -v dbtools-mcp-server | grep -v mysql-mcp-server | grep -v oci-pricing-mcp-server | grep -v oracle-db-doc-mcp-server | grep -v oracle-db-mcp-java-toolkit | jq -R -s -c 'split("\n")[:-1]')
-          echo "directories=$directories" >> $GITHUB_OUTPUT
+          projects=$(python - <<'PY'
+          import json
+          import subprocess
+
+          payload = json.loads(
+              subprocess.check_output(["python", "-m", "joist", "list", "--json"], text=True)
+          )
+          matrix = [
+              {"project": name, "directory": project["root"].removeprefix("src/")}
+              for name, project in sorted(payload["projects"].items())
+          ]
+          print(json.dumps(matrix))
+          PY
+          )
+          echo "projects=$projects" >> "$GITHUB_OUTPUT"
 
   combined-coverage:
     runs-on: ubuntu-latest
@@ -111,4 +114,3 @@ jobs:
             oracle-mcp-coverage-report/*
             .coverage
           include-hidden-files: true
-

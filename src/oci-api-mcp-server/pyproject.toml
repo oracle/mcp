@@ -56,3 +56,7 @@ omit = [
 ]
 precision = 2
 fail_under = 90
+
+[tool.joist]
+name = "oci-api-mcp-server"
+type = "app"

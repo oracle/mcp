@@ -53,3 +53,7 @@ omit = [
 ]
 precision = 2
 fail_under = 90
+
+[tool.joist]
+name = "oci-faaas-mcp-server"
+type = "app"

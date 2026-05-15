@@ -52,3 +52,7 @@ omit = [
 [tool.coverage.report]
 precision = 2
 fail_under = 90
+
+[tool.joist]
+name = "oci-registry-mcp-server"
+type = "app"

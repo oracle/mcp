@@ -1,0 +1,77 @@
+[workspace]
+projects = ["src/*"]
+exclude = [
+    "src/dbtools-mcp-server",
+    "src/mysql-mcp-server",
+    "src/oci-pricing-mcp-server",
+    "src/oracle-db-doc-mcp-server",
+    "src/oracle-db-mcp-java-toolkit",
+]
+default_base = "origin/main"
+cache_dir = ".joist/cache"
+
+[target_defaults.sync]
+command = "uv --directory {project_root} sync --locked --all-extras --dev"
+cache = false
+
+[target_defaults.install]
+command = "uv --directory {project_root} pip install ."
+cache = false
+
+[target_defaults.lock]
+command = "uv --directory {project_root} lock"
+cache = false
+
+[target_defaults.lock-check]
+command = "uv --directory {project_root} lock --check"
+cache = false
+
+[target_defaults.lint]
+command = "uv tool run ruff check {project_root}"
+cache = true
+inputs = [
+    "{project_root}/oracle/**/*.py",
+    "{project_root}/pyproject.toml",
+    "ruff.toml",
+    "joist.toml",
+]
+
+[target_defaults.format]
+command = "uv tool run ruff format {project_root}"
+cache = false
+
+[target_defaults.test]
+command = "python scripts/joist_project.py test {project_root}"
+cache = true
+outputs = [".coverage.{project_name}"]
+inputs = [
+    "{project_root}/oracle/**/*.py",
+    "{project_root}/pyproject.toml",
+    "{project_root}/uv.lock",
+    "requirements-dev.txt",
+    "ruff.toml",
+    "joist.toml",
+]
+
+[target_defaults.build]
+command = "python scripts/joist_project.py build {project_root}"
+cache = false
+inputs = [
+    "{project_root}/oracle/**/*.py",
+    "{project_root}/pyproject.toml",
+    "{project_root}/uv.lock",
+    "joist.toml",
+]
+depends_on = ["^build"]
+
+[target_defaults.test-publish]
+command = "uv --directory {project_root} publish --publish-url https://test.pypi.org/legacy/ --check-url=https://test.pypi.org/simple/"
+cache = false
+
+[target_defaults.publish]
+command = "uv --directory {project_root} publish --check-url=https://pypi.org/simple/"
+cache = false
+
+[target_defaults.containerize]
+command = "python scripts/joist_project.py containerize {project_root}"
+cache = false

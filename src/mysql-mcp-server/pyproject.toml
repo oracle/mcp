@@ -10,7 +10,7 @@ license-files = ["LICENSE.txt"]
 dependencies = [
     "fastmcp==3.2.4",
     "mysql-connector-python==9.5.0",
-    "oci==2.171.0"
+    "oci==2.173.1"
 ]
 
 classifiers = [

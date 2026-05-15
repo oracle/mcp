@@ -11,7 +11,7 @@ authors = [
 ]
 dependencies = [
     "fastmcp==3.2.4",
-    "oci==2.171.0",
+    "oci==2.173.1",
     "pydantic==2.12.3",
     "mcp>=1.27.0",
     "pytest-cov>=7.0.0",

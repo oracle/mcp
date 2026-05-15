@@ -9,7 +9,7 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "fastmcp==3.2.4",
-    "oci==2.171.0",
+    "oci==2.173.1",
 ]
 
 classifiers = [

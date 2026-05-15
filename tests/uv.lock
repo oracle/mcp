@@ -886,7 +886,7 @@ wheels = [
 
 [[package]]
 name = "oci"
-version = "2.171.0"
+version = "2.173.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -897,9 +897,9 @@ dependencies = [
     { name = "pytz" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bd/60/280971906425495ee1b7c81e2bf052a113fbec1adc4de0ec4bd1df07d43c/oci-2.171.0.tar.gz", hash = "sha256:83e46b7d6a54d9d41a1d090c6a3e4e9bd00caa305ceb1958eb5a15191b72cb68", size = 17035917, upload-time = "2026-04-14T03:25:12.714Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8b/c9/4161259038d4ec2bb446eaf368ea10706f95b940a013a06e5d01c2428714/oci-2.173.1.tar.gz", hash = "sha256:bcbd34d8163e23f10f573ca4e828c702eb063b76b900fe03ffc1cf20baf8d93f", size = 17165335, upload-time = "2026-05-05T07:19:38.524Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9c/2f/4925fcf29e771c62a6892a49d5e35efed2fb0d1ee3aaa1535435cf2e2b87/oci-2.171.0-py3-none-any.whl", hash = "sha256:235e7aa8891c02869ea9d0418ef8ffc7af18b36509bc0b95d74c449569bf894c", size = 34771785, upload-time = "2026-04-14T03:25:04.927Z" },
+    { url = "https://files.pythonhosted.org/packages/c5/d8/6be79521e77a7cb1e1183e14f156477a4850f84d10058d4d4a1e6f70346d/oci-2.173.1-py3-none-any.whl", hash = "sha256:0b3f3d58eb8176033ff86b6b117f4023f828b299b60bf52eaa523b7d5f438afb", size = 34951836, upload-time = "2026-05-05T07:19:29.582Z" },
 ]
 
 [[package]]
@@ -972,7 +972,7 @@ requires-dist = [
     { name = "cryptography", specifier = ">=46.0.7" },
     { name = "fastmcp", specifier = "==3.2.4" },
     { name = "flask", specifier = ">=3.1.3" },
-    { name = "oci", specifier = "==2.171.0" },
+    { name = "oci", specifier = "==2.173.1" },
     { name = "ollama-mcp-bridge", specifier = ">=0.9.1" },
 ]
 
@@ -1586,11 +1586,11 @@ wheels = [
 
 [[package]]
 name = "urllib3"
-version = "2.6.3"
+version = "2.7.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/c7/24/5f1b3bdffd70275f6661c76461e25f024d5a38a46f04aaca912426a2b1d3/urllib3-2.6.3.tar.gz", hash = "sha256:1b62b6884944a57dbe321509ab94fd4d3b307075e0c2eae991ac71ee15ad38ed", size = 435556, upload-time = "2026-01-07T16:24:43.925Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e5ee11424ef85419ba0d8ba0b3138bf360be2ff56953/urllib3-2.7.0.tar.gz", hash = "sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c", size = 433602, upload-time = "2026-05-07T16:13:18.596Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/39/08/aaaad47bc4e9dc8c725e68f9d04865dbcb2052843ff09c97b08904852d84/urllib3-2.6.3-py3-none-any.whl", hash = "sha256:bf272323e553dfb2e87d9bfd225ca7b0f467b919d7bbd355436d3fd37cb0acd4", size = 131584, upload-time = "2026-01-07T16:24:42.685Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897", size = 131087, upload-time = "2026-05-07T16:13:17.151Z" },
 ]
 
 [[package]]

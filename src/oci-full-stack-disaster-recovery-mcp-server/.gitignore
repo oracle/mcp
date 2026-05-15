@@ -1,0 +1,12 @@
+.DS_Store
+.env
+.env.*
+.claude/
+.cline/
+.roo/
+.cursor/
+mcp_settings*.json
+.pytest_cache/
+.venv/
+__pycache__/
+*.py[cod]

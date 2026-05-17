@@ -4,5 +4,10 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
+from importlib.metadata import PackageNotFoundError, version
+
 __project__ = "oracle.oci-load-balancer-mcp-server"
-__version__ = "1.0.0"
+try:
+    __version__ = version(__project__)
+except PackageNotFoundError:
+    __version__ = "0.0.0"

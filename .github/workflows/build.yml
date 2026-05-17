@@ -9,35 +9,46 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    needs: get-directories
+    needs: get_changed_projects
     strategy:
       matrix:
-        include: ${{ fromJson(needs.get-directories.outputs.projects) }}
+        include: ${{ fromJson(needs.get_changed_projects.outputs.projects) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: No changed projects
+        if: ${{ matrix.skip }}
+        run: echo "No changed projects to build."
+
       - name: Set up Python
+        if: ${{ !matrix.skip }}
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
       - name: Install requirements
+        if: ${{ !matrix.skip }}
         run: pip install -r requirements-dev.txt
 
       - name: Sync
+        if: ${{ !matrix.skip }}
         run: python -m joist run sync ${{ matrix.project }}
 
       - name: Test and Coverage
+        if: ${{ !matrix.skip }}
         run: python -m joist run test ${{ matrix.project }} --no-cache
 
       - name: Build
+        if: ${{ !matrix.skip }}
         run: python -m joist run build ${{ matrix.project }} --no-cache
 
       - name: Test install
+        if: ${{ !matrix.skip }}
         run: python -m joist run install ${{ matrix.project }}
 
       - name: Upload coverage report
+        if: ${{ !matrix.skip }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.directory }}-coverage-report
@@ -46,13 +57,16 @@ jobs:
             .coverage.${{ matrix.project }}
           include-hidden-files: true
 
-  get-directories:
+  get_changed_projects:
     runs-on: ubuntu-latest
     outputs:
-      projects: ${{ steps.get-projects.outputs.projects }}
+      projects: ${{ steps.get_projects.outputs.projects }}
+      has_projects: ${{ steps.get_projects.outputs.has_projects }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -62,28 +76,52 @@ jobs:
       - name: Install requirements
         run: pip install -r requirements-dev.txt
 
-      - name: Get Joist projects
-        id: get-projects
+      - name: Get changed Joist projects
+        id: get_projects
+        env:
+          BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
         run: |
-          projects=$(python - <<'PY'
+          python - <<'PY'
           import json
+          import os
           import subprocess
+          import sys
 
-          payload = json.loads(
-              subprocess.check_output(["python", "-m", "joist", "list", "--json"], text=True)
-          )
+          base = os.environ["BASE_REF"]
+          if not base or base == "0" * 40:
+              command = [sys.executable, "-m", "joist", "list", "--json"]
+              reason = "no usable base ref; selected all projects"
+          else:
+              command = [sys.executable, "-m", "joist", "list", "--since", base, "--json"]
+              reason = f"selected projects changed since {base}"
+
+          payload = json.loads(subprocess.check_output(command, text=True))
+
           matrix = [
-              {"project": name, "directory": project["root"].removeprefix("src/")}
+              {
+                  "project": name,
+                  "directory": project["root"].removeprefix("src/"),
+                  "skip": False,
+              }
               for name, project in sorted(payload["projects"].items())
           ]
-          print(json.dumps(matrix))
+          output_matrix = matrix or [{"project": "none", "directory": "none", "skip": True}]
+
+          print(f"Joist command: {' '.join(command)}", file=sys.stderr)
+          print(f"Selection reason: {reason}", file=sys.stderr)
+          print(f"Selected projects: {json.dumps([item['project'] for item in matrix])}", file=sys.stderr)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"projects={json.dumps(output_matrix)}\n")
+              output.write(f"has_projects={'true' if matrix else 'false'}\n")
           PY
-          )
-          echo "projects=$projects" >> "$GITHUB_OUTPUT"
 
   combined-coverage:
     runs-on: ubuntu-latest
-    needs: build
+    needs:
+      - get_changed_projects
+      - build
+    if: ${{ needs.get_changed_projects.outputs.has_projects == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

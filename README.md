@@ -363,12 +363,13 @@ For example: `make project=oci-compute-mcp-server build` will only build the com
 
 The repository uses [Joist](https://pypi.org/project/joist/) to orchestrate these
 per-server commands. Joist keeps the existing project-local `uv.lock` files, but
-adds graph-aware project selection and affected-project runs:
+adds graph-aware project selection and changed-project runs:
 
 ```sh
 joist list
-make affected-lint
-make affected-test base=origin/main
+joist list --since origin/main
+make since-lint
+make since-test since=origin/main
 make project=oci-compute-mcp-server test
 ```
 

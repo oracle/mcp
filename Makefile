@@ -2,10 +2,11 @@
 # This matches all projects by default. Set `project` to a Joist project name to run one project.
 project ?= *
 base ?= origin/main
+since ?= $(base)
 JOIST ?= python -m joist
-JOIST_PROJECTS = $(if $(filter *,$(project)),--all,$(project))
+JOIST_PROJECTS = $(if $(filter *,$(project)),,$(project))
 
-.PHONY: affected-build affected-lint affected-test build combine-coverage containerize e2e-tests format install lint lock lock-check publish sync test test-publish
+.PHONY: affected-build affected-lint affected-test build combine-coverage containerize e2e-tests format install lint lock lock-check publish since-build since-lint since-test sync test test-publish
 
 build:
 	$(JOIST) run build $(JOIST_PROJECTS)
@@ -58,11 +59,17 @@ e2e-tests: build install
 containerize:
 	$(JOIST) run containerize $(JOIST_PROJECTS)
 
-affected-build:
-	$(JOIST) affected build --base $(base)
+since-build:
+	$(JOIST) run build --since $(since)
 
-affected-lint:
-	$(JOIST) affected lint --base $(base)
+since-lint:
+	$(JOIST) run lint --since $(since)
 
-affected-test:
-	$(JOIST) affected test --base $(base)
+since-test:
+	$(JOIST) run test --since $(since)
+
+affected-build: since-build
+
+affected-lint: since-lint
+
+affected-test: since-test

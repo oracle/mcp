@@ -9,6 +9,13 @@ exclude = [
 ]
 default_base = "origin/main"
 cache_dir = ".joist/cache"
+affects_all = [
+    ".github/workflows/**",
+    "Makefile",
+    "requirements*.txt",
+    "ruff.toml",
+    "scripts/**",
+]
 
 [target_defaults.sync]
 command = "uv --directory {project_root} sync --locked --all-extras --dev"

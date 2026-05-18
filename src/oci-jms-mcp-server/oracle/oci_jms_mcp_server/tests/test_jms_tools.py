@@ -1049,6 +1049,254 @@ class TestJmsTools:
             with pytest.raises(fastmcp.exceptions.ToolError):
                 await client.call_tool("java_runtime_compliance", {"fleet_id": "fleet1"})
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "tool_name,sdk_method,kwargs",
+        [
+            ("list_jms_plugins", "list_jms_plugins", {}),
+            ("get_jms_plugin", "get_jms_plugin", {"jms_plugin_id": "plugin1"}),
+            ("list_installation_sites", "list_installation_sites", {"fleet_id": "fleet1"}),
+            ("get_fleet_agent_configuration", "get_fleet_agent_configuration", {"fleet_id": "fleet1"}),
+            (
+                "get_fleet_advanced_feature_configuration",
+                "get_fleet_advanced_feature_configuration",
+                {"fleet_id": "fleet1"},
+            ),
+            ("summarize_resource_inventory", "summarize_resource_inventory", {}),
+            ("summarize_managed_instance_usage", "summarize_managed_instance_usage", {"fleet_id": "fleet1"}),
+            ("get_fleet_health_diagnostics", "list_fleet_diagnoses", {"fleet_id": "fleet1"}),
+            ("list_jms_notices", "list_announcements", {}),
+        ],
+    )
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_tool_propagates_service_error(
+        self, mock_get_client, tool_name, sdk_method, kwargs
+    ):
+        # Every tool should surface OCI ServiceError instead of swallowing it.
+        mock_client = MagicMock()
+        getattr(mock_client, sdk_method).side_effect = oci.exceptions.ServiceError(
+            status=500,
+            code="InternalServerError",
+            message="boom",
+            opc_request_id="req",
+            headers={},
+        )
+        mock_get_client.return_value = mock_client
+
+        async with Client(mcp) as client:
+            with pytest.raises(fastmcp.exceptions.ToolError):
+                await client.call_tool(tool_name, kwargs)
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_summarize_fleet_health_unknown_when_text_fragments_empty(self, mock_get_client):
+        # Diagnoses/errors that carry no usable text strings collapse to UNKNOWN.
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        diagnosis_response = create_autospec(oci.response.Response)
+        diagnosis_response.data = oci.jms.models.FleetDiagnosisCollection(
+            items=[oci.jms.models.FleetDiagnosisSummary(resource_diagnosis="UNKNOWN_ENUM_VALUE")]
+        )
+        diagnosis_response.has_next_page = False
+        diagnosis_response.next_page = None
+        mock_client.list_fleet_diagnoses.return_value = diagnosis_response
+
+        errors_response = create_autospec(oci.response.Response)
+        errors_response.data = oci.jms.models.FleetErrorCollection(items=[])
+        errors_response.has_next_page = False
+        errors_response.next_page = None
+        mock_client.list_fleet_errors.return_value = errors_response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool("summarize_fleet_health", {"fleet_id": "fleet1"})
+            ).structured_content
+
+            assert result["overall_health_status"] == "UNKNOWN"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_summarize_fleet_health_triggers_inventory_and_auth_recommendations(
+        self, mock_get_client
+    ):
+        # Diagnosis text containing the documented keyword families should produce
+        # the matching recommended next-step entries.
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        diagnosis_response = create_autospec(oci.response.Response)
+        diagnosis_response.data = oci.jms.models.FleetDiagnosisCollection(
+            items=[
+                oci.jms.models.FleetDiagnosisSummary(
+                    resource_diagnosis="Inventory scan reported unauthorized region access"
+                )
+            ]
+        )
+        diagnosis_response.has_next_page = False
+        diagnosis_response.next_page = None
+        mock_client.list_fleet_diagnoses.return_value = diagnosis_response
+
+        errors_response = create_autospec(oci.response.Response)
+        errors_response.data = oci.jms.models.FleetErrorCollection(items=[])
+        errors_response.has_next_page = False
+        errors_response.next_page = None
+        mock_client.list_fleet_errors.return_value = errors_response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool("summarize_fleet_health", {"fleet_id": "fleet1"})
+            ).structured_content
+
+            recommendations = result["recommended_next_checks"]
+            assert any("inventory collection settings" in entry for entry in recommendations)
+            assert any("region or compartment alignment" in entry for entry in recommendations)
+            assert any("JMS notices" in entry for entry in recommendations)
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_java_runtime_compliance_short_circuits_when_version_missing(
+        self, mock_get_client
+    ):
+        # _safe_get_java_release must skip the SDK call when version is None.
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        usage_response = create_autospec(oci.response.Response)
+        usage_response.data = oci.jms.models.JreUsageCollection(
+            items=[
+                oci.jms.models.JreUsage(
+                    id="jre1",
+                    fleet_id="fleet1",
+                    version=None,
+                    vendor="Oracle",
+                    distribution="JDK",
+                    security_status="UP_TO_DATE",
+                    approximate_installation_count=1,
+                )
+            ]
+        )
+        usage_response.has_next_page = False
+        usage_response.next_page = None
+        mock_client.summarize_jre_usage.return_value = usage_response
+
+        async with Client(mcp) as client:
+            await client.call_tool("java_runtime_compliance", {"fleet_id": "fleet1"})
+
+        mock_client.get_java_release.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_list_fleets_ignores_blank_sort_by(self, mock_get_client):
+        # A whitespace-only sort_by must be dropped before reaching the SDK.
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        response = create_autospec(oci.response.Response)
+        response.data = oci.jms.models.FleetCollection(items=[])
+        response.has_next_page = False
+        response.next_page = None
+        mock_client.list_fleets.return_value = response
+
+        async with Client(mcp) as client:
+            await client.call_tool(
+                "list_fleets",
+                {"compartment_id": "ocid1.compartment.oc1..test", "sort_by": "   "},
+            )
+
+        assert "sort_by" not in mock_client.list_fleets.call_args.kwargs
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_list_fleets_truncates_first_page_to_limit(self, mock_get_client):
+        # Hitting the limit mid-page must stop iteration and not call the SDK again.
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        response = create_autospec(oci.response.Response)
+        response.data = oci.jms.models.FleetCollection(
+            items=[
+                oci.jms.models.FleetSummary(id=f"fleet{i}", display_name=f"Fleet {i}")
+                for i in range(5)
+            ]
+        )
+        response.has_next_page = True
+        response.next_page = "token"
+        mock_client.list_fleets.return_value = response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_fleets",
+                    {"compartment_id": "ocid1.compartment.oc1..test", "limit": 2},
+                )
+            ).structured_content["result"]
+
+            assert len(result) == 2
+            assert mock_client.list_fleets.call_count == 1
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_java_runtime_compliance_aggregates_upgrade_required_and_caches_release(
+        self, mock_get_client
+    ):
+        # Two rows sharing a version should produce exactly one get_java_release call
+        # and accumulate runtimes_requiring_upgrade for the UPGRADE_REQUIRED bucket.
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        usage_response = create_autospec(oci.response.Response)
+        usage_response.data = oci.jms.models.JreUsageCollection(
+            items=[
+                oci.jms.models.JreUsage(
+                    id="jre-upgrade",
+                    fleet_id="fleet1",
+                    version="17.0.1",
+                    vendor="Oracle",
+                    distribution="JDK",
+                    security_status="UPGRADE_REQUIRED",
+                    approximate_installation_count=3,
+                ),
+                oci.jms.models.JreUsage(
+                    id="jre-update",
+                    fleet_id="fleet1",
+                    version="17.0.1",
+                    vendor="Oracle",
+                    distribution="JDK",
+                    security_status="UPDATE_REQUIRED",
+                    approximate_installation_count=2,
+                ),
+            ]
+        )
+        usage_response.has_next_page = False
+        usage_response.next_page = None
+        mock_client.summarize_jre_usage.return_value = usage_response
+
+        release_response = create_autospec(oci.response.Response)
+        release_response.data = MagicMock(
+            release_date=None,
+            days_under_security_baseline=None,
+            license_type="ORACLE",
+            release_type="LTS",
+            release_notes_url=None,
+        )
+        mock_client.get_java_release.return_value = release_response
+
+        sites_response = create_autospec(oci.response.Response)
+        sites_response.data = oci.jms.models.InstallationSiteCollection(items=[])
+        sites_response.has_next_page = False
+        sites_response.next_page = None
+        mock_client.list_installation_sites.return_value = sites_response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool("java_runtime_compliance", {"fleet_id": "fleet1"})
+            ).structured_content
+
+            assert result["runtimes_requiring_upgrade"] == 3
+            assert result["runtimes_requiring_update"] == 2
+            assert mock_client.get_java_release.call_count == 1
+
 
 class TestServerMain:
     @patch("oracle.oci_jms_mcp_server.server.mcp.run")

@@ -5,12 +5,17 @@ https://oss.oracle.com/licenses/upl.
 """
 
 from datetime import datetime, UTC
+from unittest.mock import patch
 
 import oci
+import pytest
 
+from oracle.oci_jms_mcp_server import models, util
 from oracle.oci_jms_mcp_server.models import (
+    map_custom_log,
     map_fleet_diagnosis,
     map_fleet_error,
+    map_fleet_error_detail,
     map_jms_notice,
     map_fleet,
     map_fleet_advanced_feature_configuration,
@@ -199,3 +204,63 @@ def test_map_jms_notice():
     assert result.key == 1001
     assert result.summary == "Planned maintenance"
     assert result.time_released == now
+
+
+@pytest.mark.parametrize(
+    "mapper",
+    [
+        map_custom_log,
+        map_fleet_summary,
+        map_fleet,
+        map_jms_plugin_summary,
+        map_jms_plugin,
+        map_installation_site_summary,
+        map_fleet_agent_configuration,
+        map_fleet_advanced_feature_configuration,
+        map_managed_instance_usage,
+        map_resource_inventory,
+        map_fleet_diagnosis,
+        map_fleet_error_detail,
+        map_fleet_error,
+        map_jms_notice,
+    ],
+)
+def test_mapper_returns_none_on_none_input(mapper):
+    # Every map_* converter short-circuits on a None SDK object so callers
+    # don't have to guard their pagination loops.
+    assert mapper(None) is None
+
+
+def test_oci_to_dict_handles_none_and_plain_dict():
+    assert models._oci_to_dict(None) is None
+    assert models._oci_to_dict({"a": 1}) == {"a": 1}
+
+
+def test_oci_to_dict_falls_back_to_object_dict():
+    # When oci.util.to_dict can't handle the object, _oci_to_dict falls back
+    # to the public attributes of __dict__ (skipping anything underscore-prefixed).
+    class Bag:
+        def __init__(self):
+            self.public = "value"
+            self._private = "hidden"
+
+    with patch("oci.util.to_dict", side_effect=TypeError("unsupported")):
+        result = models._oci_to_dict(Bag())
+
+    assert result == {"public": "value"}
+
+
+def test_oci_to_dict_returns_none_for_bare_object_when_sdk_helper_fails():
+    # An object without __dict__ (e.g. a bare object()) returns None when
+    # both the OCI helper and the dict fallback are unusable.
+    with patch("oci.util.to_dict", side_effect=TypeError("unsupported")):
+        assert models._oci_to_dict(object()) is None
+
+
+def test_get_jms_environment_blank_value_returns_none():
+    assert util.get_jms_environment("   ") is None
+
+
+def test_get_jms_environment_rejects_unparseable_input():
+    with pytest.raises(ValueError):
+        util.get_jms_environment("???")

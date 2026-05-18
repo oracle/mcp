@@ -1013,6 +1013,42 @@ class TestJmsTools:
             assert result["unknown_runtimes"] == 1
             assert result["version_breakdown"][0]["release_type"] is None
 
+    @pytest.mark.asyncio
+    @patch("oracle.oci_jms_mcp_server.server.get_jms_client")
+    async def test_java_runtime_compliance_propagates_5xx_release_lookup(self, mock_get_client):
+        # Only 400/404 are swallowed by _safe_get_java_release; 5xx must surface.
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        usage_response = create_autospec(oci.response.Response)
+        usage_response.data = oci.jms.models.JreUsageCollection(
+            items=[
+                oci.jms.models.JreUsage(
+                    id="jre1",
+                    fleet_id="fleet1",
+                    version="17.0.1",
+                    vendor="Oracle",
+                    distribution="JDK",
+                    security_status="UP_TO_DATE",
+                    approximate_installation_count=1,
+                )
+            ]
+        )
+        usage_response.has_next_page = False
+        usage_response.next_page = None
+        mock_client.summarize_jre_usage.return_value = usage_response
+        mock_client.get_java_release.side_effect = oci.exceptions.ServiceError(
+            status=500,
+            code="InternalServerError",
+            message="Internal server error",
+            opc_request_id="req",
+            headers={},
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(fastmcp.exceptions.ToolError):
+                await client.call_tool("java_runtime_compliance", {"fleet_id": "fleet1"})
+
 
 class TestServerMain:
     @patch("oracle.oci_jms_mcp_server.server.mcp.run")

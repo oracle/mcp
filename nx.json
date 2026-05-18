@@ -1,0 +1,92 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "defaultBase": "origin/main",
+  "cacheDirectory": ".nx/cache",
+  "neverConnectToCloud": true,
+  "parallel": 4,
+  "plugins": [
+    {
+      "plugin": "@nxlv/python",
+      "options": {
+        "packageManager": "uv"
+      }
+    }
+  ],
+  "tui": {
+    "enabled": false
+  },
+  "namedInputs": {
+    "default": [
+      "{projectRoot}/**/*",
+      "sharedGlobals"
+    ],
+    "sharedGlobals": [
+      "{workspaceRoot}/.github/workflows/**",
+      "{workspaceRoot}/Makefile",
+      "{workspaceRoot}/requirements*.txt",
+      "{workspaceRoot}/ruff.toml",
+      "{workspaceRoot}/nx.json",
+      "{workspaceRoot}/package.json"
+    ],
+    "python": [
+      "{projectRoot}/oracle/**/*.py",
+      "{projectRoot}/pyproject.toml",
+      "{projectRoot}/uv.lock"
+    ],
+    "pythonWithWorkspace": [
+      "python",
+      "sharedGlobals"
+    ]
+  },
+  "targetDefaults": {
+    "sync": {
+      "cache": false
+    },
+    "install": {
+      "cache": false
+    },
+    "lock": {
+      "cache": false
+    },
+    "lock-check": {
+      "cache": false
+    },
+    "format": {
+      "cache": false
+    },
+    "stamp": {
+      "cache": false,
+      "inputs": [
+        "pythonWithWorkspace",
+        "{workspaceRoot}/scripts/nx_project.py"
+      ]
+    },
+    "lint": {
+      "cache": true,
+      "inputs": [
+        "pythonWithWorkspace"
+      ]
+    },
+    "test": {
+      "cache": true,
+      "inputs": [
+        "pythonWithWorkspace"
+      ]
+    },
+    "build": {
+      "cache": false,
+      "inputs": [
+        "pythonWithWorkspace",
+        "{workspaceRoot}/scripts/nx_project.py"
+      ]
+    },
+    "containerize": {
+      "cache": false,
+      "inputs": [
+        "pythonWithWorkspace",
+        "{projectRoot}/Containerfile",
+        "{workspaceRoot}/scripts/nx_project.py"
+      ]
+    }
+  }
+}

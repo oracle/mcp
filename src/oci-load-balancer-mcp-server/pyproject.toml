@@ -34,6 +34,7 @@ dev = [
     "pytest>=9.0.3",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=7.0.0",
+    "ruff>=0.13.0",
 ]
 
 [build-system]

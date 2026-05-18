@@ -1,0 +1,31 @@
+{
+  "name": "oracle-mcp-nx-experiment",
+  "private": true,
+  "description": "Experimental Nx orchestration for the Oracle MCP monorepo.",
+  "nx": {
+    "includedScripts": []
+  },
+  "scripts": {
+    "nx": "NX_WORKSPACE_DATA_DIRECTORY=$PWD/.nx/workspace-data NX_CACHE_DIRECTORY=$PWD/.nx/cache NX_NO_CLOUD=true UV_CACHE_DIR=$PWD/.uv-cache UV_ISOLATED=1 nx",
+    "nx:projects": "npm run nx -- show projects --projects=tag:type:python",
+    "nx:sync": "npm run nx -- run-many -t sync",
+    "nx:lint": "npm run nx -- run-many -t lint",
+    "nx:test": "sh -c 'npm run nx -- run-many -t test \"$@\" && npm run nx:combine-coverage' --",
+    "nx:build": "npm run nx -- run-many -t build",
+    "nx:install": "npm run nx -- run-many -t install",
+    "nx:containerize": "npm run nx -- run-many -t containerize",
+    "nx:e2e": "npm run nx -- run e2e-tests:e2e",
+    "nx:affected:sync": "npm run nx -- affected -t sync",
+    "nx:affected:lint": "npm run nx -- affected -t lint",
+    "nx:affected:test": "sh -c 'npm run nx -- affected -t test \"$@\" && npm run nx:combine-coverage' --",
+    "nx:affected:build": "npm run nx -- affected -t build",
+    "nx:affected:install": "npm run nx -- affected -t install",
+    "nx:affected:containerize": "npm run nx -- affected -t containerize",
+    "nx:affected:e2e": "npm run nx -- affected -t e2e",
+    "nx:combine-coverage": "npm run nx -- run workspace:combine-coverage"
+  },
+  "devDependencies": {
+    "@nxlv/python": "^22.1.4",
+    "nx": "^22.0.0"
+  }
+}

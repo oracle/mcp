@@ -26,6 +26,10 @@ venv.bak/
 
 .coverage*
 htmlcov/
+.ruff_cache/
+.nx/
+.uv-cache/
+node_modules/
 
 # Maven
 **/target/
@@ -34,4 +38,3 @@ htmlcov/
 **/logs/
 **/oracle-goldengate-mcp-server.env
 **/build/**
-

@@ -1,0 +1,31 @@
+{
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "name": "workspace",
+  "projectType": "library",
+  "tags": ["type:workspace"],
+  "targets": {
+    "lint": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": ["{projectRoot}/**/*.py", "{workspaceRoot}/ruff.toml"],
+      "options": {
+        "command": "uv tool run ruff check scripts"
+      }
+    },
+    "format": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": ["{projectRoot}/**/*.py", "{workspaceRoot}/ruff.toml"],
+      "options": {
+        "command": "uv tool run ruff format scripts"
+      }
+    },
+    "combine-coverage": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "python3 scripts/combine_coverage.py"
+      }
+    }
+  }
+}

@@ -37,4 +37,5 @@ packages = ["oracle"]
 dev = [
     "pytest>=9.0.3",
     "pytest-asyncio>=1.2.0",
+    "ruff>=0.13.0",
 ]

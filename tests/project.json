@@ -1,0 +1,63 @@
+{
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "name": "e2e-tests",
+  "projectType": "application",
+  "implicitDependencies": [
+    "oci-cloud-guard-mcp-server",
+    "oci-compute-instance-agent-mcp-server",
+    "oci-compute-mcp-server",
+    "oci-faaas-mcp-server",
+    "oci-identity-mcp-server",
+    "oci-iot-mcp-server",
+    "oci-logging-mcp-server",
+    "oci-migration-mcp-server",
+    "oci-monitoring-mcp-server",
+    "oci-network-load-balancer-mcp-server",
+    "oci-networking-mcp-server",
+    "oci-object-storage-mcp-server",
+    "oci-registry-mcp-server",
+    "oci-resource-search-mcp-server",
+    "oci-usage-mcp-server"
+  ],
+  "tags": ["type:e2e", "scope:tests"],
+  "targets": {
+    "sync": {
+      "executor": "@nxlv/python:sync",
+      "options": {
+        "args": "--locked --all-extras --dev"
+      }
+    },
+    "lock": {
+      "executor": "@nxlv/python:lock"
+    },
+    "lock-check": {
+      "executor": "@nxlv/python:lock",
+      "options": {
+        "args": "--check"
+      }
+    },
+    "lint": {
+      "executor": "@nxlv/python:ruff-check",
+      "inputs": ["{projectRoot}/**/*", "sharedGlobals"],
+      "options": {
+        "lintFilePatterns": ["."]
+      }
+    },
+    "format": {
+      "executor": "@nxlv/python:ruff-format",
+      "inputs": ["{projectRoot}/**/*", "sharedGlobals"],
+      "options": {
+        "filePatterns": ["."]
+      }
+    },
+    "e2e": {
+      "executor": "@nxlv/python:run-commands",
+      "cache": false,
+      "inputs": ["{projectRoot}/**/*", "sharedGlobals"],
+      "options": {
+        "cwd": "tests",
+        "command": "uv run behave e2e/features"
+      }
+    }
+  }
+}

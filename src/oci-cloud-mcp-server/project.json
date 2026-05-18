@@ -1,0 +1,108 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "oci-cloud-mcp-server",
+  "projectType": "library",
+  "tags": [
+    "type:python",
+    "package:oracle.oci-cloud-mcp-server"
+  ],
+  "targets": {
+    "sync": {
+      "executor": "@nxlv/python:sync",
+      "options": {
+        "args": "--locked --all-extras --dev"
+      }
+    },
+    "install": {
+      "executor": "@nxlv/python:run-commands",
+      "options": {
+        "cwd": "src/oci-cloud-mcp-server",
+        "command": "uv pip install ."
+      }
+    },
+    "lock": {
+      "executor": "@nxlv/python:lock",
+      "options": {}
+    },
+    "lock-check": {
+      "executor": "@nxlv/python:lock",
+      "options": {
+        "args": "--check"
+      }
+    },
+    "lint": {
+      "executor": "@nxlv/python:ruff-check",
+      "options": {
+        "lintFilePatterns": [
+          "."
+        ]
+      }
+    },
+    "format": {
+      "executor": "@nxlv/python:ruff-format",
+      "options": {
+        "filePatterns": [
+          "."
+        ]
+      }
+    },
+    "test": {
+      "executor": "@nxlv/python:run-commands",
+      "options": {
+        "cwd": "src/oci-cloud-mcp-server",
+        "env": {
+          "COVERAGE_FILE": "../../.coverage.oci-cloud-mcp-server"
+        },
+        "command": "uv run pytest --cov=. --cov-branch --cov-append --cov-report=html --cov-report=term-missing"
+      },
+      "outputs": [
+        "{workspaceRoot}/.coverage.oci-cloud-mcp-server"
+      ]
+    },
+    "stamp": {
+      "executor": "@nxlv/python:run-commands",
+      "options": {
+        "command": "python3 scripts/nx_project.py stamp src/oci-cloud-mcp-server"
+      }
+    },
+    "build": {
+      "executor": "@nxlv/python:build",
+      "dependsOn": [
+        "stamp",
+        "^build"
+      ],
+      "options": {
+        "outputPath": "src/oci-cloud-mcp-server/dist",
+        "lockedVersions": false,
+        "bundleLocalDependencies": false,
+        "ignorePaths": [
+          ".venv",
+          ".tox"
+        ]
+      },
+      "outputs": [
+        "{projectRoot}/dist"
+      ]
+    },
+    "test-publish": {
+      "executor": "@nxlv/python:run-commands",
+      "options": {
+        "cwd": "src/oci-cloud-mcp-server",
+        "command": "uv publish --publish-url https://test.pypi.org/legacy/ --check-url=https://test.pypi.org/simple/"
+      }
+    },
+    "publish": {
+      "executor": "@nxlv/python:run-commands",
+      "options": {
+        "cwd": "src/oci-cloud-mcp-server",
+        "command": "uv publish --check-url=https://pypi.org/simple/"
+      }
+    },
+    "containerize": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "python3 scripts/nx_project.py containerize src/oci-cloud-mcp-server"
+      }
+    }
+  }
+}

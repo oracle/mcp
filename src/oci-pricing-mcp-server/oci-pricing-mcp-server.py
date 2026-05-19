@@ -18,6 +18,7 @@ import re
 import unicodedata
 from functools import lru_cache
 from typing import Any, TypedDict
+from urllib.parse import urlparse
 
 import httpx
 from fastmcp import FastMCP
@@ -36,6 +37,7 @@ except Exception:
     _HAS_PYCOUNTRY = False
 
 API = "https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/"
+APEX_HOST = "apexapps.oracle.com"
 mcp = FastMCP("oci-pricing-mcp")
 
 # -------------------- environment-driven defaults --------------------
@@ -256,7 +258,20 @@ async def iter_all(
         )
         if not nxt:
             break
-        url, params = (nxt if nxt.startswith("http") else f"https://apexapps.oracle.com{nxt}"), None
+        next_url = _safe_next_url(nxt)
+        if next_url is None:
+            break
+        url, params = next_url, None
+
+
+def _safe_next_url(next_href: str) -> str | None:
+    parsed = urlparse(next_href)
+    if parsed.scheme or parsed.netloc:
+        if parsed.scheme == "https" and parsed.netloc == APEX_HOST:
+            return next_href
+        return None
+    path = next_href if next_href.startswith("/") else f"/{next_href}"
+    return f"https://{APEX_HOST}{path}"
 
 
 # -------------------- fuzzy search --------------------

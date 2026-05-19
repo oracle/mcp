@@ -6,3 +6,7 @@
 
 - HTTP transport support was removed; this server is now `stdio`-only.
 - `stdio` request authentication continues to use the configured OCI CLI profile.
+
+### Fixed
+
+- Destructive-command denylist matching is now prefix-based and recognizes valueless global flags (e.g. `--debug`), closing a normalization bypass.

@@ -9,6 +9,8 @@ from types import SimpleNamespace
 
 from oracle.oci_resource_search_mcp_server.models import (
     ResourceSummary,
+    UNTRUSTED_DATA_END,
+    UNTRUSTED_DATA_START,
     _oci_to_dict,
     map_resource_summary,
     map_search_context,
@@ -23,7 +25,9 @@ class TestSearchContext:
         sc = SimpleNamespace(highlights={"displayName": ["<h1>match</h1>"]})
         mapped = map_search_context(sc)
         assert mapped is not None
-        assert mapped.highlights == {"displayName": ["<h1>match</h1>"]}
+        assert mapped.highlights == {
+            "displayName": [f"{UNTRUSTED_DATA_START}\n<h1>match</h1>\n{UNTRUSTED_DATA_END}"]
+        }
 
 
 class TestResourceSummaryMapping:
@@ -51,15 +55,23 @@ class TestResourceSummaryMapping:
         assert mapped.identifier.startswith("ocid1.instance")
         assert mapped.compartment_id.startswith("ocid1.compartment")
         assert mapped.time_created == ts
-        assert mapped.display_name == "My Instance"
+        assert mapped.display_name == f"{UNTRUSTED_DATA_START}\nMy Instance\n{UNTRUSTED_DATA_END}"
         assert mapped.availability_domain == "AD-1"
         assert mapped.lifecycle_state == "RUNNING"
-        assert mapped.freeform_tags == {"Owner": "Dev"}
-        assert mapped.defined_tags == {"Operations": {"CostCenter": "42"}}
+        assert mapped.freeform_tags == {"Owner": f"{UNTRUSTED_DATA_START}\nDev\n{UNTRUSTED_DATA_END}"}
+        assert mapped.defined_tags == {
+            "Operations": {"CostCenter": f"{UNTRUSTED_DATA_START}\n42\n{UNTRUSTED_DATA_END}"}
+        }
         assert mapped.system_tags == {"orcl-cloud": {"free-tier-retain": True}}
         assert mapped.search_context is not None
-        assert mapped.search_context.highlights == {"displayName": ["<h1>My Instance</h1>"]}
-        assert mapped.identity_context == {"keyA": "valueA"}
+        assert mapped.search_context.highlights == {
+            "displayName": [
+                f"{UNTRUSTED_DATA_START}\n<h1>My Instance</h1>\n{UNTRUSTED_DATA_END}"
+            ]
+        }
+        assert mapped.identity_context == {
+            "keyA": f"{UNTRUSTED_DATA_START}\nvalueA\n{UNTRUSTED_DATA_END}"
+        }
         assert mapped.additional_details == {"attachedVnic": []}
 
     def test_map_resource_summary_without_search_context(self):

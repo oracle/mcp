@@ -369,7 +369,8 @@ class TestIdentityTools:
             )
             result = call_tool_result.structured_content
 
-            assert result["token"] == "token1"
+            assert result["token"] is None
+            assert result["description"] == "Test token"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_identity_mcp_server.server.get_identity_client")

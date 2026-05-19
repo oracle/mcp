@@ -5,7 +5,9 @@ https://oss.oracle.com/licenses/upl.
 """
 
 import os
+import tempfile
 from logging import Logger
+from pathlib import Path
 from typing import Annotated, List
 
 import oci
@@ -30,6 +32,45 @@ from . import __project__, __version__
 logger = Logger(__name__, level="INFO")
 
 mcp = FastMCP(name=__project__)
+
+_SENSITIVE_UPLOAD_PREFIXES = (
+    Path.home() / ".oci",
+    Path.home() / ".ssh",
+    Path("/etc"),
+    Path("/run/secrets"),
+    Path("/var/run/secrets"),
+)
+
+
+def _path_is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _get_upload_root() -> Path:
+    root = os.getenv("OCI_MCP_UPLOAD_ROOT")
+    if root:
+        return Path(root).expanduser().resolve()
+    return (Path(tempfile.gettempdir()) / "oci-mcp-uploads").resolve()
+
+
+def _resolve_upload_path(file_path: str) -> Path:
+    upload_root = _get_upload_root()
+    resolved_path = Path(file_path).expanduser().resolve(strict=True)
+    if not _path_is_relative_to(resolved_path, upload_root):
+        raise ValueError(
+            f"Rejected upload path '{file_path}': resolved path is outside configured upload root '{upload_root}'."
+        )
+    for prefix in _SENSITIVE_UPLOAD_PREFIXES:
+        resolved_prefix = prefix.expanduser().resolve(strict=False)
+        if resolved_path == resolved_prefix or _path_is_relative_to(resolved_path, resolved_prefix):
+            raise ValueError(f"Rejected upload path '{file_path}': path is in a sensitive location.")
+    if not resolved_path.is_file():
+        raise ValueError(f"Rejected upload path '{file_path}': path is not a regular file.")
+    return resolved_path
 
 
 def _get_http_config_and_signer():
@@ -239,12 +280,19 @@ def upload_object(
         "If the object name is not provided, use the file name as the object name",
     ] = "",
 ):
+    try:
+        resolved_file_path = _resolve_upload_path(file_path)
+    except Exception as e:
+        logger.warning("Rejected upload path %s: %s", file_path, e)
+        return {"error": str(e)}
+
     object_storage_client = get_object_storage_client()
     namespace_name = get_object_storage_namespace(compartment_id)
     logger.info("Got Namespace: %s", namespace_name)
-    logger.info("Checking file at path: %s", file_path)
+    logger.info("Checking file at path: %s", resolved_file_path)
+    object_name = object_name or resolved_file_path.name
     try:
-        with open(file_path, "rb") as file:
+        with open(resolved_file_path, "rb") as file:
             object_storage_client.put_object(namespace_name, bucket_name, object_name, file)
         return {"message": "Object uploaded successfully"}
     except Exception as e:

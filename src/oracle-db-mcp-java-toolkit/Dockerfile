@@ -1,18 +1,5 @@
 # ---------- 1) Build stage ----------
-FROM container-registry.oracle.com/java/openjdk:17 AS builder
-
-ARG MAVEN_VERSION=3.9.12
-ARG MAVEN_BASE_URL=https://archive.apache.org/dist/maven/maven-3
-
-RUN curl -fsSL \
-      ${MAVEN_BASE_URL}/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz \
-      -o /tmp/maven.tar.gz \
-  && tar -xzf /tmp/maven.tar.gz -C /opt \
-  && ln -s /opt/apache-maven-${MAVEN_VERSION} /opt/maven \
-  && rm /tmp/maven.tar.gz
-
-ENV MAVEN_HOME=/opt/maven
-ENV PATH="${MAVEN_HOME}/bin:${PATH}"
+FROM maven:3.9.12-eclipse-temurin-17@sha256:a0603aab698040d9c94259f379ec0487da1678560748d6c7508483034033c53d AS builder
 
 WORKDIR /src
 
@@ -21,7 +8,7 @@ COPY . .
 RUN mvn -B -q -DskipTests clean package
 
 # ---------- 2) Runtime stage ----------
-FROM container-registry.oracle.com/java/openjdk:17
+FROM container-registry.oracle.com/java/openjdk:17@sha256:82cc9efbe316236933eb4fb8c0606c536dfbfc545f2e728ebed728b729f3eb1b
 
 RUN useradd -r -u 10001 appuser && \
     mkdir -p /app /ext && chown -R appuser:appuser /app /ext

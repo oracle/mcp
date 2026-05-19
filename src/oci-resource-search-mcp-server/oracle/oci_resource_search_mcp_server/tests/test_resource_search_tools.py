@@ -14,6 +14,9 @@ from fastmcp.server.dependencies import AccessToken
 from oracle.oci_resource_search_mcp_server import server
 from oracle.oci_resource_search_mcp_server.server import mcp
 
+TENANT_ID = "ocid1.tenancy.oc1..aaaaaaaaexample"
+COMPARTMENT_ID = "ocid1.compartment.oc1..aaaaaaaaexample"
+
 
 class TestResourceSearchTools:
     @pytest.mark.asyncio
@@ -36,14 +39,17 @@ class TestResourceSearchTools:
         mock_search_response.has_next_page = False
         mock_search_response.next_page = None
         mock_client.search_resources.return_value = mock_search_response
+        mock_type_response = create_autospec(oci.response.Response)
+        mock_type_response.data = [oci.resource_search.models.ResourceType(name="dbsystem")]
+        mock_client.list_resource_types.return_value = mock_type_response
 
         async with Client(mcp) as client:
             result = (
                 await client.call_tool(
                     "list_all_resources",
                     {
-                        "tenant_id": "tenant1",
-                        "compartment_id": "compartment1",
+                        "tenant_id": TENANT_ID,
+                        "compartment_id": COMPARTMENT_ID,
                     },
                 )
             ).structured_content["result"]
@@ -71,14 +77,17 @@ class TestResourceSearchTools:
         mock_search_response.has_next_page = False
         mock_search_response.next_page = None
         mock_client.search_resources.return_value = mock_search_response
+        mock_type_response = create_autospec(oci.response.Response)
+        mock_type_response.data = [oci.resource_search.models.ResourceType(name="dbsystem")]
+        mock_client.list_resource_types.return_value = mock_type_response
 
         async with Client(mcp) as client:
             result = (
                 await client.call_tool(
                     "search_resources",
                     {
-                        "tenant_id": "tenant1",
-                        "compartment_id": "compartment1",
+                        "tenant_id": TENANT_ID,
+                        "compartment_id": COMPARTMENT_ID,
                         "display_name": "Resource",
                     },
                 )
@@ -107,6 +116,10 @@ class TestResourceSearchTools:
         mock_search_response.has_next_page = False
         mock_search_response.next_page = None
         mock_client.search_resources.return_value = mock_search_response
+        mock_client.list_resource_types.return_value = create_autospec(oci.response.Response)
+        mock_client.list_resource_types.return_value.data = [
+            oci.resource_search.models.ResourceType(name="dbsystem")
+        ]
 
         async with Client(mcp) as client:
             result = (
@@ -142,14 +155,17 @@ class TestResourceSearchTools:
         mock_search_response.has_next_page = False
         mock_search_response.next_page = None
         mock_client.search_resources.return_value = mock_search_response
+        mock_type_response = create_autospec(oci.response.Response)
+        mock_type_response.data = [oci.resource_search.models.ResourceType(name="dbsystem")]
+        mock_client.list_resource_types.return_value = mock_type_response
 
         async with Client(mcp) as client:
             result = (
                 await client.call_tool(
                     "search_resources_by_type",
                     {
-                        "tenant_id": "tenant1",
-                        "compartment_id": "compartment1",
+                        "tenant_id": TENANT_ID,
+                        "compartment_id": COMPARTMENT_ID,
                         "resource_type": "DBSystem",
                     },
                 )
@@ -207,7 +223,7 @@ class TestResourceSearchTools:
             result = (
                 await client.call_tool(
                     "list_all_resources",
-                    {"tenant_id": "t1", "compartment_id": "c1"},
+                    {"tenant_id": TENANT_ID, "compartment_id": COMPARTMENT_ID},
                 )
             ).structured_content["result"]
 
@@ -244,13 +260,16 @@ class TestResourceSearchTools:
         if hasattr(resp, "next_page"):
             delattr(resp, "next_page")
         mock_client.search_resources.return_value = resp
+        mock_type_response = create_autospec(oci.response.Response)
+        mock_type_response.data = [oci.resource_search.models.ResourceType(name="instance")]
+        mock_client.list_resource_types.return_value = mock_type_response
         async with Client(mcp) as client:
             result = (
                 await client.call_tool(
                     "search_resources",
                     {
                         "tenant_id": "t1",
-                        "compartment_id": "c1",
+                        "compartment_id": COMPARTMENT_ID,
                         "display_name": "name",
                     },
                 )
@@ -270,6 +289,10 @@ class TestResourceSearchTools:
         if hasattr(resp, "next_page"):
             delattr(resp, "next_page")
         mock_client.search_resources.return_value = resp
+        mock_client.list_resource_types.return_value = create_autospec(oci.response.Response)
+        mock_client.list_resource_types.return_value.data = [
+            oci.resource_search.models.ResourceType(name="instance")
+        ]
         async with Client(mcp) as client:
             result = (
                 await client.call_tool(
@@ -292,13 +315,16 @@ class TestResourceSearchTools:
         if hasattr(resp, "next_page"):
             delattr(resp, "next_page")
         mock_client.search_resources.return_value = resp
+        mock_type_response = create_autospec(oci.response.Response)
+        mock_type_response.data = [oci.resource_search.models.ResourceType(name="instance")]
+        mock_client.list_resource_types.return_value = mock_type_response
         async with Client(mcp) as client:
             result = (
                 await client.call_tool(
                     "search_resources_by_type",
                     {
                         "tenant_id": "t1",
-                        "compartment_id": "c1",
+                        "compartment_id": COMPARTMENT_ID,
                         "resource_type": "instance",
                     },
                 )
@@ -326,7 +352,7 @@ class TestResourceSearchTools:
             result = (
                 await client.call_tool(
                     "list_all_resources",
-                    {"tenant_id": "t1", "compartment_id": "c1", "limit": 1},
+                    {"tenant_id": TENANT_ID, "compartment_id": COMPARTMENT_ID, "limit": 1},
                 )
             ).structured_content["result"]
         # The server appends all items from a page before checking the limit
@@ -344,7 +370,7 @@ class TestResourceSearchTools:
             with pytest.raises(ToolError):
                 await client.call_tool(
                     "list_all_resources",
-                    {"tenant_id": "t1", "compartment_id": "c1"},
+                    {"tenant_id": TENANT_ID, "compartment_id": COMPARTMENT_ID},
                 )
 
     @pytest.mark.asyncio
@@ -359,9 +385,31 @@ class TestResourceSearchTools:
                     "search_resources",
                     {
                         "tenant_id": "t1",
-                        "compartment_id": "c1",
+                        "compartment_id": COMPARTMENT_ID,
                         "display_name": "x",
                     },
+                )
+
+    @pytest.mark.asyncio
+    async def test_search_resources_rejects_query_injection_display_name(self):
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool(
+                    "search_resources",
+                    {
+                        "tenant_id": TENANT_ID,
+                        "compartment_id": COMPARTMENT_ID,
+                        "display_name": "x' || compartmentId != 'none",
+                    },
+                )
+
+    @pytest.mark.asyncio
+    async def test_list_all_resources_rejects_invalid_compartment_id(self):
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError):
+                await client.call_tool(
+                    "list_all_resources",
+                    {"tenant_id": TENANT_ID, "compartment_id": "compartment1"},
                 )
 
     @pytest.mark.asyncio
@@ -383,13 +431,17 @@ class TestResourceSearchTools:
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
         mock_client.search_resources.side_effect = RuntimeError("type")
+        mock_client.list_resource_types.return_value = create_autospec(oci.response.Response)
+        mock_client.list_resource_types.return_value.data = [
+            oci.resource_search.models.ResourceType(name="instance")
+        ]
         async with Client(mcp) as client:
             with pytest.raises(ToolError):
                 await client.call_tool(
                     "search_resources_by_type",
                     {
                         "tenant_id": "t1",
-                        "compartment_id": "c1",
+                        "compartment_id": COMPARTMENT_ID,
                         "resource_type": "instance",
                     },
                 )

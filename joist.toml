@@ -1,0 +1,100 @@
+[workspace]
+projects = ["src/*"]
+exclude = [
+    "src/dbtools-mcp-server",
+    "src/mysql-mcp-server",
+    "src/oci-pricing-mcp-server",
+    "src/oracle-db-doc-mcp-server",
+    "src/oracle-db-mcp-java-toolkit",
+]
+default_base = "origin/main"
+cache_dir = ".joist/cache"
+affects_all = [
+    ".github/workflows/**",
+    "Makefile",
+    "requirements*.txt",
+    "ruff.toml",
+    "scripts/**",
+]
+
+[target_defaults.sync]
+cwd = "{project_root}"
+commands = ["uv sync --locked --all-extras --dev"]
+cache = false
+
+[target_defaults.install]
+cwd = "{project_root}"
+commands = ["uv pip install ."]
+cache = false
+
+[target_defaults.lock]
+cwd = "{project_root}"
+commands = ["uv lock"]
+cache = false
+
+[target_defaults.lock-check]
+cwd = "{project_root}"
+commands = ["uv lock --check"]
+cache = false
+
+[target_defaults.lint]
+cwd = "{project_root}"
+commands = ["uv tool run ruff check ."]
+cache = true
+inputs = [
+    "oracle/**/*.py",
+    "pyproject.toml",
+    "{workspace_root}/ruff.toml",
+    "{workspace_root}/joist.toml",
+]
+
+[target_defaults.format]
+cwd = "{project_root}"
+commands = ["uv tool run ruff format ."]
+cache = false
+
+[target_defaults.test]
+cwd = "{project_root}"
+env = { COVERAGE_FILE = "{workspace_root}/.coverage.{project_name}" }
+commands = ["uv run pytest --cov=. --cov-branch --cov-append --cov-report=html --cov-report=term-missing"]
+cache = true
+outputs = ["{workspace_root}/.coverage.{project_name}"]
+inputs = [
+    "oracle/**/*.py",
+    "pyproject.toml",
+    "uv.lock",
+    "{workspace_root}/requirements-dev.txt",
+    "{workspace_root}/ruff.toml",
+    "{workspace_root}/joist.toml",
+]
+
+[target_defaults.build]
+cwd = "{project_root}"
+commands = ["python {workspace_root}/scripts/joist_project.py build {project_root}"]
+cache = false
+inputs = [
+    "oracle/**/*.py",
+    "pyproject.toml",
+    "uv.lock",
+    "{workspace_root}/joist.toml",
+]
+depends_on = ["^build"]
+
+[target_defaults.test-publish]
+cwd = "{project_root}"
+commands = ["uv publish --publish-url https://test.pypi.org/legacy/ --check-url=https://test.pypi.org/simple/"]
+cache = false
+
+[target_defaults.publish]
+cwd = "{project_root}"
+commands = ["uv publish --check-url=https://pypi.org/simple/"]
+cache = false
+
+[target_defaults.containerize]
+cwd = "{project_root}"
+if_exists = "Containerfile"
+commands = [
+    "podman build -t {package_name}:{version} .",
+    "podman tag {package_name}:{version} {package_name}:latest",
+]
+cache = false

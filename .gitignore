@@ -26,6 +26,7 @@ venv.bak/
 
 .coverage*
 htmlcov/
+.joist/
 
 # Maven
 **/target/
@@ -34,4 +35,3 @@ htmlcov/
 **/logs/
 **/oracle-goldengate-mcp-server.env
 **/build/**
-

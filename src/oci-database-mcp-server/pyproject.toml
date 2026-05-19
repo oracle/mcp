@@ -38,3 +38,7 @@ dev = [
     "pytest>=9.0.3",
     "pytest-asyncio>=1.2.0",
 ]
+
+[tool.joist]
+name = "oci-database-mcp-server"
+type = "app"

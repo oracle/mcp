@@ -361,6 +361,18 @@ This section will help you set up your environment to prepare it for local devel
 **Note**: If you want to run commands in a single server project, you can add the `project` variable to only run commands for that specific project
 For example: `make project=oci-compute-mcp-server build` will only build the compute mcp server
 
+The repository uses [Joist](https://pypi.org/project/joist/) to orchestrate these
+per-server commands. Joist keeps the existing project-local `uv.lock` files, but
+adds graph-aware project selection and changed-project runs:
+
+```sh
+joist list
+joist list --since origin/main
+make since-lint
+make since-test since=origin/main
+make project=oci-compute-mcp-server test
+```
+
 3. Add desired servers to your MCP client configuration, but run them using the locally installed server package instead
 
 Below is an example MCP client configuration for a typical python server using the local server package

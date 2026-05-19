@@ -22,5 +22,7 @@ jobs:
     - name: Lint with Ruff
       run: |
         ruff check
-    - name: Check uv.lock
+    - name: List Joist projects
+      run: python -m joist list
+    - name: Check project locks with Joist
       run: make lock-check

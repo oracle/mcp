@@ -1,77 +1,37 @@
-SOURCE_FOLDER := src
-# These directories will be excluded from common cmds like build, install, test etc
-EXCLUDED_PROJECTS := dbtools-mcp-server mysql-mcp-server oci-pricing-mcp-server oracle-db-doc-mcp-server oracle-db-mcp-java-toolkit
-EXCLUDED_PROJECT_PATHS = $(addprefix $(SOURCE_FOLDER)/, $(EXCLUDED_PROJECTS))
-# This matches all paths by default. If you want to run a command on a specific package you can specify the `project` variable
+# Project discovery and exclusions live in joist.toml.
+# This matches all projects by default. Set `project` to a Joist project name to run one project.
 project ?= *
-# These are the directories that will be built
-DIRS := $(wildcard $(SOURCE_FOLDER)/$(project))
-SUBDIRS := $(filter-out $(EXCLUDED_PROJECT_PATHS), $(DIRS))
+base ?= origin/main
+since ?= $(base)
+JOIST ?= python -m joist
+JOIST_PROJECTS = $(if $(filter *,$(project)),,$(project))
 
-.PHONY: test format
+.PHONY: affected-build affected-lint affected-test build combine-coverage containerize e2e-tests format install lint lock lock-check publish since-build since-lint since-test sync test test-publish
 
 build:
-	@set -e -o pipefail; \
-	for dir in $(SUBDIRS); do \
-		if [ -f $$dir/pyproject.toml ]; then \
-			echo "Building $$dir"; \
-			name=$$(python -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['name'])"); \
-			version=$$(python -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['version'])"); \
-			if [ -d $$dir/oracle/*_mcp_server ]; then \
-				init_py_file=$$(echo $$dir/oracle/*_mcp_server/__init__.py); \
-				printf '"""\nCopyright (c) 2025, Oracle and/or its affiliates.\nLicensed under the Universal Permissive License v1.0 as shown at\nhttps://oss.oracle.com/licenses/upl.\n"""\n\n' > $$init_py_file; \
-				echo "__project__ = \"$$name\"" >> $$init_py_file; \
-				echo "__version__ = \"$$version\"" >> $$init_py_file; \
-			fi; \
-			cd $$dir && uv build && cd ../..; \
-		fi \
-	done
+	$(JOIST) run build $(JOIST_PROJECTS)
 
 install:
-	@for dir in $(SUBDIRS); do \
-		if [ -f $$dir/pyproject.toml ]; then \
-			echo "Installing $$dir"; \
-			cd $$dir && uv pip install . && cd ../..; \
-		fi \
-	done
+	$(JOIST) run install $(JOIST_PROJECTS)
 
 sync:
-	@for dir in $(SUBDIRS); do \
-		if [ -f $$dir/pyproject.toml ]; then \
-			echo "Installing $$dir"; \
-			cd $$dir && uv sync --locked --all-extras --dev && cd ../..; \
-		fi \
-	done
+	$(JOIST) run sync $(JOIST_PROJECTS)
 
 lock:
-	@for dir in $(SUBDIRS); do \
-		if [ -f $$dir/pyproject.toml ]; then \
-			echo "Installing $$dir"; \
-			cd $$dir && uv lock && cd ../..; \
-		fi \
-	done
+	$(JOIST) run lock $(JOIST_PROJECTS)
 
 lock-check:
-	@for dir in $(SUBDIRS); do \
-		if [ -f $$dir/pyproject.toml ]; then \
-			echo "Installing $$dir"; \
-			cd $$dir && uv lock --check && cd ../..; \
-		fi \
-	done
+	$(JOIST) run lock-check $(JOIST_PROJECTS)
 
 lint:
+ifeq ($(project),*)
 	uv tool run ruff check
+else
+	$(JOIST) run lint $(project)
+endif
 
 test:
-	@set -e -o pipefail; \
-	for dir in $(SUBDIRS); do \
-		if [ -f $$dir/pyproject.toml ]; then \
-			echo "Testing $$dir"; \
-			( cd $$dir && \
-				COVERAGE_FILE=../../.coverage.$$(basename $$dir) \
-				uv run pytest --cov=. --cov-branch --cov-append --cov-report=html --cov-report=term-missing ) || exit 1; \
-		fi \
-	done
+	$(JOIST) run test $(JOIST_PROJECTS)
 	$(MAKE) combine-coverage
 
 combine-coverage:
@@ -80,37 +40,36 @@ combine-coverage:
 	uv run coverage report --fail-under=69
 
 test-publish:
-	@set -e -o pipefail; \
-	for dir in $(SUBDIRS); do \
-		cd $$dir && \
-		uv publish --publish-url https://test.pypi.org/legacy/ --check-url=https://test.pypi.org/simple/ && \
-		cd ../..; \
-	done
+	$(JOIST) run test-publish $(JOIST_PROJECTS)
 
 publish:
-	@set -e -o pipefail; \
-	for dir in $(SUBDIRS); do \
-		cd $$dir && \
-		uv publish --check-url=https://pypi.org/simple/ && \
-		cd ../..; \
-	done
+	$(JOIST) run publish $(JOIST_PROJECTS)
 
 format:
+ifeq ($(project),*)
 	uv tool run ruff format
+else
+	$(JOIST) run format $(project)
+endif
 
 e2e-tests: build install
 	behave tests/e2e/features && cd ..
 
 # Create container images for the specified MCP servers
 containerize:
-	@for dir in $(SUBDIRS); do \
-		if [[ -f $$dir/Containerfile && (-f $$dir/pyproject.toml) ]]; then \
-			name=$$(uv run tomlq -r '.project.name' $$dir/pyproject.toml); \
-			version=$$(uv run tomlq -r '.project.version' $$dir/pyproject.toml); \
-			echo "Building container image for $$dir with version $$version"; \
-			cd $$dir && \
-				podman build -t $$name:$$version . && \
-				podman tag $$name:$$version $$name:latest && \
-				echo "Container image $$name:$$version (tagged with $$name:latest) built successfully" && cd ../..; \
-		fi \
-	done
+	$(JOIST) run containerize $(JOIST_PROJECTS)
+
+since-build:
+	$(JOIST) run build --since $(since)
+
+since-lint:
+	$(JOIST) run lint --since $(since)
+
+since-test:
+	$(JOIST) run test --since $(since)
+
+affected-build: since-build
+
+affected-lint: since-lint
+
+affected-test: since-test

@@ -4,3 +4,4 @@ pytest-asyncio
 pytest-cov
 uv
 ruff
+joist==0.4.0

@@ -42,3 +42,7 @@ dev = [
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=7.0.0",
 ]
+
+[tool.joist]
+name = "oci-support-mcp-server"
+type = "app"

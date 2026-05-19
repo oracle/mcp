@@ -217,12 +217,16 @@ def main():
         # under the configured credentials. To expose externally, set
         # --host 0.0.0.0 explicitly AND put an authenticated reverse
         # proxy in front. (S8.)
+        #
+        # Note: FastMCP.run() takes only `transport` and `mount_path` —
+        # host/port live on `mcp.settings`. Set them BEFORE run().
         if _config.host == '0.0.0.0':
             logger.warning(
                 'streamable-http bound to 0.0.0.0 — server has NO '
                 'built-in auth; ensure a reverse proxy / firewall '
                 'is in front')
-        mcp.run(transport='streamable-http',
-                host=_config.host, port=_config.port)
+        mcp.settings.host = _config.host
+        mcp.settings.port = _config.port
+        mcp.run(transport='streamable-http')
     else:
         mcp.run(transport='stdio')

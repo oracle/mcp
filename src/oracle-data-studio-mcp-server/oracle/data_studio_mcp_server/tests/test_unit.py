@@ -4745,6 +4745,49 @@ class TestServer:
         # Lifespan still yielded a context — startup didn't break
         assert 'essbase' not in ctx
 
+    def test_main_streamable_http_sets_host_port_via_settings(self):
+        '''Regression: FastMCP.run() takes only `transport` and
+        `mount_path`. host/port must be set via mcp.settings before
+        calling run(). Previous code passed host=... as a kwarg to
+        run() which raises TypeError on real FastMCP.'''
+        import oracle.data_studio_mcp_server.server as srv
+
+        # Build a config that selects streamable-http and a specific
+        # host/port. We patch apply_profile + mcp.run so main() doesn't
+        # actually start a server.
+        fake_cfg = MagicMock(transport='streamable-http',
+                              host='0.0.0.0', port=9001,
+                              profile='admin')
+        with patch.object(srv, 'load_config', return_value=fake_cfg), \
+             patch.object(srv, 'apply_profile'), \
+             patch.object(srv.mcp, 'run') as run_mock:
+            srv.main()
+        # run() called with ONLY transport — no host/port kwargs
+        call = run_mock.call_args
+        assert call.kwargs.get('host') is None, \
+            'run() must NOT be called with host=... — host goes on mcp.settings'
+        assert call.kwargs.get('port') is None
+        # transport is the only positional/kwarg
+        assert call.kwargs.get('transport') == 'streamable-http' \
+            or (call.args and call.args[0] == 'streamable-http')
+        # The settings were updated before the call
+        assert srv.mcp.settings.host == '0.0.0.0'
+        assert srv.mcp.settings.port == 9001
+
+    def test_main_stdio_default_does_not_touch_settings_host(self):
+        import oracle.data_studio_mcp_server.server as srv
+
+        fake_cfg = MagicMock(transport='stdio', host='127.0.0.1',
+                              port=8000, profile='admin')
+        with patch.object(srv, 'load_config', return_value=fake_cfg), \
+             patch.object(srv, 'apply_profile'), \
+             patch.object(srv.mcp, 'run') as run_mock:
+            srv.main()
+        # stdio transport — run() called with stdio only
+        call = run_mock.call_args
+        assert (call.kwargs.get('transport') == 'stdio'
+                or (call.args and call.args[0] == 'stdio'))
+
     def test_lifespan_dt_configured(self):
         '''DT path: stores _dt_config for later lazy-connect.'''
         import asyncio

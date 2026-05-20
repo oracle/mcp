@@ -36,6 +36,7 @@ A YAML file may define:
 
 * One or more **tools** — The MCP tools:
   * `dataSource` (optional): Defines the data source to be used (defaults to system properties `db.url`, `db.user` and `db.password`).
+  * `enabled` (optional): If `false`, disables this custom tool. Omitted/`true` means enabled.
   * `name`: The tool name and title, derived from the YAML key.
   * `description`: A brief description of the tool.
   * `parameters` (optional): A list of the parameters required for the tool. (To fill the statement's placeholders)
@@ -86,6 +87,9 @@ tools:
 # Optional toolsets combining custom tools
 toolsets:
   reporting: [hotels-by-name]
+  finance:
+    tools: [hotels-by-name]
+    enabled: false
 ```
 
 To enable YAML configuration, launch the server with:
@@ -98,6 +102,51 @@ Toolsets can be enabled from `-Dtools` alongside individual tools. For example:
 - `-Dtools=reporting` enables all tools in the `reporting` toolset
 - `-Dtools=reporting,explain` enables your `reporting` set plus the built-in `explain` toolset (see below)
 - `-Dtools=*` or omit `-Dtools` to enable everything
+
+Custom tool defaults:
+- Custom tools and custom toolsets are enabled by default, even if they are not listed in `-Dtools`.
+- Set `enabled: false` on a tool or a toolset to disable it.
+
+Priority/precedence rules (highest to lowest):
+1. **Tool-level explicit disable wins:** `tools.<name>.enabled: false` always disables the tool.
+2. **Tool-level explicit enable overrides disabled toolsets:** `tools.<name>.enabled: true` enables the tool even if one of its toolsets is disabled.
+3. **Disabled toolset affects non-explicit tools:** if a tool is only implied/default-enabled (`enabled` omitted) and belongs to any toolset with `enabled: false`, it stays disabled.
+4. **Otherwise default is enabled:** custom tools and custom toolsets are enabled by default.
+
+How to disable a custom toolset (explicit form):
+
+```yaml
+toolsets:
+  reporting:
+    tools: [hotels-by-name, sales-by-region]
+    enabled: false
+```
+
+Notes:
+- The short list form (`reporting: [hotels-by-name, sales-by-region]`) is enabled by default.
+- To disable a toolset, use the object form above with `enabled: false`.
+
+Example:
+
+```yaml
+tools:
+  hotels-by-name:
+    # enabled omitted => implicit/default
+    statement: SELECT * FROM hotels
+
+  hotels-by-rating:
+    enabled: true
+    statement: SELECT * FROM hotels
+
+toolsets:
+  reporting:
+    tools: [hotels-by-name, hotels-by-rating]
+    enabled: false
+```
+
+Outcome:
+- `hotels-by-name` => disabled (implicit tool in disabled toolset)
+- `hotels-by-rating` => enabled (explicit `enabled: true`)
 
 > Tip: You can also manage YAML-defined tools at runtime using the `edit-tools` admin tool; see section 3.9.
 
@@ -397,6 +446,7 @@ _Note: The `mcp-admin` toolset is focused on server discovery and runtime config
     - `name` (string, required): Tool name/YAML key
     - `remove` (boolean, optional): If true, delete the tool
     - `description` (string, optional)
+    - `enabled` (boolean, optional): `false` disables the tool; omitted/`true` enables it
     - `dataSource` (string, optional): Key from `dataSources:`
     - `statement` (string, optional): SQL (SELECT or DML)
     - `parameters` (array, optional): Items of `{ name, type, description, required }`

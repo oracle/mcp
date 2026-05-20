@@ -40,6 +40,7 @@ public final class ServerConfig {
   public final String dbUser;
   public final char[] dbPassword;
   public final Set<String> toolsFilter;
+  public final Set<String> disabledToolsetMembers;
   public final Map<String, DataSourceConfig> sources;
   public final Map<String, ToolConfig> tools;
   public static String defaultSourceName; // Only if the default db info are from yaml config to avoid redundancy
@@ -49,6 +50,7 @@ public final class ServerConfig {
       String dbUser,
       char[] dbPassword,
       Set<String> toolsFilter,
+      Set<String> disabledToolsetMembers,
       Map<String, DataSourceConfig> sources,
       Map<String, ToolConfig> tools
   ) {
@@ -56,6 +58,7 @@ public final class ServerConfig {
     this.dbUser = dbUser;
     this.dbPassword = dbPassword;
     this.toolsFilter = toolsFilter;
+    this.disabledToolsetMembers = disabledToolsetMembers;
     this.sources = sources;
     this.tools = tools;
   }
@@ -116,6 +119,7 @@ public final class ServerConfig {
     if (configRoot != null) configRoot.substituteEnvVars();
 
     Set<String> expandedTools = expandToolsFilter(rawTools, configRoot);
+    Set<String> disabledToolsetMembers = collectDisabledToolsetMembers(configRoot);
 
     boolean allLoadedConstantsPresent =
         dbUrl != null && !dbUrl.isBlank()
@@ -141,7 +145,7 @@ public final class ServerConfig {
     if (needDb && (dbPass == null || dbPass.length == 0)) {
       throw new IllegalStateException("Missing required db.password in both system properties and YAML config");
     }
-    return new ServerConfig(dbUrl, dbUser, dbPass, expandedTools, sources, toolsMap);
+    return new ServerConfig(dbUrl, dbUser, dbPass, expandedTools, disabledToolsetMembers, sources, toolsMap);
   }
 
   /**
@@ -166,6 +170,7 @@ public final class ServerConfig {
             LoadedConstants.DB_USER,
             LoadedConstants.DB_PASSWORD,
             expanded,
+            Collections.emptySet(),
             new HashMap<>(),
             new HashMap<>()
     );
@@ -200,10 +205,39 @@ public final class ServerConfig {
    * Returns null to mean "all tools" if the input is null.
    */
   private static Set<String> expandToolsFilter(Set<String> raw, ConfigRoot configRoot) {
-    if (raw == null) return null; // all tools enabled
-    Map<String, List<String>> yamlSets = (configRoot != null) ? configRoot.toolsets : null;
+    Map<String, Object> yamlSets = (configRoot != null) ? configRoot.toolsets : null;
+
+    // -Dtools omitted or * / all => all built-ins + all custom tools, then prune disabled custom tools.
+    if (raw == null) {
+      return null;
+    }
 
     Set<String> out = new LinkedHashSet<>();
+
+    // Custom tools are enabled by default even when absent from -Dtools
+    if (configRoot != null && configRoot.tools != null) {
+      for (Map.Entry<String, ToolConfig> e : configRoot.tools.entrySet()) {
+        String tn = e.getKey();
+        ToolConfig tc = e.getValue();
+        if (tn == null) continue;
+        if (tc != null && Boolean.FALSE.equals(tc.enabled)) continue;
+        if (tc != null && tc.enabled == null && isMemberOfDisabledToolset(configRoot, tn)) continue;
+        String k = tn.trim().toLowerCase(Locale.ROOT);
+        if (!k.isEmpty()) out.add(k);
+      }
+    }
+
+    // Custom toolsets are enabled by default even when absent from -Dtools
+    if (yamlSets != null) {
+      for (Map.Entry<String, Object> e : yamlSets.entrySet()) {
+        String setName = e.getKey();
+        if (setName == null) continue;
+        ToolsetDef def = parseToolsetDef(e.getValue());
+        if (!def.enabled) continue;
+        out.addAll(def.members);
+      }
+    }
+
     for (String name : raw) {
       String k = name == null ? null : name.trim().toLowerCase(Locale.ROOT);
       if (k == null || k.isEmpty()) continue;
@@ -220,20 +254,128 @@ public final class ServerConfig {
 
       // YAML toolset match (only if not a built-in name)
       if (yamlSets != null && yamlSets.containsKey(k)) {
-        List<String> members = yamlSets.get(k);
-        if (members != null) {
-          for (String m : members) {
-            if (m != null) {
-              String mm = m.trim().toLowerCase(Locale.ROOT);
-              if (!mm.isEmpty()) out.add(mm);
-            }
-          }
+        ToolsetDef def = parseToolsetDef(yamlSets.get(k));
+        if (def.enabled) {
+          out.addAll(def.members);
         }
         continue;
       }
 
       // Fallback to explicit tool name
       out.add(k);
+    }
+
+    // Ensure tool-level enabled:false always wins
+    if (configRoot != null && configRoot.tools != null) {
+      for (Map.Entry<String, ToolConfig> e : configRoot.tools.entrySet()) {
+        String tn = e.getKey();
+        ToolConfig tc = e.getValue();
+        if (tn == null || tc == null) continue;
+        if (Boolean.FALSE.equals(tc.enabled)) {
+          out.remove(tn.trim().toLowerCase(Locale.ROOT));
+        }
+      }
+    }
+
+    return out;
+  }
+
+  private static final class ToolsetDef {
+    final boolean enabled;
+    final Set<String> members;
+
+    ToolsetDef(boolean enabled, Set<String> members) {
+      this.enabled = enabled;
+      this.members = members;
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  private static ToolsetDef parseToolsetDef(Object raw) {
+    boolean enabled = true;
+    Set<String> members = new LinkedHashSet<>();
+
+    if (raw instanceof List<?> list) {
+      for (Object m : list) {
+        if (m == null) continue;
+        String mm = String.valueOf(m).trim().toLowerCase(Locale.ROOT);
+        if (!mm.isEmpty()) members.add(mm);
+      }
+      return new ToolsetDef(enabled, members);
+    }
+
+    if (raw instanceof Map<?, ?> map) {
+      Object enabledObj = map.get("enabled");
+      if (enabledObj instanceof Boolean b) {
+        enabled = b;
+      } else if (enabledObj != null) {
+        enabled = Boolean.parseBoolean(String.valueOf(enabledObj));
+      }
+
+      Object toolsObj = map.get("tools");
+      if (toolsObj instanceof List<?> list) {
+        for (Object m : list) {
+          if (m == null) continue;
+          String mm = String.valueOf(m).trim().toLowerCase(Locale.ROOT);
+          if (!mm.isEmpty()) members.add(mm);
+        }
+      }
+      return new ToolsetDef(enabled, members);
+    }
+
+    return new ToolsetDef(true, members);
+  }
+
+  public static boolean isToolEnabled(ServerConfig config, String toolName) {
+    if (toolName == null) return false;
+    String key = toolName.trim().toLowerCase(Locale.ROOT);
+    if (key.isEmpty()) return false;
+
+    ToolConfig tc = config != null && config.tools != null ? config.tools.get(key) : null;
+    if (tc == null && config != null && config.tools != null) {
+      tc = config.tools.get(toolName);
+    }
+
+    if (tc != null && Boolean.FALSE.equals(tc.enabled)) {
+      return false;
+    }
+
+    if (tc != null && tc.enabled == null && config != null && config.disabledToolsetMembers != null
+        && config.disabledToolsetMembers.contains(key)) {
+      return false;
+    }
+
+    if (config == null || config.toolsFilter == null) {
+      return true;
+    }
+
+    // Custom tools are enabled by default even when absent from -Dtools
+    if (tc != null) {
+      return true;
+    }
+
+    return config.toolsFilter.contains(key);
+  }
+
+  private static boolean isMemberOfDisabledToolset(ConfigRoot configRoot, String toolName) {
+    if (configRoot == null || configRoot.toolsets == null || toolName == null) return false;
+    String key = toolName.trim().toLowerCase(Locale.ROOT);
+    if (key.isEmpty()) return false;
+    for (Map.Entry<String, Object> e : configRoot.toolsets.entrySet()) {
+      ToolsetDef def = parseToolsetDef(e.getValue());
+      if (!def.enabled && def.members.contains(key)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static Set<String> collectDisabledToolsetMembers(ConfigRoot configRoot) {
+    Set<String> out = new LinkedHashSet<>();
+    if (configRoot == null || configRoot.toolsets == null) return out;
+    for (Map.Entry<String, Object> e : configRoot.toolsets.entrySet()) {
+      ToolsetDef def = parseToolsetDef(e.getValue());
+      if (!def.enabled) out.addAll(def.members);
     }
     return out;
   }

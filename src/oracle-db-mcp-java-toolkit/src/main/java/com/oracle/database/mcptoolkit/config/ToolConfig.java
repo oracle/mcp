@@ -44,6 +44,11 @@ public class ToolConfig {
   public String statement;
 
   /**
+   * Optional runtime switch. If null/omitted, defaults to enabled.
+   */
+  public Boolean enabled;
+
+  /**
    * Substitutes environment variables in the tool configuration.
    * <p>
    * Replaces placeholders in the tool's name, source, description, and statement with their corresponding environment variable values.

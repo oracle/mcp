@@ -61,14 +61,18 @@ public final class ServerConfig {
   }
 
   private static final Set<String> DB_TOOLS = Set.of(
-    "similarity-search",  "explain-plan", "read-query", "write-query",
-     "transaction", "table", "db-ping", "db-metrics-range"
+    "similarity-search", "explain-plan", "read-query", "write-query",
+    "transaction", "table", "db-ping", "db-metrics-range", "vector-store",
+    "vector-model", "embed", "task", "oci-storage"
   );
 
   /** Built-in toolsets covering predefined tools. Lowercase keys and members. */
   private static final Map<String, Set<String>> BUILTIN_TOOLSETS = Map.of(
       "log-analyzer", Set.of("jdbc-analyzer", "rdbms-analyzer"),
-      "rag", Set.of("similarity-search"),
+      "rag", Set.of(
+                  "similarity-search", "vector-store", "vector-model",
+                  "embed", "task", "oci-storage"
+          ),
       "database-operator", Set.of(
               "read-query", "write-query", "transaction", "table", "db-ping", "db-metrics-range",
               "explain-plan"

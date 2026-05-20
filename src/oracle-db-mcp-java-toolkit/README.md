@@ -12,7 +12,7 @@ Oracle Database MCP Toolkit is a Model Context Protocol (MCP) server that lets y
   * Admin tools for runtime discovery and configuration: list available tools and live-edit YAML-defined tools with hot reload.
 * Deploy locally or remotely - optionally as a container - with support for TLS and OAuth2
 
-![MCP Toolkit Architecture Diagram](./images/MCPToolkitArchitectureDiagram.svg)
+![MCP Toolkit Architecture Diagram](./images/MCPToolkitArchitecture.svg)
 
 _Note_: The [Oracle SQLcl MCP Server](https://docs.oracle.com/en/database/oracle/sql-developer-command-line/25.4/sqcug/using-oracle-sqlcl-mcp-server.html) is a fully supported product
 with MCP capabilities for the Oracle Database.
@@ -141,8 +141,10 @@ The server provides four built-in toolsets that can be enabled via `-Dtools`:
     </tr>
     <tr>
       <td><code>rag</code></td>
-      <td>Vector similarity search</td>
-      <td>similarity-search</td>
+      <td>Vector store management, document embedding, and semantic similarity search</td>
+      <td>
+        vector-model, vector-store, embed, task, oci-storage, similarity-search
+      </td>
     </tr>
   </tbody>
 </table>
@@ -153,7 +155,7 @@ _Note: Each tool belongs to exactly one built-in toolset. Enabling a toolset ena
 - `-Dtools=mcp-admin` - Admin and runtime configuration tools
 - `-Dtools=log-analyzer` - Oracle JDBC Log and RDBMS/SQLNet trace file analysis only (no database required)
 - `-Dtools=database-operator` - Database operations and SQL execution
-- `-Dtools=rag` – Vector similarity search
+- `-Dtools=rag` – Vector store management, document embedding, and semantic similarity search
 - `-Dtools=mcp-admin,log-analyzer` - Admin + log analysis
 - `-Dtools=*` - All tools (default if omitted)
 
@@ -207,7 +209,134 @@ The `rdbms-analyzer` tool operate on RDBMS/SQLNet trace files based on the chose
 
 Each extracted record includes relevant details/context and is returned serialized in JSON format.
 
-### 3.7. Vector Similarity Search (RAG)
+### 3.7. Vector Store Management and Semantic Search (RAG)
+
+These tools provide a full RAG pipeline: model management, vector store creation, document embedding from local files or OCI Object Storage, and semantic similarity search. All embedding operations run in the background and return a task ID immediately.
+
+> **Prerequisite:** An ONNX embedding model must be loaded into your Oracle database before running any embedding tool. Use `vector-model` action=list to verify.
+
+---
+
+* **`vector-model`**: Manage ONNX embedding models loaded in the database.
+
+  - `action=list` — list all loaded models with their names, algorithms, creation dates, and sizes.
+  - `action=drop` — remove a model by name.
+
+  **Inputs:**
+
+  * `action` (string, required) — `list` or `drop`
+  * `modelName` (string, required for `drop`) — name of the model to remove
+
+  **Returns:** list of models for `list`, or `{ modelName, status: "dropped" }` for `drop`.
+
+---
+
+* **`vector-store`**: Create and list vector store tables.
+
+  - `action=create` — create a new table ready for vector search. Every table gets an `ID` primary key and a `CREATED_AT` timestamp automatically. When metadata is enabled (default), a `METADATA` JSON column and a source URI index are also created for deduplication.
+  - `action=list` — list all tables in the current schema that have at least one VECTOR column.
+
+  **Inputs:**
+
+  * `action` (string, required) — `create` or `list`
+  * `tableName` (string, required for `create`) — name of the new vector store
+  * `textColumn` (string, default: `TEXT`) — column for text chunks
+  * `embeddingColumn` (string, default: `EMBEDDING`) — column for vectors
+  * `dimensions` (integer, optional) — fix vector size to a specific dimension, or omit for flexible
+  * `includeMetadata` (boolean, default: `true`) — add a METADATA column for document tracking and deduplication
+
+  **Returns:** `{ tableName, textColumn, embeddingColumn, dimensions, hasMetadata }` for `create`, or an array of `{ tableName, vectorColumns, rowCount }` for `list`.
+
+---
+
+* **`embed`**: Embed documents into a vector store. All actions run as background jobs and return a `taskId` immediately. Use the `task` tool to monitor progress.
+
+  **Common optional inputs for all actions:**
+  * `table` (string, required for `file`, `files`, `object`, `bucket`) — target vector store (use `targetTable` for `action=table`)
+  * `textColumn` (string, default: `TEXT`) — text column in the target table
+  * `embeddingColumn` (string, default: `EMBEDDING`) — vector column in the target table
+  * `modelName` (string, default: `doc_model`) — ONNX embedding model name
+  * `chunkParams` (string, default: `{"max": 500, "overlap": 50}`) — chunking parameters (max tokens per chunk, overlap)
+
+  **Actions:**
+
+  - `action=file` — embed a single local file (PDF, Word, plain text, and other formats supported by Oracle’s `UTL_TO_TEXT`).
+    * `filePath` (string, required) — absolute path to the file
+
+  - `action=files` — embed multiple local files in a single background job.
+    * `filePaths` (array, required) — list of absolute file paths
+
+  - `action=table` — embed text from an existing Oracle table into a vector store.
+    * `sourceTable` (string, required) — table containing the source text
+    * `sourceTextColumn` (string, required) — column in the source table holding the text to embed
+    * `sourceIdColumn` (string, required) — unique identifier column in the source table (stored in metadata as `source_id`)
+    * `targetTable` (string, required) — target vector store table
+    * `metadataColumn` (string, default: `METADATA`) — metadata column in the target table
+
+  - `action=object` — embed a single file from OCI Object Storage.
+    * `objectUrl` (string) — direct OCI object URL or Pre-Authenticated Request (PAR) URL
+    * Or provide `region` + `namespace` + `bucketName` + `objectName` individually
+    * `credentialName` (string, optional) — DBMS_CLOUD credential name; omit for public objects
+
+  - `action=bucket` — embed all files in an OCI bucket.
+    * `bucketUrl` (string) — direct OCI bucket URL or PAR URL
+    * Or provide `region` + `namespace` + `bucketName` individually
+    * `credentialName` (string, optional) — DBMS_CLOUD credential name; omit for public buckets
+    * `prefix` (string, optional) — filter objects by path prefix (e.g. `docs/`)
+    * `allowedExtensions` (array, optional) — only embed files with these extensions (e.g. `["pdf", "txt"]`); omit to process all files
+
+  **Returns:** `{ taskId, status: "PENDING", table, ... }` — use the `task` tool to check progress.
+
+  **Deduplication:** When the target table has a METADATA column, duplicate documents are automatically skipped. The same file, OCI object, or source row is never embedded twice.
+
+  **Metadata written per chunk** (when target table has a METADATA column):
+
+  For `action=file`, `files`, `object`, `bucket`:
+  * `document_id` — UUID shared by all chunks of the same document
+  * `source_uri` — file path (`file:///...`) or OCI URL of the source document
+  * `chunk_index` — 0-based position of the chunk within the document
+  * `total_chunks` — total number of chunks for this document
+
+  For `action=table`:
+  * `source_table` — name of the source table
+  * `source_id` — value of the `sourceIdColumn` for the originating row
+  * `chunk_index` — 0-based position of the chunk within that row's text
+  * `embedded_at` — timestamp of when the embedding was generated
+
+  > Tables created without `includeMetadata` accept inserts but skip deduplication — the same document can be embedded multiple times.
+
+---
+
+* **`task`**: Monitor background embedding jobs.
+
+  - `action=status` — get the current status and per-file results for a specific task.
+  - `action=list` — list all tasks submitted since the server started (in-memory only, cleared on restart).
+
+  **Inputs:**
+
+  * `action` (string, required) — `status` or `list`
+  * `taskId` (string, required for `status`) — task ID returned by the `embed` tool
+
+  **Returns:** `{ taskId, status, table, totalChunksCreated, submittedAt, completedAt, results }` where `status` is one of `PENDING`, `RUNNING`, `COMPLETED`, or `FAILED`. The `results` array contains one entry per file or source table with `status: "success"`, `"skipped"`, or `"error"`.
+
+---
+
+* **`oci-storage`**: Browse OCI Object Storage buckets and list database credentials.
+
+  - `action=list-objects` — list all objects in a bucket. Provide `bucketUrl` (direct or PAR URL), or `region` + `namespace` + `bucketName`.
+  - `action=list-credentials` — list all DBMS_CLOUD credentials available in the current schema.
+
+  **Inputs:**
+
+  * `action` (string, required) — `list-objects` or `list-credentials`
+  * `bucketUrl` (string) — direct OCI bucket URL or PAR URL (alternative to region/namespace/bucketName)
+  * `region`, `namespace`, `bucketName` (string) — required for `list-objects` when `bucketUrl` is not provided
+  * `credentialName` (string, optional) — DBMS_CLOUD credential; omit for public buckets
+  * `prefix` (string, optional) — filter objects by path prefix
+
+  **Returns:** `{ bucketUri, totalObjects, objects: [{ name, sizeBytes, lastModified }] }` for `list-objects`, or `{ totalCredentials, credentials: [{ credentialName, username, enabled }] }` for `list-credentials`.
+
+---
 
 * **`similarity-search`**: Perform semantic similarity search using Oracle’s vector features (`VECTOR_EMBEDDING`, `VECTOR_DISTANCE`).
 
@@ -546,7 +675,7 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
           <li><code>mcp-admin</code> — server discovery and runtime configuration tools (list-tools, edit-tools)</li>
           <li><code>database-operator</code> — database operations, transactions, monitoring, and execution plans (read-query, write-query, table, transaction, db-ping, db-metrics-range, explain-plan).</li>
           <li><code>log-analyzer</code> — all JDBC log and RDBMS/SQLNet analysis tools (jdbc-analyzer and rdbms-analyzer)</li>
-          <li><code>rag</code> — similarity-search</li>
+          <li><code>rag</code> — vector store management, document embedding, and semantic similarity search (vector-model, vector-store, embed, task, oci-storage, similarity-search)</li>
         </ul>
         You can also define your own YAML <code>toolsets:</code> and reference them here.  
         Use <code>*</code> or <code>all</code> to enable everything. If omitted, all tools are enabled by default.
@@ -683,6 +812,7 @@ podman run --rm \
     -Dhttps.port=45451 \
     -DcertificatePath=[path/to/certificate] \
     -DcertificatePassword=[password] \
+    -Dtools=get-jdbc-stats,get-jdbc-queries \
     -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service \
     -Ddb.user=your_user \
     -Ddb.password=your_password" \
@@ -710,6 +840,7 @@ podman run --rm \
   -e JAVA_TOOL_OPTIONS="\
     -Dtransport=http \
     -Dhttps.port=45451 \
+    -Dtools=get-jdbc-stats,get-jdbc-queries \
     -Ddb.url=jdbc:oracle:thin:@your-host:1521/your-service \
     -Ddb.user=your_user \
     -Ddb.password=your_password \

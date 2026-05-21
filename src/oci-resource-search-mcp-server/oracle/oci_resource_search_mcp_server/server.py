@@ -5,6 +5,7 @@ https://oss.oracle.com/licenses/upl.
 """
 
 import os
+import re
 from logging import Logger
 from typing import Optional
 
@@ -25,6 +26,35 @@ from . import __project__, __version__
 logger = Logger(__name__, level="INFO")
 
 mcp = FastMCP(name=__project__)
+
+_OCID_RE = re.compile(r"^ocid1\.[a-z0-9-]+\.[a-z0-9-]*\.[a-z0-9-]*\..+$")
+_RESOURCE_TYPE_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def _validate_compartment_id(compartment_id: str) -> str:
+    if not _OCID_RE.fullmatch(compartment_id):
+        raise ValueError("compartment_id must be a valid OCI OCID.")
+    return compartment_id
+
+
+def _validate_display_name(display_name: str) -> str:
+    if "'" in display_name:
+        raise ValueError("display_name must not contain single quotes.")
+    return display_name
+
+
+def _list_resource_type_names(client) -> set[str]:
+    response = client.list_resource_types()
+    return {resource_type.name.lower() for resource_type in response.data}
+
+
+def _validate_resource_type(client, resource_type: str) -> str:
+    normalized = resource_type.lower()
+    if not _RESOURCE_TYPE_RE.fullmatch(normalized):
+        raise ValueError("resource_type must contain only lowercase letters, digits, and underscores.")
+    if normalized not in _list_resource_type_names(client):
+        raise ValueError(f"resource_type '{resource_type}' is not supported by OCI Resource Search.")
+    return normalized
 
 
 def _get_http_config_and_signer():
@@ -106,6 +136,7 @@ def list_all_resources(
     ),
 ) -> list[ResourceSummary]:
     resources: list[ResourceSummary] = []
+    compartment_id = _validate_compartment_id(compartment_id)
 
     try:
         client = get_search_client()
@@ -157,6 +188,8 @@ def search_resources(
     ),
 ) -> list[ResourceSummary]:
     resources: list[ResourceSummary] = []
+    compartment_id = _validate_compartment_id(compartment_id)
+    display_name = _validate_display_name(display_name)
 
     try:
         client = get_search_client()
@@ -266,9 +299,11 @@ def search_resources_by_type(
     ),
 ) -> list[ResourceSummary]:
     resources: list[ResourceSummary] = []
+    compartment_id = _validate_compartment_id(compartment_id)
 
     try:
         client = get_search_client()
+        normalized_resource_type = _validate_resource_type(client, resource_type)
 
         response: oci.response.Response = None
         has_next_page = True
@@ -280,7 +315,7 @@ def search_resources_by_type(
                 "search_details": StructuredSearchDetails(
                     type="Structured",
                     query=(
-                        f"query {resource_type.lower()} resources where compartmentId = '{compartment_id}'"
+                        f"query {normalized_resource_type} resources where compartmentId = '{compartment_id}'"
                     ),
                 ),
                 "page": next_page,

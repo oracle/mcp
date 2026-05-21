@@ -51,6 +51,10 @@ Developers choosing to distribute a binary implementation of this project are re
 
 Users are responsible for their local environment and credential safety. Different language model selections may yield different results and performance.
 
+## Upload root
+
+`upload_object` only reads files under `OCI_MCP_UPLOAD_ROOT` (default: `<tmpdir>/oci-mcp-uploads`). Set this to the directory you intend to upload from. Paths outside the root, and paths under `~/.oci`, `~/.ssh`, `/etc`, `/run/secrets`, or `/var/run/secrets`, are rejected.
+
 ## License
 
 Copyright (c) 2025 Oracle and/or its affiliates.

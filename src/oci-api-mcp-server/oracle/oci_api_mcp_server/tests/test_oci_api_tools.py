@@ -13,6 +13,7 @@ import pytest
 from fastmcp import Client
 import oracle.oci_api_mcp_server.server as server
 from oracle.oci_api_mcp_server import __project__
+from oracle.oci_api_mcp_server.denylist import Denylist
 from oracle.oci_api_mcp_server.server import mcp
 
 __version__ = importlib.metadata.version(__project__)
@@ -190,6 +191,35 @@ class TestOCITools:
 
             assert "error" in result
             assert any("denied by denylist" in value for value in result.values())
+
+    @pytest.mark.parametrize(
+        ("command", "normalized"),
+        [
+            ("compute instance terminate --instance-id ocid1.instance.oc1..example", "compute instance terminate"),
+            ("--debug compute instance terminate --instance-id ocid1.instance.oc1..example", "compute instance terminate"),
+            ("--raw-output compute instance terminate --instance-id ocid1.instance.oc1..example", "compute instance terminate"),
+            ("--no-retry compute instance terminate --instance-id ocid1.instance.oc1..example", "compute instance terminate"),
+            ("--config-file /tmp/config compute instance terminate --instance-id ocid1.instance.oc1..example", "compute instance terminate"),
+        ],
+    )
+    def test_denylist_preserves_command_words_after_global_options(self, command, normalized):
+        denylist = Denylist(MagicMock())
+
+        assert denylist.remove_params_from_command(command) == normalized
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "--debug compute instance terminate --instance-id ocid1.instance.oc1..example",
+            "--raw-output compute instance terminate --instance-id ocid1.instance.oc1..example",
+            "--no-retry compute instance terminate --instance-id ocid1.instance.oc1..example",
+        ],
+    )
+    def test_denylist_blocks_destructive_commands_after_valueless_global_options(self, command):
+        denylist = Denylist(MagicMock())
+        denylist.denylist = ["compute instance terminate"]
+
+        assert denylist.isCommandInDenyList(command) is True
 
 
 class TestServer:

@@ -6,6 +6,8 @@ on:
     paths:
       - "src/oracle-db-doc-mcp-server/**"
       - ".github/workflows/build-doc-mcp.yml"
+permissions:
+  contents: read
 
 jobs:
   build-image:
@@ -14,6 +16,7 @@ jobs:
         runner: ["ubuntu-24.04", "ubuntu-24.04-arm"]
 
     permissions:
+      contents: read
       packages: write
 
     name: 🛠️ Build image
@@ -21,7 +24,12 @@ jobs:
 
     steps:
       - name: 📂 Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Harden runner
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2
+        with:
+          egress-policy: audit
 
       - name: 🔄 Generate environment variables
         id: os_arch
@@ -52,6 +60,11 @@ jobs:
       packages: write
 
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2
+        with:
+          egress-policy: audit
+
       - name: 🫸 Push multi-arch image to Container Registry
         run: |
           podman login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}

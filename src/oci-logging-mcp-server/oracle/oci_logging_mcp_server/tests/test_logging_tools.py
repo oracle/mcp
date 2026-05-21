@@ -12,6 +12,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import AccessToken
+from oracle.oci_logging_mcp_server.models import mark_untrusted
 from oracle.oci_logging_mcp_server.server import mcp
 
 
@@ -113,7 +114,7 @@ class TestLoggingTools:
             result = call_tool_result.structured_content["result"]
 
             assert len(result) == 1
-            assert result[0]["display_name"] == "groupUp"
+            assert "groupUp" in result[0]["display_name"]
             assert result[0]["id"] == "logGroup1"
 
     @pytest.mark.asyncio
@@ -215,7 +216,7 @@ class TestLoggingTools:
             assert result["id"] == "logGroup1"
             assert result["compartment_id"] == "compartment1"
             assert result["lifecycle_state"] == "ACTIVE"
-            assert result["display_name"] == "groupUp"
+            assert "groupUp" in result["display_name"]
 
     @pytest.mark.asyncio
     @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
@@ -241,7 +242,7 @@ class TestLoggingTools:
 
             assert result[0]["id"] == "logid1"
             assert result[0]["lifecycle_state"] == "ACTIVE"
-            assert result[0]["display_name"] == "logjam"
+            assert "logjam" in result[0]["display_name"]
 
     @pytest.mark.asyncio
     @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
@@ -344,7 +345,7 @@ class TestLoggingTools:
             result = call_tool_result.structured_content
 
             assert result["id"] == "ocid1.log.oc1.iad.1"
-            assert result["display_name"] == "jh-pbf-app_invoke"
+            assert "jh-pbf-app_invoke" in result["display_name"]
             assert result["lifecycle_state"] == "ACTIVE"
             assert result["log_type"] == "SERVICE"
             assert result["retention_duration"] == 30
@@ -413,7 +414,7 @@ class TestLoggingTools:
             )
             result = call_tool_result.structured_content
 
-            assert result["results"][0]["data"]["event"] == "testEvent"
+            assert result["results"][0]["data"]["event"] == mark_untrusted("testEvent")
 
     @pytest.mark.asyncio
     @patch("oracle.oci_logging_mcp_server.server.map_search_response")

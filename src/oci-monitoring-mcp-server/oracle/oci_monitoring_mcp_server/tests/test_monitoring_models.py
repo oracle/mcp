@@ -16,6 +16,10 @@ from oracle.oci_monitoring_mcp_server.alarm_models import (
     map_alarm_summary,
     map_suppression,
 )
+
+
+def _untrusted(value: str) -> str:
+    return f"--- BEGIN UNTRUSTED OCI DATA ---\n{value}\n--- END UNTRUSTED OCI DATA ---"
 from oracle.oci_monitoring_mcp_server.metric_models import (
     AggregatedDatapoint,
     Datapoint,
@@ -55,7 +59,7 @@ class TestAlarmModels:
         )
         mapped1 = map_suppression(s1)
         assert isinstance(mapped1, Suppression)
-        assert mapped1.description == "Desc"
+        assert mapped1.description == _untrusted("Desc")
         assert mapped1.time_suppress_from == datetime(2024, 1, 1)
         assert mapped1.time_suppress_until == datetime(2024, 1, 2)
 
@@ -79,10 +83,10 @@ class TestAlarmModels:
         )
         mapped = map_alarm_override(ov)
         assert isinstance(mapped, AlarmOverride)
-        assert mapped.rule_name == "BASE"
+        assert mapped.rule_name == _untrusted("BASE")
         assert mapped.query == "Q"
         assert mapped.severity == "CRITICAL"
-        assert mapped.body == "B"
+        assert mapped.body == _untrusted("B")
         assert mapped.pending_duration == "PT5M"
 
     def test_map_alarm_overrides_list_and_empty(self) -> None:
@@ -91,7 +95,7 @@ class TestAlarmModels:
         ov = SimpleNamespace(ruleName="BASE")
         out = map_alarm_overrides([ov, None])
         assert isinstance(out, list)
-        assert out and out[0].rule_name == "BASE"
+        assert out and out[0].rule_name == _untrusted("BASE")
 
     def test_map_alarm_summary(self) -> None:
         alarm_snake = SimpleNamespace(
@@ -120,26 +124,26 @@ class TestAlarmModels:
         mapped = map_alarm_summary(alarm_snake)
         assert isinstance(mapped, AlarmSummary)
         assert mapped.id == "ocid1.alarm.oc1..abc"
-        assert mapped.display_name == "High CPU"
+        assert mapped.display_name == _untrusted("High CPU")
         assert mapped.compartment_id == "ocid1.compartment.oc1..xyz"
         assert mapped.metric_compartment_id == "ocid1.compartment.oc1..m"
         assert mapped.namespace == "oci_compute"
         assert mapped.query.startswith("CpuUtilization")
         assert mapped.severity == "CRITICAL"
         assert mapped.destinations == ["ocid1.topic.oc1..t1"]
-        assert mapped.suppression and mapped.suppression.description == "maint"
+        assert mapped.suppression and mapped.suppression.description == _untrusted("maint")
         assert mapped.is_enabled is True
         assert mapped.is_notifications_per_metric_dimension_enabled is False
-        assert mapped.freeform_tags == {"env": "dev"}
-        assert mapped.defined_tags == {"NS": {"K": "V"}}
+        assert mapped.freeform_tags == {"env": _untrusted("dev")}
+        assert mapped.defined_tags == {"NS": {"K": _untrusted("V")}}
         assert mapped.lifecycle_state == "ACTIVE"
-        assert mapped.overrides and mapped.overrides[0].rule_name == "BASE"
-        assert mapped.rule_name == "BASE"
+        assert mapped.overrides and mapped.overrides[0].rule_name == _untrusted("BASE")
+        assert mapped.rule_name == _untrusted("BASE")
         assert mapped.notification_version == "1.0"
-        assert mapped.notification_title == "Title"
+        assert mapped.notification_title == _untrusted("Title")
         assert mapped.evaluation_slack_duration == "PT3M"
-        assert mapped.alarm_summary == "summary"
-        assert mapped.resource_group == "rg"
+        assert mapped.alarm_summary == _untrusted("summary")
+        assert mapped.resource_group == _untrusted("rg")
 
 
 class TestMetricModels:
@@ -155,9 +159,9 @@ class TestMetricModels:
         )
         mapped = map_metric(m)
         assert isinstance(mapped, Metric)
-        assert mapped.name == "CpuUtilization"
-        assert mapped.dimensions == {"resourceId": "ocid1.instance..."}
-        assert mapped.metadata == {"unit": "%"}
+        assert mapped.name == _untrusted("CpuUtilization")
+        assert mapped.dimensions == {"resourceId": _untrusted("ocid1.instance...")}
+        assert mapped.metadata == {"unit": _untrusted("%")}
         assert mapped.resolution == "1m"
 
     def test_map_aggregated_datapoint_and_list(self) -> None:
@@ -184,7 +188,7 @@ class TestMetricModels:
         )
         mapped = map_metric_data(md)
         assert isinstance(mapped, MetricData)
-        assert mapped.name == "CpuUtilization"
+        assert mapped.name == _untrusted("CpuUtilization")
         assert mapped.aggregated_datapoints and isinstance(
             mapped.aggregated_datapoints[0], AggregatedDatapoint
         )

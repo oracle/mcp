@@ -209,9 +209,10 @@ class TestObjectStorageTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_object_storage_mcp_server.server.get_object_storage_client")
-    async def test_upload_object_success(self, mock_get_client, tmp_path):
+    async def test_upload_object_success(self, mock_get_client, tmp_path, monkeypatch):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
+        monkeypatch.setenv("OCI_MCP_UPLOAD_ROOT", str(tmp_path))
 
         mock_namespace_response = create_autospec(oci.response.Response)
         mock_namespace_response.data = "test_namespace"
@@ -238,9 +239,10 @@ class TestObjectStorageTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_object_storage_mcp_server.server.get_object_storage_client")
-    async def test_upload_object_error(self, mock_get_client, tmp_path):
+    async def test_upload_object_error(self, mock_get_client, tmp_path, monkeypatch):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
+        monkeypatch.setenv("OCI_MCP_UPLOAD_ROOT", str(tmp_path))
 
         mock_namespace_response = create_autospec(oci.response.Response)
         mock_namespace_response.data = "test_namespace"
@@ -263,6 +265,33 @@ class TestObjectStorageTools:
 
         assert "error" in result
         assert "No such file" in result["error"] or "No such file or directory" in result["error"]
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_object_storage_mcp_server.server.get_object_storage_client")
+    async def test_upload_object_rejects_file_outside_upload_root(
+        self, mock_get_client, tmp_path, monkeypatch
+    ):
+        upload_root = tmp_path / "uploads"
+        upload_root.mkdir()
+        outside_file = tmp_path / "outside.txt"
+        outside_file.write_text("secret", encoding="utf-8")
+        monkeypatch.setenv("OCI_MCP_UPLOAD_ROOT", str(upload_root))
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "upload_object",
+                    {
+                        "bucket_name": "bucket1",
+                        "compartment_id": "test_compartment",
+                        "file_path": str(outside_file),
+                        "object_name": "outside.txt",
+                    },
+                )
+            ).structured_content
+
+        assert "outside configured upload root" in result["error"]
+        mock_get_client.assert_not_called()
 
 
 class TestServer:

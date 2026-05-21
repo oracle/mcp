@@ -28,7 +28,7 @@ from oracle.oci_support_mcp_server.models import (
 from pydantic import Field
 
 __project__ = "oracle.oci_support_mcp_server"
-__version__ = "0.1.0"
+__version__ = "3.0.0"
 logger = Logger(__name__, level="INFO")
 mcp = FastMCP(name=__project__)
 

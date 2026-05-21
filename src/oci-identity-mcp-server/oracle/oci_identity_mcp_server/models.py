@@ -226,13 +226,13 @@ class AuthToken(BaseModel):
     )
 
 
-def map_auth_token(auth_token_data: oci.identity.models.AuthToken) -> AuthToken:
+def map_auth_token(auth_token_data: oci.identity.models.AuthToken, include_token: bool = False) -> AuthToken:
     """
     Convert an oci.identity.models.AuthToken to oracle.oci_identity_mcp_server.models.AuthToken.
     """
     return AuthToken(
         id=getattr(auth_token_data, "id", None),
-        token=getattr(auth_token_data, "token", None),
+        token=getattr(auth_token_data, "token", None) if include_token else None,
         user_id=getattr(auth_token_data, "user_id", None),
         description=getattr(auth_token_data, "description", None),
         time_created=getattr(auth_token_data, "time_created", None),

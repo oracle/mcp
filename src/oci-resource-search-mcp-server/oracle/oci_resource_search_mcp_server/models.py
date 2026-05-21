@@ -10,6 +10,21 @@ from typing import Any, Dict, List, Optional
 import oci
 from pydantic import BaseModel, Field
 
+UNTRUSTED_DATA_START = "--- BEGIN UNTRUSTED OCI DATA ---"
+UNTRUSTED_DATA_END = "--- END UNTRUSTED OCI DATA ---"
+
+
+def mark_untrusted(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return f"{UNTRUSTED_DATA_START}\n{value}\n{UNTRUSTED_DATA_END}"
+    if isinstance(value, dict):
+        return {key: mark_untrusted(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [mark_untrusted(item) for item in value]
+    return value
+
 
 def _oci_to_dict(obj):
     """Best-effort conversion of OCI SDK model objects to plain dicts."""
@@ -49,7 +64,7 @@ class SearchContext(BaseModel):
 def map_search_context(sc) -> SearchContext | None:
     if not sc:
         return None
-    return SearchContext(highlights=getattr(sc, "highlights", None))
+    return SearchContext(highlights=mark_untrusted(getattr(sc, "highlights", None)))
 
 
 # endregion
@@ -130,15 +145,15 @@ def map_resource_summary(
         identifier=getattr(rs, "identifier", None),
         compartment_id=getattr(rs, "compartment_id", None),
         time_created=getattr(rs, "time_created", None),
-        display_name=getattr(rs, "display_name", None),
+        display_name=mark_untrusted(getattr(rs, "display_name", None)),
         availability_domain=getattr(rs, "availability_domain", None),
         lifecycle_state=getattr(rs, "lifecycle_state", None),
-        freeform_tags=getattr(rs, "freeform_tags", None),
-        defined_tags=getattr(rs, "defined_tags", None),
-        system_tags=getattr(rs, "system_tags", None),
+        freeform_tags=mark_untrusted(getattr(rs, "freeform_tags", None)),
+        defined_tags=mark_untrusted(getattr(rs, "defined_tags", None)),
+        system_tags=mark_untrusted(getattr(rs, "system_tags", None)),
         search_context=map_search_context(getattr(rs, "search_context", None)),
-        identity_context=getattr(rs, "identity_context", None),
-        additional_details=getattr(rs, "additional_details", None),
+        identity_context=mark_untrusted(getattr(rs, "identity_context", None)),
+        additional_details=mark_untrusted(getattr(rs, "additional_details", None)),
     )
 
 

@@ -185,12 +185,7 @@ class TestOciPricingMcpServer(unittest.TestCase):
             if callable(cand):
                 return "plain", cand
 
-        # 3) Reluctantly accept __call__
-        call_cand = getattr(obj, "__call__", None)
-        if callable(call_cand):
-            return "plain", call_cand
-
-        # 4) Final fallback
+        # 3) Final fallback
         if callable(obj):
             return "plain", obj
 
@@ -639,6 +634,29 @@ class TestOciPricingMcpServer(unittest.TestCase):
         self.assertIn("items", out)
         self.assertIn("returned", out)
         # No strict assertions on content due to public-subset variance.
+
+    def test_iter_all_rejects_untrusted_absolute_next_link(self):
+        calls = []
+
+        async def fake_fetch(_client, url, params):
+            calls.append((url, params))
+            return {
+                "items": [{"partNumber": "B123"}],
+                "links": [{"rel": "next", "href": "http://169.254.169.254/opc/v2/instance/"}],
+            }
+
+        original_fetch = self.module.fetch
+        self.module.fetch = fake_fetch
+        try:
+            async def collect():
+                return [item async for item in self.module.iter_all(object(), currency="USD", max_pages=2)]
+
+            items = asyncio.run(collect())
+        finally:
+            self.module.fetch = original_fetch
+
+        self.assertEqual(items, [{"partNumber": "B123"}])
+        self.assertEqual(calls, [(self.module.API, {"currencyCode": "USD"})])
 
     def tearDown(self):
         print(f"{'=' * 70}")

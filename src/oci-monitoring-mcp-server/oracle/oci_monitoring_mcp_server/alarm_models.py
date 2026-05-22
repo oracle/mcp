@@ -10,21 +10,6 @@ from typing import Any, Dict, List, Literal, Optional
 import oci
 from pydantic import BaseModel, Field
 
-UNTRUSTED_DATA_START = "--- BEGIN UNTRUSTED OCI DATA ---"
-UNTRUSTED_DATA_END = "--- END UNTRUSTED OCI DATA ---"
-
-
-def mark_untrusted(value):
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return f"{UNTRUSTED_DATA_START}\n{value}\n{UNTRUSTED_DATA_END}"
-    if isinstance(value, dict):
-        return {key: mark_untrusted(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [mark_untrusted(item) for item in value]
-    return value
-
 SeverityType = Literal["CRITICAL", "ERROR", "WARNING", "INFO", "UNKNOWN_ENUM_VALUE"]
 
 
@@ -46,7 +31,7 @@ def map_suppression(s: oci.monitoring.models.Suppression | None) -> Suppression 
     if not s:
         return None
     return Suppression(
-        description=mark_untrusted(getattr(s, "description", None)),
+        description=getattr(s, "description", None),
         time_suppress_from=getattr(s, "time_suppress_from", None) or getattr(s, "timeSuppressFrom", None),
         time_suppress_until=getattr(s, "time_suppress_until", None) or getattr(s, "timeSuppressUntil", None),
     )
@@ -77,10 +62,10 @@ def map_alarm_override(
     if not o:
         return None
     return AlarmOverride(
-        rule_name=mark_untrusted(getattr(o, "rule_name", None) or getattr(o, "ruleName", None)),
+        rule_name=getattr(o, "rule_name", None) or getattr(o, "ruleName", None),
         query=getattr(o, "query", None),
         severity=getattr(o, "severity", None),
-        body=mark_untrusted(getattr(o, "body", None)),
+        body=getattr(o, "body", None),
         pending_duration=getattr(o, "pending_duration", None) or getattr(o, "pendingDuration", None),
     )
 
@@ -180,9 +165,7 @@ def map_alarm_summary(
     """
     return AlarmSummary(
         id=getattr(alarm, "id", None),
-        display_name=mark_untrusted(
-            getattr(alarm, "display_name", None) or getattr(alarm, "displayName", None)
-        ),
+        display_name=getattr(alarm, "display_name", None) or getattr(alarm, "displayName", None),
         compartment_id=getattr(alarm, "compartment_id", None) or getattr(alarm, "compartmentId", None),
         metric_compartment_id=getattr(alarm, "metric_compartment_id", None)
         or getattr(alarm, "metricCompartmentId", None),
@@ -196,26 +179,17 @@ def map_alarm_summary(
             alarm, "is_notifications_per_metric_dimension_enabled", None
         )
         or getattr(alarm, "isNotificationsPerMetricDimensionEnabled", None),
-        freeform_tags=mark_untrusted(
-            getattr(alarm, "freeform_tags", None) or getattr(alarm, "freeformTags", None)
-        ),
-        defined_tags=mark_untrusted(
-            getattr(alarm, "defined_tags", None) or getattr(alarm, "definedTags", None)
-        ),
+        freeform_tags=getattr(alarm, "freeform_tags", None) or getattr(alarm, "freeformTags", None),
+        defined_tags=getattr(alarm, "defined_tags", None) or getattr(alarm, "definedTags", None),
         lifecycle_state=getattr(alarm, "lifecycle_state", None) or getattr(alarm, "lifecycleState", None),
         overrides=map_alarm_overrides(getattr(alarm, "overrides", None)),
-        rule_name=mark_untrusted(getattr(alarm, "rule_name", None) or getattr(alarm, "ruleName", None)),
+        rule_name=getattr(alarm, "rule_name", None) or getattr(alarm, "ruleName", None),
         notification_version=getattr(alarm, "notification_version", None)
         or getattr(alarm, "notificationVersion", None),
-        notification_title=mark_untrusted(
-            getattr(alarm, "notification_title", None) or getattr(alarm, "notificationTitle", None)
-        ),
+        notification_title=getattr(alarm, "notification_title", None)
+        or getattr(alarm, "notificationTitle", None),
         evaluation_slack_duration=getattr(alarm, "evaluation_slack_duration", None)
         or getattr(alarm, "evaluationSlackDuration", None),
-        alarm_summary=mark_untrusted(
-            getattr(alarm, "alarm_summary", None) or getattr(alarm, "alarmSummary", None)
-        ),
-        resource_group=mark_untrusted(
-            getattr(alarm, "resource_group", None) or getattr(alarm, "resourceGroup", None)
-        ),
+        alarm_summary=getattr(alarm, "alarm_summary", None) or getattr(alarm, "alarmSummary", None),
+        resource_group=getattr(alarm, "resource_group", None) or getattr(alarm, "resourceGroup", None),
     )

@@ -12,7 +12,6 @@ import pytest
 from fastmcp import Client
 from fastmcp.server.dependencies import AccessToken
 from oracle.oci_monitoring_mcp_server import server
-from oracle.oci_monitoring_mcp_server.metric_models import mark_untrusted
 from oracle.oci_monitoring_mcp_server.scripts import MQL_QUERY_DOC, get_script_content
 from oracle.oci_monitoring_mcp_server.server import mcp
 
@@ -61,7 +60,7 @@ class TestMonitoringTools:
 
         assert result is not None
         for metric in result:
-            assert metric["namespace"] == mark_untrusted("123")
+            assert metric["namespace"] == "123"
             assert metric["compartment_id"] == "compartment1"
             assert isinstance(metric["aggregated_datapoints"], list)
 

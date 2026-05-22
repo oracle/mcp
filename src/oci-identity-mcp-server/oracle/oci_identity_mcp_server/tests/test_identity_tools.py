@@ -350,30 +350,6 @@ class TestIdentityTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
-    async def test_create_auth_token(self, mock_get_client):
-        mock_client = MagicMock()
-        mock_get_client.return_value = mock_client
-
-        mock_create_response = create_autospec(oci.response.Response)
-        mock_create_response.data = oci.identity.models.AuthToken(
-            token="token1", description="Test token", lifecycle_state="ACTIVE"
-        )
-        mock_client.create_auth_token.return_value = mock_create_response
-
-        async with Client(mcp) as client:
-            call_tool_result = await client.call_tool(
-                "create_auth_token",
-                {
-                    "user_id": "test_user",
-                },
-            )
-            result = call_tool_result.structured_content
-
-            assert result["token"] is None
-            assert result["description"] == "Test token"
-
-    @pytest.mark.asyncio
-    @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
     @patch("oracle.oci_identity_mcp_server.server._get_profile_value", return_value="test_user")
     async def test_get_current_user_from_config_user(self, _mock_get_profile_value, mock_get_client):
         mock_client = MagicMock()

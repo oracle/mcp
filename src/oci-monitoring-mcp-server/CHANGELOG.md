@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.1
+
+### Fixed
+
+- Returned OCI fields are no longer wrapped in untrusted-data sentinel envelopes, restoring the stable response shapes from before 2.0.0.
+
 ## 2.0.0
 
 ### Breaking Changes

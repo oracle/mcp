@@ -318,6 +318,47 @@ class TestGoldenGateTools(unittest.TestCase):
             )
             self.assertEqual(m.call_args.args[1]["begin"], {"sequence": 145, "offset": 5})
 
+    def test_create_replicat_accepts_top_level_checkpoint_table(self):
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            server.create_replicat(
+                "R1",
+                "AA",
+                "D",
+                "C",
+                mapStatement="MAP S.T, TARGET S2.T2;",
+                checkpointTable='"SRCMIRROR_OCIGGLL"."CHECKTABLE"',
+                advanced=None,
+            )
+            payload = m.call_args.args[1]
+            self.assertEqual(payload["checkpoint"], {"table": '"SRCMIRROR_OCIGGLL"."CHECKTABLE"'})
+            self.assertNotIn('CHECKPOINTTABLE "SRCMIRROR_OCIGGLL"."CHECKTABLE"', payload["config"])
+
+    def test_create_replicat_accepts_advanced_checkpoint_table_for_backward_compatibility(self):
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            server.create_replicat(
+                "R1",
+                "AA",
+                "D",
+                "C",
+                mapStatement="MAP S.T, TARGET S2.T2;",
+                advanced=ReplicatAdvancedParameters(checkpointTable="SRCMIRROR_OCIGGLL.CHECKTABLE"),
+            )
+            payload = m.call_args.args[1]
+            self.assertEqual(payload["checkpoint"], {"table": "SRCMIRROR_OCIGGLL.CHECKTABLE"})
+            self.assertNotIn("CHECKPOINTTABLE SRCMIRROR_OCIGGLL.CHECKTABLE", payload["config"])
+
+    def test_create_replicat_rejects_conflicting_checkpoint_tables(self):
+        with self.assertRaises(ValueError):
+            server.create_replicat(
+                "R1",
+                "AA",
+                "D",
+                "C",
+                mapStatement="MAP S.T, TARGET S2.T2;",
+                checkpointTable="A.CHK",
+                advanced=ReplicatAdvancedParameters(checkpointTable="B.CHK"),
+            )
+
     def test_update_replicat(self):
         with patch.object(server.client, "patch", return_value={"ok": True}) as m:
             out = server.update_replicat("R1", trailName="AA", domainName="D", connectionName="C", mapStatement="MAP S.T, TARGET S2.T2;", advanced=None)
@@ -355,6 +396,20 @@ class TestGoldenGateTools(unittest.TestCase):
         self.assertEqual(payload["mode"], {"type": "parallel", "parallel": False})
         self.assertNotIn("source", payload)
         self.assertNotIn("credentials", payload)
+
+    def test_update_replicat_accepts_top_level_checkpoint_table(self):
+        with patch.object(server.client, "patch", return_value={"ok": True}) as m:
+            server.update_replicat(
+                "R1",
+                trailName="AA",
+                domainName="D",
+                connectionName="C",
+                mapStatement="MAP S.T, TARGET S2.T2;",
+                checkpointTable="SRCMIRROR_OCIGGLL.CHECKTABLE",
+                advanced=None,
+            )
+            payload = m.call_args.args[1]
+            self.assertEqual(payload["checkpoint"], {"table": "SRCMIRROR_OCIGGLL.CHECKTABLE"})
 
     def test_create_distribution_path(self):
         with patch.object(server.client, "post", return_value={"ok": True}) as m:

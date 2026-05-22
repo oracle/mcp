@@ -36,12 +36,7 @@ See [Environment configuration](#environment-configuration) below for all suppor
 
 ### 1) Obtain the code
 
-1. Download ZIP
-2. Extract ZIP and open `oracle-goldengate-mcp-server`.
-
-If you are using Git (recommended to get updates and pull additional required files), you can clone/pull instead of relying only on ZIP downloads.
-
-Clone:
+Git Clone:
 
 ```sh
 git clone https://github.com/oracle/mcp.git

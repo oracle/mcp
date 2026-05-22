@@ -107,6 +107,31 @@ def _resolve_begin_value(begin: Any, default: Any = "now") -> Any:
     return begin
 
 
+def _resolve_replicat_checkpoint(
+    checkpoint_table: Any,
+    advanced_checkpoint_table: Any,
+) -> str | None:
+    """Resolve a Replicat checkpoint table from top-level or advanced input.
+
+    The GoldenGate REST endpoint requires the checkpoint table in the Replicat
+    creation payload, not in MAP options.  Exposing it as a top-level tool
+    argument makes the MCP schema easier for LLM clients to discover, while the
+    advanced.checkpointTable location is kept for backward compatibility.
+    """
+    checkpoint_table = _none_if_fieldinfo(checkpoint_table)
+    advanced_checkpoint_table = _none_if_fieldinfo(advanced_checkpoint_table)
+
+    top_level = str(checkpoint_table).strip() if checkpoint_table and str(checkpoint_table).strip() else None
+    advanced = (
+        str(advanced_checkpoint_table).strip()
+        if advanced_checkpoint_table and str(advanced_checkpoint_table).strip()
+        else None
+    )
+    if top_level and advanced and top_level != advanced:
+        raise ValueError("Conflicting checkpoint table values supplied in 'checkpointTable' and 'advanced.checkpointTable'.")
+    return top_level or advanced
+
+
 @mcp.tool(description="Return the list of GoldenGate domains available in OCI GoldenGate deployment. Domains group connections in GoldenGate.")
 def list_domains() -> str:
     """Return the list of GoldenGate domains available in OCI GoldenGate deployment. Domains group connections in GoldenGate."""
@@ -343,7 +368,7 @@ def update_extract(
     return _ok(client.patch(api.update_extract(extractName), payload))
 
 
-@mcp.tool(description="Creates a new Replicat in OCI GoldenGate deployment to replicate data into a target. Supports raw mapStatement or structured source/options. Optionally accepts a checkpointTable, otherwise use list_checkpoint_tables to find a checkpoint table.")
+@mcp.tool(description="Creates a new Replicat in OCI GoldenGate deployment to replicate data into a target. Supports raw mapStatement or structured source/options. Requires checkpointTable for deployments that use database checkpoints; use list_checkpoint_tables to find a valid table.")
 def create_replicat(
     replicatName: str = Field(..., description="Replicat process name", min_length=1, max_length=8),
     trailName: str = Field(..., description="Two-character trail name", min_length=2, max_length=2),
@@ -356,13 +381,18 @@ def create_replicat(
         None,
         description="Optional start position for Replicat. Defaults to 'now'. Accepts an ISO-8601 timestamp string or structured trail position like {sequence: 145, offset: 5}.",
     ),
+    checkpointTable: str | None = Field(
+        None,
+        description='Checkpoint table name for ADD REPLICAT, for example SRCMIRROR_OCIGGLL.CHECKTABLE or "SRCMIRROR_OCIGGLL"."CHECKTABLE". Prefer this top-level field over options or advanced parameters.',
+    ),
     advanced: ReplicatAdvancedParameters | None = Field(None, description="Advanced GoldenGate Replicat parameters"),
 ) -> str:
-    """Creates a new Replicat in OCI GoldenGate deployment to replicate data into a target. Supports raw mapStatement or structured source/options. Optionally accepts a checkpointTable, otherwise use list_checkpoint_tables to find a checkpoint table."""
+    """Creates a new Replicat in OCI GoldenGate deployment to replicate data into a target. Supports raw mapStatement or structured source/options. Requires checkpointTable for deployments that use database checkpoints; use list_checkpoint_tables to find a valid table."""
     mapStatement = _none_if_fieldinfo(mapStatement)
     source = _none_if_fieldinfo(source)
     options = _none_if_fieldinfo(options)
     begin = _none_if_fieldinfo(begin)
+    checkpointTable = _none_if_fieldinfo(checkpointTable)
     advanced = _none_if_fieldinfo(advanced)
 
     if mapStatement and mapStatement.strip():
@@ -376,6 +406,7 @@ def create_replicat(
 
     advanced_payload = _serialize_model(advanced) or {}
     adv = build_advanced_replicat_parameters(advanced_payload)
+    checkpoint = _resolve_replicat_checkpoint(checkpointTable, adv.get("checkpointTable"))
     config_lines = [f"REPLICAT {replicatName}"]
     if adv.get("credentialLines"):
         config_lines.extend(adv["credentialLines"])
@@ -383,7 +414,6 @@ def create_replicat(
         config_lines.append(f"USERIDALIAS {connectionName} DOMAIN {domainName}")
 
     lines = adv.get("lines") or []
-    checkpoint = adv.get("checkpointTable")
     if checkpoint:
         lines = [ln for ln in lines if not ln.startswith("CHECKPOINTTABLE")]
     config_lines.extend(lines)
@@ -415,6 +445,10 @@ def update_replicat(
     mapStatement: str | None = Field(None, description="Raw MAP statement(s) for Replicat"),
     source: CreateReplicatSource | None = Field(None, description="Structured source mapping used to build MAP statements"),
     options: CreateReplicatOptions | None = Field(None, description="Optional structured MAP statement options"),
+    checkpointTable: str | None = Field(
+        None,
+        description='Checkpoint table name for the Replicat checkpoint payload, for example SRCMIRROR_OCIGGLL.CHECKTABLE or "SRCMIRROR_OCIGGLL"."CHECKTABLE".',
+    ),
     advanced: ReplicatAdvancedParameters | None = Field(None, description="Advanced GoldenGate Replicat parameters"),
 ) -> str:
     """Updates an existing Replicat in OCI GoldenGate deployment. Accepts the same structured payload as create_replicat but performs a PATCH instead."""
@@ -424,6 +458,7 @@ def update_replicat(
     mapStatement = _none_if_fieldinfo(mapStatement)
     source = _none_if_fieldinfo(source)
     options = _none_if_fieldinfo(options)
+    checkpointTable = _none_if_fieldinfo(checkpointTable)
     advanced = _none_if_fieldinfo(advanced)
 
     if mapStatement and mapStatement.strip():
@@ -440,12 +475,16 @@ def update_replicat(
 
     advanced_payload = _serialize_model(advanced) or {}
     adv = build_advanced_replicat_parameters(advanced_payload)
+    checkpoint = _resolve_replicat_checkpoint(checkpointTable, adv.get("checkpointTable"))
     config_lines = [f"REPLICAT {replicatName}"]
     if adv.get("credentialLines"):
         config_lines.extend(adv["credentialLines"])
     elif domainName and connectionName:
         config_lines.append(f"USERIDALIAS {connectionName} DOMAIN {domainName}")
-    config_lines.extend(adv.get("lines") or [])
+    lines = adv.get("lines") or []
+    if checkpoint:
+        lines = [ln for ln in lines if not ln.startswith("CHECKPOINTTABLE")]
+    config_lines.extend(lines)
     config_lines.append(final_map_statement)
 
     payload: dict[str, Any] = {
@@ -467,6 +506,8 @@ def update_replicat(
     payload["mode"] = resolved_mode
     if resolved_mode.get("type") != "parallel" and trailName:
         payload["source"] = {"name": trailName}
+    if checkpoint:
+        payload["checkpoint"] = {"table": checkpoint}
     if not adv.get("credentialLines") and domainName and connectionName:
         payload["credentials"] = {"domain": domainName, "alias": connectionName}
     return _ok(client.patch(api.update_replicat(replicatName), payload))

@@ -43,7 +43,6 @@ The server supports the following environment variables:
 | get_tenancy_info | Get tenancy information. |
 | list_availability_domains | List availability domains in a given tenancy. |
 | get_current_tenancy | Get current tenancy information. |
-| create_auth_token | Create an authentication token for a user. |
 | get_current_user | Get current user information. |
 | get_compartment_by_name | Return a compartment matching the provided name                              |
 | list_subscribed_regions | Return a list of all regions the customer (tenancy) is subscribed to         |

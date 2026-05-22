@@ -10,21 +10,6 @@ from typing import Any, Dict, List, Literal, Optional
 import oci
 from pydantic import BaseModel, Field
 
-UNTRUSTED_DATA_START = "--- BEGIN UNTRUSTED OCI DATA ---"
-UNTRUSTED_DATA_END = "--- END UNTRUSTED OCI DATA ---"
-
-
-def mark_untrusted(value):
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return f"{UNTRUSTED_DATA_START}\n{value}\n{UNTRUSTED_DATA_END}"
-    if isinstance(value, dict):
-        return {key: mark_untrusted(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [mark_untrusted(item) for item in value]
-    return value
-
 
 def _oci_to_dict(obj):
     """Best-effort conversion of OCI SDK model objects to plain dicts."""
@@ -108,10 +93,10 @@ def map_log_group_summary(
     return LogGroupSummary(
         id=getattr(log_group, "id", None),
         compartment_id=getattr(log_group, "compartment_id", None),
-        display_name=mark_untrusted(getattr(log_group, "display_name", None)),
-        description=mark_untrusted(getattr(log_group, "description", None)),
-        defined_tags=mark_untrusted(getattr(log_group, "defined_tags", None)),
-        freeform_tags=mark_untrusted(getattr(log_group, "freeform_tags", None)),
+        display_name=getattr(log_group, "display_name", None),
+        description=getattr(log_group, "description", None),
+        defined_tags=getattr(log_group, "defined_tags", None),
+        freeform_tags=getattr(log_group, "freeform_tags", None),
         time_created=getattr(log_group, "time_created", None),
         time_last_modified=getattr(log_group, "time_last_modified", None),
         lifecycle_state=getattr(log_group, "lifecycle_state", None),
@@ -182,11 +167,11 @@ def map_log_group(
     return LogGroup(
         id=getattr(log_group, "id", None),
         compartment_id=getattr(log_group, "compartment_id", None),
-        display_name=mark_untrusted(getattr(log_group, "display_name", None)),
-        description=mark_untrusted(getattr(log_group, "description", None)),
+        display_name=getattr(log_group, "display_name", None),
+        description=getattr(log_group, "description", None),
         lifecycle_state=getattr(log_group, "lifecycle_state", None),
-        defined_tags=mark_untrusted(getattr(log_group, "defined_tags", None)),
-        freeform_tags=mark_untrusted(getattr(log_group, "freeform_tags", None)),
+        defined_tags=getattr(log_group, "defined_tags", None),
+        freeform_tags=getattr(log_group, "freeform_tags", None),
         time_created=getattr(log_group, "time_created", None),
         time_last_modified=getattr(log_group, "time_last_modified", None),
     )
@@ -341,13 +326,13 @@ def map_log_summary(log: oci.logging.models.LogSummary) -> LogSummary | None:
     return LogSummary(
         id=getattr(log, "id", None),
         log_group_id=getattr(log, "log_group_id", None),
-        display_name=mark_untrusted(getattr(log, "display_name", None)),
+        display_name=getattr(log, "display_name", None),
         is_enabled=getattr(log, "is_enabled", None),
         lifecycle_state=getattr(log, "lifecycle_state", None),
         log_type=getattr(log, "log_type", None),
         configuration=map_configuration(getattr(log, "configuration", None)),
-        defined_tags=mark_untrusted(getattr(log, "defined_tags", None)),
-        freeform_tags=mark_untrusted(getattr(log, "freeform_tags", None)),
+        defined_tags=getattr(log, "defined_tags", None),
+        freeform_tags=getattr(log, "freeform_tags", None),
         time_created=getattr(log, "time_created", None),
         time_last_modified=getattr(log, "time_last_modified", None),
         retention_duration=getattr(log, "retention_duration", None),
@@ -426,11 +411,11 @@ def map_log(log: oci.logging.models.Log) -> Log | None:
         id=getattr(log, "id", None),
         tenancy_id=getattr(log, "tenancy_id", None),
         log_group_id=getattr(log, "log_group_id", None),
-        display_name=mark_untrusted(getattr(log, "display_name", None)),
+        display_name=getattr(log, "display_name", None),
         log_type=getattr(log, "log_type", None),
         is_enabled=getattr(log, "is_enabled", None),
-        defined_tags=mark_untrusted(getattr(log, "defined_tags", None)),
-        freeform_tags=mark_untrusted(getattr(log, "freeform_tags", None)),
+        defined_tags=getattr(log, "defined_tags", None),
+        freeform_tags=getattr(log, "freeform_tags", None),
         configuration=map_configuration(getattr(log, "configuration", None)),
         lifecycle_state=getattr(log, "lifecycle_state", None),
         time_created=getattr(log, "time_created", None),
@@ -494,7 +479,7 @@ def map_field_info(fi) -> FieldInfo | None:
 def map_search_result(sr) -> SearchResult | None:
     if not sr:
         return None
-    return SearchResult(data=mark_untrusted(_oci_to_dict(getattr(sr, "data", None))))
+    return SearchResult(data=_oci_to_dict(getattr(sr, "data", None)))
 
 
 def map_search_result_summary(srs) -> SearchResultSummary | None:

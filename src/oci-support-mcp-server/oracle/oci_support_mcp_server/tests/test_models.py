@@ -6,10 +6,6 @@ Designed to increase coverage of models.py (mappings and edge cases).
 from oracle.oci_support_mcp_server import models
 
 
-def _untrusted(value: str) -> str:
-    return f"{models.UNTRUSTED_DATA_START}\n{value}\n{models.UNTRUSTED_DATA_END}"
-
-
 def test_map_incident_summary_with_dict():
     input_dict = {
         "key": "K1",
@@ -62,7 +58,7 @@ def test_map_incident_resource_type_with_dict():
     assert isinstance(result, models.IncidentResourceType)
     assert result.resource_type_key == "RTKEY"
     assert result.name == "ResourceType1"
-    assert result.description == _untrusted("A type")
+    assert result.description == "A type"
 
 
 def test_map_validation_response_with_dict():

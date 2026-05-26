@@ -38,3 +38,15 @@ dev = [
     "pytest>=9.0.3",
     "pytest-asyncio>=1.2.0",
 ]
+
+[tool.coverage.run]
+omit = [
+    "**/__init__.py",
+    "**/tests/*",
+    "dist/*",
+    ".venv/*",
+]
+
+[tool.coverage.report]
+precision = 2
+fail_under = 90

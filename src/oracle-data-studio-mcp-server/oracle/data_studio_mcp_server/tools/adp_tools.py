@@ -108,14 +108,23 @@ def register_tools(mcp: FastMCP):
     def adp_query_analytic_view(av_name: str,
                                  show_sql: bool = False,
                                  owner: str = None,
+                                 max_rows: int = 1000,
                                  ctx: Context = None) -> str:
         """Query data from an Analytic View with auto-discovered dimensions and measures.
+
+        Results are row-capped at `max_rows` (default 1000). When the
+        cap fires, the response is wrapped in
+        ``{"rows": [...], "truncated": true, "original_row_count": N,
+        "max_rows": M}`` so the caller can decide whether to re-query
+        with a tighter filter.
 
         Args:
             av_name: Analytic View name.
             show_sql: If true, return the generated SQL instead of data.
             owner: Schema owner (defaults to current user).
+            max_rows: Maximum rows to return (default 1000).
         """
+        from ._helpers import bound_rows
         client = get_adp(ctx)
         if not client:
             return err(_NO_CONN_MSG)
@@ -125,12 +134,24 @@ def register_tools(mcp: FastMCP):
 
             if show_sql:
                 result = client.Analytics.get_sql_simple(av_name, owner)
-            else:
-                result = client.Analytics.get_data_simple(av_name, owner)
+                if isinstance(result, str):
+                    return result
+                return json.dumps(result, indent=2, default=str)
 
-            if isinstance(result, str):
-                return result
-            return json.dumps(result, indent=2, default=str)
+            # Data path: apply the row cap and surface truncation flag.
+            rows = client.Analytics.get_data_simple(av_name, owner)
+            # SDK may return a list, a JSON-string list, or an envelope dict.
+            if isinstance(rows, str):
+                try:
+                    rows = json.loads(rows)
+                except ValueError:
+                    return rows
+            if isinstance(rows, dict):
+                inner = rows.get('items') or rows.get('rows')
+                if isinstance(inner, list):
+                    rows = inner
+            bounded = bound_rows(rows, max_rows=max_rows)
+            return json.dumps(bounded, indent=2, default=str)
         except Exception as exc:
             return err(str(exc))
 

@@ -19,6 +19,7 @@ from mcp.server.fastmcp import FastMCP
 
 from .config import load_config, ServerConfig
 from .profiles import apply_profile
+from .tools._helpers import wrap_mutating_tools_with_audit
 
 # Logging to stderr (required for stdio transport)
 logging.basicConfig(
@@ -206,6 +207,12 @@ def main():
 
     # Apply tool access profile (must be after tool registration)
     apply_profile(mcp, _config.profile)
+
+    # Wire audit logging for every mutating / executing tool. The
+    # wrapper emits a single INFO line on the 'oracle-data-studio-mcp.audit'
+    # logger for every call so operators retain a who/what/when trail.
+    n_audited = wrap_mutating_tools_with_audit(mcp, profile=_config.profile)
+    logger.info('Audit logging wired for %d mutating tools', n_audited)
 
     logger.info('Starting Oracle Data Studio MCP server '
                 '(transport=%s, profile=%s)',

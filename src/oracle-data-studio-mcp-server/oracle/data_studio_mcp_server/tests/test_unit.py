@@ -4905,3 +4905,457 @@ class TestIntegration:
             describe_fn(app_name=app_name, db_name=db_name, ctx=ctx))
         assert describe_result['database']['type'] == 'BSO'
         assert len(describe_result['dimensions']) == 2
+
+
+# ====================================================================== #
+#  R3 — Audit logging for mutating / executing tools                       #
+# ====================================================================== #
+#
+# Reviewer item 3 ("mutating and destructive tools have explicit names,
+# validation, confirmation, and audit context"). The audit context piece
+# is implemented by `wrap_mutating_tools_with_audit` in
+# `tools/_helpers.py`, wired from `server.py.main()` so every call to a
+# mutating tool emits a single structured INFO line on
+# `oracle-data-studio-mcp.audit`.
+
+class TestAuditLogging:
+
+    def _wrap(self, tool_modules, profile=None):
+        '''Register tools and apply the audit wrapper. Returns the
+        configured FastMCP server.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            wrap_mutating_tools_with_audit)
+        mcp_server = FastMCP('test')
+        for mod in tool_modules:
+            mod.register_tools(mcp_server)
+        n = wrap_mutating_tools_with_audit(mcp_server, profile=profile)
+        return mcp_server, n
+
+    def test_audit_emits_single_info_line(self, caplog):
+        '''The bare `audit()` helper emits one structured line on the
+        dedicated audit logger.'''
+        import logging
+        from oracle.data_studio_mcp_server.tools._helpers import audit
+        caplog.set_level(logging.INFO,
+                         logger='oracle-data-studio-mcp.audit')
+        audit('essbase_manage_application',
+              action='delete', target='Sample', profile='admin')
+        # Find the audit line — there should be exactly one
+        lines = [r.getMessage() for r in caplog.records
+                 if r.name == 'oracle-data-studio-mcp.audit']
+        assert len(lines) == 1
+        line = lines[0]
+        assert line.startswith('audit ')
+        assert 'tool=essbase_manage_application' in line
+        assert 'action=delete' in line
+        assert 'target=Sample' in line
+        assert 'profile=admin' in line
+        assert 'outcome=ok' in line
+
+    def test_audit_redacts_password_in_target(self, caplog):
+        '''Values are funnelled through `safe_err` — no creds leak
+        even if a caller accidentally passes a connect string.'''
+        import logging
+        from oracle.data_studio_mcp_server.tools._helpers import audit
+        caplog.set_level(logging.INFO,
+                         logger='oracle-data-studio-mcp.audit')
+        audit('adp_manage_credentials', action='create',
+              target='ADMIN/Welcome2025#@adb.example.com:1522/svc')
+        line = next(r.getMessage() for r in caplog.records
+                    if r.name == 'oracle-data-studio-mcp.audit')
+        assert 'Welcome2025' not in line
+        assert 'ADMIN/***@' in line
+
+    def test_audit_quotes_value_with_spaces(self, caplog):
+        '''Audit-line values are shell-quoted when they contain spaces
+        so log parsers see a single field.'''
+        import logging
+        from oracle.data_studio_mcp_server.tools._helpers import audit
+        caplog.set_level(logging.INFO,
+                         logger='oracle-data-studio-mcp.audit')
+        audit('dt_manage_project', action='create',
+              target='Marketing Q3 Forecast')
+        line = next(r.getMessage() for r in caplog.records
+                    if r.name == 'oracle-data-studio-mcp.audit')
+        assert 'target="Marketing Q3 Forecast"' in line
+
+    def test_is_mutating_tool_classification(self):
+        '''The is_mutating_tool() helper covers the documented surface.'''
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            is_mutating_tool)
+        # All-yes: every prefix from the docs
+        for name in [
+            'essbase_manage_application', 'essbase_run_calculation',
+            'essbase_load_data', 'essbase_deploy_workbook',
+            'essbase_edit_outline', 'essbase_query',
+            'essbase_export_data',
+            'adp_manage_catalog', 'adp_load_from_cloud',
+            'adp_build_analytic_view', 'adp_generate_insights',
+            'adp_ai_chat',
+            'dt_manage_project', 'dt_create_pipeline', 'dt_run_pipeline',
+        ]:
+            assert is_mutating_tool(name), name
+        # All-no: read-only tools
+        for name in [
+            'essbase_explore', 'essbase_describe_database',
+            'essbase_browse_outline', 'essbase_search_members',
+            'essbase_server_health', 'essbase_get_logs',
+            'adp_search', 'adp_browse_catalog',
+            'adp_query_analytic_view',  # read-only by design
+            'adp_get_annotations',
+            'dt_explore', 'dt_describe_project',
+        ]:
+            assert not is_mutating_tool(name), name
+
+    def test_wrap_marks_only_mutating_tools(self):
+        '''The wrapper picks up only mutating tools from the registered
+        catalog. We count wrappers by name and compare against the
+        is_mutating_tool() oracle.'''
+        from oracle.data_studio_mcp_server.tools import (
+            adp_tools, dt_tools, essbase_tools)
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            is_mutating_tool)
+        mcp_server, n = self._wrap(
+            [essbase_tools, adp_tools, dt_tools], profile='admin')
+        tools = mcp_server._tool_manager._tools
+        expected = sum(1 for name in tools if is_mutating_tool(name))
+        assert n == expected
+        # Spot-check: a few specific mutating tools carry the marker
+        for name in ('essbase_manage_application', 'adp_load_from_cloud',
+                      'dt_run_pipeline', 'essbase_query'):
+            assert tools[name].fn.__audited__ is True
+        # And a few read-only ones do not
+        for name in ('essbase_explore', 'adp_search', 'dt_explore'):
+            assert not getattr(tools[name].fn, '__audited__', False)
+
+    def test_wrap_is_idempotent(self):
+        '''Re-wrapping doesn't double-wrap.'''
+        from oracle.data_studio_mcp_server.tools import (
+            adp_tools, dt_tools, essbase_tools)
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            wrap_mutating_tools_with_audit)
+        mcp_server, n1 = self._wrap(
+            [essbase_tools, adp_tools, dt_tools], profile='admin')
+        n2 = wrap_mutating_tools_with_audit(mcp_server, profile='admin')
+        assert n1 > 0
+        assert n2 == 0
+
+    def test_call_emits_audit_on_success(self, caplog):
+        '''Invoking a wrapped mutating tool emits an audit line.'''
+        import logging
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        caplog.set_level(logging.INFO,
+                         logger='oracle-data-studio-mcp.audit')
+        mcp_server, _ = self._wrap([essbase_tools], profile='analyst')
+
+        # Set up a mocked Essbase client and call essbase_query (which
+        # is in our audited set because it executes MDX).
+        ess = MagicMock()
+        ess.grid.execute_mdx.return_value = {'cells': [], 'axes': []}
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {'essbase': ess}
+
+        fn = mcp_server._tool_manager._tools['essbase_query'].fn
+        result = fn(app_name='Sample', db_name='Basic',
+                     mdx='SELECT 1 ON 0 FROM Basic', ctx=ctx)
+        assert json.loads(result)  # well-formed JSON
+        lines = [r.getMessage() for r in caplog.records
+                 if r.name == 'oracle-data-studio-mcp.audit']
+        assert len(lines) == 1
+        assert 'tool=essbase_query' in lines[0]
+        assert 'profile=analyst' in lines[0]
+        assert 'outcome=ok' in lines[0]
+        assert 'target=Sample' in lines[0]
+
+    def test_call_emits_audit_on_error(self, caplog):
+        '''An exception path still emits an audit line with outcome=error.'''
+        import logging
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        caplog.set_level(logging.INFO,
+                         logger='oracle-data-studio-mcp.audit')
+        mcp_server, _ = self._wrap([essbase_tools], profile='admin')
+
+        # No essbase in ctx → the tool returns an {"error": ...} JSON,
+        # not an exception. That path must still audit outcome=error.
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {}
+
+        fn = mcp_server._tool_manager._tools['essbase_query'].fn
+        result = fn(app_name='Sample', db_name='Basic',
+                     mdx='SELECT 1 ON 0 FROM Basic', ctx=ctx)
+        body = json.loads(result)
+        assert 'error' in body
+
+        lines = [r.getMessage() for r in caplog.records
+                 if r.name == 'oracle-data-studio-mcp.audit']
+        assert len(lines) == 1
+        assert 'outcome=error' in lines[0]
+
+
+# ====================================================================== #
+#  R4 — Output bounding for query / export tools                          #
+# ====================================================================== #
+#
+# Reviewer item 4 ("query results and backend content are bounded and
+# treated as untrusted data"). Both helpers in tools/_helpers.py:
+#   - bound_mdx_result(result, max_rows=...) for the Essbase MDX shapes
+#   - bound_rows(rows, max_rows=...) for ADP analytic-view list returns
+
+class TestBoundMdxResult:
+    '''Unit tests for the axes+cells and slice+ranges MDX shapes.'''
+
+    def _axes_response(self, n_rows, n_cols=2):
+        return {
+            'axes': [
+                {'tuples': [{'members': [{'name': f'c{c}'}]}
+                             for c in range(n_cols)]},
+                {'tuples': [{'members': [{'name': f'r{r}'}]}
+                             for r in range(n_rows)],
+                 'dimensions': [{'name': 'Time'}]},
+            ],
+            'cells': [{'value': r * n_cols + c}
+                       for r in range(n_rows)
+                       for c in range(n_cols)],
+        }
+
+    def test_under_cap_passes_through(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            bound_mdx_result)
+        result = self._axes_response(n_rows=5)
+        bounded = bound_mdx_result(result, max_rows=10)
+        assert bounded is result  # mutated in place, returned
+        assert 'truncated' not in bounded
+
+    def test_over_cap_truncates_axes_and_cells(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            bound_mdx_result)
+        result = self._axes_response(n_rows=50, n_cols=2)
+        bounded = bound_mdx_result(result, max_rows=10)
+        assert bounded['truncated'] is True
+        assert bounded['original_row_count'] == 50
+        assert bounded['max_rows'] == 10
+        # Row axis is trimmed
+        assert len(bounded['axes'][1]['tuples']) == 10
+        # Cells trimmed row-major: 10 rows × 2 cols = 20 cells
+        assert len(bounded['cells']) == 20
+
+    def test_max_rows_default_when_invalid(self):
+        '''Bad max_rows falls back to DEFAULT_MAX_ROWS (1000).'''
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            bound_mdx_result, DEFAULT_MAX_ROWS)
+        result = self._axes_response(n_rows=1500)
+        # Negative max_rows → default
+        bounded = bound_mdx_result(result, max_rows=-1)
+        assert bounded['max_rows'] == DEFAULT_MAX_ROWS
+        assert bounded['truncated'] is True
+        assert len(bounded['axes'][1]['tuples']) == DEFAULT_MAX_ROWS
+
+    def test_slice_ranges_shape_truncates(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            bound_mdx_result)
+        result = {
+            'slice': {
+                'rows': [{'members': [f'r{i}']} for i in range(20)],
+                'columns': [{'members': ['Sales']},
+                            {'members': ['COGS']}],
+                'data': {'ranges': [{'values':
+                    list(range(40))}]},
+            },
+        }
+        bounded = bound_mdx_result(result, max_rows=5)
+        assert bounded['truncated'] is True
+        assert bounded['original_row_count'] == 20
+        assert len(bounded['slice']['rows']) == 5
+        assert len(bounded['slice']['data']['ranges'][0]['values']) == 10
+
+    def test_unknown_shape_passes_through(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            bound_mdx_result)
+        result = {'something': 'else'}
+        bounded = bound_mdx_result(result, max_rows=10)
+        assert bounded == result  # unchanged
+
+    def test_non_dict_passes_through(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            bound_mdx_result)
+        assert bound_mdx_result('a string', max_rows=10) == 'a string'
+        assert bound_mdx_result(None, max_rows=10) is None
+        assert bound_mdx_result(42, max_rows=10) == 42
+
+
+class TestBoundRows:
+
+    def test_under_cap_marks_not_truncated(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            bound_rows)
+        env = bound_rows([{'a': 1}, {'a': 2}], max_rows=10)
+        assert env['truncated'] is False
+        assert env['original_row_count'] == 2
+        assert env['rows'] == [{'a': 1}, {'a': 2}]
+
+    def test_over_cap_truncates(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            bound_rows)
+        rows = [{'i': i} for i in range(50)]
+        env = bound_rows(rows, max_rows=10)
+        assert env['truncated'] is True
+        assert env['original_row_count'] == 50
+        assert env['max_rows'] == 10
+        assert len(env['rows']) == 10
+        assert env['rows'][0] == {'i': 0}
+
+    def test_non_list_input_returned_unchanged(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            bound_rows)
+        env = bound_rows('not a list', max_rows=10)
+        assert env['truncated'] is False
+        assert env['rows'] == 'not a list'
+
+
+class TestQueryToolsRespectMaxRows:
+    '''End-to-end: essbase_query / essbase_export_data / adp_query_av
+    pass `max_rows` through and surface `truncated: true`.'''
+
+    def _ess_query(self, mcp_server, ess, **kwargs):
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {'essbase': ess}
+        fn = mcp_server._tool_manager._tools['essbase_query'].fn
+        return fn(ctx=ctx, **kwargs)
+
+    def test_essbase_query_truncates_at_max_rows(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        ess = MagicMock()
+        # Return 100 rows; cap at 10
+        ess.grid.execute_mdx.return_value = {
+            'axes': [
+                {'tuples': [{'members': [{'name': 'Sales'}]}]},
+                {'tuples': [{'members': [{'name': f'r{i}'}]}
+                             for i in range(100)],
+                 'dimensions': [{'name': 'Time'}]},
+            ],
+            'cells': [{'value': i} for i in range(100)],
+        }
+        result = json.loads(self._ess_query(
+            mcp_server, ess, app_name='S', db_name='B',
+            mdx='SELECT...', max_rows=10))
+        assert result['truncated'] is True
+        assert result['original_row_count'] == 100
+        assert result['max_rows'] == 10
+        assert len(result['axes'][1]['tuples']) == 10
+
+    def test_essbase_query_default_cap_is_1000(self):
+        '''No max_rows arg → DEFAULT_MAX_ROWS applies.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        ess = MagicMock()
+        ess.grid.execute_mdx.return_value = {
+            'axes': [
+                {'tuples': [{'members': [{'name': 'Sales'}]}]},
+                {'tuples': [{'members': [{'name': f'r{i}'}]}
+                             for i in range(1500)],
+                 'dimensions': [{'name': 'Time'}]},
+            ],
+            'cells': [{'value': i} for i in range(1500)],
+        }
+        result = json.loads(self._ess_query(
+            mcp_server, ess, app_name='S', db_name='B', mdx='X'))
+        assert result['truncated'] is True
+        assert result['max_rows'] == 1000
+        assert len(result['axes'][1]['tuples']) == 1000
+
+    def test_essbase_export_data_truncates(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        ess = MagicMock()
+        ess.grid.execute_mdx.return_value = {
+            'axes': [
+                {'tuples': [{'members': [{'name': 'Sales'}]}]},
+                {'tuples': [{'members': [{'name': f'r{i}'}]}
+                             for i in range(20)],
+                 'dimensions': [{'name': 'Time'}]},
+            ],
+            'cells': [{'value': i} for i in range(20)],
+        }
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {'essbase': ess}
+        fn = mcp_server._tool_manager._tools['essbase_export_data'].fn
+        result = json.loads(fn(app_name='S', db_name='B',
+                                mdx='X', max_rows=5, ctx=ctx))
+        assert result['truncated'] is True
+        assert result['original_row_count'] == 20
+        assert result['max_rows'] == 5
+
+    def test_adp_query_analytic_view_truncates(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import adp_tools
+        mcp_server = FastMCP('test')
+        adp_tools.register_tools(mcp_server)
+        adp = MagicMock()
+        adp.rest.expired = None
+        adp.Analytics.is_exist.return_value = True
+        adp.Analytics.get_data_simple.return_value = [
+            {'i': i} for i in range(50)]
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {'adp': adp}
+        fn = mcp_server._tool_manager._tools['adp_query_analytic_view'].fn
+        result = json.loads(fn(av_name='SALES_AV', max_rows=10, ctx=ctx))
+        assert result['truncated'] is True
+        assert result['original_row_count'] == 50
+        assert len(result['rows']) == 10
+
+    def test_adp_query_analytic_view_under_cap_no_truncation(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import adp_tools
+        mcp_server = FastMCP('test')
+        adp_tools.register_tools(mcp_server)
+        adp = MagicMock()
+        adp.rest.expired = None
+        adp.Analytics.is_exist.return_value = True
+        adp.Analytics.get_data_simple.return_value = [
+            {'i': i} for i in range(3)]
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {'adp': adp}
+        fn = mcp_server._tool_manager._tools['adp_query_analytic_view'].fn
+        result = json.loads(fn(av_name='SALES_AV', max_rows=10, ctx=ctx))
+        assert result['truncated'] is False
+        assert len(result['rows']) == 3
+
+
+# ====================================================================== #
+#  R5 — Server wiring: audit + profile applied at startup                 #
+# ====================================================================== #
+
+class TestServerStartupWiring:
+    '''Smoke tests proving main()'s startup sequence wires both
+    apply_profile() and wrap_mutating_tools_with_audit() before the
+    server runs.'''
+
+    def test_main_wires_audit_after_register(self, monkeypatch):
+        '''main() should call wrap_mutating_tools_with_audit(); we patch
+        it and assert it ran with the configured profile.'''
+        from oracle.data_studio_mcp_server import server as srv
+        from oracle.data_studio_mcp_server.config import ServerConfig
+
+        # Stub config: viewer profile, stdio, no service configs
+        monkeypatch.setattr(srv, 'load_config',
+                            lambda: ServerConfig(profile='viewer',
+                                                  transport='stdio'))
+        # Capture call to wrap_mutating_tools_with_audit
+        seen = {}
+        def _fake_wrap(server, profile=None):
+            seen['profile'] = profile
+            return 0
+        monkeypatch.setattr(srv, 'wrap_mutating_tools_with_audit',
+                            _fake_wrap)
+        # Prevent the real server from running
+        monkeypatch.setattr(srv.mcp, 'run', lambda **_: None)
+        srv.main()
+        assert seen.get('profile') == 'viewer'

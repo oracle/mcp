@@ -144,19 +144,29 @@ def register_tools(mcp: FastMCP):
     # ── 3. essbase_query ──────────────────────────────────────────────
     @mcp.tool()
     def essbase_query(app_name: str, db_name: str, mdx: str,
-                      ctx: Context) -> str:
+                      max_rows: int = 1000,
+                      ctx: Context = None) -> str:
         """Execute an MDX query and return formatted tabular results.
+
+        Results are capped at `max_rows` (default 1000). When the cap
+        fires, `truncated: true`, `original_row_count`, and `max_rows`
+        are added to the response so the caller can decide whether to
+        re-query with a tighter WHERE clause.
 
         Args:
             app_name: Application name.
             db_name: Database (cube) name.
             mdx: MDX query string.
+            max_rows: Maximum row-axis tuples to return. Default 1000.
+                Hard floor 1; values ≤0 fall back to the default.
         """
+        from ._helpers import bound_mdx_result
         ess = get_essbase(ctx)
         if not ess:
             return err(_NO)
         try:
             result = ess.grid.execute_mdx(app_name, db_name, mdx)
+            result = bound_mdx_result(result, max_rows=max_rows)
             return json.dumps(result, indent=2, default=str)
         except Exception as exc:
             return err(str(exc))
@@ -599,17 +609,23 @@ def register_tools(mcp: FastMCP):
     def essbase_export_data(app_name: str, db_name: str,
                              mdx: str = None,
                              report_name: str = None,
+                             max_rows: int = 1000,
                              ctx: Context = None) -> str:
         """Export data from an Essbase database.
 
-        Provide either an MDX query or a saved report name.
+        Provide either an MDX query or a saved report name. Results
+        are row-capped at `max_rows` (default 1000); when the cap
+        fires, `truncated: true` and `original_row_count` are added
+        to the response.
 
         Args:
             app_name: Application name.
             db_name: Database (cube) name.
             mdx: MDX query string.
             report_name: Name of a saved MDX report.
+            max_rows: Maximum row-axis tuples to return (default 1000).
         """
+        from ._helpers import bound_mdx_result
         ess = get_essbase(ctx)
         if not ess:
             return err(_NO)
@@ -622,6 +638,7 @@ def register_tools(mcp: FastMCP):
             else:
                 # Default: get the default grid
                 result = ess.grid.get_default_grid(app_name, db_name)
+            result = bound_mdx_result(result, max_rows=max_rows)
             return json.dumps(result, indent=2, default=str)
         except Exception as exc:
             return err(str(exc))

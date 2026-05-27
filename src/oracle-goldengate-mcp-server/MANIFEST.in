@@ -1,0 +1,1 @@
+exclude uv.lock .gitignore .containerignore

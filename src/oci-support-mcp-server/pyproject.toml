@@ -36,6 +36,9 @@ packages = ["oracle"]
 exclude = ["/oracle/**/tests/**"]
 include = ["oracle"]
 
+[tool.hatch.build.targets.sdist]
+exclude = ["uv.lock", ".gitignore", ".containerignore"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",

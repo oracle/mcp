@@ -35,6 +35,9 @@ build-backend = "hatchling.build"
 packages = ["oracle"]
 exclude = ["/oracle/**/tests/**"]
 
+[tool.hatch.build.targets.sdist]
+exclude = ["uv.lock", ".gitignore", ".containerignore"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",

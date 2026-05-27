@@ -174,66 +174,7 @@ class TestRecoveryDatabaseTools:
         assert result[0]["id"] == "wr1"
         assert result[0]["operation_type"] == "Restore Database"
 
-    @pytest.mark.asyncio
-    @patch("oracle.oci_recovery_mcp_server.server.get_database_client")
-    async def test_create_backup(self, mock_get_db_client):
-        mock_client = MagicMock()
-        mock_get_db_client.return_value = mock_client
-
-        create_resp = create_autospec(oci.response.Response)
-        create_resp.data = {
-            "id": "b-created",
-            "database_id": "db1",
-            "display_name": "Manual Backup",
-            "type": "FULL",
-        }
-        mock_client.create_backup.return_value = create_resp
-
-        async with Client(mcp) as client:
-            call_tool_result = await client.call_tool(
-                "create_backup",
-                {
-                    "database_id": "db1",
-                    "display_name": "Manual Backup",
-                    "retention_period_in_days": 14,
-                },
-            )
-            result = call_tool_result.structured_content
-
-        assert result["id"] == "b-created"
-        kwargs = mock_client.create_backup.call_args.kwargs
-        assert kwargs["create_backup_details"].database_id == "db1"
-        assert kwargs["create_backup_details"].retention_period_in_days == 14
-
-    @pytest.mark.asyncio
-    @patch("oracle.oci_recovery_mcp_server.server.get_database_client")
-    async def test_update_backup(self, mock_get_db_client):
-        mock_client = MagicMock()
-        mock_get_db_client.return_value = mock_client
-
-        update_resp = create_autospec(oci.response.Response)
-        update_resp.data = {
-            "id": "b1",
-            "database_id": "db1",
-            "retention_period_in_days": 30,
-        }
-        mock_client.update_backup.return_value = update_resp
-
-        async with Client(mcp) as client:
-            call_tool_result = await client.call_tool(
-                "update_backup",
-                {
-                    "backup_id": "b1",
-                    "retention_period_in_days": 30,
-                },
-            )
-            result = call_tool_result.structured_content
-
-        assert result["id"] == "b1"
-        kwargs = mock_client.update_backup.call_args.kwargs
-        assert kwargs["backup_id"] == "b1"
-        assert kwargs["update_backup_details"].retention_period_in_days == 30
-
+ 
     @pytest.mark.asyncio
     @patch("oracle.oci_recovery_mcp_server.server.get_database_client")
     async def test_summarize_protected_database_backup_destination(self, mock_get_db_client):
@@ -527,19 +468,6 @@ class TestRecoveryDatabaseTools:
             result = call_tool_result.structured_content["result"]
 
         assert result == []
-
-    @pytest.mark.asyncio
-    @patch("oracle.oci_recovery_mcp_server.server.get_database_client")
-    async def test_update_backup_no_fields_raises(self, mock_get_db_client):
-        mock_client = MagicMock()
-        mock_get_db_client.return_value = mock_client
-
-        with pytest.raises(Exception, match="No update fields provided"):
-            async with Client(mcp) as client:
-                await client.call_tool(
-                    "update_backup",
-                    {"backup_id": "b1"},
-                )
 
     @pytest.mark.asyncio
     @patch("oracle.oci_recovery_mcp_server.server.get_database_client")

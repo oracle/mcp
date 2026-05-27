@@ -9,5 +9,6 @@ dependencies = [
     "fastmcp==3.2.4",
     "markdownify>=1.2.0",
     "pocketsearch>=0.40.0",
-    "pydantic>=2.12.3"
+    "pydantic>=2.12.3",
+    "starlette==1.0.1"
 ]

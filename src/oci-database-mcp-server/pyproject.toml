@@ -14,6 +14,7 @@ dependencies = [
     "oci==2.173.1",
     "mcp>=1.27.0",
     "pytest-cov>=7.0.0",
+    "starlette==1.0.1",
 ]
 
 classifiers = [

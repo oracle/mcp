@@ -11,7 +11,8 @@ authors = [
 ]
 dependencies = [
     "fastmcp==3.2.4",
-    "oci-cli==3.79.0"
+    "oci-cli==3.79.0",
+    "starlette==1.0.1",
 ]
 
 classifiers = [

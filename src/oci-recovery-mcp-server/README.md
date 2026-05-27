@@ -64,6 +64,7 @@ uv pip install .
 - get_database(database_id, region=None) -> Database
 - list_backups(compartment_id=None, database_id=None, lifecycle_state=None, type=None, limit=None, page=None, region=None) -> list[BackupSummary]
 - get_backup(backup_id, region=None) -> Backup
+- list_restore(compartment_id, fetch_for_child_compartment=False, resource_id=None, status=None, limit=None, page=None, sort_order=None, sort_by=None, opc_request_id=None, region=None, aggregate_pages=True) -> list[WorkRequest]
 - summarize_protected_database_backup_destination(compartment_id=None, region=None, db_home_id=None, include_last_backup_time=False) -> ProtectedDatabaseBackupDestinationSummary
 - get_db_home(db_home_id, region=None) -> DatabaseHome
 - list_db_systems(compartment_id=None, lifecycle_state=None, limit=None, page=None, region=None) -> list[DbSystemSummary]

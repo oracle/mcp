@@ -6,8 +6,8 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "beautifulsoup4>=4.9.0",
-    "fastmcp==3.3.1",
+    "fastmcp==3.4.2",
     "markdownify>=1.2.0",
     "pocketsearch>=0.40.0",
-    "pydantic>=2.12.3"
+    "pydantic>=2.12.3",
 ]

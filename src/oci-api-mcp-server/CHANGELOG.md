@@ -5,6 +5,7 @@
 ### Fixed
 
 - OCI command parsing now preserves quoted arguments when retrieving command help or running OCI CLI commands. ([#100](https://github.com/oracle/mcp/issues/100))
+- Updated dependency fastmcp to 3.4.2
 
 ## 2.0.0
 

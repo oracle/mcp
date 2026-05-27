@@ -10,8 +10,8 @@ authors = [
     {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
 ]
 dependencies = [
-    "fastmcp==3.3.1",
-    "oci-cli==3.79.0"
+    "fastmcp==3.4.2",
+    "oci-cli==3.79.0",
 ]
 
 classifiers = [

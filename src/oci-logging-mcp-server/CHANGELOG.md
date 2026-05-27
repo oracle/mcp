@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- Updated dependency fastmcp to 3.4.2
+
 ## 2.0.1
 
 ### Fixed

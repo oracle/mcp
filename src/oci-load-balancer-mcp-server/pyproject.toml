@@ -6,7 +6,7 @@ description = "An OCI Model Context Protocol server for load-balancer"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "fastmcp==3.3.1",
+    "fastmcp==3.4.2",
     "oci==2.173.1",
     "pydantic==2.12.3",
 ]

@@ -10,7 +10,7 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "fastmcp==3.3.1",
+    "fastmcp==3.4.2",
     "oci==2.173.1",
 ]
 

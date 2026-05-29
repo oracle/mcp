@@ -152,6 +152,13 @@ PROFILES = {
             # RECREATE) — analyst is "read + query/execute, no
             # modify" and pipelines write, so admin only.
             'dt_run_pipeline',
+            # Select AI is an NL→SQL surface backed by the DB. Without
+            # operator-configured table allow/deny lists in place, the
+            # safe default is admin-only. Operators who enable analyst
+            # access should set MCP_AI_CHAT_ALLOWED_TABLES or
+            # MCP_AI_CHAT_DENIED_TABLES and surface them in their auth
+            # proxy / runtime policy. See OWASP LLM01/LLM05.
+            'adp_ai_chat',
         }),
     },
     'admin': None,  # No filtering — all tools

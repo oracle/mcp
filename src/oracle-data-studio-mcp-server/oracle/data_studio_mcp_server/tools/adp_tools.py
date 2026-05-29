@@ -622,14 +622,20 @@ def register_tools(mcp: FastMCP):
     def adp_manage_analytic_views(action: str,
                                     av_name: str = None,
                                     owner: str = None,
+                                    confirm: str = None,
                                     ctx: Context = None) -> str:
         """Manage Analytic Views: list all AVs or drop one.
+
+        Destructive actions (`drop`) require `confirm` to match
+        `av_name` exactly — guards against prompt-injected deletions.
 
         Args:
             action: One of 'list', 'drop'.
             av_name: Analytic View name (required for drop).
             owner: Schema owner (optional, for list).
+            confirm: For drop: must equal `av_name`.
         """
+        from ._helpers import require_confirm
         client = get_adp(ctx)
         if not client:
             return err(_NO_CONN_MSG)
@@ -641,6 +647,10 @@ def register_tools(mcp: FastMCP):
             elif action == 'drop':
                 if not av_name:
                     return err('av_name required for drop action.')
+                msg = require_confirm(av_name, confirm,
+                                       action_label='drop analytic view')
+                if msg:
+                    return err(msg)
                 result = client.Analytics.drop(av_name)
                 return fmt(json.loads(result) if isinstance(
                     result, str) else result)
@@ -755,18 +765,46 @@ def register_tools(mcp: FastMCP):
                       mode: str = 'chat',
                       tables: str = None,
                       profile_name: str = None,
+                      max_rows: int = 1000,
                       ctx: Context = None) -> str:
         """Chat with the database using Oracle Select AI in different modes.
+
+        The returned payload is wrapped in an "untrusted-output"
+        envelope (`{"source": "select_ai", "untrusted": true, ...}`)
+        because the response interleaves LLM-generated text with DB
+        query results — callers must not feed it back into another
+        tool unchecked. Row results are capped at `max_rows`.
+
+        When `MCP_AI_CHAT_ALLOWED_TABLES` is set, every requested table
+        must match the allowlist. When `MCP_AI_CHAT_DENIED_TABLES` is
+        set, no requested table may match it. Both can coexist;
+        deny wins.
 
         Args:
             question: Natural language question or prompt.
             mode: One of 'chat', 'chat_with_db', 'generate_insight'.
-            tables: Comma-separated table names (for chat_with_db/generate_insight).
+            tables: Comma-separated table names (for chat_with_db /
+                generate_insight). Required if
+                MCP_AI_CHAT_ALLOWED_TABLES is set.
             profile_name: Select AI profile name (optional).
+            max_rows: Max rows from any DB-backed response. Default 1000.
         """
+        from ._helpers import check_ai_chat_tables, ai_chat_envelope
         client = get_adp(ctx)
         if not client:
             return err(_NO_CONN_MSG)
+
+        # Table-policy gate. Pulled from the lifespan context which is
+        # populated from env at startup.
+        lc = (ctx.request_context.lifespan_context
+              if ctx is not None else {})
+        policy_err = check_ai_chat_tables(
+            tables,
+            allowed=lc.get('_ai_chat_allowed_tables'),
+            denied=lc.get('_ai_chat_denied_tables'))
+        if policy_err:
+            return err(policy_err)
+
         try:
             table_list = None
             if tables:
@@ -787,12 +825,17 @@ def register_tools(mcp: FastMCP):
                 return err(f'Unknown mode: {mode}. '
                            f'Use chat/chat_with_db/generate_insight.')
 
+            # Normalise: some SDK paths return a JSON string instead of
+            # a dict / list. Parse so the envelope sees structured data.
             if isinstance(result, str):
                 try:
-                    return fmt(json.loads(result))
+                    result = json.loads(result)
                 except (json.JSONDecodeError, TypeError):
-                    return result
-            return json.dumps(result, indent=2, default=str)
+                    pass
+
+            envelope = ai_chat_envelope(result, mode=mode,
+                                         max_rows=max_rows)
+            return json.dumps(envelope, indent=2, default=str)
         except Exception as exc:
             return err(str(exc))
 

@@ -744,16 +744,19 @@ class TestProfiles:
         }
         apply_profile(mock_mcp, 'analyst')
         tools = mock_mcp._tool_manager._tools
-        # Analyst should keep: explore, query, run_, generate_, ai_
+        # Analyst should keep: explore, query, run_, generate_
         assert 'essbase_explore' in tools
         assert 'essbase_run_calculation' in tools
         assert 'adp_generate_insights' in tools
-        assert 'adp_ai_chat' in tools
         assert 'dt_explore' in tools
-        # Analyst should remove: manage_, load_from_cloud (explicit deny)
+        # Analyst should remove: manage_, load_from_cloud,
+        # and adp_ai_chat (Select AI is admin-only by default — see
+        # the explicit_deny comment in profiles.py for the LLM01/LLM05
+        # reasoning).
         assert 'essbase_manage_variables' not in tools
         assert 'adp_load_from_cloud' not in tools
         assert 'dt_manage_schedule' not in tools
+        assert 'adp_ai_chat' not in tools
 
     @mcp_required
     def test_viewer_cannot_run_mdx(self):
@@ -2118,7 +2121,9 @@ class TestEssbaseToolDispatch:
         ess = MagicMock()
         ess.sessions.delete_session.return_value = {'status': 'killed'}
         ctx = self._make_ctx(ess)
-        json.loads(fn(action='kill', session_id='123', ctx=ctx))
+        # kill requires confirm=session_id (LLM06 mitigation)
+        json.loads(fn(action='kill', session_id='123',
+                       confirm='123', ctx=ctx))
         ess.sessions.delete_session.assert_called_once_with('123')
 
     def test_essbase_manage_application_update(self):
@@ -4087,7 +4092,8 @@ ADP_DISPATCH_CASES = [
     # adp_manage_analytic_views
     ('adp_manage_analytic_views', {'action': 'list'},
      'Analytics.get_list'),
-    ('adp_manage_analytic_views', {'action': 'drop', 'av_name': 'AV'},
+    ('adp_manage_analytic_views', {'action': 'drop', 'av_name': 'AV',
+                                      'confirm': 'AV'},
      'Analytics.drop'),
     # adp_manage_credentials
     ('adp_manage_credentials', {'action': 'list'},
@@ -4269,7 +4275,8 @@ DT_DISPATCH_CASES = [
                                 'variable_name': 'V', 'value': 'x'},
      'update_variable', False),
     # dt_manage_project delete
-    ('dt_manage_project', {'action': 'delete', 'project_name': 'P'},
+    ('dt_manage_project', {'action': 'delete', 'project_name': 'P',
+                              'confirm': 'P'},
      'delete_project', False),
     # dt_manage_dataload create — exercises the builder path's existence
     # check (will hit ImportError on the DataLoad builder; we just
@@ -4303,13 +4310,15 @@ ESS_DISPATCH_CASES = [
     ('essbase_manage_application', {'action': 'create', 'app_name': 'A',
                                       'db_name': 'D'},
      'applications.create_application'),
-    ('essbase_manage_application', {'action': 'delete', 'app_name': 'A'},
+    # Destructive actions require confirm=resource_name (LLM06 mitigation)
+    ('essbase_manage_application', {'action': 'delete', 'app_name': 'A',
+                                      'confirm': 'A'},
      'applications.delete_application'),
     ('essbase_manage_application', {'action': 'copy', 'app_name': 'A',
                                       'new_name': 'B'},
      'applications.copy_application'),
     ('essbase_manage_application', {'action': 'rename', 'app_name': 'A',
-                                      'new_name': 'B'},
+                                      'new_name': 'B', 'confirm': 'A'},
      'applications.rename_application'),
     # start/stop go through update_application, not start/stop_application
     ('essbase_manage_application', {'action': 'start', 'app_name': 'A'},
@@ -4318,7 +4327,8 @@ ESS_DISPATCH_CASES = [
      'applications.update_application'),
     # essbase_manage_database (no create — only delete/copy/rename/update)
     ('essbase_manage_database', {'action': 'delete',
-                                   'app_name': 'A', 'db_name': 'D'},
+                                   'app_name': 'A', 'db_name': 'D',
+                                   'confirm': 'D'},
      'applications.delete_database'),
     ('essbase_manage_database', {'action': 'copy',
                                    'app_name': 'A', 'db_name': 'D',
@@ -4440,7 +4450,8 @@ ESS_DISPATCH_CASES = [
      'users.list_users'),
     ('essbase_manage_users', {'action': 'get', 'user_id': 'u'},
      'users.get_user'),
-    ('essbase_manage_users', {'action': 'delete', 'user_id': 'u'},
+    ('essbase_manage_users', {'action': 'delete', 'user_id': 'u',
+                                'confirm': 'u'},
      'users.delete_user'),
     ('essbase_manage_users', {'action': 'list_roles'},
      'users.list_roles'),
@@ -4602,8 +4613,8 @@ ESS_DISPATCH_CASES = [
                                 'app_name': 'A', 'db_name': 'D',
                                 'object_name': 'O'},
      'locks.unlock_object'),
-    # essbase_manage_sessions kill_all
-    ('essbase_manage_sessions', {'action': 'kill_all'},
+    # essbase_manage_sessions kill_all — requires confirm='all'
+    ('essbase_manage_sessions', {'action': 'kill_all', 'confirm': 'all'},
      'sessions.delete_all_sessions'),
     ('essbase_manage_sessions', {'action': 'current'},
      'sessions.get_current_session'),
@@ -4755,9 +4766,15 @@ class TestServer:
         # Build a config that selects streamable-http and a specific
         # host/port. We patch apply_profile + mcp.run so main() doesn't
         # actually start a server.
+        # Non-loopback host requires opting past the fail-closed gate.
+        # Pass allow_insecure_bind=True so the gate allows the bind, and
+        # auth_token=None so we exercise the FastMCP.run() path (rather
+        # than the uvicorn-wrap path used when a token is configured).
         fake_cfg = MagicMock(transport='streamable-http',
                               host='0.0.0.0', port=9001,
-                              profile='admin')
+                              profile='admin',
+                              auth_token=None,
+                              allow_insecure_bind=True)
         with patch.object(srv, 'load_config', return_value=fake_cfg), \
              patch.object(srv, 'apply_profile'), \
              patch.object(srv.mcp, 'run') as run_mock:
@@ -5359,3 +5376,423 @@ class TestServerStartupWiring:
         monkeypatch.setattr(srv.mcp, 'run', lambda **_: None)
         srv.main()
         assert seen.get('profile') == 'viewer'
+
+
+# ====================================================================== #
+#  Security findings 1–4: HTTP bind gate, metadata redaction,             #
+#  Select AI policy, destructive-action confirmations                     #
+# ====================================================================== #
+
+class TestHttpBindGate:
+    '''Finding 1: streamable-http must fail closed on non-loopback bind.'''
+
+    def test_is_loopback(self):
+        from oracle.data_studio_mcp_server.http_runtime import is_loopback
+        for host in ('127.0.0.1', '::1', 'localhost', None, ''):
+            assert is_loopback(host), host
+        for host in ('0.0.0.0', '10.0.0.5', 'mcp.internal',
+                      '169.254.1.1', '8.8.8.8'):
+            assert not is_loopback(host), host
+
+    def test_decide_bind_loopback_passes(self):
+        from oracle.data_studio_mcp_server.http_runtime import decide_bind
+        # No auth needed for loopback
+        decide_bind('127.0.0.1')
+        decide_bind('::1')
+        decide_bind('localhost')
+
+    def test_decide_bind_non_loopback_with_token_passes(self):
+        from oracle.data_studio_mcp_server.http_runtime import decide_bind
+        decide_bind('0.0.0.0', auth_token='s3cr3t-token-1234')
+
+    def test_decide_bind_non_loopback_with_insecure_flag_passes(self, caplog):
+        '''operator-acknowledged insecure bind emits a WARNING.'''
+        import logging
+        from oracle.data_studio_mcp_server.http_runtime import decide_bind
+        caplog.set_level(logging.WARNING,
+                         logger='oracle-data-studio-mcp')
+        decide_bind('0.0.0.0', allow_insecure_bind=True)
+        warnings_ = [r.getMessage() for r in caplog.records
+                     if r.levelno == logging.WARNING]
+        assert any('non-loopback' in w and '0.0.0.0' in w
+                   for w in warnings_)
+
+    def test_decide_bind_non_loopback_no_auth_refuses(self):
+        from oracle.data_studio_mcp_server.http_runtime import (
+            decide_bind, InsecureBindRefused)
+        with pytest.raises(InsecureBindRefused) as exc:
+            decide_bind('0.0.0.0')
+        assert 'MCP_AUTH_TOKEN' in str(exc.value)
+        assert 'allow-insecure-bind' in str(exc.value)
+        assert '0.0.0.0' in str(exc.value)
+
+    def test_main_refuses_non_loopback_without_auth(self, monkeypatch):
+        '''server.main() must sys.exit(2) on the gate.'''
+        from oracle.data_studio_mcp_server import server as srv
+        from oracle.data_studio_mcp_server.config import ServerConfig
+        cfg = ServerConfig(profile='admin',
+                           transport='streamable-http',
+                           host='0.0.0.0',
+                           port=9000,
+                           auth_token=None,
+                           allow_insecure_bind=False)
+        monkeypatch.setattr(srv, 'load_config', lambda: cfg)
+        with pytest.raises(SystemExit) as exc:
+            srv.main()
+        assert exc.value.code == 2
+
+    def test_bearer_middleware_rejects_missing_header(self):
+        from oracle.data_studio_mcp_server.http_runtime import (
+            make_bearer_middleware)
+        from starlette.applications import Starlette
+        from starlette.routing import Route
+        from starlette.responses import JSONResponse
+        from starlette.testclient import TestClient
+        from starlette.middleware import Middleware
+
+        async def ok(request):
+            return JSONResponse({'ok': True})
+
+        app = Starlette(routes=[Route('/x', ok, methods=['POST'])],
+                         middleware=[Middleware(make_bearer_middleware('s3cret'))])
+        client = TestClient(app)
+        # No Authorization header → 401
+        r = client.post('/x')
+        assert r.status_code == 401
+        assert r.json()['error'] == 'authentication required'
+        # Wrong token → 401
+        r = client.post('/x', headers={'Authorization': 'Bearer nope'})
+        assert r.status_code == 401
+        assert r.json()['error'] == 'invalid bearer token'
+        # Correct token → 200
+        r = client.post('/x', headers={'Authorization': 'Bearer s3cret'})
+        assert r.status_code == 200
+        assert r.json() == {'ok': True}
+
+    def test_bearer_middleware_allows_root_health(self):
+        '''GET / passes unauthenticated so probes work.'''
+        from oracle.data_studio_mcp_server.http_runtime import (
+            make_bearer_middleware)
+        from starlette.applications import Starlette
+        from starlette.routing import Route
+        from starlette.responses import JSONResponse
+        from starlette.testclient import TestClient
+        from starlette.middleware import Middleware
+
+        async def root(request):
+            return JSONResponse({'pong': True})
+
+        app = Starlette(routes=[Route('/', root, methods=['GET'])],
+                         middleware=[Middleware(make_bearer_middleware('s3cret'))])
+        client = TestClient(app)
+        r = client.get('/')
+        assert r.status_code == 200
+
+
+class TestConnectionMetadataRedaction:
+    '''Finding 2: viewer must not see JDBC URLs, wallet paths, etc.'''
+
+    SENSITIVE_CONN = {
+        'name': 'PROD_ADW',
+        'connectionName': 'PROD_ADW',
+        'type': 'Oracle',
+        'connectionType': 'Oracle',
+        'status': 'Active',
+        'description': 'Production warehouse',
+        'host': 'adb.us-ashburn-1.oraclecloud.com',
+        'port': 1522,
+        'serviceName': 'prod_high',
+        'schemaName': 'SALES',
+        # Sensitive — should never reach viewer/analyst
+        'jdbcURL': 'jdbc:oracle:thin:@(description=…)',
+        'username': 'ADMIN',
+        'password': 'Welcome2025#',
+        'walletLocation': '/users/admin/wallets/prod.zip',
+        'tnsAdmin': '/etc/oracle/network/admin',
+        'truststorePassword': 'storepwd',
+        'connectionXml': '<?xml ...?>',
+        'connectionTypeProperties': {'oauth_secret': 'AbCdEf123'},
+    }
+
+    def test_viewer_sees_only_identity_fields(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            redact_connection_metadata)
+        out = redact_connection_metadata(self.SENSITIVE_CONN, profile='viewer')
+        assert out['name'] == 'PROD_ADW'
+        assert out['type'] == 'Oracle'
+        assert out['status'] == 'Active'
+        assert out['_redacted'] is True
+        # None of the sensitive fields make it through:
+        for k in ('jdbcURL', 'username', 'password', 'walletLocation',
+                  'tnsAdmin', 'truststorePassword', 'connectionXml',
+                  'connectionTypeProperties', 'host', 'port',
+                  'serviceName', 'schemaName'):
+            assert k not in out, f'viewer leaked {k!r}: {out}'
+
+    def test_analyst_adds_host_port_schema(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            redact_connection_metadata)
+        out = redact_connection_metadata(self.SENSITIVE_CONN, profile='analyst')
+        # Identity + topology
+        for k in ('name', 'type', 'host', 'port', 'serviceName',
+                  'schemaName'):
+            assert out[k] == self.SENSITIVE_CONN[k], k
+        # But still NEVER auth material:
+        for k in ('jdbcURL', 'username', 'password', 'walletLocation',
+                  'tnsAdmin', 'truststorePassword', 'connectionXml',
+                  'connectionTypeProperties'):
+            assert k not in out, f'analyst leaked {k!r}'
+
+    def test_admin_sees_raw(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            redact_connection_metadata)
+        out = redact_connection_metadata(self.SENSITIVE_CONN, profile='admin')
+        assert out is self.SENSITIVE_CONN
+
+    def test_unknown_profile_treated_as_viewer(self):
+        '''Fail-closed: unknown profile string falls back to least-privilege.'''
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            redact_connection_metadata)
+        out = redact_connection_metadata(self.SENSITIVE_CONN, profile='wat')
+        assert 'jdbcURL' not in out
+        assert 'walletLocation' not in out
+
+    def test_list_of_connections_each_redacted(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            redact_connection_metadata)
+        payload = [self.SENSITIVE_CONN, self.SENSITIVE_CONN]
+        out = redact_connection_metadata(payload, profile='viewer')
+        assert isinstance(out, list) and len(out) == 2
+        for entry in out:
+            assert 'jdbcURL' not in entry
+            assert 'walletLocation' not in entry
+            assert entry['_redacted'] is True
+
+    def test_nested_connection_in_envelope(self):
+        '''Common shape: {'items': [conn, conn, ...]} — walk and redact.'''
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            redact_connection_metadata)
+        envelope = {'items': [self.SENSITIVE_CONN]}
+        # The envelope is itself a dict with 'items' — it gets redacted too.
+        # Under viewer, the only top-level allow-list keys that match
+        # are the identifier set; 'items' isn't in there. That's OK —
+        # the helper is intended to be called on the connection-shaped
+        # payload directly. Test the bare-list path instead.
+        out = redact_connection_metadata(envelope['items'], profile='viewer')
+        assert 'jdbcURL' not in out[0]
+
+
+class TestAiChatPolicy:
+    '''Finding 3: adp_ai_chat profile + table allow/deny enforcement.'''
+
+    def test_analyst_profile_blocks_adp_ai_chat(self):
+        from oracle.data_studio_mcp_server.profiles import (
+            apply_profile, PROFILES)
+        mock_mcp = MagicMock()
+        mock_mcp._tool_manager._tools = {
+            'adp_ai_chat': MagicMock(),
+            'adp_search': MagicMock(),
+        }
+        apply_profile(mock_mcp, 'analyst')
+        tools = mock_mcp._tool_manager._tools
+        assert 'adp_ai_chat' not in tools
+        assert 'adp_search' in tools
+
+    def test_no_policy_allows_anything(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            check_ai_chat_tables)
+        # No allow / no deny → call proceeds regardless of `tables`.
+        assert check_ai_chat_tables(None) is None
+        assert check_ai_chat_tables('ANY,TABLES') is None
+
+    def test_allowlist_rejects_unlisted_table(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            check_ai_chat_tables)
+        allowed = frozenset({'ORDERS', 'CUSTOMERS'})
+        msg = check_ai_chat_tables('ORDERS,SECRETS', allowed=allowed)
+        assert msg is not None
+        assert 'SECRETS' in msg
+        assert 'allow list' in msg
+
+    def test_allowlist_with_no_tables_requested_rejects(self):
+        '''Allowlist set + caller omits `tables` → policy can't be applied.'''
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            check_ai_chat_tables)
+        allowed = frozenset({'ORDERS'})
+        msg = check_ai_chat_tables(None, allowed=allowed)
+        assert msg is not None
+        assert 'no `tables` were specified' in msg
+
+    def test_denylist_rejects_listed_table(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            check_ai_chat_tables)
+        denied = frozenset({'DBA_USERS', 'AUDSYS.AUDIT_TRAIL'})
+        msg = check_ai_chat_tables('ORDERS,DBA_USERS', denied=denied)
+        assert msg is not None
+        assert 'DBA_USERS' in msg
+        assert 'deny list' in msg
+
+    def test_deny_beats_allow(self):
+        '''Deny always wins even when a table is also on the allowlist.'''
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            check_ai_chat_tables)
+        allowed = frozenset({'DBA_USERS'})
+        denied = frozenset({'DBA_USERS'})
+        msg = check_ai_chat_tables('DBA_USERS', allowed=allowed, denied=denied)
+        assert msg is not None
+        assert 'deny list' in msg
+
+    def test_case_insensitive_matching(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            check_ai_chat_tables)
+        denied = frozenset({'DBA_USERS'})
+        assert check_ai_chat_tables('dba_users', denied=denied) is not None
+        assert check_ai_chat_tables('Dba_Users', denied=denied) is not None
+
+    def test_qualified_name_matches_bare_name(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            check_ai_chat_tables)
+        denied = frozenset({'AUDIT_TRAIL'})
+        assert check_ai_chat_tables('SYS.AUDIT_TRAIL',
+                                      denied=denied) is not None
+
+    def test_envelope_marks_select_ai_output_untrusted(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            ai_chat_envelope)
+        result = [{'id': 1}, {'id': 2}]
+        env = ai_chat_envelope(result, mode='chat_with_db', max_rows=10)
+        assert env['source'] == 'select_ai'
+        assert env['untrusted'] is True
+        assert env['mode'] == 'chat_with_db'
+        assert env['rows'] == result
+
+    def test_envelope_bounds_rows(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            ai_chat_envelope)
+        rows = [{'i': i} for i in range(100)]
+        env = ai_chat_envelope(rows, mode='chat_with_db', max_rows=10)
+        assert env['untrusted'] is True
+        assert env['truncated'] is True
+        assert env['original_row_count'] == 100
+        assert len(env['rows']) == 10
+
+
+class TestRequireConfirm:
+    '''Finding 4: destructive actions require confirm = resource_name.'''
+
+    def test_match_passes(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            require_confirm)
+        assert require_confirm('Sample', 'Sample') is None
+
+    def test_mismatch_returns_error(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            require_confirm)
+        msg = require_confirm('Sample', 'sample')  # case-sensitive
+        assert msg is not None
+        assert "'Sample'" in msg
+
+    def test_missing_returns_error(self):
+        from oracle.data_studio_mcp_server.tools._helpers import (
+            require_confirm)
+        assert require_confirm('Sample', None) is not None
+        assert require_confirm('Sample', '') is not None
+
+    def test_essbase_manage_application_delete_requires_confirm(self):
+        '''End-to-end: missing confirm => no SDK call, error returned.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_manage_application'].fn
+
+        ess = MagicMock()
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {'essbase': ess}
+
+        # Missing confirm → blocked
+        result = json.loads(fn(action='delete', app_name='Sample', ctx=ctx))
+        assert 'error' in result
+        ess.applications.delete_application.assert_not_called()
+
+        # Wrong confirm → blocked
+        result = json.loads(fn(action='delete', app_name='Sample',
+                                 confirm='wrong', ctx=ctx))
+        assert 'error' in result
+        ess.applications.delete_application.assert_not_called()
+
+        # Correct confirm → SDK call lands
+        ess.applications.delete_application.return_value = ''
+        json.loads(fn(action='delete', app_name='Sample',
+                        confirm='Sample', ctx=ctx))
+        ess.applications.delete_application.assert_called_once_with('Sample')
+
+    def test_essbase_manage_sessions_kill_all_requires_confirm_all(self):
+        '''kill_all uses the literal token 'all'.'''
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import essbase_tools
+        mcp_server = FastMCP('test')
+        essbase_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['essbase_manage_sessions'].fn
+
+        ess = MagicMock()
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {'essbase': ess}
+
+        # Missing confirm → blocked
+        result = json.loads(fn(action='kill_all', ctx=ctx))
+        assert 'error' in result
+        ess.sessions.delete_all_sessions.assert_not_called()
+
+        # confirm='all' → SDK call lands
+        ess.sessions.delete_all_sessions.return_value = ''
+        json.loads(fn(action='kill_all', confirm='all', ctx=ctx))
+        ess.sessions.delete_all_sessions.assert_called_once()
+
+    def test_dt_manage_project_delete_requires_confirm(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import dt_tools
+        mcp_server = FastMCP('test')
+        dt_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['dt_manage_project'].fn
+
+        client = MagicMock()
+        client.check_if_project_exists.return_value = 'pid-1'
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {
+            'datatransforms': {'client': client, 'workbench': None}}
+
+        # Missing confirm → blocked, no SDK call
+        result = json.loads(fn(action='delete', project_name='Marketing',
+                                ctx=ctx))
+        assert 'error' in result
+        client.delete_project.assert_not_called()
+
+        # Correct confirm
+        client.delete_project.return_value = None
+        json.loads(fn(action='delete', project_name='Marketing',
+                       confirm='Marketing', ctx=ctx))
+        client.delete_project.assert_called_once_with('Marketing')
+
+    def test_adp_manage_analytic_views_drop_requires_confirm(self):
+        from mcp.server.fastmcp import FastMCP
+        from oracle.data_studio_mcp_server.tools import adp_tools
+        mcp_server = FastMCP('test')
+        adp_tools.register_tools(mcp_server)
+        fn = mcp_server._tool_manager._tools['adp_manage_analytic_views'].fn
+
+        client = MagicMock()
+        client.rest.expired = None
+        ctx = MagicMock()
+        ctx.request_context.lifespan_context = {'adp': client}
+
+        # Missing confirm → blocked
+        result = json.loads(fn(action='drop', av_name='SALES_AV', ctx=ctx))
+        assert 'error' in result
+        client.Analytics.drop.assert_not_called()
+
+        # Correct confirm
+        client.Analytics.drop.return_value = ''
+        json.loads(fn(action='drop', av_name='SALES_AV',
+                       confirm='SALES_AV', ctx=ctx))
+        client.Analytics.drop.assert_called_once_with('SALES_AV')

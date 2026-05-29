@@ -649,8 +649,13 @@ def register_tools(mcp: FastMCP):
                                     db_name: str = None,
                                     db_type: str = 'BSO',
                                     new_name: str = None,
+                                    confirm: str = None,
                                     ctx: Context = None) -> str:
         """Create, delete, copy, rename, start, or stop an Essbase application.
+
+        Destructive actions (`delete`, `rename`) require `confirm` to
+        match `app_name` exactly — guards against prompt-injected
+        deletions.
 
         Args:
             action: One of 'create', 'delete', 'copy', 'rename', 'start', 'stop'.
@@ -658,7 +663,9 @@ def register_tools(mcp: FastMCP):
             db_name: Database name (required for create — creates the app with this initial database).
             db_type: Database type for create: 'BSO' (block storage, default) or 'ASO' (aggregate storage).
             new_name: New name for copy or rename actions.
+            confirm: For destructive actions only: must equal `app_name`.
         """
+        from ._helpers import require_confirm
         ess = get_essbase(ctx)
         if not ess:
             return err(_NO)
@@ -674,6 +681,10 @@ def register_tools(mcp: FastMCP):
                 })
                 return fmt(result)
             elif action == 'delete':
+                msg = require_confirm(app_name, confirm,
+                                       action_label='delete application')
+                if msg:
+                    return err(msg)
                 a.delete_application(app_name)
                 return json.dumps({'status': 'deleted',
                                    'application': app_name})
@@ -686,6 +697,10 @@ def register_tools(mcp: FastMCP):
             elif action == 'rename':
                 if not new_name:
                     return err('new_name required for rename.')
+                msg = require_confirm(app_name, confirm,
+                                       action_label='rename application')
+                if msg:
+                    return err(msg)
                 result = a.rename_application({
                     'oldAppName': app_name, 'newAppName': new_name})
                 return fmt(result)
@@ -1565,8 +1580,12 @@ def register_tools(mcp: FastMCP):
                                  new_name: str = None,
                                  target_app: str = None,
                                  target_db: str = None,
+                                 confirm: str = None,
                                  ctx: Context = None) -> str:
         """Manage databases within an Essbase application: delete, copy, or rename.
+
+        Destructive actions (`delete`) require `confirm` to match
+        `db_name` exactly — guards against prompt-injected deletions.
 
         Args:
             action: One of 'delete', 'copy', 'rename', 'update'.
@@ -1575,13 +1594,19 @@ def register_tools(mcp: FastMCP):
             new_name: New database name (required for rename).
             target_app: Target application name (required for copy).
             target_db: Target database name (required for copy).
+            confirm: For delete only: must equal `db_name`.
         """
+        from ._helpers import require_confirm
         ess = get_essbase(ctx)
         if not ess:
             return err(_NO)
         try:
             a = ess.applications
             if action == 'delete':
+                msg = require_confirm(db_name, confirm,
+                                       action_label='delete database')
+                if msg:
+                    return err(msg)
                 a.delete_database(app_name, db_name)
                 return json.dumps({'status': 'deleted',
                                    'application': app_name,
@@ -1626,8 +1651,12 @@ def register_tools(mcp: FastMCP):
                               password: str = None,
                               role: str = None,
                               app_name: str = None,
+                              confirm: str = None,
                               ctx: Context = None) -> str:
         """Manage Essbase users: list, get details, create, update, delete, provision, deprovision roles, or list roles.
+
+        Destructive actions (`delete`) require `confirm` to match
+        `user_id` exactly — guards against prompt-injected deletions.
 
         Args:
             action: One of 'list', 'get', 'create', 'update', 'delete', 'provision', 'deprovision', 'list_roles', 'list_service_roles', 'list_app_roles'.
@@ -1635,7 +1664,9 @@ def register_tools(mcp: FastMCP):
             password: Password (required for create).
             role: Role name (required for provision, e.g. 'service_administrator', 'power_user').
             app_name: Application name (for app-level provisioning; omit for service-level).
+            confirm: For delete only: must equal `user_id`.
         """
+        from ._helpers import require_confirm
         ess = get_essbase(ctx)
         if not ess:
             return err(_NO)
@@ -1674,6 +1705,10 @@ def register_tools(mcp: FastMCP):
             elif action == 'delete':
                 if not user_id:
                     return err('user_id required for delete.')
+                msg = require_confirm(user_id, confirm,
+                                       action_label='delete user')
+                if msg:
+                    return err(msg)
                 u.delete_user(user_id)
                 return json.dumps({'status': 'deleted',
                                    'user': user_id})
@@ -1846,13 +1881,20 @@ def register_tools(mcp: FastMCP):
     @mcp.tool()
     def essbase_manage_sessions(action: str = 'list',
                                   session_id: str = None,
+                                  confirm: str = None,
                                   ctx: Context = None) -> str:
         """Manage Essbase sessions: list active sessions, get current session, kill a session, or kill all sessions.
+
+        Destructive actions (`kill`, `kill_all`) require `confirm`:
+          - `kill`: must equal `session_id`.
+          - `kill_all`: must equal the literal string 'all'.
 
         Args:
             action: One of 'list' (default), 'current', 'kill', 'kill_all'.
             session_id: Session ID (required for kill).
+            confirm: Confirmation token (required for kill and kill_all).
         """
+        from ._helpers import require_confirm
         ess = get_essbase(ctx)
         if not ess:
             return err(_NO)
@@ -1867,11 +1909,19 @@ def register_tools(mcp: FastMCP):
             elif action == 'kill':
                 if not session_id:
                     return err('session_id required for kill.')
+                msg = require_confirm(session_id, confirm,
+                                       action_label='kill session')
+                if msg:
+                    return err(msg)
                 s.delete_session(session_id)
                 return json.dumps({'status': 'killed',
                                    'session': session_id})
 
             elif action == 'kill_all':
+                msg = require_confirm('all', confirm,
+                                       action_label='kill all sessions')
+                if msg:
+                    return err(msg)
                 s.delete_all_sessions()
                 return json.dumps({'status': 'all_sessions_killed'})
 

@@ -20,6 +20,11 @@ from mcp.server.fastmcp import FastMCP
 from .config import load_config, ServerConfig
 from .profiles import apply_profile
 from .tools._helpers import wrap_mutating_tools_with_audit
+from .http_runtime import (
+    decide_bind,
+    wrap_app_with_bearer_auth,
+    InsecureBindRefused,
+)
 
 # Logging to stderr (required for stdio transport)
 logging.basicConfig(
@@ -36,6 +41,18 @@ _config: ServerConfig | None = None
 async def app_lifespan(server: FastMCP):
     '''Connect to Essbase and/or ADP at startup, yield context dict.'''
     context: dict = {}
+
+    # Stash the active profile so tools that need profile-aware behaviour
+    # (e.g. connection metadata redaction) can read it without threading
+    # the value through every signature. Default 'viewer' = least
+    # privilege if config didn't run.
+    context['_profile'] = (_config.profile
+                           if _config is not None else 'viewer')
+    # Select AI table allow / deny lists. Consumed by adp_ai_chat.
+    context['_ai_chat_allowed_tables'] = (
+        _config.ai_chat_allowed_tables if _config is not None else None)
+    context['_ai_chat_denied_tables'] = (
+        _config.ai_chat_denied_tables if _config is not None else None)
 
     # -- Essbase --
     if _config and _config.essbase:
@@ -219,21 +236,38 @@ def main():
                 _config.transport, _config.profile)
 
     if _config.transport == 'streamable-http':
-        # Default bind: 127.0.0.1 (loopback). The server has no
-        # built-in auth — anyone who reaches the port gets full access
-        # under the configured credentials. To expose externally, set
-        # --host 0.0.0.0 explicitly AND put an authenticated reverse
-        # proxy in front. (S8.)
-        #
-        # Note: FastMCP.run() takes only `transport` and `mount_path` —
-        # host/port live on `mcp.settings`. Set them BEFORE run().
-        if _config.host == '0.0.0.0':
-            logger.warning(
-                'streamable-http bound to 0.0.0.0 — server has NO '
-                'built-in auth; ensure a reverse proxy / firewall '
-                'is in front')
+        # Fail-closed gate: non-loopback bind requires either an
+        # MCP_AUTH_TOKEN (server enforces bearer auth) or an explicit
+        # --allow-insecure-bind acknowledgement (operator confirms an
+        # authenticated reverse proxy is in front). Default bind is
+        # 127.0.0.1, which never trips the gate.
+        try:
+            decide_bind(
+                _config.host,
+                auth_token=_config.auth_token,
+                allow_insecure_bind=_config.allow_insecure_bind)
+        except InsecureBindRefused as e:
+            logger.error('%s', e)
+            sys.exit(2)
+
         mcp.settings.host = _config.host
         mcp.settings.port = _config.port
-        mcp.run(transport='streamable-http')
+
+        if _config.auth_token:
+            # Build the HTTP app ourselves, wrap with bearer-auth
+            # middleware, and serve via uvicorn. Equivalent to what
+            # FastMCP.run('streamable-http') does internally, but with
+            # the middleware injected before tool dispatch.
+            import uvicorn  # local import: not needed for stdio path
+            app = wrap_app_with_bearer_auth(
+                mcp.streamable_http_app(),
+                _config.auth_token)
+            logger.info(
+                'streamable-http: bearer auth enforced on %s:%s',
+                _config.host, _config.port)
+            uvicorn.run(app, host=_config.host, port=_config.port,
+                        log_level=mcp.settings.log_level.lower())
+        else:
+            mcp.run(transport='streamable-http')
     else:
         mcp.run(transport='stdio')

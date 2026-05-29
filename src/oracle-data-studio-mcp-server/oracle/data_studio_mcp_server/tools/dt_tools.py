@@ -46,11 +46,14 @@ def register_tools(mcp: FastMCP):
             if e:
                 errors.append(e)
 
-            # Connections
+            # Connections — redact host/userinfo/wallet by profile so we
+            # don't leak JDBC URLs and wallet paths to a viewer-level LLM.
+            from ._helpers import redact_connection_metadata, get_profile
             conns, e = safe_call('connections',
                                  client.list_connections)
             if conns:
-                data['connections'] = conns
+                data['connections'] = redact_connection_metadata(
+                    conns, profile=get_profile(ctx))
             if e:
                 errors.append(e)
 
@@ -131,13 +134,20 @@ def register_tools(mcp: FastMCP):
     # ── 28b. dt_manage_project ────────────────────────────────────────
     @mcp.tool()
     def dt_manage_project(action: str, project_name: str,
+                           confirm: str = None,
                            ctx: Context = None) -> str:
         """Manage Data Transforms projects (admin-only).
+
+        Destructive actions (`delete`) require `confirm` to match
+        `project_name` exactly — guards against prompt-injected
+        deletions.
 
         Args:
             action: One of 'delete'.
             project_name: Name of the project.
+            confirm: For delete: must equal `project_name`.
         """
+        from ._helpers import require_confirm
         dt = get_dt(ctx)
         if not dt:
             return err(_NO)
@@ -145,6 +155,10 @@ def register_tools(mcp: FastMCP):
             client = dt['client']
 
             if action == 'delete':
+                msg = require_confirm(project_name, confirm,
+                                       action_label='delete project')
+                if msg:
+                    return err(msg)
                 project_id = client.check_if_project_exists(project_name)
                 if not project_id:
                     return err(f'Project "{project_name}" not found.')
@@ -172,12 +186,16 @@ def register_tools(mcp: FastMCP):
             errors = []
             data = {'connection_name': connection_name}
 
-            # Details
+            # Details — redact JDBC URL, wallet path, host/userinfo for
+            # non-admin profiles. Even `viewer` keeps the connection
+            # name + type so it remains useful for discovery.
+            from ._helpers import redact_connection_metadata, get_profile
             details, e = safe_call('details',
                                    client.get_connection_details,
                                    connection_name)
             if details:
-                data['details'] = details
+                data['details'] = redact_connection_metadata(
+                    details, profile=get_profile(ctx))
             if e:
                 errors.append(e)
 

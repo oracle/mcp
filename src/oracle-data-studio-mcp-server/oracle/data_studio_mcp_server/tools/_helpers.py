@@ -7,6 +7,7 @@
 import json
 import logging
 import re
+from typing import Optional
 
 logger = logging.getLogger('oracle-data-studio-mcp')
 
@@ -402,3 +403,254 @@ def bound_rows(rows, max_rows=None) -> dict:
                 'original_row_count': total, 'max_rows': cap}
     return {'rows': rows[:cap], 'truncated': True,
             'original_row_count': total, 'max_rows': cap}
+
+
+# ────────────────────────────────────────────────────────────────────
+#  Connection / metadata redaction by profile (LLM02)
+# ────────────────────────────────────────────────────────────────────
+# Connection-shaped SDK responses routinely embed sensitive platform
+# details — JDBC URLs (sometimes with credentials), wallet paths,
+# hostnames, usernames, OCI tenancy/compartment OCIDs. Returning those
+# verbatim to the LLM is an info-disclosure path (LLM02 in the OWASP
+# GenAI Top 10).
+#
+# `redact_connection_metadata` keeps only fields explicitly listed in
+# the per-profile allow-set; everything else is dropped. This is
+# deny-by-default — new SDK fields don't accidentally leak. Admin
+# sees the raw response so operators can still debug.
+#
+# Profile rules (least-privilege ↑):
+#   viewer   — name, type, status, description only
+#   analyst  — + host, port, schema, serviceName, database (no auth)
+#   admin    — raw
+
+# Common identifier and type fields safe to surface even to viewer.
+_REDACT_VIEWER_ALLOW = frozenset({
+    'name', 'connectionName', 'connection_name',
+    'type', 'connectionType', 'connection_type',
+    'status', 'state', 'enabled',
+    'description', 'globalId', 'global_id', 'id',
+    'createdAt', 'created_at', 'updatedAt', 'updated_at',
+})
+
+# Analyst additionally sees the "where" of a connection (host, db,
+# schema) but never the "how" (auth material). Hosts may still
+# disclose internal network topology — that's the trade-off analysts
+# accept when they pick this profile over viewer.
+_REDACT_ANALYST_EXTRA = frozenset({
+    'host', 'port', 'serviceName', 'service_name',
+    'schema', 'schemaName', 'schema_name',
+    'database', 'databaseName', 'database_name',
+    'dataServerName', 'data_server_name',
+})
+
+
+def redact_connection_metadata(payload, profile: str = 'viewer'):
+    '''Recursively keep only profile-safe fields from a connection-shaped payload.
+
+    Accepts a dict (single connection), a list (collection), or any
+    other shape (returned unchanged). Nested dicts/lists are walked.
+
+    @param payload: SDK response object.
+    @param profile: 'viewer', 'analyst', 'admin', or any other string
+        (treated as 'viewer' — fail closed on unknown profiles).
+    @return: A pruned copy of the payload safe for the given profile.
+    '''
+    if profile == 'admin':
+        return payload
+    if profile == 'analyst':
+        allow = _REDACT_VIEWER_ALLOW | _REDACT_ANALYST_EXTRA
+    else:
+        # Treat unknown profile as viewer — least privilege.
+        allow = _REDACT_VIEWER_ALLOW
+    return _redact_walk(payload, allow)
+
+
+def _redact_walk(node, allow):
+    if isinstance(node, dict):
+        out = {}
+        for k, v in node.items():
+            if k in allow:
+                out[k] = _redact_walk(v, allow)
+        # Add a marker so the caller / LLM can see the response was
+        # filtered. Skip if the dict is empty after filtering (avoid
+        # noise on already-empty objects).
+        if out:
+            out['_redacted'] = True
+        return out
+    if isinstance(node, list):
+        return [_redact_walk(item, allow) for item in node]
+    # Scalars (or any other shape) pass through unchanged.
+    return node
+
+
+def get_profile(ctx) -> str:
+    '''Return the active server profile from the lifespan context.
+
+    Tools that need profile-aware behaviour call this rather than
+    threading the profile through every signature. Defaults to
+    'viewer' (least privilege) when missing — fail closed.
+    '''
+    try:
+        return ctx.request_context.lifespan_context.get(
+            '_profile', 'viewer')
+    except AttributeError:
+        return 'viewer'
+
+
+# ────────────────────────────────────────────────────────────────────
+#  adp_ai_chat table allow / deny policy (LLM01 / LLM06)
+# ────────────────────────────────────────────────────────────────────
+# `adp_ai_chat` is an NL→SQL surface backed by the database. Without
+# operator-configured constraints, a prompt-injected LLM could pivot
+# to sensitive tables (DBA_USERS, audit logs, application secrets).
+# The policy is enforced before the SDK call so a denied table never
+# reaches Select AI.
+
+def _normalize_table_key(t: str) -> str:
+    '''Strip whitespace + quotes; uppercase. Returns "" for empties.'''
+    if not t:
+        return ''
+    return t.strip().strip('"').strip("'").upper()
+
+
+def check_ai_chat_tables(tables_csv: Optional[str],
+                          allowed: Optional[frozenset] = None,
+                          denied: Optional[frozenset] = None) -> Optional[str]:
+    '''Validate a comma-separated table list against allow / deny policy.
+
+    Returns None if the call should proceed, otherwise a human-readable
+    error message describing the policy violation. Both bare table
+    names ("ORDERS") and qualified names ("SALES.ORDERS") are matched
+    case-insensitively against both forms.
+
+    @param tables_csv: The `tables` kwarg as supplied to the tool.
+        May be None or empty for chat-mode requests with no table list.
+    @param allowed: Optional allow-list. When set, every requested
+        table must be in it. None = no allow-list constraint.
+    @param denied: Optional deny-list. When set, no requested table
+        may be in it. None = no deny-list constraint.
+    '''
+    # No constraints configured → nothing to check.
+    if allowed is None and denied is None:
+        return None
+
+    # Parse requested tables.
+    requested = []
+    if tables_csv:
+        for raw in tables_csv.split(','):
+            key = _normalize_table_key(raw)
+            if key:
+                requested.append(key)
+
+    # Allow-list set but no tables requested: caller must declare
+    # tables explicitly so policy can be evaluated. This blocks the
+    # "no tables = chat mode = unconstrained Select AI" hole.
+    if allowed is not None and not requested:
+        return ('adp_ai_chat: MCP_AI_CHAT_ALLOWED_TABLES is set but '
+                'no `tables` were specified. List the tables your '
+                'question targets so the table policy can be applied.')
+
+    def _matches(name, policy):
+        '''Return True if `name` is in `policy` either as-is or as
+        its bare-name part / fully-qualified counterpart.'''
+        if name in policy:
+            return True
+        # Compare bare name component
+        bare = name.rsplit('.', 1)[-1]
+        return bare in policy
+
+    # Deny wins, always.
+    if denied is not None:
+        for t in requested:
+            if _matches(t, denied):
+                return ('adp_ai_chat: table {!r} is on the deny list '
+                        '(MCP_AI_CHAT_DENIED_TABLES). Refusing the '
+                        'request.'.format(t))
+
+    # Allow-list mode: every requested table must match.
+    if allowed is not None:
+        for t in requested:
+            if not _matches(t, allowed):
+                return ('adp_ai_chat: table {!r} is not in the '
+                        'allow list (MCP_AI_CHAT_ALLOWED_TABLES). '
+                        'Refusing the request.'.format(t))
+    return None
+
+
+# ────────────────────────────────────────────────────────────────────
+#  Destructive-action confirmation tokens (LLM06)
+# ────────────────────────────────────────────────────────────────────
+# Profile filtering and audit logging are necessary but not
+# sufficient — an admin (or a prompt-injected LLM running as admin)
+# can still issue "delete that application" against a real cube.
+# `require_confirm` makes destructive actions require an explicit
+# confirm token matching the target resource name. The token never
+# travels server→LLM, so the LLM has to be told the resource name
+# by the operator. This is OWASP LLM06 (excessive agency) mitigation.
+
+def require_confirm(resource_name: str,
+                    confirm: Optional[str],
+                    *, action_label: str = 'this destructive action') -> Optional[str]:
+    '''Validate a `confirm` token against a resource name.
+
+    Returns None when the call may proceed, otherwise a human-readable
+    error message describing what the caller must pass. Comparison is
+    case-sensitive and exact — typos block the call. The error message
+    is deliberately specific so the operator can tell the LLM the
+    right token; the audit log will record both the attempt and the
+    `outcome=error`.
+
+    @param resource_name: The thing being mutated (app name, user id,
+        session id, project name, …).
+    @param confirm: The token the caller supplied. None / '' / wrong
+        value → block.
+    @param action_label: Human-readable phrase used in the error
+        message — e.g. "delete application", "kill session".
+    '''
+    if confirm and confirm == resource_name:
+        return None
+    return (
+        'Refusing {0}: pass confirm={1!r} to acknowledge. '
+        'Confirmation tokens are required for irreversible actions.'
+        .format(action_label, resource_name))
+
+
+def ai_chat_envelope(result, *, mode: str, max_rows=None) -> dict:
+    '''Wrap Select AI output in an "untrusted-output" envelope.
+
+    Select AI responses interleave LLM-generated text with database
+    query results. Neither piece is trustworthy from the perspective
+    of downstream tool execution — the LLM can prompt-inject the
+    next call, and the DB content can carry stale or attacker-
+    controlled values. Tag the envelope so the calling client knows
+    not to feed it back into another tool unchecked (OWASP LLM05).
+
+    Rows are bounded if the result includes a list payload.
+    '''
+    envelope = {
+        'source': 'select_ai',
+        'mode': mode,
+        'untrusted': True,
+    }
+    # If result is a list, bound it. If a dict carrying a list, bound
+    # the inner list. Otherwise pass through.
+    if isinstance(result, list):
+        envelope.update(bound_rows(result, max_rows=max_rows))
+        return envelope
+    if isinstance(result, dict):
+        # Common shapes: {'rows': [...], ...} or {'data': [...], ...}
+        for key in ('rows', 'data', 'items'):
+            if isinstance(result.get(key), list):
+                bounded = bound_rows(result[key], max_rows=max_rows)
+                new = dict(result)
+                new[key] = bounded.get('rows', new[key])
+                for k in ('truncated', 'original_row_count', 'max_rows'):
+                    if k in bounded:
+                        new[k] = bounded[k]
+                envelope['result'] = new
+                return envelope
+        envelope['result'] = result
+        return envelope
+    envelope['result'] = result
+    return envelope

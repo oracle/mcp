@@ -58,6 +58,25 @@ class ServerConfig:
     # MCP_PROFILE=admin). This follows oracle/mcp BEST_PRACTICES on
     # scope minimisation and safe defaults.
     profile: str = 'viewer'
+    # Optional first-party bearer auth for streamable-http. When set,
+    # every HTTP request must carry `Authorization: Bearer <token>`.
+    # Required for any non-loopback bind unless allow_insecure_bind is
+    # explicitly set.
+    auth_token: Optional[str] = None
+    # Operator opt-in: acknowledge a non-loopback bind without
+    # MCP_AUTH_TOKEN. Use this only when an authenticated reverse proxy
+    # / API gateway sits in front of the MCP port. Without one of
+    # auth_token or allow_insecure_bind, non-loopback bind fails closed
+    # at startup.
+    allow_insecure_bind: bool = False
+    # Select AI / adp_ai_chat table policy. Tables are matched
+    # case-insensitively against both bare names and `OWNER.NAME` forms.
+    # If allowlist is set and a request references tables not in it,
+    # the call is rejected. If denylist is set and a request references
+    # any denied table, the call is rejected. Both can coexist; deny
+    # always wins.
+    ai_chat_allowed_tables: Optional[frozenset] = None
+    ai_chat_denied_tables: Optional[frozenset] = None
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -79,6 +98,19 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--port', type=int, default=None,
         help='HTTP port for streamable-http transport (default: 8000)')
+    parser.add_argument(
+        '--auth-token', default=None,
+        help='Bearer token for streamable-http auth (env MCP_AUTH_TOKEN). '
+             'When set, every HTTP request must carry '
+             '`Authorization: Bearer <token>`. Required for any '
+             'non-loopback bind unless --allow-insecure-bind is set.')
+    parser.add_argument(
+        '--allow-insecure-bind', action='store_true', default=None,
+        help='Acknowledge a non-loopback streamable-http bind without '
+             'MCP_AUTH_TOKEN. Use only when an authenticated reverse '
+             'proxy or API gateway is in front of this server. Without '
+             'this flag (or --auth-token), non-loopback bind fails '
+             'closed at startup. (env MCP_ALLOW_INSECURE_BIND=1)')
 
     # Essbase
     ess = parser.add_argument_group('Essbase')
@@ -144,6 +176,28 @@ def load_config() -> ServerConfig:
     profile = (_val(args.profile, 'MCP_PROFILE', 'server', 'profile')
                or 'viewer')
 
+    # -- Streamable-HTTP auth gate --
+    # Tokens are never read from the INI file (would be plaintext on disk).
+    auth_token = (args.auth_token
+                  or os.environ.get('MCP_AUTH_TOKEN'))
+    # `allow_insecure_bind` is intentionally CLI-flag-or-env-only — never
+    # from the config file. Putting it in a file would make "I accept
+    # the risk" a one-time, easy-to-forget decision.
+    allow_insecure_bind = bool(
+        args.allow_insecure_bind
+        or os.environ.get('MCP_ALLOW_INSECURE_BIND', '').lower()
+           in ('1', 'true', 'yes'))
+
+    # -- adp_ai_chat table policy (env-only; no CLI / no INI file) --
+    def _csv_set(env_key):
+        raw = os.environ.get(env_key, '').strip()
+        if not raw:
+            return None
+        return frozenset(t.strip().upper()
+                          for t in raw.split(',') if t.strip())
+    ai_chat_allowed_tables = _csv_set('MCP_AI_CHAT_ALLOWED_TABLES')
+    ai_chat_denied_tables = _csv_set('MCP_AI_CHAT_DENIED_TABLES')
+
     # -- Essbase --
     # Tokens are NEVER read from the INI file (would be plaintext on
     # disk). Resolve from CLI > env > keyring only.
@@ -200,4 +254,8 @@ def load_config() -> ServerConfig:
         transport=transport,
         host=host,
         port=port,
-        profile=profile)
+        profile=profile,
+        auth_token=auth_token,
+        allow_insecure_bind=allow_insecure_bind,
+        ai_chat_allowed_tables=ai_chat_allowed_tables,
+        ai_chat_denied_tables=ai_chat_denied_tables)

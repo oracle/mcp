@@ -183,6 +183,20 @@ def test_model_mappers_capture_nested_and_variant_fields():
     assert metrics.is_redo_logs_enabled is False
     assert metrics.retention_period_in_days == 14
 
+    work_request = models.map_work_request(
+        {
+            "id": "wr1",
+            "compartmentId": "compartment",
+            "operationType": "RESTORE_DATABASE",
+            "percentComplete": 75.5,
+            "resourceId": "db1",
+        }
+    )
+    assert work_request.id == "wr1"
+    assert work_request.operation_type == "RESTORE_DATABASE"
+    assert work_request.percent_complete == 75.5
+    assert work_request.resource_id == "db1"
+
 
 def test_model_mappers_cover_unusual_iterables_and_attribute_sources(monkeypatch):
     class BadIterable:
@@ -472,6 +486,74 @@ def test_http_config_and_client_factories_cover_auth_paths(monkeypatch):
     assert database_client.call_args.kwargs["signer"] == "session-signer"
 
 
+def test_new_client_factories_cover_limits_work_requests_and_subscription(monkeypatch):
+    monkeypatch.setattr(
+        server,
+        "_get_http_config_and_signer",
+        lambda region=None: (None, None),
+    )
+    monkeypatch.setattr(
+        server,
+        "_load_oci_config_for_server",
+        lambda: {"region": "home-region"},
+    )
+    monkeypatch.setattr(server, "_effective_auth_method", lambda: "apikey")
+    monkeypatch.setattr(
+        server,
+        "_wrap_oci_client",
+        lambda client, **kwargs: (client, kwargs["client_name"]),
+    )
+
+    limits_client = MagicMock(return_value="limits-client")
+    work_request_client = MagicMock(return_value="work-request-client")
+    subscribed_service_client = MagicMock(return_value="subscription-client")
+    monkeypatch.setattr(server.oci.limits, "LimitsClient", limits_client)
+    monkeypatch.setattr(
+        server.oci.work_requests, "WorkRequestClient", work_request_client
+    )
+    monkeypatch.setattr(
+        server.oci.onesubscription,
+        "SubscribedServiceClient",
+        subscribed_service_client,
+    )
+
+    assert server.get_limits_client(region="us-phoenix-1")[1] == "limits"
+    assert (
+        server.get_work_request_client(region="us-chicago-1")[1] == "work_requests"
+    )
+    assert (
+        server.get_onesubscription_client(region="us-ashburn-1")[1]
+        == "onesubscription"
+    )
+    assert limits_client.call_args.args[0]["region"] == "us-phoenix-1"
+    assert work_request_client.call_args.args[0]["region"] == "us-chicago-1"
+    assert subscribed_service_client.call_args.args[0]["region"] == "us-ashburn-1"
+    assert "signer" not in limits_client.call_args.kwargs
+
+    monkeypatch.setattr(server, "_effective_auth_method", lambda: "session")
+    monkeypatch.setattr(
+        server, "_build_signer_for_session", lambda _config: "session-signer"
+    )
+    assert server.get_limits_client()[1] == "limits"
+    assert limits_client.call_args.kwargs["signer"] == "session-signer"
+
+    http_signer = object()
+    monkeypatch.setattr(
+        server,
+        "_get_http_config_and_signer",
+        lambda region=None: ({"region": region or "home-region"}, http_signer),
+    )
+    assert server.get_work_request_client(region="us-sanjose-1")[1] == "work_requests"
+    assert server.get_limits_client(region="us-sanjose-1")[1] == "limits"
+    assert (
+        server.get_onesubscription_client(region="us-sanjose-1")[1]
+        == "onesubscription"
+    )
+    assert work_request_client.call_args.kwargs["signer"] is http_signer
+    assert limits_client.call_args.kwargs["signer"] is http_signer
+    assert subscribed_service_client.call_args.kwargs["signer"] is http_signer
+
+
 def test_compartment_and_database_home_helpers_cover_resolution(monkeypatch):
     compartments = [
         SimpleNamespace(id="compartment-a", name="Dev"),
@@ -546,6 +628,213 @@ def test_compartment_and_database_home_helpers_cover_resolution(monkeypatch):
     ]
     db_client.list_db_homes.side_effect = RuntimeError("service unavailable")
     assert server._fetch_db_home_ids_for_compartment("compartment-a") == []
+
+
+def test_region_subscription_and_limit_tools_cover_current_contracts(monkeypatch):
+    region_cache = {"fetched_at": 0.0, "ttl_seconds": 3600, "items": {}}
+    monkeypatch.setattr(server, "_REGION_CACHE", region_cache)
+    monkeypatch.setattr(server, "get_tenancy", lambda: "tenancy")
+
+    identity_client = MagicMock()
+    identity_client.list_region_subscriptions.return_value = _response(
+        [
+            SimpleNamespace(region_name="us-phoenix-1", status="READY"),
+            SimpleNamespace(regionName="us-ashburn-1", status="READY"),
+            SimpleNamespace(status="IGNORED"),
+        ]
+    )
+    monkeypatch.setattr(
+        server, "get_identity_client", lambda request_id=None: identity_client
+    )
+
+    regions = server._iam_subscribed_regions_with_status(request_id="rid")
+    assert regions == [
+        {"region": "us-ashburn-1", "status": "READY"},
+        {"region": "us-phoenix-1", "status": "READY"},
+    ]
+    assert server._iam_subscribed_regions_with_status(request_id="rid2") == regions
+    identity_client.list_region_subscriptions.assert_called_once_with(
+        tenancy_id="tenancy"
+    )
+    assert server.fetch_regions_subscribed()["total"] == 2
+
+    limits_client = MagicMock()
+    monkeypatch.setattr(
+        server.oci.util,
+        "to_dict",
+        lambda _obj: _raise(RuntimeError("no SDK conversion")),
+    )
+    limits_client.get_resource_availability.side_effect = [
+        _response(
+            SimpleNamespace(
+                scope_type="REGION",
+                available=90,
+                used=10,
+                fractional_availability=0.9,
+                fractional_usage=0.1,
+                effective_quota_value=100,
+                policy_name="storage-policy",
+            )
+        ),
+        _response(
+            {
+                "scope_type": "AD",
+                "available": 4,
+                "used": 1,
+                "fractional_availability": 0.8,
+                "fractional_usage": 0.2,
+                "effective_quota_value": 5,
+                "policy_name": "count-policy",
+            }
+        ),
+    ]
+    monkeypatch.setattr(
+        server,
+        "_load_oci_config_for_server",
+        lambda: {"region": "us-phoenix-1"},
+    )
+    monkeypatch.setattr(
+        server,
+        "get_limits_client",
+        lambda region, request_id=None: limits_client,
+    )
+
+    limits = server.check_recovery_service_limits(
+        compartment_id="ignored",
+        region="ignored",
+        opc_request_id="opc",
+    )
+    assert limits["compartmentId"] == "tenancy"
+    assert limits["region"] == "us-phoenix-1"
+    assert limits["limits"]["protectedDatabaseBackupStorageGb"]["available"] == 90
+    assert limits["limits"]["protectedDatabaseCount"]["policyName"] == "count-policy"
+    assert [
+        call.kwargs["limit_name"]
+        for call in limits_client.get_resource_availability.call_args_list
+    ] == [
+        "protected-database-backup-storage-gb",
+        "protected-database-count",
+    ]
+    assert all(
+        call.kwargs["opc_request_id"] == "opc"
+        for call in limits_client.get_resource_availability.call_args_list
+    )
+
+
+def test_child_compartment_helpers_cover_cache_fast_path_and_fallback(monkeypatch):
+    monkeypatch.setattr(
+        server,
+        "_COMPARTMENT_CACHE",
+        {"fetched_at": 0.0, "ttl_seconds": 300, "items": None},
+    )
+    monkeypatch.setattr(server.time, "time", lambda: 100.0)
+    monkeypatch.setattr(server, "get_tenancy", lambda: "tenancy")
+    monkeypatch.setattr(
+        server,
+        "list_all_compartments_internal",
+        lambda _only_one_page: [
+            SimpleNamespace(id="child", compartment_id="tenancy"),
+            SimpleNamespace(id="child", compartment_id="tenancy"),
+            SimpleNamespace(name="missing id"),
+        ],
+    )
+    identity_client = MagicMock()
+    identity_client.get_compartment.return_value = _response(
+        SimpleNamespace(id="tenancy", name="Root")
+    )
+    monkeypatch.setattr(
+        server, "get_identity_client", lambda request_id=None: identity_client
+    )
+
+    cached = server._list_all_compartments_cached(request_id="rid")
+    assert [compartment.id for compartment in cached] == ["child", "tenancy"]
+    assert server._list_all_compartments_cached(request_id="rid2") is cached
+
+    compartments = [
+        SimpleNamespace(id="root", compartment_id="tenancy"),
+        SimpleNamespace(id="child", compartment_id="root"),
+        SimpleNamespace(id="grandchild", compartmentId="child"),
+        SimpleNamespace(id="orphan"),
+    ]
+    assert server._build_children_index(compartments) == {
+        "tenancy": ["root"],
+        "root": ["child"],
+        "child": ["grandchild"],
+    }
+    monkeypatch.setattr(
+        server,
+        "_list_all_compartments_cached",
+        lambda request_id=None: compartments,
+    )
+    assert server._expand_compartment_scope(
+        "root", include_child_compartments=True
+    ) == ["root", "child", "grandchild"]
+    assert server._expand_compartment_scope(
+        "root", include_child_compartments=False
+    ) == ["root"]
+
+    fallback_identity = MagicMock()
+    fallback_identity.list_compartments.side_effect = [
+        _response([SimpleNamespace(id="child")], has_next_page=True, next_page="p2"),
+        _response([SimpleNamespace(id="sibling")]),
+        _response([]),
+        _response([]),
+    ]
+    monkeypatch.setattr(server, "_list_all_compartments_cached", lambda **_: [])
+    monkeypatch.setattr(
+        server, "get_identity_client", lambda request_id=None: fallback_identity
+    )
+    assert server._expand_compartment_scope(
+        "root", include_child_compartments=True
+    ) == ["root", "child", "sibling"]
+
+    monkeypatch.setattr(
+        server, "_resolve_compartment_id", lambda value, **_kwargs: f"resolved-{value}"
+    )
+    monkeypatch.setattr(
+        server,
+        "_expand_compartment_scope",
+        MagicMock(side_effect=RuntimeError("identity unavailable")),
+    )
+    assert server._compartment_ids_for_tool(
+        "Dev", fetch_for_child_compartment=True
+    ) == ["resolved-Dev"]
+
+
+def test_fetch_child_compartments_crawls_and_applies_output_options(monkeypatch):
+    identity_client = MagicMock()
+    identity_client.list_compartments.side_effect = [
+        _response([SimpleNamespace(id="child")]),
+        _response([]),
+    ]
+    monkeypatch.setattr(
+        server,
+        "_resolve_compartment_id",
+        lambda compartment_id: f"resolved-{compartment_id}",
+    )
+    monkeypatch.setattr(
+        server,
+        "_expand_compartment_scope",
+        lambda *_args, **_kwargs: ["resolved-Root"],
+    )
+    monkeypatch.setattr(
+        server, "get_identity_client", lambda request_id=None: identity_client
+    )
+
+    result = server.fetch_child_compartments("Root", include_self=False)
+    assert result == {
+        "rootCompartmentId": "resolved-Root",
+        "total": 1,
+        "compartmentIds": ["child"],
+    }
+
+    monkeypatch.setattr(
+        server,
+        "_expand_compartment_scope",
+        lambda *_args, **_kwargs: ["resolved-Root", "child", "grandchild"],
+    )
+    result = server.fetch_child_compartments("Root", include_self=True, limit=2)
+    assert result["compartmentIds"] == ["resolved-Root", "child"]
 
 
 class TestRecoveryTools:
@@ -755,10 +1044,13 @@ class TestRecoveryTools:
             )
             result = call_tool_result.structured_content
 
-            assert result["protected"] == 1
-            assert result["warning"] == 1
-            assert result["alert"] == 0
-            assert result["total"] == 2
+            aggregated = result["aggregated"]
+            assert aggregated["protected"] == 1
+            assert aggregated["warning"] == 1
+            assert aggregated["alert"] == 0
+            assert aggregated["total"] == 2
+            assert result["compartmentIdsScanned"] == ["ocid1.compartment.oc1..test"]
+            assert result["per_compartment"][0]["warning"] == 1
 
     @pytest.mark.asyncio
     @patch("oracle.oci_recovery_mcp_server.server.get_tenancy")
@@ -801,9 +1093,12 @@ class TestRecoveryTools:
             )
             result = call_tool_result.structured_content
 
-            assert result["enabled"] == 1
-            assert result["disabled"] == 1
-            assert result["total"] == 2
+            aggregated = result["aggregated"]
+            assert aggregated["enabled"] == 1
+            assert aggregated["disabled"] == 1
+            assert aggregated["total"] == 2
+            assert result["compartmentIdsScanned"] == ["ocid1.compartment.oc1..test"]
+            assert result["per_compartment"][0]["enabled"] == 1
 
     @pytest.mark.asyncio
     @patch("oracle.oci_recovery_mcp_server.server.get_tenancy")
@@ -854,14 +1149,16 @@ class TestRecoveryTools:
             )
             result = call_tool_result.structured_content
 
-        total_scanned = result.get("total_databases_scanned") or result.get(
+        aggregated = result["aggregated"]
+        total_scanned = aggregated.get("total_databases_scanned") or aggregated.get(
             "totalDatabasesScanned"
         )
-        sum_gb = result.get("sum_backup_space_used_in_gbs") or result.get(
+        sum_gb = aggregated.get("sum_backup_space_used_in_gbs") or aggregated.get(
             "sumBackupSpaceUsedInGBs"
         )
         assert abs(sum_gb - 15.0) < 1e-9
         assert total_scanned == 2
+        assert result["missingMetricsCount"] == 0
 
     @pytest.mark.asyncio
     @patch("oracle.oci_recovery_mcp_server.server.get_monitoring_client")
@@ -900,6 +1197,155 @@ class TestRecoveryTools:
             assert result[0]["dimensions"]["resourceId"] == "pd1"
             assert len(result[0]["datapoints"]) == 2
             assert result[0]["datapoints"][0]["value"] == 1.0
+
+
+def test_child_scope_tools_cover_dedup_and_filter_kwargs(monkeypatch):
+    recovery_client = MagicMock()
+    monitoring_client = MagicMock()
+    work_request_client = MagicMock()
+    monkeypatch.setattr(
+        models.oci.util,
+        "to_dict",
+        lambda obj: obj if isinstance(obj, dict) else getattr(obj, "__dict__", obj),
+    )
+    monkeypatch.setattr(
+        server,
+        "get_recovery_client",
+        lambda region=None, request_id=None: recovery_client,
+    )
+    monkeypatch.setattr(
+        server,
+        "get_monitoring_client",
+        lambda request_id=None: monitoring_client,
+    )
+    monkeypatch.setattr(
+        server,
+        "get_work_request_client",
+        lambda region=None, request_id=None: work_request_client,
+    )
+    monkeypatch.setattr(
+        server,
+        "_compartment_ids_for_tool",
+        lambda compartment_id, fetch_for_child_compartment, request_id=None: [
+            "compartment-a",
+            "compartment-b",
+        ],
+    )
+
+    recovery_client.list_protected_databases.side_effect = [
+        _response([SimpleNamespace(id="pd1", display_name="PD 1")]),
+        _response([SimpleNamespace(id="pd1", display_name="PD 1 duplicate")]),
+    ]
+    recovery_client.get_protected_database.return_value = _response(
+        SimpleNamespace(
+            metrics=SimpleNamespace(backup_space_used_in_gbs=1.5),
+            is_redo_logs_shipped=True,
+        )
+    )
+    protected_databases = server.list_protected_databases(
+        "root", fetch_for_child_compartment=True
+    )
+    assert [pd["id"] for pd in protected_databases] == ["pd1"]
+
+    recovery_client.list_protection_policies.side_effect = [
+        _response([SimpleNamespace(id="policy1")]),
+        _response([SimpleNamespace(id="policy1"), SimpleNamespace(id="policy2")]),
+    ]
+    policies = server.list_protection_policies(
+        "root", fetch_for_child_compartment=True
+    )
+    assert [policy.id for policy in policies] == ["policy1", "policy2"]
+
+    recovery_client.list_recovery_service_subnets.side_effect = [
+        _response([SimpleNamespace(id="rss1", subnet_id="subnet1")]),
+        _response([SimpleNamespace(id="rss1"), SimpleNamespace(id="rss2")]),
+    ]
+    recovery_client.get_recovery_service_subnet.side_effect = RuntimeError(
+        "optional full lookup failed"
+    )
+    subnets = server.list_recovery_service_subnets(
+        "root", fetch_for_child_compartment=True
+    )
+    assert [subnet.id for subnet in subnets] == ["rss1", "rss2"]
+    assert subnets[0].subnets == ["subnet1"]
+
+    series_a = SimpleNamespace(
+        dimensions={"resourceId": "pd1"},
+        aggregated_datapoints=[SimpleNamespace(timestamp="t1", value=1)],
+    )
+    series_b = SimpleNamespace(
+        dimensions={"resourceId": "pd2"},
+        aggregated_datapoints=[SimpleNamespace(timestamp="t2", value=2)],
+    )
+    monitoring_client.summarize_metrics_data.side_effect = [
+        _response([series_a]),
+        _response([series_b]),
+    ]
+    metrics = server.get_recovery_service_metrics(
+        compartment_id="root",
+        start_time="2024-01-01T00:00:00Z",
+        end_time="2024-01-01T01:00:00Z",
+        fetch_for_child_compartment=True,
+        metricName="DataLossExposure",
+        resolution="5m",
+        aggregation="sum",
+        protected_database_id="pd1",
+    )
+    assert [item["compartmentId"] for item in metrics] == [
+        "compartment-a",
+        "compartment-b",
+    ]
+    details = monitoring_client.summarize_metrics_data.call_args_list[0].kwargs[
+        "summarize_metrics_data_details"
+    ]
+    assert details.query == 'DataLossExposure[5m]{resourceId="pd1"}.sum()'
+
+    work_request_client.list_work_requests.side_effect = [
+        _response(
+            SimpleNamespace(
+                items=[
+                    {
+                        "id": "wr1",
+                        "operationType": "RESTORE_DATABASE",
+                        "status": "IN_PROGRESS",
+                    },
+                    {"id": "skip", "operationType": "Create Backup"},
+                ]
+            ),
+            has_next_page=True,
+            next_page="wr-page-2",
+        ),
+        _response([{"id": "wr1", "operation_type": "Restore Database"}]),
+        _response([{"id": "wr2", "operation_type": "restore-database"}]),
+    ]
+    restore_requests = server.list_restore(
+        "root",
+        fetch_for_child_compartment=True,
+        resource_id="db1",
+        status="IN_PROGRESS",
+        limit=2,
+        page="wr-page-1",
+        sort_order="DESC",
+        sort_by="timeAccepted",
+        opc_request_id="opc",
+        region="us-ashburn-1",
+    )
+    assert [request.id for request in restore_requests] == ["wr1", "wr2"]
+    first_restore_call = work_request_client.list_work_requests.call_args_list[0].kwargs
+    assert first_restore_call == {
+        "compartment_id": "compartment-a",
+        "resource_id": "db1",
+        "status": "IN_PROGRESS",
+        "sort_order": "DESC",
+        "sort_by": "timeAccepted",
+        "opc_request_id": "opc",
+        "limit": 2,
+        "page": "wr-page-1",
+    }
+    assert (
+        work_request_client.list_work_requests.call_args_list[1].kwargs["page"]
+        == "wr-page-2"
+    )
 
 
 def test_recovery_resource_tools_cover_filters_pagination_and_enrichment(monkeypatch):
@@ -1154,6 +1600,7 @@ def test_protected_database_tools_cover_serialization_fallbacks(monkeypatch):
     assert protected_databases == [
         {
             "id": "pd-fallback",
+            "policyLockedDateTime": None,
             "recovery_service_subnets": [{"id": "rss-fallback"}],
         }
     ]
@@ -1219,6 +1666,7 @@ def test_summary_tools_cover_fallback_counts_and_metrics(monkeypatch):
         "_resolve_compartment_id",
         lambda compartment_id, **_kwargs: compartment_id or "tenancy",
     )
+    monkeypatch.setattr(server, "get_tenancy", lambda: "tenancy")
 
     recovery_client.list_protected_databases.return_value = _response(
         [
@@ -1236,7 +1684,7 @@ def test_summary_tools_cover_fallback_counts_and_metrics(monkeypatch):
     health = server.summarize_protected_database_health(
         compartment_id=None, region="us-ashburn-1"
     )
-    assert health == {
+    assert health["aggregated"] == {
         "compartmentId": "tenancy",
         "region": "us-ashburn-1",
         "protected": 1,
@@ -1245,6 +1693,17 @@ def test_summary_tools_cover_fallback_counts_and_metrics(monkeypatch):
         "unknown": 1,
         "total": 3,
     }
+    assert health["per_compartment"] == [
+        {
+            "compartmentId": "tenancy",
+            "region": "us-ashburn-1",
+            "protected": 1,
+            "warning": 0,
+            "alert": 1,
+            "unknown": 1,
+            "total": 3,
+        }
+    ]
 
     recovery_client.list_protected_databases.return_value = _response(
         [
@@ -1263,13 +1722,14 @@ def test_summary_tools_cover_fallback_counts_and_metrics(monkeypatch):
     redo = server.summarize_protected_database_redo_status(
         compartment_id="compartment", region="us-ashburn-1"
     )
-    assert redo == {
+    assert redo["aggregated"] == {
         "compartmentId": "compartment",
         "region": "us-ashburn-1",
         "enabled": 2,
         "disabled": 1,
         "total": 3,
     }
+    assert redo["per_compartment"][0]["total"] == 3
 
     recovery_client.list_protected_databases.return_value = _response(
         [
@@ -1287,15 +1747,16 @@ def test_summary_tools_cover_fallback_counts_and_metrics(monkeypatch):
     recovery_client.get_protected_database.side_effect = [
         RuntimeError("fall back to summary metrics"),
         _response(SimpleNamespace(metrics={"backupSpaceUsedInGbs": 3.5})),
-        _response(SimpleNamespace(metrics={"backup_space_used_in_gbs": "not numeric"})),
+        _response(SimpleNamespace(metrics={})),
     ]
 
     backup_space = server.summarize_backup_space_used(
         compartment_id="compartment", region="us-ashburn-1"
     )
-    assert backup_space.compartment_id == "compartment"
-    assert backup_space.total_databases_scanned == 3
-    assert backup_space.sum_backup_space_used_in_gbs == 6.0
+    assert backup_space["aggregated"]["compartmentId"] == "compartment"
+    assert backup_space["aggregated"]["totalDatabasesScanned"] == 3
+    assert backup_space["aggregated"]["sumBackupSpaceUsedInGBs"] == 6.0
+    assert backup_space["missingMetricsCount"] == 1
 
 
 def test_database_tools_cover_compartment_paths_and_backup_enrichment(monkeypatch):
@@ -1479,6 +1940,187 @@ def test_database_tools_cover_compartment_paths_and_backup_enrichment(monkeypatc
     assert summary.items[0].last_backup_time.isoformat() == "2024-01-02T00:00:00+00:00"
 
 
+def test_database_child_scope_tools_cover_deduplication(monkeypatch):
+    db_client = MagicMock()
+    recovery_client = MagicMock()
+    monkeypatch.setattr(
+        models.oci.util,
+        "to_dict",
+        lambda obj: obj if isinstance(obj, dict) else getattr(obj, "__dict__", obj),
+    )
+    monkeypatch.setattr(
+        server,
+        "get_database_client",
+        lambda region=None, request_id=None: db_client,
+    )
+    monkeypatch.setattr(
+        server,
+        "get_recovery_client",
+        lambda region=None, request_id=None: recovery_client,
+    )
+    monkeypatch.setattr(
+        server, "_resolve_compartment_id", lambda value, **_kwargs: value
+    )
+    monkeypatch.setattr(
+        server,
+        "_compartment_ids_for_tool",
+        lambda compartment_id, fetch_for_child_compartment, request_id=None: [
+            "compartment-a",
+            "compartment-b",
+        ],
+    )
+    monkeypatch.setattr(
+        server,
+        "_fetch_db_home_ids_for_compartment",
+        lambda compartment_id, region=None: ["home1"],
+    )
+    recovery_client.list_protected_databases.return_value = _response([])
+
+    db_client.list_databases.side_effect = [
+        _response(
+            SimpleNamespace(
+                items=[
+                    {
+                        "id": "db1",
+                        "dbName": "DB1",
+                        "dbBackupConfig": {"isAutoBackupEnabled": True},
+                    }
+                ]
+            )
+        ),
+        _response(
+            SimpleNamespace(
+                items=[
+                    {
+                        "id": "db1",
+                        "dbName": "DB1 Duplicate",
+                        "dbBackupConfig": {"isAutoBackupEnabled": True},
+                    },
+                    {
+                        "id": "db2",
+                        "dbName": "DB2",
+                        "dbBackupConfig": {"isAutoBackupEnabled": True},
+                    },
+                ]
+            )
+        ),
+    ]
+    databases = server.list_databases(
+        compartment_id="root",
+        fetch_for_child_compartment=True,
+    )
+    assert [database.id for database in databases] == ["db1", "db2"]
+
+    db_client.reset_mock()
+    db_client.list_databases.side_effect = [
+        _response(
+            SimpleNamespace(
+                items=[
+                    {
+                        "id": "db1",
+                        "dbUniqueName": "DB1_UNQ",
+                        "dbBackupConfig": {"isAutoBackupEnabled": True},
+                    }
+                ]
+            )
+        ),
+        _response(
+            SimpleNamespace(
+                items=[
+                    {
+                        "id": "db2",
+                        "dbUniqueName": "DB2_UNQ",
+                        "dbBackupConfig": {"isAutoBackupEnabled": True},
+                    }
+                ]
+            )
+        ),
+    ]
+    db_client.list_backups.side_effect = [
+        _response(SimpleNamespace(items=[{"id": "backup1", "databaseId": "db1"}])),
+        _response(
+            SimpleNamespace(
+                items=[
+                    {"id": "backup1", "databaseId": "db2"},
+                    {"id": "backup2", "databaseId": "db2"},
+                ]
+            )
+        ),
+    ]
+    backups = server.list_backups(
+        compartment_id="root",
+        fetch_for_child_compartment=True,
+    )
+    assert [backup["id"] for backup in backups] == ["backup1", "backup2"]
+
+    db_client.reset_mock()
+    db_client.list_databases.side_effect = [
+        _response(
+            [
+                {
+                    "id": "db1",
+                    "dbName": "DB1",
+                    "dbBackupConfig": {
+                        "isAutoBackupEnabled": True,
+                        "backupDestinationDetails": [
+                            {"type": "RECOVERY_SERVICE", "id": "dest1"}
+                        ],
+                    },
+                }
+            ]
+        ),
+        _response(
+            [
+                {
+                    "id": "db1",
+                    "dbName": "DB1 Duplicate",
+                    "dbBackupConfig": {
+                        "isAutoBackupEnabled": True,
+                        "backupDestinationDetails": [
+                            {"type": "RECOVERY_SERVICE", "id": "dest1"}
+                        ],
+                    },
+                },
+                {
+                    "id": "db2",
+                    "dbName": "DB2",
+                    "dbBackupConfig": {"isAutoBackupEnabled": False},
+                },
+            ]
+        ),
+    ]
+    summary = server.summarize_protected_database_backup_destination(
+        compartment_id="root",
+        fetch_for_child_compartment=True,
+        db_home_id="home1",
+        include_last_backup_time=False,
+    )
+    assert [item.database_id for item in summary.items] == ["db1", "db2"]
+    assert summary.total_databases == 3
+
+    db_client.reset_mock()
+    db_client.list_db_homes.side_effect = [
+        _response([SimpleNamespace(id="home1")]),
+        _response([SimpleNamespace(id="home1"), SimpleNamespace(id="home2")]),
+    ]
+    homes = server.list_db_homes(
+        compartment_id="root",
+        fetch_for_child_compartment=True,
+    )
+    assert [home.id for home in homes] == ["home1", "home2"]
+
+    db_client.reset_mock()
+    db_client.list_db_systems.side_effect = [
+        _response([SimpleNamespace(id="system1")]),
+        _response([SimpleNamespace(id="system1"), SimpleNamespace(id="system2")]),
+    ]
+    systems = server.list_db_systems(
+        compartment_id="root",
+        fetch_for_child_compartment=True,
+    )
+    assert [system.id for system in systems] == ["system1", "system2"]
+
+
 def test_database_home_and_system_tools_cover_pagination_and_defaults(monkeypatch):
     db_client = MagicMock()
     monkeypatch.setattr(
@@ -1515,7 +2157,8 @@ def test_database_home_and_system_tools_cover_pagination_and_defaults(monkeypatc
     )
     assert [home.id for home in homes] == ["home1", "home2"]
     assert (
-        db_client.list_db_homes.call_args_list[0].kwargs["compartment_id"] == "tenancy"
+        db_client.list_db_homes.call_args_list[0].kwargs["compartment_id"]
+        == "resolved-tenancy"
     )
     assert db_client.list_db_homes.call_args_list[1].kwargs["page"] == "home-page-2"
 
@@ -1655,7 +2298,7 @@ def test_summary_serialization_fallbacks_and_error_paths(monkeypatch):
         "dict",
         lambda self, **_kwargs: _raise(RuntimeError("dict failed")),
     )
-    assert server.summarize_protected_database_health("compartment") == {
+    assert server.summarize_protected_database_health("compartment")["aggregated"] == {
         "compartmentId": "compartment",
         "region": None,
         "protected": 0,
@@ -1675,7 +2318,7 @@ def test_summary_serialization_fallbacks_and_error_paths(monkeypatch):
         "dict",
         lambda self, **_kwargs: _raise(RuntimeError("dict failed")),
     )
-    assert server.summarize_protected_database_redo_status("compartment") == {
+    assert server.summarize_protected_database_redo_status("compartment")["aggregated"] == {
         "compartmentId": "compartment",
         "region": None,
         "enabled": 0,
@@ -1855,6 +2498,7 @@ def test_database_list_branches_and_tool_error_paths(monkeypatch):
         "_resolve_compartment_id",
         lambda compartment_id, **_kwargs: compartment_id or "tenancy",
     )
+    recovery_client.list_protected_databases.return_value = _response([])
 
     with pytest.raises(ValueError, match="Either db_home_id"):
         server.list_databases()
@@ -1888,7 +2532,7 @@ def test_database_list_branches_and_tool_error_paths(monkeypatch):
 
     db_client.list_databases.return_value = _response([{"id": "db2", "dbName": "DB2"}])
     db_client.get_database.side_effect = RuntimeError("backup config unavailable")
-    databases = server.list_databases(db_home_id="home1")
+    databases = server.list_databases(compartment_id="compartment", db_home_id="home1")
     assert databases[0].id == "db2"
     assert databases[0].db_backup_config is None
 

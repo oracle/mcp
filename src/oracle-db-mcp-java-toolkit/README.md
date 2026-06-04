@@ -315,7 +315,7 @@ These tools provide a full RAG pipeline: model management, vector store creation
   - `action=files` — embed multiple local files in a single background job.
     * `filePaths` (array, required) — list of absolute file paths; at most 100 files per request
 
-  Local file ingestion requires `-DlocalIngestRoot=/path/to/ingest/root`. Each requested file path is resolved to its real filesystem path and must stay inside that root. Ingested files must be no larger than `ingestMaxFileBytes`, whose value is in bytes (default: `52428800`, 50 MB).
+  Local file ingestion requires `-DingestRootDir=/path/to/ingest/root`. Each requested file path is resolved to its real filesystem path and must stay inside that root. Ingested files must be no larger than `ingestMaxFileSizeMb`, whose value is in MB (default: `50`).
 
   - `action=table` — embed text from an existing Oracle table into a vector store.
     * `sourceTable` (string, required) — table containing the source text
@@ -337,7 +337,7 @@ These tools provide a full RAG pipeline: model management, vector store creation
     * `allowedExtensions` (array, optional) — only embed files with these extensions (e.g. `["pdf", "txt"]`); omit to skip extension filtering
     * `maxObjects` (number or string, optional) — maximum bucket objects to embed. Default is `100`; values above `10000` process at most `10000`.
 
-    Bucket ingestion skips objects larger than `ingestMaxFileBytes` (default: `52428800`, 50 MB) before downloading or embedding them.
+    Bucket ingestion skips objects larger than `ingestMaxFileSizeMb` (default: `50` MB) before embedding them.
 
   **Returns:** `{ taskId, status: "PENDING", table, ... }` — use the `task` tool to check progress.
 
@@ -753,16 +753,16 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
       <td><code>/opt/oracle/ext-jars</code></td>
     </tr>
     <tr>
-      <td><code>localIngestRoot</code></td>
+      <td><code>ingestRootDir</code></td>
       <td>No</td>
       <td>Root directory for local file ingestion with the <code>embed</code> tool. Required only for <code>action=file</code> and <code>action=files</code>. Requested file paths must resolve inside this directory.</td>
       <td><code>/opt/mcp/ingest</code></td>
     </tr>
     <tr>
-      <td><code>ingestMaxFileBytes</code></td>
+      <td><code>ingestMaxFileSizeMb</code></td>
       <td>No</td>
-      <td>Maximum file size for <code>embed</code> ingestion from local files and OCI bucket objects. The value is in bytes. Default is <code>52428800</code> bytes (50 MB).</td>
-      <td><code>52428800</code></td>
+      <td>Maximum file size for <code>embed</code> ingestion from local files and OCI bucket objects. The value is in MB. Default is <code>50</code>.</td>
+      <td><code>50</code></td>
     </tr>
     <tr>
       <td><code>transport</code></td>

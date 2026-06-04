@@ -54,7 +54,7 @@ public class EmbeddingTaskManager {
   private static final int MAX_LOCAL_INGEST_FILES = 100;
   private static final Duration COMPLETED_TASK_TTL = Duration.ofHours(72);
   private static final String SIMPLE_FILE_EXTENSION = "[a-z0-9]{1,16}";
-  private static final long DEFAULT_INGEST_MAX_FILE_BYTES = 50L * 1024L * 1024L;  //50 MB
+  private static final long DEFAULT_INGEST_MAX_FILE_SIZE_MB = 50L;
   private static final Set<String> LOCAL_INGEST_ALLOWED_EXTENSIONS = Set.of(
           "txt", "md", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
           "html", "htm", "json", "csv", "xml");
@@ -518,42 +518,42 @@ public class EmbeddingTaskManager {
   }
 
   /**
-   * Resolves the configured local ingest root to its real filesystem path.
+   * Resolves the configured ingest root directory to its real filesystem path.
    *
    * @return canonical ingest root directory
    */
   private static Path resolveLocalIngestRoot() throws IOException {
-    String root = LoadedConstants.LOCAL_INGEST_ROOT;
+    String root = LoadedConstants.INGEST_ROOT_DIR;
     if (root == null || root.isBlank()) {
-      throw new IllegalStateException("Local file ingestion requires -DlocalIngestRoot");
+      throw new IllegalStateException("Local file ingestion requires -DingestRootDir");
     }
 
     Path realRoot = Paths.get(root).toRealPath();
     if (!Files.isDirectory(realRoot)) {
-      throw new IllegalStateException("Local ingest root is not a directory");
+      throw new IllegalStateException("Ingest root directory is not a directory");
     }
     return realRoot;
   }
 
   /**
-   * Returns the configured ingest max file size, or the default 50 MB limit.
+   * Returns the configured ingest max file size in bytes, using a megabyte property.
    *
    * @return maximum allowed file size in bytes
    */
   private static long ingestMaxFileBytes() {
-    String value = LoadedConstants.INGEST_MAX_FILE_BYTES;
-    long maxFileBytes;
+    String value = LoadedConstants.INGEST_MAX_FILE_SIZE_MB;
+    long maxFileSizeMb;
     try {
-      maxFileBytes = (value == null || value.isBlank())
-              ? DEFAULT_INGEST_MAX_FILE_BYTES
+      maxFileSizeMb = (value == null || value.isBlank())
+              ? DEFAULT_INGEST_MAX_FILE_SIZE_MB
               : Long.parseLong(value.trim());
     } catch (NumberFormatException e) {
-      throw new IllegalStateException("ingestMaxFileBytes must be a number", e);
+      throw new IllegalStateException("ingestMaxFileSizeMb must be a number", e);
     }
-    if (maxFileBytes <= 0) {
-      throw new IllegalStateException("ingestMaxFileBytes must be greater than zero");
+    if (maxFileSizeMb <= 0) {
+      throw new IllegalStateException("ingestMaxFileSizeMb must be greater than zero");
     }
-    return maxFileBytes;
+    return maxFileSizeMb * 1024L * 1024L;
   }
 
   /**

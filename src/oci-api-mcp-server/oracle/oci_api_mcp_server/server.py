@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 from logging import Logger
+import shlex
 from typing import Annotated
 
 import oci
@@ -110,7 +111,7 @@ def get_oci_command_help(command: str) -> str:
 
     try:
         result = subprocess.run(
-            ["oci"] + command.split() + ["--help"],
+            ["oci"] + shlex.split(command) + ["--help"],
             env=env_copy,
             capture_output=True,
             text=True,
@@ -163,7 +164,7 @@ def run_oci_command(
 
     try:
         result = subprocess.run(
-            ["oci", "--profile", profile, "--auth", "security_token"] + command.split(),
+            ["oci", "--profile", profile, "--auth", "security_token"] + shlex.split(command),
             env=env_copy,
             capture_output=True,
             text=True,

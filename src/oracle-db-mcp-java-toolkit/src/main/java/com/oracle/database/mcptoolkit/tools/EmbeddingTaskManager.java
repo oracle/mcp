@@ -449,7 +449,7 @@ public class EmbeddingTaskManager {
     task.status = "RUNNING";
 
     try {
-      Path ingestRoot = resolveLocalIngestRoot();
+      Path ingestRoot = resolveIngestRootDir();
       long maxFileBytes = ingestMaxFileBytes();
 
       try (Connection c = openConnection(config, null)) {
@@ -460,12 +460,13 @@ public class EmbeddingTaskManager {
             Path path = validateLocalIngestFile(filePath, ingestRoot, maxFileBytes);
             byte[] fileBytes = Files.readAllBytes(path);
             String fullPath  = path.toString();
+            String displayName  = path.getFileName().toString();
             String sourceUri = path.toUri().toString();
 
             // Pre-check deduplication so we can distinguish "already exists" from "no text extracted"
             if (withMetadata && RagTools.fileExistsInVectorStore(c, table, sourceUri)) {
               task.results.add(Map.of(
-                      "file",   fullPath,
+                      "file",   displayName,
                       "status", "skipped",
                       "reason", "File already exists in vector store"));
               continue;
@@ -475,19 +476,19 @@ public class EmbeddingTaskManager {
                     c, table, textColumn, embeddingColumn, modelName, fileBytes, fullPath, chunkParams);
             if (chunks == 0) {
               task.results.add(Map.of(
-                      "file",   fullPath,
+                      "file",   displayName,
                       "status", "skipped",
                       "reason", "No text could be extracted (image or unsupported file format)"));
             } else {
               totalChunks += chunks;
               task.results.add(Map.of(
-                      "file",          fullPath,
+                      "file",          displayName,
                       "status",        "success",
                       "chunksCreated", chunks));
             }
           } catch (Exception e) {
             task.results.add(Map.of(
-                    "file",   filePath,
+                    "file",   displayFileName(filePath),
                     "status", "error",
                     "error",  errorMessage(e)));
           }
@@ -522,7 +523,7 @@ public class EmbeddingTaskManager {
    *
    * @return canonical ingest root directory
    */
-  private static Path resolveLocalIngestRoot() throws IOException {
+  private static Path resolveIngestRootDir() throws IOException {
     String root = LoadedConstants.INGEST_ROOT_DIR;
     if (root == null || root.isBlank()) {
       throw new IllegalStateException("Local file ingestion requires -DingestRootDir");
@@ -707,7 +708,22 @@ public class EmbeddingTaskManager {
   record ExtensionFilter(String condition, List<String> patterns) {}
 
   private static String errorMessage(Exception e) {
-    return e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+    if (e instanceof IllegalArgumentException || e instanceof IllegalStateException) {
+      return e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+    }
+    return "Embedding task failed";
+  }
+
+  private static String displayFileName(String filePath) {
+    if (filePath == null || filePath.isBlank()) {
+      return "unknown";
+    }
+    try {
+      Path fileName = Paths.get(filePath).getFileName();
+      return fileName == null ? "unknown" : fileName.toString();
+    } catch (Exception e) {
+      return "unknown";
+    }
   }
 
   private static String quoteIdent(String name) {

@@ -170,7 +170,7 @@ The server provides four built-in toolsets that can be enabled via `-Dtools`:
       <td><code>mcp-admin</code></td>
       <td>Server discovery and runtime configuration</td>
       <td>
-        list-tools, edit-tools
+        list-tools, edit-tools, list-credentials
       </td>
     </tr>
     <tr>
@@ -309,11 +309,13 @@ These tools provide a full RAG pipeline: model management, vector store creation
 
   **Actions:**
 
-  - `action=file` — embed a single local file (PDF, Word, plain text, and other formats supported by Oracle’s `UTL_TO_TEXT`).
+  - `action=file` — embed a single local file (PDF, Word, Excel, PowerPoint, plain text, and other formats supported by Oracle’s `UTL_TO_TEXT`).
     * `filePath` (string, required) — absolute path to the file
 
   - `action=files` — embed multiple local files in a single background job.
-    * `filePaths` (array, required) — list of absolute file paths
+    * `filePaths` (array, required) — list of absolute file paths; at most 100 files per request
+
+  Local file ingestion requires `-DlocalIngestRoot=/path/to/ingest/root`. Each requested file path is resolved to its real filesystem path and must stay inside that root. Ingested files must be no larger than `ingestMaxFileBytes`, whose value is in bytes (default: `52428800`, 50 MB).
 
   - `action=table` — embed text from an existing Oracle table into a vector store.
     * `sourceTable` (string, required) — table containing the source text
@@ -327,12 +329,15 @@ These tools provide a full RAG pipeline: model management, vector store creation
     * Or provide `region` + `namespace` + `bucketName` + `objectName` individually
     * `credentialName` (string, optional) — DBMS_CLOUD credential name; omit for public objects
 
-  - `action=bucket` — embed all files in an OCI bucket.
+  - `action=bucket` — embed files in an OCI bucket.
     * `bucketUrl` (string) — direct OCI bucket URL or PAR URL
     * Or provide `region` + `namespace` + `bucketName` individually
     * `credentialName` (string, optional) — DBMS_CLOUD credential name; omit for public buckets
     * `prefix` (string, optional) — filter objects by path prefix (e.g. `docs/`)
-    * `allowedExtensions` (array, optional) — only embed files with these extensions (e.g. `["pdf", "txt"]`); omit to process all files
+    * `allowedExtensions` (array, optional) — only embed files with these extensions (e.g. `["pdf", "txt"]`); omit to skip extension filtering
+    * `maxObjects` (number or string, optional) — maximum bucket objects to embed. Default is `100`; values above `10000` process at most `10000`.
+
+    Bucket ingestion skips objects larger than `ingestMaxFileBytes` (default: `52428800`, 50 MB) before downloading or embedding them.
 
   **Returns:** `{ taskId, status: "PENDING", table, ... }` — use the `task` tool to check progress.
 
@@ -361,6 +366,8 @@ These tools provide a full RAG pipeline: model management, vector store creation
   - `action=status` — get the current status and per-file results for a specific task.
   - `action=list` — list all tasks submitted since the server started (in-memory only, cleared on restart).
 
+    Embedding task metadata is retained in memory for up to 72 hours after completion or failure. The server keeps at most 1000 task records; if the task store is full, new embedding submissions are rejected until older completed or failed task records expire.
+
   **Inputs:**
 
   * `action` (string, required) — `status` or `list`
@@ -370,20 +377,20 @@ These tools provide a full RAG pipeline: model management, vector store creation
 
 ---
 
-* **`oci-storage`**: Browse OCI Object Storage buckets and list database credentials.
+* **`oci-storage`**: Browse OCI Object Storage buckets.
 
-  - `action=list-objects` — list all objects in a bucket. Provide `bucketUrl` (direct or PAR URL), or `region` + `namespace` + `bucketName`.
-  - `action=list-credentials` — list all DBMS_CLOUD credentials available in the current schema.
+  - `action=list-objects` — list objects in a bucket. Provide `bucketUrl` (direct or PAR URL), or `region` + `namespace` + `bucketName`. Returns 100 objects by default, and at most 10000. Use `prefix` to narrow results or check for a specific object.
 
   **Inputs:**
 
-  * `action` (string, required) — `list-objects` or `list-credentials`
+  * `action` (string, required) — `list-objects`
   * `bucketUrl` (string) — direct OCI bucket URL or PAR URL (alternative to region/namespace/bucketName)
   * `region`, `namespace`, `bucketName` (string) — required for `list-objects` when `bucketUrl` is not provided
   * `credentialName` (string, optional) — DBMS_CLOUD credential; omit for public buckets
   * `prefix` (string, optional) — filter objects by path prefix
+  * `maxResults` (number or string, optional) — maximum objects to return. Default is `100`; values above `10000` return at most `10000`.
 
-  **Returns:** `{ bucketUri, totalObjects, objects: [{ name, sizeBytes, lastModified }] }` for `list-objects`, or `{ totalCredentials, credentials: [{ credentialName, username, enabled }] }` for `list-credentials`.
+  **Returns:** `{ bucketUri, prefix, maxResults, truncated, totalObjects, objects: [{ name, sizeBytes, lastModified }] }`.
 
 ---
 
@@ -433,13 +440,17 @@ These tools provide a full RAG pipeline: model management, vector store creation
 These tools help you discover what's enabled and manage YAML-defined tools at runtime.
 They are part of the `mcp-admin` toolset (enable via `-Dtools=mcp-admin` or include individual tool names).
 
-_Note: The `mcp-admin` toolset is focused on server discovery and runtime configuration only._
+_Note: The `mcp-admin` toolset is focused on server discovery, runtime configuration, and administrative inventory._
 
 #### MCP Admin Tools:
 
 - `list-tools`: List all available tools with their descriptions.
   - Inputs: none
   - Returns: `tools` array with `{ name, title, description }` for built-ins (honoring `-Dtools` filter) and any YAML-defined tools.
+
+- `list-credentials`: List DBMS_CLOUD credentials available in the current schema.
+  - Inputs: none
+  - Returns: `{ totalCredentials, credentials: [{ credentialName, username, enabled }] }`
 
 - `edit-tools`: Create, update, or remove a YAML-defined tool. Changes are auto-reloaded by the server.
   - Inputs (subset; see schema in code):
@@ -722,7 +733,7 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
         Comma-separated allow-list of tool or toolset names to enable (case-insensitive).<br/>
         You can pass individual tools (e.g. <code>jdbc-analyzer</code>, <code>read-query</code>) or any of the following built-in toolsets:
         <ul>
-          <li><code>mcp-admin</code> — server discovery and runtime configuration tools (list-tools, edit-tools)</li>
+          <li><code>mcp-admin</code> — server discovery, runtime configuration, and administrative inventory tools (list-tools, edit-tools, list-credentials)</li>
           <li><code>database-operator</code> — database operations, transactions, monitoring, and execution plans (read-query, write-query, table, transaction, db-ping, db-metrics-range, explain-plan).</li>
           <li><code>log-analyzer</code> — all JDBC log and RDBMS/SQLNet analysis tools (jdbc-analyzer and rdbms-analyzer)</li>
           <li><code>rag</code> — vector store management, document embedding, and semantic similarity search (vector-model, vector-store, embed, task, oci-storage, similarity-search)</li>
@@ -740,6 +751,18 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
         Useful for optional components like <code>oraclepki</code> when using TCPS wallets, token authentication, or centralized driver config.
       </td>
       <td><code>/opt/oracle/ext-jars</code></td>
+    </tr>
+    <tr>
+      <td><code>localIngestRoot</code></td>
+      <td>No</td>
+      <td>Root directory for local file ingestion with the <code>embed</code> tool. Required only for <code>action=file</code> and <code>action=files</code>. Requested file paths must resolve inside this directory.</td>
+      <td><code>/opt/mcp/ingest</code></td>
+    </tr>
+    <tr>
+      <td><code>ingestMaxFileBytes</code></td>
+      <td>No</td>
+      <td>Maximum file size for <code>embed</code> ingestion from local files and OCI bucket objects. The value is in bytes. Default is <code>52428800</code> bytes (50 MB).</td>
+      <td><code>52428800</code></td>
     </tr>
     <tr>
       <td><code>transport</code></td>

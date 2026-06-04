@@ -256,13 +256,14 @@ final class SqlQueries {
   """;
 
   /**
-   * Embeds every object in an OCI bucket in a single statement.
+   * Embeds matching objects in an OCI bucket in a single statement.
    * DBMS_CLOUD.LIST_OBJECTS drives the outer loop; DBMS_CLOUD.GET_OBJECT fetches
    * each file directly inside the DB.
    * <p>
    * Format args : table, textColumn, embeddingColumn, extensionCondition, table (dedup)
-   * Bind params : bucketUri, credentialName, bucketUri, credentialName, bucketUri,
-   *               chunkParams, embeddingParams, prefix ('' = all objects), bucketUri
+   * Bind params : bucketUri, credentialName, bucketUri, prefix ('' = no prefix filter),
+   *               maxFileBytes, extension patterns, maxObjects, credentialName, bucketUri,
+   *               chunkParams, embeddingParams, bucketUri
    */
   public static final String INSERT_FROM_OCI_BUCKET_QUERY = """
     INSERT INTO %s (ID, CREATED_AT, METADATA, %s, %s)
@@ -277,7 +278,15 @@ final class SqlQueries {
       ),
       jt.EMBED_DATA,
       TO_VECTOR(jt.EMBED_VECTOR)
-    FROM DBMS_CLOUD.LIST_OBJECTS(?, ?) lst
+    FROM (
+      SELECT object_name
+      FROM DBMS_CLOUD.LIST_OBJECTS(?, ?)
+      WHERE object_name LIKE ? || '%%'
+      AND bytes <= ?
+      %s
+      ORDER BY object_name
+      FETCH FIRST ? ROWS ONLY
+    ) lst
     CROSS APPLY TABLE(
       DBMS_VECTOR.UTL_TO_EMBEDDINGS(
         DBMS_VECTOR.UTL_TO_CHUNKS(
@@ -295,9 +304,7 @@ final class SqlQueries {
         EMBED_VECTOR CLOB PATH '$.embed_vector'
       )
     ) jt
-    WHERE lst.object_name LIKE ? || '%%'
-    %s
-    AND NOT EXISTS (
+    WHERE NOT EXISTS (
       SELECT 1 FROM %s
       WHERE JSON_VALUE(METADATA, '$.source_uri') = ? || lst.object_name
     )
@@ -307,8 +314,9 @@ final class SqlQueries {
    * Same bucket pipeline without METADATA column or deduplication.
    * <p>
    * Format args : table, textColumn, embeddingColumn, extensionCondition
-   * Bind params : credentialName, bucketUri, credentialName, bucketUri,
-   *               chunkParams, embeddingParams, prefix ('' = all objects)
+   * Bind params : credentialName, bucketUri, prefix ('' = no prefix filter), maxFileBytes,
+   *               extension patterns, maxObjects, credentialName, bucketUri, chunkParams,
+   *               embeddingParams
    */
   public static final String INSERT_FROM_OCI_BUCKET_NO_METADATA_QUERY = """
     INSERT INTO %s (ID, CREATED_AT, %s, %s)
@@ -317,7 +325,15 @@ final class SqlQueries {
       SYSTIMESTAMP,
       jt.EMBED_DATA,
       TO_VECTOR(jt.EMBED_VECTOR)
-    FROM DBMS_CLOUD.LIST_OBJECTS(?, ?) lst
+    FROM (
+      SELECT object_name
+      FROM DBMS_CLOUD.LIST_OBJECTS(?, ?)
+      WHERE object_name LIKE ? || '%%'
+      AND bytes <= ?
+      %s
+      ORDER BY object_name
+      FETCH FIRST ? ROWS ONLY
+    ) lst
     CROSS APPLY TABLE(
       DBMS_VECTOR.UTL_TO_EMBEDDINGS(
         DBMS_VECTOR.UTL_TO_CHUNKS(
@@ -335,8 +351,6 @@ final class SqlQueries {
         EMBED_VECTOR CLOB PATH '$.embed_vector'
       )
     ) jt
-    WHERE lst.object_name LIKE ? || '%%'
-    %s
   """;
 
   /**

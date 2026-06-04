@@ -21,7 +21,12 @@ import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.*;
+
+import static com.oracle.database.mcptoolkit.Utils.openConnection;
 
 /**
  * Provides a set of admin/maintenance tools for various operations.
@@ -29,6 +34,7 @@ import java.util.*;
  * <p>The available tools are:</p>
  * <ul>
  *   <li><strong>list-tools</strong>: List all available tools with descriptions.</li>
+ *   <li><strong>list-credentials</strong>: List DBMS_CLOUD credentials available in the schema.</li>
  *   <li><strong>edit-tools</strong>: Upsert a YAML-defined tool in the config file and rely on runtime reload.</li>
  * </ul>
  */
@@ -37,7 +43,7 @@ public class McpAdminTools {
   private McpAdminTools() {}
 
   /**
-   * Returns a list of all MCP admin tool specifications, including "list-tools" and "edit-tools".
+   * Returns a list of all MCP admin tool specifications.
    * The returned tools are filtered based on the configuration provided.
    *
    * @param config the server configuration used to filter the tools
@@ -47,9 +53,56 @@ public class McpAdminTools {
     List<McpServerFeatures.SyncToolSpecification> tools = new ArrayList<>();
 
     tools.add(getListToolsTool(config));
+    tools.add(getListCredentialsTool(config));
     tools.add(getEditToolsTool());
 
     return tools;
+  }
+
+  /**
+   * Returns an admin tool that lists DBMS_CLOUD credentials available in the current schema.
+   *
+   * @param config server configuration used to connect to the database
+   * @return a tool specification for the "list-credentials" tool
+   */
+  public static McpServerFeatures.SyncToolSpecification getListCredentialsTool(ServerConfig config) {
+    return McpServerFeatures.SyncToolSpecification.builder()
+            .tool(McpSchema.Tool.builder()
+                    .name("list-credentials")
+                    .title("List Credentials")
+                    .description("List DBMS_CLOUD credentials available in the current schema.")
+                    .inputSchema(ToolSchemas.NO_INPUT_SCHEMA)
+                    .build())
+            .callHandler((exchange, callReq) -> {
+              try {
+                List<Map<String, Object>> credentials = new ArrayList<>();
+                try (Connection c = openConnection(config, null);
+                     PreparedStatement ps = c.prepareStatement(SqlQueries.LIST_CREDENTIALS_QUERY);
+                     ResultSet rs = ps.executeQuery()) {
+                  while (rs.next()) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("credentialName", rs.getString("credential_name"));
+                    row.put("username",       rs.getString("username"));
+                    row.put("enabled",        rs.getString("enabled"));
+                    credentials.add(row);
+                  }
+                }
+
+                Map<String, Object> result = new LinkedHashMap<>();
+                result.put("totalCredentials", credentials.size());
+                result.put("credentials",      credentials);
+                return McpSchema.CallToolResult.builder()
+                        .structuredContent(result)
+                        .addTextContent(new ObjectMapper().writeValueAsString(result))
+                        .build();
+              } catch (Exception e) {
+                return McpSchema.CallToolResult.builder()
+                        .addTextContent("Unexpected: " + e.getMessage())
+                        .isError(true)
+                        .build();
+              }
+            })
+            .build();
   }
 
   /**

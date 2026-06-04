@@ -394,7 +394,10 @@ public class ToolSchemas {
           "items": {
             "type": "string"
           },
-          "description": "Optional file extension filter (e.g. pdf, txt, docx). For action=bucket. If omitted, all files are processed." 
+          "description": "Optional file extension filter (e.g. pdf, txt, docx). For action=bucket. If omitted, no extension filter is applied."
+        },
+        "maxObjects": {
+          "description": "Maximum bucket objects to embed for action=bucket. Default is 100. Values above 10000 process at most 10000 objects."
         },
         "objectUrl": {
           "type": "string",
@@ -427,7 +430,7 @@ public class ToolSchemas {
     }""";
 
   /**
-   * JSON schema for OCI Object Storage utilities (list-objects, list-credentials).
+   * JSON schema for OCI Object Storage utilities.
    */
   static final String OCI_STORAGE = """
     {
@@ -435,8 +438,8 @@ public class ToolSchemas {
       "properties": {
         "action": {
           "type": "string",
-          "enum": ["list-objects", "list-credentials"],
-          "description": "list-objects=List all objects in an OCI bucket (use bucketUrl for a direct or PAR URL, or provide region+namespace+bucketName). list-credentials=List all DBMS_CLOUD credentials in the schema."
+          "enum": ["list-objects"],
+          "description": "list-objects=List objects in an OCI bucket (default 100, capped at 10000; use bucketUrl for a direct or PAR URL, or provide region+namespace+bucketName). Use prefix to narrow results."
         },
         "credentialName": {
           "type": "string",
@@ -457,6 +460,9 @@ public class ToolSchemas {
         "prefix": {
           "type": "string",
           "description": "Optional prefix filter (e.g. docs/). For action=list-objects."
+        },
+        "maxResults": {
+          "description": "Maximum objects to return for action=list-objects. Default is 100. Values above 10000 return at most 10000 objects."
         },
         "bucketUrl": {
           "type": "string",

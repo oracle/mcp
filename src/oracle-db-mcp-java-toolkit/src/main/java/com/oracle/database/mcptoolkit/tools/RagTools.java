@@ -34,6 +34,8 @@ import static com.oracle.database.mcptoolkit.tools.ToolSchemas.*;
  */
 public class RagTools {
 
+  private static final JsonMapper JSON_MAPPER = new JsonMapper();
+  private static final String SIMPLE_ORACLE_IDENTIFIER = "[A-Za-z][A-Za-z0-9_$#]{0,127}";
   private static final String DEFAULT_VECTOR_TABLE            = "profile_oracle";
   private static final String DEFAULT_VECTOR_DATA_COLUMN      = "text";
   private static final String DEFAULT_VECTOR_EMBEDDING_COLUMN = "embedding";
@@ -258,7 +260,7 @@ public class RagTools {
                  + "action=files (batch of local files, needs filePaths array), "
                  + "action=table (from an existing Oracle table), "
                  + "action=object (single OCI Object Storage file), "
-                 + "action=bucket (all files in an OCI bucket). "
+                 + "action=bucket (matching files in an OCI bucket). "
                  + "All actions run in the background — returns a taskId immediately. "
                  + "Show the taskId to the user and wait for them to ask for a status check.")
          .inputSchema(EMBED)
@@ -363,12 +365,12 @@ public class RagTools {
 
             // objectUrl (direct or PAR) takes priority over individual components
             String rawObjectUrl = getOrDefault(args.get("objectUrl"), null);
-            String objectUri = (rawObjectUrl != null) ? rawObjectUrl
+            String objectUri = (rawObjectUrl != null) ? ObjectStorageRagTools.validateObjectStorageUrl(rawObjectUrl)
                     : ObjectStorageRagTools.buildObjectUri(
-                            String.valueOf(args.get("region")),
-                            String.valueOf(args.get("namespace")),
-                            String.valueOf(args.get("bucketName")),
-                            String.valueOf(args.get("objectName")));
+                            getOrDefault(args.get("region"), null),
+                            getOrDefault(args.get("namespace"), null),
+                            getOrDefault(args.get("bucketName"), null),
+                            getOrDefault(args.get("objectName"), null));
 
             String taskId = EmbeddingTaskManager.getInstance().submitSingleFile(
                     config, table, credentialName, objectUri,
@@ -394,6 +396,7 @@ public class RagTools {
             String embeddingColumn = getOrDefault(args.get("embeddingColumn"), DEFAULT_VECTOR_EMBEDDING_COLUMN);
             String modelName       = getOrDefault(args.get("modelName"),       DEFAULT_VECTOR_MODEL_NAME);
             String chunkParams     = getOrDefault(args.get("chunkParams"),     DEFAULT_CHUNK_PARAMS);
+            int maxObjects         = ObjectStorageRagTools.parseListObjectsMaxResults(args.get("maxObjects"));
             @SuppressWarnings("unchecked")
             List<String> allowedExtensions = args.get("allowedExtensions") instanceof List<?>
                     ? ((List<?>) args.get("allowedExtensions")).stream().map(Object::toString).toList()
@@ -401,14 +404,14 @@ public class RagTools {
 
             // bucketUrl (direct or PAR) takes priority over individual components
             String rawBucketUrl = getOrDefault(args.get("bucketUrl"), null);
-            String bucketUri = (rawBucketUrl != null) ? rawBucketUrl
+            String bucketUri = (rawBucketUrl != null) ? ObjectStorageRagTools.validateObjectStorageUrl(rawBucketUrl)
                     : ObjectStorageRagTools.buildBucketUri(
-                            String.valueOf(args.get("region")),
-                            String.valueOf(args.get("namespace")),
-                            String.valueOf(args.get("bucketName")));
+                            getOrDefault(args.get("region"), null),
+                            getOrDefault(args.get("namespace"), null),
+                            getOrDefault(args.get("bucketName"), null));
 
             String taskId = EmbeddingTaskManager.getInstance().submitBucket(
-                    config, table, credentialName, bucketUri, prefix, allowedExtensions,
+                    config, table, credentialName, bucketUri, prefix, allowedExtensions, maxObjects,
                     textColumn, embeddingColumn, modelName, chunkParams);
 
             LinkedHashMap<String, Object> result = new LinkedHashMap<>();
@@ -416,6 +419,7 @@ public class RagTools {
             result.put("status",    "PENDING");
             result.put("bucketUri", bucketUri);
             result.put("prefix",    prefix);
+            result.put("maxObjects", maxObjects);
             if (!allowedExtensions.isEmpty()) result.put("allowedExtensions", allowedExtensions);
             result.put("table",     table);
             return McpSchema.CallToolResult.builder()
@@ -509,9 +513,10 @@ public class RagTools {
                                                   int textFetchLimit,
                                                   String question,
                                                   int topK) throws SQLException {
+    String safeModelName = validateModelName(modelName);
     String sql = String.format(
         SqlQueries.SIMILARITY_SEARCH_QUERY,
-        quoteIdent(dataColumn.toUpperCase()), textFetchLimit, quoteIdent(table.toUpperCase()), quoteIdent(embeddingColumn.toUpperCase()), modelName
+        quoteIdent(dataColumn.toUpperCase()), textFetchLimit, quoteIdent(table.toUpperCase()), quoteIdent(embeddingColumn.toUpperCase()), safeModelName
     );
 
     List<String> result = new ArrayList<>();
@@ -761,7 +766,25 @@ public class RagTools {
    * @return JSON string with provider and model fields
    */
   static String buildEmbeddingParams(String modelName) {
-    return String.format("{\"provider\": \"database\", \"model\": \"%s\"}", modelName);
+    String safeModelName = validateModelName(modelName);
+    try {
+      return JSON_MAPPER.writeValueAsString(Map.of(
+              "provider", "database",
+              "model", safeModelName));
+    } catch (Exception e) {
+      throw new IllegalArgumentException("Invalid embedding parameters", e);
+    }
+  }
+
+  /**
+   * Validates model names that are inserted into SQL.
+   */
+  static String validateModelName(String modelName) {
+    String value = modelName == null ? "" : modelName.trim();
+    if (!value.matches(SIMPLE_ORACLE_IDENTIFIER)) {
+      throw new IllegalArgumentException("Invalid modelName");
+    }
+    return value;
   }
 
   /**

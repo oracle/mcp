@@ -64,9 +64,9 @@ public final class ServerConfig {
   }
 
   private static final Set<String> DB_TOOLS = Set.of(
-    "similarity-search", "explain-plan", "read-query", "write-query",
-    "transaction", "table", "db-ping", "db-metrics-range", "vector-store",
-    "vector-model", "embed", "task", "oci-storage"
+      "similarity-search", "explain-plan", "read-query", "write-query",
+      "transaction", "table", "db-ping", "db-metrics-range", "vector-store",
+      "vector-model", "embed", "task", "oci-storage", "list-credentials"
   );
 
   /** Built-in toolsets covering predefined tools. Lowercase keys and members. */
@@ -80,7 +80,7 @@ public final class ServerConfig {
               "read-query", "write-query", "transaction", "table", "db-ping", "db-metrics-range",
               "explain-plan"
       ),
-      "mcp-admin", Set.of("list-tools", "edit-tools")
+      "mcp-admin", Set.of("list-tools", "edit-tools", "list-credentials")
   );
 
 

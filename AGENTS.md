@@ -27,6 +27,18 @@ These instructions apply to the entire repository. More specific instructions in
 - Do not edit generated or local output artifacts such as `htmlcov/`, `.coverage*`, `.ruff_cache/`, `.pytest_cache/`, `__pycache__/`, `dist/`, `src/logs`, or `.venv/`.
 - Keep diffs focused on the requested change; avoid unrelated formatting, import reordering, or refactors.
 
+## Changelog Guidance
+
+- When changing any server under `src/<server-name>/`, check whether that server has a `CHANGELOG.md`; if it does, update it for user-visible or operator-visible changes.
+- Follow Keep a Changelog 1.1.0 principles: write changelog entries for humans, keep the newest release first, group related change types, and use ISO 8601 dates (`YYYY-MM-DD`) when adding dated release sections.
+- Prefer the standard sections `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, and `Security`.
+- Preserve this repository's existing `Breaking Changes` heading for compatibility breaks, and list those entries first within a release section.
+- Use an `## Unreleased` section for work that has not been assigned a release version yet; move entries into `## <version>` or `## <version> - YYYY-MM-DD` when a release is cut.
+- Keep entries concise and outcome-focused instead of copying commit messages. Mention changed tools, transports, authentication requirements, configuration or environment variables, response shapes, validation behavior, and security posture when relevant.
+- Do not add changelog entries for purely internal refactors, formatting-only edits, or test-only changes unless they affect users, operators, packaging, or documented behavior.
+- If multiple `src/` servers are changed, update each changed server's changelog independently when that server has one.
+- Do not create a new changelog unless explicitly requested; maintain existing `src/*/CHANGELOG.md` files.
+
 ## MCP Server Quality Validation
 
 When validating the quality of any MCP server under `src/`:

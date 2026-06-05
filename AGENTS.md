@@ -37,7 +37,7 @@ These instructions apply to the entire repository. More specific instructions in
 - Keep entries concise and outcome-focused instead of copying commit messages. Mention changed tools, transports, authentication requirements, configuration or environment variables, response shapes, validation behavior, and security posture when relevant.
 - Do not add changelog entries for purely internal refactors, formatting-only edits, or test-only changes unless they affect users, operators, packaging, or documented behavior.
 - If multiple `src/` servers are changed, update each changed server's changelog independently when that server has one.
-- Do not create a new changelog unless explicitly requested; maintain existing `src/*/CHANGELOG.md` files.
+- Only create a new changelog if a server doesn't have one when explicitly requested, or when the update introduces breaking changes; maintain existing src/*/CHANGELOG.md files.
 
 ## MCP Server Quality Validation
 

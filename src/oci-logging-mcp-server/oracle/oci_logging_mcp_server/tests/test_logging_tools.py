@@ -12,7 +12,6 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import AccessToken
-from oracle.oci_logging_mcp_server.models import mark_untrusted
 from oracle.oci_logging_mcp_server.server import mcp
 
 
@@ -414,7 +413,7 @@ class TestLoggingTools:
             )
             result = call_tool_result.structured_content
 
-            assert result["results"][0]["data"]["event"] == mark_untrusted("testEvent")
+            assert result["results"][0]["data"]["event"] == "testEvent"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_logging_mcp_server.server.map_search_response")

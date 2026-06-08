@@ -15,13 +15,11 @@ from fastmcp.server.auth.providers.oci import OCIProvider
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.utilities.auth import parse_scopes
 from oracle.oci_identity_mcp_server.models import (
-    AuthToken,
     AvailabilityDomain,
     Compartment,
     RegionSubscription,
     Tenancy,
     User,
-    map_auth_token,
     map_availability_domain,
     map_compartment,
     map_region_subscription,
@@ -234,29 +232,6 @@ def get_current_tenancy() -> Tenancy:
 
     except Exception as e:
         logger.error(f"Error in get_tenancy tool: {str(e)}")
-        raise e
-
-
-@mcp.tool
-def create_auth_token(
-    user_id: str = Field(..., description="The OCID of the user"),
-    description: Optional[str] = Field("", description="The description of the auth token"),
-) -> AuthToken:
-    try:
-        client = get_identity_client()
-
-        create_auth_token_details = oci.identity.models.CreateAuthTokenDetails(description=description)
-
-        response: oci.response.Response = client.create_auth_token(
-            user_id=user_id,
-            create_auth_token_details=create_auth_token_details,
-        )
-        data: oci.identity.models.AuthToken = response.data
-        logger.info("Created auth token")
-        return map_auth_token(data)
-
-    except Exception as e:
-        logger.error(f"Error in create_auth_token tool: {str(e)}")
         raise e
 
 

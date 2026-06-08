@@ -1,8 +1,12 @@
+import inspect
+from contextlib import ExitStack
+from types import SimpleNamespace
 from unittest.mock import MagicMock, create_autospec, mock_open, patch
 
 import oci
 import pytest
 from fastmcp import Client
+import oracle.oci_database_mcp_server.models as models
 import oracle.oci_database_mcp_server.server as server
 from oracle.oci_database_mcp_server.server import mcp
 
@@ -43,6 +47,102 @@ class TestGetDatabaseClient:
         assert isinstance(kwargs["circuit_breaker_strategy"], oci.circuit_breaker.CircuitBreakerStrategy)
         assert callable(kwargs["circuit_breaker_callback"])
         assert result is mock_client.return_value
+
+
+def test_oci_base_model_from_oci(monkeypatch):
+    class MinimalModel(models.OCIBaseModel):
+        value: str | None = None
+
+    monkeypatch.setattr(models.oci.util, "to_dict", lambda _sdk_obj: {"value": "mapped"})
+
+    assert MinimalModel.from_oci(object()).value == "mapped"
+
+
+def test_generated_model_mappers_handle_none_and_sdk_conversion_fallback(monkeypatch):
+    def raising_to_dict(_sdk_obj):
+        raise RuntimeError("conversion failed")
+
+    monkeypatch.setattr(models.oci.util, "to_dict", raising_to_dict)
+
+    for mapper_name, mapper in inspect.getmembers(models, inspect.isfunction):
+        if not mapper_name.startswith("map_"):
+            continue
+
+        assert mapper(None) is None, mapper_name
+        mapped = mapper(SimpleNamespace())
+        assert isinstance(mapped, models.OCIBaseModel), mapper_name
+
+
+def _sample_value(parameter_name):
+    if parameter_name == "region":
+        return "us-phoenix-1"
+    if parameter_name == "limit":
+        return 10
+    if parameter_name == "page":
+        return "page-token"
+    if parameter_name == "sort_order":
+        return "ASC"
+    if parameter_name == "sort_by":
+        return "DISPLAYNAME"
+    if parameter_name in {"is_shared", "is_dedicated", "is_free_tier", "is_dev_tier", "is_refreshable_clone", "is_data_guard_enabled", "is_upgrade_supported", "is_database_software_image_supported"}:
+        return True
+    if parameter_name == "db_servers":
+        return ["db-server-1"]
+    if parameter_name == "excluded_fields":
+        return ["DB_SERVERS"]
+    if parameter_name == "type":
+        return "FULL"
+    if parameter_name.endswith("_details"):
+        return {}
+    return f"sample-{parameter_name}"
+
+
+def test_generated_list_and_get_tools_forward_all_optional_kwargs(monkeypatch):
+    response = SimpleNamespace(data=[SimpleNamespace(id="sample")])
+    mock_client = MagicMock()
+
+    def fake_to_dict(value):
+        if isinstance(value, list):
+            return [{"id": getattr(item, "id", None)} for item in value]
+        return {"id": getattr(value, "id", None)}
+
+    monkeypatch.setattr(server.oci.util, "to_dict", fake_to_dict)
+    monkeypatch.setattr(server, "get_database_client", lambda region=None: mock_client)
+
+    tool_names = sorted(
+        name
+        for name, func in inspect.getmembers(server, inspect.isfunction)
+        if (
+            name.startswith("list_") or name.startswith("get_") or name == "resource_pool_shapes"
+        )
+        and name not in {"get_database_client", "get_public_ip_for_database"}
+    )
+
+    with ExitStack() as stack:
+        for mapper_name, mapper in inspect.getmembers(server, inspect.isfunction):
+            if mapper_name.startswith("map_"):
+                stack.enter_context(
+                    patch.object(
+                        server,
+                        mapper_name,
+                        side_effect=lambda _item, _mapper_name=mapper_name: {"mapped_by": _mapper_name},
+                    )
+                )
+
+        for tool_name in tool_names:
+            client_method = getattr(mock_client, tool_name)
+            client_method.reset_mock()
+            client_method.return_value = response
+            tool = getattr(server, tool_name)
+            kwargs = {
+                parameter_name: _sample_value(parameter_name)
+                for parameter_name in inspect.signature(tool).parameters
+            }
+
+            result = tool(**kwargs)
+
+            assert result is not None, tool_name
+            client_method.assert_called_once()
 
 
 @pytest.mark.asyncio

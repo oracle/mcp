@@ -9,21 +9,6 @@ from typing import Dict, List, Optional
 import oci.cims.models
 from pydantic import BaseModel, Field
 
-UNTRUSTED_DATA_START = "--- BEGIN UNTRUSTED OCI DATA ---"
-UNTRUSTED_DATA_END = "--- END UNTRUSTED OCI DATA ---"
-
-
-def mark_untrusted(value):
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return f"{UNTRUSTED_DATA_START}\n{value}\n{UNTRUSTED_DATA_END}"
-    if isinstance(value, dict):
-        return {key: mark_untrusted(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [mark_untrusted(item) for item in value]
-    return value
-
 # --- OCI Support CIMS Pydantic Models ---
 
 
@@ -368,8 +353,8 @@ def map_context(oci_context) -> Context | None:
         return None
     return Context(
         context_type=getattr(oci_context, "context_type", None),
-        description=mark_untrusted(getattr(oci_context, "description", None)),
-        additional_details=mark_untrusted(getattr(oci_context, "additional_details", None)),
+        description=getattr(oci_context, "description", None),
+        additional_details=getattr(oci_context, "additional_details", None),
     )
 
 
@@ -571,12 +556,12 @@ def map_ticket(oci_ticket) -> Ticket | None:
         ticket_number=get("ticket_number"),
         severity=get("severity"),
         resource_list=resource_list,
-        title=mark_untrusted(get("title")),
-        description=mark_untrusted(get("description")),
+        title=get("title"),
+        description=get("description"),
         time_created=get("time_created"),
         time_updated=get("time_updated"),
         lifecycle_state=get("lifecycle_state"),
-        lifecycle_details=mark_untrusted(get("lifecycle_details")),
+        lifecycle_details=get("lifecycle_details"),
     )
 
 
@@ -604,7 +589,7 @@ def map_incident_summary(oci_incident_summary) -> IncidentSummary | None:
         primary_contact_party_id=get("primary_contact_party_id"),
         primary_contact_party_name=get("primary_contact_party_name"),
         is_write_permitted=get("is_write_permitted"),
-        warn_message=mark_untrusted(get("warn_message")),
+        warn_message=get("warn_message"),
         problem_type=get("problem_type"),
     )
 
@@ -622,7 +607,7 @@ def map_contextual_data(oci_ctx) -> ContextualData | None:
         client_id=get("client_id"),
         schema_name=get("schema_name"),
         schema_version=get("schema_version"),
-        payload=mark_untrusted(get("payload")),
+        payload=get("payload"),
     )
 
 
@@ -718,7 +703,7 @@ def map_create_ticket_details(oci_ticket) -> CreateTicketDetails | None:
             else None
         ),
         title=get("title"),
-        description=mark_untrusted(get("description")),
+        description=get("description"),
         contextual_data=map_contextual_data(get("contextual_data")),
     )
 
@@ -785,7 +770,7 @@ def map_incident_resource_type(oci_resource_type) -> IncidentResourceType | None
         resource_type_key=get("resource_type_key"),
         name=get("name"),
         label=get("label"),
-        description=mark_untrusted(get("description")),
+        description=get("description"),
         is_subscriptions_supported=get("is_subscriptions_supported"),
         service_category_list=(
             [map_service_category(sc) for sc in (get("service_category_list") or [])]

@@ -176,6 +176,57 @@ class TestResourceSearchTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_resource_search_mcp_server.server.get_search_client")
+    async def test_search_resources_by_type_validates_paginated_resource_types(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_search_response = create_autospec(oci.response.Response)
+        mock_search_response.data = oci.resource_search.models.ResourceSummaryCollection(
+            items=[
+                oci.resource_search.models.ResourceSummary(
+                    identifier="db1",
+                    display_name="DB 1",
+                    resource_type="dbsystem",
+                    lifecycle_state="AVAILABLE",
+                )
+            ]
+        )
+        mock_search_response.has_next_page = False
+        mock_search_response.next_page = None
+        mock_client.search_resources.return_value = mock_search_response
+
+        first_type_page = create_autospec(oci.response.Response)
+        first_type_page.data = [oci.resource_search.models.ResourceType(name="instance")]
+        first_type_page.has_next_page = True
+        first_type_page.next_page = "token-2"
+
+        second_type_page = create_autospec(oci.response.Response)
+        second_type_page.data = [oci.resource_search.models.ResourceType(name="dbsystem")]
+        second_type_page.has_next_page = False
+        second_type_page.next_page = None
+
+        mock_client.list_resource_types.side_effect = [first_type_page, second_type_page]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "search_resources_by_type",
+                    {
+                        "tenant_id": TENANT_ID,
+                        "compartment_id": COMPARTMENT_ID,
+                        "resource_type": "dbsystem",
+                    },
+                )
+            ).structured_content["result"]
+
+        assert len(result) == 1
+        assert result[0]["resource_type"] == "dbsystem"
+        assert mock_client.list_resource_types.call_count == 2
+        assert mock_client.list_resource_types.call_args_list[0].kwargs == {}
+        assert mock_client.list_resource_types.call_args_list[1].kwargs == {"page": "token-2"}
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_resource_search_mcp_server.server.get_search_client")
     async def test_list_resource_types(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client

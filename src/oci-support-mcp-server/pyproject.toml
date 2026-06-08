@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-support-mcp-server"
-version = "2.0.0"
+version = "2.0.1"
 description = "OCI Support Service MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -10,7 +10,7 @@ authors = [
     {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
 ]
 dependencies = [
-    "fastmcp==3.2.4",
+    "fastmcp==3.3.1",
     "oci==2.173.1",
     "pydantic==2.12.3",
 ]
@@ -42,3 +42,15 @@ dev = [
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=7.0.0",
 ]
+
+[tool.coverage.run]
+omit = [
+    "**/__init__.py",
+    "**/tests/*",
+    "dist/*",
+    ".venv/*",
+]
+
+[tool.coverage.report]
+precision = 2
+fail_under = 90

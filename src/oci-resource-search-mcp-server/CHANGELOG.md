@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.0.1
+
+### Fixed
+
+- `search_resources_by_type` now validates resource types across all `ListResourceTypes` pages.
+- Returned OCI fields are no longer wrapped in untrusted-data sentinel envelopes, restoring the stable response shapes from before 3.0.0.
+
 ## 3.0.0
 
 ### Breaking Changes

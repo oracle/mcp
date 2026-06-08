@@ -10,21 +10,6 @@ from typing import Dict, List, Literal, Optional
 import oci
 from pydantic import BaseModel, Field
 
-UNTRUSTED_DATA_START = "--- BEGIN UNTRUSTED OCI DATA ---"
-UNTRUSTED_DATA_END = "--- END UNTRUSTED OCI DATA ---"
-
-
-def mark_untrusted(value):
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return f"{UNTRUSTED_DATA_START}\n{value}\n{UNTRUSTED_DATA_END}"
-    if isinstance(value, dict):
-        return {key: mark_untrusted(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [mark_untrusted(item) for item in value]
-    return value
-
 StatisticType = Literal[
     "absent",
     "avg",
@@ -141,12 +126,12 @@ def map_metric(metric_data: oci.monitoring.models.Metric) -> Metric:
     Convert an oci.monitoring.models.Metric to oracle.oci_monitoring_mcp_server.models.Metric.
     """
     return Metric(
-        namespace=mark_untrusted(getattr(metric_data, "namespace", None)),
-        resource_group=mark_untrusted(getattr(metric_data, "resource_group", None)),
+        namespace=getattr(metric_data, "namespace", None),
+        resource_group=getattr(metric_data, "resource_group", None),
         compartment_id=getattr(metric_data, "compartment_id", None),
-        name=mark_untrusted(getattr(metric_data, "name", None)),
-        dimensions=mark_untrusted(getattr(metric_data, "dimensions", None)),
-        metadata=mark_untrusted(getattr(metric_data, "metadata", None)),
+        name=getattr(metric_data, "name", None),
+        dimensions=getattr(metric_data, "dimensions", None),
+        metadata=getattr(metric_data, "metadata", None),
         resolution=getattr(metric_data, "resolution", None),
     )
 
@@ -218,12 +203,12 @@ def map_metric_data(metric_data: oci.monitoring.models.MetricData) -> MetricData
     Convert an oci.monitoring.models.MetricData to oracle.oci_monitoring_mcp_server.models.MetricData.
     """
     return MetricData(
-        namespace=mark_untrusted(getattr(metric_data, "namespace", None)),
-        resource_group=mark_untrusted(getattr(metric_data, "resource_group", None)),
+        namespace=getattr(metric_data, "namespace", None),
+        resource_group=getattr(metric_data, "resource_group", None),
         compartment_id=getattr(metric_data, "compartment_id", None),
-        name=mark_untrusted(getattr(metric_data, "name", None)),
-        dimensions=mark_untrusted(getattr(metric_data, "dimensions", None)),
-        metadata=mark_untrusted(getattr(metric_data, "metadata", None)),
+        name=getattr(metric_data, "name", None),
+        dimensions=getattr(metric_data, "dimensions", None),
+        metadata=getattr(metric_data, "metadata", None),
         resolution=getattr(metric_data, "resolution", None),
         aggregated_datapoints=map_aggregated_datapoints(getattr(metric_data, "aggregated_datapoints", None)),
     )

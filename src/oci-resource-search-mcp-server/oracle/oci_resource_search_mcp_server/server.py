@@ -44,8 +44,23 @@ def _validate_display_name(display_name: str) -> str:
 
 
 def _list_resource_type_names(client) -> set[str]:
-    response = client.list_resource_types()
-    return {resource_type.name.lower() for resource_type in response.data}
+    resource_type_names: set[str] = set()
+    has_next_page = True
+    next_page = None
+
+    while has_next_page:
+        kwargs = {"page": next_page} if next_page else {}
+        response = client.list_resource_types(**kwargs)
+        resource_type_names.update(
+            resource_type.name.lower() for resource_type in response.data
+        )
+
+        has_next_page = getattr(response, "has_next_page", False) is True
+        next_page = getattr(response, "next_page", None) if has_next_page else None
+        if has_next_page and not next_page:
+            break
+
+    return resource_type_names
 
 
 def _validate_resource_type(client, resource_type: str) -> str:

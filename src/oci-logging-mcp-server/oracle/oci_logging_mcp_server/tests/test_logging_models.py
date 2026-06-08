@@ -20,8 +20,6 @@ from oracle.oci_logging_mcp_server.models import (
     SearchResult,
     SearchResultSummary,
     Source,
-    UNTRUSTED_DATA_END,
-    UNTRUSTED_DATA_START,
     _oci_to_dict,
     map_archiving,
     map_configuration,
@@ -212,7 +210,7 @@ class TestLoggingModels:
         assert isinstance(mapped.fields[0], FieldInfo)
         assert mapped.fields[0].field_name == fi.field_name
         assert isinstance(mapped.results[0], SearchResult)
-        assert mapped.results[0].data == {"k": f"{UNTRUSTED_DATA_START}\nv\n{UNTRUSTED_DATA_END}"}
+        assert mapped.results[0].data == {"k": "v"}
         assert isinstance(mapped.summary, SearchResultSummary)
         assert mapped.summary.result_count == summary.result_count
 
@@ -225,7 +223,7 @@ class TestLoggingModels:
         search_result_input = SimpleNamespace(data={"a": 1})
         sr = map_search_result(search_result_input)
         assert isinstance(sr, SearchResult)
-        assert sr.data == search_result_input.data
+        assert sr.data == {"a": 1}
 
         summary_input = SimpleNamespace(result_count=3, field_count=2)
         srs = map_search_result_summary(summary_input)

@@ -77,7 +77,7 @@ test:
 combine-coverage:
 	uv run coverage combine
 	uv run coverage html
-	uv run coverage report --fail-under=69
+	uv run coverage report --fail-under=90
 
 test-publish:
 	@set -e -o pipefail; \

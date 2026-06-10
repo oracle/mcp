@@ -282,7 +282,7 @@ These tools provide a full RAG pipeline: model management, vector store creation
 
 * **`vector-store`**: Create and list vector store tables.
 
-  - `action=create` — create a new table ready for vector search. Every table gets an `ID` primary key and a `CREATED_AT` timestamp automatically. When metadata is enabled (default), a `METADATA` JSON column and a source URI index are also created for deduplication.
+  - `action=create` — create a new table ready for vector search. Every table gets an `ID` primary key and a `CREATED_AT` timestamp automatically. When metadata is enabled (default), a `METADATA` JSON column and two indexes are created: one on `source_uri` for deduplication and one on `task_id` for cancellation cleanup.
   - `action=list` — list all tables in the current schema that have at least one VECTOR column.
 
   **Inputs:**
@@ -346,12 +346,14 @@ These tools provide a full RAG pipeline: model management, vector store creation
   **Metadata written per chunk** (when target table has a METADATA column):
 
   For `action=file`, `files`, `object`, `bucket`:
+  * `task_id` — ID of the embedding task that inserted this chunk (used for cancellation cleanup)
   * `document_id` — UUID shared by all chunks of the same document
   * `source_uri` — file path (`file:///...`) or OCI URL of the source document
   * `chunk_index` — 0-based position of the chunk within the document
   * `total_chunks` — total number of chunks for this document
 
   For `action=table`:
+  * `task_id` — ID of the embedding task that inserted this chunk (used for cancellation cleanup)
   * `source_table` — name of the source table
   * `source_id` — value of the `sourceIdColumn` for the originating row
   * `chunk_index` — 0-based position of the chunk within that row's text
@@ -361,19 +363,29 @@ These tools provide a full RAG pipeline: model management, vector store creation
 
 ---
 
-* **`task`**: Monitor background embedding jobs.
+* **`task`**: Monitor and control background embedding jobs.
 
   - `action=status` — get the current status and per-file results for a specific task.
   - `action=list` — list all tasks submitted since the server started (in-memory only, cleared on restart).
+  - `action=cancel` — request cancellation of a PENDING or RUNNING task.
 
-    Embedding task metadata is retained in memory for up to 72 hours after completion or failure. The server keeps at most 1000 task records; if the task store is full, new embedding submissions are rejected until older completed or failed task records expire.
+    Embedding task metadata is retained in memory for up to 72 hours after completion, failure, or cancellation. The server keeps at most 1000 task records; if the task store is full, new embedding submissions are rejected until older terminal task records expire.
 
   **Inputs:**
 
-  * `action` (string, required) — `status` or `list`
-  * `taskId` (string, required for `status`) — task ID returned by the `embed` tool
+  * `action` (string, required) — `status`, `list`, or `cancel`
+  * `taskId` (string, required for `status` and `cancel`) — task ID returned by the `embed` tool
 
-  **Returns:** `{ taskId, status, table, totalChunksCreated, submittedAt, completedAt, results }` where `status` is one of `PENDING`, `RUNNING`, `COMPLETED`, or `FAILED`. The `results` array contains one entry per file or source table with `status: "success"`, `"skipped"`, or `"error"`.
+  **Returns:** `{ taskId, status, table, totalChunksCreated, submittedAt, completedAt, results }` where `status` is one of `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, or `CANCELLED`. The `results` array contains per-file/source entries and may include cleanup or cancellation entries for cancelled tasks.
+
+  **Cancellation policy:**
+
+  Cancelling a task is best-effort for work that is already running:
+
+  - **Local-file jobs** (`action=file`, `action=files`): the cancel flag is checked between files, and the active insert statement is cancelled when possible. If the target vector store has a `METADATA` column, rows stamped with the task ID are removed before the task is marked `CANCELLED`.
+  - **Single-SQL jobs** (`action=object`, `action=bucket`, `action=table`): JDBC `PreparedStatement.cancel()` asks Oracle to stop the active statement. If the statement is stopped before completion, no rows from that statement are committed. If the statement completes before cancellation takes effect, the task may finish as `COMPLETED`.
+  - **PENDING tasks** (still in the queue) are cancelled before they start — nothing is written to the database.
+  - Calling `cancel` on a task already in a terminal state (`COMPLETED`, `FAILED`, or `CANCELLED`) returns an error.
 
 ---
 

@@ -419,12 +419,12 @@ public class ToolSchemas {
       "properties": {
         "action": {
           "type": "string",
-          "enum": ["status", "list"],
-          "description": "status=Get status of a specific task (needs taskId). list=List all embedding tasks submitted since the server started."
+          "enum": ["status", "list", "cancel"],
+          "description": "status=Get status of a specific task (needs taskId). list=List all embedding tasks submitted since the server started. cancel=Request cancellation of a PENDING or RUNNING task (needs taskId). Cleanup of committed local-file rows requires task metadata."
         },
         "taskId": {
           "type": "string",
-          "description": "Task ID returned by the embed tool. Required for action=status." }
+          "description": "Task ID returned by the embed tool. Required for action=status and action=cancel." }
       },
       "required": ["action"]
     }""";

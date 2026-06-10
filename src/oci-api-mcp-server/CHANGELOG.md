@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- OCI command parsing now preserves quoted arguments when retrieving command help or running OCI CLI commands. ([#100](https://github.com/oracle/mcp/issues/100))
+
 ## 2.0.0
 
 ### Breaking Changes

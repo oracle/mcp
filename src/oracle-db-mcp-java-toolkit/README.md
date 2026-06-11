@@ -168,9 +168,9 @@ The server provides four built-in toolsets that can be enabled via `-Dtools`:
   <tbody>
     <tr>
       <td><code>mcp-admin</code></td>
-      <td>Server discovery and runtime configuration</td>
+      <td>Protected administrative tools</td>
       <td>
-        list-tools, edit-tools, list-credentials
+        edit-tools, list-credentials
       </td>
     </tr>
     <tr>
@@ -198,7 +198,7 @@ The server provides four built-in toolsets that can be enabled via `-Dtools`:
   </tbody>
 </table>
 
-_Note: Each tool belongs to exactly one built-in toolset. Enabling a toolset enables all tools listed for that toolset._
+_Note: `list-tools` is a standalone discovery tool. Enabling a toolset enables all tools listed for that toolset._
 
 **Common Configurations:**
 - `-Dtools=mcp-admin` - Admin and runtime configuration tools
@@ -206,7 +206,7 @@ _Note: Each tool belongs to exactly one built-in toolset. Enabling a toolset ena
 - `-Dtools=database-operator` - Database operations and SQL execution
 - `-Dtools=rag` – Vector store management, document embedding, and semantic similarity search
 - `-Dtools=mcp-admin,log-analyzer` - Admin + log analysis
-- `-Dtools=*` - All tools (default if omitted)
+- `-Dtools=*` - All non-protected tools (default if omitted). Protected admin tools require `-Dtools=mcp-admin` or the individual tool name.
 
 ### 3.1. Database Operations
 These tools provide direct SQL execution capabilities:
@@ -438,9 +438,10 @@ These tools provide a full RAG pipeline: model management, vector store creation
 ### 3.9. Admin and Runtime Configuration Tools
 
 These tools help you discover what's enabled and manage YAML-defined tools at runtime.
-They are part of the `mcp-admin` toolset (enable via `-Dtools=mcp-admin` or include individual tool names).
+`list-tools` is a standalone discovery tool. Protected administrative tools are part of the `mcp-admin` toolset (enable via `-Dtools=mcp-admin` or include individual tool names).
+The `mcp-admin` toolset is not included by default, `-Dtools=*`, or `-Dtools=all`; enable it explicitly with `-Dtools=mcp-admin`.
 
-_Note: The `mcp-admin` toolset is focused on server discovery, runtime configuration, and administrative inventory._
+_Note: The `mcp-admin` toolset is focused on protected runtime configuration and administrative inventory._
 
 #### MCP Admin Tools:
 
@@ -451,6 +452,8 @@ _Note: The `mcp-admin` toolset is focused on server discovery, runtime configura
 - `list-credentials`: List DBMS_CLOUD credentials available in the current schema.
   - Inputs: none
   - Returns: `{ totalCredentials, credentials: [{ credentialName, username, enabled }] }`
+  - Requirements and behavior:
+    - Must be explicitly enabled with `-Dtools=list-credentials` or `-Dtools=mcp-admin`.
 
 - `edit-tools`: Create, update, or remove a YAML-defined tool. Changes are auto-reloaded by the server.
   - Inputs (subset; see schema in code):
@@ -462,6 +465,7 @@ _Note: The `mcp-admin` toolset is focused on server discovery, runtime configura
     - `statement` (string, optional): SQL (SELECT or DML)
     - `parameters` (array, optional): Items of `{ name, type, description, required }`
   - Requirements and behavior:
+    - Must be explicitly enabled with `-Dtools=edit-tools` or `-Dtools=mcp-admin`.
     - Requires `-DconfigFile` to be set to a writable YAML file; otherwise the tool will return an error.
     - On upsert/remove, the YAML is written and the server hot-reloads the configuration shortly after.
 
@@ -733,13 +737,13 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
         Comma-separated allow-list of tool or toolset names to enable (case-insensitive).<br/>
         You can pass individual tools (e.g. <code>jdbc-analyzer</code>, <code>read-query</code>) or any of the following built-in toolsets:
         <ul>
-          <li><code>mcp-admin</code> — server discovery, runtime configuration, and administrative inventory tools (list-tools, edit-tools, list-credentials)</li>
+          <li><code>mcp-admin</code> — protected runtime configuration and administrative inventory tools (edit-tools, list-credentials)</li>
           <li><code>database-operator</code> — database operations, transactions, monitoring, and execution plans (read-query, write-query, table, transaction, db-ping, db-metrics-range, explain-plan).</li>
           <li><code>log-analyzer</code> — all JDBC log and RDBMS/SQLNet analysis tools (jdbc-analyzer and rdbms-analyzer)</li>
           <li><code>rag</code> — vector store management, document embedding, and semantic similarity search (vector-model, vector-store, embed, task, oci-storage, similarity-search)</li>
         </ul>
         You can also define your own YAML <code>toolsets:</code> and reference them here.  
-        Use <code>*</code> or <code>all</code> to enable everything. If omitted, all tools are enabled by default.
+        Use <code>*</code> or <code>all</code> to enable all non-protected tools. If omitted, all non-protected tools are enabled by default.
       </td>
       <td><code>mcp-admin, log-analyzer</code> or <code>reporting</code></td>
     </tr>

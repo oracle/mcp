@@ -80,8 +80,10 @@ public final class ServerConfig {
               "read-query", "write-query", "transaction", "table", "db-ping", "db-metrics-range",
               "explain-plan"
       ),
-      "mcp-admin", Set.of("list-tools", "edit-tools", "list-credentials")
+      "mcp-admin", Set.of("edit-tools", "list-credentials")
   );
+
+  private static final Set<String> EXPLICIT_ADMIN_TOOLS = Set.of("edit-tools", "list-credentials");
 
 
   /**
@@ -345,6 +347,10 @@ public final class ServerConfig {
       return false;
     }
 
+    if (EXPLICIT_ADMIN_TOOLS.contains(key) && !isAdminToolExplicitlyRequested(key)) {
+      return false;
+    }
+
     if (config == null || config.toolsFilter == null) {
       return true;
     }
@@ -355,6 +361,14 @@ public final class ServerConfig {
     }
 
     return config.toolsFilter.contains(key);
+  }
+
+  private static boolean isAdminToolExplicitlyRequested(String toolName) {
+    Set<String> rawTools = parseToolsProp(LoadedConstants.TOOLS);
+    if (rawTools == null) {
+      return false;
+    }
+    return rawTools.contains(toolName) || rawTools.contains("mcp-admin");
   }
 
   private static boolean isMemberOfDisabledToolset(ConfigRoot configRoot, String toolName) {

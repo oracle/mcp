@@ -16,6 +16,7 @@ import java.util.Map;
 public class ConfigRoot {
   public Map<String, DataSourceConfig> dataSources;
   public Map<String, ToolConfig> tools;
+  public AdminConfig admin;
   /**
    * Optional named toolsets allowing users to group custom tools.
    *

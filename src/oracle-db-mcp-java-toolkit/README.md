@@ -472,7 +472,21 @@ _Note: The `mcp-admin` toolset is focused on protected runtime configuration and
     - When HTTP authentication is enabled, requires OAuth scope `mcp:tools:write` or `mcp:admin`.
     - To allow any authenticated caller to use `edit-tools` without scope enforcement, set `-DeditTools.requireScope=false`.
     - OAuth scope lookup defaults to the `scope` claim in the introspection response. If your authorization server uses a different claim, configure its dot-separated path with `-Doauth.scopeClaimPath=<claim.path>`.
+    - Tool names must be safe and cannot collide with built-in tools or toolsets.
+    - For `edit-tools` changes, `dataSource` is required, must exist under `dataSources:`, and must be in `admin.editTools.allowedDataSources` when that allowlist is configured.
+    - `edit-tools` allows `SELECT` statements by default; additional statement types must be allowed by `admin.editTools.allowedStatementTypes`.
+    - Parameters must use supported types and match SQL bind placeholders exactly.
     - On upsert/remove, the YAML is written and the server hot-reloads the configuration shortly after.
+
+  Optional policy for changes made through `edit-tools`:
+  ```yaml
+  admin:
+    editTools:
+      enabled: true
+      allowedDataSources: [reporting-db]
+      allowedStatementTypes: [SELECT]
+  ```
+  This policy applies only to YAML changes made through `edit-tools`; it is not an allowlist for hand-edited YAML files.
 
   Example (upsert a tool):
   ```jsonc

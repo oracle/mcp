@@ -12,6 +12,7 @@ import com.oracle.database.mcptoolkit.LoadedConstants;
 import com.oracle.database.mcptoolkit.OracleDatabaseMCPToolkit;
 import com.oracle.database.mcptoolkit.ServerConfig;
 import com.oracle.database.mcptoolkit.Utils;
+import com.oracle.database.mcptoolkit.config.ToolConfig;
 import com.oracle.database.mcptoolkit.oauth.AuthContext;
 import com.oracle.database.mcptoolkit.oauth.OAuth2Configuration;
 import io.modelcontextprotocol.server.McpServerFeatures;
@@ -294,6 +295,14 @@ public class McpAdminTools {
                     .build();
           }
 
+          CustomToolPolicy.ValidationResult nameValidation = CustomToolPolicy.validateToolName(name);
+          if (!nameValidation.valid()) {
+            return McpSchema.CallToolResult.builder()
+                .addTextContent(nameValidation.message())
+                .isError(true)
+                .build();
+          }
+
           Path path = Paths.get(cfgPath);
           Yaml yaml = new Yaml();
 
@@ -376,6 +385,17 @@ public class McpAdminTools {
               }
             }
             t.put("parameters", params);
+          }
+
+          ServerConfig currentConfig = OracleDatabaseMCPToolkit.getConfig();
+          ToolConfig candidate = new ObjectMapper().convertValue(t, ToolConfig.class);
+          candidate.name = name;
+          CustomToolPolicy.ValidationResult validation = CustomToolPolicy.validateForEditTools(name, candidate, currentConfig);
+          if (!validation.valid()) {
+            return McpSchema.CallToolResult.builder()
+                .addTextContent(validation.message())
+                .isError(true)
+                .build();
           }
 
           tools.put(name, t);

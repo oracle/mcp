@@ -15,6 +15,7 @@ import io.modelcontextprotocol.spec.McpSchema;
 import java.nio.file.Paths;
 import java.sql.*;
 import java.util.*;
+import java.util.function.Consumer;
 
 import static com.oracle.database.mcptoolkit.Utils.*;
 import static com.oracle.database.mcptoolkit.tools.ToolSchemas.*;
@@ -29,7 +30,7 @@ import static com.oracle.database.mcptoolkit.tools.ToolSchemas.*;
  *   <li><strong>vector-model</strong>: List or drop ONNX embedding models (action=list, drop).</li>
  *   <li><strong>embed</strong>: Embed documents from local files, Oracle tables, or OCI Object Storage
  *       (action=file, action=files, table, object, bucket). All actions are asynchronous and return a taskId.</li>
- *   <li><strong>task</strong>: Track background embedding tasks (action=status, list).</li>
+ *   <li><strong>task</strong>: Track background embedding tasks (action=status, list, cancel).</li>
  * </ul>
  */
 public class RagTools {
@@ -448,7 +449,7 @@ public class RagTools {
       .tool(McpSchema.Tool.builder()
          .name("task")
          .title("Task")
-         .description("Track background embedding tasks. action=status (needs taskId), list (no args).")
+         .description("Track background embedding tasks. action=status (needs taskId), list (no args), cancel (needs taskId).")
          .inputSchema(TASK)
          .build())
       .callHandler((exchange, callReq) -> {
@@ -481,8 +482,18 @@ public class RagTools {
                     .addTextContent(new JsonMapper().writeValueAsString(result))
                     .build();
           });
+          case "cancel" -> tryCall(() -> {
+            String taskId = String.valueOf(callReq.arguments().get("taskId"));
+            EmbeddingTaskManager.getInstance().cancelTask(taskId);
+            EmbeddingTaskManager.EmbeddingTask task = EmbeddingTaskManager.getInstance().getTask(taskId);
+            Map<String, Object> result = EmbeddingTaskManager.taskToMap(task);
+            return McpSchema.CallToolResult.builder()
+                    .structuredContent(result)
+                    .addTextContent(new JsonMapper().writeValueAsString(result))
+                    .build();
+          });
           default -> new McpSchema.CallToolResult(
-                  "Unknown action '" + action + "'. Must be one of: status, list", true);
+                  "Unknown action '" + action + "'. Must be one of: status, list, cancel", true);
         };
       })
     .build();
@@ -654,6 +665,12 @@ public class RagTools {
                 quoteIdent(tableName.toUpperCase())
         );
         st.executeUpdate(indexSql);
+        String taskIndexSql = String.format(
+                "CREATE INDEX %s ON %s (JSON_VALUE(METADATA, '$.task_id'))",
+                quoteIdent((tableName + "_TASK_IDX").toUpperCase()),
+                quoteIdent(tableName.toUpperCase())
+        );
+        st.executeUpdate(taskIndexSql);
       }
     }
   }
@@ -669,13 +686,16 @@ public class RagTools {
    * @param fileBytes raw file content
    * @param fullPath file path (used for deduplication)
    * @param chunkParams how to split the document
+   * @param taskId background task ID to write into METADATA
+   * @param activeStatementConsumer callback used to expose the active statement for cancellation
    * @return number of chunks inserted, or 0 if no text could be extracted from the file
    * @throws SQLException if insertion fails
    */
   static int insertFileWithNativeChunking(
           Connection c, String table, String textColumn, String embeddingColumn,
           String modelName, byte[] fileBytes, String fullPath,
-          String chunkParams) throws SQLException {
+          String chunkParams, String taskId,
+          Consumer<PreparedStatement> activeStatementConsumer) throws SQLException {
 
     Blob fileBlob = c.createBlob();
     fileBlob.setBytes(1, fileBytes);
@@ -697,13 +717,19 @@ public class RagTools {
       String sourceUri  = Paths.get(fullPath).toUri().toString(); // file:///path/to/file
 
       try (PreparedStatement ps = c.prepareStatement(sql)) {
-        ps.setString(1, documentId);
-        ps.setString(2, sourceUri);
-        ps.setBlob(3, fileBlob);
-        ps.setString(4, chunkParams);
-        ps.setString(5, embeddingParams);
-        ps.setString(6, sourceUri);
-        return ps.executeUpdate();
+        try {
+          activeStatementConsumer.accept(ps);
+          ps.setString(1, taskId);
+          ps.setString(2, documentId);
+          ps.setString(3, sourceUri);
+          ps.setBlob(4, fileBlob);
+          ps.setString(5, chunkParams);
+          ps.setString(6, embeddingParams);
+          ps.setString(7, sourceUri);
+          return ps.executeUpdate();
+        } finally {
+          activeStatementConsumer.accept(null);
+        }
       }
 
     } else {
@@ -715,10 +741,15 @@ public class RagTools {
       );
 
       try (PreparedStatement ps = c.prepareStatement(sql)) {
-        ps.setBlob(1, fileBlob);
-        ps.setString(2, chunkParams);
-        ps.setString(3, embeddingParams);
-        return ps.executeUpdate();
+        try {
+          activeStatementConsumer.accept(ps);
+          ps.setBlob(1, fileBlob);
+          ps.setString(2, chunkParams);
+          ps.setString(3, embeddingParams);
+          return ps.executeUpdate();
+        } finally {
+          activeStatementConsumer.accept(null);
+        }
       }
     }
   }

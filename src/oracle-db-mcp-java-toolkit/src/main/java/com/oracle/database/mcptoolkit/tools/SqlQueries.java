@@ -75,6 +75,17 @@ final class SqlQueries {
   """;
 
   /**
+   * Deletes all rows inserted by a specific embedding task, identified by task_id in METADATA.
+   * Used as a compensating DELETE when a cancelled task needs metadata-based cleanup.
+   * <p>
+   * Format args: table
+   * Bind params: taskId
+   */
+  public static final String DELETE_TASK_ROWS_QUERY = """
+    DELETE FROM %s WHERE JSON_VALUE(METADATA, '$.task_id') = ?
+  """;
+
+  /**
    * Check whether a file's source_uri already exists in a vector store's METADATA column.
    * <p>
    * Bind params: table (via format), sourceUri
@@ -107,9 +118,10 @@ final class SqlQueries {
       SYS_GUID(),
       SYSTIMESTAMP,
       JSON_OBJECT(
-        'document_id' VALUE ?,
-        'source_uri'  VALUE ?,
-        'chunk_index' VALUE (ROW_NUMBER() OVER (ORDER BY ROWNUM) - 1),
+        'task_id'      VALUE ?,
+        'document_id'  VALUE ?,
+        'source_uri'   VALUE ?,
+        'chunk_index'  VALUE (ROW_NUMBER() OVER (ORDER BY ROWNUM) - 1),
         'total_chunks' VALUE COUNT(*) OVER ()
       ),
       jt.EMBED_DATA,
@@ -173,7 +185,7 @@ final class SqlQueries {
    * with NOT EXISTS deduplication on source_uri.
    * <p>
    * Format args: table, textColumn, embeddingColumn, table (dedup check)
-   * Bind params: documentId, sourceUri, credentialName, objectUri, chunkParams, embeddingParams, sourceUri (dedup)
+   * Bind params: taskId, documentId, sourceUri, credentialName, objectUri, chunkParams, embeddingParams, sourceUri (dedup)
    */
   public static final String INSERT_FROM_OCI_OBJECT_QUERY = """
     INSERT INTO %s (ID, CREATED_AT, METADATA, %s, %s)
@@ -181,9 +193,10 @@ final class SqlQueries {
       SYS_GUID(),
       SYSTIMESTAMP,
       JSON_OBJECT(
-        'document_id' VALUE ?,
-        'source_uri'  VALUE ?,
-        'chunk_index' VALUE (ROW_NUMBER() OVER (ORDER BY ROWNUM) - 1),
+        'task_id'      VALUE ?,
+        'document_id'  VALUE ?,
+        'source_uri'   VALUE ?,
+        'chunk_index'  VALUE (ROW_NUMBER() OVER (ORDER BY ROWNUM) - 1),
         'total_chunks' VALUE COUNT(*) OVER ()
       ),
       jt.EMBED_DATA,
@@ -261,7 +274,7 @@ final class SqlQueries {
    * each file directly inside the DB.
    * <p>
    * Format args : table, textColumn, embeddingColumn, extensionCondition, table (dedup)
-   * Bind params : bucketUri, credentialName, bucketUri, prefix ('' = no prefix filter),
+   * Bind params : taskId, bucketUri, credentialName, bucketUri, prefix ('' = no prefix filter),
    *               maxFileBytes, extension patterns, maxObjects, credentialName, bucketUri,
    *               chunkParams, embeddingParams, bucketUri
    */
@@ -271,8 +284,9 @@ final class SqlQueries {
       SYS_GUID(),
       SYSTIMESTAMP,
       JSON_OBJECT(
-        'document_id' VALUE SYS_GUID(),
-        'source_uri'  VALUE (? || lst.object_name),
+        'task_id'      VALUE ?,
+        'document_id'  VALUE SYS_GUID(),
+        'source_uri'   VALUE (? || lst.object_name),
         'chunk_index' VALUE (ROW_NUMBER() OVER (PARTITION BY lst.object_name ORDER BY ROWNUM) - 1),
         'total_chunks' VALUE COUNT(*) OVER (PARTITION BY lst.object_name)
       ),
@@ -360,7 +374,7 @@ final class SqlQueries {
    * Format args (12): targetTable, textCol, embeddingCol, metadataCol,
    *                   sourceIdCol, sourceIdCol, sourceTable, sourceTextCol,
    *                   targetTable, metadataCol, sourceIdCol, metadataCol
-   * Bind params  (4): sourceTable, chunkParams, embedParams, sourceTable (dedup)
+   * Bind params  (5): taskId, sourceTable, chunkParams, embedParams, sourceTable (dedup)
    */
   public static final String INSERT_EMBEDDINGS_FROM_TABLE = """
     INSERT INTO %s (id, created_at, %s, %s, %s)
@@ -370,6 +384,7 @@ final class SqlQueries {
         JSON_VALUE(t.COLUMN_VALUE, '$.embed_data' RETURNING CLOB),
         TO_VECTOR(JSON_VALUE(t.COLUMN_VALUE, '$.embed_vector' RETURNING CLOB)),
         JSON_OBJECT(
+            KEY 'task_id'       VALUE ?,
             KEY 'source_table'  VALUE ?,
             KEY 'source_id'     VALUE src.%s,
             KEY 'chunk_index'   VALUE (ROW_NUMBER() OVER (PARTITION BY src.%s ORDER BY ROWNUM) - 1),

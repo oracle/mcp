@@ -31,6 +31,7 @@ import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -80,7 +81,7 @@ public class EmbeddingTaskManager {
    */
   public static class EmbeddingTask {
     public final String  taskId;
-    public volatile String  status; // PENDING | RUNNING | COMPLETED | FAILED
+    public volatile String  status; // PENDING | RUNNING | COMPLETED | FAILED | CANCELLED
     public final String  table;
     public final String  credentialName;
     public volatile int  totalChunksCreated  = 0;
@@ -88,6 +89,9 @@ public class EmbeddingTaskManager {
     public volatile String  errorMessage;
     public final Instant submittedAt = Instant.now();
     public volatile Instant completedAt;
+    volatile Future<?> future;
+    volatile boolean cancelRequested = false;
+    volatile PreparedStatement activeStatement;
 
     EmbeddingTask(String taskId, String table, String credentialName) {
       this.taskId         = taskId;
@@ -229,7 +233,7 @@ public class EmbeddingTaskManager {
 
     tasks.put(task.taskId, task);
     try {
-      executor.submit(work);
+      task.future = executor.submit(work);
     } catch (RejectedExecutionException e) {
       tasks.remove(task.taskId);
       throw new IllegalStateException("Embedding task queue is full; try again later", e);
@@ -237,7 +241,7 @@ public class EmbeddingTaskManager {
   }
 
   /**
-   * Removes completed or failed task records that are older than the retention window.
+   * Removes terminal task records that are older than the retention window.
    */
   private void cleanupTasks() {
     Instant expiresBefore = Instant.now().minus(COMPLETED_TASK_TTL);
@@ -245,7 +249,9 @@ public class EmbeddingTaskManager {
       EmbeddingTask task = entry.getValue();
       return task.completedAt != null
               && task.completedAt.isBefore(expiresBefore)
-              && ("COMPLETED".equals(task.status) || "FAILED".equals(task.status));
+              && ("COMPLETED".equals(task.status)
+              || "FAILED".equals(task.status)
+              || "CANCELLED".equals(task.status));
     });
   }
 
@@ -254,6 +260,61 @@ public class EmbeddingTaskManager {
    */
   public Collection<EmbeddingTask> getAllTasks() {
     return tasks.values();
+  }
+
+  /**
+   * Requests cancellation of a PENDING or RUNNING embedding task.
+   * <p>
+   * For SQL that is currently executing, calls {@code PreparedStatement.cancel()}.
+   * <p>
+   * Local-file tasks also use a cooperative flag checked between files. Rows inserted before
+   * cancellation are cleaned up only when the target vector store has a METADATA column containing
+   * the task ID.
+   * <p>
+   * Cancellation is best-effort for work already running in the database.
+   *
+   * @param taskId the task to cancel
+   * @throws IllegalArgumentException if the task is not found
+   * @throws IllegalStateException    if the task is already in a terminal state
+   */
+  public void cancelTask(String taskId) {
+    EmbeddingTask task = tasks.get(taskId);
+    if (task == null) {
+      throw new IllegalArgumentException("Task not found: " + taskId);
+    }
+    String currentStatus = task.status;
+    if ("COMPLETED".equals(currentStatus) || "FAILED".equals(currentStatus) || "CANCELLED".equals(currentStatus)) {
+      throw new IllegalStateException("Task already in terminal state: " + currentStatus);
+    }
+
+    task.cancelRequested = true;
+
+    // For queued tasks: cancel before they start
+    Future<?> f = task.future;
+    if (f != null && f.cancel(false) && "PENDING".equals(task.status)) {
+      task.status      = "CANCELLED";
+      task.completedAt = Instant.now();
+    }
+
+    // For RUNNING tasks: ask JDBC/Oracle to cancel the active SQL statement.
+    PreparedStatement ps = task.activeStatement;
+    if (ps != null) {
+      try { ps.cancel(); } catch (Exception ignored) {}
+    }
+  }
+
+  /**
+   * Deletes all rows stamped with the given task ID from the vector store METADATA.
+   * Called as a compensating DELETE when a local-file task is cancelled mid-loop.
+   *
+   * @return number of rows deleted
+   */
+  private int deleteTaskRows(Connection c, String table, String taskId) throws SQLException {
+    String sql = String.format(SqlQueries.DELETE_TASK_ROWS_QUERY, quoteIdent(table));
+    try (PreparedStatement ps = c.prepareStatement(sql)) {
+      ps.setString(1, taskId);
+      return ps.executeUpdate();
+    }
   }
 
   /**
@@ -289,6 +350,11 @@ public class EmbeddingTaskManager {
           String textColumn, String embeddingColumn,
           String modelName, String chunkParams) {
 
+    if (task.cancelRequested) {
+      task.status      = "CANCELLED";
+      task.completedAt = Instant.now();
+      return;
+    }
     task.status = "RUNNING";
 
     try (Connection c = openConnection(config, null)) {
@@ -306,13 +372,15 @@ public class EmbeddingTaskManager {
                 quoteIdent(table)
         );
         try (PreparedStatement ps = c.prepareStatement(sql)) {
-          ps.setString(1, UUID.randomUUID().toString()); // document_id
-          ps.setString(2, objectUri);                    // source_uri in metadata
-          ps.setString(3, credentialName);               // GET_OBJECT credential (null = public)
-          ps.setString(4, objectUri);                    // GET_OBJECT object uri
-          ps.setString(5, chunkParams);
-          ps.setString(6, embeddingParams);
-          ps.setString(7, objectUri);                    // NOT EXISTS dedup check
+          ps.setString(1, task.taskId);                  // task_id
+          ps.setString(2, UUID.randomUUID().toString()); // document_id
+          ps.setString(3, objectUri);                    // source_uri in metadata
+          ps.setString(4, credentialName);               // GET_OBJECT credential (null = public)
+          ps.setString(5, objectUri);                    // GET_OBJECT object uri
+          ps.setString(6, chunkParams);
+          ps.setString(7, embeddingParams);
+          ps.setString(8, objectUri);                    // NOT EXISTS dedup check
+          task.activeStatement = ps;
           chunks = ps.executeUpdate();
         }
       } else {
@@ -327,9 +395,11 @@ public class EmbeddingTaskManager {
           ps.setString(2, objectUri);
           ps.setString(3, chunkParams);
           ps.setString(4, embeddingParams);
+          task.activeStatement = ps;
           chunks = ps.executeUpdate();
         }
       }
+      task.activeStatement = null;
 
       task.totalChunksCreated = chunks;
       if (chunks == 0) {
@@ -347,9 +417,14 @@ public class EmbeddingTaskManager {
       task.completedAt = Instant.now();
 
     } catch (Exception e) {
-      task.errorMessage = errorMessage(e);
-      task.status       = "FAILED";
-      task.completedAt  = Instant.now();
+      task.activeStatement = null;
+      if (task.cancelRequested) {
+        task.status = "CANCELLED";
+      } else {
+        task.errorMessage = errorMessage(e);
+        task.status       = "FAILED";
+      }
+      task.completedAt = Instant.now();
     }
   }
 
@@ -365,6 +440,11 @@ public class EmbeddingTaskManager {
           String textColumn, String embeddingColumn,
           String modelName, String chunkParams) {
 
+    if (task.cancelRequested) {
+      task.status      = "CANCELLED";
+      task.completedAt = Instant.now();
+      return;
+    }
     task.status = "RUNNING";
 
     String effectivePrefix   = (prefix == null) ? "" : prefix;
@@ -387,18 +467,20 @@ public class EmbeddingTaskManager {
                 quoteIdent(table)
         );
         try (PreparedStatement ps = c.prepareStatement(sql)) {
-          ps.setString(1, bucketUri);        // source_uri prefix in metadata
-          ps.setString(2, credentialName);   // LIST_OBJECTS credential (null = public)
-          ps.setString(3, bucketUri);        // LIST_OBJECTS bucket uri
-          ps.setString(4, effectivePrefix);  // LIKE prefix filter
-          ps.setLong(5, maxFileBytes);       // LIST_OBJECTS bytes filter
-          int nextIndex = bindExtensionPatterns(ps, 6, extensionFilter.patterns());
+          ps.setString(1, task.taskId);      // task_id
+          ps.setString(2, bucketUri);        // source_uri prefix in metadata
+          ps.setString(3, credentialName);   // LIST_OBJECTS credential (null = public)
+          ps.setString(4, bucketUri);        // LIST_OBJECTS bucket uri
+          ps.setString(5, effectivePrefix);  // LIKE prefix filter
+          ps.setLong(6, maxFileBytes);       // LIST_OBJECTS bytes filter
+          int nextIndex = bindExtensionPatterns(ps, 7, extensionFilter.patterns());
           ps.setInt(nextIndex++, maxObjects);
           ps.setString(nextIndex++, credentialName); // GET_OBJECT credential (null = public)
           ps.setString(nextIndex++, bucketUri);      // GET_OBJECT base uri
           ps.setString(nextIndex++, chunkParams);
           ps.setString(nextIndex++, embeddingParams);
           ps.setString(nextIndex, bucketUri);        // NOT EXISTS dedup base uri
+          task.activeStatement = ps;
           inserted = ps.executeUpdate();
         }
       } else {
@@ -420,18 +502,25 @@ public class EmbeddingTaskManager {
           ps.setString(nextIndex++, bucketUri);      // GET_OBJECT base uri
           ps.setString(nextIndex++, chunkParams);
           ps.setString(nextIndex, embeddingParams);
+          task.activeStatement = ps;
           inserted = ps.executeUpdate();
         }
       }
+      task.activeStatement = null;
 
       task.totalChunksCreated = inserted;
       task.status             = "COMPLETED";
       task.completedAt        = Instant.now();
 
     } catch (Exception e) {
-      task.errorMessage = errorMessage(e);
-      task.status       = "FAILED";
-      task.completedAt  = Instant.now();
+      task.activeStatement = null;
+      if (task.cancelRequested) {
+        task.status = "CANCELLED";
+      } else {
+        task.errorMessage = errorMessage(e);
+        task.status       = "FAILED";
+      }
+      task.completedAt = Instant.now();
     }
   }
 
@@ -446,6 +535,11 @@ public class EmbeddingTaskManager {
           String textColumn, String embeddingColumn,
           String modelName, String chunkParams) {
 
+    if (task.cancelRequested) {
+      task.status      = "CANCELLED";
+      task.completedAt = Instant.now();
+      return;
+    }
     task.status = "RUNNING";
 
     try {
@@ -456,6 +550,7 @@ public class EmbeddingTaskManager {
         boolean withMetadata = RagTools.hasMetadataColumn(c, table);
         int totalChunks = 0;
         for (String filePath : filePaths) {
+          if (task.cancelRequested) break;
           try {
             Path path = validateLocalIngestFile(filePath, ingestRoot, maxFileBytes);
             byte[] fileBytes = Files.readAllBytes(path);
@@ -473,7 +568,8 @@ public class EmbeddingTaskManager {
             }
 
             int chunks = RagTools.insertFileWithNativeChunking(
-                    c, table, textColumn, embeddingColumn, modelName, fileBytes, fullPath, chunkParams);
+                    c, table, textColumn, embeddingColumn, modelName, fileBytes, fullPath, chunkParams,
+                    task.taskId, ps -> task.activeStatement = ps);
             if (chunks == 0) {
               task.results.add(Map.of(
                       "file",   displayName,
@@ -487,21 +583,61 @@ public class EmbeddingTaskManager {
                       "chunksCreated", chunks));
             }
           } catch (Exception e) {
+            if (task.cancelRequested) {
+              task.results.add(Map.of(
+                      "file",   displayFileName(filePath),
+                      "status", "cancelled"));
+              break;
+            }
             task.results.add(Map.of(
                     "file",   displayFileName(filePath),
                     "status", "error",
                     "error",  errorMessage(e)));
           }
         }
-        task.totalChunksCreated = totalChunks;
-        task.status             = "COMPLETED";
-        task.completedAt        = Instant.now();
+
+        if (task.cancelRequested) {
+          if (withMetadata) {
+            try {
+              int deletedRows = deleteTaskRows(c, table, task.taskId);
+              task.results.add(Map.of(
+                      "status",             "cleanup",
+                      "rowsDeletedByTaskId", deletedRows));
+              task.totalChunksCreated = 0;
+              task.status             = "CANCELLED";
+            } catch (Exception cleanupError) {
+              task.totalChunksCreated = totalChunks;
+              task.errorMessage       = "Cancellation requested, but cleanup failed";
+              task.results.add(Map.of(
+                      "status", "cleanup_failed",
+                      "error",  errorMessage(cleanupError)));
+              task.status             = "FAILED";
+            }
+          } else {
+            task.totalChunksCreated = totalChunks;
+            if (totalChunks > 0) {
+              task.errorMessage = "Cancellation requested, but target vector store has no METADATA column; inserted rows could not be cleaned up.";
+              task.results.add(Map.of(
+                      "status",        "cleanup_unavailable",
+                      "chunksCreated", totalChunks));
+            }
+            task.status = "CANCELLED";
+          }
+        } else {
+          task.totalChunksCreated = totalChunks;
+          task.status             = "COMPLETED";
+        }
+        task.completedAt = Instant.now();
       }
 
     } catch (Exception e) {
-      task.errorMessage = errorMessage(e);
-      task.status       = "FAILED";
-      task.completedAt  = Instant.now();
+      if (task.cancelRequested) {
+        task.status = "CANCELLED";
+      } else {
+        task.errorMessage = errorMessage(e);
+        task.status       = "FAILED";
+      }
+      task.completedAt = Instant.now();
     }
   }
 
@@ -606,6 +742,11 @@ public class EmbeddingTaskManager {
           String targetTable, String textCol, String embeddingCol, String metadataCol,
           String modelName, String chunkParams) {
 
+    if (task.cancelRequested) {
+      task.status      = "CANCELLED";
+      task.completedAt = Instant.now();
+      return;
+    }
     task.status = "RUNNING";
     String embedParams = RagTools.buildEmbeddingParams(modelName);
 
@@ -626,15 +767,18 @@ public class EmbeddingTaskManager {
 
       try (PreparedStatement stmt = conn.prepareStatement(sql)) {
         if (withMetadata) {
-          stmt.setString(1, sourceTable);   // JSON_OBJECT KEY 'source_table'
-          stmt.setString(2, chunkParams);
-          stmt.setString(3, embedParams);
-          stmt.setString(4, sourceTable);   // NOT EXISTS dedup check
+          stmt.setString(1, task.taskId);   // JSON_OBJECT KEY 'task_id'
+          stmt.setString(2, sourceTable);   // JSON_OBJECT KEY 'source_table'
+          stmt.setString(3, chunkParams);
+          stmt.setString(4, embedParams);
+          stmt.setString(5, sourceTable);   // NOT EXISTS dedup check
         } else {
           stmt.setString(1, chunkParams);
           stmt.setString(2, embedParams);
         }
+        task.activeStatement = stmt;
         int inserted = stmt.executeUpdate();
+        task.activeStatement = null;
         task.totalChunksCreated = inserted;
         task.results.add(Map.of(
                 "sourceTable",   sourceTable,
@@ -646,9 +790,14 @@ public class EmbeddingTaskManager {
       task.completedAt = Instant.now();
 
     } catch (Exception e) {
-      task.errorMessage = errorMessage(e);
-      task.status       = "FAILED";
-      task.completedAt  = Instant.now();
+      task.activeStatement = null;
+      if (task.cancelRequested) {
+        task.status = "CANCELLED";
+      } else {
+        task.errorMessage = errorMessage(e);
+        task.status       = "FAILED";
+      }
+      task.completedAt = Instant.now();
     }
   }
 

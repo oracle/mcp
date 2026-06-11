@@ -44,6 +44,7 @@ public final class LoadedConstants {
   public static final String INTROSPECTION_ENDPOINT = System.getProperty("introspectionEndpoint");
   public static final String CLIENT_ID = System.getProperty("clientId");
   public static final String CLIENT_SECRET = System.getProperty("clientSecret");
+  public static final String OAUTH_SCOPE_CLAIM_PATH = System.getProperty("oauth.scopeClaimPath", "scope");
 
   /** Yaml config */
   public static final String CONFIG_FILE = System.getProperty("configFile");

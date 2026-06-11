@@ -624,6 +624,7 @@ In order to configure an OAuth2 server, the `-DenableAuthentication` should be e
   Which means that whenever the MCP server receives an HTTP request, it sends an HTTP request to the OAuth2 server's introspection endpoint to check the validity of the JWT access token.
 * `-DclientId`: Client ID (e.g. `oracle-db-toolkit`)
 * `-DclientSecret`: Client Secret (e.g. `Xj9mPqR2vL5kN8tY3hB7wF4uD6cA1eZ0`)
+* `-Doauth.scopeClaimPath`: (default: `scope`) Dot-separated path in the introspection response that contains OAuth scopes.
 * `-DallowedHosts`: (default: `*`) The value of `Access-Control-Allow-Origin` header when requesting the `/.well-known/oauth-protected-resource` endpoint (and `/.well-known/oauth-authorization-server` if `-DredirectOAuthToOpenID` is set to `true`) of the MCP Server.
 
 For more details regarding this MCP and OAuth, please see [MCP specification for authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization) (or a newer version if available).
@@ -836,6 +837,12 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
       <td>No</td>
       <td>The confidential key used to authenticate the client to the configured authorization server during the OAuth2 flow.</td>
       <td><code>-DclientSecret=Xj9mPqR2vL5kN8tY3hB7wF4uD6cA1eZ0</code></td>
+    </tr>
+    <tr>
+      <td><code>oauth.scopeClaimPath</code></td>
+      <td>No</td>
+      <td>Dot-separated path in the OAuth2 introspection response that contains scopes. Defaults to <code>scope</code>.</td>
+      <td><code>-Doauth.scopeClaimPath=scope</code></td>
     </tr>
     <tr>
       <td><code>allowedHosts</code></td>

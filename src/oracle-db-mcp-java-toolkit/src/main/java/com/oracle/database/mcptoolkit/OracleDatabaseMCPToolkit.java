@@ -71,14 +71,13 @@ public class OracleDatabaseMCPToolkit {
              .tools(true)
              .logging()
              .build())
+          .tools(Utils.getSyncToolSpecifications(config))
           .immediateExecution(true)
           .build();
       }
       default -> throw new IllegalArgumentException(
               "Unsupported transport: " + LoadedConstants.TRANSPORT_KIND + " (expected 'stdio' or 'http')");
     }
-    Utils.addSyncToolSpecifications(serverInstance, config);
-
     // Start config file poller only when a config file path is provided
     if (LoadedConstants.CONFIG_FILE != null && !LoadedConstants.CONFIG_FILE.isBlank()) {
       Thread pollingThread = new Thread(() -> pollConfigFile(), "config-file-poller");
@@ -112,6 +111,7 @@ public class OracleDatabaseMCPToolkit {
            .tools(true)
            .logging()
            .build())
+        .tools(Utils.getSyncToolSpecifications(config))
         .immediateExecution(true)
         .build();
 

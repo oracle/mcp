@@ -76,18 +76,20 @@ public class Utils {
    *   Returns the list of all available tools for this server.
    * </p>
    */
-  static void addSyncToolSpecifications(McpSyncServer server, ServerConfig config) {
+  static List<McpServerFeatures.SyncToolSpecification> getSyncToolSpecifications(ServerConfig config) {
     // Clear custom tool names at startup in case of restart
     synchronized (customToolNames) {
       customToolNames.clear();
       customToolSignatures.clear();
     }
 
+    List<McpServerFeatures.SyncToolSpecification> enabledSpecs = new ArrayList<>();
+
     List<McpServerFeatures.SyncToolSpecification> specs = LogAnalyzerTools.getTools();
     for (McpServerFeatures.SyncToolSpecification spec : specs) {
       String toolName = spec.tool().name();
       if (isToolEnabled(config, toolName)) {
-        server.addTool(spec);
+        enabledSpecs.add(spec);
       }
     }
 
@@ -96,7 +98,7 @@ public class Utils {
     for (McpServerFeatures.SyncToolSpecification spec : ragSpecs) {
       String toolName = spec.tool().name();
       if (isToolEnabled(config, toolName)) {
-        server.addTool(spec);
+        enabledSpecs.add(spec);
       }
     }
 
@@ -105,7 +107,7 @@ public class Utils {
     for (McpServerFeatures.SyncToolSpecification spec : dbOperatorSpecs) {
       String toolName = spec.tool().name();
       if (isToolEnabled(config, toolName)) {
-        server.addTool(spec);
+        enabledSpecs.add(spec);
       }
     }
 
@@ -114,7 +116,7 @@ public class Utils {
     for (McpServerFeatures.SyncToolSpecification spec : mcpAdminSpecs) {
       String toolName = spec.tool().name();
       if (isToolEnabled(config, toolName)) {
-        server.addTool(spec);
+        enabledSpecs.add(spec);
       }
     }
 
@@ -136,7 +138,7 @@ public class Utils {
           LOG.warning("Skipping invalid custom tool '" + name + "': " + validation.message());
           continue;
         }
-        server.addTool(makeSyncToolSpecification(tc, config));
+        enabledSpecs.add(makeSyncToolSpecification(tc, config));
         String sig = computeSignature(tc);
         synchronized (customToolNames) {
           customToolNames.add(tc.name);
@@ -144,6 +146,7 @@ public class Utils {
         }
       }
     }
+    return enabledSpecs;
   }
 
   private static String computeSignature(ToolConfig tc) {

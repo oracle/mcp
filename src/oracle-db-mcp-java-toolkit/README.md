@@ -487,6 +487,7 @@ _Note: The `mcp-admin` toolset is focused on protected runtime configuration and
       allowedStatementTypes: [SELECT]
   ```
   This policy applies only to YAML changes made through `edit-tools`; it is not an allowlist for hand-edited YAML files.
+  Hand-edited YAML tools are treated as admin-controlled config. Startup and hot reload perform basic structural validation and skip invalid tools, but they do not enforce `admin.editTools.allowedDataSources` or `admin.editTools.allowedStatementTypes`.
 
   Example (upsert a tool):
   ```jsonc

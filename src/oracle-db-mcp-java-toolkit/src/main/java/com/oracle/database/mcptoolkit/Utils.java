@@ -121,8 +121,21 @@ public class Utils {
     // ---------- Dynamically Added Tools ----------
     if (config.tools != null) {
       for (Map.Entry<String, ToolConfig> entry : config.tools.entrySet()) {
+        String name = entry.getKey();
         ToolConfig tc = entry.getValue();
+        if (tc == null) {
+          LOG.warning("Skipping invalid custom tool '" + name + "': Tool definition is required.");
+          continue;
+        }
+        if (tc != null && (tc.name == null || tc.name.isBlank())) {
+          tc.name = name;
+        }
         if (!isToolEnabled(config, tc.name)) continue;
+        CustomToolPolicy.ValidationResult validation = CustomToolPolicy.validateForRuntime(name, tc, config);
+        if (!validation.valid()) {
+          LOG.warning("Skipping invalid custom tool '" + name + "': " + validation.message());
+          continue;
+        }
         server.addTool(makeSyncToolSpecification(tc, config));
         String sig = computeSignature(tc);
         synchronized (customToolNames) {
@@ -220,7 +233,23 @@ public class Utils {
         for (Map.Entry<String, ToolConfig> entry : config.tools.entrySet()) {
           String name = entry.getKey();
           ToolConfig tc = entry.getValue();
+          if (tc == null) {
+            LOG.warning("Skipping invalid custom tool '" + name + "': Tool definition is required.");
+            continue;
+          }
+          if (tc != null && (tc.name == null || tc.name.isBlank())) {
+            tc.name = name;
+          }
           if (!isToolEnabled(config, name)) {
+            continue;
+          }
+          CustomToolPolicy.ValidationResult validation = CustomToolPolicy.validateForRuntime(name, tc, config);
+          if (!validation.valid()) {
+            String message = "Skipping invalid custom tool '" + name + "': " + validation.message();
+            if (customToolNames.contains(name)) {
+              message += " Existing runtime tool remains active.";
+            }
+            LOG.warning(message);
             continue;
           }
           String newSig = computeSignature(tc);

@@ -454,6 +454,8 @@ _Note: The `mcp-admin` toolset is focused on protected runtime configuration and
   - Returns: `{ totalCredentials, credentials: [{ credentialName, username, enabled }] }`
   - Requirements and behavior:
     - Must be explicitly enabled with `-Dtools=list-credentials` or `-Dtools=mcp-admin`.
+    - When HTTP authentication is enabled, requires OAuth scope `mcp:credentials:read` or `mcp:admin`.
+    - To allow any authenticated caller to use `list-credentials` without scope enforcement, set `-DlistCredentials.requireScope=false`.
 
 - `edit-tools`: Create, update, or remove a YAML-defined tool. Changes are auto-reloaded by the server.
   - Inputs (subset; see schema in code):
@@ -467,6 +469,9 @@ _Note: The `mcp-admin` toolset is focused on protected runtime configuration and
   - Requirements and behavior:
     - Must be explicitly enabled with `-Dtools=edit-tools` or `-Dtools=mcp-admin`.
     - Requires `-DconfigFile` to be set to a writable YAML file; otherwise the tool will return an error.
+    - When HTTP authentication is enabled, requires OAuth scope `mcp:tools:write` or `mcp:admin`.
+    - To allow any authenticated caller to use `edit-tools` without scope enforcement, set `-DeditTools.requireScope=false`.
+    - OAuth scope lookup defaults to the `scope` claim in the introspection response. If your authorization server uses a different claim, configure its dot-separated path with `-Doauth.scopeClaimPath=<claim.path>`.
     - On upsert/remove, the YAML is written and the server hot-reloads the configuration shortly after.
 
   Example (upsert a tool):
@@ -843,6 +848,18 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
       <td>No</td>
       <td>Dot-separated path in the OAuth2 introspection response that contains scopes. Defaults to <code>scope</code>.</td>
       <td><code>-Doauth.scopeClaimPath=scope</code></td>
+    </tr>
+    <tr>
+      <td><code>editTools.requireScope</code></td>
+      <td>No</td>
+      <td>Whether <code>edit-tools</code> requires OAuth scope <code>mcp:tools:write</code> or <code>mcp:admin</code> when HTTP authentication is enabled. Defaults to <code>true</code>. Set to <code>false</code> only when any authenticated caller should be allowed to use <code>edit-tools</code>.</td>
+      <td><code>-DeditTools.requireScope=false</code></td>
+    </tr>
+    <tr>
+      <td><code>listCredentials.requireScope</code></td>
+      <td>No</td>
+      <td>Whether <code>list-credentials</code> requires OAuth scope <code>mcp:credentials:read</code> or <code>mcp:admin</code> when HTTP authentication is enabled. Defaults to <code>true</code>. Set to <code>false</code> only when any authenticated caller should be allowed to list credential metadata.</td>
+      <td><code>-DlistCredentials.requireScope=false</code></td>
     </tr>
     <tr>
       <td><code>allowedHosts</code></td>

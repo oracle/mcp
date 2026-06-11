@@ -12,6 +12,8 @@ import com.oracle.database.mcptoolkit.LoadedConstants;
 import com.oracle.database.mcptoolkit.OracleDatabaseMCPToolkit;
 import com.oracle.database.mcptoolkit.ServerConfig;
 import com.oracle.database.mcptoolkit.Utils;
+import com.oracle.database.mcptoolkit.oauth.AuthContext;
+import com.oracle.database.mcptoolkit.oauth.OAuth2Configuration;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.yaml.snakeyaml.Yaml;
@@ -25,6 +27,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.*;
+import java.util.logging.Logger;
 
 import static com.oracle.database.mcptoolkit.Utils.openConnection;
 
@@ -39,6 +42,10 @@ import static com.oracle.database.mcptoolkit.Utils.openConnection;
  * </ul>
  */
 public class McpAdminTools {
+  private static final Logger LOG = Logger.getLogger(McpAdminTools.class.getName());
+  private static final String ADMIN_REQUIRED_SCOPE = "mcp:admin";
+  private static final String EDIT_TOOLS_REQUIRED_SCOPE = "mcp:tools:write";
+  private static final String LIST_CREDENTIALS_REQUIRED_SCOPE = "mcp:credentials:read";
 
   private McpAdminTools() {}
 
@@ -72,9 +79,17 @@ public class McpAdminTools {
                     .title("List Credentials")
                     .description("List DBMS_CLOUD credentials available in the current schema.")
                     .inputSchema(ToolSchemas.NO_INPUT_SCHEMA)
-                    .build())
+            .build())
             .callHandler((exchange, callReq) -> {
               try {
+                Optional<McpSchema.CallToolResult> authorizationError = authorizeProtectedTool(
+                    "list-credentials",
+                    LIST_CREDENTIALS_REQUIRED_SCOPE,
+                    LoadedConstants.LIST_CREDENTIALS_REQUIRE_SCOPE);
+                if (authorizationError.isPresent()) {
+                  return authorizationError.get();
+                }
+
                 List<Map<String, Object>> credentials = new ArrayList<>();
                 try (Connection c = openConnection(config, null);
                      PreparedStatement ps = c.prepareStatement(SqlQueries.LIST_CREDENTIALS_QUERY);
@@ -255,6 +270,14 @@ public class McpAdminTools {
          .build())
       .callHandler((exchange, callReq) -> {
         try {
+          Optional<McpSchema.CallToolResult> authorizationError = authorizeProtectedTool(
+              "edit-tools",
+              EDIT_TOOLS_REQUIRED_SCOPE,
+              LoadedConstants.EDIT_TOOLS_REQUIRE_SCOPE);
+          if (authorizationError.isPresent()) {
+            return authorizationError.get();
+          }
+
           final var cfgPath = LoadedConstants.CONFIG_FILE;
           if (cfgPath == null || cfgPath.isBlank()) {
             return McpSchema.CallToolResult.builder()
@@ -392,6 +415,32 @@ public class McpAdminTools {
 
   private static boolean isEnabled(ServerConfig config, String toolName) {
     return ServerConfig.isToolEnabled(config, toolName);
+  }
+
+  private static Optional<McpSchema.CallToolResult> authorizeProtectedTool(
+      String toolName,
+      String requiredScope,
+      boolean requireScope) {
+    if (!OAuth2Configuration.getInstance().isAuthenticationEnabled()) {
+      return Optional.empty();
+    }
+
+    if (!requireScope) {
+      LOG.warning("Scope enforcement is disabled for " + toolName + ". Any authenticated caller can use this tool.");
+      return Optional.empty();
+    }
+
+    if (AuthContext.hasScope(requiredScope) || AuthContext.hasScope(ADMIN_REQUIRED_SCOPE)) {
+      return Optional.empty();
+    }
+
+    String message = "Denied " + toolName + " request. The authenticated token does not include required scope '"
+        + requiredScope + "' or '" + ADMIN_REQUIRED_SCOPE + "'. If your authorization server stores scopes in a different claim, configure -Doauth.scopeClaimPath=<claim.path>.";
+    LOG.warning(message);
+    return Optional.of(McpSchema.CallToolResult.builder()
+        .addTextContent(message)
+        .isError(true)
+        .build());
   }
 
   private static String asString(Object v) {

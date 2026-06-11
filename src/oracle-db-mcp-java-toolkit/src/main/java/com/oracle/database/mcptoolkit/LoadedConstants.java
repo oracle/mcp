@@ -45,6 +45,8 @@ public final class LoadedConstants {
   public static final String CLIENT_ID = System.getProperty("clientId");
   public static final String CLIENT_SECRET = System.getProperty("clientSecret");
   public static final String OAUTH_SCOPE_CLAIM_PATH = System.getProperty("oauth.scopeClaimPath", "scope");
+  public static final boolean EDIT_TOOLS_REQUIRE_SCOPE = Boolean.parseBoolean(System.getProperty("editTools.requireScope", "true"));
+  public static final boolean LIST_CREDENTIALS_REQUIRE_SCOPE = Boolean.parseBoolean(System.getProperty("listCredentials.requireScope", "true"));
 
   /** Yaml config */
   public static final String CONFIG_FILE = System.getProperty("configFile");

@@ -420,11 +420,17 @@ public class ToolSchemas {
         "action": {
           "type": "string",
           "enum": ["status", "list", "cancel"],
-          "description": "status=Get status of a specific task (needs taskId). list=List all embedding tasks submitted since the server started. cancel=Request cancellation of a PENDING or RUNNING task (needs taskId). Cleanup of committed local-file rows requires task metadata."
+          "description": "status=Get status of a specific task (needs taskId). list=List embedding tasks submitted since the server started, newest first, with optional limit/offset pagination. cancel=Request cancellation of a PENDING or RUNNING task (needs taskId). Cleanup of committed local-file rows requires task metadata."
         },
         "taskId": {
           "type": "string",
-          "description": "Task ID returned by the embed tool. Required for action=status and action=cancel." }
+          "description": "Task ID returned by the embed tool. Required for action=status and action=cancel." },
+        "limit": {
+          "type": "integer",
+          "description": "For action=list, maximum tasks to return. Default is 100. Values above 1000 return at most 1000 tasks." },
+        "offset": {
+          "type": "integer",
+          "description": "For action=list, number of newest tasks to skip. Default is 0." }
       },
       "required": ["action"]
     }""";

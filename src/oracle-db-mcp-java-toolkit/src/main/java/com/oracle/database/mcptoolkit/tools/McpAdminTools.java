@@ -12,6 +12,9 @@ import com.oracle.database.mcptoolkit.LoadedConstants;
 import com.oracle.database.mcptoolkit.OracleDatabaseMCPToolkit;
 import com.oracle.database.mcptoolkit.ServerConfig;
 import com.oracle.database.mcptoolkit.Utils;
+import com.oracle.database.mcptoolkit.config.ToolConfig;
+import com.oracle.database.mcptoolkit.oauth.AuthContext;
+import com.oracle.database.mcptoolkit.oauth.OAuth2Configuration;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.yaml.snakeyaml.Yaml;
@@ -21,7 +24,13 @@ import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.*;
+import java.util.logging.Logger;
+
+import static com.oracle.database.mcptoolkit.Utils.openConnection;
 
 /**
  * Provides a set of admin/maintenance tools for various operations.
@@ -29,15 +38,20 @@ import java.util.*;
  * <p>The available tools are:</p>
  * <ul>
  *   <li><strong>list-tools</strong>: List all available tools with descriptions.</li>
+ *   <li><strong>list-credentials</strong>: List DBMS_CLOUD credentials available in the schema.</li>
  *   <li><strong>edit-tools</strong>: Upsert a YAML-defined tool in the config file and rely on runtime reload.</li>
  * </ul>
  */
 public class McpAdminTools {
+  private static final Logger LOG = Logger.getLogger(McpAdminTools.class.getName());
+  private static final String ADMIN_REQUIRED_SCOPE = "mcp:admin";
+  private static final String EDIT_TOOLS_REQUIRED_SCOPE = "mcp:tools:write";
+  private static final String LIST_CREDENTIALS_REQUIRED_SCOPE = "mcp:credentials:read";
 
   private McpAdminTools() {}
 
   /**
-   * Returns a list of all MCP admin tool specifications, including "list-tools" and "edit-tools".
+   * Returns a list of all MCP admin tool specifications.
    * The returned tools are filtered based on the configuration provided.
    *
    * @param config the server configuration used to filter the tools
@@ -47,9 +61,64 @@ public class McpAdminTools {
     List<McpServerFeatures.SyncToolSpecification> tools = new ArrayList<>();
 
     tools.add(getListToolsTool(config));
+    tools.add(getListCredentialsTool(config));
     tools.add(getEditToolsTool());
 
     return tools;
+  }
+
+  /**
+   * Returns an admin tool that lists DBMS_CLOUD credentials available in the current schema.
+   *
+   * @param config server configuration used to connect to the database
+   * @return a tool specification for the "list-credentials" tool
+   */
+  public static McpServerFeatures.SyncToolSpecification getListCredentialsTool(ServerConfig config) {
+    return McpServerFeatures.SyncToolSpecification.builder()
+            .tool(McpSchema.Tool.builder()
+                    .name("list-credentials")
+                    .title("List Credentials")
+                    .description("List DBMS_CLOUD credentials available in the current schema.")
+                    .inputSchema(ToolSchemas.NO_INPUT_SCHEMA)
+            .build())
+            .callHandler((exchange, callReq) -> {
+              try {
+                Optional<McpSchema.CallToolResult> authorizationError = authorizeProtectedTool(
+                    "list-credentials",
+                    LIST_CREDENTIALS_REQUIRED_SCOPE,
+                    LoadedConstants.LIST_CREDENTIALS_REQUIRE_SCOPE);
+                if (authorizationError.isPresent()) {
+                  return authorizationError.get();
+                }
+
+                List<Map<String, Object>> credentials = new ArrayList<>();
+                try (Connection c = openConnection(config, null);
+                     PreparedStatement ps = c.prepareStatement(SqlQueries.LIST_CREDENTIALS_QUERY);
+                     ResultSet rs = ps.executeQuery()) {
+                  while (rs.next()) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("credentialName", rs.getString("credential_name"));
+                    row.put("username",       rs.getString("username"));
+                    row.put("enabled",        rs.getString("enabled"));
+                    credentials.add(row);
+                  }
+                }
+
+                Map<String, Object> result = new LinkedHashMap<>();
+                result.put("totalCredentials", credentials.size());
+                result.put("credentials",      credentials);
+                return McpSchema.CallToolResult.builder()
+                        .structuredContent(result)
+                        .addTextContent(new ObjectMapper().writeValueAsString(result))
+                        .build();
+              } catch (Exception e) {
+                return McpSchema.CallToolResult.builder()
+                        .addTextContent("Unexpected: " + e.getMessage())
+                        .isError(true)
+                        .build();
+              }
+            })
+            .build();
   }
 
   /**
@@ -202,6 +271,14 @@ public class McpAdminTools {
          .build())
       .callHandler((exchange, callReq) -> {
         try {
+          Optional<McpSchema.CallToolResult> authorizationError = authorizeProtectedTool(
+              "edit-tools",
+              EDIT_TOOLS_REQUIRED_SCOPE,
+              LoadedConstants.EDIT_TOOLS_REQUIRE_SCOPE);
+          if (authorizationError.isPresent()) {
+            return authorizationError.get();
+          }
+
           final var cfgPath = LoadedConstants.CONFIG_FILE;
           if (cfgPath == null || cfgPath.isBlank()) {
             return McpSchema.CallToolResult.builder()
@@ -216,6 +293,14 @@ public class McpAdminTools {
                     .addTextContent("'name' is required")
                     .isError(true)
                     .build();
+          }
+
+          CustomToolPolicy.ValidationResult nameValidation = CustomToolPolicy.validateToolName(name);
+          if (!nameValidation.valid()) {
+            return McpSchema.CallToolResult.builder()
+                .addTextContent(nameValidation.message())
+                .isError(true)
+                .build();
           }
 
           Path path = Paths.get(cfgPath);
@@ -302,6 +387,17 @@ public class McpAdminTools {
             t.put("parameters", params);
           }
 
+          ServerConfig currentConfig = OracleDatabaseMCPToolkit.getConfig();
+          ToolConfig candidate = new ObjectMapper().convertValue(t, ToolConfig.class);
+          candidate.name = name;
+          CustomToolPolicy.ValidationResult validation = CustomToolPolicy.validateForEditTools(name, candidate, currentConfig);
+          if (!validation.valid()) {
+            return McpSchema.CallToolResult.builder()
+                .addTextContent(validation.message())
+                .isError(true)
+                .build();
+          }
+
           tools.put(name, t);
           root.put("tools", tools);
 
@@ -339,6 +435,32 @@ public class McpAdminTools {
 
   private static boolean isEnabled(ServerConfig config, String toolName) {
     return ServerConfig.isToolEnabled(config, toolName);
+  }
+
+  private static Optional<McpSchema.CallToolResult> authorizeProtectedTool(
+      String toolName,
+      String requiredScope,
+      boolean requireScope) {
+    if (!OAuth2Configuration.getInstance().isAuthenticationEnabled()) {
+      return Optional.empty();
+    }
+
+    if (!requireScope) {
+      LOG.warning("Scope enforcement is disabled for " + toolName + ". Any authenticated caller can use this tool.");
+      return Optional.empty();
+    }
+
+    if (AuthContext.hasScope(requiredScope) || AuthContext.hasScope(ADMIN_REQUIRED_SCOPE)) {
+      return Optional.empty();
+    }
+
+    String message = "Denied " + toolName + " request. The authenticated token does not include required scope '"
+        + requiredScope + "' or '" + ADMIN_REQUIRED_SCOPE + "'. If your authorization server stores scopes in a different claim, configure -Doauth.scopeClaimPath=<claim.path>.";
+    LOG.warning(message);
+    return Optional.of(McpSchema.CallToolResult.builder()
+        .addTextContent(message)
+        .isError(true)
+        .build());
   }
 
   private static String asString(Object v) {

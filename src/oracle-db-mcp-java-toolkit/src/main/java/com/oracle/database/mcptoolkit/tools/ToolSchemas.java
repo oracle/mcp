@@ -225,8 +225,8 @@ public class ToolSchemas {
           "remove":      { "type": "boolean", "description": "If true, remove this tool from the YAML config. Other fields are ignored." },
           "description": { "type": "string", "description": "Human-friendly description of the tool" },
           "enabled":     { "type": "boolean", "description": "Optional switch. true/omitted = enabled, false = disabled." },
-          "dataSource":  { "type": "string", "description": "Reference key from dataSources to use for this tool" },
-          "statement":   { "type": "string", "description": "SQL statement to execute (SELECT or DML)" },
+          "dataSource":  { "type": "string", "description": "Reference key from dataSources to use for this tool. Required for upsert." },
+          "statement":   { "type": "string", "description": "SQL statement to execute. Required for upsert. SELECT is allowed by default; additional statement types require admin.editTools policy." },
           "parameters":  {
             "type": "array",
             "description": "Optional parameter list for the tool",
@@ -394,7 +394,10 @@ public class ToolSchemas {
           "items": {
             "type": "string"
           },
-          "description": "Optional file extension filter (e.g. pdf, txt, docx). For action=bucket. If omitted, all files are processed." 
+          "description": "Optional file extension filter (e.g. pdf, txt, docx). For action=bucket. If omitted, no extension filter is applied."
+        },
+        "maxObjects": {
+          "description": "Maximum bucket objects to embed for action=bucket. Default is 100. Values above 10000 process at most 10000 objects."
         },
         "objectUrl": {
           "type": "string",
@@ -416,18 +419,24 @@ public class ToolSchemas {
       "properties": {
         "action": {
           "type": "string",
-          "enum": ["status", "list"],
-          "description": "status=Get status of a specific task (needs taskId). list=List all embedding tasks submitted since the server started."
+          "enum": ["status", "list", "cancel"],
+          "description": "status=Get status of a specific task (needs taskId). list=List embedding tasks submitted since the server started, newest first, with optional limit/offset pagination. cancel=Request cancellation of a PENDING or RUNNING task (needs taskId). Cleanup of committed local-file rows requires task metadata."
         },
         "taskId": {
           "type": "string",
-          "description": "Task ID returned by the embed tool. Required for action=status." }
+          "description": "Task ID returned by the embed tool. Required for action=status and action=cancel." },
+        "limit": {
+          "type": "integer",
+          "description": "For action=list, maximum tasks to return. Default is 100. Values above 1000 return at most 1000 tasks." },
+        "offset": {
+          "type": "integer",
+          "description": "For action=list, number of newest tasks to skip. Default is 0." }
       },
       "required": ["action"]
     }""";
 
   /**
-   * JSON schema for OCI Object Storage utilities (list-objects, list-credentials).
+   * JSON schema for OCI Object Storage utilities.
    */
   static final String OCI_STORAGE = """
     {
@@ -435,8 +444,8 @@ public class ToolSchemas {
       "properties": {
         "action": {
           "type": "string",
-          "enum": ["list-objects", "list-credentials"],
-          "description": "list-objects=List all objects in an OCI bucket (use bucketUrl for a direct or PAR URL, or provide region+namespace+bucketName). list-credentials=List all DBMS_CLOUD credentials in the schema."
+          "enum": ["list-objects"],
+          "description": "list-objects=List objects in an OCI bucket (default 100, capped at 10000; use bucketUrl for a direct or PAR URL, or provide region+namespace+bucketName). Use prefix to narrow results."
         },
         "credentialName": {
           "type": "string",
@@ -457,6 +466,9 @@ public class ToolSchemas {
         "prefix": {
           "type": "string",
           "description": "Optional prefix filter (e.g. docs/). For action=list-objects."
+        },
+        "maxResults": {
+          "description": "Maximum objects to return for action=list-objects. Default is 100. Values above 10000 return at most 10000 objects."
         },
         "bucketUrl": {
           "type": "string",

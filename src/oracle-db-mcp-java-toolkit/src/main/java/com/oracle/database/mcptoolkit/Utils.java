@@ -76,18 +76,20 @@ public class Utils {
    *   Returns the list of all available tools for this server.
    * </p>
    */
-  static void addSyncToolSpecifications(McpSyncServer server, ServerConfig config) {
+  static List<McpServerFeatures.SyncToolSpecification> getSyncToolSpecifications(ServerConfig config) {
     // Clear custom tool names at startup in case of restart
     synchronized (customToolNames) {
       customToolNames.clear();
       customToolSignatures.clear();
     }
 
+    List<McpServerFeatures.SyncToolSpecification> enabledSpecs = new ArrayList<>();
+
     List<McpServerFeatures.SyncToolSpecification> specs = LogAnalyzerTools.getTools();
     for (McpServerFeatures.SyncToolSpecification spec : specs) {
       String toolName = spec.tool().name();
       if (isToolEnabled(config, toolName)) {
-        server.addTool(spec);
+        enabledSpecs.add(spec);
       }
     }
 
@@ -96,7 +98,7 @@ public class Utils {
     for (McpServerFeatures.SyncToolSpecification spec : ragSpecs) {
       String toolName = spec.tool().name();
       if (isToolEnabled(config, toolName)) {
-        server.addTool(spec);
+        enabledSpecs.add(spec);
       }
     }
 
@@ -105,7 +107,7 @@ public class Utils {
     for (McpServerFeatures.SyncToolSpecification spec : dbOperatorSpecs) {
       String toolName = spec.tool().name();
       if (isToolEnabled(config, toolName)) {
-        server.addTool(spec);
+        enabledSpecs.add(spec);
       }
     }
 
@@ -114,16 +116,29 @@ public class Utils {
     for (McpServerFeatures.SyncToolSpecification spec : mcpAdminSpecs) {
       String toolName = spec.tool().name();
       if (isToolEnabled(config, toolName)) {
-        server.addTool(spec);
+        enabledSpecs.add(spec);
       }
     }
 
     // ---------- Dynamically Added Tools ----------
     if (config.tools != null) {
       for (Map.Entry<String, ToolConfig> entry : config.tools.entrySet()) {
+        String name = entry.getKey();
         ToolConfig tc = entry.getValue();
+        if (tc == null) {
+          LOG.warning("Skipping invalid custom tool '" + name + "': Tool definition is required.");
+          continue;
+        }
+        if (tc != null && (tc.name == null || tc.name.isBlank())) {
+          tc.name = name;
+        }
         if (!isToolEnabled(config, tc.name)) continue;
-        server.addTool(makeSyncToolSpecification(tc, config));
+        CustomToolPolicy.ValidationResult validation = CustomToolPolicy.validateForRuntime(name, tc, config);
+        if (!validation.valid()) {
+          LOG.warning("Skipping invalid custom tool '" + name + "': " + validation.message());
+          continue;
+        }
+        enabledSpecs.add(makeSyncToolSpecification(tc, config));
         String sig = computeSignature(tc);
         synchronized (customToolNames) {
           customToolNames.add(tc.name);
@@ -131,6 +146,7 @@ public class Utils {
         }
       }
     }
+    return enabledSpecs;
   }
 
   private static String computeSignature(ToolConfig tc) {
@@ -220,7 +236,23 @@ public class Utils {
         for (Map.Entry<String, ToolConfig> entry : config.tools.entrySet()) {
           String name = entry.getKey();
           ToolConfig tc = entry.getValue();
+          if (tc == null) {
+            LOG.warning("Skipping invalid custom tool '" + name + "': Tool definition is required.");
+            continue;
+          }
+          if (tc != null && (tc.name == null || tc.name.isBlank())) {
+            tc.name = name;
+          }
           if (!isToolEnabled(config, name)) {
+            continue;
+          }
+          CustomToolPolicy.ValidationResult validation = CustomToolPolicy.validateForRuntime(name, tc, config);
+          if (!validation.valid()) {
+            String message = "Skipping invalid custom tool '" + name + "': " + validation.message();
+            if (customToolNames.contains(name)) {
+              message += " Existing runtime tool remains active.";
+            }
+            LOG.warning(message);
             continue;
           }
           String newSig = computeSignature(tc);

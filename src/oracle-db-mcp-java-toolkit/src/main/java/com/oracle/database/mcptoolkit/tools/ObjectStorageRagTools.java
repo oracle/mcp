@@ -12,13 +12,18 @@ import com.oracle.database.mcptoolkit.ServerConfig;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.spec.McpSchema;
 
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import static com.oracle.database.mcptoolkit.Utils.openConnection;
 import static com.oracle.database.mcptoolkit.Utils.getOrDefault;
@@ -26,7 +31,7 @@ import static com.oracle.database.mcptoolkit.Utils.tryCall;
 
 /**
  * Provides the {@code oci-storage} tool for browsing OCI Object Storage buckets
- * and listing database credentials.
+ * used by RAG workflows.
  * <p>
  * All authentication is handled by the Oracle database via {@code DBMS_CLOUD} credentials —
  * no separate OCI configuration is needed. Create a credential once with
@@ -34,6 +39,12 @@ import static com.oracle.database.mcptoolkit.Utils.tryCall;
  * that accesses private buckets. For public buckets, the credential can be omitted.
  */
 public class ObjectStorageRagTools {
+
+  private static final int DEFAULT_LIST_OBJECTS_RESULTS = 100;
+  private static final int MAX_LIST_OBJECTS_RESULTS = 10000;
+  private static final Pattern OCI_REGION = Pattern.compile("[a-z]+-[a-z]+-[0-9]+");
+  private static final Pattern OBJECT_STORAGE_HOST =
+          Pattern.compile("objectstorage\\.[a-z]+-[a-z]+-[0-9]+\\.oraclecloud\\.com");
 
   private ObjectStorageRagTools() {}
 
@@ -52,9 +63,8 @@ public class ObjectStorageRagTools {
   /**
    * Returns a tool specification for {@code oci-storage}.
    * <p>
-   * action=list-objects — lists all objects in an OCI bucket. Accepts a direct {@code bucketUrl}
+   * action=list-objects — lists objects in an OCI bucket. Accepts a direct {@code bucketUrl}
    * (including PAR URLs) or individual {@code region}, {@code namespace}, and {@code bucketName}.<br>
-   * action=list-credentials — lists all {@code DBMS_CLOUD} credentials in the schema.
    *
    * @param config server configuration
    * @return tool specification
@@ -65,8 +75,7 @@ public class ObjectStorageRagTools {
          .name("oci-storage")
          .title("OCI Storage")
          .description("OCI Object Storage utilities. "
-                 + "action=list-objects (lists bucket contents; provide bucketUrl, or region+namespace+bucketName). "
-                 + "action=list-credentials (lists all DBMS_CLOUD credentials in the schema).")
+                 + "action=list-objects (lists bucket contents; provide bucketUrl, or region+namespace+bucketName).")
          .inputSchema(ToolSchemas.OCI_STORAGE)
          .build())
       .callHandler((exchange, callReq) -> {
@@ -77,15 +86,17 @@ public class ObjectStorageRagTools {
             Map<String, Object> args = callReq.arguments();
             String credentialName = nullableCredential(args.get("credentialName"));
             String prefix         = getOrDefault(args.get("prefix"), "");
+            int maxResults        = parseListObjectsMaxResults(args.get("maxResults"));
 
             // bucketUrl (direct or PAR) takes priority over individual components
             String rawBucketUrl = getOrDefault(args.get("bucketUrl"), null);
-            String bucketUri = (rawBucketUrl != null) ? rawBucketUrl : buildBucketUri(
-                    String.valueOf(args.get("region")),
-                    String.valueOf(args.get("namespace")),
-                    String.valueOf(args.get("bucketName")));
+            String bucketUri = (rawBucketUrl != null) ? validateObjectStorageUrl(rawBucketUrl) : buildBucketUri(
+                    getOrDefault(args.get("region"), null),
+                    getOrDefault(args.get("namespace"), null),
+                    getOrDefault(args.get("bucketName"), null));
 
             List<Map<String, Object>> objects = new ArrayList<>();
+            boolean truncated = false;
             try (Connection c = openConnection(config, null);
                  PreparedStatement ps = c.prepareStatement(SqlQueries.LIST_OCI_BUCKET_OBJECTS_QUERY)) {
 
@@ -95,6 +106,10 @@ public class ObjectStorageRagTools {
 
               try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
+                  if (objects.size() >= maxResults) {
+                    truncated = true;
+                    break;
+                  }
                   Map<String, Object> obj = new LinkedHashMap<>();
                   obj.put("name",         rs.getString("object_name"));
                   obj.put("sizeBytes",    rs.getLong("bytes"));
@@ -106,6 +121,9 @@ public class ObjectStorageRagTools {
 
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("bucketUri",    bucketUri);
+            result.put("prefix",       prefix);
+            result.put("maxResults",   maxResults);
+            result.put("truncated",    truncated);
             result.put("totalObjects", objects.size());
             result.put("objects",      objects);
             return McpSchema.CallToolResult.builder()
@@ -114,31 +132,8 @@ public class ObjectStorageRagTools {
                     .build();
           });
 
-          case "list-credentials" -> tryCall(() -> {
-            List<Map<String, Object>> credentials = new ArrayList<>();
-            try (Connection c = openConnection(config, null);
-                 PreparedStatement ps = c.prepareStatement(SqlQueries.LIST_CREDENTIALS_QUERY);
-                 ResultSet rs = ps.executeQuery()) {
-              while (rs.next()) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("credentialName", rs.getString("credential_name"));
-                row.put("username",       rs.getString("username"));
-                row.put("enabled",        rs.getString("enabled"));
-                credentials.add(row);
-              }
-            }
-
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("totalCredentials", credentials.size());
-            result.put("credentials",      credentials);
-            return McpSchema.CallToolResult.builder()
-                    .structuredContent(result)
-                    .addTextContent(new JsonMapper().writeValueAsString(result))
-                    .build();
-          });
-
           default -> new McpSchema.CallToolResult(
-                  "Unknown action '" + action + "'. Must be one of: list-objects, list-credentials", true);
+                  "Unknown action '" + action + "'. Must be: list-objects", true);
         };
       })
     .build();
@@ -169,10 +164,15 @@ public class ObjectStorageRagTools {
    * @return the fully qualified object URI
    */
   static String buildObjectUri(String region, String namespace, String bucketName, String objectName) {
-    return "https://objectstorage." + region + ".oraclecloud.com"
-            + "/n/" + namespace
-            + "/b/" + bucketName
-            + "/o/" + objectName;
+    String safeRegion = validateRegion(region);
+    requireNonBlank(namespace, "namespace");
+    requireNonBlank(bucketName, "bucketName");
+    requireNonBlank(objectName, "objectName");
+
+    return "https://objectstorage." + safeRegion + ".oraclecloud.com"
+            + "/n/" + encodePathSegment(namespace)
+            + "/b/" + encodePathSegment(bucketName)
+            + "/o/" + encodeObjectName(objectName);
   }
 
   /**
@@ -185,10 +185,94 @@ public class ObjectStorageRagTools {
    * @return the bucket base URI (always ends with {@code /o/})
    */
   static String buildBucketUri(String region, String namespace, String bucketName) {
-    return "https://objectstorage." + region + ".oraclecloud.com"
-            + "/n/" + namespace
-            + "/b/" + bucketName
+    String safeRegion = validateRegion(region);
+    requireNonBlank(namespace, "namespace");
+    requireNonBlank(bucketName, "bucketName");
+
+    return "https://objectstorage." + safeRegion + ".oraclecloud.com"
+            + "/n/" + encodePathSegment(namespace)
+            + "/b/" + encodePathSegment(bucketName)
             + "/o/";
+  }
+
+  /**
+   * Validates a direct Object Storage or PAR URL before sending it to DBMS_CLOUD.
+   */
+  static String validateObjectStorageUrl(String url) {
+    String value = requireNonBlank(url, "objectUrl");
+    URI uri;
+    try {
+      uri = URI.create(value);
+    } catch (IllegalArgumentException e) {
+      throw new IllegalArgumentException("Invalid OCI Object Storage URL", e);
+    }
+
+    String scheme = uri.getScheme();
+    String host = uri.getHost();
+    if (!"https".equalsIgnoreCase(scheme)) {
+      throw new IllegalArgumentException("OCI Object Storage URL must use https");
+    }
+    if (host == null || !OBJECT_STORAGE_HOST.matcher(host.toLowerCase(Locale.ROOT)).matches()) {
+      throw new IllegalArgumentException("OCI Object Storage URL host is not allowed");
+    }
+    return value;
+  }
+
+  /**
+   * Parses the requested list limit, defaulting to 100 and capping at 10000.
+   */
+  public static int parseListObjectsMaxResults(Object value) {
+    String s = getOrDefault(value, String.valueOf(DEFAULT_LIST_OBJECTS_RESULTS));
+
+    int requested;
+    try {
+      requested = Integer.parseInt(s);
+    } catch (NumberFormatException e) {
+      throw new IllegalArgumentException("maxResults must be a number", e);
+    }
+    if (requested < 1) {
+      throw new IllegalArgumentException("maxResults must be greater than zero");
+    }
+    return Math.min(requested, MAX_LIST_OBJECTS_RESULTS);
+  }
+
+  /**
+   * Validates an OCI region name used in Object Storage host construction.
+   */
+  private static String validateRegion(String region) {
+    String value = requireNonBlank(region, "region").toLowerCase(Locale.ROOT);
+    if (!OCI_REGION.matcher(value).matches()) {
+      throw new IllegalArgumentException("Invalid OCI region");
+    }
+    return value;
+  }
+
+  /**
+   * Returns a trimmed value, rejecting missing or blank required inputs.
+   */
+  private static String requireNonBlank(String value, String fieldName) {
+    if (value == null || value.isBlank()) {
+      throw new IllegalArgumentException(fieldName + " must not be blank");
+    }
+    return value.trim();
+  }
+
+  /**
+   * URL-encodes a single Object Storage path segment.
+   */
+  private static String encodePathSegment(String value) {
+    return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+  }
+
+  /**
+   * URL-encodes an object name while preserving slash-separated object prefixes.
+   */
+  private static String encodeObjectName(String objectName) {
+    String[] segments = objectName.split("/", -1);
+    for (int i = 0; i < segments.length; i++) {
+      segments[i] = encodePathSegment(segments[i]);
+    }
+    return String.join("/", segments);
   }
 
 }

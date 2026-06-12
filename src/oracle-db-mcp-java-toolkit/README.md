@@ -168,9 +168,9 @@ The server provides four built-in toolsets that can be enabled via `-Dtools`:
   <tbody>
     <tr>
       <td><code>mcp-admin</code></td>
-      <td>Server discovery and runtime configuration</td>
+      <td>Protected administrative tools</td>
       <td>
-        list-tools, edit-tools
+        edit-tools, list-credentials
       </td>
     </tr>
     <tr>
@@ -198,7 +198,7 @@ The server provides four built-in toolsets that can be enabled via `-Dtools`:
   </tbody>
 </table>
 
-_Note: Each tool belongs to exactly one built-in toolset. Enabling a toolset enables all tools listed for that toolset._
+_Note: `list-tools` is a standalone discovery tool. Enabling a toolset enables all tools listed for that toolset._
 
 **Common Configurations:**
 - `-Dtools=mcp-admin` - Admin and runtime configuration tools
@@ -206,7 +206,7 @@ _Note: Each tool belongs to exactly one built-in toolset. Enabling a toolset ena
 - `-Dtools=database-operator` - Database operations and SQL execution
 - `-Dtools=rag` – Vector store management, document embedding, and semantic similarity search
 - `-Dtools=mcp-admin,log-analyzer` - Admin + log analysis
-- `-Dtools=*` - All tools (default if omitted)
+- `-Dtools=*` - All non-protected tools (default if omitted). Protected admin tools require `-Dtools=mcp-admin` or the individual tool name.
 
 ### 3.1. Database Operations
 These tools provide direct SQL execution capabilities:
@@ -282,7 +282,7 @@ These tools provide a full RAG pipeline: model management, vector store creation
 
 * **`vector-store`**: Create and list vector store tables.
 
-  - `action=create` — create a new table ready for vector search. Every table gets an `ID` primary key and a `CREATED_AT` timestamp automatically. When metadata is enabled (default), a `METADATA` JSON column and a source URI index are also created for deduplication.
+  - `action=create` — create a new table ready for vector search. Every table gets an `ID` primary key and a `CREATED_AT` timestamp automatically. When metadata is enabled (default), a `METADATA` JSON column and two indexes are created: one on `source_uri` for deduplication and one on `task_id` for cancellation cleanup.
   - `action=list` — list all tables in the current schema that have at least one VECTOR column.
 
   **Inputs:**
@@ -309,11 +309,13 @@ These tools provide a full RAG pipeline: model management, vector store creation
 
   **Actions:**
 
-  - `action=file` — embed a single local file (PDF, Word, plain text, and other formats supported by Oracle’s `UTL_TO_TEXT`).
+  - `action=file` — embed a single local file (PDF, Word, Excel, PowerPoint, plain text, and other formats supported by Oracle’s `UTL_TO_TEXT`).
     * `filePath` (string, required) — absolute path to the file
 
   - `action=files` — embed multiple local files in a single background job.
-    * `filePaths` (array, required) — list of absolute file paths
+    * `filePaths` (array, required) — list of absolute file paths; at most 100 files per request
+
+  Local file ingestion requires `-DingestRootDir=/path/to/ingest/root`. Each requested file path is resolved to its real filesystem path and must stay inside that root. Ingested files must be no larger than `ingestMaxFileSizeMb`, whose value is in MB (default: `50`).
 
   - `action=table` — embed text from an existing Oracle table into a vector store.
     * `sourceTable` (string, required) — table containing the source text
@@ -327,12 +329,15 @@ These tools provide a full RAG pipeline: model management, vector store creation
     * Or provide `region` + `namespace` + `bucketName` + `objectName` individually
     * `credentialName` (string, optional) — DBMS_CLOUD credential name; omit for public objects
 
-  - `action=bucket` — embed all files in an OCI bucket.
+  - `action=bucket` — embed files in an OCI bucket.
     * `bucketUrl` (string) — direct OCI bucket URL or PAR URL
     * Or provide `region` + `namespace` + `bucketName` individually
     * `credentialName` (string, optional) — DBMS_CLOUD credential name; omit for public buckets
     * `prefix` (string, optional) — filter objects by path prefix (e.g. `docs/`)
-    * `allowedExtensions` (array, optional) — only embed files with these extensions (e.g. `["pdf", "txt"]`); omit to process all files
+    * `allowedExtensions` (array, optional) — only embed files with these extensions (e.g. `["pdf", "txt"]`); omit to skip extension filtering
+    * `maxObjects` (number or string, optional) — maximum bucket objects to embed. Default is `100`; values above `10000` process at most `10000`.
+
+    Bucket ingestion skips objects larger than `ingestMaxFileSizeMb` (default: `50` MB) before embedding them.
 
   **Returns:** `{ taskId, status: "PENDING", table, ... }` — use the `task` tool to check progress.
 
@@ -341,12 +346,14 @@ These tools provide a full RAG pipeline: model management, vector store creation
   **Metadata written per chunk** (when target table has a METADATA column):
 
   For `action=file`, `files`, `object`, `bucket`:
+  * `task_id` — ID of the embedding task that inserted this chunk (used for cancellation cleanup)
   * `document_id` — UUID shared by all chunks of the same document
   * `source_uri` — file path (`file:///...`) or OCI URL of the source document
   * `chunk_index` — 0-based position of the chunk within the document
   * `total_chunks` — total number of chunks for this document
 
   For `action=table`:
+  * `task_id` — ID of the embedding task that inserted this chunk (used for cancellation cleanup)
   * `source_table` — name of the source table
   * `source_id` — value of the `sourceIdColumn` for the originating row
   * `chunk_index` — 0-based position of the chunk within that row's text
@@ -356,34 +363,48 @@ These tools provide a full RAG pipeline: model management, vector store creation
 
 ---
 
-* **`task`**: Monitor background embedding jobs.
+* **`task`**: Monitor and control background embedding jobs.
 
   - `action=status` — get the current status and per-file results for a specific task.
-  - `action=list` — list all tasks submitted since the server started (in-memory only, cleared on restart).
+  - `action=list` — list tasks submitted since the server started, newest first, with optional pagination (in-memory only, cleared on restart).
+  - `action=cancel` — request cancellation of a PENDING or RUNNING task.
+
+    Embedding task metadata is retained in memory for up to 72 hours after completion, failure, or cancellation. The server keeps at most 10000 task records; if the task store is full, new embedding submissions are rejected until older terminal task records expire.
 
   **Inputs:**
 
-  * `action` (string, required) — `status` or `list`
-  * `taskId` (string, required for `status`) — task ID returned by the `embed` tool
+  * `action` (string, required) — `status`, `list`, or `cancel`
+  * `taskId` (string, required for `status` and `cancel`) — task ID returned by the `embed` tool
+  * `limit` (integer, optional for `list`) — maximum tasks to return. Default is `100`; values above `1000` return at most `1000`.
+  * `offset` (integer, optional for `list`) — number of newest tasks to skip. Default is `0`.
 
-  **Returns:** `{ taskId, status, table, totalChunksCreated, submittedAt, completedAt, results }` where `status` is one of `PENDING`, `RUNNING`, `COMPLETED`, or `FAILED`. The `results` array contains one entry per file or source table with `status: "success"`, `"skipped"`, or `"error"`.
+  **Returns:** `status` and `cancel` return `{ taskId, status, table, totalChunksCreated, submittedAt, completedAt, results }` where `status` is one of `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, or `CANCELLED`. `list` returns `{ totalTasks, limit, offset, returned, hasMore, tasks }`. The `results` array contains per-file/source entries and may include cleanup or cancellation entries for cancelled tasks.
+
+  **Cancellation policy:**
+
+  Cancelling a task is best-effort for work that is already running:
+
+  - **Local-file jobs** (`action=file`, `action=files`): the cancel flag is checked between files, and the active insert statement is cancelled when possible. If the target vector store has a `METADATA` column, rows stamped with the task ID are removed before the task is marked `CANCELLED`.
+  - **Single-SQL jobs** (`action=object`, `action=bucket`, `action=table`): JDBC `PreparedStatement.cancel()` asks Oracle to stop the active statement. If the statement is stopped before completion, no rows from that statement are committed. If the statement completes before cancellation takes effect, the task may finish as `COMPLETED`.
+  - **PENDING tasks** (still in the queue) are cancelled before they start — nothing is written to the database.
+  - Calling `cancel` on a task already in a terminal state (`COMPLETED`, `FAILED`, or `CANCELLED`) returns an error.
 
 ---
 
-* **`oci-storage`**: Browse OCI Object Storage buckets and list database credentials.
+* **`oci-storage`**: Browse OCI Object Storage buckets.
 
-  - `action=list-objects` — list all objects in a bucket. Provide `bucketUrl` (direct or PAR URL), or `region` + `namespace` + `bucketName`.
-  - `action=list-credentials` — list all DBMS_CLOUD credentials available in the current schema.
+  - `action=list-objects` — list objects in a bucket. Provide `bucketUrl` (direct or PAR URL), or `region` + `namespace` + `bucketName`. Returns 100 objects by default, and at most 10000. Use `prefix` to narrow results or check for a specific object.
 
   **Inputs:**
 
-  * `action` (string, required) — `list-objects` or `list-credentials`
+  * `action` (string, required) — `list-objects`
   * `bucketUrl` (string) — direct OCI bucket URL or PAR URL (alternative to region/namespace/bucketName)
   * `region`, `namespace`, `bucketName` (string) — required for `list-objects` when `bucketUrl` is not provided
   * `credentialName` (string, optional) — DBMS_CLOUD credential; omit for public buckets
   * `prefix` (string, optional) — filter objects by path prefix
+  * `maxResults` (number or string, optional) — maximum objects to return. Default is `100`; values above `10000` return at most `10000`.
 
-  **Returns:** `{ bucketUri, totalObjects, objects: [{ name, sizeBytes, lastModified }] }` for `list-objects`, or `{ totalCredentials, credentials: [{ credentialName, username, enabled }] }` for `list-credentials`.
+  **Returns:** `{ bucketUri, prefix, maxResults, truncated, totalObjects, objects: [{ name, sizeBytes, lastModified }] }`.
 
 ---
 
@@ -431,15 +452,24 @@ These tools provide a full RAG pipeline: model management, vector store creation
 ### 3.9. Admin and Runtime Configuration Tools
 
 These tools help you discover what's enabled and manage YAML-defined tools at runtime.
-They are part of the `mcp-admin` toolset (enable via `-Dtools=mcp-admin` or include individual tool names).
+`list-tools` is a standalone discovery tool. Protected administrative tools are part of the `mcp-admin` toolset (enable via `-Dtools=mcp-admin` or include individual tool names).
+The `mcp-admin` toolset is not included by default, `-Dtools=*`, or `-Dtools=all`; enable it explicitly with `-Dtools=mcp-admin`.
 
-_Note: The `mcp-admin` toolset is focused on server discovery and runtime configuration only._
+_Note: The `mcp-admin` toolset is focused on protected runtime configuration and administrative inventory._
 
 #### MCP Admin Tools:
 
 - `list-tools`: List all available tools with their descriptions.
   - Inputs: none
   - Returns: `tools` array with `{ name, title, description }` for built-ins (honoring `-Dtools` filter) and any YAML-defined tools.
+
+- `list-credentials`: List DBMS_CLOUD credentials available in the current schema.
+  - Inputs: none
+  - Returns: `{ totalCredentials, credentials: [{ credentialName, username, enabled }] }`
+  - Requirements and behavior:
+    - Must be explicitly enabled with `-Dtools=list-credentials` or `-Dtools=mcp-admin`.
+    - When HTTP authentication is enabled, requires OAuth scope `mcp:credentials:read` or `mcp:admin`.
+    - To allow any authenticated caller to use `list-credentials` without scope enforcement, set `-DlistCredentials.requireScope=false`.
 
 - `edit-tools`: Create, update, or remove a YAML-defined tool. Changes are auto-reloaded by the server.
   - Inputs (subset; see schema in code):
@@ -451,8 +481,27 @@ _Note: The `mcp-admin` toolset is focused on server discovery and runtime config
     - `statement` (string, optional): SQL (SELECT or DML)
     - `parameters` (array, optional): Items of `{ name, type, description, required }`
   - Requirements and behavior:
+    - Must be explicitly enabled with `-Dtools=edit-tools` or `-Dtools=mcp-admin`.
     - Requires `-DconfigFile` to be set to a writable YAML file; otherwise the tool will return an error.
+    - When HTTP authentication is enabled, requires OAuth scope `mcp:tools:write` or `mcp:admin`.
+    - To allow any authenticated caller to use `edit-tools` without scope enforcement, set `-DeditTools.requireScope=false`.
+    - OAuth scope lookup defaults to the `scope` claim in the introspection response. If your authorization server uses a different claim, configure its dot-separated path with `-Doauth.scopeClaimPath=<claim.path>`.
+    - Tool names must be safe and cannot collide with built-in tools or toolsets.
+    - For `edit-tools` changes, `dataSource` is required, must exist under `dataSources:`, and must be in `admin.editTools.allowedDataSources` when that allowlist is configured.
+    - `edit-tools` allows `SELECT` statements by default; additional statement types must be allowed by `admin.editTools.allowedStatementTypes`.
+    - Parameters must use supported types and match SQL bind placeholders exactly.
     - On upsert/remove, the YAML is written and the server hot-reloads the configuration shortly after.
+
+  Optional policy for changes made through `edit-tools`:
+  ```yaml
+  admin:
+    editTools:
+      enabled: true
+      allowedDataSources: [reporting-db]
+      allowedStatementTypes: [SELECT]
+  ```
+  This policy applies only to YAML changes made through `edit-tools`; it is not an allowlist for hand-edited YAML files.
+  Hand-edited YAML tools are treated as admin-controlled config. Startup and hot reload perform basic structural validation and skip invalid tools, but they do not enforce `admin.editTools.allowedDataSources` or `admin.editTools.allowedStatementTypes`.
 
   Example (upsert a tool):
   ```jsonc
@@ -609,6 +658,7 @@ In order to configure an OAuth2 server, the `-DenableAuthentication` should be e
   Which means that whenever the MCP server receives an HTTP request, it sends an HTTP request to the OAuth2 server's introspection endpoint to check the validity of the JWT access token.
 * `-DclientId`: Client ID (e.g. `oracle-db-toolkit`)
 * `-DclientSecret`: Client Secret (e.g. `Xj9mPqR2vL5kN8tY3hB7wF4uD6cA1eZ0`)
+* `-Doauth.scopeClaimPath`: (default: `scope`) Dot-separated path in the introspection response that contains OAuth scopes.
 * `-DallowedHosts`: (default: `*`) The value of `Access-Control-Allow-Origin` header when requesting the `/.well-known/oauth-protected-resource` endpoint (and `/.well-known/oauth-authorization-server` if `-DredirectOAuthToOpenID` is set to `true`) of the MCP Server.
 
 For more details regarding this MCP and OAuth, please see [MCP specification for authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization) (or a newer version if available).
@@ -722,13 +772,13 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
         Comma-separated allow-list of tool or toolset names to enable (case-insensitive).<br/>
         You can pass individual tools (e.g. <code>jdbc-analyzer</code>, <code>read-query</code>) or any of the following built-in toolsets:
         <ul>
-          <li><code>mcp-admin</code> — server discovery and runtime configuration tools (list-tools, edit-tools)</li>
+          <li><code>mcp-admin</code> — protected runtime configuration and administrative inventory tools (edit-tools, list-credentials)</li>
           <li><code>database-operator</code> — database operations, transactions, monitoring, and execution plans (read-query, write-query, table, transaction, db-ping, db-metrics-range, explain-plan).</li>
           <li><code>log-analyzer</code> — all JDBC log and RDBMS/SQLNet analysis tools (jdbc-analyzer and rdbms-analyzer)</li>
           <li><code>rag</code> — vector store management, document embedding, and semantic similarity search (vector-model, vector-store, embed, task, oci-storage, similarity-search)</li>
         </ul>
         You can also define your own YAML <code>toolsets:</code> and reference them here.  
-        Use <code>*</code> or <code>all</code> to enable everything. If omitted, all tools are enabled by default.
+        Use <code>*</code> or <code>all</code> to enable all non-protected tools. If omitted, all non-protected tools are enabled by default.
       </td>
       <td><code>mcp-admin, log-analyzer</code> or <code>reporting</code></td>
     </tr>
@@ -740,6 +790,18 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
         Useful for optional components like <code>oraclepki</code> when using TCPS wallets, token authentication, or centralized driver config.
       </td>
       <td><code>/opt/oracle/ext-jars</code></td>
+    </tr>
+    <tr>
+      <td><code>ingestRootDir</code></td>
+      <td>No</td>
+      <td>Root directory for local file ingestion with the <code>embed</code> tool. Required only for <code>action=file</code> and <code>action=files</code>. Requested file paths must resolve inside this directory.</td>
+      <td><code>/opt/mcp/ingest</code></td>
+    </tr>
+    <tr>
+      <td><code>ingestMaxFileSizeMb</code></td>
+      <td>No</td>
+      <td>Maximum file size for <code>embed</code> ingestion from local files and OCI bucket objects. The value is in MB. Default is <code>50</code>.</td>
+      <td><code>50</code></td>
     </tr>
     <tr>
       <td><code>transport</code></td>
@@ -809,6 +871,24 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
       <td>No</td>
       <td>The confidential key used to authenticate the client to the configured authorization server during the OAuth2 flow.</td>
       <td><code>-DclientSecret=Xj9mPqR2vL5kN8tY3hB7wF4uD6cA1eZ0</code></td>
+    </tr>
+    <tr>
+      <td><code>oauth.scopeClaimPath</code></td>
+      <td>No</td>
+      <td>Dot-separated path in the OAuth2 introspection response that contains scopes. Defaults to <code>scope</code>.</td>
+      <td><code>-Doauth.scopeClaimPath=scope</code></td>
+    </tr>
+    <tr>
+      <td><code>editTools.requireScope</code></td>
+      <td>No</td>
+      <td>Whether <code>edit-tools</code> requires OAuth scope <code>mcp:tools:write</code> or <code>mcp:admin</code> when HTTP authentication is enabled. Defaults to <code>true</code>. Set to <code>false</code> only when any authenticated caller should be allowed to use <code>edit-tools</code>.</td>
+      <td><code>-DeditTools.requireScope=false</code></td>
+    </tr>
+    <tr>
+      <td><code>listCredentials.requireScope</code></td>
+      <td>No</td>
+      <td>Whether <code>list-credentials</code> requires OAuth scope <code>mcp:credentials:read</code> or <code>mcp:admin</code> when HTTP authentication is enabled. Defaults to <code>true</code>. Set to <code>false</code> only when any authenticated caller should be allowed to list credential metadata.</td>
+      <td><code>-DlistCredentials.requireScope=false</code></td>
     </tr>
     <tr>
       <td><code>allowedHosts</code></td>

@@ -27,6 +27,8 @@ public final class LoadedConstants {
 
   /** Tools config */
   public static final String TOOLS = System.getProperty("tools");
+  public static final String INGEST_ROOT_DIR = System.getProperty("ingestRootDir");
+  public static final String INGEST_MAX_FILE_SIZE_MB = System.getProperty("ingestMaxFileSizeMb");
   public static final String DB_URL = System.getProperty("db.url");
   public static final String DB_USER = System.getProperty("db.user");
   public static final char[] DB_PASSWORD = System.getProperty("db.password") != null
@@ -42,6 +44,9 @@ public final class LoadedConstants {
   public static final String INTROSPECTION_ENDPOINT = System.getProperty("introspectionEndpoint");
   public static final String CLIENT_ID = System.getProperty("clientId");
   public static final String CLIENT_SECRET = System.getProperty("clientSecret");
+  public static final String OAUTH_SCOPE_CLAIM_PATH = System.getProperty("oauth.scopeClaimPath", "scope");
+  public static final boolean EDIT_TOOLS_REQUIRE_SCOPE = Boolean.parseBoolean(System.getProperty("editTools.requireScope", "true"));
+  public static final boolean LIST_CREDENTIALS_REQUIRE_SCOPE = Boolean.parseBoolean(System.getProperty("listCredentials.requireScope", "true"));
 
   /** Yaml config */
   public static final String CONFIG_FILE = System.getProperty("configFile");

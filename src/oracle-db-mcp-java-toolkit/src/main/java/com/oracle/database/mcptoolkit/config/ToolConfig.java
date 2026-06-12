@@ -83,6 +83,7 @@ public class ToolConfig {
     ObjectNode properties = schema.putObject("properties");
     ArrayNode required = JsonNodeFactory.instance.arrayNode();
 
+    if (this.parameters != null) {
       for (ToolParameterConfig param : this.parameters) {
         if (param == null) {
           continue;
@@ -94,6 +95,7 @@ public class ToolConfig {
           required.add(param.name);
         }
       }
+    }
     if (!required.isEmpty()) {
       schema.set("required", required);
     }

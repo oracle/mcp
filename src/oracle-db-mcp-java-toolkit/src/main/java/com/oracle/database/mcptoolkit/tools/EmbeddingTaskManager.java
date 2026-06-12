@@ -7,24 +7,34 @@
 
 package com.oracle.database.mcptoolkit.tools;
 
+import com.oracle.database.mcptoolkit.LoadedConstants;
 import com.oracle.database.mcptoolkit.ServerConfig;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import static com.oracle.database.mcptoolkit.Utils.openConnection;
 
@@ -39,10 +49,26 @@ import static com.oracle.database.mcptoolkit.Utils.openConnection;
  */
 public class EmbeddingTaskManager {
 
+  private static final int MAX_EMBEDDING_THREADS = 5;
+  private static final int MAX_EMBEDDING_QUEUE_SIZE = 100;
+  private static final int MAX_STORED_TASKS = 10_000;
+  private static final int MAX_LOCAL_INGEST_FILES = 100;
+  private static final Duration COMPLETED_TASK_TTL = Duration.ofHours(72);
+  private static final String SIMPLE_FILE_EXTENSION = "[a-z0-9]{1,16}";
+  private static final long DEFAULT_INGEST_MAX_FILE_SIZE_MB = 50L;
+  private static final Set<String> LOCAL_INGEST_ALLOWED_EXTENSIONS = Set.of(
+          "txt", "md", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+          "html", "htm", "json", "csv", "xml");
   private static final EmbeddingTaskManager INSTANCE = new EmbeddingTaskManager();
 
   private final ConcurrentHashMap<String, EmbeddingTask> tasks = new ConcurrentHashMap<>();
-  private final ExecutorService executor = Executors.newCachedThreadPool();
+  private final ExecutorService executor = new ThreadPoolExecutor(
+          MAX_EMBEDDING_THREADS,
+          MAX_EMBEDDING_THREADS,
+          0L,
+          TimeUnit.MILLISECONDS,
+          new ArrayBlockingQueue<>(MAX_EMBEDDING_QUEUE_SIZE),
+          new ThreadPoolExecutor.AbortPolicy());
 
   private EmbeddingTaskManager() {}
 
@@ -55,7 +81,7 @@ public class EmbeddingTaskManager {
    */
   public static class EmbeddingTask {
     public final String  taskId;
-    public volatile String  status; // PENDING | RUNNING | COMPLETED | FAILED
+    public volatile String  status; // PENDING | RUNNING | COMPLETED | FAILED | CANCELLED
     public final String  table;
     public final String  credentialName;
     public volatile int  totalChunksCreated  = 0;
@@ -63,6 +89,9 @@ public class EmbeddingTaskManager {
     public volatile String  errorMessage;
     public final Instant submittedAt = Instant.now();
     public volatile Instant completedAt;
+    volatile Future<?> future;
+    volatile boolean cancelRequested = false;
+    volatile PreparedStatement activeStatement;
 
     EmbeddingTask(String taskId, String table, String credentialName) {
       this.taskId         = taskId;
@@ -93,14 +122,13 @@ public class EmbeddingTaskManager {
 
     String taskId = UUID.randomUUID().toString();
     EmbeddingTask task = new EmbeddingTask(taskId, table, credentialName);
-    tasks.put(taskId, task);
-    executor.submit(() -> runSingleFile(task, config, table, credentialName, objectUri,
+    submitTask(task, () -> runSingleFile(task, config, table, credentialName, objectUri,
             textColumn, embeddingColumn, modelName, chunkParams));
     return taskId;
   }
 
   /**
-   * Submits a background job to embed all objects in an OCI bucket.
+   * Submits a background job to embed matching objects in an OCI bucket.
    * <p>
    * The entire pipeline — listing, downloading, chunking, embedding, inserting — is
    * executed as a single SQL statement inside the database. Nothing is transferred to Java.
@@ -109,8 +137,9 @@ public class EmbeddingTaskManager {
    * @param table              target vector store table
    * @param credentialName     DBMS_CLOUD credential name; {@code null} for public buckets
    * @param bucketUri          full OCI bucket URL or PAR URL
-   * @param prefix             object-name prefix filter; blank = all objects
-   * @param allowedExtensions  file extension filter (e.g. ["pdf","txt"]); empty = all files
+   * @param prefix             object-name prefix filter; blank means no prefix filter
+   * @param allowedExtensions  file extension filter (e.g. ["pdf","txt"]); empty means no extension filter
+   * @param maxObjects         maximum number of bucket objects to process
    * @param textColumn         text column in the target table
    * @param embeddingColumn    embedding column in the target table
    * @param modelName          ONNX embedding model name
@@ -120,15 +149,14 @@ public class EmbeddingTaskManager {
   public String submitBucket(
           ServerConfig config,
           String table, String credentialName, String bucketUri, String prefix,
-          List<String> allowedExtensions,
+          List<String> allowedExtensions, int maxObjects,
           String textColumn, String embeddingColumn,
           String modelName, String chunkParams) {
 
     String taskId = UUID.randomUUID().toString();
     EmbeddingTask task = new EmbeddingTask(taskId, table, credentialName);
-    tasks.put(taskId, task);
-    executor.submit(() -> runBucket(task, config, table, credentialName, bucketUri,
-            prefix, allowedExtensions, textColumn, embeddingColumn, modelName, chunkParams));
+    submitTask(task, () -> runBucket(task, config, table, credentialName, bucketUri,
+            prefix, allowedExtensions, maxObjects, textColumn, embeddingColumn, modelName, chunkParams));
     return taskId;
   }
 
@@ -151,10 +179,10 @@ public class EmbeddingTaskManager {
           String textColumn, String embeddingColumn,
           String modelName, String chunkParams) {
 
+    validateLocalIngestFileCount(filePaths);
     String taskId = UUID.randomUUID().toString();
     EmbeddingTask task = new EmbeddingTask(taskId, table, null);
-    tasks.put(taskId, task);
-    executor.submit(() -> runLocalFiles(task, config, table, filePaths,
+    submitTask(task, () -> runLocalFiles(task, config, table, filePaths,
             textColumn, embeddingColumn, modelName, chunkParams));
     return taskId;
   }
@@ -189,10 +217,42 @@ public class EmbeddingTaskManager {
 
     String taskId = UUID.randomUUID().toString();
     EmbeddingTask task = new EmbeddingTask(taskId, targetTable, null);
-    tasks.put(taskId, task);
-    executor.submit(() -> runTableEmbedding(task, config, sourceTable, sourceTextCol, sourceIdCol,
+    submitTask(task, () -> runTableEmbedding(task, config, sourceTable, sourceTextCol, sourceIdCol,
             targetTable, textCol, embeddingCol, metadataCol, modelName, chunkParams));
     return taskId;
+  }
+
+  /**
+   * Stores and submits a background embedding task, rejecting it if task storage or queue limits are full.
+   */
+  private void submitTask(EmbeddingTask task, Runnable work) {
+    cleanupTasks();
+    if (tasks.size() >= MAX_STORED_TASKS) {
+      throw new IllegalStateException("Embedding task storage is full; try again later");
+    }
+
+    tasks.put(task.taskId, task);
+    try {
+      task.future = executor.submit(work);
+    } catch (RejectedExecutionException e) {
+      tasks.remove(task.taskId);
+      throw new IllegalStateException("Embedding task queue is full; try again later", e);
+    }
+  }
+
+  /**
+   * Removes terminal task records that are older than the retention window.
+   */
+  private void cleanupTasks() {
+    Instant expiresBefore = Instant.now().minus(COMPLETED_TASK_TTL);
+    tasks.entrySet().removeIf(entry -> {
+      EmbeddingTask task = entry.getValue();
+      return task.completedAt != null
+              && task.completedAt.isBefore(expiresBefore)
+              && ("COMPLETED".equals(task.status)
+              || "FAILED".equals(task.status)
+              || "CANCELLED".equals(task.status));
+    });
   }
 
   /**
@@ -200,6 +260,61 @@ public class EmbeddingTaskManager {
    */
   public Collection<EmbeddingTask> getAllTasks() {
     return tasks.values();
+  }
+
+  /**
+   * Requests cancellation of a PENDING or RUNNING embedding task.
+   * <p>
+   * For SQL that is currently executing, calls {@code PreparedStatement.cancel()}.
+   * <p>
+   * Local-file tasks also use a cooperative flag checked between files. Rows inserted before
+   * cancellation are cleaned up only when the target vector store has a METADATA column containing
+   * the task ID.
+   * <p>
+   * Cancellation is best-effort for work already running in the database.
+   *
+   * @param taskId the task to cancel
+   * @throws IllegalArgumentException if the task is not found
+   * @throws IllegalStateException    if the task is already in a terminal state
+   */
+  public void cancelTask(String taskId) {
+    EmbeddingTask task = tasks.get(taskId);
+    if (task == null) {
+      throw new IllegalArgumentException("Task not found: " + taskId);
+    }
+    String currentStatus = task.status;
+    if ("COMPLETED".equals(currentStatus) || "FAILED".equals(currentStatus) || "CANCELLED".equals(currentStatus)) {
+      throw new IllegalStateException("Task already in terminal state: " + currentStatus);
+    }
+
+    task.cancelRequested = true;
+
+    // For queued tasks: cancel before they start
+    Future<?> f = task.future;
+    if (f != null && f.cancel(false) && "PENDING".equals(task.status)) {
+      task.status      = "CANCELLED";
+      task.completedAt = Instant.now();
+    }
+
+    // For RUNNING tasks: ask JDBC/Oracle to cancel the active SQL statement.
+    PreparedStatement ps = task.activeStatement;
+    if (ps != null) {
+      try { ps.cancel(); } catch (Exception ignored) {}
+    }
+  }
+
+  /**
+   * Deletes all rows stamped with the given task ID from the vector store METADATA.
+   * Called as a compensating DELETE when a local-file task is cancelled mid-loop.
+   *
+   * @return number of rows deleted
+   */
+  private int deleteTaskRows(Connection c, String table, String taskId) throws SQLException {
+    String sql = String.format(SqlQueries.DELETE_TASK_ROWS_QUERY, quoteIdent(table));
+    try (PreparedStatement ps = c.prepareStatement(sql)) {
+      ps.setString(1, taskId);
+      return ps.executeUpdate();
+    }
   }
 
   /**
@@ -235,6 +350,11 @@ public class EmbeddingTaskManager {
           String textColumn, String embeddingColumn,
           String modelName, String chunkParams) {
 
+    if (task.cancelRequested) {
+      task.status      = "CANCELLED";
+      task.completedAt = Instant.now();
+      return;
+    }
     task.status = "RUNNING";
 
     try (Connection c = openConnection(config, null)) {
@@ -252,13 +372,15 @@ public class EmbeddingTaskManager {
                 quoteIdent(table)
         );
         try (PreparedStatement ps = c.prepareStatement(sql)) {
-          ps.setString(1, UUID.randomUUID().toString()); // document_id
-          ps.setString(2, objectUri);                    // source_uri in metadata
-          ps.setString(3, credentialName);               // GET_OBJECT credential (null = public)
-          ps.setString(4, objectUri);                    // GET_OBJECT object uri
-          ps.setString(5, chunkParams);
-          ps.setString(6, embeddingParams);
-          ps.setString(7, objectUri);                    // NOT EXISTS dedup check
+          ps.setString(1, task.taskId);                  // task_id
+          ps.setString(2, UUID.randomUUID().toString()); // document_id
+          ps.setString(3, objectUri);                    // source_uri in metadata
+          ps.setString(4, credentialName);               // GET_OBJECT credential (null = public)
+          ps.setString(5, objectUri);                    // GET_OBJECT object uri
+          ps.setString(6, chunkParams);
+          ps.setString(7, embeddingParams);
+          ps.setString(8, objectUri);                    // NOT EXISTS dedup check
+          task.activeStatement = ps;
           chunks = ps.executeUpdate();
         }
       } else {
@@ -273,9 +395,11 @@ public class EmbeddingTaskManager {
           ps.setString(2, objectUri);
           ps.setString(3, chunkParams);
           ps.setString(4, embeddingParams);
+          task.activeStatement = ps;
           chunks = ps.executeUpdate();
         }
       }
+      task.activeStatement = null;
 
       task.totalChunksCreated = chunks;
       if (chunks == 0) {
@@ -293,29 +417,40 @@ public class EmbeddingTaskManager {
       task.completedAt = Instant.now();
 
     } catch (Exception e) {
-      task.errorMessage = errorMessage(e);
-      task.status       = "FAILED";
-      task.completedAt  = Instant.now();
+      task.activeStatement = null;
+      if (task.cancelRequested) {
+        task.status = "CANCELLED";
+      } else {
+        task.errorMessage = errorMessage(e);
+        task.status       = "FAILED";
+      }
+      task.completedAt = Instant.now();
     }
   }
 
   /**
-   * Embeds all objects in an OCI bucket via a single SQL statement.
+   * Embeds matching objects in an OCI bucket via a single SQL statement.
    * {@code DBMS_CLOUD.LIST_OBJECTS} drives the outer iteration;
    * {@code DBMS_CLOUD.GET_OBJECT} fetches each file directly inside the DB.
    */
   private void runBucket(
           EmbeddingTask task, ServerConfig config,
           String table, String credentialName, String bucketUri,
-          String prefix, List<String> allowedExtensions,
+          String prefix, List<String> allowedExtensions, int maxObjects,
           String textColumn, String embeddingColumn,
           String modelName, String chunkParams) {
 
+    if (task.cancelRequested) {
+      task.status      = "CANCELLED";
+      task.completedAt = Instant.now();
+      return;
+    }
     task.status = "RUNNING";
 
     String effectivePrefix   = (prefix == null) ? "" : prefix;
     String embeddingParams   = RagTools.buildEmbeddingParams(modelName);
-    String extensionCondition = buildExtensionCondition(allowedExtensions);
+    ExtensionFilter extensionFilter = buildExtensionFilter(allowedExtensions);
+    long maxFileBytes = ingestMaxFileBytes();
 
     try (Connection c = openConnection(config, null)) {
 
@@ -328,19 +463,24 @@ public class EmbeddingTaskManager {
                 quoteIdent(table),
                 quoteIdent(textColumn),
                 quoteIdent(embeddingColumn),
-                extensionCondition,
+                extensionFilter.condition(),
                 quoteIdent(table)
         );
         try (PreparedStatement ps = c.prepareStatement(sql)) {
-          ps.setString(1, bucketUri);        // source_uri prefix in metadata
-          ps.setString(2, credentialName);   // LIST_OBJECTS credential (null = public)
-          ps.setString(3, bucketUri);        // LIST_OBJECTS bucket uri
-          ps.setString(4, credentialName);   // GET_OBJECT credential (null = public)
-          ps.setString(5, bucketUri);        // GET_OBJECT base uri
-          ps.setString(6, chunkParams);
-          ps.setString(7, embeddingParams);
-          ps.setString(8, effectivePrefix);  // LIKE prefix filter
-          ps.setString(9, bucketUri);        // NOT EXISTS dedup base uri
+          ps.setString(1, task.taskId);      // task_id
+          ps.setString(2, bucketUri);        // source_uri prefix in metadata
+          ps.setString(3, credentialName);   // LIST_OBJECTS credential (null = public)
+          ps.setString(4, bucketUri);        // LIST_OBJECTS bucket uri
+          ps.setString(5, effectivePrefix);  // LIKE prefix filter
+          ps.setLong(6, maxFileBytes);       // LIST_OBJECTS bytes filter
+          int nextIndex = bindExtensionPatterns(ps, 7, extensionFilter.patterns());
+          ps.setInt(nextIndex++, maxObjects);
+          ps.setString(nextIndex++, credentialName); // GET_OBJECT credential (null = public)
+          ps.setString(nextIndex++, bucketUri);      // GET_OBJECT base uri
+          ps.setString(nextIndex++, chunkParams);
+          ps.setString(nextIndex++, embeddingParams);
+          ps.setString(nextIndex, bucketUri);        // NOT EXISTS dedup base uri
+          task.activeStatement = ps;
           inserted = ps.executeUpdate();
         }
       } else {
@@ -349,28 +489,38 @@ public class EmbeddingTaskManager {
                 quoteIdent(table),
                 quoteIdent(textColumn),
                 quoteIdent(embeddingColumn),
-                extensionCondition
+                extensionFilter.condition()
         );
         try (PreparedStatement ps = c.prepareStatement(sql)) {
           ps.setString(1, credentialName);   // LIST_OBJECTS credential (null = public)
           ps.setString(2, bucketUri);        // LIST_OBJECTS bucket uri
-          ps.setString(3, credentialName);   // GET_OBJECT credential (null = public)
-          ps.setString(4, bucketUri);        // GET_OBJECT base uri
-          ps.setString(5, chunkParams);
-          ps.setString(6, embeddingParams);
-          ps.setString(7, effectivePrefix);  // LIKE prefix filter
+          ps.setString(3, effectivePrefix);  // LIKE prefix filter
+          ps.setLong(4, maxFileBytes);       // LIST_OBJECTS bytes filter
+          int nextIndex = bindExtensionPatterns(ps, 5, extensionFilter.patterns());
+          ps.setInt(nextIndex++, maxObjects);
+          ps.setString(nextIndex++, credentialName); // GET_OBJECT credential (null = public)
+          ps.setString(nextIndex++, bucketUri);      // GET_OBJECT base uri
+          ps.setString(nextIndex++, chunkParams);
+          ps.setString(nextIndex, embeddingParams);
+          task.activeStatement = ps;
           inserted = ps.executeUpdate();
         }
       }
+      task.activeStatement = null;
 
       task.totalChunksCreated = inserted;
       task.status             = "COMPLETED";
       task.completedAt        = Instant.now();
 
     } catch (Exception e) {
-      task.errorMessage = errorMessage(e);
-      task.status       = "FAILED";
-      task.completedAt  = Instant.now();
+      task.activeStatement = null;
+      if (task.cancelRequested) {
+        task.status = "CANCELLED";
+      } else {
+        task.errorMessage = errorMessage(e);
+        task.status       = "FAILED";
+      }
+      task.completedAt = Instant.now();
     }
   }
 
@@ -385,63 +535,200 @@ public class EmbeddingTaskManager {
           String textColumn, String embeddingColumn,
           String modelName, String chunkParams) {
 
+    if (task.cancelRequested) {
+      task.status      = "CANCELLED";
+      task.completedAt = Instant.now();
+      return;
+    }
     task.status = "RUNNING";
 
-    try (Connection c = openConnection(config, null)) {
-      boolean withMetadata = RagTools.hasMetadataColumn(c, table);
-      int totalChunks = 0;
-      for (String filePath : filePaths) {
-        Path path = Paths.get(filePath);
-        if (!Files.exists(path)) {
-          task.results.add(Map.of(
-                  "file",   filePath,
-                  "status", "error",
-                  "error",  "File not found: " + filePath));
-          continue;
-        }
-        try {
-          byte[] fileBytes = Files.readAllBytes(path);
-          String fullPath  = path.toAbsolutePath().toString();
-          String sourceUri = Paths.get(fullPath).toUri().toString();
+    try {
+      Path ingestRoot = resolveIngestRootDir();
+      long maxFileBytes = ingestMaxFileBytes();
 
-          // Pre-check deduplication so we can distinguish "already exists" from "no text extracted"
-          if (withMetadata && RagTools.fileExistsInVectorStore(c, table, sourceUri)) {
+      try (Connection c = openConnection(config, null)) {
+        boolean withMetadata = RagTools.hasMetadataColumn(c, table);
+        int totalChunks = 0;
+        for (String filePath : filePaths) {
+          if (task.cancelRequested) break;
+          try {
+            Path path = validateLocalIngestFile(filePath, ingestRoot, maxFileBytes);
+            byte[] fileBytes = Files.readAllBytes(path);
+            String fullPath  = path.toString();
+            String displayName  = path.getFileName().toString();
+            String sourceUri = path.toUri().toString();
+
+            // Pre-check deduplication so we can distinguish "already exists" from "no text extracted"
+            if (withMetadata && RagTools.fileExistsInVectorStore(c, table, sourceUri)) {
+              task.results.add(Map.of(
+                      "file",   displayName,
+                      "status", "skipped",
+                      "reason", "File already exists in vector store"));
+              continue;
+            }
+
+            int chunks = RagTools.insertFileWithNativeChunking(
+                    c, table, textColumn, embeddingColumn, modelName, fileBytes, fullPath, chunkParams,
+                    task.taskId, ps -> task.activeStatement = ps);
+            if (chunks == 0) {
+              task.results.add(Map.of(
+                      "file",   displayName,
+                      "status", "skipped",
+                      "reason", "No text could be extracted (image or unsupported file format)"));
+            } else {
+              totalChunks += chunks;
+              task.results.add(Map.of(
+                      "file",          displayName,
+                      "status",        "success",
+                      "chunksCreated", chunks));
+            }
+          } catch (Exception e) {
+            if (task.cancelRequested) {
+              task.results.add(Map.of(
+                      "file",   displayFileName(filePath),
+                      "status", "cancelled"));
+              break;
+            }
             task.results.add(Map.of(
-                    "file",   fullPath,
-                    "status", "skipped",
-                    "reason", "File already exists in vector store"));
-            continue;
+                    "file",   displayFileName(filePath),
+                    "status", "error",
+                    "error",  errorMessage(e)));
           }
+        }
 
-          int chunks = RagTools.insertFileWithNativeChunking(
-                  c, table, textColumn, embeddingColumn, modelName, fileBytes, fullPath, chunkParams);
-          if (chunks == 0) {
-            task.results.add(Map.of(
-                    "file",   fullPath,
-                    "status", "skipped",
-                    "reason", "No text could be extracted (image or unsupported file format)"));
+        if (task.cancelRequested) {
+          if (withMetadata) {
+            try {
+              int deletedRows = deleteTaskRows(c, table, task.taskId);
+              task.results.add(Map.of(
+                      "status",             "cleanup",
+                      "rowsDeletedByTaskId", deletedRows));
+              task.totalChunksCreated = 0;
+              task.status             = "CANCELLED";
+            } catch (Exception cleanupError) {
+              task.totalChunksCreated = totalChunks;
+              task.errorMessage       = "Cancellation requested, but cleanup failed";
+              task.results.add(Map.of(
+                      "status", "cleanup_failed",
+                      "error",  errorMessage(cleanupError)));
+              task.status             = "FAILED";
+            }
           } else {
-            totalChunks += chunks;
-            task.results.add(Map.of(
-                    "file",          fullPath,
-                    "status",        "success",
-                    "chunksCreated", chunks));
+            task.totalChunksCreated = totalChunks;
+            if (totalChunks > 0) {
+              task.errorMessage = "Cancellation requested, but target vector store has no METADATA column; inserted rows could not be cleaned up.";
+              task.results.add(Map.of(
+                      "status",        "cleanup_unavailable",
+                      "chunksCreated", totalChunks));
+            }
+            task.status = "CANCELLED";
           }
-        } catch (Exception e) {
-          task.results.add(Map.of(
-                  "file",   filePath,
-                  "status", "error",
-                  "error",  errorMessage(e)));
+        } else {
+          task.totalChunksCreated = totalChunks;
+          task.status             = "COMPLETED";
         }
+        task.completedAt = Instant.now();
       }
-      task.totalChunksCreated = totalChunks;
-      task.status             = "COMPLETED";
-      task.completedAt        = Instant.now();
 
     } catch (Exception e) {
-      task.errorMessage = errorMessage(e);
-      task.status       = "FAILED";
-      task.completedAt  = Instant.now();
+      if (task.cancelRequested) {
+        task.status = "CANCELLED";
+      } else {
+        task.errorMessage = errorMessage(e);
+        task.status       = "FAILED";
+      }
+      task.completedAt = Instant.now();
+    }
+  }
+
+  /**
+   * Validates the number of local files accepted in one embedding task.
+   */
+  static void validateLocalIngestFileCount(List<String> filePaths) {
+    if (filePaths == null || filePaths.isEmpty()) {
+      throw new IllegalArgumentException("filePaths must not be empty");
+    }
+    if (filePaths.size() > MAX_LOCAL_INGEST_FILES) {
+      throw new IllegalArgumentException(
+              "Too many local ingest files; maximum is " + MAX_LOCAL_INGEST_FILES);
+    }
+  }
+
+  /**
+   * Resolves the configured ingest root directory to its real filesystem path.
+   *
+   * @return canonical ingest root directory
+   */
+  private static Path resolveIngestRootDir() throws IOException {
+    String root = LoadedConstants.INGEST_ROOT_DIR;
+    if (root == null || root.isBlank()) {
+      throw new IllegalStateException("Local file ingestion requires -DingestRootDir");
+    }
+
+    Path realRoot = Paths.get(root).toRealPath();
+    if (!Files.isDirectory(realRoot)) {
+      throw new IllegalStateException("Ingest root directory is not a directory");
+    }
+    return realRoot;
+  }
+
+  /**
+   * Returns the configured ingest max file size in bytes, using a megabyte property.
+   *
+   * @return maximum allowed file size in bytes
+   */
+  private static long ingestMaxFileBytes() {
+    String value = LoadedConstants.INGEST_MAX_FILE_SIZE_MB;
+    long maxFileSizeMb;
+    try {
+      maxFileSizeMb = (value == null || value.isBlank())
+              ? DEFAULT_INGEST_MAX_FILE_SIZE_MB
+              : Long.parseLong(value.trim());
+    } catch (NumberFormatException e) {
+      throw new IllegalStateException("ingestMaxFileSizeMb must be a number", e);
+    }
+    if (maxFileSizeMb <= 0) {
+      throw new IllegalStateException("ingestMaxFileSizeMb must be greater than zero");
+    }
+    return maxFileSizeMb * 1024L * 1024L;
+  }
+
+  /**
+   * Validates a caller-provided local file path before reading it.
+   *
+   * @return canonical file path that is inside the configured ingest root
+   */
+  private static Path validateLocalIngestFile(
+          String filePath, Path ingestRoot, long maxFileBytes) throws IOException {
+    if (filePath == null || filePath.isBlank()) {
+      throw new IllegalArgumentException("File path must not be blank");
+    }
+
+    Path path = Paths.get(filePath).toRealPath();
+    if (!Files.isRegularFile(path)) {
+      throw new IllegalArgumentException("Path is not a regular file");
+    }
+    if (!path.startsWith(ingestRoot)) {
+      throw new IllegalArgumentException("File is outside the configured ingest root");
+    }
+    validateLocalIngestFileName(path.getFileName().toString());
+
+    long fileSize = Files.size(path);
+    if (fileSize > maxFileBytes) {
+      throw new IllegalArgumentException("File exceeds max local ingest size");
+    }
+    return path;
+  }
+
+  /**
+   * Validates that a local ingest file has an allowed document extension.
+   */
+  private static void validateLocalIngestFileName(String fileName) {
+    String lowerName = fileName.toLowerCase(Locale.ROOT);
+    int dot = lowerName.lastIndexOf('.');
+    String extension = dot >= 0 ? lowerName.substring(dot + 1) : "";
+    if (!LOCAL_INGEST_ALLOWED_EXTENSIONS.contains(extension)) {
+      throw new IllegalArgumentException("File extension is not allowed for local ingestion");
     }
   }
 
@@ -455,6 +742,11 @@ public class EmbeddingTaskManager {
           String targetTable, String textCol, String embeddingCol, String metadataCol,
           String modelName, String chunkParams) {
 
+    if (task.cancelRequested) {
+      task.status      = "CANCELLED";
+      task.completedAt = Instant.now();
+      return;
+    }
     task.status = "RUNNING";
     String embedParams = RagTools.buildEmbeddingParams(modelName);
 
@@ -475,15 +767,18 @@ public class EmbeddingTaskManager {
 
       try (PreparedStatement stmt = conn.prepareStatement(sql)) {
         if (withMetadata) {
-          stmt.setString(1, sourceTable);   // JSON_OBJECT KEY 'source_table'
-          stmt.setString(2, chunkParams);
-          stmt.setString(3, embedParams);
-          stmt.setString(4, sourceTable);   // NOT EXISTS dedup check
+          stmt.setString(1, task.taskId);   // JSON_OBJECT KEY 'task_id'
+          stmt.setString(2, sourceTable);   // JSON_OBJECT KEY 'source_table'
+          stmt.setString(3, chunkParams);
+          stmt.setString(4, embedParams);
+          stmt.setString(5, sourceTable);   // NOT EXISTS dedup check
         } else {
           stmt.setString(1, chunkParams);
           stmt.setString(2, embedParams);
         }
+        task.activeStatement = stmt;
         int inserted = stmt.executeUpdate();
+        task.activeStatement = null;
         task.totalChunksCreated = inserted;
         task.results.add(Map.of(
                 "sourceTable",   sourceTable,
@@ -495,29 +790,89 @@ public class EmbeddingTaskManager {
       task.completedAt = Instant.now();
 
     } catch (Exception e) {
-      task.errorMessage = errorMessage(e);
-      task.status       = "FAILED";
-      task.completedAt  = Instant.now();
+      task.activeStatement = null;
+      if (task.cancelRequested) {
+        task.status = "CANCELLED";
+      } else {
+        task.errorMessage = errorMessage(e);
+        task.status       = "FAILED";
+      }
+      task.completedAt = Instant.now();
     }
   }
 
   /**
    * Builds an optional SQL AND clause that filters bucket objects by file extension.
-   * Returns an empty string when the list is empty (all files are processed).
+   * Returns an empty string when the list is empty, meaning no extension filter is applied.
+   *
+   * @param extensions caller-provided extensions, with or without a leading dot
+   * @return SQL condition with bind placeholders and the matching bind values
    */
-  private static String buildExtensionCondition(List<String> extensions) {
-    if (extensions == null || extensions.isEmpty()) return "";
-    String conditions = extensions.stream()
-            .map(ext -> {
-              String e = ext.startsWith(".") ? ext : "." + ext;
-              return "lst.object_name LIKE '%" + e + "'";
-            })
+  static ExtensionFilter buildExtensionFilter(List<String> extensions) {
+    if (extensions == null || extensions.isEmpty()) {
+      return new ExtensionFilter("", List.of());
+    }
+
+    List<String> patterns = extensions.stream()
+            .map(EmbeddingTaskManager::normalizeExtensionPattern)
+            .toList();
+    String conditions = patterns.stream()
+            .map(pattern -> "LOWER(object_name) LIKE ?")
             .collect(java.util.stream.Collectors.joining(" OR "));
-    return "AND (" + conditions + ")";
+    return new ExtensionFilter("AND (" + conditions + ")", patterns);
   }
 
+  /**
+   * Validates and converts one extension into a case-insensitive SQL LIKE pattern.
+   *
+   * @param extension extension such as {@code pdf} or {@code .pdf}
+   * @return pattern such as {@code %.pdf}
+   */
+  private static String normalizeExtensionPattern(String extension) {
+    String value = extension == null ? "" : extension.trim().toLowerCase(Locale.ROOT);
+    if (value.startsWith(".")) {
+      value = value.substring(1);
+    }
+    if (!value.matches(SIMPLE_FILE_EXTENSION)) {
+      throw new IllegalArgumentException("Invalid allowedExtensions value");
+    }
+    return "%." + value;
+  }
+
+  /**
+   * Binds extension LIKE patterns and returns the next available bind index.
+   */
+  private static int bindExtensionPatterns(
+          PreparedStatement ps, int startIndex, List<String> patterns) throws SQLException {
+    int index = startIndex;
+    for (String pattern : patterns) {
+      ps.setString(index++, pattern);
+    }
+    return index;
+  }
+
+  /**
+   * Holds the SQL fragment and bind values for an extension filter.
+   */
+  record ExtensionFilter(String condition, List<String> patterns) {}
+
   private static String errorMessage(Exception e) {
-    return e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+    if (e instanceof IllegalArgumentException || e instanceof IllegalStateException) {
+      return e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+    }
+    return "Embedding task failed";
+  }
+
+  private static String displayFileName(String filePath) {
+    if (filePath == null || filePath.isBlank()) {
+      return "unknown";
+    }
+    try {
+      Path fileName = Paths.get(filePath).getFileName();
+      return fileName == null ? "unknown" : fileName.toString();
+    } catch (Exception e) {
+      return "unknown";
+    }
   }
 
   private static String quoteIdent(String name) {

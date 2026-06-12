@@ -9,6 +9,7 @@ package com.oracle.database.mcptoolkit;
 
 import com.oracle.database.mcptoolkit.config.ConfigRoot;
 import com.oracle.database.mcptoolkit.config.DataSourceConfig;
+import com.oracle.database.mcptoolkit.config.EditToolsConfig;
 import com.oracle.database.mcptoolkit.config.ToolConfig;
 
 import java.util.*;
@@ -43,6 +44,7 @@ public final class ServerConfig {
   public final Set<String> disabledToolsetMembers;
   public final Map<String, DataSourceConfig> sources;
   public final Map<String, ToolConfig> tools;
+  public final EditToolsConfig editToolsPolicy;
   public static String defaultSourceName; // Only if the default db info are from yaml config to avoid redundancy
 
   private ServerConfig(
@@ -52,7 +54,8 @@ public final class ServerConfig {
       Set<String> toolsFilter,
       Set<String> disabledToolsetMembers,
       Map<String, DataSourceConfig> sources,
-      Map<String, ToolConfig> tools
+      Map<String, ToolConfig> tools,
+      EditToolsConfig editToolsPolicy
   ) {
     this.dbUrl = dbUrl;
     this.dbUser = dbUser;
@@ -61,12 +64,13 @@ public final class ServerConfig {
     this.disabledToolsetMembers = disabledToolsetMembers;
     this.sources = sources;
     this.tools = tools;
+    this.editToolsPolicy = editToolsPolicy;
   }
 
   private static final Set<String> DB_TOOLS = Set.of(
-    "similarity-search", "explain-plan", "read-query", "write-query",
-    "transaction", "table", "db-ping", "db-metrics-range", "vector-store",
-    "vector-model", "embed", "task", "oci-storage"
+      "similarity-search", "explain-plan", "read-query", "write-query",
+      "transaction", "table", "db-ping", "db-metrics-range", "vector-store",
+      "vector-model", "embed", "task", "oci-storage", "list-credentials"
   );
 
   /** Built-in toolsets covering predefined tools. Lowercase keys and members. */
@@ -80,8 +84,12 @@ public final class ServerConfig {
               "read-query", "write-query", "transaction", "table", "db-ping", "db-metrics-range",
               "explain-plan"
       ),
-      "mcp-admin", Set.of("list-tools", "edit-tools")
+      "mcp-admin", Set.of("edit-tools", "list-credentials")
   );
+
+  private static final Set<String> EXPLICIT_ADMIN_TOOLS = Set.of("edit-tools", "list-credentials");
+
+  private static final Set<String> STANDALONE_BUILTIN_TOOLS = Set.of("list-tools");
 
 
   /**
@@ -110,6 +118,7 @@ public final class ServerConfig {
 
     Map<String, DataSourceConfig> sources = configRoot != null ? configRoot.dataSources : Collections.emptyMap();
     Map<String, ToolConfig> toolsMap = configRoot != null ? configRoot.tools : Collections.emptyMap();
+    EditToolsConfig editToolsPolicy = configRoot != null && configRoot.admin != null ? configRoot.admin.editTools : null;
 
     if (toolsMap != null) {
       for (Map.Entry<String, ToolConfig> entry : toolsMap.entrySet()) {
@@ -145,7 +154,7 @@ public final class ServerConfig {
     if (needDb && (dbPass == null || dbPass.length == 0)) {
       throw new IllegalStateException("Missing required db.password in both system properties and YAML config");
     }
-    return new ServerConfig(dbUrl, dbUser, dbPass, expandedTools, disabledToolsetMembers, sources, toolsMap);
+    return new ServerConfig(dbUrl, dbUser, dbPass, expandedTools, disabledToolsetMembers, sources, toolsMap, editToolsPolicy);
   }
 
   /**
@@ -172,7 +181,8 @@ public final class ServerConfig {
             expanded,
             Collections.emptySet(),
             new HashMap<>(),
-            new HashMap<>()
+            new HashMap<>(),
+            null
     );
   }
 
@@ -345,6 +355,10 @@ public final class ServerConfig {
       return false;
     }
 
+    if (EXPLICIT_ADMIN_TOOLS.contains(key) && !isAdminToolExplicitlyRequested(key)) {
+      return false;
+    }
+
     if (config == null || config.toolsFilter == null) {
       return true;
     }
@@ -355,6 +369,37 @@ public final class ServerConfig {
     }
 
     return config.toolsFilter.contains(key);
+  }
+
+  private static boolean isAdminToolExplicitlyRequested(String toolName) {
+    Set<String> rawTools = parseToolsProp(LoadedConstants.TOOLS);
+    if (rawTools == null) {
+      return false;
+    }
+    return rawTools.contains(toolName) || rawTools.contains("mcp-admin");
+  }
+
+  public static boolean isBuiltInToolName(String toolName) {
+    if (toolName == null) {
+      return false;
+    }
+    String key = toolName.trim().toLowerCase(Locale.ROOT);
+    if (STANDALONE_BUILTIN_TOOLS.contains(key)) {
+      return true;
+    }
+    for (Set<String> toolsetMembers : BUILTIN_TOOLSETS.values()) {
+      if (toolsetMembers.contains(key)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public static boolean isBuiltInToolsetName(String toolsetName) {
+    if (toolsetName == null) {
+      return false;
+    }
+    return BUILTIN_TOOLSETS.containsKey(toolsetName.trim().toLowerCase(Locale.ROOT));
   }
 
   private static boolean isMemberOfDisabledToolset(ConfigRoot configRoot, String toolName) {

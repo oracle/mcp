@@ -15,6 +15,7 @@ import io.modelcontextprotocol.spec.McpSchema;
 import java.nio.file.Paths;
 import java.sql.*;
 import java.util.*;
+import java.util.function.Consumer;
 
 import static com.oracle.database.mcptoolkit.Utils.*;
 import static com.oracle.database.mcptoolkit.tools.ToolSchemas.*;
@@ -29,17 +30,21 @@ import static com.oracle.database.mcptoolkit.tools.ToolSchemas.*;
  *   <li><strong>vector-model</strong>: List or drop ONNX embedding models (action=list, drop).</li>
  *   <li><strong>embed</strong>: Embed documents from local files, Oracle tables, or OCI Object Storage
  *       (action=file, action=files, table, object, bucket). All actions are asynchronous and return a taskId.</li>
- *   <li><strong>task</strong>: Track background embedding tasks (action=status, list).</li>
+ *   <li><strong>task</strong>: Track background embedding tasks (action=status, list, cancel).</li>
  * </ul>
  */
 public class RagTools {
 
+  private static final JsonMapper JSON_MAPPER = new JsonMapper();
+  private static final String SIMPLE_ORACLE_IDENTIFIER = "[A-Za-z][A-Za-z0-9_$#]{0,127}";
   private static final String DEFAULT_VECTOR_TABLE            = "profile_oracle";
   private static final String DEFAULT_VECTOR_DATA_COLUMN      = "text";
   private static final String DEFAULT_VECTOR_EMBEDDING_COLUMN = "embedding";
   private static final String DEFAULT_VECTOR_MODEL_NAME       = "doc_model";
   private static final int    DEFAULT_VECTOR_TEXT_FETCH_LIMIT = 4000;
   private static final String DEFAULT_CHUNK_PARAMS            = "{\"max\": 500, \"overlap\": 50}";
+  private static final int    DEFAULT_TASK_LIST_LIMIT         = 100;
+  private static final int    MAX_TASK_LIST_LIMIT             = 1000;
 
   private RagTools() {}
 
@@ -258,7 +263,7 @@ public class RagTools {
                  + "action=files (batch of local files, needs filePaths array), "
                  + "action=table (from an existing Oracle table), "
                  + "action=object (single OCI Object Storage file), "
-                 + "action=bucket (all files in an OCI bucket). "
+                 + "action=bucket (matching files in an OCI bucket). "
                  + "All actions run in the background — returns a taskId immediately. "
                  + "Show the taskId to the user and wait for them to ask for a status check.")
          .inputSchema(EMBED)
@@ -363,12 +368,12 @@ public class RagTools {
 
             // objectUrl (direct or PAR) takes priority over individual components
             String rawObjectUrl = getOrDefault(args.get("objectUrl"), null);
-            String objectUri = (rawObjectUrl != null) ? rawObjectUrl
+            String objectUri = (rawObjectUrl != null) ? ObjectStorageRagTools.validateObjectStorageUrl(rawObjectUrl)
                     : ObjectStorageRagTools.buildObjectUri(
-                            String.valueOf(args.get("region")),
-                            String.valueOf(args.get("namespace")),
-                            String.valueOf(args.get("bucketName")),
-                            String.valueOf(args.get("objectName")));
+                            getOrDefault(args.get("region"), null),
+                            getOrDefault(args.get("namespace"), null),
+                            getOrDefault(args.get("bucketName"), null),
+                            getOrDefault(args.get("objectName"), null));
 
             String taskId = EmbeddingTaskManager.getInstance().submitSingleFile(
                     config, table, credentialName, objectUri,
@@ -394,6 +399,7 @@ public class RagTools {
             String embeddingColumn = getOrDefault(args.get("embeddingColumn"), DEFAULT_VECTOR_EMBEDDING_COLUMN);
             String modelName       = getOrDefault(args.get("modelName"),       DEFAULT_VECTOR_MODEL_NAME);
             String chunkParams     = getOrDefault(args.get("chunkParams"),     DEFAULT_CHUNK_PARAMS);
+            int maxObjects         = ObjectStorageRagTools.parseListObjectsMaxResults(args.get("maxObjects"));
             @SuppressWarnings("unchecked")
             List<String> allowedExtensions = args.get("allowedExtensions") instanceof List<?>
                     ? ((List<?>) args.get("allowedExtensions")).stream().map(Object::toString).toList()
@@ -401,14 +407,14 @@ public class RagTools {
 
             // bucketUrl (direct or PAR) takes priority over individual components
             String rawBucketUrl = getOrDefault(args.get("bucketUrl"), null);
-            String bucketUri = (rawBucketUrl != null) ? rawBucketUrl
+            String bucketUri = (rawBucketUrl != null) ? ObjectStorageRagTools.validateObjectStorageUrl(rawBucketUrl)
                     : ObjectStorageRagTools.buildBucketUri(
-                            String.valueOf(args.get("region")),
-                            String.valueOf(args.get("namespace")),
-                            String.valueOf(args.get("bucketName")));
+                            getOrDefault(args.get("region"), null),
+                            getOrDefault(args.get("namespace"), null),
+                            getOrDefault(args.get("bucketName"), null));
 
             String taskId = EmbeddingTaskManager.getInstance().submitBucket(
-                    config, table, credentialName, bucketUri, prefix, allowedExtensions,
+                    config, table, credentialName, bucketUri, prefix, allowedExtensions, maxObjects,
                     textColumn, embeddingColumn, modelName, chunkParams);
 
             LinkedHashMap<String, Object> result = new LinkedHashMap<>();
@@ -416,6 +422,7 @@ public class RagTools {
             result.put("status",    "PENDING");
             result.put("bucketUri", bucketUri);
             result.put("prefix",    prefix);
+            result.put("maxObjects", maxObjects);
             if (!allowedExtensions.isEmpty()) result.put("allowedExtensions", allowedExtensions);
             result.put("table",     table);
             return McpSchema.CallToolResult.builder()
@@ -444,7 +451,7 @@ public class RagTools {
       .tool(McpSchema.Tool.builder()
          .name("task")
          .title("Task")
-         .description("Track background embedding tasks. action=status (needs taskId), list (no args).")
+         .description("Track background embedding tasks. action=status (needs taskId), list (supports limit/offset), cancel (needs taskId).")
          .inputSchema(TASK)
          .build())
       .callHandler((exchange, callReq) -> {
@@ -463,22 +470,50 @@ public class RagTools {
                     .build();
           });
           case "list" -> tryCall(() -> {
-            List<Map<String, Object>> taskList = EmbeddingTaskManager.getInstance().getAllTasks()
+            Map<String, Object> args = callReq.arguments();
+            int limit;
+            int offset;
+            try {
+              limit = parseTaskListLimit(args.get("limit"));
+              offset = parseTaskListOffset(args.get("offset"));
+            } catch (IllegalArgumentException e) {
+              return new McpSchema.CallToolResult(e.getMessage(), true);
+            }
+
+            List<EmbeddingTaskManager.EmbeddingTask> allTasks = EmbeddingTaskManager.getInstance().getAllTasks()
                     .stream()
                     .sorted((a, b) -> b.submittedAt.compareTo(a.submittedAt))
+                    .collect(java.util.stream.Collectors.toList());
+            List<Map<String, Object>> taskList = allTasks.stream()
+                    .skip(offset)
+                    .limit(limit)
                     .map(EmbeddingTaskManager::taskToMap)
                     .collect(java.util.stream.Collectors.toList());
 
             LinkedHashMap<String, Object> result = new LinkedHashMap<>();
-            result.put("totalTasks", taskList.size());
+            result.put("totalTasks", allTasks.size());
+            result.put("limit",      limit);
+            result.put("offset",     offset);
+            result.put("returned",   taskList.size());
+            result.put("hasMore",    (long) offset + taskList.size() < allTasks.size());
             result.put("tasks",      taskList);
             return McpSchema.CallToolResult.builder()
                     .structuredContent(result)
                     .addTextContent(new JsonMapper().writeValueAsString(result))
                     .build();
           });
+          case "cancel" -> tryCall(() -> {
+            String taskId = String.valueOf(callReq.arguments().get("taskId"));
+            EmbeddingTaskManager.getInstance().cancelTask(taskId);
+            EmbeddingTaskManager.EmbeddingTask task = EmbeddingTaskManager.getInstance().getTask(taskId);
+            Map<String, Object> result = EmbeddingTaskManager.taskToMap(task);
+            return McpSchema.CallToolResult.builder()
+                    .structuredContent(result)
+                    .addTextContent(new JsonMapper().writeValueAsString(result))
+                    .build();
+          });
           default -> new McpSchema.CallToolResult(
-                  "Unknown action '" + action + "'. Must be one of: status, list", true);
+                  "Unknown action '" + action + "'. Must be one of: status, list, cancel", true);
         };
       })
     .build();
@@ -509,9 +544,10 @@ public class RagTools {
                                                   int textFetchLimit,
                                                   String question,
                                                   int topK) throws SQLException {
+    String safeModelName = validateModelName(modelName);
     String sql = String.format(
         SqlQueries.SIMILARITY_SEARCH_QUERY,
-        quoteIdent(dataColumn.toUpperCase()), textFetchLimit, quoteIdent(table.toUpperCase()), quoteIdent(embeddingColumn.toUpperCase()), modelName
+        quoteIdent(dataColumn.toUpperCase()), textFetchLimit, quoteIdent(table.toUpperCase()), quoteIdent(embeddingColumn.toUpperCase()), safeModelName
     );
 
     List<String> result = new ArrayList<>();
@@ -649,6 +685,12 @@ public class RagTools {
                 quoteIdent(tableName.toUpperCase())
         );
         st.executeUpdate(indexSql);
+        String taskIndexSql = String.format(
+                "CREATE INDEX %s ON %s (JSON_VALUE(METADATA, '$.task_id'))",
+                quoteIdent((tableName + "_TASK_IDX").toUpperCase()),
+                quoteIdent(tableName.toUpperCase())
+        );
+        st.executeUpdate(taskIndexSql);
       }
     }
   }
@@ -664,13 +706,16 @@ public class RagTools {
    * @param fileBytes raw file content
    * @param fullPath file path (used for deduplication)
    * @param chunkParams how to split the document
+   * @param taskId background task ID to write into METADATA
+   * @param activeStatementConsumer callback used to expose the active statement for cancellation
    * @return number of chunks inserted, or 0 if no text could be extracted from the file
    * @throws SQLException if insertion fails
    */
   static int insertFileWithNativeChunking(
           Connection c, String table, String textColumn, String embeddingColumn,
           String modelName, byte[] fileBytes, String fullPath,
-          String chunkParams) throws SQLException {
+          String chunkParams, String taskId,
+          Consumer<PreparedStatement> activeStatementConsumer) throws SQLException {
 
     Blob fileBlob = c.createBlob();
     fileBlob.setBytes(1, fileBytes);
@@ -692,13 +737,19 @@ public class RagTools {
       String sourceUri  = Paths.get(fullPath).toUri().toString(); // file:///path/to/file
 
       try (PreparedStatement ps = c.prepareStatement(sql)) {
-        ps.setString(1, documentId);
-        ps.setString(2, sourceUri);
-        ps.setBlob(3, fileBlob);
-        ps.setString(4, chunkParams);
-        ps.setString(5, embeddingParams);
-        ps.setString(6, sourceUri);
-        return ps.executeUpdate();
+        try {
+          activeStatementConsumer.accept(ps);
+          ps.setString(1, taskId);
+          ps.setString(2, documentId);
+          ps.setString(3, sourceUri);
+          ps.setBlob(4, fileBlob);
+          ps.setString(5, chunkParams);
+          ps.setString(6, embeddingParams);
+          ps.setString(7, sourceUri);
+          return ps.executeUpdate();
+        } finally {
+          activeStatementConsumer.accept(null);
+        }
       }
 
     } else {
@@ -710,10 +761,15 @@ public class RagTools {
       );
 
       try (PreparedStatement ps = c.prepareStatement(sql)) {
-        ps.setBlob(1, fileBlob);
-        ps.setString(2, chunkParams);
-        ps.setString(3, embeddingParams);
-        return ps.executeUpdate();
+        try {
+          activeStatementConsumer.accept(ps);
+          ps.setBlob(1, fileBlob);
+          ps.setString(2, chunkParams);
+          ps.setString(3, embeddingParams);
+          return ps.executeUpdate();
+        } finally {
+          activeStatementConsumer.accept(null);
+        }
       }
     }
   }
@@ -761,7 +817,25 @@ public class RagTools {
    * @return JSON string with provider and model fields
    */
   static String buildEmbeddingParams(String modelName) {
-    return String.format("{\"provider\": \"database\", \"model\": \"%s\"}", modelName);
+    String safeModelName = validateModelName(modelName);
+    try {
+      return JSON_MAPPER.writeValueAsString(Map.of(
+              "provider", "database",
+              "model", safeModelName));
+    } catch (Exception e) {
+      throw new IllegalArgumentException("Invalid embedding parameters", e);
+    }
+  }
+
+  /**
+   * Validates model names that are inserted into SQL.
+   */
+  static String validateModelName(String modelName) {
+    String value = modelName == null ? "" : modelName.trim();
+    if (!value.matches(SIMPLE_ORACLE_IDENTIFIER)) {
+      throw new IllegalArgumentException("Invalid modelName");
+    }
+    return value;
   }
 
   /**
@@ -773,6 +847,42 @@ public class RagTools {
       return Integer.parseInt(String.valueOf(value));
     } catch (Exception e) {
       return null;
+    }
+  }
+
+  /**
+   * Parses the maximum number of tasks to return for one task list page.
+   */
+  private static int parseTaskListLimit(Object value) {
+    int limit = parseIntegerOrDefault("limit", value, DEFAULT_TASK_LIST_LIMIT);
+    if (limit <= 0) {
+      throw new IllegalArgumentException("limit must be greater than zero");
+    }
+    return Math.min(limit, MAX_TASK_LIST_LIMIT);
+  }
+
+  /**
+   * Parses the number of newest tasks to skip for task list pagination.
+   */
+  private static int parseTaskListOffset(Object value) {
+    int offset = parseIntegerOrDefault("offset", value, 0);
+    if (offset < 0) {
+      throw new IllegalArgumentException("offset must not be negative");
+    }
+    return offset;
+  }
+
+  /**
+   * Parses an integer argument, returning a default when omitted.
+   */
+  private static int parseIntegerOrDefault(String name, Object value, int defaultValue) {
+    if (value == null) {
+      return defaultValue;
+    }
+    try {
+      return Integer.parseInt(String.valueOf(value));
+    } catch (NumberFormatException e) {
+      throw new IllegalArgumentException(name + " must be an integer");
     }
   }
 }

@@ -43,6 +43,8 @@ public class RagTools {
   private static final String DEFAULT_VECTOR_MODEL_NAME       = "doc_model";
   private static final int    DEFAULT_VECTOR_TEXT_FETCH_LIMIT = 4000;
   private static final String DEFAULT_CHUNK_PARAMS            = "{\"max\": 500, \"overlap\": 50}";
+  private static final int    DEFAULT_TASK_LIST_LIMIT         = 100;
+  private static final int    MAX_TASK_LIST_LIMIT             = 1000;
 
   private RagTools() {}
 
@@ -449,7 +451,7 @@ public class RagTools {
       .tool(McpSchema.Tool.builder()
          .name("task")
          .title("Task")
-         .description("Track background embedding tasks. action=status (needs taskId), list (no args), cancel (needs taskId).")
+         .description("Track background embedding tasks. action=status (needs taskId), list (supports limit/offset), cancel (needs taskId).")
          .inputSchema(TASK)
          .build())
       .callHandler((exchange, callReq) -> {
@@ -468,14 +470,32 @@ public class RagTools {
                     .build();
           });
           case "list" -> tryCall(() -> {
-            List<Map<String, Object>> taskList = EmbeddingTaskManager.getInstance().getAllTasks()
+            Map<String, Object> args = callReq.arguments();
+            int limit;
+            int offset;
+            try {
+              limit = parseTaskListLimit(args.get("limit"));
+              offset = parseTaskListOffset(args.get("offset"));
+            } catch (IllegalArgumentException e) {
+              return new McpSchema.CallToolResult(e.getMessage(), true);
+            }
+
+            List<EmbeddingTaskManager.EmbeddingTask> allTasks = EmbeddingTaskManager.getInstance().getAllTasks()
                     .stream()
                     .sorted((a, b) -> b.submittedAt.compareTo(a.submittedAt))
+                    .collect(java.util.stream.Collectors.toList());
+            List<Map<String, Object>> taskList = allTasks.stream()
+                    .skip(offset)
+                    .limit(limit)
                     .map(EmbeddingTaskManager::taskToMap)
                     .collect(java.util.stream.Collectors.toList());
 
             LinkedHashMap<String, Object> result = new LinkedHashMap<>();
-            result.put("totalTasks", taskList.size());
+            result.put("totalTasks", allTasks.size());
+            result.put("limit",      limit);
+            result.put("offset",     offset);
+            result.put("returned",   taskList.size());
+            result.put("hasMore",    (long) offset + taskList.size() < allTasks.size());
             result.put("tasks",      taskList);
             return McpSchema.CallToolResult.builder()
                     .structuredContent(result)
@@ -827,6 +847,42 @@ public class RagTools {
       return Integer.parseInt(String.valueOf(value));
     } catch (Exception e) {
       return null;
+    }
+  }
+
+  /**
+   * Parses the maximum number of tasks to return for one task list page.
+   */
+  private static int parseTaskListLimit(Object value) {
+    int limit = parseIntegerOrDefault("limit", value, DEFAULT_TASK_LIST_LIMIT);
+    if (limit <= 0) {
+      throw new IllegalArgumentException("limit must be greater than zero");
+    }
+    return Math.min(limit, MAX_TASK_LIST_LIMIT);
+  }
+
+  /**
+   * Parses the number of newest tasks to skip for task list pagination.
+   */
+  private static int parseTaskListOffset(Object value) {
+    int offset = parseIntegerOrDefault("offset", value, 0);
+    if (offset < 0) {
+      throw new IllegalArgumentException("offset must not be negative");
+    }
+    return offset;
+  }
+
+  /**
+   * Parses an integer argument, returning a default when omitted.
+   */
+  private static int parseIntegerOrDefault(String name, Object value, int defaultValue) {
+    if (value == null) {
+      return defaultValue;
+    }
+    try {
+      return Integer.parseInt(String.valueOf(value));
+    } catch (NumberFormatException e) {
+      throw new IllegalArgumentException(name + " must be an integer");
     }
   }
 }

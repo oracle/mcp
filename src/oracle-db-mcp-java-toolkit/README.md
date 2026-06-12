@@ -366,17 +366,19 @@ These tools provide a full RAG pipeline: model management, vector store creation
 * **`task`**: Monitor and control background embedding jobs.
 
   - `action=status` — get the current status and per-file results for a specific task.
-  - `action=list` — list all tasks submitted since the server started (in-memory only, cleared on restart).
+  - `action=list` — list tasks submitted since the server started, newest first, with optional pagination (in-memory only, cleared on restart).
   - `action=cancel` — request cancellation of a PENDING or RUNNING task.
 
-    Embedding task metadata is retained in memory for up to 72 hours after completion, failure, or cancellation. The server keeps at most 1000 task records; if the task store is full, new embedding submissions are rejected until older terminal task records expire.
+    Embedding task metadata is retained in memory for up to 72 hours after completion, failure, or cancellation. The server keeps at most 10000 task records; if the task store is full, new embedding submissions are rejected until older terminal task records expire.
 
   **Inputs:**
 
   * `action` (string, required) — `status`, `list`, or `cancel`
   * `taskId` (string, required for `status` and `cancel`) — task ID returned by the `embed` tool
+  * `limit` (integer, optional for `list`) — maximum tasks to return. Default is `100`; values above `1000` return at most `1000`.
+  * `offset` (integer, optional for `list`) — number of newest tasks to skip. Default is `0`.
 
-  **Returns:** `{ taskId, status, table, totalChunksCreated, submittedAt, completedAt, results }` where `status` is one of `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, or `CANCELLED`. The `results` array contains per-file/source entries and may include cleanup or cancellation entries for cancelled tasks.
+  **Returns:** `status` and `cancel` return `{ taskId, status, table, totalChunksCreated, submittedAt, completedAt, results }` where `status` is one of `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, or `CANCELLED`. `list` returns `{ totalTasks, limit, offset, returned, hasMore, tasks }`. The `results` array contains per-file/source entries and may include cleanup or cancellation entries for cancelled tasks.
 
   **Cancellation policy:**
 

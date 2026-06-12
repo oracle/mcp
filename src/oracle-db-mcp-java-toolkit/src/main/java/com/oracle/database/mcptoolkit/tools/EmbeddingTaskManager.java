@@ -51,7 +51,7 @@ public class EmbeddingTaskManager {
 
   private static final int MAX_EMBEDDING_THREADS = 5;
   private static final int MAX_EMBEDDING_QUEUE_SIZE = 100;
-  private static final int MAX_STORED_TASKS = 1000;
+  private static final int MAX_STORED_TASKS = 10_000;
   private static final int MAX_LOCAL_INGEST_FILES = 100;
   private static final Duration COMPLETED_TASK_TTL = Duration.ofHours(72);
   private static final String SIMPLE_FILE_EXTENSION = "[a-z0-9]{1,16}";

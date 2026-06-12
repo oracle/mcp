@@ -89,7 +89,7 @@ public class OAuth2TokenValidator {
         JsonNode active = jsonNode.get("active");
         isTokenValid = active != null && active.asBoolean();
         if (isTokenValid) {
-          scopes = extractScopes(jsonNode);
+          scopes = extractScopes(jsonNode, OAUTH_CONFIG.getScopeClaimPath());
         }
       }
     } catch (IOException | InterruptedException e) {
@@ -103,8 +103,7 @@ public class OAuth2TokenValidator {
     return new ValidationResult(isTokenValid, scopes);
   }
 
-  private Set<String> extractScopes(JsonNode introspectionResponse) {
-    String claimPath = OAUTH_CONFIG.getScopeClaimPath();
+  static Set<String> extractScopes(JsonNode introspectionResponse, String claimPath) {
     if (claimPath == null || claimPath.isBlank()) {
       claimPath = "scope";
     }

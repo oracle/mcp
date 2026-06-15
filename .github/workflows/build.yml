@@ -10,6 +10,7 @@ permissions:
   contents: read
 jobs:
   build:
+    name: Python / ${{ matrix.directory }}
     runs-on: ubuntu-latest
     needs: get-directories
     strategy:
@@ -74,10 +75,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - name: Get directories
+      - name: Get Python package directories
         id: get-directories
         run: |
-          directories=$(ls src | grep -v dbtools-mcp-server | grep -v mysql-mcp-server | grep -v oci-pricing-mcp-server | grep -v oracle-db-doc-mcp-server | grep -v oracle-db-mcp-java-toolkit | jq -R -s -c 'split("\n")[:-1]')
+          directories=$(ls src | grep -v dbtools-mcp-server | grep -v mysql-mcp-server | grep -v oci-javascript-mcp-server | grep -v oci-pricing-mcp-server | grep -v oracle-db-doc-mcp-server | grep -v oracle-db-mcp-java-toolkit | jq -R -s -c 'split("\n")[:-1]')
           echo "directories=$directories" >> $GITHUB_OUTPUT
 
   combined-coverage:
@@ -113,3 +114,27 @@ jobs:
             oracle-mcp-coverage-report/*
             .coverage
           include-hidden-files: true
+
+  javascript-build:
+    name: JavaScript / ${{ matrix.directory }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        directory:
+          - oci-javascript-mcp-server
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "26"
+
+      - name: Install dependencies
+        working-directory: src/${{ matrix.directory }}
+        run: npm ci
+
+      - name: Test and Check
+        working-directory: src/${{ matrix.directory }}
+        run: npm run ci

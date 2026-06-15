@@ -1,0 +1,57 @@
+{
+  "name": "oci-javascript-mcp-server",
+  "version": "0.1.0",
+  "description": "OCI JavaScript code execution MCP server",
+  "type": "module",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "oci",
+    "oracle",
+    "cloud"
+  ],
+  "homepage": "https://github.com/oracle/mcp/tree/main/src/oci-javascript-mcp-server",
+  "bugs": {
+    "url": "https://github.com/oracle/mcp/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oracle/mcp.git",
+    "directory": "src/oci-javascript-mcp-server"
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE.txt"
+  ],
+  "bin": {
+    "oci-javascript-mcp-server": "src/server.ts"
+  },
+  "scripts": {
+    "start": "node --no-node-snapshot --experimental-strip-types src/server.ts",
+    "test": "node --no-node-snapshot --experimental-strip-types --test test/*.test.ts",
+    "check": "tsc --noEmit",
+    "packcheck": "npm --cache \"${TMPDIR:-/tmp}/oci-javascript-mcp-server-npm-cache\" pack --dry-run --json > /dev/null",
+    "ci": "npm test && npm run check && npm run packcheck",
+    "prepublishOnly": "npm run ci"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "isolated-vm": "^7.0.0",
+    "oci-common": "^2.132.0",
+    "oci-sdk": "^2.132.0",
+    "zod": "^4.4.3"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=26"
+  },
+  "packageManager": "npm@11.12.1",
+  "license": "UPL-1.0"
+}

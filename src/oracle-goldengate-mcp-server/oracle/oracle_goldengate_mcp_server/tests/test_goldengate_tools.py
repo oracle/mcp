@@ -218,6 +218,50 @@ class TestGoldenGateTools(unittest.TestCase):
             )
             self.assertEqual(m.call_args.args[1]["begin"], {"at": {"csn": 11}})
 
+    def test_create_initial_load_extract(self):
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            out = server.create_initial_load_extract("E1", "AA", "D", "C", tableStatement="TABLE S.T;")
+
+        self.assertEqual(m.call_args.args[0], server.api.create_extract("E1"))
+        payload = m.call_args.args[1]
+        self.assertEqual(payload["status"], "stopped")
+        self.assertEqual(payload["managedProcessSettings"], server.DEFAULT_MANAGED_PROCESS_SETTINGS)
+        self.assertEqual(payload["encryptionProfile"], "LocalWallet")
+        self.assertEqual(payload["source"], "tables")
+        self.assertEqual(
+            payload["config"],
+            [
+                "--- Auto generated Parameter File, do not edit ---",
+                "EXTRACT E1",
+                "--- End of auto generated Parameter File ---",
+                "USERIDALIAS C DOMAIN D",
+                "EXTFILE AA, PURGE",
+                "TABLE S.T;",
+            ],
+        )
+        self.assertNotIn("targets", payload)
+        self.assertNotIn("begin", payload)
+        self.assertNotIn("credentials", payload)
+        self._assert_json(out, {"ok": True})
+
+    def test_create_initial_load_extract_builds_structured_source(self):
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            out = server.create_initial_load_extract(
+                "E1",
+                "AA",
+                "D",
+                "C",
+                source=CreateExtractSource(schema="S", table="T"),
+                options=CreateExtractOptions(cols=["ID", "NAME"]),
+                encryptionProfile="CustomWallet",
+            )
+
+        payload = m.call_args.args[1]
+        self.assertEqual(payload["encryptionProfile"], "CustomWallet")
+        self.assertIn("TABLE S.T, COLS (ID, NAME);", payload["config"])
+        self.assertIn("EXTFILE AA, PURGE", payload["config"])
+        self._assert_json(out, {"ok": True})
+
     def test_update_extract(self):
         with patch.object(server.client, "patch", return_value={"ok": True}) as m:
             out = server.update_extract("E1", trailName="AA", domainName="D", connectionName="C", tableStatement="TABLE S.T;", advanced=None)
@@ -543,6 +587,10 @@ class TestGoldenGateTools(unittest.TestCase):
     def test_create_extract_requires_table_statement_or_source(self):
         with self.assertRaises(ValueError):
             server.create_extract("E1", "AA", "D", "C")
+
+    def test_create_initial_load_extract_requires_table_statement_or_source(self):
+        with self.assertRaises(ValueError):
+            server.create_initial_load_extract("E1", "AA", "D", "C")
 
     def test_update_replicat_requires_map_statement_or_source(self):
         with self.assertRaises(ValueError):

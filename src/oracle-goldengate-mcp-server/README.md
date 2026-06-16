@@ -209,6 +209,7 @@ Optional variables are also supported:
 | add_trandata_schema | Add TRANDATA at schema level for a given connection. |
 | add_trandata_table | Add TRANDATA at table level for a given connection. |
 | create_extract | Create an Extract. |
+| create_initial_load_extract | Create an Initial Load Extract that reads tables and writes an EXTFILE. |
 | update_extract | Update an Extract. |
 | create_replicat | Create a Replicat. |
 | update_replicat | Update a Replicat. |

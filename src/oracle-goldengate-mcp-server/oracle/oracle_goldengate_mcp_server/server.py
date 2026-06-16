@@ -313,6 +313,51 @@ def create_extract(
     return _ok(client.post(api.create_extract(extractName), payload))
 
 
+@mcp.tool(description="Creates a new Initial Load Extract in OCI GoldenGate deployment. Initial Load Extracts read tables directly and write to an EXTFILE using the same Extract REST endpoint.")
+def create_initial_load_extract(
+    extractName: str = Field(..., description="Extract process name", min_length=1, max_length=8),
+    trailName: str = Field(..., description="Two-character EXTFILE name", min_length=2, max_length=2),
+    domainName: str = Field(..., description="GoldenGate domain name"),
+    connectionName: str = Field(..., description="GoldenGate connection (alias) name"),
+    tableStatement: str | None = Field(None, description="Raw TABLE statement(s) for Initial Load Extract"),
+    source: CreateExtractSource | None = Field(None, description="Structured source mapping used to build TABLE statements"),
+    options: CreateExtractOptions | None = Field(None, description="Optional structured TABLE statement options"),
+    encryptionProfile: str | None = Field("LocalWallet", description="GoldenGate encryption profile for the Initial Load Extract"),
+) -> str:
+    """Creates a new Initial Load Extract in OCI GoldenGate deployment."""
+    tableStatement = _none_if_fieldinfo(tableStatement)
+    source = _none_if_fieldinfo(source)
+    options = _none_if_fieldinfo(options)
+    encryptionProfile = _none_if_fieldinfo(encryptionProfile)
+
+    if tableStatement and tableStatement.strip():
+        final_table_statement = normalize_table_statement(tableStatement)
+    else:
+        if not source:
+            raise ValueError("Either 'tableStatement' or 'source' must be provided.")
+        final_table_statement = build_table_statement(
+            {"source": _serialize_model(source), "options": _serialize_model(options)}
+        )
+
+    config_lines = [
+        "--- Auto generated Parameter File, do not edit ---",
+        f"EXTRACT {extractName}",
+        "--- End of auto generated Parameter File ---",
+        f"USERIDALIAS {connectionName} DOMAIN {domainName}",
+        f"EXTFILE {trailName}, PURGE",
+        final_table_statement,
+    ]
+
+    payload = {
+        "status": "stopped",
+        "managedProcessSettings": DEFAULT_MANAGED_PROCESS_SETTINGS,
+        "encryptionProfile": encryptionProfile or "LocalWallet",
+        "source": "tables",
+        "config": config_lines,
+    }
+    return _ok(client.post(api.create_extract(extractName), payload))
+
+
 @mcp.tool(description="Updates an existing Extract in OCI GoldenGate deployment. Accepts the same structured payload as create_extract but performs a PATCH instead.")
 def update_extract(
     extractName: str = Field(..., description="Extract process name", min_length=1, max_length=8),

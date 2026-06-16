@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import oci.object_storage.models
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Bucket(BaseModel):
@@ -97,12 +97,7 @@ class Bucket(BaseModel):
         description="The auto tiering status on the bucket.",
     )
 
-    class Config:
-        extra = "allow"
-        arbitrary_types_allowed = True
-        json_encoders = {
-            datetime: lambda dt: dt.isoformat(),
-        }
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
 
 class NamespaceMetadata(BaseModel):
@@ -125,8 +120,7 @@ class NamespaceMetadata(BaseModel):
         description=("If set, specifies the default compartment assignment for the Swift API."),
     )
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class CreateBucketDetails(BaseModel):
@@ -180,8 +174,7 @@ class CreateBucketDetails(BaseModel):
         description="The auto tiering status on the bucket.",
     )
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 class BucketSummary(BaseModel):
@@ -218,12 +211,7 @@ class BucketSummary(BaseModel):
         description="Defined tags for this resource.",
     )
 
-    class Config:
-        extra = "allow"
-        arbitrary_types_allowed = True
-        json_encoders = {
-            datetime: lambda dt: dt.isoformat(),
-        }
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
 
 class ObjectSummary(BaseModel):
@@ -260,12 +248,7 @@ class ObjectSummary(BaseModel):
         description="The date and time the object was modified.",
     )
 
-    class Config:
-        extra = "allow"
-        arbitrary_types_allowed = True
-        json_encoders = {
-            datetime: lambda dt: dt.isoformat(),
-        }
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
 
 class ListObjects(BaseModel):
@@ -289,9 +272,7 @@ class ListObjects(BaseModel):
         ),
     )
 
-    class Config:
-        extra = "allow"
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
 
 class ObjectVersionSummary(BaseModel):
@@ -336,12 +317,7 @@ class ObjectVersionSummary(BaseModel):
         description="This flag will indicate if the version is deleted or not.",
     )
 
-    class Config:
-        extra = "allow"
-        arbitrary_types_allowed = True
-        json_encoders = {
-            datetime: lambda dt: dt.isoformat(),
-        }
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
 
 class ObjectVersionCollection(BaseModel):
@@ -358,8 +334,7 @@ class ObjectVersionCollection(BaseModel):
         ),
     )
 
-    class Config:
-        extra = "forbid"
+    model_config = ConfigDict(extra="forbid")
 
 
 def map_object_summary(obj: oci.object_storage.models.ObjectSummary) -> ObjectSummary:

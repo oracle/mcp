@@ -44,7 +44,7 @@ class TestModelMapping:
         assert mapped.size == 123
         assert mapped.storage_tier == "STANDARD"
         # json encodes datetimes using isoformat
-        json_text = mapped.json()
+        json_text = mapped.model_dump_json()
         assert "2021-01-01T00:00:00" in json_text
         assert "2021-01-02T00:00:00" in json_text
 

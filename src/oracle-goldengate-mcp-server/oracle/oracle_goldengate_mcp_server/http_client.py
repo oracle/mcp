@@ -20,6 +20,7 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
 from .consts import DEFAULT_TIMEOUT_SECONDS
+from .security import redact_text
 
 
 def _classify_request_error(exc: requests.exceptions.RequestException) -> str:
@@ -99,6 +100,8 @@ class HttpClient:
         """Build request headers and serialized body."""
         headers = {"Accept": "application/json"}
         body_str = json.dumps(body) if body is not None else None
+        if body is not None:
+            headers["Content-Type"] = "application/json"
 
         if custom_headers:
             headers.update(custom_headers)
@@ -122,9 +125,9 @@ class HttpClient:
             )
         except requests.exceptions.RequestException as exc:
             reason = _classify_request_error(exc)
-            raise RuntimeError(f"{method.upper()} {path} failed: {reason}") from exc
+            raise RuntimeError(f"{method.upper()} {redact_text(path)} failed: {reason}") from exc
         if not (200 <= resp.status_code < 300):
-            raise RuntimeError(f"{method.upper()} {path} failed: {resp.status_code} {resp.text}")
+            raise RuntimeError(f"{method.upper()} {redact_text(path)} failed: {resp.status_code} {redact_text(resp.text)}")
         if response_text:
             return resp.text
         try:

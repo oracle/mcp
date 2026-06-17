@@ -36,6 +36,7 @@ from .models import (
     ReplicatAdvancedParameters,
 )
 from .replicat_config import build_advanced_replicat_parameters
+from .security import redact_text, sanitize_data
 from .table_statement import build_table_statement, normalize_table_statement
 
 cfg = read_config()
@@ -49,19 +50,21 @@ DEFAULT_WARNLONGTRANS_PARAMETER = "WARNLONGTRANS 1H, CHECKINTERVAL 10M"
 
 def _ok(data: Any) -> str:
     """Normalize tool output to string (JSON-encoded for dict/list payloads)."""
-    return data if isinstance(data, str) else json.dumps(data)
+    sanitized = sanitize_data(data)
+    return sanitized if isinstance(sanitized, str) else json.dumps(sanitized)
 
 
 def _log_startup(level: str, message: str) -> None:
     """Emit startup logs to stderr and optionally append to launcher log file."""
-    stderr_line = f"[{level}] {message}"
+    safe_message = redact_text(message)
+    stderr_line = f"[{level}] {safe_message}"
     print(stderr_line, file=sys.stderr, flush=True)
     log_file = os.getenv("GG_MCP_LOG_FILE")
     if log_file:
         try:
             ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with open(log_file, "a", encoding="utf-8") as f:
-                f.write(f"[{ts}] [{level}] {message}\n")
+                f.write(f"[{ts}] [{level}] {safe_message}\n")
         except OSError:
             # Avoid breaking MCP startup if file logging fails.
             pass
@@ -69,12 +72,12 @@ def _log_startup(level: str, message: str) -> None:
 
 def _verify_deployment_connectivity() -> None:
     """Validate GoldenGate deployment connectivity before serving MCP tools."""
-    deployment_url = cfg.get("baseUrl", "<unknown>")
+    deployment_url = redact_text(str(cfg.get("baseUrl", "<unknown>")))
     _log_startup("INFO", f"Verifying connectivity to GoldenGate deployment: {deployment_url}")
     try:
         client.get(api.list_domains())
     except Exception as exc:
-        _log_startup("ERROR", f"Failed to connect to GoldenGate deployment: {deployment_url} ({exc})")
+        _log_startup("ERROR", f"Failed to connect to GoldenGate deployment: {deployment_url} ({redact_text(str(exc))})")
         exc_message = str(exc)
         if " 401 " in exc_message or "401 {" in exc_message or "401" in exc_message:
             _log_startup(
@@ -138,6 +141,17 @@ def _has_parameter_line(lines: list[str], parameter_name: str) -> bool:
     """Return whether a GoldenGate parameter line is already present."""
     prefix = parameter_name.upper()
     return any(line.strip().upper().startswith(prefix) for line in lines)
+
+
+def _normalize_distribution_host(value: Any, field_name: str) -> str:
+    """Validate and normalize a Distribution Path host field."""
+    value = _none_if_fieldinfo(value)
+    host = str(value).strip() if value is not None else ""
+    if not host:
+        raise ValueError(f"{field_name} is required.")
+    if "://" in host or any(ch in host for ch in "/?#:"):
+        raise ValueError(f"{field_name} must be a hostname only, without protocol, port, path, query, or fragment.")
+    return host
 
 
 @mcp.tool(description="Return the list of GoldenGate domains available in OCI GoldenGate deployment. Domains group connections in GoldenGate.")
@@ -480,13 +494,14 @@ def create_replicat(
 
     payload: dict[str, Any] = {
         "config": config_lines,
-        "credentials": {"domain": domainName, "alias": connectionName},
         "managedProcessSettings": DEFAULT_MANAGED_PROCESS_SETTINGS,
         "mode": adv.get("mode") or {"type": "nonintegrated", "parallel": True},
         "registration": "none",
         "status": "stopped",
         "begin": _resolve_begin_value(begin),
     }
+    if not adv.get("credentialLines"):
+        payload["credentials"] = {"domain": domainName, "alias": connectionName}
     mode_type = (payload["mode"] or {}).get("type", "nonintegrated")
     if mode_type != "parallel":
         payload["source"] = {"name": trailName}
@@ -592,6 +607,8 @@ def create_distribution_path(
     targetAuthenticationMethod = _none_if_fieldinfo(targetAuthenticationMethod)
     targetDomain = _none_if_fieldinfo(targetDomain)
     targetAlias = _none_if_fieldinfo(targetAlias)
+    sourceURI = _normalize_distribution_host(sourceURI, "sourceURI")
+    targetURI = _normalize_distribution_host(targetURI, "targetURI")
 
     auth = targetAuthenticationMethod or "OAuth"
     port = targetPort or 443
@@ -629,6 +646,10 @@ def create_data_stream(
     bufferSize: int | None = Field(None, description="Data stream buffer size in bytes", ge=1024),
 ) -> str:
     """Creates a new Data Stream using the trail provided in OCI GoldenGate deployment to distribute or expose data as AsyncAPI channels."""
+    qualityOfService = _none_if_fieldinfo(qualityOfService)
+    cloudEventsFormat = _none_if_fieldinfo(cloudEventsFormat)
+    bufferSize = _none_if_fieldinfo(bufferSize)
+
     payload = {
         "source": {"trail": trailName},
         "cloudEventsFormat": cloudEventsFormat if cloudEventsFormat is not None else False,

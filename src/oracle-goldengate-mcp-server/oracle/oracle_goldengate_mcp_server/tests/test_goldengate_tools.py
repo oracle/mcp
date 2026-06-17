@@ -35,13 +35,27 @@ class TestGoldenGateTools(unittest.TestCase):
     def _assert_json(self, actual: str, expected: dict):
         self.assertEqual(json.loads(actual), expected)
 
+    def test_ok_redacts_sensitive_tool_output(self):
+        output = server._ok(
+            {
+                "status": "failed",
+                "password": "top-secret",
+                "report": "USERID app, PASSWORD report-secret",
+            }
+        )
+        self.assertNotIn("top-secret", output)
+        self.assertNotIn("report-secret", output)
+        self.assertIn("[REDACTED]", output)
+
     def test_log_startup_writes_file_and_ignores_file_errors(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             log_file = os.path.join(tmpdir, "startup.log")
             with patch.dict(os.environ, {"GG_MCP_LOG_FILE": log_file}):
-                server._log_startup("INFO", "hello")
+                server._log_startup("INFO", "hello PASSWORD secret")
             with open(log_file, encoding="utf-8") as f:
-                self.assertIn("[INFO] hello", f.read())
+                content = f.read()
+                self.assertIn("[INFO] hello", content)
+                self.assertNotIn("secret", content)
 
         with patch.dict(os.environ, {"GG_MCP_LOG_FILE": "/no/such/dir/startup.log"}):
             server._log_startup("INFO", "ignored")
@@ -353,6 +367,7 @@ class TestGoldenGateTools(unittest.TestCase):
         self.assertEqual(payload["checkpoint"], {"table": "D.CHKPT"})
         self.assertEqual(payload["mode"], {"type": "parallel", "parallel": True})
         self.assertNotIn("source", payload)
+        self.assertNotIn("credentials", payload)
 
     def test_create_replicat_defaults_begin_to_now(self):
         with patch.object(server.client, "post", return_value={"ok": True}) as m:
@@ -516,10 +531,21 @@ class TestGoldenGateTools(unittest.TestCase):
         self.assertEqual(m.call_args.args[1]["target"]["authenticationMethod"], {"domain": "D", "alias": "A"})
         self._assert_json(out, {"ok": True})
 
+    def test_create_distribution_path_rejects_non_hostname_inputs(self):
+        with self.assertRaises(ValueError):
+            server.create_distribution_path("P1", "https://src.example.com", "AA", "tgt.example.com")
+
+        with self.assertRaises(ValueError):
+            server.create_distribution_path("P1", "src.example.com", "AA", "tgt.example.com/services")
+
     def test_create_data_stream(self):
         with patch.object(server.client, "post", return_value={"ok": True}) as m:
             out = server.create_data_stream("DS1", "AA")
             self.assertEqual(m.call_args.args[0], server.api.create_data_stream("DS1", "AA", None, None, None))
+            payload = m.call_args.args[1]
+            self.assertFalse(payload["cloudEventsFormat"])
+            self.assertEqual(payload["qualityOfService"], "exactlyOnce")
+            self.assertEqual(payload["bufferSize"], 1048576)
             self._assert_json(out, {"ok": True})
 
     def test_create_data_stream_with_custom_options(self):

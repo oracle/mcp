@@ -14,6 +14,7 @@ import os
 from codecs import BOM_UTF8, BOM_UTF16_BE, BOM_UTF16_LE
 from urllib.parse import quote
 
+from .consts import DEFAULT_TIMEOUT_SECONDS
 from .http_client import sign_oci_request
 
 
@@ -66,7 +67,7 @@ def _signed_get(cfg: dict, hostname: str, path: str) -> dict:
     import http.client
 
     headers = sign_oci_request(cfg, "GET", path, hostname)
-    conn = http.client.HTTPSConnection(hostname)
+    conn = http.client.HTTPSConnection(hostname, timeout=DEFAULT_TIMEOUT_SECONDS)
     conn.request("GET", path, headers=headers)
     response = conn.getresponse()
     data = response.read().decode("utf-8")

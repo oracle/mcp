@@ -20,6 +20,7 @@ from oracle.oracle_goldengate_mcp_server import (
     http_client,
     map_statement,
     replicat_config,
+    security,
     table_statement,
 )
 
@@ -373,9 +374,11 @@ def test_signed_get_success_and_http_error(monkeypatch: pytest.MonkeyPatch) -> N
     class _Connection:
         next_response = _Response(200, '{"ok": true}')
         requests = []
+        timeouts = []
 
-        def __init__(self, hostname: str):
+        def __init__(self, hostname: str, timeout: int | None = None):
             self.hostname = hostname
+            self.timeouts.append(timeout)
 
         def request(self, method: str, path: str, headers: dict):
             self.requests.append((self.hostname, method, path, headers))
@@ -389,6 +392,7 @@ def test_signed_get_success_and_http_error(monkeypatch: pytest.MonkeyPatch) -> N
     assert _Connection.requests == [
         ("secrets.example.com", "GET", "/secret", {"authorization": "sig"})
     ]
+    assert _Connection.timeouts == [config.DEFAULT_TIMEOUT_SECONDS]
 
     _Connection.next_response = _Response(404, "missing")
     with pytest.raises(RuntimeError, match="HTTP 404: missing"):
@@ -517,6 +521,12 @@ def test_http_client_helpers_and_request_paths(monkeypatch: pytest.MonkeyPatch) 
     with pytest.raises(RuntimeError, match="500"):
         client.get("/fail")
 
+    fake.next = _Resp(500, '{"password": "super-secret"}', None)
+    with pytest.raises(RuntimeError) as exc:
+        client.get("/fail-secret")
+    assert "super-secret" not in str(exc.value)
+    assert "[REDACTED]" in str(exc.value)
+
     fake.next = requests.exceptions.ConnectionError("name or service not known")
     with pytest.raises(RuntimeError, match="DNS resolution failed"):
         client.get("/conn")
@@ -539,9 +549,23 @@ def test_http_client_helpers_and_request_paths(monkeypatch: pytest.MonkeyPatch) 
     assert client.post("/post", {"x": 1}) == {"ok": True}
     assert captured[-1]["method"] == "POST"
     assert captured[-1]["data"] == '{"x": 1}'
+    assert captured[-1]["headers"]["Content-Type"] == "application/json"
 
     assert client.patch("/patch", {"y": 2}) == {"ok": True}
     assert captured[-1]["method"] == "PATCH"
 
     assert client.delete("/delete") == {"ok": True}
     assert captured[-1]["method"] == "DELETE"
+
+
+def test_security_sanitizes_nested_data_and_text() -> None:
+    sanitized = security.sanitize_data(
+        {
+            "password": "top-secret",
+            "nested": ["USERID app, PASSWORD report-secret"],
+            "safe": "value",
+        }
+    )
+    assert sanitized["password"] == "[REDACTED]"
+    assert "report-secret" not in sanitized["nested"][0]
+    assert sanitized["safe"] == "value"

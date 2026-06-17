@@ -185,6 +185,8 @@ class TestGoldenGateTools(unittest.TestCase):
                 m.call_args.args[1]["managedProcessSettings"],
                 server.DEFAULT_MANAGED_PROCESS_SETTINGS,
             )
+            self.assertIn(server.DEFAULT_REPORTCOUNT_PARAMETER, m.call_args.args[1]["config"])
+            self.assertIn(server.DEFAULT_WARNLONGTRANS_PARAMETER, m.call_args.args[1]["config"])
             self._assert_json(out, {"ok": True})
 
     def test_create_extract_defaults_begin_to_now(self):
@@ -217,6 +219,26 @@ class TestGoldenGateTools(unittest.TestCase):
                 advanced=None,
             )
             self.assertEqual(m.call_args.args[1]["begin"], {"at": {"csn": 11}})
+
+    def test_create_extract_does_not_duplicate_advanced_monitoring_parameters(self):
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            server.create_extract(
+                "E1",
+                "AA",
+                "D",
+                "C",
+                tableStatement="TABLE S.T;",
+                advanced=ExtractAdvancedParameters(
+                    reportCount={"every": "10 MINUTES", "rate": True},
+                    additionalParameters=["WARNLONGTRANS 2H, CHECKINTERVAL 15M"],
+                ),
+            )
+
+        config = m.call_args.args[1]["config"]
+        self.assertEqual(sum(1 for line in config if line.startswith("REPORTCOUNT")), 1)
+        self.assertEqual(sum(1 for line in config if line.startswith("WARNLONGTRANS")), 1)
+        self.assertIn("REPORTCOUNT EVERY 10 MINUTES, RATE", config)
+        self.assertIn("WARNLONGTRANS 2H, CHECKINTERVAL 15M", config)
 
     def test_create_initial_load_extract(self):
         with patch.object(server.client, "post", return_value={"ok": True}) as m:
@@ -326,6 +348,7 @@ class TestGoldenGateTools(unittest.TestCase):
         self._assert_json(out, {"ok": True})
         payload = m.call_args.args[1]
         self.assertIn("USERIDALIAS TARGET DOMAIN D", payload["config"])
+        self.assertIn(server.DEFAULT_REPORTCOUNT_PARAMETER, payload["config"])
         self.assertIn("MAP S.T, TARGET D.T, TARGETDEF target.def;", payload["config"])
         self.assertEqual(payload["checkpoint"], {"table": "D.CHKPT"})
         self.assertEqual(payload["mode"], {"type": "parallel", "parallel": True})
@@ -335,6 +358,21 @@ class TestGoldenGateTools(unittest.TestCase):
         with patch.object(server.client, "post", return_value={"ok": True}) as m:
             server.create_replicat("R1", "AA", "D", "C", mapStatement="MAP S.T, TARGET S2.T2;", advanced=None)
             self.assertEqual(m.call_args.args[1]["begin"], "now")
+
+    def test_create_replicat_does_not_duplicate_advanced_reportcount(self):
+        with patch.object(server.client, "post", return_value={"ok": True}) as m:
+            server.create_replicat(
+                "R1",
+                "AA",
+                "D",
+                "C",
+                mapStatement="MAP S.T, TARGET S2.T2;",
+                advanced=ReplicatAdvancedParameters(additionalParameters=["REPORTCOUNT EVERY 5 MINUTES, RATE"]),
+            )
+
+        config = m.call_args.args[1]["config"]
+        self.assertEqual(sum(1 for line in config if line.startswith("REPORTCOUNT")), 1)
+        self.assertIn("REPORTCOUNT EVERY 5 MINUTES, RATE", config)
 
     def test_create_replicat_accepts_timestamp_begin(self):
         with patch.object(server.client, "post", return_value={"ok": True}) as m:

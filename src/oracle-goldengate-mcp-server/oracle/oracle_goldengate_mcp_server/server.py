@@ -43,6 +43,8 @@ client = HttpClient(cfg)
 mcp = FastMCP(SERVER_NAME)
 
 DEFAULT_MANAGED_PROCESS_SETTINGS = "ogg:managedProcessSettings:Default"
+DEFAULT_REPORTCOUNT_PARAMETER = "REPORTCOUNT EVERY 1 MINUTES, RATE"
+DEFAULT_WARNLONGTRANS_PARAMETER = "WARNLONGTRANS 1H, CHECKINTERVAL 10M"
 
 
 def _ok(data: Any) -> str:
@@ -130,6 +132,12 @@ def _resolve_replicat_checkpoint(
     if top_level and advanced and top_level != advanced:
         raise ValueError("Conflicting checkpoint table values supplied in 'checkpointTable' and 'advanced.checkpointTable'.")
     return top_level or advanced
+
+
+def _has_parameter_line(lines: list[str], parameter_name: str) -> bool:
+    """Return whether a GoldenGate parameter line is already present."""
+    prefix = parameter_name.upper()
+    return any(line.strip().upper().startswith(prefix) for line in lines)
 
 
 @mcp.tool(description="Return the list of GoldenGate domains available in OCI GoldenGate deployment. Domains group connections in GoldenGate.")
@@ -298,6 +306,10 @@ def create_extract(
     ext_trail = advanced_payload.get("extTrail")
     config_lines.append(f"EXTTRAIL {ext_trail.strip() if ext_trail and ext_trail.strip() else trailName}")
     config_lines.append(f"USERIDALIAS {connectionName} DOMAIN {domainName}")
+    if not _has_parameter_line(advanced_params, "REPORTCOUNT"):
+        config_lines.append(DEFAULT_REPORTCOUNT_PARAMETER)
+    if not _has_parameter_line(advanced_params, "WARNLONGTRANS"):
+        config_lines.append(DEFAULT_WARNLONGTRANS_PARAMETER)
     config_lines.extend(advanced_params)
     config_lines.append(final_table_statement)
 
@@ -461,6 +473,8 @@ def create_replicat(
     lines = adv.get("lines") or []
     if checkpoint:
         lines = [ln for ln in lines if not ln.startswith("CHECKPOINTTABLE")]
+    if not _has_parameter_line(lines, "REPORTCOUNT"):
+        config_lines.append(DEFAULT_REPORTCOUNT_PARAMETER)
     config_lines.extend(lines)
     config_lines.append(final_map_statement)
 

@@ -186,6 +186,10 @@ DDL INCLUDE MAPPED
 DYNAMICRESOLUTION
 TABLE HR.EMPLOYEES;
 
+Default monitoring parameters
+- `create_extract` emits `REPORTCOUNT EVERY 1 MINUTES, RATE` unless `advanced.reportCount` or an advanced raw `REPORTCOUNT` parameter is provided.
+- `create_extract` emits `WARNLONGTRANS 1H, CHECKINTERVAL 10M` unless an advanced raw `WARNLONGTRANS` parameter is provided.
+
 4) With container and PARTITIONOBJID and TARGET
 Request:
 {

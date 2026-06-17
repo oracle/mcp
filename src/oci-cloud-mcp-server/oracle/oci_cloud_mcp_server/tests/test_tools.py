@@ -385,3 +385,52 @@ class TestCloudSdkTools:
                 assert result["client"] == "oci.fake.FakeClient"
                 assert result["operation"] == "get_widget"
                 assert result["data"] == {"id": "w1", "ok": True}
+
+
+class TestProfileTools:
+    @pytest.mark.asyncio
+    async def test_list_oci_profiles_returns_sections(self, tmp_path):
+        config_file = tmp_path / "config"
+        config_file.write_text("[DEFAULT]\n[DEV]\nregion=us-ashburn-1\n[PROD]\nregion=us-phoenix-1\n")
+
+        with patch("oracle.oci_cloud_mcp_server.server._active_profile", None):
+            with patch.dict("os.environ", {"OCI_CONFIG_FILE": str(config_file)}, clear=False):
+                async with Client(mcp) as client:
+                    result = (await client.call_tool("list_oci_profiles", {})).data
+                assert "DEV" in result["profiles"]
+                assert "PROD" in result["profiles"]
+
+    @pytest.mark.asyncio
+    async def test_list_oci_profiles_missing_file_raises(self, tmp_path):
+        missing = str(tmp_path / "no_such_config")
+        with patch.dict("os.environ", {"OCI_CONFIG_FILE": missing}, clear=False):
+            async with Client(mcp) as client:
+                with pytest.raises(Exception):
+                    await client.call_tool("list_oci_profiles", {})
+
+    @pytest.mark.asyncio
+    async def test_set_oci_profile_switches_active(self, tmp_path):
+        import oracle.oci_cloud_mcp_server.server as srv
+
+        config_file = tmp_path / "config"
+        config_file.write_text("[DEV]\nregion=us-ashburn-1\n[PROD]\nregion=us-phoenix-1\n")
+
+        original = srv._active_profile
+        try:
+            with patch.dict("os.environ", {"OCI_CONFIG_FILE": str(config_file)}, clear=False):
+                async with Client(mcp) as client:
+                    result = (await client.call_tool("set_oci_profile", {"profile_name": "PROD"})).data
+                assert result["active_profile"] == "PROD"
+                assert srv._active_profile == "PROD"
+        finally:
+            srv._active_profile = original
+
+    @pytest.mark.asyncio
+    async def test_set_oci_profile_unknown_profile_raises(self, tmp_path):
+        config_file = tmp_path / "config"
+        config_file.write_text("[DEV]\nregion=us-ashburn-1\n")
+
+        with patch.dict("os.environ", {"OCI_CONFIG_FILE": str(config_file)}, clear=False):
+            async with Client(mcp) as client:
+                with pytest.raises(Exception):
+                    await client.call_tool("set_oci_profile", {"profile_name": "NONEXISTENT"})

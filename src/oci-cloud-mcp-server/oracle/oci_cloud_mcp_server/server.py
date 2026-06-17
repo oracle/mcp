@@ -51,6 +51,7 @@ mcp = FastMCP(
 _user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
 _ADDITIONAL_UA = f"{_user_agent_name}/{__version__}"
 known_paginated: set = {"get_rr_set"}
+_active_profile: Optional[str] = None
 _MODEL_SUFFIXES = ("_details", "_config", "_configuration", "_source_details")
 _DEFAULT_SUMMARY_ITEMS = 5
 _DEFAULT_MODEL_FIELDS = 20
@@ -504,7 +505,7 @@ def _get_config_and_signer() -> Tuple[Dict[str, Any], Any]:
 
     config = oci.config.from_file(
         file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
-        profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
+        profile_name=_active_profile or os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
     config["additional_user_agent"] = _ADDITIONAL_UA
 
@@ -1479,6 +1480,42 @@ def list_oci_clients() -> dict:
         for client_fqn, cls in _discover_client_classes()
     ]
     return {"count": len(clients), "clients": clients}
+
+
+@mcp.tool(description="List all OCI profiles available in the local OCI config file.")
+def list_oci_profiles() -> dict:
+    import configparser
+    config_file = os.path.expanduser(
+        os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION)
+    )
+    if not os.path.exists(config_file):
+        raise FileNotFoundError(f"OCI config file not found: {config_file}")
+    parser = configparser.ConfigParser()
+    parser.read(config_file)
+    profiles = list(parser.sections())
+    active = _active_profile or os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+    return {"profiles": profiles, "active": active}
+
+
+@mcp.tool(description="Switch the active OCI profile used for all subsequent requests in this session.")
+def set_oci_profile(
+    profile_name: Annotated[str, "Name of the OCI profile to activate, as it appears in ~/.oci/config."],
+) -> dict:
+    import configparser
+    global _active_profile
+    config_file = os.path.expanduser(
+        os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION)
+    )
+    if not os.path.exists(config_file):
+        raise FileNotFoundError(f"OCI config file not found: {config_file}")
+    parser = configparser.ConfigParser()
+    parser.read(config_file)
+    if profile_name not in parser.sections():
+        available = list(parser.sections())
+        raise ValueError(f"Profile '{profile_name}' not found. Available profiles: {available}")
+    _active_profile = profile_name
+    logger.info(f"Active OCI profile switched to '{profile_name}'")
+    return {"active_profile": _active_profile}
 
 
 def main():

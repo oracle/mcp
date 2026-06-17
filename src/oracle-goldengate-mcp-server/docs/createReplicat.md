@@ -22,6 +22,11 @@ Input shape (abridged)
       }
     - options?: CreateReplicatOptions (see src/mapStatement.ts for full set)
 - Optional:
+  - checkpointTable?: string
+    - Checkpoint table name for the REST `checkpoint.table` payload, for example
+      `SRCMIRROR_OCIGGLL.CHECKTABLE` or `"SRCMIRROR_OCIGGLL"."CHECKTABLE"`.
+    - Prefer this top-level field. `advanced.checkpointTable` is still accepted
+      for backward compatibility.
   - advanced?: {
       dbOptions?: string | string[] | {
         entries?: string[]
@@ -31,6 +36,7 @@ Input shape (abridged)
       additionalParameters?: string[]
       modeType?: "nonintegrated" | "integrated" | "parallel" | "coordinated"
       modeParallel?: boolean
+       checkpointTable?: string
     }
 
 Advanced parameter emission order
@@ -85,6 +91,28 @@ BATCHSQL BATCHERRORMODE
 BATCHSQL BATCHESPERQUEUE 100
 BATCHSQL OPSPERBATCH 2000
 MAP SCHEMA.* , TARGET SCHEMA.*;
+
+2b) Replicat with checkpoint table
+Request:
+{
+  "replicatName": "RFLIGHT",
+  "trailName": "LT",
+  "domainName": "OracleGoldenGate",
+  "connectionName": "TARGET_CONN",
+  "mapStatement": "MAP SRC.FLIGHT, TARGET SRCMIRROR.FLIGHT;",
+  "checkpointTable": "\"SRCMIRROR_OCIGGLL\".\"CHECKTABLE\""
+}
+Sends the checkpoint table in the REST payload:
+{
+  "checkpoint": {
+    "table": "\"SRCMIRROR_OCIGGLL\".\"CHECKTABLE\""
+  }
+}
+
+Do not put the checkpoint table in `options`; `options` is only for MAP
+statement options. Passing `options: "CHECKPOINTTABLE ..."` or
+`options.checkpointTable` will fail schema validation. `advanced` must be an
+object if used, for example `{ "checkpointTable": "SRCMIRROR_OCIGGLL.CHECKTABLE" }`.
 
 3) Alternative credentials and advanced parallelism
 Request:
@@ -155,5 +183,6 @@ Notes
 - The `source` object must include `targetTable` when using structured MAP; otherwise provide a raw `mapStatement`.
 - `advanced.applyParallelism` cannot be combined with `advanced.minApplyParallelism` or `advanced.maxApplyParallelism`. Supplying both will result in an error prior to issuing the request.
 - `advanced.modeType` / `advanced.modeParallel` allow controlling the Replicat `mode` object for REST calls. When omitted, the server defaults to classic (`nonintegrated`) mode with `parallel: false`.
+- Use top-level `checkpointTable` when GoldenGate returns `OGG-08100: No checkpoint table specified for ADD REPLICAT command`. The server serializes it as REST `checkpoint.table` and does not emit `CHECKPOINTTABLE` into the parameter file.
 - Replicat parameter files do not support `EXTTRAIL`, so the server no longer emits this line when creating or updating replicats. For parallel replicat (`modeType: 'parallel'`) the server also suppresses `MAP_PARALLELISM` since it is unsupported.
 - See createExtract documentation for additional structured option handling patterns.

@@ -2004,7 +2004,8 @@ class TestEssbaseToolDispatch:
         ess = MagicMock()
         ess.groups.remove_users.return_value = {'status': 'ok'}
         ctx = self._make_ctx(ess)
-        json.loads(fn(action='remove_users', group_id='G', ctx=ctx))
+        json.loads(fn(action='remove_users', group_id='G',
+                       confirm='G', ctx=ctx))
         ess.groups.remove_users.assert_called_once_with('G')
 
     def test_essbase_manage_groups_add_subgroups(self):
@@ -2560,7 +2561,7 @@ class TestEssbaseToolDispatch:
         ctx = self._make_ctx(ess)
         json.loads(fn(app_name='A', db_name='D',
                        action='remove', member_name='Q1',
-                       ctx=ctx))
+                       confirm='Q1', ctx=ctx))
         # Verify the remove action carries actionType=removeMember (case
         # may differ — check it's a remove)
         call_args = ess.dimensions.batch_outline_edit.call_args
@@ -4055,7 +4056,7 @@ ADP_DISPATCH_CASES = [
      'Catalog.enable_catalog'),
     ('adp_manage_catalog', {'action': 'disable', 'catalog_name': 'C'},
      'Catalog.disable_catalog'),
-    ('adp_manage_catalog', {'action': 'unmount', 'catalog_name': 'C'},
+    ('adp_manage_catalog', {'action': 'unmount', 'catalog_name': 'C', 'confirm': 'C'},
      'Catalog.unmount_catalog'),
     # adp_manage_sharing
     ('adp_manage_sharing', {'action': 'list'},
@@ -4064,7 +4065,7 @@ ADP_DISPATCH_CASES = [
      'Share.get_share'),
     ('adp_manage_sharing', {'action': 'create', 'share_name': 'S'},
      'Share.create_share'),
-    ('adp_manage_sharing', {'action': 'delete', 'share_name': 'S'},
+    ('adp_manage_sharing', {'action': 'delete', 'share_name': 'S', 'confirm': 'S'},
      'Share.delete_share'),
     ('adp_manage_sharing', {'action': 'unpublish', 'share_name': 'S'},
      'Share.unpublish_share'),
@@ -4074,7 +4075,7 @@ ADP_DISPATCH_CASES = [
     ('adp_manage_sharing', {'action': 'list_recipients'},
      'Share.get_recipients'),
     ('adp_manage_sharing', {'action': 'delete_recipient',
-                             'recipient_name': 'R'},
+                             'recipient_name': 'R', 'confirm': 'R'},
      'Share.delete_recipient'),
     ('adp_manage_sharing', {'action': 'get_objects', 'share_name': 'S'},
      'Share.get_share_objects'),
@@ -4087,7 +4088,7 @@ ADP_DISPATCH_CASES = [
                              'recipient_name': 'P'},
      'Share.create_provider'),
     ('adp_manage_sharing', {'action': 'delete_provider',
-                             'recipient_name': 'P'},
+                             'recipient_name': 'P', 'confirm': 'P'},
      'Share.delete_provider'),
     # adp_manage_analytic_views
     ('adp_manage_analytic_views', {'action': 'list'},
@@ -4109,7 +4110,7 @@ ADP_DISPATCH_CASES = [
                                   'private_key': 'k',
                                   'fingerprint': 'f'},
      'Ingest.create_ocid_credential'),
-    ('adp_manage_credentials', {'action': 'drop', 'credential_name': 'C'},
+    ('adp_manage_credentials', {'action': 'drop', 'credential_name': 'C', 'confirm': 'C'},
      'Ingest.drop_credential'),
     ('adp_manage_credentials', {'action': 'list_storage_links'},
      'Ingest.get_cloud_storage_link_list'),
@@ -4119,7 +4120,7 @@ ADP_DISPATCH_CASES = [
                                   'credential_name': 'C'},
      'Ingest.create_cloud_storage_link'),
     ('adp_manage_credentials', {'action': 'drop_storage_link',
-                                  'storage_link_name': 'SL'},
+                                  'storage_link_name': 'SL', 'confirm': 'SL'},
      'Ingest.drop_cloud_storage_link'),
     # adp_manage_insights
     ('adp_manage_insights', {'action': 'list_requests'},
@@ -4129,7 +4130,7 @@ ADP_DISPATCH_CASES = [
      'Insight.get_insights_list'),
     ('adp_manage_insights', {'action': 'status', 'request_name': 'R'},
      'Insight.get_job_status'),
-    ('adp_manage_insights', {'action': 'drop', 'request_name': 'R'},
+    ('adp_manage_insights', {'action': 'drop', 'request_name': 'R', 'confirm': 'R'},
      'Insight.drop'),
     # adp_manage_db_links
     ('adp_manage_db_links', {'action': 'list'},
@@ -4192,7 +4193,7 @@ ADP_DISPATCH_CASES = [
     ('adp_manage_db_links', {'action': 'link_tables',
                               'db_link_name': 'L', 'tables': 'T1'},
      'Ingest.link_tables_from_db_link'),
-    ('adp_manage_db_links', {'action': 'drop', 'db_link_name': 'L'},
+    ('adp_manage_db_links', {'action': 'drop', 'db_link_name': 'L', 'confirm': 'L'},
      'Catalog.drop_database_link'),
     # adp_manage_insights get_graph
     ('adp_manage_insights', {'action': 'get_graph',
@@ -4225,7 +4226,7 @@ DT_DISPATCH_CASES = [
      'list_schedules', False),
     ('dt_manage_schedule', {'action': 'delete',
                               'schedule_name': 'S',
-                              'project_name': 'P'},
+                              'project_name': 'P', 'confirm': 'S'},
      'delete_schedule', False),
     # dt_manage_variables (set creates new variable when not found)
     ('dt_manage_variables', {'action': 'list'},
@@ -4237,7 +4238,7 @@ DT_DISPATCH_CASES = [
      'get_connection_types', False),
     ('dt_manage_connection', {'action': 'test', 'connection_name': 'C'},
      'test_connection_by_name', False),
-    ('dt_manage_connection', {'action': 'delete', 'connection_name': 'C'},
+    ('dt_manage_connection', {'action': 'delete', 'connection_name': 'C', 'confirm': 'C'},
      'delete_connection', False),
     # dt_manage_dataload
     ('dt_manage_dataload', {'action': 'list', 'project_name': 'P'},
@@ -4343,7 +4344,7 @@ ESS_DISPATCH_CASES = [
      'files.list_files'),
     ('essbase_manage_files', {'action': 'create_folder', 'path': '/p'},
      'files.create_folder'),
-    ('essbase_manage_files', {'action': 'delete', 'path': '/x'},
+    ('essbase_manage_files', {'action': 'delete', 'path': '/x', 'confirm': '/x'},
      'files.delete_file'),
     ('essbase_manage_files', {'action': 'copy', 'path': '/a',
                                 'target_path': '/b'},
@@ -4382,7 +4383,7 @@ ESS_DISPATCH_CASES = [
      'scripts.update_script'),
     ('essbase_manage_script', {'action': 'delete',
                                  'app_name': 'A', 'db_name': 'D',
-                                 'script_name': 'S'},
+                                 'script_name': 'S', 'confirm': 'S'},
      'scripts.delete_script'),
     ('essbase_manage_script', {'action': 'validate',
                                  'app_name': 'A', 'db_name': 'D',
@@ -4396,7 +4397,7 @@ ESS_DISPATCH_CASES = [
                                        'connection_name': 'C'},
      'connections.get_connection'),
     ('essbase_manage_connections', {'action': 'delete',
-                                       'connection_name': 'C'},
+                                       'connection_name': 'C', 'confirm': 'C'},
      'connections.delete_connection'),
     # essbase_manage_filters
     ('essbase_manage_filters', {'action': 'list',
@@ -4408,7 +4409,7 @@ ESS_DISPATCH_CASES = [
      'filters.get_filter'),
     ('essbase_manage_filters', {'action': 'delete',
                                   'app_name': 'A', 'db_name': 'D',
-                                  'filter_name': 'F'},
+                                  'filter_name': 'F', 'confirm': 'F'},
      'filters.delete_filter'),
     ('essbase_manage_filters', {'action': 'rename',
                                   'app_name': 'A', 'db_name': 'D',
@@ -4422,7 +4423,7 @@ ESS_DISPATCH_CASES = [
     # rerun also calls wait_for_completion — assert on rerun
     ('essbase_manage_jobs', {'action': 'rerun', 'job_id': 1},
      'jobs.rerun'),
-    ('essbase_manage_jobs', {'action': 'purge'},
+    ('essbase_manage_jobs', {'action': 'purge', 'confirm': 'all'},
      'jobs.purge'),
     # essbase_manage_datasources (no app_name / db_name params)
     ('essbase_manage_datasources', {'action': 'list'},
@@ -4431,7 +4432,7 @@ ESS_DISPATCH_CASES = [
                                        'datasource_name': 'DS'},
      'datasources.get_datasource'),
     ('essbase_manage_datasources', {'action': 'delete',
-                                       'datasource_name': 'DS'},
+                                       'datasource_name': 'DS', 'confirm': 'DS'},
      'datasources.delete_datasource'),
     # essbase_manage_drill_through
     ('essbase_manage_drill_through', {'action': 'list',
@@ -4443,7 +4444,7 @@ ESS_DISPATCH_CASES = [
      'drill_through.get_report'),
     ('essbase_manage_drill_through', {'action': 'delete',
                                          'app_name': 'A', 'db_name': 'D',
-                                         'report_name': 'R'},
+                                         'report_name': 'R', 'confirm': 'R'},
      'drill_through.delete_report'),
     # essbase_manage_users
     ('essbase_manage_users', {'action': 'list'},
@@ -4478,7 +4479,7 @@ ESS_DISPATCH_CASES = [
      'groups.list_groups'),
     ('essbase_manage_groups', {'action': 'get', 'group_id': 'G'},
      'groups.get_group'),
-    ('essbase_manage_groups', {'action': 'delete', 'group_id': 'G'},
+    ('essbase_manage_groups', {'action': 'delete', 'group_id': 'G', 'confirm': 'G'},
      'groups.delete_group'),
     ('essbase_manage_groups', {'action': 'get_users', 'group_id': 'G'},
      'groups.get_users'),
@@ -4527,7 +4528,7 @@ ESS_DISPATCH_CASES = [
                                 'parent_name': 'P'},
      'dimensions.batch_outline_edit'),
     ('essbase_edit_outline', {'app_name': 'A', 'db_name': 'D',
-                                'action': 'remove', 'member_name': 'M'},
+                                'action': 'remove', 'member_name': 'M', 'confirm': 'M'},
      'dimensions.batch_outline_edit'),
     ('essbase_edit_outline', {'app_name': 'A', 'db_name': 'D',
                                 'action': 'rename', 'member_name': 'M',

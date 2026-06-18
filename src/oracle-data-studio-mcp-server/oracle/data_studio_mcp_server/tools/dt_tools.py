@@ -460,6 +460,7 @@ def register_tools(mcp: FastMCP):
                             time: str = None,
                             days: str = None,
                             status: str = 'INACTIVE',
+                            confirm: str = None,
                             ctx: Context = None) -> str:
         """Manage Data Transforms schedules: list, create, or delete.
 
@@ -476,6 +477,7 @@ def register_tools(mcp: FastMCP):
             days: Days for weekly schedules, comma-separated (e.g. 'MONDAY,WEDNESDAY,FRIDAY'). Valid values: MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY. Required for weekly.
             status: 'ACTIVE' or 'INACTIVE' (default: INACTIVE). Set to ACTIVE to enable immediately.
         """
+        from ._helpers import require_confirm
         dt = get_dt(ctx)
         if not dt:
             return err(_NO)
@@ -486,6 +488,10 @@ def register_tools(mcp: FastMCP):
                 return fmt(result)
 
             elif action == 'delete':
+                msg = require_confirm(schedule_name, confirm,
+                                       action_label='delete schedule')
+                if msg:
+                    return err(msg)
                 if not schedule_name:
                     return err('schedule_name required for delete.')
                 result = client.delete_schedule(schedule_name)
@@ -656,6 +662,7 @@ def register_tools(mcp: FastMCP):
                                password: str = None,
                                wallet_path: str = None,
                                jdbc_url: str = None,
+                               confirm: str = None,
                                ctx: Context = None) -> str:
         """Manage Data Transforms connections: list, create, delete, or test.
 
@@ -671,6 +678,7 @@ def register_tools(mcp: FastMCP):
             wallet_path: Wallet path for create (alternative to host/port).
             jdbc_url: JDBC URL for create (alternative to host/port).
         """
+        from ._helpers import require_confirm
         dt = get_dt(ctx)
         if not dt:
             return err(_NO)
@@ -714,6 +722,10 @@ def register_tools(mcp: FastMCP):
                     return err('Connection builder not available. Install oracle-data-studio>=1.0.25.')
 
             elif action == 'delete':
+                msg = require_confirm(connection_name, confirm,
+                                       action_label='delete connection')
+                if msg:
+                    return err(msg)
                 if not connection_name:
                     return err('connection_name required for delete.')
                 result = client.delete_connection(connection_name)

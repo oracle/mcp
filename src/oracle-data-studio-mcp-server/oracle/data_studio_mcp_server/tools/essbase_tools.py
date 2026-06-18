@@ -394,8 +394,13 @@ def register_tools(mcp: FastMCP):
                                   db_name: str = None,
                                   variable_name: str = None,
                                   value: str = None,
+                                  confirm: str = None,
                                   ctx: Context = None) -> str:
         """Manage Essbase substitution variables at any scope.
+
+        Destructive actions (`delete`) require `confirm` to match
+        `variable_name` exactly — guards against prompt-injected
+        deletions.
 
         Args:
             action: One of 'list', 'get', 'set', 'delete'.
@@ -404,7 +409,9 @@ def register_tools(mcp: FastMCP):
             db_name: Database name (required for db scope).
             variable_name: Variable name (required for get/set/delete).
             value: Variable value (required for set).
+            confirm: For delete: must equal `variable_name`.
         """
+        from ._helpers import require_confirm
         ess = get_essbase(ctx)
         if not ess:
             return err(_NO)
@@ -447,6 +454,12 @@ def register_tools(mcp: FastMCP):
                         return fmt(v.create_db_variable(
                             app_name, db_name, payload))
             elif action == 'delete':
+                if not variable_name:
+                    return err('variable_name required for delete.')
+                msg = require_confirm(variable_name, confirm,
+                                       action_label='delete variable')
+                if msg:
+                    return err(msg)
                 if scope == 'server':
                     v.delete_server_variable(variable_name)
                 elif scope == 'application':
@@ -725,6 +738,7 @@ def register_tools(mcp: FastMCP):
                                script_name: str,
                                content: str = None,
                                new_name: str = None,
+                               confirm: str = None,
                                ctx: Context = None) -> str:
         """Manage calc scripts: list, create, update, delete, or validate.
 
@@ -739,6 +753,7 @@ def register_tools(mcp: FastMCP):
             content: Calc script text (required for create/update, e.g. 'CALC ALL;').
             new_name: New name for rename (optional with 'update').
         """
+        from ._helpers import require_confirm
         ess = get_essbase(ctx)
         if not ess:
             return err(_NO)
@@ -791,6 +806,10 @@ def register_tools(mcp: FastMCP):
                                    'new_name': new_name})
 
             elif action == 'delete':
+                msg = require_confirm(script_name, confirm,
+                                       action_label='delete script')
+                if msg:
+                    return err(msg)
                 s.delete_script(app_name, db_name, script_name)
                 return json.dumps({'status': 'deleted',
                                    'script': script_name})
@@ -811,6 +830,7 @@ def register_tools(mcp: FastMCP):
     def essbase_manage_files(action: str, path: str = None,
                               target_path: str = None,
                               content: str = None,
+                              confirm: str = None,
                               ctx: Context = None) -> str:
         """Manage files in the Essbase file catalog: list, upload, download, copy, move, delete, create_folder.
 
@@ -823,6 +843,7 @@ def register_tools(mcp: FastMCP):
             target_path: Destination path (required for copy/move).
             content: Text content to upload (required for upload, e.g. data file contents or rule file).
         """
+        from ._helpers import require_confirm
         ess = get_essbase(ctx)
         if not ess:
             return err(_NO)
@@ -862,6 +883,10 @@ def register_tools(mcp: FastMCP):
                 return fmt(result)
 
             elif action == 'delete':
+                msg = require_confirm(path, confirm,
+                                       action_label='delete file')
+                if msg:
+                    return err(msg)
                 if not path:
                     return err('path required for delete.')
                 f.delete_file(path)
@@ -900,6 +925,7 @@ def register_tools(mcp: FastMCP):
                                     user: str = None,
                                     password: str = None,
                                     db_type: str = 'oracle',
+                                    confirm: str = None,
                                     ctx: Context = None) -> str:
         """Manage Essbase global connections: list, get, create, update, test, or delete.
 
@@ -916,6 +942,7 @@ def register_tools(mcp: FastMCP):
             password: Database password (required for create).
             db_type: Connection type: 'oracle' (default), 'sql_server', 'db2'.
         """
+        from ._helpers import require_confirm
         ess = get_essbase(ctx)
         if not ess:
             return err(_NO)
@@ -984,6 +1011,10 @@ def register_tools(mcp: FastMCP):
                 return fmt(result)
 
             elif action == 'delete':
+                msg = require_confirm(connection_name, confirm,
+                                       action_label='delete connection')
+                if msg:
+                    return err(msg)
                 if not connection_name:
                     return err('connection_name required.')
                 c.delete_connection(connection_name)
@@ -1068,6 +1099,7 @@ def register_tools(mcp: FastMCP):
                                 user_or_group: str = None,
                                 access: str = 'read',
                                 new_name: str = None,
+                                confirm: str = None,
                                 ctx: Context = None) -> str:
         """Manage security filters for row-level access control on an Essbase database.
 
@@ -1084,6 +1116,7 @@ def register_tools(mcp: FastMCP):
             access: Access type for simple filter creation: 'read' (default), 'write', 'none', 'metaread'.
             new_name: New filter name (required for copy/rename).
         """
+        from ._helpers import require_confirm
         ess = get_essbase(ctx)
         if not ess:
             return err(_NO)
@@ -1200,6 +1233,10 @@ def register_tools(mcp: FastMCP):
                 return fmt(result)
 
             elif action == 'delete':
+                msg = require_confirm(filter_name, confirm,
+                                       action_label='delete filter')
+                if msg:
+                    return err(msg)
                 if not filter_name:
                     return err('filter_name required for delete.')
                 fl.delete_filter(app_name, db_name, filter_name)
@@ -1227,6 +1264,7 @@ def register_tools(mcp: FastMCP):
     def essbase_manage_jobs(action: str = 'list',
                              job_id: int = None,
                              limit: int = 50,
+                             confirm: str = None,
                              ctx: Context = None) -> str:
         """Monitor and manage Essbase jobs: list recent jobs, check status, or rerun a failed job.
 
@@ -1237,6 +1275,7 @@ def register_tools(mcp: FastMCP):
             job_id: Job ID (required for status/rerun).
             limit: Maximum jobs to return for list (default 50).
         """
+        from ._helpers import require_confirm
         ess = get_essbase(ctx)
         if not ess:
             return err(_NO)
@@ -1266,6 +1305,10 @@ def register_tools(mcp: FastMCP):
                 return json.dumps(data, indent=2, default=str)
 
             elif action == 'purge':
+                msg = require_confirm('all', confirm,
+                                       action_label='purge jobs')
+                if msg:
+                    return err(msg)
                 j.purge()
                 return json.dumps({'status': 'purged'})
 
@@ -1288,6 +1331,7 @@ def register_tools(mcp: FastMCP):
                               alias_table: str = 'Default',
                               alias_value: str = None,
                               uda_value: str = None,
+                              confirm: str = None,
                               ctx: Context = None) -> str:
         """Edit the cube outline: add, remove, move, or rename members and set properties.
 
@@ -1308,6 +1352,7 @@ def register_tools(mcp: FastMCP):
             alias_value: Alias value (for 'set_alias', or optionally with 'add').
             uda_value: User-Defined Attribute value (for 'set_uda').
         """
+        from ._helpers import require_confirm
         ess = get_essbase(ctx)
         if not ess:
             return err(_NO)
@@ -1340,6 +1385,10 @@ def register_tools(mcp: FastMCP):
                         'alias': alias_value})
 
             elif action == 'remove':
+                msg = require_confirm(member_name, confirm,
+                                       action_label='remove outline member')
+                if msg:
+                    return err(msg)
                 edit_actions.append({
                     'actionType': 'removeMember',
                     'memberName': member_name})
@@ -1406,6 +1455,7 @@ def register_tools(mcp: FastMCP):
                                     connection: str = None,
                                     query: str = None,
                                     columns: str = None,
+                                    confirm: str = None,
                                     ctx: Context = None) -> str:
         """Manage global datasources for data loads and drill-through.
 
@@ -1416,6 +1466,7 @@ def register_tools(mcp: FastMCP):
             query: SQL query for the datasource (for create).
             columns: Comma-separated column names (for create).
         """
+        from ._helpers import require_confirm
         ess = get_essbase(ctx)
         if not ess:
             return err(_NO)
@@ -1462,6 +1513,10 @@ def register_tools(mcp: FastMCP):
                 return fmt(result)
 
             elif action == 'delete':
+                msg = require_confirm(datasource_name, confirm,
+                                       action_label='delete datasource')
+                if msg:
+                    return err(msg)
                 if not datasource_name:
                     return err('datasource_name required for delete.')
                 ds.delete_datasource(datasource_name)
@@ -1484,6 +1539,7 @@ def register_tools(mcp: FastMCP):
                                       sql_query: str = None,
                                       columns: str = None,
                                       drillable_regions: str = None,
+                                      confirm: str = None,
                                       ctx: Context = None) -> str:
         """Manage drill-through reports that link cube cells to detail data.
 
@@ -1497,6 +1553,7 @@ def register_tools(mcp: FastMCP):
             columns: Comma-separated column names to display (for create).
             drillable_regions: Comma-separated member specifications defining where drill-through is available (for create, e.g. '@IDESCENDANTS(East),@IDESCENDANTS(Sales)').
         """
+        from ._helpers import require_confirm
         ess = get_essbase(ctx)
         if not ess:
             return err(_NO)
@@ -1554,6 +1611,10 @@ def register_tools(mcp: FastMCP):
                 return fmt(result)
 
             elif action == 'delete':
+                msg = require_confirm(report_name, confirm,
+                                       action_label='delete drill-through report')
+                if msg:
+                    return err(msg)
                 if not report_name:
                     return err('report_name required for delete.')
                 dt.delete_report(app_name, db_name, report_name)
@@ -1769,6 +1830,7 @@ def register_tools(mcp: FastMCP):
     def essbase_manage_groups(action: str,
                                group_id: str = None,
                                user_ids: str = None,
+                               confirm: str = None,
                                ctx: Context = None) -> str:
         """Manage Essbase groups: list, get details, create, delete, add/remove users, get users, add/remove subgroups.
 
@@ -1777,6 +1839,7 @@ def register_tools(mcp: FastMCP):
             group_id: Group ID (required for get/create/delete/add_users/remove_users/get_users/add_subgroups/remove_subgroups).
             user_ids: Comma-separated user IDs (required for add_users). For add_subgroups, comma-separated subgroup IDs.
         """
+        from ._helpers import require_confirm
         ess = get_essbase(ctx)
         if not ess:
             return err(_NO)
@@ -1818,6 +1881,10 @@ def register_tools(mcp: FastMCP):
                     {'status': 'created', 'group': group_id})
 
             elif action == 'delete':
+                msg = require_confirm(group_id, confirm,
+                                       action_label='delete group')
+                if msg:
+                    return err(msg)
                 if not group_id:
                     return err('group_id required for delete.')
                 g.delete_group(group_id)
@@ -1836,6 +1903,10 @@ def register_tools(mcp: FastMCP):
                      'users': [u['id'] for u in users]})
 
             elif action == 'remove_users':
+                msg = require_confirm(group_id, confirm,
+                                       action_label='remove users from group')
+                if msg:
+                    return err(msg)
                 if not group_id:
                     return err('group_id required for remove_users.')
                 result = g.remove_users(group_id)
@@ -1862,6 +1933,10 @@ def register_tools(mcp: FastMCP):
                      'subgroups': [s['id'] for s in subgroups]})
 
             elif action == 'remove_subgroups':
+                msg = require_confirm(group_id, confirm,
+                                       action_label='remove subgroups from group')
+                if msg:
+                    return err(msg)
                 if not group_id:
                     return err('group_id required for remove_subgroups.')
                 result = g.remove_subgroups(group_id)

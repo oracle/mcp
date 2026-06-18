@@ -440,6 +440,7 @@ def register_tools(mcp: FastMCP):
     # ── 24b. adp_manage_catalog ──────────────────────────────────────
     @mcp.tool()
     def adp_manage_catalog(action: str, catalog_name: str = None,
+                            confirm: str = None,
                             ctx: Context = None) -> str:
         """Manage data catalogs (admin-only): enable, disable, or unmount catalogs.
 
@@ -447,6 +448,7 @@ def register_tools(mcp: FastMCP):
             action: One of 'enable', 'disable', 'unmount'.
             catalog_name: Catalog name (required).
         """
+        from ._helpers import require_confirm
         client = get_adp(ctx)
         if not client:
             return err(_NO_CONN_MSG)
@@ -462,6 +464,10 @@ def register_tools(mcp: FastMCP):
                 return fmt(json.loads(result) if isinstance(
                     result, str) else result)
             elif action == 'unmount':
+                msg = require_confirm(catalog_name, confirm,
+                                       action_label='unmount catalog')
+                if msg:
+                    return err(msg)
                 result = client.Catalog.unmount_catalog(catalog_name)
                 return fmt(json.loads(result) if isinstance(
                     result, str) else result)
@@ -478,6 +484,7 @@ def register_tools(mcp: FastMCP):
                             recipient_name: str = None,
                             email: str = None,
                             new_name: str = None,
+                            confirm: str = None,
                             ctx: Context = None) -> str:
         """Manage data sharing: list shares, create share, publish, delete, manage recipients, providers, and more.
 
@@ -501,6 +508,7 @@ def register_tools(mcp: FastMCP):
         recipient. To grant a published share to a specific recipient,
         call action='grant_recipient' with recipient_name + tables.
         """
+        from ._helpers import require_confirm
         client = get_adp(ctx)
         if not client:
             return err(_NO_CONN_MSG)
@@ -549,6 +557,10 @@ def register_tools(mcp: FastMCP):
                 return fmt(json.loads(result) if isinstance(
                     result, str) else result)
             elif action == 'delete':
+                msg = require_confirm(share_name, confirm,
+                                       action_label='delete share')
+                if msg:
+                    return err(msg)
                 if not share_name:
                     return err('share_name required for delete.')
                 result = client.Share.delete_share(share_name)
@@ -572,6 +584,10 @@ def register_tools(mcp: FastMCP):
                 return fmt(json.loads(result) if isinstance(
                     result, str) else result)
             elif action == 'delete_recipient':
+                msg = require_confirm(recipient_name, confirm,
+                                       action_label='delete recipient')
+                if msg:
+                    return err(msg)
                 if not recipient_name:
                     return err('recipient_name required for delete_recipient.')
                 result = client.Share.delete_recipient(recipient_name)
@@ -601,6 +617,10 @@ def register_tools(mcp: FastMCP):
                 return fmt(json.loads(result) if isinstance(
                     result, str) else result)
             elif action == 'delete_provider':
+                msg = require_confirm(recipient_name, confirm,
+                                       action_label='delete provider')
+                if msg:
+                    return err(msg)
                 if not recipient_name:
                     return err('recipient_name required for delete_provider.')
                 result = client.Share.delete_provider(recipient_name)
@@ -673,6 +693,7 @@ def register_tools(mcp: FastMCP):
                                  storage_link_name: str = None,
                                  uri: str = None,
                                  description: str = None,
+                                 confirm: str = None,
                                  ctx: Context = None) -> str:
         """Manage cloud credentials and storage links for data loading.
 
@@ -689,6 +710,7 @@ def register_tools(mcp: FastMCP):
             uri: URI for cloud storage (for create_storage_link).
             description: Description (optional, for create_storage_link).
         """
+        from ._helpers import require_confirm
         client = get_adp(ctx)
         if not client:
             return err(_NO_CONN_MSG)
@@ -717,6 +739,10 @@ def register_tools(mcp: FastMCP):
                 return fmt(json.loads(result) if isinstance(
                     result, str) else result)
             elif action == 'drop':
+                msg = require_confirm(credential_name, confirm,
+                                       action_label='drop credential')
+                if msg:
+                    return err(msg)
                 if not credential_name:
                     return err('credential_name required for drop.')
                 result = client.Ingest.drop_credential(credential_name)
@@ -736,6 +762,10 @@ def register_tools(mcp: FastMCP):
                 return fmt(json.loads(result) if isinstance(
                     result, str) else result)
             elif action == 'drop_storage_link':
+                msg = require_confirm(storage_link_name, confirm,
+                                       action_label='drop storage link')
+                if msg:
+                    return err(msg)
                 if not storage_link_name:
                     return err('storage_link_name required for '
                                'drop_storage_link.')
@@ -845,6 +875,7 @@ def register_tools(mcp: FastMCP):
                               request_name: str = None,
                               insight_name: str = None,
                               viz_id: int = None,
+                              confirm: str = None,
                               ctx: Context = None) -> str:
         """Manage AI-generated insights: list requests, view results, check status.
 
@@ -854,6 +885,7 @@ def register_tools(mcp: FastMCP):
             insight_name: Insight name (for get_graph).
             viz_id: Visualization ID (for get_graph).
         """
+        from ._helpers import require_confirm
         client = get_adp(ctx)
         if not client:
             return err(_NO_CONN_MSG)
@@ -883,6 +915,10 @@ def register_tools(mcp: FastMCP):
                 return fmt(json.loads(result) if isinstance(
                     result, str) else result)
             elif action == 'drop':
+                msg = require_confirm(request_name, confirm,
+                                       action_label='drop insight')
+                if msg:
+                    return err(msg)
                 if not request_name:
                     return err('request_name required for drop.')
                 result = client.Insight.drop(request_name)
@@ -901,6 +937,7 @@ def register_tools(mcp: FastMCP):
                               db_link_name: str = None,
                               tables: str = None,
                               consumer_group: str = 'LOW',
+                              confirm: str = None,
                               ctx: Context = None) -> str:
         """Manage database links and copy/link tables from remote databases.
 
@@ -910,6 +947,7 @@ def register_tools(mcp: FastMCP):
             tables: Comma-separated table names for copy_tables/link_tables.
             consumer_group: Resource consumer group: 'LOW' (default), 'MEDIUM', 'HIGH'.
         """
+        from ._helpers import require_confirm
         client = get_adp(ctx)
         if not client:
             return err(_NO_CONN_MSG)
@@ -955,6 +993,10 @@ def register_tools(mcp: FastMCP):
                 return fmt(json.loads(result) if isinstance(
                     result, str) else result)
             elif action == 'drop':
+                msg = require_confirm(db_link_name, confirm,
+                                       action_label='drop database link')
+                if msg:
+                    return err(msg)
                 if not db_link_name:
                     return err('db_link_name required for drop.')
                 result = client.Catalog.drop_database_link(

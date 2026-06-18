@@ -8,9 +8,9 @@ license = "UPL-1.0"
 license-files = ["LICENSE.txt"]
 
 dependencies = [
-    "fastmcp==3.3.1",
+    "fastmcp==3.4.2",
     "mysql-connector-python==9.5.0",
-    "oci==2.173.1"
+    "oci==2.179.0"
 ]
 
 classifiers = [

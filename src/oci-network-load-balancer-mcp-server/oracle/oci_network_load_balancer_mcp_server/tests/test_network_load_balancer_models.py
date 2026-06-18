@@ -4,7 +4,7 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
-from datetime import datetime
+from datetime import datetime, UTC
 
 import oci
 import pytest
@@ -154,8 +154,8 @@ class TestNetworkLoadBalancerModels:
             lifecycle_state="ACTIVE",
             lifecycle_details="Running",
             nlb_ip_version="IPV4",
-            time_created=datetime.utcnow(),
-            time_updated=datetime.utcnow(),
+            time_created=datetime.now(UTC),
+            time_updated=datetime.now(UTC),
             ip_addresses=[
                 oci.network_load_balancer.models.IpAddress(
                     ip_address="1.2.3.4", is_public=True, ip_version="IPV4"

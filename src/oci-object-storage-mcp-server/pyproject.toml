@@ -10,8 +10,8 @@ license = "UPL-1.0"
 license-files = ["LICENSE.txt"]
 requires-python = ">=3.13"
 dependencies = [
-    "fastmcp==3.3.1",
-    "oci==2.173.1",
+    "fastmcp==3.4.2",
+    "oci==2.179.0",
 ]
 
 classifiers = [

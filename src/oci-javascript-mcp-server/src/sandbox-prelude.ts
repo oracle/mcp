@@ -400,12 +400,12 @@ function __ociIsObjectProtocolKey(value) {
   return value === "then" || value === "catch" || value === "finally" || value === "toJSON";
 }
 
-function __ociIsBindingReservedKey(value) {
-  return __ociIsObjectProtocolKey(value) || value === "paginate";
-}
-
 function __ociManifestServices() {
   return (__ociReflectionManifest && __ociReflectionManifest.services) || {};
+}
+
+function __ociHasServiceManifest() {
+  return __objectKeys(__ociManifestServices()).length > 0;
 }
 
 function __ociManifestClients(service) {
@@ -634,7 +634,6 @@ function __ociService(service) {
 }
 
 const __ociBindingTarget = {
-  client: (service, client, options) => __ociClient(service, client, options),
   config: async () => __ociRpc("config", {})
 };
 
@@ -643,21 +642,22 @@ const __ociBinding = new __proxy(__ociBindingTarget, {
     if (service in target) {
       return target[service];
     }
-    if (typeof service !== "string" || service.startsWith("_") || __ociIsBindingReservedKey(service)) {
+    if (typeof service !== "string" || service.startsWith("_") || __ociIsObjectProtocolKey(service)) {
+      return undefined;
+    }
+    if (__ociHasServiceManifest() && !(service in __ociManifestServices())) {
       return undefined;
     }
     return __ociService(service);
   },
   has(target, service) {
     return service in target
-      || (typeof service === "string"
-        && !__ociIsBindingReservedKey(service)
-        && service in __ociManifestServices());
+      || (typeof service === "string" && service in __ociManifestServices());
   },
   ownKeys() {
     return __ociMergedKeys(
       __reflectOwnKeys(__ociBindingTarget),
-      __objectKeys(__ociManifestServices()).filter(service => !__ociIsBindingReservedKey(service))
+      __objectKeys(__ociManifestServices())
     );
   },
   getOwnPropertyDescriptor(target, service) {
@@ -665,9 +665,7 @@ const __ociBinding = new __proxy(__ociBindingTarget, {
     if (descriptor) {
       return descriptor;
     }
-    if (typeof service === "string"
-      && !__ociIsBindingReservedKey(service)
-      && service in __ociManifestServices()) {
+    if (typeof service === "string" && service in __ociManifestServices()) {
       return __ociDescriptor(__ociService(service));
     }
     return undefined;

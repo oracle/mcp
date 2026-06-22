@@ -211,7 +211,7 @@ not mutate the configured default region:
 
 ```js
 const iadCompute = new oci.core.ComputeClient({ region: "us-ashburn-1" });
-const phxCompute = oci.client("core", "ComputeClient", { region: "us-phoenix-1" });
+const phxCompute = new oci.core.ComputeClient({ region: "us-phoenix-1" });
 
 const [iadInstances, phxInstances] = await Promise.all([
   iadCompute.listInstances({ compartmentId, limit: 50 }),
@@ -228,7 +228,7 @@ The injected OCI surface is reflective. Normal JavaScript introspection works
 for the shallow SDK shape:
 
 ```js
-Object.keys(oci);                         // services plus client/config
+Object.keys(oci);                         // services plus config
 Object.keys(oci.core);                    // clients
 Object.keys(oci.core.ComputeClient());    // operations
 "listInstances" in oci.core.ComputeClient();

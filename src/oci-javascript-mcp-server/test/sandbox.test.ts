@@ -49,7 +49,8 @@ test("sandbox sends client initialization region in OCI RPC payloads", async () 
   const result = await runJavaScript(
     `
     const compute = new oci.core.ComputeClient({ region: "us-phoenix-1" });
-    const dynamic = oci.client("core", "ComputeClient", { region: "us-ashburn-1" });
+    const DynamicComputeClient = oci.core.ComputeClient;
+    const dynamic = new DynamicComputeClient({ region: "us-ashburn-1" });
     await compute.listInstances({ compartmentId: "ocid1.compartment" });
     await dynamic.getInstance({ instanceId: "ocid1.instance" });
     `,
@@ -402,8 +403,8 @@ test("sandbox reflects OCI services clients and operations from manifest", async
     return {
       services: Object.keys(oci),
       hasCore: "core" in oci,
-      hasPaginate: "paginate" in oci,
-      paginateType: typeof oci.paginate,
+      hasUnknownService: "notAService" in oci,
+      unknownServiceType: typeof oci.notAService,
       coreClients: Object.keys(oci.core),
       computeFactoryKeys: Object.keys(oci.core.ComputeClient),
       computeClientKeys: Object.keys(oci.core.ComputeClient()),
@@ -444,10 +445,10 @@ test("sandbox reflects OCI services clients and operations from manifest", async
   assert.equal(result.exitCode, 0);
   assert.equal(result.stderr, "");
   assert.deepEqual(result.result, {
-    services: ["client", "config", "core", "identity"],
+    services: ["config", "core", "identity"],
     hasCore: true,
-    hasPaginate: false,
-    paginateType: "undefined",
+    hasUnknownService: false,
+    unknownServiceType: "undefined",
     coreClients: ["ComputeClient", "VirtualNetworkClient"],
     computeFactoryKeys: ["getInstance", "listInstances"],
     computeClientKeys: ["getInstance", "listInstances"],
@@ -455,6 +456,39 @@ test("sandbox reflects OCI services clients and operations from manifest", async
     hasListInstances: true
   });
   assert.equal(hostCalls, 0);
+});
+
+test("sandbox does not expose custom OCI client helper", async () => {
+  const result = await runJavaScript(
+    `
+    return {
+      clientType: typeof oci.client,
+      hasClient: "client" in oci
+    };
+    `,
+    {
+      timeoutSeconds: 10,
+      reflectionManifest: {
+        services: {
+          core: {
+            clients: {
+              ComputeClient: {
+                operations: ["listInstances"]
+              }
+            }
+          }
+        }
+      },
+      hostRpc: async () => ({})
+    }
+  );
+
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.stderr, "");
+  assert.deepEqual(result.result, {
+    clientType: "undefined",
+    hasClient: false
+  });
 });
 
 test("sandbox OCI proxies are not mistaken for promises", async () => {
@@ -498,7 +532,7 @@ test("sandbox OCI proxies are not mistaken for promises", async () => {
   assert.equal(result.stderr, "");
   assert.equal(requests.length, 0);
   assert.deepEqual(result.result, {
-    bindingKeys: ["client", "config", "core"],
+    bindingKeys: ["config", "core"],
     serviceKeys: ["ComputeClient"],
     factoryKeys: ["listInstances"],
     clientKeys: ["listInstances"],

@@ -48,6 +48,34 @@ bridge: sandbox code can only send structured OCI operation requests to the
 trusted host process, and the host validates, signs, executes, sanitizes, and
 returns JSON results without ever handing credentials into the sandbox.
 
+## Request Flow
+
+```mermaid
+sequenceDiagram
+  participant Client as MCP client
+  participant Server as MCP server
+  participant Isolate as Fresh V8 isolate
+  participant Proxy as Injected oci proxy
+  participant Host as Host RPC validator
+  participant SDK as OCI SDK client
+  participant OCI as OCI APIs
+
+  Client->>Server: run_javascript(code)
+  Server->>Isolate: create isolate and install prelude
+  Server->>Isolate: run code with timeout and limits
+  Isolate->>Proxy: call oci service/client operation
+  Proxy->>Host: send structured invoke request
+  Host->>Host: validate service, client, operation, request
+  Host->>SDK: create client with host OCI auth
+  SDK->>OCI: signed HTTPS request
+  OCI-->>SDK: OCI response
+  SDK-->>Host: SDK response object
+  Host-->>Proxy: sanitized JSON result
+  Proxy-->>Isolate: resolve awaited OCI call
+  Isolate-->>Server: final expression result, stdout, stderr
+  Server-->>Client: MCP tool result
+```
+
 ## Install
 
 For local development from this package directory:

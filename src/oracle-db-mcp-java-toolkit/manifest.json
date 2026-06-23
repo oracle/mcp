@@ -1,0 +1,285 @@
+{
+    "manifest_version": "0.2",
+    "name": "oracle-db-mcp-toolkit",
+    "display_name": "Oracle Database MCP Toolkit",
+    "version": "1.0.0",
+    "description": "Oracle Database MCP Toolkit is a Model Context Protocol (MCP) server for Oracle Database operations, RAG/vector workflows, and log analysis.",
+    "author": {
+        "name": "Oracle JDBC team"
+    },
+    "server": {
+        "type": "binary",
+        "entry_point": "oracle-db-mcp-toolkit-1.0.0.jar",
+        "mcp_config": {
+            "command": "/bin/sh",
+            "args": [
+                "-c",
+                "set -- java; val=\"${CONFIG_FILE:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-DconfigFile=$val\" ;; esac; val=\"${DB_URL:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-Ddb.url=$val\" ;; esac; val=\"${DB_USER:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-Ddb.user=$val\" ;; esac; val=\"${DB_PASSWORD:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-Ddb.password=$val\" ;; esac; val=\"${TOOLS:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-Dtools=$val\" ;; esac; val=\"${INGEST_ROOT_DIR:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-DingestRootDir=$val\" ;; esac; val=\"${INGEST_MAX_FILE_SIZE_MB:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-DingestMaxFileSizeMb=$val\" ;; esac; val=\"${OJDBC_EXT_DIR:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-Dojdbc.ext.dir=$val\" ;; esac; val=\"${TRANSPORT:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-Dtransport=$val\" ;; esac; val=\"${HTTPS_PORT:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-Dhttps.port=$val\" ;; esac; val=\"${CERTIFICATE_PATH:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-DcertificatePath=$val\" ;; esac; val=\"${CERTIFICATE_PASSWORD:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-DcertificatePassword=$val\" ;; esac; val=\"${ENABLE_AUTHENTICATION:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-DenableAuthentication=$val\" ;; esac; val=\"${ALLOWED_HOSTS:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-DallowedHosts=$val\" ;; esac; val=\"${REDIRECT_OPENID_TO_OAUTH:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-DredirectOpenIDToOAuth=$val\" ;; esac; val=\"${AUTH_SERVER:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-DauthServer=$val\" ;; esac; val=\"${INTROSPECTION_ENDPOINT:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-DintrospectionEndpoint=$val\" ;; esac; val=\"${CLIENT_ID:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-DclientId=$val\" ;; esac; val=\"${CLIENT_SECRET:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-DclientSecret=$val\" ;; esac; val=\"${OAUTH_SCOPE_CLAIM_PATH:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-Doauth.scopeClaimPath=$val\" ;; esac; val=\"${EDIT_TOOLS_REQUIRE_SCOPE:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-DeditTools.requireScope=$val\" ;; esac; val=\"${LIST_CREDENTIALS_REQUIRE_SCOPE:-}\"; case \"$val\" in ''|\\$\\{user_config.*\\}) ;; *) set -- \"$@\" \"-DlistCredentials.requireScope=$val\" ;; esac; exec \"$@\" -jar \"${__dirname}/oracle-db-mcp-toolkit-1.0.0.jar\""
+            ],
+            "env": {
+                "CONFIG_FILE": "${user_config.configFile}",
+                "DB_URL": "${user_config.dbUrl}",
+                "DB_USER": "${user_config.dbUser}",
+                "DB_PASSWORD": "${user_config.dbPassword}",
+                "TOOLS": "${user_config.tools}",
+                "INGEST_ROOT_DIR": "${user_config.ingestRootDir}",
+                "INGEST_MAX_FILE_SIZE_MB": "${user_config.ingestMaxFileSizeMb}",
+                "OJDBC_EXT_DIR": "${user_config.ojdbcExtDir}",
+                "TRANSPORT": "${user_config.transport}",
+                "HTTPS_PORT": "${user_config.httpsPort}",
+                "CERTIFICATE_PATH": "${user_config.certificatePath}",
+                "CERTIFICATE_PASSWORD": "${user_config.certificatePassword}",
+                "ENABLE_AUTHENTICATION": "${user_config.enableAuthentication}",
+                "ALLOWED_HOSTS": "${user_config.allowedHosts}",
+                "REDIRECT_OPENID_TO_OAUTH": "${user_config.redirectOpenIDToOAuth}",
+                "AUTH_SERVER": "${user_config.authServer}",
+                "INTROSPECTION_ENDPOINT": "${user_config.introspectionEndpoint}",
+                "CLIENT_ID": "${user_config.clientId}",
+                "CLIENT_SECRET": "${user_config.clientSecret}",
+                "OAUTH_SCOPE_CLAIM_PATH": "${user_config.oauthScopeClaimPath}",
+                "EDIT_TOOLS_REQUIRE_SCOPE": "${user_config.editToolsRequireScope}",
+                "LIST_CREDENTIALS_REQUIRE_SCOPE": "${user_config.listCredentialsRequireScope}",
+                "ORACLE_DB_TOOLKIT_AUTH_TOKEN": "${user_config.oracleDbToolkitAuthToken}"
+            }
+        }
+    },
+    "tools": [
+        {
+            "name": "list-tools",
+            "description": "List all available tools with their descriptions."
+        },
+        {
+            "name": "edit-tools",
+            "description": "Create or update YAML-defined tools in the config file. Changes are auto-reloaded."
+        },
+        {
+            "name": "list-credentials",
+            "description": "List DBMS_CLOUD credentials available in the current schema."
+        },
+        {
+            "name": "read-query",
+            "description": "Run a SELECT and return rows as JSON."
+        },
+        {
+            "name": "write-query",
+            "description": "Execute DML/DDL statements with optional transaction support."
+        },
+        {
+            "name": "table",
+            "description": "Manage tables with create/drop/list/describe actions."
+        },
+        {
+            "name": "transaction",
+            "description": "Manage JDBC transactions: start, resume, commit, rollback."
+        },
+        {
+            "name": "db-ping",
+            "description": "Check database connectivity and round-trip latency."
+        },
+        {
+            "name": "db-metrics-range",
+            "description": "Return Oracle DB cumulative metrics from V$SYSSTAT."
+        },
+        {
+            "name": "explain-plan",
+            "description": "Generate and inspect SQL execution plans."
+        },
+        {
+            "name": "jdbc-analyzer",
+            "description": "Analyze Oracle JDBC thin logs (stats, queries, errors, connection-events, compare, list-files)."
+        },
+        {
+            "name": "rdbms-analyzer",
+            "description": "Analyze Oracle RDBMS/SQLNet trace files (errors, packet-dumps)."
+        },
+        {
+            "name": "similarity-search",
+            "description": "Semantic vector similarity over tables with text and embedding columns."
+        },
+        {
+            "name": "vector-store",
+            "description": "Manage vector stores (create, list)."
+        },
+        {
+            "name": "vector-model",
+            "description": "Manage ONNX embedding models (list, drop)."
+        },
+        {
+            "name": "embed",
+            "description": "Embed files/table/object-storage content into vector stores as background tasks."
+        },
+        {
+            "name": "task",
+            "description": "Track background embedding tasks (status, paginated list, cancel)."
+        },
+        {
+            "name": "oci-storage",
+            "description": "OCI Object Storage utilities (list-objects, list-credentials)."
+        }
+    ],
+    "tools_generated": true,
+    "user_config": {
+        "configFile": {
+            "type": "file",
+            "title": "Toolkit Config File",
+            "description": "Path to the toolkit YAML config file used for data sources and custom tools.",
+            "required": false,
+            "sensitive": false
+        },
+        "dbUrl": {
+            "type": "string",
+            "title": "DB URL",
+            "description": "Oracle JDBC URL (for -Ddb.url).",
+            "required": false,
+            "sensitive": false
+        },
+        "dbUser": {
+            "type": "string",
+            "title": "DB User",
+            "description": "Database username (for -Ddb.user).",
+            "required": false,
+            "sensitive": false
+        },
+        "dbPassword": {
+            "type": "string",
+            "title": "DB Password",
+            "description": "Database password (for -Ddb.password).",
+            "required": false,
+            "sensitive": true
+        },
+        "tools": {
+            "type": "string",
+            "title": "Tools Filter",
+            "description": "Optional tools filter string for -Dtools. Use mcp-admin or explicit admin tool names to enable protected admin tools.",
+            "required": false,
+            "sensitive": false
+        },
+        "ingestRootDir": {
+            "type": "string",
+            "title": "Ingest Root Directory",
+            "description": "Root directory for local file ingestion with the embed tool.",
+            "required": false,
+            "sensitive": false
+        },
+        "ingestMaxFileSizeMb": {
+            "type": "string",
+            "title": "Ingest Max File Size MB",
+            "description": "Maximum file size in MB for local file and OCI object ingestion.",
+            "required": false,
+            "sensitive": false
+        },
+        "ojdbcExtDir": {
+            "type": "string",
+            "title": "OJDBC Extension Directory",
+            "description": "Directory containing optional Oracle JDBC extension jars for -Dojdbc.ext.dir.",
+            "required": false,
+            "sensitive": false
+        },
+        "transport": {
+            "type": "string",
+            "title": "Transport",
+            "description": "Transport kind for -Dtransport (example: stdio).",
+            "required": false,
+            "sensitive": false
+        },
+        "httpsPort": {
+            "type": "string",
+            "title": "HTTPS Port",
+            "description": "HTTPS listener port for -Dhttps.port.",
+            "required": false,
+            "sensitive": false
+        },
+        "certificatePath": {
+            "type": "file",
+            "title": "Certificate Path",
+            "description": "Path to the SSL certificate keystore for -DcertificatePath.",
+            "required": false,
+            "sensitive": false
+        },
+        "certificatePassword": {
+            "type": "string",
+            "title": "Certificate Password",
+            "description": "Password for the SSL certificate keystore.",
+            "required": false,
+            "sensitive": true
+        },
+        "enableAuthentication": {
+            "type": "string",
+            "title": "Enable Auth",
+            "description": "Set -DenableAuthentication to true/false.",
+            "required": false,
+            "sensitive": false
+        },
+        "allowedHosts": {
+            "type": "string",
+            "title": "Allowed Hosts",
+            "description": "Set -DallowedHosts (default is *).",
+            "required": false,
+            "sensitive": false
+        },
+        "redirectOpenIDToOAuth": {
+            "type": "string",
+            "title": "Redirect OpenID to OAuth",
+            "description": "Set -DredirectOpenIDToOAuth to true/false for authorization server discovery compatibility.",
+            "required": false,
+            "sensitive": false
+        },
+        "authServer": {
+            "type": "string",
+            "title": "Auth Server",
+            "description": "OAuth auth server URL for -DauthServer.",
+            "required": false,
+            "sensitive": false
+        },
+        "introspectionEndpoint": {
+            "type": "string",
+            "title": "Introspection URL",
+            "description": "OAuth introspection endpoint for -DintrospectionEndpoint.",
+            "required": false,
+            "sensitive": false
+        },
+        "clientId": {
+            "type": "string",
+            "title": "Client ID",
+            "description": "OAuth client id for -DclientId.",
+            "required": false,
+            "sensitive": false
+        },
+        "clientSecret": {
+            "type": "string",
+            "title": "Client Secret",
+            "description": "OAuth client secret for -DclientSecret.",
+            "required": false,
+            "sensitive": true
+        },
+        "oauthScopeClaimPath": {
+            "type": "string",
+            "title": "OAuth Scope Claim Path",
+            "description": "Dot-separated path in the OAuth introspection response that contains scopes.",
+            "required": false,
+            "sensitive": false
+        },
+        "editToolsRequireScope": {
+            "type": "string",
+            "title": "Edit Tools Require Scope",
+            "description": "Set -DeditTools.requireScope to true/false for edit-tools OAuth scope enforcement.",
+            "required": false,
+            "sensitive": false
+        },
+        "listCredentialsRequireScope": {
+            "type": "string",
+            "title": "List Credentials Require Scope",
+            "description": "Set -DlistCredentials.requireScope to true/false for list-credentials OAuth scope enforcement.",
+            "required": false,
+            "sensitive": false
+        },
+        "oracleDbToolkitAuthToken": {
+            "type": "string",
+            "title": "Auth Token",
+            "description": "Optional bearer token for toolkit authentication (passed as ORACLE_DB_TOOLKIT_AUTH_TOKEN env).",
+            "required": false,
+            "sensitive": true
+        }
+    },
+    "license": "UPL-1.0"
+}

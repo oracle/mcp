@@ -71,17 +71,21 @@ public class OracleDatabaseMCPToolkit {
              .tools(true)
              .logging()
              .build())
+          .tools(Utils.getSyncToolSpecifications(config))
           .immediateExecution(true)
           .build();
       }
       default -> throw new IllegalArgumentException(
               "Unsupported transport: " + LoadedConstants.TRANSPORT_KIND + " (expected 'stdio' or 'http')");
     }
-    Utils.addSyncToolSpecifications(serverInstance, config);
-
-    Thread pollingThread = new Thread(() -> pollConfigFile(), "config-file-poller");
-    pollingThread.setDaemon(true);
-    pollingThread.start();
+    // Start config file poller only when a config file path is provided
+    if (LoadedConstants.CONFIG_FILE != null && !LoadedConstants.CONFIG_FILE.isBlank()) {
+      Thread pollingThread = new Thread(() -> pollConfigFile(), "config-file-poller");
+      pollingThread.setDaemon(true);
+      pollingThread.start();
+    } else {
+      LOG.info("[oracle-db-mcp-toolkit] Config file not provided; polling disabled");
+    }
   }
 
   private OracleDatabaseMCPToolkit() {
@@ -107,6 +111,7 @@ public class OracleDatabaseMCPToolkit {
            .tools(true)
            .logging()
            .build())
+        .tools(Utils.getSyncToolSpecifications(config))
         .immediateExecution(true)
         .build();
 
@@ -221,6 +226,11 @@ public class OracleDatabaseMCPToolkit {
 
   // For now, we rely on this instead of the nio watcher logic (for container’s sake)
   private static void pollConfigFile() {
+    // Guard against null/blank to avoid NPE when no -DconfigFile is supplied
+    if (LoadedConstants.CONFIG_FILE == null || LoadedConstants.CONFIG_FILE.isBlank()) {
+      LOG.info("[oracle-db-mcp-toolkit] CONFIG_FILE not set; skipping config polling.");
+      return;
+    }
     File configFile = new File(LoadedConstants.CONFIG_FILE);
     long lastModified = configFile.lastModified();
     while (true) {

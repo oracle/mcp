@@ -36,6 +36,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -75,18 +76,20 @@ public class Utils {
    *   Returns the list of all available tools for this server.
    * </p>
    */
-  static void addSyncToolSpecifications(McpSyncServer server, ServerConfig config) {
+  static List<McpServerFeatures.SyncToolSpecification> getSyncToolSpecifications(ServerConfig config) {
     // Clear custom tool names at startup in case of restart
     synchronized (customToolNames) {
       customToolNames.clear();
       customToolSignatures.clear();
     }
 
+    List<McpServerFeatures.SyncToolSpecification> enabledSpecs = new ArrayList<>();
+
     List<McpServerFeatures.SyncToolSpecification> specs = LogAnalyzerTools.getTools();
     for (McpServerFeatures.SyncToolSpecification spec : specs) {
       String toolName = spec.tool().name();
       if (isToolEnabled(config, toolName)) {
-        server.addTool(spec);
+        enabledSpecs.add(spec);
       }
     }
 
@@ -95,7 +98,7 @@ public class Utils {
     for (McpServerFeatures.SyncToolSpecification spec : ragSpecs) {
       String toolName = spec.tool().name();
       if (isToolEnabled(config, toolName)) {
-        server.addTool(spec);
+        enabledSpecs.add(spec);
       }
     }
 
@@ -104,7 +107,7 @@ public class Utils {
     for (McpServerFeatures.SyncToolSpecification spec : dbOperatorSpecs) {
       String toolName = spec.tool().name();
       if (isToolEnabled(config, toolName)) {
-        server.addTool(spec);
+        enabledSpecs.add(spec);
       }
     }
 
@@ -113,16 +116,29 @@ public class Utils {
     for (McpServerFeatures.SyncToolSpecification spec : mcpAdminSpecs) {
       String toolName = spec.tool().name();
       if (isToolEnabled(config, toolName)) {
-        server.addTool(spec);
+        enabledSpecs.add(spec);
       }
     }
 
     // ---------- Dynamically Added Tools ----------
     if (config.tools != null) {
       for (Map.Entry<String, ToolConfig> entry : config.tools.entrySet()) {
+        String name = entry.getKey();
         ToolConfig tc = entry.getValue();
+        if (tc == null) {
+          LOG.warning("Skipping invalid custom tool '" + name + "': Tool definition is required.");
+          continue;
+        }
+        if (tc != null && (tc.name == null || tc.name.isBlank())) {
+          tc.name = name;
+        }
         if (!isToolEnabled(config, tc.name)) continue;
-        server.addTool(makeSyncToolSpecification(tc, config));
+        CustomToolPolicy.ValidationResult validation = CustomToolPolicy.validateForRuntime(name, tc, config);
+        if (!validation.valid()) {
+          LOG.warning("Skipping invalid custom tool '" + name + "': " + validation.message());
+          continue;
+        }
+        enabledSpecs.add(makeSyncToolSpecification(tc, config));
         String sig = computeSignature(tc);
         synchronized (customToolNames) {
           customToolNames.add(tc.name);
@@ -130,6 +146,7 @@ public class Utils {
         }
       }
     }
+    return enabledSpecs;
   }
 
   private static String computeSignature(ToolConfig tc) {
@@ -219,7 +236,23 @@ public class Utils {
         for (Map.Entry<String, ToolConfig> entry : config.tools.entrySet()) {
           String name = entry.getKey();
           ToolConfig tc = entry.getValue();
+          if (tc == null) {
+            LOG.warning("Skipping invalid custom tool '" + name + "': Tool definition is required.");
+            continue;
+          }
+          if (tc != null && (tc.name == null || tc.name.isBlank())) {
+            tc.name = name;
+          }
           if (!isToolEnabled(config, name)) {
+            continue;
+          }
+          CustomToolPolicy.ValidationResult validation = CustomToolPolicy.validateForRuntime(name, tc, config);
+          if (!validation.valid()) {
+            String message = "Skipping invalid custom tool '" + name + "': " + validation.message();
+            if (customToolNames.contains(name)) {
+              message += " Existing runtime tool remains active.";
+            }
+            LOG.warning(message);
             continue;
           }
           String newSig = computeSignature(tc);
@@ -455,17 +488,44 @@ public class Utils {
       Map<String, Object> row = new LinkedHashMap<>();
       for (int i = 1; i <= cols; i++) {
         String colName = md.getColumnLabel(i);
-        Object value = rs.getObject(i);
-
-        if (value instanceof Clob clob) {
-          value = clobToString(clob);
-        }
-
+        Object value = normalizeResultSetValueForJson(rs, i);
         row.put(colName, value);
       }
       out.add(row);
     }
     return out;
+  }
+
+  /**
+   * Converts JDBC cell values into JSON-safe values for MCP responses.
+   * Handles Oracle-specific wrappers (e.g., oracle.sql.TIMESTAMP) and CLOBs.
+   *
+   * @param rs the source {@link ResultSet}
+   * @param colIndex the column index of the value to read from the current row
+   * @return a JSON-safe value
+   * @throws SQLException if JDBC access fails while reading or converting the value
+   */
+  private static Object normalizeResultSetValueForJson(ResultSet rs, int colIndex) throws SQLException {
+    Object value = rs.getObject(colIndex);
+    if (value == null) {
+      return null;
+    }
+
+    if (value instanceof Clob clob) {
+      return clobToString(clob);
+    }
+
+    if (value instanceof Timestamp ts) {
+      return ts.toString();
+    }
+
+    String className = value.getClass().getName();
+    if ("oracle.sql.TIMESTAMP".equals(className)) {
+      Timestamp ts = rs.getTimestamp(colIndex);
+      return ts != null ? ts.toString() : null;
+    }
+
+    return value;
   }
 
   /**
@@ -488,11 +548,7 @@ public class Utils {
   }
 
   private static boolean isToolEnabled(ServerConfig config, String toolName) {
-    if (config.toolsFilter == null) {
-      return true;
-    }
-    String key = toolName.toLowerCase(Locale.ROOT);
-    return config.toolsFilter.contains(key);
+    return ServerConfig.isToolEnabled(config, toolName);
   }
 
   /**

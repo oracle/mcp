@@ -12,8 +12,8 @@ license = { text = "Universal Permissive License v 1.0" }
 license-files = ["LICENSE.txt"]
 keywords = ["oci", "oracle", "disaster-recovery", "mcp", "fsdr"]
 dependencies = [
-    "fastmcp==3.3.1",
-    "oci>=2.132.0",
+    "fastmcp==3.4.2",
+    "oci>=2.179.0",
     "pydantic>=2.0.0",
 ]
 

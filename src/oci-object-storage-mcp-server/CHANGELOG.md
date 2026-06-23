@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Updated dependency locks for FastMCP 3.4.2, OCI SDK 2.179.0, and refreshed authentication-related transitive packages.
 - Updated Object Storage response models and tests to use Pydantic v2 serialization and configuration APIs, removing deprecation warnings during unit tests. ([#304](https://github.com/oracle/mcp/issues/304))
 
 ## 2.0.0

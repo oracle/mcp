@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Updated dependency locks for FastMCP 3.4.2, OCI CLI 3.87.0, and refreshed transitive packages.
+
 ### Fixed
 
 - OCI command parsing now preserves quoted arguments when retrieving command help or running OCI CLI commands. ([#100](https://github.com/oracle/mcp/issues/100))

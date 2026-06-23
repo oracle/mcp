@@ -1,14 +1,16 @@
 SOURCE_FOLDER := src
 # These directories will be excluded from common cmds like build, install, test etc
-EXCLUDED_PROJECTS := dbtools-mcp-server mysql-mcp-server oci-pricing-mcp-server oracle-db-doc-mcp-server oracle-db-mcp-java-toolkit
+EXCLUDED_PROJECTS := dbtools-mcp-server mysql-mcp-server oci-javascript-mcp-server oci-pricing-mcp-server oracle-db-doc-mcp-server oracle-db-mcp-java-toolkit
 EXCLUDED_PROJECT_PATHS = $(addprefix $(SOURCE_FOLDER)/, $(EXCLUDED_PROJECTS))
 # This matches all paths by default. If you want to run a command on a specific package you can specify the `project` variable
 project ?= *
 # These are the directories that will be built
 DIRS := $(wildcard $(SOURCE_FOLDER)/$(project))
 SUBDIRS := $(filter-out $(EXCLUDED_PROJECT_PATHS), $(DIRS))
+JAVASCRIPT_SUBDIRS ?= $(SOURCE_FOLDER)/oci-javascript-mcp-server
+NPM ?= npm
 
-.PHONY: test format
+.PHONY: build install sync lock lock-check lint test combine-coverage test-publish publish format e2e-tests containerize javascript-sync javascript-test javascript-check javascript-ci ci
 
 build:
 	@set -e -o pipefail; \
@@ -73,6 +75,44 @@ test:
 		fi \
 	done
 	$(MAKE) combine-coverage
+
+javascript-sync:
+	@set -e; \
+	for dir in $(JAVASCRIPT_SUBDIRS); do \
+		if [ -f $$dir/package.json ]; then \
+			echo "Installing JavaScript dependencies in $$dir"; \
+			( cd $$dir && $(NPM) install ) || exit 1; \
+		fi \
+	done
+
+javascript-test:
+	@set -e; \
+	for dir in $(JAVASCRIPT_SUBDIRS); do \
+		if [ -f $$dir/package.json ]; then \
+			echo "Testing JavaScript package in $$dir"; \
+			( cd $$dir && $(NPM) test ) || exit 1; \
+		fi \
+	done
+
+javascript-check:
+	@set -e; \
+	for dir in $(JAVASCRIPT_SUBDIRS); do \
+		if [ -f $$dir/package.json ]; then \
+			echo "Checking JavaScript package in $$dir"; \
+			( cd $$dir && $(NPM) run check ) || exit 1; \
+		fi \
+	done
+
+javascript-ci:
+	@set -e; \
+	for dir in $(JAVASCRIPT_SUBDIRS); do \
+		if [ -f $$dir/package.json ]; then \
+			echo "Running JavaScript CI in $$dir"; \
+			( cd $$dir && $(NPM) ci && $(NPM) run ci ) || exit 1; \
+		fi \
+	done
+
+ci: lint test javascript-ci
 
 combine-coverage:
 	uv run coverage combine

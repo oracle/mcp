@@ -388,13 +388,36 @@ For macOS/Linux:
 
 where `<path to your cloned repo>` is the absolute path to wherever you cloned this repo that will help point to the venv created above (e.g. `/Users/myuser/dev/mcp/.venv`)
 
+### JavaScript MCP servers
+
+Most servers in this repository are Python packages managed with `uv`. JavaScript servers are first-class MCP servers too, but they use `npm` and are intentionally excluded from the Python package loop.
+
+The OCI JavaScript MCP server lives in `src/oci-javascript-mcp-server`:
+
+```sh
+cd src/oci-javascript-mcp-server
+npm install
+npm test
+npm run check
+```
+
+From the repository root, you can run the JavaScript package targets with:
+
+```sh
+make javascript-sync
+make javascript-test
+make javascript-check
+make javascript-ci
+```
+
 ## Directory Structure
 
 ```
 .
 ├── src/
-│   ├── dbtools-mcp-server/     # MCP server (Python example)
-│   ├── another-mcp-server/     # (Possible Node.js, Java, or other implementation)
+│   ├── oci-api-mcp-server/        # MCP server (Python package)
+│   ├── oci-javascript-mcp-server/ # MCP server (Node.js package)
+│   ├── oracle-db-mcp-java-toolkit/ # MCP server (Java package)
 │   └── ...
 ├── LICENSE.txt
 ├── README.md
@@ -469,6 +492,14 @@ tool for debugging and development.
 ```bash
 make lint
 make test
+make javascript-test
+make javascript-check
+```
+
+To run both the Python and JavaScript checks from the repository root:
+
+```bash
+make ci
 ```
 
 ## Publishing
@@ -497,6 +528,10 @@ uv run --index=https://test.pypi.org/simple oracle.oci-api-mcp-server
 ```bash
 UV_PUBLISH_TOKEN=$(cat /path/to/pypi/token-file) make publish
 ```
+
+JavaScript packages are published separately through npm. Before publishing
+`src/oci-javascript-mcp-server`, run `npm run ci` from that package directory;
+the repository-level `make publish` target publishes only the Python packages.
 
 ## Contributing
 

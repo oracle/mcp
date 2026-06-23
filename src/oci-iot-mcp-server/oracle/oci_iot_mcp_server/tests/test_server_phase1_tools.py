@@ -756,7 +756,7 @@ def test_candidate_matches_invoke_covers_match_conditions(overrides, expected):
         ("list_digital_twin_adapters", "list_digital_twin_adapters_records", (), {"iot_domain_id": "domain-1"}, [{"id": "adapter-1"}]),
         ("list_digital_twin_models", "list_digital_twin_models_records", (), {"iot_domain_id": "domain-1"}, [{"id": "model-1"}]),
         ("list_digital_twin_instances", "list_digital_twin_instances_records", (), {"iot_domain_id": "domain-1", "limit": 2}, [{"id": "twin-1"}]),
-        ("list_digital_twin_relationships", "list_digital_twin_relationships_records", (), {"iot_domain_id": "domain-1"}, [{"id": "rel-1"}]),
+        ("list_digital_twin_relationships", "list_digital_twin_relationships_records", (), {"iot_domain_id": "domain-1", "limit": 1000}, [{"id": "rel-1"}]),
         ("list_iot_domain_groups", "list_iot_domain_groups_records", (), {"compartment_id": "compartment-1"}, [{"id": "group-1"}]),
         ("list_iot_domains", "list_iot_domains_records", (), {"compartment_id": "compartment-1"}, [{"id": "domain-1"}]),
         ("list_work_request_errors", "list_work_request_errors_records", (), {"work_request_id": "wr-1"}, [{"message": "boom"}]),

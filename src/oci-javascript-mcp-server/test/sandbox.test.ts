@@ -44,6 +44,24 @@ test("sandbox runs JavaScript and calls host OCI RPC", async () => {
   ]);
 });
 
+test("sandbox reports uncaught JavaScript errors without internal frames", async () => {
+  const result = await runJavaScript(
+    "missingTenantId;",
+    {
+      timeoutSeconds: 10,
+      hostRpc: async () => ({})
+    }
+  );
+
+  assert.equal(result.result, null);
+  assert.deepEqual(result.error, {
+    name: "ReferenceError",
+    message: "missingTenantId is not defined"
+  });
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.stderr, "");
+});
+
 test("sandbox sends client initialization region in OCI RPC payloads", async () => {
   const requests: HostRpcRequest[] = [];
   const result = await runJavaScript(

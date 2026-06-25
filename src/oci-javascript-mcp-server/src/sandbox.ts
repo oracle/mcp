@@ -11,6 +11,7 @@ import type {
   Json,
   JsonObject,
   OciReflectionManifest,
+  SandboxError,
   SandboxResult
 } from "./types.ts";
 import { SANDBOX_BOOTSTRAP } from "./sandbox-prelude.ts";
@@ -141,6 +142,7 @@ export async function runJavaScript(
       await drainHostRpc(api, rpcState);
       return {
         result,
+        error: null,
         stdout: output.stdout,
         stderr: output.stderr,
         exitCode: output.exceeded ? 1 : 0,
@@ -149,14 +151,9 @@ export async function runJavaScript(
     } catch (error) {
       rpcState.accepting = false;
       const timedOut = isTimeoutError(error);
-      const message = error instanceof Error && error.stack ? error.stack : String(error);
-      output.stderr = appendCapped(
-        output.stderr,
-        output.stderr ? `\n${message}` : message,
-        MAX_STDERR_BYTES
-      );
       return {
         result: null,
+        error: formatError(error),
         stdout: output.stdout,
         stderr: output.stderr,
         exitCode: timedOut ? -1 : 1,
@@ -304,10 +301,10 @@ function isTimeoutError(error: unknown): boolean {
   return /timed out|deadline exceeded|Script execution timed out/i.test(message);
 }
 
-function formatError(error: unknown): JsonObject {
+function formatError(error: unknown): SandboxError {
   const response = readObjectField(error, "response");
   const body = readField(error, "body") ?? readField(response, "body") ?? readField(response, "data");
-  const details: JsonObject = {
+  const details: SandboxError = {
     message: errorMessage(error)
   };
   for (const key of [

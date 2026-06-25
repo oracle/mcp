@@ -34,6 +34,7 @@ const server = new McpServer({
     "Run one complete JavaScript script against the injected OCI binding. "
     + "Leave the result value as the final expression; "
     + "stdout/stderr are for logs. "
+    + "Uncaught JavaScript or OCI errors are returned in error. "
     + "Try normal JavaScript first, use list limit/page tokens for pagination, and call "
     + "discover_oci only after an SDK shape error or genuine uncertainty."
   )
@@ -47,6 +48,7 @@ server.registerTool(
       + "Run one complete JavaScript script in a fresh sandbox with an injected "
       + "`oci` binding. Leave the result value as the final expression; "
       + "stdout/stderr are for incidental logs. Try straightforward code first; "
+      + "uncaught JavaScript or OCI errors are returned in `error`; "
       + "use OCI list limit/page tokens for pagination, and use `discover_oci` only after "
       + "SDK shape errors or genuine uncertainty. "
       + "The sandbox has no OCI credentials, filesystem, network, or environment access."
@@ -78,6 +80,7 @@ server.registerTool(
       });
       return {
         result: result.result,
+        error: result.error,
         stdout: result.stdout,
         stderr: result.stderr,
         exit_code: result.exitCode,

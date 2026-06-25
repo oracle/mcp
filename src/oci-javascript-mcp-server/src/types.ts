@@ -14,8 +14,11 @@ export type Json =
 
 export type JsonObject = { [key: string]: Json };
 
+export type SandboxError = JsonObject & { message: string };
+
 export type SandboxResult = {
   result: Json;
+  error: SandboxError | null;
   stdout: string;
   stderr: string;
   exitCode: number;

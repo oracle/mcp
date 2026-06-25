@@ -72,7 +72,7 @@ sequenceDiagram
   SDK-->>Host: SDK response object
   Host-->>Proxy: sanitized JSON result
   Proxy-->>Isolate: resolve awaited OCI call
-  Isolate-->>Server: final expression result, stdout, stderr
+  Isolate-->>Server: final expression result or error, logs
   Server-->>Client: MCP tool result
 ```
 
@@ -156,6 +156,9 @@ uses the injected `oci` binding. The script's final expression is returned as
 structured `result`. `console.log` is available for incidental debugging. Scripts that only log or
 perform side effects can end with a statement whose value is `undefined`; their
 structured `result` will be `null`.
+
+Uncaught JavaScript or OCI errors are returned as structured `error` values.
+`stdout` and `stderr` are reserved for logs written by the script.
 
 Treat this like normal code execution: write and run straightforward JavaScript
 first. Use `discover_oci` only after an SDK shape error or when the service,

@@ -3,9 +3,11 @@ from datetime import UTC, datetime
 
 from .control_plane import (
     get_digital_twin_adapter_record,
+    get_digital_twin_instance_record,
     get_digital_twin_model_record,
     get_iot_domain_group_record,
     get_iot_domain_record,
+    list_digital_twin_instances_page_record,
 )
 from .data_plane import (
     DataApiTokenError,
@@ -136,6 +138,132 @@ def _build_check(name: str, status: str, details: dict | None = None) -> dict:
     return {"name": name, "status": status, "details": details or {}}
 
 
+def _safe_exception_payload(message: str, exc: Exception) -> dict:
+    return {"message": message, "error_type": exc.__class__.__name__}
+
+
+def resolve_gateway_topology(bundle: dict, *, gateway_children_limit: int = 100) -> dict:
+    twin = bundle["twin"]
+    connectivity_type = twin.get("connectivity_type")
+    gateway_ids = twin.get("gateways") or []
+    topology = {
+        "connectivity_type": connectivity_type,
+        "gateways": gateway_ids,
+        "gateway_twins": [],
+        "gateway_resolution_errors": [],
+        "child_discovery_errors": [],
+        "child_discovery_truncated": False,
+        "indirect_children": [],
+        "warnings": [],
+    }
+
+    if connectivity_type == "INDIRECT":
+        if not gateway_ids:
+            topology["warnings"].append("Indirect twin has no gateway references.")
+            return topology
+        for gateway_id in gateway_ids:
+            try:
+                gateway = get_digital_twin_instance_record(gateway_id)
+            except Exception as exc:
+                topology["gateway_resolution_errors"].append(
+                    {
+                        "gateway_id": gateway_id,
+                        **_safe_exception_payload("Gateway twin could not be resolved.", exc),
+                    }
+                )
+                continue
+            if _is_error(gateway):
+                topology["gateway_resolution_errors"].append(
+                    {"gateway_id": gateway_id, "error": gateway["error"]}
+                )
+            else:
+                topology["gateway_twins"].append(gateway)
+        if topology["gateway_resolution_errors"]:
+            topology["warnings"].append("One or more gateway twins could not be resolved.")
+        return topology
+
+    if connectivity_type == "GATEWAY":
+        iot_domain_id = twin.get("iot_domain_id")
+        if not iot_domain_id:
+            topology["warnings"].append("Gateway child discovery requires the twin iot_domain_id.")
+            return topology
+        try:
+            child_page = list_digital_twin_instances_page_record(
+                iot_domain_id=iot_domain_id,
+                connectivity_type="INDIRECT",
+                limit=gateway_children_limit,
+            )
+        except Exception as exc:
+            topology["child_discovery_errors"].append(
+                _safe_exception_payload("Unable to discover indirect child twins for gateway.", exc)
+            )
+            topology["warnings"].append("Indirect child discovery failed; gateway topology may be incomplete.")
+            return topology
+        topology["indirect_children"] = [
+            child for child in child_page["items"] if twin["id"] in (child.get("gateways") or [])
+        ]
+        topology["child_discovery_truncated"] = bool(child_page.get("opc_next_page"))
+        if topology["child_discovery_truncated"]:
+            topology["warnings"].append(
+                "Indirect child discovery is bounded to one SDK list call and may not include every child twin."
+            )
+        return topology
+
+    return topology
+
+
+def _gateway_topology_check(topology: dict) -> dict:
+    connectivity_type = topology.get("connectivity_type")
+    if connectivity_type == "INDIRECT" and not topology.get("gateways"):
+        return _build_check(
+            "gateway_topology",
+            "warning",
+            {
+                "connectivity_type": connectivity_type,
+                "message": "Indirect twin has no gateway references.",
+            },
+        )
+    if topology.get("gateway_resolution_errors"):
+        return _build_check(
+            "gateway_topology",
+            "warning",
+            {
+                "connectivity_type": connectivity_type,
+                "gateway_resolution_errors": topology["gateway_resolution_errors"],
+            },
+        )
+    if topology.get("child_discovery_errors"):
+        return _build_check(
+            "gateway_topology",
+            "warning",
+            {
+                "connectivity_type": connectivity_type,
+                "child_discovery_errors": topology["child_discovery_errors"],
+            },
+        )
+    if topology.get("child_discovery_truncated"):
+        return _build_check(
+            "gateway_topology",
+            "warning",
+            {
+                "connectivity_type": connectivity_type,
+                "child_discovery_truncated": True,
+                "indirect_child_count": len(topology.get("indirect_children") or []),
+                "warnings": topology.get("warnings") or [],
+            },
+        )
+    return _build_check(
+        "gateway_topology",
+        "ok",
+        {
+            "connectivity_type": connectivity_type,
+            "gateway_count": len(topology.get("gateway_twins") or []),
+            "indirect_child_count": len(topology.get("indirect_children") or []),
+            "warnings": topology.get("warnings") or [],
+        },
+    )
+
+
 def validate_twin_readiness_impl(
     *,
     digital_twin_instance_id: str | None = None,
@@ -204,11 +332,14 @@ def validate_twin_readiness_impl(
             },
         ),
     ]
+    gateway_topology = bundle.get("gateway_topology") or resolve_gateway_topology(bundle)
+    checks.append(_gateway_topology_check(gateway_topology))
 
     overall_status = _summarize_checks(checks)
     return {
         "overall_status": overall_status,
         "twin": twin,
+        "gateway_topology": gateway_topology,
         "checks": checks,
     }
 
@@ -222,7 +353,7 @@ def get_twin_platform_context_impl(
     domain_short_id: str | None = None,
     compartment_id: str | None = None,
 ):
-    return resolve_twin_bundle(
+    bundle = resolve_twin_bundle(
         digital_twin_instance_id=digital_twin_instance_id,
         digital_twin_instance_name=digital_twin_instance_name,
         iot_domain_id=iot_domain_id,
@@ -230,6 +361,10 @@ def get_twin_platform_context_impl(
         domain_short_id=domain_short_id,
         compartment_id=compartment_id,
     )
+    if _is_error(bundle):
+        return bundle
+    bundle["gateway_topology"] = resolve_gateway_topology(bundle)
+    return bundle
 
 
 def get_latest_twin_state_impl(

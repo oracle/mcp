@@ -81,11 +81,14 @@ class DigitalTwinModelModel(BaseModel):
     lifecycle_state: str | None = Field(None, description="Lifecycle state of the digital twin model")
     created_at: datetime | None = Field(None, description="Creation timestamp of the digital twin model")
     last_updated: datetime | None = Field(None, description="Last update timestamp of the digital twin model")
+    iot_domain_id: str | None = Field(None, description="The linked IoT domain identifier")
+    spec_uri: str | None = Field(None, description="URI to the digital twin model specification")
     freeform_tags: dict[str, Any] | None = Field(
         None,
         description="Simple key-value pair that is applied without any predefined name, type, or scope",
     )
     defined_tags: dict[str, dict[str, Any]] | None = Field(None, description="Defined tags for this resource")
+    system_tags: dict[str, Any] | None = Field(None, description="System tags for this resource")
 
     @classmethod
     def from_oci_model(cls, model: Any):
@@ -97,8 +100,11 @@ class DigitalTwinModelModel(BaseModel):
             lifecycle_state=getattr(model, "lifecycle_state", None),
             created_at=_created_at(model),
             last_updated=_last_updated(model),
+            iot_domain_id=getattr(model, "iot_domain_id", None),
+            spec_uri=getattr(model, "spec_uri", None),
             freeform_tags=_freeform_tags(model),
             defined_tags=_defined_tags(model),
+            system_tags=getattr(model, "system_tags", None),
         )
 
 
@@ -109,6 +115,14 @@ class DigitalTwinModelSummaryModel(BaseModel):
     lifecycle_state: str | None = Field(None, description="Lifecycle state of the digital twin model")
     created_at: datetime | None = Field(None, description="Creation timestamp of the digital twin model")
     last_updated: datetime | None = Field(None, description="Last update timestamp of the digital twin model")
+    iot_domain_id: str | None = Field(None, description="The linked IoT domain identifier")
+    spec_uri: str | None = Field(None, description="URI to the digital twin model specification")
+    freeform_tags: dict[str, Any] | None = Field(
+        None,
+        description="Simple key-value pair that is applied without any predefined name, type, or scope",
+    )
+    defined_tags: dict[str, dict[str, Any]] | None = Field(None, description="Defined tags for this resource")
+    system_tags: dict[str, Any] | None = Field(None, description="System tags for this resource")
 
     @classmethod
     def from_oci_model(cls, model: Any):
@@ -120,6 +134,11 @@ class DigitalTwinModelSummaryModel(BaseModel):
             lifecycle_state=getattr(model, "lifecycle_state", None),
             created_at=_created_at(model),
             last_updated=_last_updated(model),
+            iot_domain_id=getattr(model, "iot_domain_id", None),
+            spec_uri=getattr(model, "spec_uri", None),
+            freeform_tags=_freeform_tags(model),
+            defined_tags=_defined_tags(model),
+            system_tags=getattr(model, "system_tags", None),
         )
 
 
@@ -132,11 +151,21 @@ class DigitalTwinInstanceModel(BaseModel):
     last_updated: datetime | None = Field(None, description="Last update timestamp of the digital twin instance")
     iot_domain_id: str | None = Field(None, description="The linked IoT domain identifier")
     digital_twin_adapter_id: str | None = Field(None, description="The linked digital twin adapter identifier")
+    digital_twin_model_id: str | None = Field(None, description="The linked digital twin model identifier")
+    digital_twin_model_spec_uri: str | None = Field(
+        None,
+        description="URI to the digital twin model specification",
+    )
+    connectivity_type: str | None = Field(None, description="Digital twin connectivity type")
+    gateways: list[str] | None = Field(None, description="Gateway digital twin instance identifiers")
+    auth_id: str | None = Field(None, description="The authentication resource identifier for the instance")
+    external_key: str | None = Field(None, description="External key for the physical entity represented by the twin")
     freeform_tags: dict[str, Any] | None = Field(
         None,
         description="Simple key-value pair that is applied without any predefined name, type, or scope",
     )
     defined_tags: dict[str, dict[str, Any]] | None = Field(None, description="Defined tags for this resource")
+    system_tags: dict[str, Any] | None = Field(None, description="System tags for this resource")
 
     @classmethod
     def from_oci_model(cls, model: Any):
@@ -150,8 +179,15 @@ class DigitalTwinInstanceModel(BaseModel):
             last_updated=_last_updated(model),
             iot_domain_id=getattr(model, "iot_domain_id", None),
             digital_twin_adapter_id=getattr(model, "digital_twin_adapter_id", None),
+            digital_twin_model_id=getattr(model, "digital_twin_model_id", None),
+            digital_twin_model_spec_uri=getattr(model, "digital_twin_model_spec_uri", None),
+            connectivity_type=getattr(model, "connectivity_type", None),
+            gateways=getattr(model, "gateways", None),
+            auth_id=getattr(model, "auth_id", None),
+            external_key=getattr(model, "external_key", None),
             freeform_tags=_freeform_tags(model),
             defined_tags=_defined_tags(model),
+            system_tags=getattr(model, "system_tags", None),
         )
 
 
@@ -162,6 +198,17 @@ class DigitalTwinRelationshipModel(BaseModel):
     lifecycle_state: str | None = Field(None, description="Lifecycle state of the digital twin relationship")
     created_at: datetime | None = Field(None, description="Creation timestamp of the digital twin relationship")
     last_updated: datetime | None = Field(None, description="Last update timestamp of the digital twin relationship")
+    iot_domain_id: str | None = Field(None, description="The linked IoT domain identifier")
+    content_path: str | None = Field(None, description="The relationship content path")
+    source_digital_twin_instance_id: str | None = Field(None, description="The source digital twin instance identifier")
+    target_digital_twin_instance_id: str | None = Field(None, description="The target digital twin instance identifier")
+    content: Any | None = Field(None, description="Relationship content properties")
+    freeform_tags: dict[str, Any] | None = Field(
+        None,
+        description="Simple key-value pair that is applied without any predefined name, type, or scope",
+    )
+    defined_tags: dict[str, dict[str, Any]] | None = Field(None, description="Defined tags for this resource")
+    system_tags: dict[str, Any] | None = Field(None, description="System tags for this resource")
 
     @classmethod
     def from_oci_model(cls, model: Any):
@@ -173,6 +220,14 @@ class DigitalTwinRelationshipModel(BaseModel):
             lifecycle_state=getattr(model, "lifecycle_state", None),
             created_at=_created_at(model),
             last_updated=_last_updated(model),
+            iot_domain_id=getattr(model, "iot_domain_id", None),
+            content_path=getattr(model, "content_path", None),
+            source_digital_twin_instance_id=getattr(model, "source_digital_twin_instance_id", None),
+            target_digital_twin_instance_id=getattr(model, "target_digital_twin_instance_id", None),
+            content=_normalize_nested_oci_value(getattr(model, "content", None)),
+            freeform_tags=_freeform_tags(model),
+            defined_tags=_defined_tags(model),
+            system_tags=getattr(model, "system_tags", None),
         )
 
 

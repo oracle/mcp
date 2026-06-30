@@ -10,9 +10,20 @@ Database Management (DBM).
 
 ### STDIO transport mode
 
+Use the default OCI CLI profile:
+
 ```sh
 uvx oracle.oci-opsi-mcp-server
 ```
+
+Use a named OCI CLI profile:
+
+```sh
+OCI_CONFIG_PROFILE=<profile_name> uvx oracle.oci-opsi-mcp-server
+```
+
+Set `OCI_CONFIG_FILE=<config_file>` when the profile is not in the default OCI config file.
+STDIO supports OCI CLI API-key profiles and session-token profiles.
 
 ### HTTP streaming transport mode
 
@@ -35,9 +46,20 @@ If `IDCS_REQUIRED_SCOPES` is unset, the default is `openid profile email oci_mcp
 
 ### STDIO transport mode
 
+Use the default OCI CLI profile:
+
 ```sh
 uvx oracle.oci-dbm-mcp-server
 ```
+
+Use a named OCI CLI profile:
+
+```sh
+OCI_CONFIG_PROFILE=<profile_name> uvx oracle.oci-dbm-mcp-server
+```
+
+Set `OCI_CONFIG_FILE=<config_file>` when the profile is not in the default OCI config file.
+STDIO supports OCI CLI API-key profiles and session-token profiles.
 
 ### HTTP streaming transport mode
 
@@ -83,8 +105,8 @@ uv run oci-oracle-db-observability-mcp-server-generate-opsi --spec-file <openapi
 If `--spec-file` is omitted, the generator resolves `operations-insights` from the Oracle
 API spec index URL and fetches the referenced spec.
 
-⚠️ **NOTE**: `stdio` uses the configured OCI CLI profile. HTTP uses the authenticated OCI IAM
-user and does not use the local OCI CLI profile for request authentication.
+⚠️ **NOTE**: `stdio` uses the configured OCI CLI profile. HTTP uses IDCS/IAM token exchange
+for the authenticated OCI IAM user and ignores local OCI CLI profiles for request authentication.
 
 ⚠️ **NOTE**: Non-delete mutating OPSI tools and non-delete, non-drop mutating DBM tools are
 marked with MCP tool annotations because they can change OCI or database state.

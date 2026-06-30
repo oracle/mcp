@@ -4381,4 +4381,3 @@ def update_tablespace(
         managed_database_id=managed_database_id,
         tablespace_name=tablespace_name,
         update_tablespace_details=update_tablespace_details,)
-

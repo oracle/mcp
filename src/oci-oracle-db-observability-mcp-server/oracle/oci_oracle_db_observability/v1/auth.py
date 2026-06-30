@@ -75,13 +75,25 @@ def build_client(
     config, signer = _get_http_config_and_signer(project, version)
     if config is None:
         config = get_oci_config(project, version)
-        key_file = config.get("key_file")
         token_file = config.get("security_token_file")
-        if not key_file or not token_file:
-            raise RuntimeError("Stdio transport requires OCI config with key_file and security_token_file.")
-        private_key = oci.signer.load_private_key_from_file(key_file)
-        with open(os.path.expanduser(token_file), "r", encoding="utf-8") as token:
-            signer = oci.auth.signers.SecurityTokenSigner(token.read(), private_key)
+        if token_file:
+            key_file = config.get("key_file")
+            if not key_file:
+                raise RuntimeError(
+                    "Stdio transport OCI session-token profiles require both key_file and security_token_file."
+                )
+            private_key = oci.signer.load_private_key_from_file(key_file)
+            with open(os.path.expanduser(token_file), "r", encoding="utf-8") as token:
+                signer = oci.auth.signers.SecurityTokenSigner(token.read(), private_key)
+        else:
+            try:
+                oci.config.validate_config(config)
+            except ValueError as exc:
+                raise RuntimeError(
+                    "Stdio transport requires a valid OCI CLI profile using either API-key auth "
+                    "or session-token auth. API-key profiles must include key_file, fingerprint, "
+                    "user, tenancy, and region; session-token profiles must include security_token_file."
+                ) from exc
 
     kwargs: dict[str, object] = {
         "circuit_breaker_strategy": oci.circuit_breaker.CircuitBreakerStrategy(
@@ -89,6 +101,7 @@ def build_client(
             recovery_timeout=int(os.getenv("OCI_CIRCUIT_BREAKER_RECOVERY_TIMEOUT", "30")),
         ),
         "circuit_breaker_callback": lambda exc: logger.warning("Circuit breaker triggered: %s", exc),
-        "signer": signer,
     }
+    if signer is not None:
+        kwargs["signer"] = signer
     return client_type(config, **kwargs)

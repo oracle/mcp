@@ -11,6 +11,7 @@ import oci
 import oracle.oci_support_mcp_server.server as server
 import pytest
 from fastmcp import Client
+from oracle.oci_support_mcp_server import __project__, __version__
 from oracle.oci_support_mcp_server.models import (
     CreateIncident,
     Incident,
@@ -19,6 +20,11 @@ from oracle.oci_support_mcp_server.models import (
     ValidationResponse,
 )
 from oracle.oci_support_mcp_server.server import mcp
+
+
+EXPECTED_ADDITIONAL_USER_AGENT = (
+    f"{__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{__version__}"
+)
 
 
 def _response(data, *, has_next_page=False, next_page=None):
@@ -188,7 +194,7 @@ def test_http_config_and_cims_client_auth_paths(monkeypatch):
     config, signer = server._get_http_config_and_signer()
     assert config == {
         "region": "us-ashburn-1",
-        "additional_user_agent": f"oci_support_mcp_server/{server.__version__}",
+        "additional_user_agent": EXPECTED_ADDITIONAL_USER_AGENT,
     }
     assert signer == "http-signer"
 
@@ -207,8 +213,9 @@ def test_http_config_and_cims_client_auth_paths(monkeypatch):
         server.oci.config, "from_file", MagicMock(return_value={"region": "home"})
     )
     assert server.get_cims_client() == "incident-client"
-    assert incident_client.call_args.args[0]["additional_user_agent"] == (
-        f"oci_support/{server.__version__}"
+    assert (
+        incident_client.call_args.args[0]["additional_user_agent"]
+        == EXPECTED_ADDITIONAL_USER_AGENT
     )
     server.oci.config.from_file.assert_called_once_with(profile_name="PROFILE")
 

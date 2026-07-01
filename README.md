@@ -32,13 +32,52 @@ Follow these instructions to get started as quickly as possible. Once finished, 
 1. Install `uv` from [here](https://docs.astral.sh/uv/getting-started/installation/)
 2. Install python with `uv python install 3.13`
 3. If you are using OCI servers, configure your [OCI authentication](#authentication)
-4. Add desired servers to your [MCP client configuration](#client-configuration)
+4. Choose a server below and add it to your [MCP client configuration](#client-configuration)
 
-Below is an example MCP client configuration for a typical python server
+### Choose an OCI server
 
-*(For Node.js/Java/other servers, follow respective instructions in that server’s README)*
+For most OCI users, start with [`oci-cloud-mcp-server`](src/oci-cloud-mcp-server/README.md). It uses the official OCI Python SDK directly, without OCI CLI subprocess calls, and is the recommended general-purpose entry point for OCI workflows.
+
+Use [`oci-api-mcp-server`](src/oci-api-mcp-server/README.md) instead when you specifically want an MCP server backed by the OCI CLI. It exposes tools for discovering and running OCI CLI commands.
+
+Choose one of the other purpose-built servers when you already know the Oracle product or OCI domain you want to work with. These servers target specific service and product workflows rather than providing a general OCI entry point. Browse the [`src/`](src/) directories and read the relevant `src/<server>/README.md` before configuring one.
+
+### Recommended: OCI Cloud MCP Server
+
+Run the server over stdio:
+
+```sh
+uvx oracle.oci-cloud-mcp-server@latest
+```
+
+Then add this minimal configuration to your MCP client. Replace `<profile_name>` with the OCI CLI profile configured during [authentication](#authentication).
 
 For macOS/Linux:
+```json
+{
+  "mcpServers": {
+    "oracle-oci-cloud-mcp-server": {
+      "command": "uvx",
+      "args": [
+        "oracle.oci-cloud-mcp-server@latest"
+      ],
+      "env": {
+        "OCI_CONFIG_PROFILE": "<profile_name>",
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    }
+  }
+}
+```
+
+### Alternative: OCI API MCP Server
+
+Use this CLI-backed option when you specifically need OCI CLI commands:
+
+```sh
+uvx oracle.oci-api-mcp-server@latest
+```
+
 ```json
 {
   "mcpServers": {
@@ -48,6 +87,7 @@ For macOS/Linux:
         "oracle.oci-api-mcp-server@latest"
       ],
       "env": {
+        "OCI_CONFIG_PROFILE": "<profile_name>",
         "FASTMCP_LOG_LEVEL": "ERROR"
       }
     }

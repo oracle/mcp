@@ -77,6 +77,34 @@ https://oss.oracle.com/licenses/upl.
 """
 ```
 
+## OCI SDK user-agent telemetry
+
+Every server that constructs OCI Python SDK clients must attach a consistent additional user agent to every client configuration path. Derive it from package metadata rather than duplicating a server name or version literal:
+
+```python
+from . import __project__, __version__
+
+_user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
+_ADDITIONAL_UA = f"{_user_agent_name}/{__version__}"
+```
+
+Set the derived value before constructing every OCI SDK client, including API-key, security-token, each supported principal-based path (for example, instance- and resource-principal), and HTTP/token-exchange paths when the server supports them:
+
+```python
+config["additional_user_agent"] = _ADDITIONAL_UA
+client = oci.some_service.SomeClient(config)
+```
+
+Client factories and authentication helpers may live outside `server.py`; the requirement is that every OCI client-construction path receives `_ADDITIONAL_UA`. Unit tests must assert the exact derived value passed through each supported path.
+
+`oci-api-mcp-server` is the exception: it launches the OCI CLI rather than constructing OCI Python SDK clients directly. Set the same derived value on the subprocess environment instead:
+
+```python
+env_copy["OCI_SDK_APPEND_USER_AGENT"] = _ADDITIONAL_UA
+```
+
+Note: always remove `-server` from the end of the `__project__` name; ex `oci-cloud-mcp`.
+
 ## Type Definitions
 
 ### General Rules

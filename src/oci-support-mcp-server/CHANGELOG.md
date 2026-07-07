@@ -6,6 +6,10 @@
 
 - Updated dependency locks for FastMCP 3.4.2, OCI SDK 2.179.0, and refreshed authentication-related transitive packages.
 
+### Fixed
+
+- OCI Support clients now use canonical user-agent telemetry for HTTP token-exchange and API-key authentication paths.
+
 ## 2.0.1
 
 ### Fixed

@@ -17,7 +17,6 @@ import type {
 import { SANDBOX_BOOTSTRAP } from "./sandbox-prelude.ts";
 
 const MAX_CODE_BYTES = 1024 * 1024;
-const MAX_STDIN_BYTES = 1024 * 1024;
 const MAX_STDOUT_BYTES = 1024 * 1024;
 const MAX_STDERR_BYTES = 1024 * 1024;
 const MAX_ISOLATE_MEMORY_MB = positiveIntegerEnv("OCI_JAVASCRIPT_ISOLATE_MEMORY_MB", 128);
@@ -47,7 +46,6 @@ type SandboxApi = {
 export async function runJavaScript(
   code: string,
   options: {
-    stdin?: string | null;
     timeoutSeconds?: number;
     hostRpc: HostRpcHandler;
     reflectionManifest?: OciReflectionManifest;
@@ -55,9 +53,6 @@ export async function runJavaScript(
 ): Promise<SandboxResult> {
   if (Buffer.byteLength(code, "utf8") > MAX_CODE_BYTES) {
     throw new Error(`JavaScript code exceeds ${MAX_CODE_BYTES} bytes`);
-  }
-  if (Buffer.byteLength(options.stdin ?? "", "utf8") > MAX_STDIN_BYTES) {
-    throw new Error(`stdin exceeds ${MAX_STDIN_BYTES} bytes`);
   }
 
   const timeoutMs = normalizeTimeoutMs(options.timeoutSeconds);
@@ -100,7 +95,6 @@ export async function runJavaScript(
         new ivm.Reference(async (request: unknown) => {
           return invokeHostRpc(options.hostRpc, rpcState, request);
         }),
-        new ivm.ExternalCopy(options.stdin ?? "").copyInto(),
         new ivm.ExternalCopy(options.reflectionManifest ?? { services: {} }).copyInto()
       ],
       {

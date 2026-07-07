@@ -248,6 +248,6 @@ Fallback SDK introspection. Do not call this by default. Use it after a JavaScri
 
 ## Security Model
 
-The server process is trusted and owns OCI credentials. The sandboxed V8 isolate is untrusted and receives only `console`, `stdin`, and the generated OCI binding. It cannot import Node modules and has no direct network or filesystem capability.
+The server process is trusted and owns OCI credentials. The sandboxed V8 isolate is untrusted and receives only `console` and the generated OCI binding. It cannot import Node modules and has no direct network or filesystem capability.
 
 This is still a single-process sandbox. For production hardening against V8 or native-addon failures, run the server with an outer container or microVM boundary and a conservative network policy.

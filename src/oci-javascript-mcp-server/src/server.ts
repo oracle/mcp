@@ -57,9 +57,6 @@ server.registerTool(
       code: z.string().describe(
         "JavaScript to execute. Use the injected `oci` binding and leave the result value as the final expression."
       ),
-      stdin: z.string().optional().describe(
-        "Optional data exposed to sandbox code as `globalThis.stdin`."
-      ),
       timeout: z.number().min(MIN_TIMEOUT_SECONDS).max(MAX_TIMEOUT_SECONDS).default(
         DEFAULT_TIMEOUT_SECONDS
       ).describe("Maximum wall-clock seconds allowed for execution.")
@@ -73,7 +70,6 @@ server.registerTool(
     return jsonToolResult(await limitToolCall(async () => {
       reflectionManifest ??= createOciReflectionManifest();
       const result = await runJavaScript(args.code, {
-        stdin: args.stdin ?? null,
         timeoutSeconds: args.timeout,
         hostRpc,
         reflectionManifest

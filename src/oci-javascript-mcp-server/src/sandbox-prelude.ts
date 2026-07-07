@@ -10,8 +10,7 @@ export const SANDBOX_BOOTSTRAP = `
 const __hostConsoleLog = $0;
 const __hostConsoleError = $1;
 const __hostRpc = $2;
-const __sandboxStdin = $3;
-const __ociReflectionManifest = $4 || { services: {} };
+const __ociReflectionManifest = $3 || { services: {} };
 const __ociWireTypeKey = "__oci_wire_type";
 const __ociBase64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const __ociMaxDepth = 80;
@@ -241,13 +240,6 @@ const __ociConsole = __objectFreeze({
 
 __objectDefineProperty(globalThis, "console", {
   value: __ociConsole,
-  writable: false,
-  enumerable: true,
-  configurable: false
-});
-
-__objectDefineProperty(globalThis, "stdin", {
-  value: __sandboxStdin,
   writable: false,
   enumerable: true,
   configurable: false

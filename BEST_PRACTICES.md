@@ -88,7 +88,7 @@ _user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
 _ADDITIONAL_UA = f"{_user_agent_name}/{__version__}"
 ```
 
-Set the derived value before constructing every OCI SDK client, including API-key, security-token, principal, and HTTP/token-exchange paths when the server supports them:
+Set the derived value before constructing every OCI SDK client, including API-key, security-token, each supported principal-based path (for example, instance- and resource-principal), and HTTP/token-exchange paths when the server supports them:
 
 ```python
 config["additional_user_agent"] = _ADDITIONAL_UA

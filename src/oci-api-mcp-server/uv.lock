@@ -809,9 +809,10 @@ wheels = [
 
 [[package]]
 name = "oracle-oci-api-mcp-server"
-version = "2.0.0"
+version = "2.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "fastmcp" },
     { name = "oci-cli" },
 ]
@@ -825,6 +826,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = "==46.0.7" },
     { name = "fastmcp", specifier = "==3.4.2" },
     { name = "oci-cli", specifier = "==3.87.0" },
 ]

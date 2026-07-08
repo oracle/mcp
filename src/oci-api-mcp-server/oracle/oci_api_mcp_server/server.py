@@ -6,14 +6,20 @@ https://oss.oracle.com/licenses/upl.
 
 import json
 import os
+import shlex
 import subprocess
 from logging import Logger
-import shlex
 from typing import Annotated
 
 import oci
 from fastmcp import FastMCP
+
 from oracle.oci_api_mcp_server import __project__, __version__
+from oracle.oci_api_mcp_server.auth import (
+    UpstAuthenticationError,
+    get_upst_cli_configuration,
+    is_upst_auth_configured,
+)
 from oracle.oci_api_mcp_server.denylist import Denylist
 from oracle.oci_api_mcp_server.utils import initAuditLogger
 
@@ -163,8 +169,19 @@ def run_oci_command(
         return {"error": error_message}
 
     try:
+        cli_auth_args = ["--profile", profile, "--auth", "security_token"]
+        if is_upst_auth_configured():
+            config_file, profile = get_upst_cli_configuration()
+            cli_auth_args = [
+                "--config-file",
+                config_file,
+                "--profile",
+                profile,
+                "--auth",
+                "security_token",
+            ]
         result = subprocess.run(
-            ["oci", "--profile", profile, "--auth", "security_token"] + shlex.split(command),
+            ["oci"] + cli_auth_args + shlex.split(command),
             env=env_copy,
             capture_output=True,
             text=True,
@@ -187,6 +204,9 @@ def run_oci_command(
             pass
 
         return response
+    except UpstAuthenticationError as error:
+        logger.error("UPST authentication failed: %s", error)
+        return {"command": command, "output": "", "error": str(error), "returncode": 1}
     except subprocess.CalledProcessError as e:
         return {
             "command": command,

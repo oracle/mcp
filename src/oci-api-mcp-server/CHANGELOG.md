@@ -10,6 +10,13 @@
 
 - OCI command parsing now preserves quoted arguments when retrieving command help or running OCI CLI commands. ([#100](https://github.com/oracle/mcp/issues/100))
 
+## 2.1.0 - 2026-07-08
+
+### Added
+
+- Added environment-driven JWT-to-UPST authentication for OCI CLI commands, including
+  automatic token renewal and private, isolated credential storage.
+
 ## 2.0.0
 
 ### Breaking Changes

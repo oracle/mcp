@@ -27,6 +27,28 @@ uvx oracle.oci-api-mcp-server
 
 ⚠️ **NOTE**: All actions use the configured OCI CLI profile. Use least-privilege IAM and protect secrets.
 
+## JWT-to-UPST authentication
+
+Set the following variables to authenticate OCI CLI commands with an identity-domain
+service bearer token exchanged for an OCI User Principal Security Token (UPST):
+
+```sh
+export OCI_UPST_DOMAIN_URL='https://<identity-domain>.identity.oraclecloud.com'
+export OCI_UPST_CLIENT_ID='<token-exchange-client-id>'
+export OCI_UPST_CLIENT_SECRET='<token-exchange-client-secret>'
+export OCI_UPST_REGION='ap-mumbai-1'
+```
+
+UPST authentication takes precedence over `OCI_CONFIG_PROFILE`. The server generates an
+RSA signing key, obtains a UPST on the first OCI command, and automatically renews it
+shortly before expiration. Credentials are stored in a private temporary directory and
+removed when the server exits. To select a persistent private location, set
+`OCI_UPST_CREDENTIALS_DIR`; individual paths can be overridden with
+`OCI_UPST_PRIVATE_KEY_FILE`, `OCI_UPST_TOKEN_FILE`, and `OCI_UPST_CONFIG_FILE`.
+
+The identity represented by the UPST must have OCI IAM policies authorizing requested
+operations. Do not expose the client secret, token, private key, or generated config.
+
 ## Third-Party APIs
 
 Developers choosing to distribute a binary implementation of this project are responsible for obtaining and providing all required licenses and copyright notices for the third-party code used in order to ensure compliance with their respective open source licenses.

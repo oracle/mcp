@@ -1,0 +1,24 @@
+[project]
+name = "oracle-oci-mcp-auth-provider"
+version = "0.1.0"
+description = "Reusable OCI authentication providers for Oracle MCP servers"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "UPL-1.0"
+dependencies = ["cryptography==46.0.7", "oci==2.179.0", "requests>=2.32.5"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["oracle_oci_mcp_auth_provider"]
+
+[dependency-groups]
+dev = ["pytest>=9.0.3", "pytest-cov>=7.0.0"]
+
+[tool.coverage.run]
+omit = ["**/__init__.py", "**/tests/*"]
+
+[tool.coverage.report]
+fail_under = 90

@@ -6,6 +6,10 @@
 
 - Updated dependency locks for FastMCP 3.4.2, OCI SDK 2.179.0, and refreshed authentication-related transitive packages.
 
+### Fixed
+
+- Fixed `invoke_oci_api` pagination for OCI responses that expose records through `results`, including Logging Search `search_logs`.
+
 ## 2.1.0
 
 ### Security

@@ -894,6 +894,9 @@ def _extract_paginated_items(response_data: Any) -> Tuple[Any, Optional[str], An
         return response_data.objects, "object_storage", None
     if isinstance(response_data, list):
         return response_data, None, None
+    results = getattr(response_data, "results", None)
+    if results is not None:
+        return results, None, None
     items = getattr(response_data, "items", response_data)
     return (response_data if callable(items) else items), None, None
 
@@ -1020,78 +1023,75 @@ def _call_with_pagination_if_applicable(
         uses_pagination = _supports_pagination(method, operation_name)
     if uses_pagination:
         logger.info(f"Using paginator for operation {operation_name}")
-        if max_results is not None:
-            call_params = dict(params)
-            requested_limit = call_params.get("limit")
-            remaining_items = max_results
-            aggregated_results: List[Any] = []
-            is_dns_record_collection = False
-            dns_record_collection_class = None
-            is_list_objects_response = False
-            list_objects_prefixes = set()
-            call_result = None
-            more_results_available = False
+        call_params = dict(params)
+        requested_limit = call_params.get("limit")
+        remaining_items = max_results
+        aggregated_results: List[Any] = []
+        is_dns_record_collection = False
+        dns_record_collection_class = None
+        is_list_objects_response = False
+        list_objects_prefixes = set()
+        call_result = None
+        more_results_available = False
 
-            while remaining_items > 0:
+        while remaining_items is None or remaining_items > 0:
+            if remaining_items is not None:
                 if isinstance(requested_limit, int) and requested_limit > 0:
                     call_params["limit"] = min(requested_limit, remaining_items)
                 else:
                     call_params.pop("limit", None)
 
-                call_result = oci.retry.DEFAULT_RETRY_STRATEGY.make_retrying_call(method, **call_params)
-                response_data = call_result.data if hasattr(call_result, "data") else call_result
-                available_slots = remaining_items
+            call_result = oci.retry.DEFAULT_RETRY_STRATEGY.make_retrying_call(method, **call_params)
+            response_data = call_result.data if hasattr(call_result, "data") else call_result
+            available_slots = remaining_items
 
-                current_items, collection_kind, collection_class = _extract_paginated_items(response_data)
-                if collection_kind == "dns":
-                    is_dns_record_collection = True
-                    dns_record_collection_class = collection_class
-                elif collection_kind == "object_storage":
-                    is_list_objects_response = True
-                    if response_data.prefixes:
-                        list_objects_prefixes.update(response_data.prefixes)
+            current_items, collection_kind, collection_class = _extract_paginated_items(response_data)
+            if collection_kind == "dns":
+                is_dns_record_collection = True
+                dns_record_collection_class = collection_class
+            elif collection_kind == "object_storage":
+                is_list_objects_response = True
+                if response_data.prefixes:
+                    list_objects_prefixes.update(response_data.prefixes)
 
-                if not hasattr(current_items, "__len__") or not hasattr(current_items, "__getitem__"):
-                    current_items = list(current_items)
-                current_count = len(current_items)
-                aggregated_results.extend(islice(current_items, available_slots))
-                if current_count > available_slots:
-                    more_results_available = True
+            if not hasattr(current_items, "__len__") or not hasattr(current_items, "__getitem__"):
+                current_items = list(current_items)
+            current_count = len(current_items)
+            aggregated_results.extend(islice(current_items, available_slots))
+            if available_slots is not None and current_count > available_slots:
+                more_results_available = True
+            if remaining_items is not None:
                 remaining_items -= current_count
 
-                if remaining_items <= 0:
-                    if is_list_objects_response and getattr(response_data, "next_start_with", None) is not None:
-                        more_results_available = True
-                    elif getattr(call_result, "has_next_page", False):
-                        more_results_available = True
+            if remaining_items is not None and remaining_items <= 0:
+                if is_list_objects_response and getattr(response_data, "next_start_with", None) is not None:
+                    more_results_available = True
+                elif getattr(call_result, "has_next_page", False):
+                    more_results_available = True
+                break
+
+            if is_list_objects_response:
+                next_start_with = getattr(response_data, "next_start_with", None)
+                if next_start_with is None:
                     break
+                call_params["start"] = next_start_with
+                continue
 
-                if is_list_objects_response:
-                    next_start_with = getattr(response_data, "next_start_with", None)
-                    if next_start_with is None:
-                        break
-                    call_params["start"] = next_start_with
-                    continue
+            if not getattr(call_result, "has_next_page", False):
+                break
+            call_params["page"] = call_result.next_page
 
-                if not getattr(call_result, "has_next_page", False):
-                    break
-                call_params["page"] = call_result.next_page
-
-            response = call_result
-            if is_dns_record_collection:
-                data = dns_record_collection_class(items=aggregated_results)
-            elif is_list_objects_response:
-                data = oci.object_storage.models.ListObjects(
-                    objects=aggregated_results,
-                    prefixes=list(list_objects_prefixes),
-                )
-            else:
-                data = aggregated_results
-            has_more = more_results_available
+        response = call_result
+        if is_dns_record_collection:
+            data = dns_record_collection_class(items=aggregated_results)
+        elif is_list_objects_response:
+            data = oci.object_storage.models.ListObjects(
+                objects=aggregated_results,
+                prefixes=list(list_objects_prefixes),
+            )
         else:
-            response = oci.pagination.list_call_get_all_results(method, **params)
-            data = response.data
-            has_more = getattr(response, "has_next_page", False)
+            data = aggregated_results
+        has_more = more_results_available
         try:
             opc_request_id = response.headers.get("opc-request-id")
         except Exception:

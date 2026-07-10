@@ -11,6 +11,7 @@ import oci
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
+from oracle.oci_cloud_mcp_server import server
 from oracle.oci_cloud_mcp_server.server import (
     _ADDITIONAL_UA,
     _align_params_to_signature,
@@ -41,7 +42,10 @@ class TestGetConfigAndSigner:
             patch("oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file") as m_loadkey,
             patch("oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner") as m_sts,
             patch("oracle.oci_cloud_mcp_server.server.oci.signer.Signer") as m_signer,
-            patch("oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=True),
+            patch(
+                "oracle.oci_cloud_mcp_server.server._profile_declares_session_token",
+                return_value=True,
+            ),
             patch("builtins.open", mock_open(read_data="TOKEN123")),
         ):
             m_from.return_value = dict(cfg)  # function mutates to add UA
@@ -70,7 +74,10 @@ class TestGetConfigAndSigner:
             patch("oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file") as m_loadkey,
             patch("oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner") as m_sts,
             patch("oracle.oci_cloud_mcp_server.server.oci.signer.Signer") as m_signer,
-            patch("oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=False),
+            patch(
+                "oracle.oci_cloud_mcp_server.server._profile_declares_session_token",
+                return_value=False,
+            ),
         ):
             m_from.return_value = dict(cfg)
             m_loadkey.return_value = object()
@@ -497,6 +504,10 @@ class TestGetConfigAndSignerErrors:
         with (
             patch("oracle.oci_cloud_mcp_server.server.oci.config.from_file") as m_from,
             patch(
+                "oracle.oci_cloud_mcp_server.server._profile_declares_session_token",
+                return_value=True,
+            ),
+            patch(
                 "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file",
                 side_effect=Exception("bad key"),
             ),
@@ -506,8 +517,8 @@ class TestGetConfigAndSignerErrors:
                 _get_config_and_signer()
 
 
-class TestSignerFallbackOnStsFailure:
-    def test_token_present_but_sts_raises_falls_back_to_api_key(self):
+class TestSignerFailurePropagation:
+    def test_session_token_sts_failure_is_propagated(self):
         cfg = {
             "tenancy": "t",
             "user": "u",
@@ -523,17 +534,20 @@ class TestSignerFallbackOnStsFailure:
                 side_effect=Exception("boom"),
             ),
             patch("oracle.oci_cloud_mcp_server.server.oci.signer.Signer") as m_signer,
-            patch("oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=True),
+            patch(
+                "oracle.oci_cloud_mcp_server.server._profile_declares_session_token",
+                return_value=True,
+            ),
             patch("builtins.open", mock_open(read_data="TOKEN123")),
         ):
             m_from.return_value = dict(cfg)
             m_loadkey.return_value = object()
-            sentinel_signer = object()
-            m_signer.return_value = sentinel_signer
 
-            out_cfg, signer = _get_config_and_signer()
-            assert out_cfg["additional_user_agent"] == _ADDITIONAL_UA
-            assert signer is sentinel_signer
+            # A session profile whose token signer fails must NOT silently fall back
+            # to an API key signer -- the error is surfaced instead.
+            with pytest.raises(Exception, match="boom"):
+                _get_config_and_signer()
+            m_signer.assert_not_called()
 
 
 class TestParamCoercionAndAlignmentExtras:
@@ -715,7 +729,7 @@ class TestInvokeImportFailure:
 
 
 class TestSignerTokenReadFailure:
-    def test_token_file_exists_but_open_fails_falls_back(self):
+    def test_token_file_open_failure_is_propagated(self):
         cfg = {
             "tenancy": "t",
             "user": "u",
@@ -726,20 +740,23 @@ class TestSignerTokenReadFailure:
         with (
             patch("oracle.oci_cloud_mcp_server.server.oci.config.from_file") as m_from,
             patch("oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file") as m_loadkey,
-            patch("oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=True),
+            patch(
+                "oracle.oci_cloud_mcp_server.server._profile_declares_session_token",
+                return_value=True,
+            ),
             patch("oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner") as m_sts,
             patch("oracle.oci_cloud_mcp_server.server.oci.signer.Signer") as m_signer,
             patch("builtins.open", side_effect=Exception("io")),
         ):
             m_from.return_value = dict(cfg)
             m_loadkey.return_value = object()
-            sentinel_signer = object()
-            m_signer.return_value = sentinel_signer
 
-            out_cfg, signer = _get_config_and_signer()
-            assert out_cfg["additional_user_agent"] == _ADDITIONAL_UA
-            assert signer is sentinel_signer
+            # A session profile whose token file cannot be read must not silently fall
+            # back to an API key signer; the read error is surfaced instead.
+            with pytest.raises(Exception, match="io"):
+                _get_config_and_signer()
             m_sts.assert_not_called()
+            m_signer.assert_not_called()
 
 
 class TestAlignParamsSignatureRaises:
@@ -1266,3 +1283,99 @@ class TestConstructModelCtorSwaggerFilter:
         assert isinstance(inst, MyModel)
         # 'b' should be filtered out because it's not in swagger_types
         assert inst.kw == {"a": 1}
+
+
+SESSION_DEFAULT_CONFIG = """\
+[DEFAULT]
+user=ocid1.user.oc1..sess
+fingerprint=aa:bb
+tenancy=ocid1.tenancy.oc1..sess
+region=us-ashburn-1
+key_file={key}
+security_token_file={token}
+
+[APIKEY]
+user=ocid1.user.oc1..apikey
+fingerprint=cc:dd
+tenancy=ocid1.tenancy.oc1..apikey
+region=us-ashburn-1
+key_file={key}
+"""
+
+
+class TestProfileAuthSelection:
+    @pytest.fixture(autouse=True)
+    def _reset_warning_flag(self):
+        server._api_key_warning_emitted = False
+        yield
+        server._api_key_warning_emitted = False
+
+    def _write_config(self, tmp_path):
+        key = tmp_path / "k.pem"
+        key.write_text("")
+        token = tmp_path / "token"
+        token.write_text("TOK")
+        cfg = tmp_path / "config"
+        cfg.write_text(SESSION_DEFAULT_CONFIG.format(key=key, token=token))
+        return cfg
+
+    def test_session_profile_is_detected(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(self._write_config(tmp_path)))
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "DEFAULT")
+        assert server._profile_declares_session_token() is True
+
+    def test_api_key_profile_does_not_inherit_default_security_token_file(
+        self, tmp_path, monkeypatch
+    ):
+        # oci.config.from_file() merges [DEFAULT] into every profile, so the raw config
+        # dict claims APIKEY has a security_token_file. The profile itself does not, and
+        # signing with the [DEFAULT] session token would use the wrong credentials.
+        cfg = self._write_config(tmp_path)
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(cfg))
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "APIKEY")
+
+        merged = oci.config.from_file(file_location=str(cfg), profile_name="APIKEY")
+        assert "security_token_file" in merged  # inherited from [DEFAULT]
+
+        assert server._profile_declares_session_token() is False
+
+    def test_unknown_profile_reports_no_session_token(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(self._write_config(tmp_path)))
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "NOSUCH")
+        assert server._profile_declares_session_token() is False
+
+    @patch(
+        "oracle.oci_cloud_mcp_server.server._profile_declares_session_token",
+        return_value=False,
+    )
+    @patch("oracle.oci_cloud_mcp_server.server.oci.config.from_file")
+    def test_incomplete_api_key_profile_raises_actionable_error(
+        self, mock_from_file, _mock_declares
+    ):
+        mock_from_file.return_value = {"key_file": "/k.pem"}
+        with pytest.raises(RuntimeError) as excinfo:
+            _get_config_and_signer()
+        message = str(excinfo.value)
+        assert "tenancy" in message and "user" in message and "fingerprint" in message
+        assert "oci session authenticate" in message
+
+    @patch("oracle.oci_cloud_mcp_server.server.oci.signer.Signer")
+    @patch(
+        "oracle.oci_cloud_mcp_server.server._profile_declares_session_token",
+        return_value=False,
+    )
+    @patch("oracle.oci_cloud_mcp_server.server.oci.config.from_file")
+    def test_api_key_warning_is_emitted_once(
+        self, mock_from_file, _mock_declares, _mock_signer
+    ):
+        mock_from_file.return_value = {
+            "key_file": "/k.pem",
+            "tenancy": "ocid1.tenancy.oc1..t",
+            "user": "ocid1.user.oc1..u",
+            "fingerprint": "aa:bb:cc",
+        }
+        with patch.object(server.logger, "warning") as mock_warning:
+            _get_config_and_signer()
+            _get_config_and_signer()
+        mock_warning.assert_called_once()
+        assert "session authenticate" in mock_warning.call_args[0][0]

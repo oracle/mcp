@@ -39,25 +39,24 @@ class TestGetClientFactories:
         side_effect=lambda client, **_: client,
     )
     @patch("oracle.oci_recovery_mcp_server.server.oci.recovery.DatabaseRecoveryClient")
-    @patch(
-        "oracle.oci_recovery_mcp_server.server._effective_auth_method",
-        return_value="apikey",
-    )
+    @patch("oracle.oci_recovery_mcp_server.server._build_signer")
     @patch("oracle.oci_recovery_mcp_server.server._load_oci_config_for_server")
-    def test_get_recovery_client_apikey_passes_circuit_breaker(
+    def test_get_recovery_client_passes_signer_and_circuit_breaker(
         self,
         mock_load_config,
-        _mock_auth_method,
+        mock_build_signer,
         mock_client,
         _mock_wrap,
     ):
         mock_load_config.return_value = {"region": "us-ashburn-1"}
+        signer = object()
+        mock_build_signer.return_value = signer
 
         result = server.get_recovery_client(region="us-phoenix-1", request_id="rid")
 
         args, kwargs = mock_client.call_args
         assert args[0]["region"] == "us-phoenix-1"
-        assert "signer" not in kwargs
+        assert kwargs["signer"] is signer
         assert isinstance(
             kwargs["circuit_breaker_strategy"],
             oci.circuit_breaker.CircuitBreakerStrategy,
@@ -69,19 +68,14 @@ class TestGetClientFactories:
         "oracle.oci_recovery_mcp_server.server._wrap_oci_client",
         side_effect=lambda client, **_: client,
     )
-    @patch("oracle.oci_recovery_mcp_server.server._build_signer_for_session")
     @patch("oracle.oci_recovery_mcp_server.server.oci.monitoring.MonitoringClient")
-    @patch(
-        "oracle.oci_recovery_mcp_server.server._effective_auth_method",
-        return_value="session",
-    )
+    @patch("oracle.oci_recovery_mcp_server.server._build_signer")
     @patch("oracle.oci_recovery_mcp_server.server._load_oci_config_for_server")
-    def test_get_monitoring_client_session_passes_circuit_breaker(
+    def test_get_monitoring_client_passes_signer_and_circuit_breaker(
         self,
         mock_load_config,
-        _mock_auth_method,
-        mock_client,
         mock_build_signer,
+        mock_client,
         _mock_wrap,
     ):
         mock_load_config.return_value = {"region": "us-ashburn-1"}
@@ -99,6 +93,192 @@ class TestGetClientFactories:
         )
         assert callable(kwargs["circuit_breaker_callback"])
         assert result is mock_client.return_value
+
+
+SESSION_DEFAULT_CONFIG = """\
+[DEFAULT]
+user=ocid1.user.oc1..sess
+fingerprint=aa:bb
+tenancy=ocid1.tenancy.oc1..sess
+region=us-ashburn-1
+key_file={key}
+security_token_file={token}
+
+[APIKEY]
+user=ocid1.user.oc1..apikey
+fingerprint=cc:dd
+tenancy=ocid1.tenancy.oc1..apikey
+region=us-ashburn-1
+key_file={key}
+"""
+
+
+class TestProfileAuthSelection:
+    @pytest.fixture(autouse=True)
+    def _reset_warning_flag(self, monkeypatch):
+        monkeypatch.delenv("ORACLE_MCP_AUTH_PROFILE", raising=False)
+        monkeypatch.delenv("ORACLE_MCP_AUTH_METHOD", raising=False)
+        server._api_key_warning_emitted = False
+        yield
+        server._api_key_warning_emitted = False
+
+    def _write_config(self, tmp_path):
+        key = tmp_path / "k.pem"
+        key.write_text("")
+        token = tmp_path / "token"
+        token.write_text("TOK")
+        cfg = tmp_path / "config"
+        cfg.write_text(SESSION_DEFAULT_CONFIG.format(key=key, token=token))
+        return cfg
+
+    def test_session_profile_is_detected(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(self._write_config(tmp_path)))
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "DEFAULT")
+        assert server._profile_declares_session_token() is True
+
+    def test_api_key_profile_does_not_inherit_default_security_token_file(
+        self, tmp_path, monkeypatch
+    ):
+        # oci.config.from_file() merges [DEFAULT] into every profile, so the raw config
+        # dict claims APIKEY has a security_token_file. The profile itself does not, and
+        # signing with the [DEFAULT] session token would use the wrong credentials.
+        cfg = self._write_config(tmp_path)
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(cfg))
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "APIKEY")
+
+        merged = oci.config.from_file(file_location=str(cfg), profile_name="APIKEY")
+        assert "security_token_file" in merged  # inherited from [DEFAULT]
+
+        assert server._profile_declares_session_token() is False
+
+    def test_unknown_profile_reports_no_session_token(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(self._write_config(tmp_path)))
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "NOSUCH")
+        assert server._profile_declares_session_token() is False
+
+    def test_build_signer_reads_session_token(self, tmp_path, monkeypatch):
+        cfg = self._write_config(tmp_path)
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(cfg))
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "DEFAULT")
+        config = oci.config.from_file(file_location=str(cfg), profile_name="DEFAULT")
+
+        private_key = object()
+        monkeypatch.setattr(
+            server.oci.signer,
+            "load_private_key_from_file",
+            lambda key_file: private_key,
+        )
+        security_token_signer = MagicMock(return_value="session-signer")
+        monkeypatch.setattr(
+            server.oci.auth.signers, "SecurityTokenSigner", security_token_signer
+        )
+
+        assert server._build_signer(config) == "session-signer"
+        security_token_signer.assert_called_once_with("TOK", private_key)
+
+    @patch(
+        "oracle.oci_recovery_mcp_server.server._profile_declares_session_token",
+        return_value=False,
+    )
+    def test_incomplete_api_key_profile_raises_actionable_error(self, _mock_declares):
+        with pytest.raises(RuntimeError) as excinfo:
+            server._build_signer({"key_file": "/k.pem"})
+        message = str(excinfo.value)
+        assert "tenancy" in message and "user" in message and "fingerprint" in message
+        assert "oci session authenticate" in message
+
+    @patch("oracle.oci_recovery_mcp_server.server.oci.signer.Signer")
+    @patch(
+        "oracle.oci_recovery_mcp_server.server._profile_declares_session_token",
+        return_value=False,
+    )
+    def test_api_key_warning_is_emitted_once(self, _mock_declares, _mock_signer):
+        config = {
+            "key_file": "/k.pem",
+            "tenancy": "ocid1.tenancy.oc1..t",
+            "user": "ocid1.user.oc1..u",
+            "fingerprint": "aa:bb:cc",
+        }
+        with patch.object(server.logger, "warning") as mock_warning:
+            server._build_signer(config)
+            server._build_signer(config)
+        mock_warning.assert_called_once()
+        assert "session authenticate" in mock_warning.call_args[0][0]
+
+    def test_env_session_override_forces_session_on_api_key_profile(
+        self, tmp_path, monkeypatch
+    ):
+        cfg = self._write_config(tmp_path)
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(cfg))
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "APIKEY")
+        monkeypatch.setenv("ORACLE_MCP_AUTH_METHOD", "session")
+        # The APIKEY profile declares no security_token_file of its own.
+        assert server._profile_declares_session_token() is False
+
+        config = oci.config.from_file(file_location=str(cfg), profile_name="APIKEY")
+        private_key = object()
+        monkeypatch.setattr(
+            server.oci.signer, "load_private_key_from_file", lambda key_file: private_key
+        )
+        security_token_signer = MagicMock(return_value="session-signer")
+        monkeypatch.setattr(
+            server.oci.auth.signers, "SecurityTokenSigner", security_token_signer
+        )
+        api_key_signer = MagicMock(return_value="api-key-signer")
+        monkeypatch.setattr(server.oci.signer, "Signer", api_key_signer)
+
+        # Explicit override wins: session path taken even though the profile is API-key.
+        assert server._build_signer(config) == "session-signer"
+        api_key_signer.assert_not_called()
+
+    def test_env_apikey_override_forces_api_key_on_session_profile(
+        self, tmp_path, monkeypatch
+    ):
+        cfg = self._write_config(tmp_path)
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(cfg))
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "DEFAULT")
+        monkeypatch.setenv("ORACLE_MCP_AUTH_METHOD", "apikey")
+        # The DEFAULT profile DOES declare a security_token_file.
+        assert server._profile_declares_session_token() is True
+
+        config = oci.config.from_file(file_location=str(cfg), profile_name="DEFAULT")
+        security_token_signer = MagicMock(return_value="session-signer")
+        monkeypatch.setattr(
+            server.oci.auth.signers, "SecurityTokenSigner", security_token_signer
+        )
+        api_key_signer = MagicMock(return_value="api-key-signer")
+        monkeypatch.setattr(server.oci.signer, "Signer", api_key_signer)
+
+        # Explicit override wins: API-key path taken even though a session token exists.
+        assert server._build_signer(config) == "api-key-signer"
+        security_token_signer.assert_not_called()
+        api_key_signer.assert_called_once()
+
+    def test_unset_env_auto_detects_both_directions(self, tmp_path, monkeypatch):
+        cfg = self._write_config(tmp_path)
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(cfg))
+        monkeypatch.delenv("ORACLE_MCP_AUTH_METHOD", raising=False)
+        assert server._effective_auth_method() is None
+
+        security_token_signer = MagicMock(return_value="session-signer")
+        monkeypatch.setattr(
+            server.oci.auth.signers, "SecurityTokenSigner", security_token_signer
+        )
+        monkeypatch.setattr(
+            server.oci.signer, "load_private_key_from_file", lambda key_file: object()
+        )
+        api_key_signer = MagicMock(return_value="api-key-signer")
+        monkeypatch.setattr(server.oci.signer, "Signer", api_key_signer)
+
+        # Session profile auto-detects to the session-token path.
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "DEFAULT")
+        session_config = oci.config.from_file(file_location=str(cfg), profile_name="DEFAULT")
+        assert server._build_signer(session_config) == "session-signer"
+
+        # API-key profile auto-detects to the API-key path.
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "APIKEY")
+        api_key_config = oci.config.from_file(file_location=str(cfg), profile_name="APIKEY")
+        assert server._build_signer(api_key_config) == "api-key-signer"
 
 
 def test_model_conversion_helpers_cover_fallback_paths(monkeypatch):
@@ -323,10 +503,6 @@ def test_server_helpers_cover_serialization_config_and_wrapping(monkeypatch, tmp
         "error",
     ]
 
-    monkeypatch.setenv("ORACLE_MCP_AUTH_METHOD", "api-key")
-    assert server._effective_auth_method() == "apikey"
-    monkeypatch.setenv("ORACLE_MCP_AUTH_METHOD", "session")
-    assert server._effective_auth_method() == "session"
     monkeypatch.setenv("ORACLE_MCP_AUTH_PROFILE", "PROFILE1")
     assert server._effective_profile_name() == "PROFILE1"
     monkeypatch.delenv("ORACLE_MCP_AUTH_PROFILE", raising=False)
@@ -350,29 +526,7 @@ def test_server_helpers_cover_serialization_config_and_wrapping(monkeypatch, tmp
     assert server._get_profile_value("user") == "user1"
     assert server._get_profile_value("tenancy") == "tenancy-default"
 
-    token_file = tmp_path / "security_token"
-    token_file.write_text("SECURITY_TOKEN", encoding="utf-8")
-    private_key = object()
     signer = object()
-    monkeypatch.setattr(
-        server.oci.signer,
-        "load_private_key_from_file",
-        lambda key_file: private_key if key_file == "key.pem" else None,
-    )
-    security_token_signer = MagicMock(return_value=signer)
-    monkeypatch.setattr(
-        server.oci.auth.signers,
-        "SecurityTokenSigner",
-        security_token_signer,
-    )
-    assert (
-        server._build_signer_for_session(
-            {"key_file": "key.pem", "security_token_file": str(token_file)}
-        )
-        is signer
-    )
-    security_token_signer.assert_called_once_with("SECURITY_TOKEN", private_key)
-
     kwargs_without_signer = server._get_oci_client_kwargs()
     kwargs_with_signer = server._get_oci_client_kwargs(signer=signer)
     assert "signer" not in kwargs_without_signer
@@ -462,9 +616,8 @@ def test_http_config_and_client_factories_cover_auth_paths(monkeypatch):
     monkeypatch.setattr(
         server, "_load_oci_config_for_server", lambda: {"region": "home"}
     )
-    monkeypatch.setattr(server, "_effective_auth_method", lambda: "session")
     monkeypatch.setattr(
-        server, "_build_signer_for_session", lambda config: "session-signer"
+        server, "_build_signer", lambda config: "session-signer"
     )
     assert server.get_identity_client()[2] == "identity"
     assert server.get_database_client(region="us-chicago-1")[2] == "database"
@@ -1601,7 +1754,9 @@ def test_logging_tool_wrapper_tenancy_and_apikey_client_paths(monkeypatch, tmp_p
     monkeypatch.setattr(
         server, "_load_oci_config_for_server", lambda: {"region": "home"}
     )
-    monkeypatch.setattr(server, "_effective_auth_method", lambda: "apikey")
+    monkeypatch.setattr(
+        server, "_build_signer", lambda _config: "profile-signer"
+    )
     monkeypatch.setattr(
         server,
         "_wrap_oci_client",
@@ -1617,18 +1772,14 @@ def test_logging_tool_wrapper_tenancy_and_apikey_client_paths(monkeypatch, tmp_p
     assert server.get_identity_client()[1] == "identity"
     assert server.get_database_client(region="us-phoenix-1")[1] == "database"
     assert server.get_monitoring_client(region="us-phoenix-1")[1] == "monitoring"
-    assert "signer" not in identity_client.call_args.kwargs
+    assert identity_client.call_args.kwargs["signer"] == "profile-signer"
     assert database_client.call_args.args[0]["region"] == "us-phoenix-1"
-    assert "signer" not in monitoring_client.call_args.kwargs
+    assert monitoring_client.call_args.kwargs["signer"] == "profile-signer"
 
     recovery_client = MagicMock(return_value="recovery-client")
     monkeypatch.setattr(server.oci.recovery, "DatabaseRecoveryClient", recovery_client)
-    monkeypatch.setattr(server, "_effective_auth_method", lambda: "session")
-    monkeypatch.setattr(
-        server, "_build_signer_for_session", lambda _config: "session-signer"
-    )
     assert server.get_recovery_client(region="us-ashburn-1")[1] == "recovery"
-    assert recovery_client.call_args.kwargs["signer"] == "session-signer"
+    assert recovery_client.call_args.kwargs["signer"] == "profile-signer"
 
 
 def test_summary_serialization_fallbacks_and_error_paths(monkeypatch):

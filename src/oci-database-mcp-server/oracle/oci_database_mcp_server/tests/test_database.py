@@ -22,8 +22,13 @@ class TestGetDatabaseClient:
     )
     @patch("oracle.oci_database_mcp_server.server.oci.config.from_file")
     @patch("oracle.oci_database_mcp_server.server.os.getenv")
+    @patch(
+        "oracle.oci_database_mcp_server.server._profile_declares_session_token",
+        return_value=True,
+    )
     def test_get_database_client_passes_circuit_breaker_and_region(
         self,
+        _mock_declares_session_token,
         mock_getenv,
         mock_from_file,
         mock_open_file,
@@ -3353,8 +3358,17 @@ async def test_get_vm_cluster_update_history_entry(mock_get_client):
 @patch("oci.config.from_file")
 @patch("oci.signer.load_private_key_from_file")
 @patch("builtins.open", new_callable=mock_open, read_data="dummy_token")
+@patch(
+    "oracle.oci_database_mcp_server.server._profile_declares_session_token",
+    return_value=True,
+)
 async def test_get_public_ip_for_database(
-    mock_file, mock_load_key, mock_config, mock_vcn_client_cls, mock_get_db_client
+    _mock_declares_session_token,
+    mock_file,
+    mock_load_key,
+    mock_config,
+    mock_vcn_client_cls,
+    mock_get_db_client,
 ):
     mock_db_client = MagicMock()
     mock_get_db_client.return_value = mock_db_client
@@ -3402,3 +3416,90 @@ async def test_get_public_ip_for_database(
 
         result_text = response.content[0].text
         assert result_text == "203.0.113.10"
+
+
+SESSION_DEFAULT_CONFIG = """\
+[DEFAULT]
+user=ocid1.user.oc1..sess
+fingerprint=aa:bb
+tenancy=ocid1.tenancy.oc1..sess
+region=us-ashburn-1
+key_file={key}
+security_token_file={token}
+
+[APIKEY]
+user=ocid1.user.oc1..apikey
+fingerprint=cc:dd
+tenancy=ocid1.tenancy.oc1..apikey
+region=us-ashburn-1
+key_file={key}
+"""
+
+
+class TestProfileAuthSelection:
+    @pytest.fixture(autouse=True)
+    def _reset_warning_flag(self):
+        server._api_key_warning_emitted = False
+        yield
+        server._api_key_warning_emitted = False
+
+    def _write_config(self, tmp_path):
+        key = tmp_path / "k.pem"
+        key.write_text("")
+        token = tmp_path / "token"
+        token.write_text("TOK")
+        cfg = tmp_path / "config"
+        cfg.write_text(SESSION_DEFAULT_CONFIG.format(key=key, token=token))
+        return cfg
+
+    def test_session_profile_is_detected(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(self._write_config(tmp_path)))
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "DEFAULT")
+        assert server._profile_declares_session_token() is True
+
+    def test_api_key_profile_does_not_inherit_default_security_token_file(self, tmp_path, monkeypatch):
+        # oci.config.from_file() merges [DEFAULT] into every profile, so the raw config
+        # dict claims APIKEY has a security_token_file. The profile itself does not, and
+        # signing with the [DEFAULT] session token would use the wrong credentials.
+        cfg = self._write_config(tmp_path)
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(cfg))
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "APIKEY")
+
+        merged = oci.config.from_file(file_location=str(cfg), profile_name="APIKEY")
+        assert "security_token_file" in merged  # inherited from [DEFAULT]
+
+        assert server._profile_declares_session_token() is False
+
+    def test_unknown_profile_reports_no_session_token(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(self._write_config(tmp_path)))
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "NOSUCH")
+        assert server._profile_declares_session_token() is False
+
+    @patch(
+        "oracle.oci_database_mcp_server.server._profile_declares_session_token",
+        return_value=False,
+    )
+    def test_incomplete_api_key_profile_raises_actionable_error(self, _mock_declares):
+        with pytest.raises(RuntimeError) as excinfo:
+            server._build_signer({"key_file": "/k.pem"})
+        message = str(excinfo.value)
+        assert "tenancy" in message and "user" in message and "fingerprint" in message
+        assert "oci session authenticate" in message
+
+    @patch("oracle.oci_database_mcp_server.server.oci.signer.Signer")
+    @patch(
+        "oracle.oci_database_mcp_server.server._profile_declares_session_token",
+        return_value=False,
+    )
+    def test_api_key_warning_is_emitted_once(self, _mock_declares, _mock_signer):
+        config = {
+            "key_file": "/k.pem",
+            "tenancy": "ocid1.tenancy.oc1..t",
+            "user": "ocid1.user.oc1..u",
+            "fingerprint": "aa:bb:cc",
+        }
+        with patch.object(server.logger, "warning") as mock_warning:
+            server._build_signer(config)
+            server._build_signer(config)
+        mock_warning.assert_called_once()
+        assert "session authenticate" in mock_warning.call_args[0][0]

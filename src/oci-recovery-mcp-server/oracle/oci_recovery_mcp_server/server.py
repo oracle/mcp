@@ -579,17 +579,22 @@ def _tool_logger(tool_name: str):
 # Auth/Config
 
 
-def _effective_auth_method() -> Literal["session", "apikey"]:
+def _effective_auth_method() -> Literal["session", "apikey"] | None:
     """
-    Auth selection is done strictly via environment variables (set by the MCP host).
+    Optional explicit override of the OCI authentication type via env var.
 
-    Required:
-      - ORACLE_MCP_AUTH_METHOD: "session" or "apikey"
+    ORACLE_MCP_AUTH_METHOD is OPTIONAL:
+      - "apikey"/"api_key"/"api-key" -> force the API-key path
+      - "session"                    -> force the session-token path
+      - unset or empty               -> None; the auth type is auto-detected from
+                                        the selected profile (see _build_signer)
 
-    Optional:
-      - ORACLE_MCP_AUTH_PROFILE: OCI config profile name (defaults to OCI_CONFIG_PROFILE/DEFAULT)
+    ORACLE_MCP_AUTH_PROFILE optionally selects the OCI config profile name
+    (defaults to OCI_CONFIG_PROFILE/DEFAULT).
     """
-    m = (os.getenv("ORACLE_MCP_AUTH_METHOD") or "session").strip().lower()
+    m = (os.getenv("ORACLE_MCP_AUTH_METHOD") or "").strip().lower()
+    if not m:
+        return None
     if m in ("apikey", "api_key", "api-key"):
         return "apikey"
     return "session"
@@ -643,12 +648,73 @@ def _get_http_config_and_signer(region: str | None = None):
     )
 
 
-def _build_signer_for_session(config: dict):
-    private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    token_file = config["security_token_file"]
-    with open(token_file, "r", encoding="utf-8") as f:
-        token = f.read()
-    return oci.auth.signers.SecurityTokenSigner(token, private_key)
+_SESSION_TOKEN_DOCS = "https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/clitoken.htm"
+_API_KEY_FIELDS = ("tenancy", "user", "fingerprint", "key_file")
+
+# configparser reserves "DEFAULT" as the section whose keys are inherited by every
+# other section. Naming a section that cannot appear in an OCI config disables that.
+_NO_INHERIT = "\x00oci-mcp-no-inherited-defaults"
+
+_api_key_warning_emitted = False
+
+
+def _profile_declares_session_token():
+    """Whether the selected profile declares security_token_file in its own section.
+
+    oci.config.from_file() merges the [DEFAULT] section into every named profile, so
+    `"security_token_file" in config` is true for an API-key profile whenever [DEFAULT]
+    happens to be a session profile -- which would sign requests with the wrong
+    credentials. Re-read the file with that inheritance disabled.
+    """
+    parser = configparser.ConfigParser(default_section=_NO_INHERIT)
+    parser.read(os.path.expanduser(os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION)))
+    profile = _effective_profile_name()
+    if not parser.has_section(profile):
+        return False
+    return parser.has_option(profile, "security_token_file")
+
+
+def _build_signer(config):
+    """Build a request signer matching the selected profile's authentication type.
+
+    An explicit ORACLE_MCP_AUTH_METHOD override (session/apikey) wins. When it is
+    unset the auth type is auto-detected from the selected profile.
+    """
+    global _api_key_warning_emitted
+
+    method = _effective_auth_method()
+    if method == "session" or (method is None and _profile_declares_session_token()):
+        private_key = oci.signer.load_private_key_from_file(config["key_file"])
+        with open(os.path.expanduser(config["security_token_file"]), "r") as f:
+            token = f.read()
+        return oci.auth.signers.SecurityTokenSigner(token, private_key)
+
+    profile = _effective_profile_name()
+    missing = [field for field in _API_KEY_FIELDS if not config.get(field)]
+    if missing:
+        raise RuntimeError(
+            f"OCI profile [{profile}] cannot authenticate: it declares no "
+            f"security_token_file, and these API key fields are missing: "
+            f"{', '.join(missing)}. Either run 'oci session authenticate' to create a "
+            f"session-token profile, or add the missing fields. See {_SESSION_TOKEN_DOCS}"
+        )
+
+    if not _api_key_warning_emitted:
+        _api_key_warning_emitted = True
+        logger.warning(
+            f"OCI profile [{profile}] authenticates with a long-lived API key. Session "
+            f"tokens expire automatically and limit the damage from a leaked credential; "
+            f"prefer 'oci session authenticate' where your tenancy supports it. "
+            f"See {_SESSION_TOKEN_DOCS}"
+        )
+
+    return oci.signer.Signer(
+        tenancy=config["tenancy"],
+        user=config["user"],
+        fingerprint=config["fingerprint"],
+        private_key_file_location=config["key_file"],
+        pass_phrase=config.get("pass_phrase"),
+    )
 
 
 def _get_oci_client_kwargs(signer=None):
@@ -668,27 +734,21 @@ def _get_oci_client_kwargs(signer=None):
 
 # Create the FastMCP app that exposes the functions decorated with @mcp.tool
 mcp = FastMCP(name=__project__)
+
+
 def get_recovery_client(
     region: str | None = None,
     *,
     request_id: Optional[str] = None,
 ) -> oci.recovery.DatabaseRecoveryClient:
-    """Create a Recovery Service client using auth selected via env vars."""
+    """Create a Recovery Service client using auth selected from the OCI profile."""
     regional_config, signer = _get_http_config_and_signer(region)
     if signer is None:
         config = _load_oci_config_for_server()
         regional_config = config if region is None else {**config, "region": region}
+        signer = _build_signer(regional_config)
 
-    method = _effective_auth_method()
-    if signer is not None:
-        client = oci.recovery.DatabaseRecoveryClient(regional_config, **_get_oci_client_kwargs(signer))
-    elif method == "apikey":
-        client = oci.recovery.DatabaseRecoveryClient(regional_config, **_get_oci_client_kwargs())
-    else:
-        signer = _build_signer_for_session(regional_config)
-        client = oci.recovery.DatabaseRecoveryClient(
-            regional_config, **_get_oci_client_kwargs(signer)
-        )
+    client = oci.recovery.DatabaseRecoveryClient(regional_config, **_get_oci_client_kwargs(signer))
 
     rid = request_id or uuid.uuid4().hex
     return _wrap_oci_client(client, request_id=rid, client_name="recovery")
@@ -698,14 +758,9 @@ def get_identity_client(*, request_id: Optional[str] = None):
     config, signer = _get_http_config_and_signer()
     if signer is None:
         config = _load_oci_config_for_server()
-    method = _effective_auth_method()
-    if signer is not None:
-        client = oci.identity.IdentityClient(config, **_get_oci_client_kwargs(signer))
-    elif method == "apikey":
-        client = oci.identity.IdentityClient(config, **_get_oci_client_kwargs())
-    else:
-        signer = _build_signer_for_session(config)
-        client = oci.identity.IdentityClient(config, **_get_oci_client_kwargs(signer))
+        signer = _build_signer(config)
+
+    client = oci.identity.IdentityClient(config, **_get_oci_client_kwargs(signer))
 
     rid = request_id or uuid.uuid4().hex
     return _wrap_oci_client(client, request_id=rid, client_name="identity")
@@ -716,14 +771,9 @@ def get_database_client(region: str = None, *, request_id: Optional[str] = None)
     if signer is None:
         config = _load_oci_config_for_server()
         regional_config = config if region is None else {**config, "region": region}
-    method = _effective_auth_method()
-    if signer is not None:
-        client = oci.database.DatabaseClient(regional_config, **_get_oci_client_kwargs(signer))
-    elif method == "apikey":
-        client = oci.database.DatabaseClient(regional_config, **_get_oci_client_kwargs())
-    else:
-        signer = _build_signer_for_session(regional_config)
-        client = oci.database.DatabaseClient(regional_config, **_get_oci_client_kwargs(signer))
+        signer = _build_signer(regional_config)
+
+    client = oci.database.DatabaseClient(regional_config, **_get_oci_client_kwargs(signer))
 
     rid = request_id or uuid.uuid4().hex
     return _wrap_oci_client(client, request_id=rid, client_name="database")
@@ -735,16 +785,9 @@ def get_monitoring_client(region: str | None = None, *, request_id: Optional[str
     if signer is None:
         config = _load_oci_config_for_server()
         regional_config = config if region is None else {**config, "region": region}
-    method = _effective_auth_method()
-    if signer is not None:
-        client = oci.monitoring.MonitoringClient(regional_config, **_get_oci_client_kwargs(signer))
-    elif method == "apikey":
-        client = oci.monitoring.MonitoringClient(regional_config, **_get_oci_client_kwargs())
-    else:
-        signer = _build_signer_for_session(regional_config)
-        client = oci.monitoring.MonitoringClient(
-            regional_config, **_get_oci_client_kwargs(signer)
-        )
+        signer = _build_signer(regional_config)
+
+    client = oci.monitoring.MonitoringClient(regional_config, **_get_oci_client_kwargs(signer))
 
     rid = request_id or uuid.uuid4().hex
     return _wrap_oci_client(client, request_id=rid, client_name="monitoring")

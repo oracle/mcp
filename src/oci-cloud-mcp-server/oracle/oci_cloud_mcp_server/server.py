@@ -4,6 +4,7 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
+import configparser
 import difflib
 import inspect
 import json
@@ -466,12 +467,43 @@ def _discover_client_classes() -> List[Tuple[str, Any]]:
     return sorted(discovered, key=lambda item: item[0])
 
 
+_SESSION_TOKEN_DOCS = "https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/clitoken.htm"
+_API_KEY_FIELDS = ("tenancy", "user", "fingerprint", "key_file")
+
+# configparser reserves "DEFAULT" as the section whose keys are inherited by every
+# other section. Naming a section that cannot appear in an OCI config disables that.
+_NO_INHERIT = "\x00oci-mcp-no-inherited-defaults"
+
+_api_key_warning_emitted = False
+
+
+def _selected_profile():
+    return os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+
+
+def _profile_declares_session_token():
+    """Whether the selected profile declares security_token_file in its own section.
+
+    oci.config.from_file() merges the [DEFAULT] section into every named profile, so
+    `"security_token_file" in config` is true for an API-key profile whenever [DEFAULT]
+    happens to be a session profile -- which would sign requests with the wrong
+    credentials. Re-read the file with that inheritance disabled.
+    """
+    parser = configparser.ConfigParser(default_section=_NO_INHERIT)
+    parser.read(os.path.expanduser(os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION)))
+    profile = _selected_profile()
+    if not parser.has_section(profile):
+        return False
+    return parser.has_option(profile, "security_token_file")
+
+
 def _get_config_and_signer() -> Tuple[Dict[str, Any], Any]:
     """
     Load OCI config and build an appropriate signer.
 
     Preference order:
-    - If a security_token_file exists, use SecurityTokenSigner (session auth).
+    - If the selected profile declares a security_token_file, use SecurityTokenSigner
+      (session auth).
     - Otherwise, fall back to API key Signer from config.
     """
     domain = os.getenv("IDCS_DOMAIN")
@@ -508,39 +540,43 @@ def _get_config_and_signer() -> Tuple[Dict[str, Any], Any]:
     )
     config["additional_user_agent"] = _ADDITIONAL_UA
 
-    token_file = os.path.expanduser(config.get("security_token_file", "") or "")
-    try:
+    global _api_key_warning_emitted
+
+    if _profile_declares_session_token():
         private_key = oci.signer.load_private_key_from_file(config["key_file"])
-    except Exception as e:
-        logger.error(f"Failed loading private key: {e}")
-        raise
+        with open(os.path.expanduser(config["security_token_file"]), "r", encoding="utf-8") as f:
+            token = f.read()
+        signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
+        logger.info("Using SecurityTokenSigner from security_token_file.")
+        return config, signer
 
-    signer = None
-    if token_file and os.path.exists(token_file):
-        try:
-            with open(token_file, "r", encoding="utf-8") as f:
-                token = f.read()
-            signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
-            logger.info("Using SecurityTokenSigner from security_token_file.")
-        except Exception as e:
-            logger.warning(
-                f"Failed to build SecurityTokenSigner from token file, will try API key signer: {e}"
-            )
+    profile = _selected_profile()
+    missing = [field for field in _API_KEY_FIELDS if not config.get(field)]
+    if missing:
+        raise RuntimeError(
+            f"OCI profile [{profile}] cannot authenticate: it declares no "
+            f"security_token_file, and these API key fields are missing: "
+            f"{', '.join(missing)}. Either run 'oci session authenticate' to create a "
+            f"session-token profile, or add the missing fields. See {_SESSION_TOKEN_DOCS}"
+        )
 
-    if signer is None:
-        try:
-            signer = oci.signer.Signer(
-                tenancy=config["tenancy"],
-                user=config["user"],
-                fingerprint=config["fingerprint"],
-                private_key_file_location=config["key_file"],
-                pass_phrase=config.get("pass_phrase"),
-            )
-            logger.info("Using API key Signer.")
-        except Exception as e:
-            logger.error(f"Failed to build API key Signer: {e}")
-            raise
+    if not _api_key_warning_emitted:
+        _api_key_warning_emitted = True
+        logger.warning(
+            f"OCI profile [{profile}] authenticates with a long-lived API key. Session "
+            f"tokens expire automatically and limit the damage from a leaked credential; "
+            f"prefer 'oci session authenticate' where your tenancy supports it. "
+            f"See {_SESSION_TOKEN_DOCS}"
+        )
 
+    signer = oci.signer.Signer(
+        tenancy=config["tenancy"],
+        user=config["user"],
+        fingerprint=config["fingerprint"],
+        private_key_file_location=config["key_file"],
+        pass_phrase=config.get("pass_phrase"),
+    )
+    logger.info("Using API key Signer.")
     return config, signer
 
 

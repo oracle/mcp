@@ -4,6 +4,7 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
+import configparser
 import json
 import os
 import subprocess
@@ -28,6 +29,39 @@ initAuditLogger(logger)
 
 # Read and setup deny list
 denylist_manager = Denylist(logger)
+
+# configparser reserves "DEFAULT" as the section whose keys are inherited by every
+# other section. Naming a section that cannot appear in an OCI config disables that.
+_NO_INHERIT = "\x00oci-mcp-no-inherited-defaults"
+
+
+def _auth_args(profile: str) -> list[str]:
+    """Return the CLI --auth flag matching the profile's auth type.
+
+    Session-token profiles declare a security_token_file in their own section;
+    API-key profiles do not. Forcing security_token on an API-key profile makes
+    the CLI block on an interactive re-auth prompt that never completes under MCP.
+
+    oci.config.from_file() merges the [DEFAULT] section into every named profile, so
+    a raw "security_token_file" in config check is true for an API-key profile
+    whenever [DEFAULT] happens to be a session profile -- which would force the wrong
+    auth. Re-read the file with that inheritance disabled and inspect the profile's
+    OWN section.
+
+    If the config file is missing or the profile has no section, return [] so the CLI
+    applies its own default (honouring OCI_CLI_AUTH) rather than us guessing wrong.
+    """
+    parser = configparser.ConfigParser(default_section=_NO_INHERIT)
+    config_path = os.path.expanduser(
+        os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION)
+    )
+    if not parser.read(config_path):
+        return []
+    if not parser.has_section(profile):
+        return []
+    if parser.has_option(profile, "security_token_file"):
+        return ["--auth", "security_token"]
+    return ["--auth", "api_key"]
 
 # Initialize the MCP server
 mcp = FastMCP(
@@ -164,7 +198,7 @@ def run_oci_command(
 
     try:
         result = subprocess.run(
-            ["oci", "--profile", profile, "--auth", "security_token"] + shlex.split(command),
+            ["oci", "--profile", profile] + _auth_args(profile) + shlex.split(command),
             env=env_copy,
             capture_output=True,
             text=True,

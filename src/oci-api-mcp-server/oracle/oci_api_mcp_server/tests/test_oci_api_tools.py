@@ -143,8 +143,12 @@ class TestOCITools:
             }
 
     @pytest.mark.asyncio
+    @patch(
+        "oracle.oci_api_mcp_server.server._auth_args",
+        return_value=["--auth", "security_token"],
+    )
     @patch("oracle.oci_api_mcp_server.server.subprocess.run")
-    async def test_run_oci_command_preserves_quoted_arguments(self, mock_run):
+    async def test_run_oci_command_preserves_quoted_arguments(self, mock_run, _mock_auth):
         command = 'compute instance list --display-name "Shared Services"'
 
         mock_result = MagicMock()
@@ -181,6 +185,53 @@ class TestOCITools:
                 check=True,
                 shell=False,
             )
+
+    @pytest.mark.asyncio
+    @patch(
+        "oracle.oci_api_mcp_server.server._auth_args",
+        return_value=["--auth", "api_key"],
+    )
+    @patch("oracle.oci_api_mcp_server.server.subprocess.run")
+    async def test_run_oci_command_uses_api_key_auth_for_api_key_profile(
+        self, mock_run, _mock_auth
+    ):
+        command = "compute instance list"
+
+        mock_result = MagicMock()
+        mock_result.stdout = "{}"
+        mock_result.stderr = ""
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
+        async with Client(mcp) as client:
+            await client.call_tool("run_oci_command", {"command": command})
+
+            argv = mock_run.call_args[0][0]
+            assert argv[:6] == ["oci", "--profile", "DEFAULT", "--auth", "api_key", "compute"]
+
+    @pytest.mark.asyncio
+    @patch(
+        "oracle.oci_api_mcp_server.server._auth_args",
+        return_value=[],
+    )
+    @patch("oracle.oci_api_mcp_server.server.subprocess.run")
+    async def test_run_oci_command_omits_auth_flag_when_profile_unreadable(
+        self, mock_run, _mock_auth
+    ):
+        command = "compute instance list"
+
+        mock_result = MagicMock()
+        mock_result.stdout = "{}"
+        mock_result.stderr = ""
+        mock_result.returncode = 0
+        mock_run.return_value = mock_result
+
+        async with Client(mcp) as client:
+            await client.call_tool("run_oci_command", {"command": command})
+
+            argv = mock_run.call_args[0][0]
+            assert "--auth" not in argv
+            assert argv == ["oci", "--profile", "DEFAULT", "compute", "instance", "list"]
 
     @pytest.mark.asyncio
     @patch("oracle.oci_api_mcp_server.server.subprocess.run")
@@ -325,3 +376,62 @@ class TestServer:
 
         with pytest.raises(RuntimeError, match="stdio transport only"):
             server.main()
+
+
+SESSION_DEFAULT_CONFIG = """\
+[DEFAULT]
+user=ocid1.user.oc1..sess
+fingerprint=aa:bb
+tenancy=ocid1.tenancy.oc1..sess
+region=us-ashburn-1
+key_file={key}
+security_token_file={token}
+
+[APIKEY]
+user=ocid1.user.oc1..apikey
+fingerprint=cc:dd
+tenancy=ocid1.tenancy.oc1..apikey
+region=us-ashburn-1
+key_file={key}
+"""
+
+
+class TestProfileAuthSelection:
+    """Exercises the real _auth_args discriminator against a temp OCI config file."""
+
+    def _write_config(self, tmp_path):
+        key = tmp_path / "k.pem"
+        key.write_text("")
+        token = tmp_path / "token"
+        token.write_text("TOK")
+        cfg = tmp_path / "config"
+        cfg.write_text(SESSION_DEFAULT_CONFIG.format(key=key, token=token))
+        return cfg
+
+    def test_session_profile_selects_security_token(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(self._write_config(tmp_path)))
+        assert server._auth_args("DEFAULT") == ["--auth", "security_token"]
+
+    def test_api_key_profile_does_not_inherit_default_security_token_file(
+        self, tmp_path, monkeypatch
+    ):
+        # oci.config.from_file() merges [DEFAULT] into every profile, so the raw config
+        # dict claims APIKEY has a security_token_file. The profile itself does not, and
+        # forcing security_token would trigger an interactive re-auth that hangs under MCP.
+        cfg = self._write_config(tmp_path)
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(cfg))
+
+        import oci
+
+        merged = oci.config.from_file(file_location=str(cfg), profile_name="APIKEY")
+        assert "security_token_file" in merged  # inherited from [DEFAULT]
+
+        assert server._auth_args("APIKEY") == ["--auth", "api_key"]
+
+    def test_unknown_profile_omits_auth_flag(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(self._write_config(tmp_path)))
+        assert server._auth_args("NOSUCH") == []
+
+    def test_missing_config_file_omits_auth_flag(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(tmp_path / "does-not-exist"))
+        assert server._auth_args("DEFAULT") == []

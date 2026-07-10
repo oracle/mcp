@@ -41,7 +41,10 @@ class TestGetConfigAndSigner:
                 "security_token_file": "/no/token",
             },
         )
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.os.path.exists", lambda p: False)
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._profile_declares_session_token",
+            lambda: False,
+        )
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file",
             lambda p: "PK",
@@ -86,10 +89,10 @@ class TestGetConfigAndSigner:
             lambda **kwargs: dict(cfg),
         )
 
-        # patch exists to indicate token file present
+        # selected profile declares a session token
         monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.os.path.exists",
-            lambda p: p == cfg["security_token_file"],
+            "oracle.oci_cloud_mcp_server.server._profile_declares_session_token",
+            lambda: True,
         )
 
         # patch key loader
@@ -137,8 +140,11 @@ class TestGetConfigAndSigner:
             "oracle.oci_cloud_mcp_server.server.oci.config.from_file",
             lambda **kwargs: dict(cfg),
         )
-        # no token file
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.os.path.exists", lambda p: False)
+        # API-key profile: no session token declared
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._profile_declares_session_token",
+            lambda: False,
+        )
         # key loader ok
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file",
@@ -177,6 +183,10 @@ class TestGetConfigAndSigner:
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server.oci.config.from_file",
             lambda **kwargs: dict(cfg),
+        )
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._profile_declares_session_token",
+            lambda: True,
         )
 
         def boom(path):  # noqa: ARG001
@@ -308,7 +318,7 @@ class TestAlignParamsToSignature:
 
 
 class TestGetConfigAndSignerMoreBranches:
-    def test_token_signer_build_failure_falls_back_to_api_key(self, monkeypatch):
+    def test_session_token_signer_build_failure_is_propagated(self, monkeypatch):
         cfg = {
             "tenancy": "t",
             "user": "u",
@@ -316,14 +326,14 @@ class TestGetConfigAndSignerMoreBranches:
             "key_file": "/path/to/key.pem",
             "security_token_file": "/tmp/token",
         }
-        # config and file present
+        # config and session-token profile present
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server.oci.config.from_file",
             lambda **kwargs: dict(cfg),
         )
         monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.os.path.exists",
-            lambda p: p == cfg["security_token_file"],
+            "oracle.oci_cloud_mcp_server.server._profile_declares_session_token",
+            lambda: True,
         )
         # key loader ok and token readable
         monkeypatch.setattr(
@@ -332,37 +342,18 @@ class TestGetConfigAndSignerMoreBranches:
         )
         monkeypatch.setattr("builtins.open", lambda *a, **k: StringIO("token"), raising=False)
 
-        # SecurityTokenSigner init fails to trigger warning path, then API key used
+        # SecurityTokenSigner init fails; there is no silent fallback to API key.
         class BoomSTS:
             def __init__(self, token, private_key):  # noqa: ARG002
                 raise Exception("sts boom")
-
-        class FakeSigner:
-            def __init__(
-                self,
-                tenancy,
-                user,
-                fingerprint,
-                private_key_file_location,
-                pass_phrase=None,
-            ):  # noqa: ARG002
-                self.tenancy = tenancy
-                self.pk_file = private_key_file_location
 
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner",
             BoomSTS,
         )
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.Signer",
-            FakeSigner,
-        )
 
-        config, signer = _get_config_and_signer()
-        assert isinstance(signer, FakeSigner)
-        assert signer.tenancy == "t"
-        assert signer.pk_file == "/path/to/key.pem"
-        assert "additional_user_agent" in config
+        with pytest.raises(Exception, match="sts boom"):
+            _get_config_and_signer()
 
     def test_api_key_signer_raises_is_propagated(self, monkeypatch):
         cfg = {
@@ -376,8 +367,11 @@ class TestGetConfigAndSignerMoreBranches:
             "oracle.oci_cloud_mcp_server.server.oci.config.from_file",
             lambda **kwargs: dict(cfg),
         )
-        # token file not present
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.os.path.exists", lambda p: False)
+        # API-key profile: no session token declared
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._profile_declares_session_token",
+            lambda: False,
+        )
         # key loader ok
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file",

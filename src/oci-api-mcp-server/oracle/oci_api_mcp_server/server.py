@@ -6,6 +6,7 @@ https://oss.oracle.com/licenses/upl.
 
 import json
 import os
+import re
 import subprocess
 from logging import Logger
 import shlex
@@ -28,6 +29,30 @@ initAuditLogger(logger)
 
 # Read and setup deny list
 denylist_manager = Denylist(logger)
+
+_OCI_COMMAND_TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+_OCI_HELP_COMMAND_ERROR = "OCI help accepts command paths only without options or values"
+
+
+def _parse_oci_help_command(command: str) -> list[str]:
+    try:
+        command_tokens = shlex.split(command)
+    except ValueError as exc:
+        raise ValueError(_OCI_HELP_COMMAND_ERROR) from exc
+
+    if not command_tokens:
+        raise ValueError(_OCI_HELP_COMMAND_ERROR)
+    if command_tokens[0] == "oci":
+        raise ValueError("Do not include the 'oci' executable in the command path")
+    if any(_OCI_COMMAND_TOKEN.fullmatch(token) is None for token in command_tokens):
+        raise ValueError(_OCI_HELP_COMMAND_ERROR)
+
+    command_path = " ".join(command_tokens)
+    if denylist_manager.isCommandInDenyList(command_path):
+        raise ValueError("Command path is denied by denylist")
+
+    return command_tokens
+
 
 # Initialize the MCP server
 mcp = FastMCP(
@@ -71,6 +96,7 @@ def get_oci_command_help(command: str) -> str:
     IMPORTANT:
       - Only provide the command _after_ 'oci' — do not include the string
         'oci' in `command`.
+      - Provide command-path tokens only. Options and option values are not accepted.
       - Never use the information returned by this tool to instruct an end
         user directly. Use it only to determine which command to run
         yourself using run_oci_command.
@@ -106,12 +132,13 @@ def get_oci_command_help(command: str) -> str:
 
     """
     logger.info(f"get_oci_command_help called with command: {command}")
+    command_tokens = _parse_oci_help_command(command)
     env_copy = os.environ.copy()
     env_copy["OCI_SDK_APPEND_USER_AGENT"] = USER_AGENT
 
     try:
         result = subprocess.run(
-            ["oci"] + shlex.split(command) + ["--help"],
+            ["oci", *command_tokens, "--help"],
             env=env_copy,
             capture_output=True,
             text=True,

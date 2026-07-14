@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- Restricted `get_oci_command_help` to option-free OCI command paths and applied the destructive-command denylist before invoking the OCI CLI.
 - OCI command parsing now preserves quoted arguments when retrieving command help or running OCI CLI commands. ([#100](https://github.com/oracle/mcp/issues/100))
 
 ## 2.0.0

@@ -11,6 +11,7 @@ from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 import oracle.oci_api_mcp_server.server as server
 from oracle.oci_api_mcp_server import __project__
 from oracle.oci_api_mcp_server.denylist import Denylist
@@ -48,7 +49,7 @@ class TestOCITools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_api_mcp_server.server.subprocess.run")
-    async def test_get_oci_command_help_preserves_quoted_arguments(self, mock_run):
+    async def test_get_oci_command_help_accepts_hyphenated_command_path(self, mock_run):
         mock_result = MagicMock()
         mock_result.stdout = "Help output"
         mock_result.stderr = ""
@@ -58,7 +59,12 @@ class TestOCITools:
             result = (
                 await client.call_tool(
                     "get_oci_command_help",
-                    {"command": 'compute instance list --display-name "Shared Services"'},
+                    {
+                        "command": (
+                            "recovery protected-database-collection "
+                            "list-protected-databases"
+                        )
+                    },
                 )
             ).structured_content["result"]
 
@@ -66,11 +72,9 @@ class TestOCITools:
             mock_run.assert_called_once_with(
                 [
                     "oci",
-                    "compute",
-                    "instance",
-                    "list",
-                    "--display-name",
-                    "Shared Services",
+                    "recovery",
+                    "protected-database-collection",
+                    "list-protected-databases",
                     "--help",
                 ],
                 env=ANY,
@@ -79,6 +83,59 @@ class TestOCITools:
                 check=True,
                 shell=False,
             )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "compute instance terminate --opc-client-request-id",
+            'compute instance list --display-name "Shared Services"',
+        ],
+    )
+    @patch("oracle.oci_api_mcp_server.server.subprocess.run")
+    async def test_get_oci_command_help_rejects_options(self, mock_run, command):
+        mock_run.return_value.stdout = "Help output"
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="command paths only"):
+                await client.call_tool("get_oci_command_help", {"command": command})
+
+        mock_run.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("command", "error"),
+        [
+            ("", "command paths only"),
+            ("oci compute instance list", "Do not include the 'oci' executable"),
+            ("compute 'unterminated", "command paths only"),
+            ("compute instance/list", "command paths only"),
+        ],
+    )
+    @patch("oracle.oci_api_mcp_server.server.subprocess.run")
+    async def test_get_oci_command_help_rejects_invalid_command_paths(
+        self, mock_run, command, error
+    ):
+        mock_run.return_value.stdout = "Help output"
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match=error):
+                await client.call_tool("get_oci_command_help", {"command": command})
+
+        mock_run.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_api_mcp_server.server.subprocess.run")
+    async def test_get_oci_command_help_rejects_denylisted_command(self, mock_run):
+        mock_run.return_value.stdout = "Help output"
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="denied by denylist"):
+                await client.call_tool(
+                    "get_oci_command_help", {"command": "compute instance terminate"}
+                )
+
+        mock_run.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("oracle.oci_api_mcp_server.server.subprocess.run")

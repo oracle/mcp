@@ -30,9 +30,10 @@
   "scripts": {
     "start": "node --no-node-snapshot --experimental-strip-types src/server.ts",
     "test": "node --no-node-snapshot --experimental-strip-types --test test/*.test.ts",
+    "coverage": "c8 npm test",
     "check": "tsc --noEmit",
     "packcheck": "npm --cache \"${TMPDIR:-/tmp}/oci-javascript-mcp-server-npm-cache\" pack --dry-run --json > /dev/null",
-    "ci": "npm test && npm run check && npm run packcheck",
+    "ci": "npm run coverage && npm run check && npm run packcheck",
     "prepublishOnly": "npm run ci"
   },
   "dependencies": {
@@ -47,7 +48,23 @@
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
+    "c8": "^12.0.0",
     "typescript": "^5.9.3"
+  },
+  "c8": {
+    "all": true,
+    "include": [
+      "src/**/*.ts"
+    ],
+    "exclude": [
+      "src/sandbox-prelude.ts",
+      "src/types.ts"
+    ],
+    "check-coverage": true,
+    "lines": 90,
+    "reporter": [
+      "text"
+    ]
   },
   "engines": {
     "node": ">=26"

@@ -2,22 +2,23 @@
 
 `oci-javascript-mcp-server` lets an MCP client run agent-authored JavaScript that calls OCI through a trusted host bridge.
 
-Sandboxed JavaScript runs inside a V8 isolate with no OCI credentials, no inherited environment, no Node built-ins, no filesystem access, and no network API. OCI calls are made through a narrow host RPC binding to the trusted server process, which loads the Oracle `oci-sdk` package and host OCI config.
+Sandboxed JavaScript runs inside a fresh worker process with a V8 isolate, no OCI credentials, a scrubbed environment, no Node built-ins, no filesystem access, and no network API. OCI calls are made through a narrow host RPC binding to the trusted server process, which loads the Oracle `oci-sdk` package and host OCI config.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
   client["MCP client / model"]
-  server["oci-javascript-mcp-server"]
+  server["Trusted MCP server process"]
 
-  subgraph sandbox["Untrusted V8 isolate"]
+  subgraph sandbox["Untrusted sandbox worker process"]
+    isolate["Fresh V8 isolate"]
     js["Agent-authored JavaScript"]
     proxy["Injected oci proxy"]
     manifest["Reflection manifest"]
   end
 
-  subgraph host["Trusted host process"]
+  subgraph host["Trusted OCI broker"]
     rpc["Host RPC validator"]
     sdk["OCI SDK clients"]
     auth["OCI config / session auth"]
@@ -26,27 +27,29 @@ flowchart LR
   oci["OCI APIs"]
 
   client -->|"run_javascript(code)"| server
-  server -->|"fresh isolate + manifest"| js
+  server -->|"spawn worker + manifest"| isolate
+  isolate --> js
   js --> proxy
-  proxy -->|"invoke { service, client, operation, request }"| rpc
+  proxy -->|"IPC invoke { service, client, operation, request }"| rpc
   rpc -->|"validated call"| sdk
   auth --> sdk
   sdk -->|"signed HTTPS request"| oci
   oci --> sdk
   sdk -->|"sanitized JSON response"| rpc
   rpc --> proxy
-  js -->|"final expression result"| server
+  js -->|"final expression result or error"| server
   server --> client
 
   manifest -. "services, clients, operations only" .-> proxy
 ```
 
 Conceptually, the model writes ordinary JavaScript, but that JavaScript runs in
-a locked-down V8 isolate that cannot see files, environment variables, network
-APIs, credentials, or the real OCI SDK. The key breakthrough is the narrow RPC
-bridge: sandbox code can only send structured OCI operation requests to the
-trusted host process, and the host validates, signs, executes, sanitizes, and
-returns JSON results without ever handing credentials into the sandbox.
+a locked-down, credential-less worker process that cannot see files,
+environment variables, network APIs, credentials, or the real OCI SDK. The key
+breakthrough is the narrow RPC bridge: sandbox code can only send structured
+OCI operation requests to the trusted host process, and the host validates,
+signs, executes, sanitizes, and returns JSON results without ever handing
+credentials into the sandbox.
 
 ## Request Flow
 
@@ -54,6 +57,7 @@ returns JSON results without ever handing credentials into the sandbox.
 sequenceDiagram
   participant Client as MCP client
   participant Server as MCP server
+  participant Worker as Sandbox worker process
   participant Isolate as Fresh V8 isolate
   participant Proxy as Injected oci proxy
   participant Host as Host RPC validator
@@ -61,19 +65,24 @@ sequenceDiagram
   participant OCI as OCI APIs
 
   Client->>Server: run_javascript(code)
-  Server->>Isolate: create isolate and install prelude
-  Server->>Isolate: run code with timeout and limits
+  Server->>Worker: fork worker with scrubbed environment
+  Worker->>Isolate: create isolate and install prelude
+  Worker->>Isolate: run code with timeout and limits
   Isolate->>Proxy: call oci service/client operation
-  Proxy->>Host: send structured invoke request
+  Proxy->>Worker: structured invoke request
+  Worker->>Host: IPC invoke request
   Host->>Host: validate service, client, operation, request
   Host->>SDK: create client with host OCI auth
   SDK->>OCI: signed HTTPS request
   OCI-->>SDK: OCI response
   SDK-->>Host: SDK response object
-  Host-->>Proxy: sanitized JSON result
+  Host-->>Worker: sanitized JSON result
+  Worker-->>Proxy: resolve awaited OCI call
   Proxy-->>Isolate: resolve awaited OCI call
-  Isolate-->>Server: final expression result or error, logs
+  Isolate-->>Worker: final expression result or error, logs
+  Worker-->>Server: sandbox result
   Server-->>Client: MCP tool result
+  Worker--xWorker: exit
 ```
 
 ## Install
@@ -93,6 +102,20 @@ oci-javascript-mcp-server
 ```
 
 This implementation requires Node 26 or newer. The server implementation uses Node's built-in TypeScript stripping, and `isolated-vm` requires Node to run with `--no-node-snapshot`. Installing `isolated-vm` uses a native package install step; environments that require explicit npm script approval must allow that install script or provide the native build toolchain it needs.
+
+For development validation:
+
+```bash
+npm test         # unit and MCP stdio integration tests
+npm run coverage # subprocess-aware coverage with a 90% line threshold
+npm run check    # TypeScript validation
+npm run ci       # coverage, type checking, and package verification
+```
+
+Coverage includes the trusted server, sandbox parent, worker process, and V8
+isolate modules. The type-only declarations and the generated isolate prelude
+string are excluded from source-line instrumentation; the prelude's behavior is
+exercised through the sandbox integration tests.
 
 ## Invoke
 
@@ -159,6 +182,9 @@ structured `result` will be `null`.
 
 Uncaught JavaScript or OCI errors are returned as structured `error` values.
 `stdout` and `stderr` are reserved for logs written by the script.
+Structured results are limited to 1 MiB by default so a script cannot amplify
+memory use across the worker IPC boundary. Set
+`OCI_JAVASCRIPT_MAX_RESULT_BYTES` to a positive byte count to change this limit.
 
 Treat this like normal code execution: write and run straightforward JavaScript
 first. Use `discover_oci` only after an SDK shape error or when the service,
@@ -248,6 +274,15 @@ Fallback SDK introspection. Do not call this by default. Use it after a JavaScri
 
 ## Security Model
 
-The server process is trusted and owns OCI credentials. The sandboxed V8 isolate is untrusted and receives only `console` and the generated OCI binding. It cannot import Node modules and has no direct network or filesystem capability.
+The server process is trusted and owns OCI credentials. Each `run_javascript`
+call runs in a fresh sandbox worker process with a scrubbed environment. The
+worker owns the V8 isolate and receives only `console` and the generated OCI
+binding. Sandboxed code cannot import Node modules and has no direct network or
+filesystem capability.
 
-This is still a single-process sandbox. For production hardening against V8 or native-addon failures, run the server with an outer container or microVM boundary and a conservative network policy.
+This process split keeps untrusted JavaScript out of the trusted server process
+and away from its memory, loaded OCI SDK, and inherited environment. It is still
+not a hardware, separate-kernel, or filesystem boundary if V8 or a native addon
+is compromised. For stronger production isolation, run the sandbox worker behind
+an outer container, gVisor/Kata layer, or microVM boundary with a conservative
+network policy and minimal filesystem mounts.

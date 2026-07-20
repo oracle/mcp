@@ -79,3 +79,60 @@ test("fromJson rejects unknown tagged values", () => {
     /Unknown OCI wire type 'mystery'/
   );
 });
+
+test("toJson bounds depth and serializes diagnostic values", () => {
+  const root: Record<string, unknown> = {};
+  let cursor = root;
+  for (let index = 0; index < 82; index += 1) {
+    const next: Record<string, unknown> = {};
+    cursor.next = next;
+    cursor = next;
+  }
+
+  const error = new Error("boom");
+  const encoded = toJson({
+    deep: root,
+    error,
+    functionValue: function namedFunction() {},
+    symbolValue: Symbol("value"),
+    positiveInfinity: Number.POSITIVE_INFINITY,
+    negativeInfinity: Number.NEGATIVE_INFINITY
+  });
+
+  assert.match(JSON.stringify(encoded), /\[MaxDepth]/);
+  assert.deepEqual((encoded as Record<string, any>).error, {
+    name: "Error",
+    message: "boom",
+    stack: error.stack
+  });
+  assert.match(String((encoded as Record<string, any>).functionValue.value), /namedFunction/);
+  assert.equal((encoded as Record<string, any>).symbolValue.value, "Symbol(value)");
+  assert.deepEqual((encoded as Record<string, any>).positiveInfinity, {
+    __oci_wire_type: "float",
+    value: "inf"
+  });
+  assert.deepEqual((encoded as Record<string, any>).negativeInfinity, {
+    __oci_wire_type: "float",
+    value: "-inf"
+  });
+});
+
+test("fromJson decodes arrays, sets, representations, and floating-point tags", () => {
+  const decoded = fromJson({
+    array: [1, { nested: true }],
+    set: { __oci_wire_type: "set", items: ["a", "b"] },
+    representation: { __oci_wire_type: "repr", value: "display" },
+    nan: { __oci_wire_type: "float", value: "nan" },
+    positiveInfinity: { __oci_wire_type: "float", value: "inf" },
+    negativeInfinity: { __oci_wire_type: "float", value: "-inf" },
+    numericFloat: { __oci_wire_type: "float", value: 12.5 }
+  }) as Record<string, unknown>;
+
+  assert.deepEqual(decoded.array, [1, { nested: true }]);
+  assert.deepEqual(Array.from(decoded.set as Set<string>), ["a", "b"]);
+  assert.equal(decoded.representation, "display");
+  assert.equal(Number.isNaN(decoded.nan), true);
+  assert.equal(decoded.positiveInfinity, Number.POSITIVE_INFINITY);
+  assert.equal(decoded.negativeInfinity, Number.NEGATIVE_INFINITY);
+  assert.equal(decoded.numericFloat, 12.5);
+});

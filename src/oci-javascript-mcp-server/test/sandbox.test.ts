@@ -204,6 +204,21 @@ test("sandbox returns a trailing expression as structured result", async () => {
   assert.equal(result.result, 42);
 });
 
+test("sandbox rejects oversized structured results before parent IPC", async () => {
+  const result = await runJavaScript(
+    `"x".repeat(1024 * 1024);`,
+    {
+      timeoutSeconds: 10,
+      hostRpc: async () => null
+    }
+  );
+
+  assert.equal(result.result, null);
+  assert.match(result.error?.message ?? "", /exceeding result limit 1048576 bytes/);
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.timedOut, false);
+});
+
 test("sandbox infers a trailing expression when helper functions use return", async () => {
   const result = await runJavaScript(
     `
@@ -907,4 +922,40 @@ test("sandbox rejects non-finite timeout values", async () => {
     }),
     /timeout must be a finite number/
   );
+});
+
+test("sandbox rejects oversized source before spawning a worker", async () => {
+  await assert.rejects(
+    runJavaScript("x".repeat(1024 * 1024 + 1), {
+      hostRpc: async () => null
+    }),
+    /JavaScript code exceeds 1048576 bytes/
+  );
+});
+
+test("sandbox caps the total number of OCI calls", async () => {
+  let hostCalls = 0;
+  const result = await runJavaScript(
+    `
+    let message = "";
+    for (let index = 0; index < 101; index += 1) {
+      try {
+        await oci.core.ComputeClient.listInstances({ compartmentId: "ocid1.compartment" });
+      } catch (error) {
+        message = error.message;
+      }
+    }
+    message;
+    `,
+    {
+      timeoutSeconds: 10,
+      hostRpc: async () => {
+        hostCalls += 1;
+        return { items: [] };
+      }
+    }
+  );
+
+  assert.equal(hostCalls, 100);
+  assert.match(String(result.result), /OCI call limit exceeded \(100\)/);
 });

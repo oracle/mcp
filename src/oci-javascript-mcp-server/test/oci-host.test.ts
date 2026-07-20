@@ -648,3 +648,180 @@ test("host builds reflection manifest from installed SDK shape", () => {
     }
   });
 });
+
+test("host RPC rejects unsupported envelopes", async () => {
+  const hostRpc = createOciSdkHostRpc(() => ({ sdk: {}, common: {} }));
+  await assert.rejects(
+    hostRpc({
+      binding: "other" as never,
+      namespace: "oci",
+      operation: "discover",
+      payload: {}
+    }),
+    /Unsupported host RPC binding other\/oci/
+  );
+  await assert.rejects(
+    hostRpc({
+      binding: "oracle",
+      namespace: "oci",
+      operation: "other" as never,
+      payload: {}
+    }),
+    /Unsupported OCI host RPC operation other/
+  );
+});
+
+test("host RPC reports unknown invoke targets", async () => {
+  const hostRpc = createOciSdkHostRpc(() => ({
+    sdk: { core: {} },
+    common: {}
+  }));
+  await assert.rejects(
+    hostRpc({
+      binding: "oracle",
+      namespace: "oci",
+      operation: "invoke",
+      payload: {
+        service: "missing",
+        client: { name: "ComputeClient" },
+        operation: "listInstances",
+        request: {}
+      }
+    }),
+    /Unknown OCI SDK service 'missing'/
+  );
+  await assert.rejects(
+    hostRpc({
+      binding: "oracle",
+      namespace: "oci",
+      operation: "invoke",
+      payload: {
+        service: "core",
+        client: { name: "MissingClient" },
+        operation: "listInstances",
+        request: {}
+      }
+    }),
+    /Unknown OCI SDK client 'core.MissingClient'/
+  );
+});
+
+test("host RPC reports unknown discovery targets and client operations", async () => {
+  class ComputeClient {
+    listInstances() {}
+  }
+  const hostRpc = createOciSdkHostRpc(() => ({
+    sdk: { core: { ComputeClient } },
+    common: {}
+  }));
+
+  await assert.rejects(
+    hostRpc({
+      binding: "oracle",
+      namespace: "oci",
+      operation: "discover",
+      payload: { service: "missing" }
+    }),
+    /Unknown OCI SDK service 'missing'/
+  );
+  await assert.rejects(
+    hostRpc({
+      binding: "oracle",
+      namespace: "oci",
+      operation: "discover",
+      payload: { service: "core", client: "MissingClient" }
+    }),
+    /Unknown OCI SDK client 'core.MissingClient'/
+  );
+  assert.deepEqual(
+    await hostRpc({
+      binding: "oracle",
+      namespace: "oci",
+      operation: "discover",
+      payload: { service: "core", client: "ComputeClient" }
+    }),
+    {
+      type: "client",
+      service: "core",
+      client: "ComputeClient",
+      operations: ["listInstances"]
+    }
+  );
+  await assert.rejects(
+    hostRpc({
+      binding: "oracle",
+      namespace: "oci",
+      operation: "discover",
+      payload: {
+        service: "core",
+        client: "ComputeClient",
+        operation: "missingOperation"
+      }
+    }),
+    /Unknown OCI SDK operation 'core.ComputeClient.missingOperation'/
+  );
+});
+
+test("host RPC rejects oversized OCI responses", async () => {
+  class ComputeClient {
+    async listInstances() {
+      return { items: ["x".repeat(1024 * 1024)] };
+    }
+
+    close() {}
+  }
+  const hostRpc = createOciSdkHostRpc(() => ({
+    sdk: {
+      ConfigFileAuthenticationDetailsProvider: class Provider {},
+      core: { ComputeClient }
+    },
+    common: {}
+  }));
+
+  await assert.rejects(
+    hostRpc({
+      binding: "oracle",
+      namespace: "oci",
+      operation: "invoke",
+      payload: {
+        service: "core",
+        client: { name: "ComputeClient" },
+        operation: "listInstances",
+        request: {}
+      }
+    }),
+    /exceeding response limit 1048576 bytes.*smaller limit/
+  );
+});
+
+test("host RPC handles an SDK operation disappearing from a client instance", async () => {
+  class ComputeClient {
+    constructor() {
+      (this as any).listInstances = undefined;
+    }
+
+    listInstances() {}
+  }
+  const hostRpc = createOciSdkHostRpc(() => ({
+    sdk: {
+      ConfigFileAuthenticationDetailsProvider: class Provider {},
+      core: { ComputeClient }
+    },
+    common: {}
+  }));
+
+  await assert.rejects(
+    hostRpc({
+      binding: "oracle",
+      namespace: "oci",
+      operation: "invoke",
+      payload: {
+        service: "core",
+        client: { name: "ComputeClient" },
+        operation: "listInstances",
+        request: {}
+      }
+    }),
+    /Unknown OCI SDK operation 'core.ComputeClient.listInstances'/
+  );
+});

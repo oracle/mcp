@@ -1,0 +1,75 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "oracle.oci-vision-mcp-server"
+version = "0.1.0"
+description = "Stdio MCP server for OCI Vision and Object Storage image workflows."
+readme = "README.md"
+requires-python = ">=3.13"
+license = "UPL-1.0"
+license-files = ["LICENSE.txt"]
+authors = [
+    {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
+]
+dependencies = [
+    "fastmcp==3.4.2",
+    "mcp>=1.27.0",
+    "oci==2.179.0",
+    "pydantic==2.12.3",
+]
+
+classifiers = [
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.scripts]
+"oracle.oci-vision-mcp-server" = "oracle.oci_vision_mcp_server.server:main"
+
+[project.urls]
+Changelog = "https://github.com/oracle/mcp/blob/main/src/oci-vision-mcp-server/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["oracle"]
+exclude = ["/oracle/**/tests/**"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.2.0",
+    "pytest-cov>=7.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["oracle/oci_vision_mcp_server/tests"]
+pythonpath = ["."]
+markers = [
+    "live: opt-in tests that call real OCI services",
+]
+
+[tool.coverage.run]
+omit = [
+    "**/__init__.py",
+    "**/__main__.py",
+    "**/config/version.py",
+    "**/io/image_validation.py",
+    "**/io/object_storage.py",
+    "**/tests/*",
+    "dist/*",
+    ".venv/*",
+]
+
+[tool.coverage.report]
+omit = [
+    "**/__init__.py",
+    "**/__main__.py",
+    "**/config/version.py",
+    "**/io/image_validation.py",
+    "**/io/object_storage.py",
+    "**/tests/*",
+]
+precision = 2
+fail_under = 90

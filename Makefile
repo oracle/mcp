@@ -1,4 +1,7 @@
 SOURCE_FOLDER := src
+COMMON_PROJECT := common
+COMMON_PROJECT_PATH := $(SOURCE_FOLDER)/$(COMMON_PROJECT)
+COMMON_PACKAGE := oracle-mcp-common
 # These directories will be excluded from common cmds like build, install, test etc
 EXCLUDED_PROJECTS := dbtools-mcp-server mysql-mcp-server oci-pricing-mcp-server oracle-db-doc-mcp-server oracle-db-mcp-java-toolkit
 EXCLUDED_PROJECT_PATHS = $(addprefix $(SOURCE_FOLDER)/, $(EXCLUDED_PROJECTS))
@@ -7,23 +10,49 @@ project ?= *
 # These are the directories that will be built
 DIRS := $(wildcard $(SOURCE_FOLDER)/$(project))
 SUBDIRS := $(filter-out $(EXCLUDED_PROJECT_PATHS), $(DIRS))
+COMMON_DIRS := $(filter $(COMMON_PROJECT_PATH),$(SUBDIRS))
+SERVER_DIRS := $(filter-out $(COMMON_PROJECT_PATH),$(SUBDIRS))
+# Releasing a server also releases the common dependency first, even when a
+# single server is selected with `project=`.
+RELEASE_DIRS := $(if $(SERVER_DIRS),$(COMMON_PROJECT_PATH) $(SERVER_DIRS),$(COMMON_DIRS))
+COMMON_VERSION := $(shell python3 -c "import tomllib; print(tomllib.load(open('$(COMMON_PROJECT_PATH)/pyproject.toml', 'rb'))['project']['version'])")
 
-.PHONY: test format
+PYPI_PUBLISH_URL := https://upload.pypi.org/legacy/
+PYPI_CHECK_URL := https://pypi.org/simple/
+TEST_PYPI_PUBLISH_URL := https://test.pypi.org/legacy/
+TEST_PYPI_CHECK_URL := https://test.pypi.org/simple/
+PUBLISH_URL ?= $(PYPI_PUBLISH_URL)
+PUBLISH_CHECK_URL ?= $(PYPI_CHECK_URL)
+VERIFY_INDEX ?= $(PYPI_CHECK_URL)
+
+.PHONY: build build-common build-servers publish publish-common publish-servers \
+	test-publish test-publish-common test-publish-servers verify-published \
+	release test-release wait-for-common _build _publish test format
 
 build:
-	@set -e -o pipefail; \
-	for dir in $(SUBDIRS); do \
+	@$(MAKE) _build BUILD_DIRS="$(COMMON_DIRS)"
+	@$(MAKE) build-servers
+
+build-common:
+	@$(MAKE) _build BUILD_DIRS="$(COMMON_PROJECT_PATH)"
+
+build-servers:
+	@$(MAKE) _build BUILD_DIRS="$(SERVER_DIRS)"
+
+_build:
+	@set -eu; \
+	for dir in $(BUILD_DIRS); do \
 		if [ -f $$dir/pyproject.toml ]; then \
 			echo "Building $$dir"; \
-			name=$$(python -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['name'])"); \
-			version=$$(python -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['version'])"); \
+			name=$$(python3 -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['name'])"); \
+			version=$$(python3 -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['version'])"); \
 			if [ -d $$dir/oracle/*_mcp_server ]; then \
 				init_py_file=$$(echo $$dir/oracle/*_mcp_server/__init__.py); \
 				printf '"""\nCopyright (c) 2025, Oracle and/or its affiliates.\nLicensed under the Universal Permissive License v1.0 as shown at\nhttps://oss.oracle.com/licenses/upl.\n"""\n\n' > $$init_py_file; \
 				echo "__project__ = \"$$name\"" >> $$init_py_file; \
 				echo "__version__ = \"$$version\"" >> $$init_py_file; \
 			fi; \
-			cd $$dir && uv build && cd ../..; \
+			cd $$dir && uv build --clear && cd ../..; \
 		fi \
 	done
 
@@ -79,21 +108,71 @@ combine-coverage:
 	uv run coverage html
 	uv run coverage report --fail-under=90
 
+publish:
+	@$(MAKE) publish-common PUBLISH_URL="$(PYPI_PUBLISH_URL)" PUBLISH_CHECK_URL="$(PYPI_CHECK_URL)"
+	@$(MAKE) wait-for-common VERIFY_INDEX="$(PYPI_CHECK_URL)"
+	@$(MAKE) publish-servers PUBLISH_URL="$(PYPI_PUBLISH_URL)" PUBLISH_CHECK_URL="$(PYPI_CHECK_URL)"
+
+publish-common:
+	@$(MAKE) build-common
+	@$(MAKE) _publish PUBLISH_DIRS="$(COMMON_PROJECT_PATH)"
+
+publish-servers:
+	@$(MAKE) build-servers
+	@$(MAKE) _publish PUBLISH_DIRS="$(SERVER_DIRS)"
+
 test-publish:
-	@set -e -o pipefail; \
-	for dir in $(SUBDIRS); do \
-		cd $$dir && \
-		uv publish --publish-url https://test.pypi.org/legacy/ --check-url=https://test.pypi.org/simple/ && \
-		cd ../..; \
+	@$(MAKE) test-publish-common
+	@$(MAKE) wait-for-common VERIFY_INDEX="$(TEST_PYPI_CHECK_URL)"
+	@$(MAKE) test-publish-servers
+
+test-publish-common:
+	@$(MAKE) publish-common PUBLISH_URL="$(TEST_PYPI_PUBLISH_URL)" PUBLISH_CHECK_URL="$(TEST_PYPI_CHECK_URL)"
+
+test-publish-servers:
+	@$(MAKE) publish-servers PUBLISH_URL="$(TEST_PYPI_PUBLISH_URL)" PUBLISH_CHECK_URL="$(TEST_PYPI_CHECK_URL)"
+
+_publish:
+	@set -eu; \
+	for dir in $(PUBLISH_DIRS); do \
+		if [ -f $$dir/pyproject.toml ]; then \
+			echo "Publishing $$dir"; \
+			cd $$dir && uv publish --publish-url "$(PUBLISH_URL)" --check-url="$(PUBLISH_CHECK_URL)" && cd ../..; \
+		fi; \
 	done
 
-publish:
-	@set -e -o pipefail; \
-	for dir in $(SUBDIRS); do \
-		cd $$dir && \
-		uv publish --check-url=https://pypi.org/simple/ && \
-		cd ../..; \
+wait-for-common:
+	@set -eu; \
+	index_url="$$(printf '%s' "$(VERIFY_INDEX)" | sed 's:/*$$::')"; \
+	for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do \
+		if curl --fail --silent --show-error "$$index_url/$(COMMON_PACKAGE)/" | grep --quiet "oracle_mcp_common-$(COMMON_VERSION)"; then \
+			echo "$(COMMON_PACKAGE)==$(COMMON_VERSION) is available from $$index_url"; \
+			exit 0; \
+		fi; \
+		echo "Waiting for $(COMMON_PACKAGE)==$(COMMON_VERSION) on $$index_url (attempt $$attempt/12)"; \
+		sleep 5; \
+	done; \
+	echo "$(COMMON_PACKAGE)==$(COMMON_VERSION) was not available from $$index_url after 60 seconds" >&2; \
+	exit 1
+
+verify-published:
+	@set -eu; \
+	for dir in $(RELEASE_DIRS); do \
+		if [ -f $$dir/pyproject.toml ]; then \
+			name=$$(python3 -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['name'])"); \
+			version=$$(python3 -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['version'])"); \
+			echo "Verifying $$name==$$version from $(VERIFY_INDEX)"; \
+			uv run --isolated --no-project --python 3.13 --refresh-package "$$name" --index "$(VERIFY_INDEX)" --with "$$name==$$version" python3 -c "from importlib.metadata import version; assert version('$$name') == '$$version'"; \
+		fi; \
 	done
+
+release:
+	@$(MAKE) publish
+	@$(MAKE) verify-published VERIFY_INDEX="$(PYPI_CHECK_URL)"
+
+test-release:
+	@$(MAKE) test-publish
+	@$(MAKE) verify-published VERIFY_INDEX="$(TEST_PYPI_CHECK_URL)"
 
 format:
 	uv tool run ruff format

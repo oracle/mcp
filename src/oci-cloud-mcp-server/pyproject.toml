@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-cloud-mcp-server"
-version = "2.1.0"
+version = "2.2.0"
 description = "OCI Python SDK MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -11,7 +11,8 @@ authors = [
 ]
 dependencies = [
     "fastmcp==3.4.2",
-    "oci==2.179.0"
+    "oci==2.179.0",
+    "oracle-mcp-common>=0.1.0,<0.2.0",
 ]
 
 classifiers = [
@@ -33,6 +34,14 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["oracle"]
 exclude = ["/oracle/**/tests/**"]
+
+[tool.uv.sources]
+oracle-mcp-common = { workspace = true }
+
+[tool.uv.workspace]
+members = [
+    "../common"
+]
 
 [dependency-groups]
 dev = [

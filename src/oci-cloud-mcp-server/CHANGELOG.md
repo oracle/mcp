@@ -1,10 +1,16 @@
 # Changelog
 
-## [Unreleased]
+## 2.2.0
 
 ### Changed
 
 - Updated dependency locks for FastMCP 3.4.2, OCI SDK 2.179.0, and refreshed authentication-related transitive packages.
+- Moved stdio OCI SDK credential and signer resolution, plus HTTP OCI IAM/IDCS provider and request-token exchange setup, to `oracle-mcp-common`. Stdio supports explicit API-key, security-token, Identity Domains UPST, instance/resource principal, delegation, and OKE workload-identity modes.
+
+### Fixed
+
+- Prevented a named API-key profile from inheriting `security_token_file` from `[DEFAULT]` and signing as a different principal.
+- Failed safely when a directly selected session token is unreadable or invalid instead of silently falling back to API-key authentication.
 
 ## 2.1.0
 

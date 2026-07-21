@@ -254,16 +254,43 @@ Note:
 
 ## Authentication and configuration
 
-This server uses the same configuration as the OCI CLI:
-- Loads configuration from the default `~/.oci/config` (or the profile specified by `OCI_CONFIG_PROFILE`)
-- Adds an additional user-agent suffix for MCP telemetry
-- Prefers a Security Token Signer when `security_token_file` is available; otherwise falls back to API key signer
+For `stdio`, the server uses `oracle-mcp-common` to resolve outbound OCI SDK
+authentication. Set `OCI_MCP_AUTH_TYPE` to one of:
+
+- `auto` (default): use a security token only when the selected profile directly declares `security_token_file`; otherwise use that profile's API key
+- `api_key` or `security_token`: explicitly select an OCI CLI-compatible profile mode
+- `identity_domain_upst`: exchange a file-backed Identity Domains JWT for an OCI UPST
+- `instance_principal`, `resource_principal`, `instance_principal_delegation`, `resource_principal_delegation`, or `oke_workload_identity`
+
+Profile-backed modes load the default `~/.oci/config`, or the file and profile
+selected by `OCI_CONFIG_FILE` and `OCI_CONFIG_PROFILE`. `OCI_REGION` overrides
+the target SDK client region without changing the selected identity. A directly
+selected session-token profile that is unreadable or invalid fails with an
+actionable error; it does not silently fall back to API-key authentication.
+
+Principal, delegation, OKE, and Identity Domains modes use the canonical
+`OCI_MCP_*` variables documented by `oracle-mcp-common`. Every mode receives the
+server's derived additional user-agent suffix for MCP telemetry.
+
+| Authentication mode | Required configuration beyond `OCI_MCP_AUTH_TYPE` |
+| --- | --- |
+| `instance_principal`, `resource_principal` | None; the OCI SDK discovers the runtime principal |
+| `instance_principal_delegation`, `resource_principal_delegation` | `OCI_MCP_DELEGATION_TOKEN_FILE` |
+| `oke_workload_identity` | None by default; `OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN_PATH` optionally overrides the mounted token |
+| `identity_domain_upst` | `OCI_MCP_IDENTITY_DOMAIN_URL`, `OCI_MCP_UPST_JWT_FILE`, `OCI_MCP_IDENTITY_DOMAIN_CLIENT_ID`, `OCI_MCP_IDENTITY_DOMAIN_CLIENT_SECRET_FILE`, and `OCI_REGION` |
+
+HTTP transport authentication remains separate from `stdio`. At startup, the
+server uses `oracle-mcp-common` to configure the OCI IAM/IDCS provider from
+`IDCS_*`, `ORACLE_MCP_BASE_URL`, and the required scopes. For each authenticated
+HTTP request, it passes the FastMCP access token to the shared HTTP policy to
+create a caller-specific token-exchange signer using `OCI_REGION`. Signers and
+OCI SDK clients are not reused across HTTP callers.
 
 Ensure your configured principal has the necessary permissions (least privilege recommended).
 
 ## Security and privacy
 
-All actions are performed with the permissions of the configured OCI profile. Follow best practices:
+All actions are performed with the permissions of the selected OCI principal or authenticated HTTP user. Follow best practices:
 - Use least-privilege IAM policies
 - Manage credentials securely
 - Avoid logging sensitive data

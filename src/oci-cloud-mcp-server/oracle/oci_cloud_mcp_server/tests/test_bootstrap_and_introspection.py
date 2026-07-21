@@ -1,193 +1,209 @@
-from io import StringIO
 from types import SimpleNamespace
 
 import pytest
+from oracle_mcp_common import AuthContext, AuthType
+from oracle.oci_cloud_mcp_server import server as cloud_server
 from oracle.oci_cloud_mcp_server.server import (
+    _ADDITIONAL_UA,
     _align_params_to_signature,
     _extract_expected_kwargs_from_source,
     _get_config_and_signer,
     _import_client,
+    main,
 )
 
 
 class TestGetConfigAndSigner:
-    def test_http_requires_region(self, monkeypatch):
+    @staticmethod
+    def _set_http_environment(monkeypatch):
         monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
         monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
         monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
         monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+
+    def test_http_propagates_common_request_context_error(self, monkeypatch):
+        self._set_http_environment(monkeypatch)
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server.get_access_token",
             lambda: SimpleNamespace(token="token"),
         )
+        calls = []
 
-        with pytest.raises(RuntimeError, match="OCI_REGION"):
+        def context_for(token):
+            calls.append(token)
+            raise ValueError("HTTP requests require an explicit region or OCI_REGION.")
+
+        monkeypatch.setattr(cloud_server, "_http_auth", SimpleNamespace(context_for=context_for))
+
+        with pytest.raises(ValueError, match="OCI_REGION"):
+            _get_config_and_signer()
+        assert calls == ["token"]
+
+    def test_http_passes_missing_access_token_to_common_policy(self, monkeypatch):
+        self._set_http_environment(monkeypatch)
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.get_access_token", lambda: None)
+        calls = []
+
+        def context_for(token):
+            calls.append(token)
+            raise ValueError("HTTP requests require an authenticated IDCS access token.")
+
+        monkeypatch.setattr(cloud_server, "_http_auth", SimpleNamespace(context_for=context_for))
+
+        with pytest.raises(ValueError, match="authenticated IDCS access token"):
+            _get_config_and_signer()
+        assert calls == [None]
+
+    def test_http_requires_initialized_policy(self, monkeypatch):
+        self._set_http_environment(monkeypatch)
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.get_access_token",
+            lambda: SimpleNamespace(token="token"),
+        )
+        monkeypatch.setattr(cloud_server, "_http_auth", None)
+
+        with pytest.raises(RuntimeError, match="policy has not been initialized"):
             _get_config_and_signer()
 
-    def test_respects_config_file_and_profile_env(self, monkeypatch):
-        called = {}
-
-        monkeypatch.setenv("OCI_CONFIG_FILE", "~/custom/config")
-        monkeypatch.setenv("OCI_CONFIG_PROFILE", "TEAM")
-
+    def test_http_request_context_retains_exact_user_agent_and_is_caller_specific(self, monkeypatch):
+        self._set_http_environment(monkeypatch)
+        tokens = iter(("first-token", "second-token"))
         monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.config.from_file",
-            lambda **kwargs: called.update(kwargs) or {
-                "tenancy": "t",
-                "user": "u",
-                "fingerprint": "f",
-                "key_file": "/path/to/key.pem",
-                "security_token_file": "/no/token",
-            },
+            "oracle.oci_cloud_mcp_server.server.get_access_token",
+            lambda: SimpleNamespace(token=next(tokens)),
         )
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.os.path.exists", lambda p: False)
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file",
-            lambda p: "PK",
-        )
-
-        class FakeSigner:
-            def __init__(
-                self,
-                tenancy,
-                user,
-                fingerprint,
-                private_key_file_location,
-                pass_phrase=None,
-            ):  # noqa: ARG002
-                self.tenancy = tenancy
-                self.user = user
-                self.fingerprint = fingerprint
-                self.private_key_file_location = private_key_file_location
-
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.oci.signer.Signer", FakeSigner)
-
-        config, signer = _get_config_and_signer()
-
-        assert called["file_location"] == "~/custom/config"
-        assert called["profile_name"] == "TEAM"
-        assert isinstance(signer, FakeSigner)
-        assert config["additional_user_agent"]
-
-    def test_prefers_security_token_signer_when_token_file_present(self, monkeypatch):
-        # fake config with token file
-        cfg = {
-            "tenancy": "t",
-            "user": "u",
-            "fingerprint": "f",
-            "key_file": "/path/to/key.pem",
-            "security_token_file": "/tmp/token",
+        first_signer = object()
+        second_signer = object()
+        contexts = {
+            "first-token": SimpleNamespace(config={"region": "us-chicago-1"}, signer=first_signer),
+            "second-token": SimpleNamespace(config={"region": "us-chicago-1"}, signer=second_signer),
         }
+        calls = []
 
-        # patch oci.config.from_file
+        def context_for(token):
+            calls.append(token)
+            return contexts[token]
+
+        monkeypatch.setattr(cloud_server, "_http_auth", SimpleNamespace(context_for=context_for))
         monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.config.from_file",
-            lambda **kwargs: dict(cfg),
+            "oracle.oci_cloud_mcp_server.server.build_auth_context",
+            lambda: pytest.fail("HTTP request authentication must not use the common provider"),
         )
 
-        # patch exists to indicate token file present
+        first_config, first_resolved_signer = _get_config_and_signer()
+        second_config, second_resolved_signer = _get_config_and_signer()
+
+        assert first_config == {
+            "region": "us-chicago-1",
+            "additional_user_agent": _ADDITIONAL_UA,
+        }
+        assert second_config == first_config
+        assert first_resolved_signer is first_signer
+        assert second_resolved_signer is second_signer
+        assert calls == ["first-token", "second-token"]
+
+    @pytest.mark.parametrize(
+        "auth_type",
+        [
+            AuthType.API_KEY,
+            AuthType.SECURITY_TOKEN,
+            AuthType.IDENTITY_DOMAIN_UPST,
+            AuthType.INSTANCE_PRINCIPAL,
+            AuthType.RESOURCE_PRINCIPAL,
+            AuthType.INSTANCE_PRINCIPAL_DELEGATION,
+            AuthType.RESOURCE_PRINCIPAL_DELEGATION,
+            AuthType.OKE_WORKLOAD_IDENTITY,
+        ],
+    )
+    def test_common_auth_context_retains_exact_user_agent(self, monkeypatch, auth_type):
+        signer = object()
+        context_config = {"region": "us-chicago-1", "auth_type_marker": auth_type.value}
+        auth_context = AuthContext(
+            auth_type=auth_type,
+            config=context_config,
+            signer=signer,
+            tenancy_id=None,
+            region="us-chicago-1",
+            profile_name=None,
+        )
         monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.os.path.exists",
-            lambda p: p == cfg["security_token_file"],
+            "oracle.oci_cloud_mcp_server.server.build_auth_context",
+            lambda: auth_context,
         )
 
-        # patch key loader
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file",
-            lambda p: "PK",
+        config, resolved_signer = _get_config_and_signer()
+
+        assert config == {**context_config, "additional_user_agent": _ADDITIONAL_UA}
+        assert resolved_signer is signer
+        assert "additional_user_agent" not in auth_context.config
+
+    def test_inherited_default_session_token_does_not_replace_named_api_key_profile(
+        self, monkeypatch, tmp_path
+    ):
+        key_file = tmp_path / "team-key.pem"
+        key_file.write_text("unused test key", encoding="utf-8")
+        config_file = tmp_path / "config"
+        config_file.write_text(
+            f"""[DEFAULT]
+security_token_file=/wrong-principal/token
+
+[TEAM]
+tenancy=team-tenancy
+user=team-user
+fingerprint=team-fingerprint
+key_file={key_file}
+region=us-chicago-1
+""",
+            encoding="utf-8",
         )
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(config_file))
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "TEAM")
+        api_signer = object()
+        api_calls = []
 
-        # patch open to return token content
-        def fake_open(path, mode="r", *args, **kwargs):  # noqa: ARG001
-            assert path == cfg["security_token_file"]
-            return StringIO("token-contents")
+        def fake_api_signer(**kwargs):
+            api_calls.append(kwargs)
+            return api_signer
 
-        monkeypatch.setattr("builtins.open", fake_open)
-
-        # capture creation of security token signer
-        class FakeSTS:
-            def __init__(self, token, private_key):
-                self.token = token
-                self.private_key = private_key
-
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.oci.signer.Signer", fake_api_signer)
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner",
-            FakeSTS,
+            lambda *args, **kwargs: pytest.fail("inherited session token selected the wrong principal"),
         )
 
         config, signer = _get_config_and_signer()
-        assert isinstance(signer, FakeSTS)
-        assert signer.token == "token-contents"
-        assert signer.private_key == "PK"
-        # ensure additional user agent was set
-        assert isinstance(config, dict)
-        assert "additional_user_agent" in config
 
-    def test_falls_back_to_api_key_signer_when_no_token(self, monkeypatch):
-        cfg = {
-            "tenancy": "t",
-            "user": "u",
-            "fingerprint": "f",
-            "key_file": "/path/to/key.pem",
-            "security_token_file": "/no/token",
-        }
+        assert signer is api_signer
+        assert api_calls[0]["tenancy"] == "team-tenancy"
+        assert config["additional_user_agent"] == _ADDITIONAL_UA
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.config.from_file",
-            lambda **kwargs: dict(cfg),
+    def test_direct_session_token_failure_does_not_fall_back_to_api_key(
+        self, monkeypatch, tmp_path
+    ):
+        missing_token = tmp_path / "missing-token"
+        key_file = tmp_path / "session-key.pem"
+        key_file.write_text("unused test key", encoding="utf-8")
+        config_file = tmp_path / "config"
+        config_file.write_text(
+            f"""[SESSION]
+tenancy=session-tenancy
+user=session-user
+fingerprint=session-fingerprint
+key_file={key_file}
+security_token_file={missing_token}
+region=us-chicago-1
+""",
+            encoding="utf-8",
         )
-        # no token file
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.os.path.exists", lambda p: False)
-        # key loader ok
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(config_file))
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "SESSION")
         monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file",
-            lambda p: "PK",
-        )
-
-        class FakeSigner:
-            def __init__(
-                self,
-                tenancy,
-                user,
-                fingerprint,
-                private_key_file_location,
-                pass_phrase=None,
-            ):  # noqa: ARG002
-                self.tenancy = tenancy
-                self.user = user
-                self.fingerprint = fingerprint
-                self.private_key_file_location = private_key_file_location
-
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.oci.signer.Signer", FakeSigner)
-
-        config, signer = _get_config_and_signer()
-        assert isinstance(signer, FakeSigner)
-        assert signer.tenancy == "t"
-        assert signer.private_key_file_location == "/path/to/key.pem"
-        assert "additional_user_agent" in config
-
-    def test_private_key_load_failure_raises(self, monkeypatch):
-        cfg = {
-            "tenancy": "t",
-            "user": "u",
-            "fingerprint": "f",
-            "key_file": "/path/to/key.pem",
-        }
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.config.from_file",
-            lambda **kwargs: dict(cfg),
+            "oracle.oci_cloud_mcp_server.server.oci.signer.Signer",
+            lambda **kwargs: pytest.fail("failed session authentication fell back to API key"),
         )
 
-        def boom(path):  # noqa: ARG001
-            raise Exception("bad key")
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file",
-            boom,
-        )
-
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError, match="Unable to read security_token_file"):
             _get_config_and_signer()
 
 
@@ -210,17 +226,22 @@ class TestAlignParamsToSignatureIntrospectionFailure:
 
 class TestMainHttpRun:
     def test_main_http_env_calls_run_with_transport_host_port(self, monkeypatch):
-        from fastmcp import FastMCP as _FastMCP
-
         called = {"args": None, "kwargs": None}
+        provider = object()
+        http_auth = SimpleNamespace(provider=provider)
+        scopes = []
 
-        def fake_run(self, *args, **kwargs):
+        def fake_run(*args, **kwargs):
             called["args"] = args
             called["kwargs"] = kwargs
 
-        # patch FastMCP.run
-        monkeypatch.setattr(_FastMCP, "run", fake_run, raising=False)
-        # set env for HTTP
+        def build_http_auth(required_scopes):
+            scopes.append(required_scopes)
+            return http_auth
+
+        monkeypatch.setattr(cloud_server.mcp, "run", fake_run)
+        monkeypatch.setattr(cloud_server, "build_idcs_http_auth", build_http_auth)
+        monkeypatch.setattr(cloud_server, "_http_auth", None)
         monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
         monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
         monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
@@ -228,17 +249,11 @@ class TestMainHttpRun:
         monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("ORACLE_MCP_PORT", "8081")
         monkeypatch.setenv("ORACLE_MCP_BASE_URL", "http://127.0.0.1:8081")
-        monkeypatch.setattr(
-            "fastmcp.server.auth.providers.oci.OCIProvider", lambda *args, **kwargs: object()
-        )
 
-        # ensure module __main__ executes with our patched run
-        import runpy
-        import sys as _sys
+        main()
 
-        monkeypatch.delitem(_sys.modules, "oracle.oci_cloud_mcp_server.server", raising=False)
-
-        runpy.run_module("oracle.oci_cloud_mcp_server.server", run_name="__main__", alter_sys=True)
+        assert scopes == [["openid", "profile", "email", "oci_mcp.cloud.invoke"]]
+        assert cloud_server.mcp.auth is provider
         assert called["kwargs"] == {
             "transport": "http",
             "host": "127.0.0.1",
@@ -305,89 +320,3 @@ class TestAlignParamsToSignature:
         params = {"vcn_details": {"x": 1}}
         out = _align_params_to_signature(create_vcn, "create_vcn", params)
         assert out == params
-
-
-class TestGetConfigAndSignerMoreBranches:
-    def test_token_signer_build_failure_falls_back_to_api_key(self, monkeypatch):
-        cfg = {
-            "tenancy": "t",
-            "user": "u",
-            "fingerprint": "f",
-            "key_file": "/path/to/key.pem",
-            "security_token_file": "/tmp/token",
-        }
-        # config and file present
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.config.from_file",
-            lambda **kwargs: dict(cfg),
-        )
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.os.path.exists",
-            lambda p: p == cfg["security_token_file"],
-        )
-        # key loader ok and token readable
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file",
-            lambda p: "PK",
-        )
-        monkeypatch.setattr("builtins.open", lambda *a, **k: StringIO("token"), raising=False)
-
-        # SecurityTokenSigner init fails to trigger warning path, then API key used
-        class BoomSTS:
-            def __init__(self, token, private_key):  # noqa: ARG002
-                raise Exception("sts boom")
-
-        class FakeSigner:
-            def __init__(
-                self,
-                tenancy,
-                user,
-                fingerprint,
-                private_key_file_location,
-                pass_phrase=None,
-            ):  # noqa: ARG002
-                self.tenancy = tenancy
-                self.pk_file = private_key_file_location
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner",
-            BoomSTS,
-        )
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.Signer",
-            FakeSigner,
-        )
-
-        config, signer = _get_config_and_signer()
-        assert isinstance(signer, FakeSigner)
-        assert signer.tenancy == "t"
-        assert signer.pk_file == "/path/to/key.pem"
-        assert "additional_user_agent" in config
-
-    def test_api_key_signer_raises_is_propagated(self, monkeypatch):
-        cfg = {
-            "tenancy": "t",
-            "user": "u",
-            "fingerprint": "f",
-            "key_file": "/path/to/key.pem",
-            "security_token_file": "/no/token",
-        }
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.config.from_file",
-            lambda **kwargs: dict(cfg),
-        )
-        # token file not present
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.os.path.exists", lambda p: False)
-        # key loader ok
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file",
-            lambda p: "PK",
-        )
-
-        # API key signer ctor fails
-        def boom_signer(**kwargs):  # noqa: ARG001
-            raise Exception("signer ctor boom")
-
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.oci.signer.Signer", boom_signer)
-        with pytest.raises(Exception):
-            _get_config_and_signer()

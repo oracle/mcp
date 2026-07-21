@@ -127,27 +127,158 @@ class TestImportClientHappyPath:
 
 
 class TestPaginatorHeadersWithGet:
-    def test_paginator_headers_with_get_yields_request_id(self, monkeypatch):
+    def test_paginator_headers_with_get_yields_request_id(self):
         class Resp:
             def __init__(self, data):
                 self.data = data
                 self.headers = {"opc-request-id": "req-123"}
 
-        def fake_pager(method, **kwargs):  # noqa: ARG001
-            return Resp([1, 2, 3])
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results",
-            fake_pager,
-        )
-
         def list_things():
-            return Resp([9])
+            return Resp([1, 2, 3])
 
         data, opc, has_more = _call_with_pagination_if_applicable(list_things, {}, "list_things")
         assert data == [1, 2, 3]
         assert opc == "req-123"
         assert has_more is False
+
+
+class TestUnboundedPaginationLimits:
+    @pytest.mark.parametrize("limit", [0, -1])
+    def test_unbounded_pagination_preserves_non_positive_limit(self, limit):
+        captured = []
+
+        class Response:
+            data = []
+            headers = {}
+
+        def list_things(limit=None):
+            captured.append(limit)
+            return Response()
+
+        data, _, has_more = _call_with_pagination_if_applicable(
+            list_things,
+            {"limit": limit},
+            "list_things",
+        )
+
+        assert captured == [limit]
+        assert data == []
+        assert has_more is False
+
+
+class TestLoggingSearchPagination:
+    @staticmethod
+    def _patch_log_search_client(monkeypatch, captured, *, has_second_page=True):
+        class SearchResponse:
+            def __init__(self, results):
+                self.results = results
+
+        class Response:
+            def __init__(self, results, request_id, next_page=None):
+                self.data = SearchResponse(results)
+                self.headers = {"opc-request-id": request_id}
+                self.next_page = next_page
+
+            @property
+            def has_next_page(self):
+                return self.next_page is not None
+
+        class LogSearchClient:
+            def __init__(self, config, signer):  # noqa: ARG002
+                pass
+
+            def search_logs(self, search_logs_details, limit=None, page=None):  # noqa: ARG002
+                captured.append({"limit": limit, "page": page})
+                if page is None:
+                    next_page = "page-2" if has_second_page else None
+                    return Response([{"id": "result-1"}, {"id": "result-2"}], "req-1", next_page)
+                return Response([{"id": "result-3"}, {"id": "result-4"}], "req-2")
+
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.import_module",
+            lambda name: SimpleNamespace(LogSearchClient=LogSearchClient),
+        )
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
+            lambda: ({}, object()),
+        )
+
+    @pytest.mark.asyncio
+    async def test_search_logs_returns_one_page_of_results(self, monkeypatch):
+        captured = []
+        self._patch_log_search_client(monkeypatch, captured, has_second_page=False)
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "invoke_oci_api",
+                    {
+                        "client_fqn": "oci.loggingsearch.LogSearchClient",
+                        "operation": "search_logs",
+                        "params": {"search_logs_details": {"search_query": "search \"example\""}},
+                        "result_mode": "full",
+                    },
+                )
+            ).data
+
+        assert captured == [{"limit": None, "page": None}]
+        assert result["opc_request_id"] == "req-1"
+        assert result["data"] == [{"id": "result-1"}, {"id": "result-2"}]
+        assert result["result_meta"]["total_items"] == 2
+
+    @pytest.mark.asyncio
+    async def test_search_logs_aggregates_results_across_pages(self, monkeypatch):
+        captured = []
+        self._patch_log_search_client(monkeypatch, captured)
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "invoke_oci_api",
+                    {
+                        "client_fqn": "oci.loggingsearch.LogSearchClient",
+                        "operation": "search_logs",
+                        "params": {"search_logs_details": {"search_query": "search \"example\""}},
+                        "result_mode": "full",
+                    },
+                )
+            ).data
+
+        assert captured == [{"limit": None, "page": None}, {"limit": None, "page": "page-2"}]
+        assert result["opc_request_id"] == "req-2"
+        assert result["data"] == [
+            {"id": "result-1"},
+            {"id": "result-2"},
+            {"id": "result-3"},
+            {"id": "result-4"},
+        ]
+        assert result["result_meta"]["pagination_used"] is True
+        assert result["result_meta"]["total_items"] == 4
+
+    @pytest.mark.asyncio
+    async def test_search_logs_respects_max_results(self, monkeypatch):
+        captured = []
+        self._patch_log_search_client(monkeypatch, captured)
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "invoke_oci_api",
+                    {
+                        "client_fqn": "oci.loggingsearch.LogSearchClient",
+                        "operation": "search_logs",
+                        "params": {"search_logs_details": {"search_query": "search \"example\""}},
+                        "max_results": 3,
+                        "result_mode": "full",
+                    },
+                )
+            ).data
+
+        assert captured == [{"limit": None, "page": None}, {"limit": None, "page": "page-2"}]
+        assert result["opc_request_id"] == "req-2"
+        assert result["data"] == [{"id": "result-1"}, {"id": "result-2"}, {"id": "result-3"}]
+        assert result["result_meta"]["returned_items"] == 3
+        assert result["result_meta"]["truncated"] is True
 
 
 class TestCallWithPaginationTypeErrorFallback:

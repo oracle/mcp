@@ -978,27 +978,19 @@ class TestFromDictSuccess:
         assert inst._data == {"a": 2}
 
 class TestPaginationListPath:
-    def test_list_operation_uses_paginator_direct(self, monkeypatch):
-        # exercise list_* branch in _call_with_pagination_if_applicable directly
+    def test_list_operation_aggregates_directly(self):
+        # Exercise the unbounded list_* pagination branch directly.
         class Resp:
             def __init__(self, data):
                 self.data = data
                 self.headers = {}
-
-        def fake_pager(method, **kwargs):  # noqa: ARG001
-            return Resp([{"n": 1}, {"n": 2}])
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results",
-            fake_pager,
-        )
 
         from oracle.oci_cloud_mcp_server.server import (
             _call_with_pagination_if_applicable,
         )
 
         def list_things(compartment_id=None):  # noqa: ARG001
-            return Resp([{"n": 9}])
+            return Resp([{"n": 1}, {"n": 2}])
 
         data, opc, has_more = _call_with_pagination_if_applicable(
             list_things, {"compartment_id": "ocid1"}, "list_things"
@@ -1021,9 +1013,9 @@ class TestListOpcRequestIdPropagation:
                 pass
 
             def list_things(self, compartment_id):  # noqa: ARG002
-                return FakeResponse([{"x": 1}])
+                return FakeResponse([{"a": 1}, {"a": 2}])
 
-        # return our fake client and a paginator result with headers
+        # Return a fake client whose response carries the request ID.
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server.import_module",
             lambda name: SimpleNamespace(FakeClient=FakeClient),
@@ -1032,11 +1024,6 @@ class TestListOpcRequestIdPropagation:
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
             lambda: ({}, object()),
         )
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results",
-            lambda method, **kwargs: FakeResponse([{"a": 1}, {"a": 2}]),
-        )
-
         async with Client(mcp) as client:
             res = (
                 await client.call_tool(

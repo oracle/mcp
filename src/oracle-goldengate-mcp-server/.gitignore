@@ -9,11 +9,11 @@ __pycache__/
 
 logs/
 oracle-goldengate-mcp-server.env
+oracle-goldengate-mcp-server-bigdata.env
+oracle-goldengate-mcp-server-oracle.env
 
 # Local launcher scripts
-run_goldengate_mcp_server_linux.sh
-run_goldengate_mcp_server_macos.sh
-run_goldengate_mcp_server_windows.bat
+run_goldengate_mcp_server_*
 
 # Keep dependency lockfile for reproducible installs
 !uv.lock

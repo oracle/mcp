@@ -1,4 +1,5 @@
 import inspect
+import sys
 from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import MagicMock, create_autospec, mock_open, patch
@@ -47,6 +48,181 @@ class TestGetDatabaseClient:
         assert isinstance(kwargs["circuit_breaker_strategy"], oci.circuit_breaker.CircuitBreakerStrategy)
         assert callable(kwargs["circuit_breaker_callback"])
         assert result is mock_client.return_value
+
+
+def test_fetch_tokens_v212_uses_explicit_timeout_and_returns_tokens(monkeypatch):
+    private_key = MagicMock()
+    private_key.sign.return_value = b"signature"
+    response = MagicMock(status_code=200)
+    response.json.return_value = {
+        "resourcePrincipalToken": "rpt",
+        "servicePrincipalSessionToken": "spst",
+    }
+    get = MagicMock(return_value=response)
+    monkeypatch.setattr(server.requests, "get", get)
+
+    assert server.fetch_tokens_v212(
+        "https://database.example.com", "resource", "tenancy", private_key, "context"
+    ) == ("rpt", "spst")
+
+    assert get.call_args.kwargs["timeout"] == server.RPST_HTTP_TIMEOUT
+    assert get.call_args.kwargs["headers"]["security-context"] == "context"
+
+
+def test_fetch_tokens_v212_retries_with_query_and_timeout(monkeypatch):
+    private_key = MagicMock()
+    private_key.sign.return_value = b"signature"
+    first_response = MagicMock(status_code=401)
+    second_response = MagicMock(status_code=200)
+    second_response.json.return_value = {
+        "resourcePrincipalToken": "rpt",
+        "servicePrincipalSessionToken": "spst",
+    }
+    session = MagicMock()
+    session.send.return_value = second_response
+    monkeypatch.setattr(server.requests, "get", MagicMock(return_value=first_response))
+    monkeypatch.setattr(server.requests, "Session", MagicMock(return_value=session))
+
+    assert server.fetch_tokens_v212(
+        "https://database.example.com", "resource", "tenancy", private_key, "context"
+    ) == ("rpt", "spst")
+
+    prepared_request = session.send.call_args.args[0]
+    assert "securityContext=context" in prepared_request.path_url
+    assert session.send.call_args.kwargs["timeout"] == server.RPST_HTTP_TIMEOUT
+
+
+def test_fetch_tokens_v212_reports_timeouts(monkeypatch):
+    private_key = MagicMock()
+    private_key.sign.return_value = b"signature"
+    monkeypatch.setattr(
+        server.requests,
+        "get",
+        MagicMock(side_effect=server.requests.exceptions.Timeout),
+    )
+
+    with pytest.raises(RuntimeError, match="Timed out fetching resource principal tokens"):
+        server.fetch_tokens_v212(
+            "https://database.example.com", "resource", "tenancy", private_key, "context"
+        )
+
+
+def test_fetch_rpst_from_auth_uses_timeout_and_returns_signer_key(monkeypatch):
+    private_key = MagicMock()
+    private_key.sign.return_value = b"signature"
+    session_key = MagicMock()
+    session_key.public_key.return_value.public_bytes.return_value = b"public-key"
+    response = MagicMock(status_code=200)
+    response.json.return_value = {"token": "rpst"}
+    post = MagicMock(return_value=response)
+    monkeypatch.setattr(server.rsa, "generate_private_key", MagicMock(return_value=session_key))
+    monkeypatch.setattr(server.requests, "post", post)
+
+    assert server.fetch_rpst_from_auth(
+        "https://auth.example.com", "tenancy", "resource", private_key, "rpt", "spst"
+    ) == ("rpst", session_key)
+
+    assert post.call_args.kwargs["timeout"] == server.RPST_HTTP_TIMEOUT
+    assert b'"resourcePrincipalToken":"rpt"' in post.call_args.kwargs["data"]
+
+
+def test_fetch_rpst_from_auth_reports_timeouts(monkeypatch):
+    private_key = MagicMock()
+    private_key.sign.return_value = b"signature"
+    session_key = MagicMock()
+    session_key.public_key.return_value.public_bytes.return_value = b"public-key"
+    monkeypatch.setattr(server.rsa, "generate_private_key", MagicMock(return_value=session_key))
+    monkeypatch.setattr(
+        server.requests,
+        "post",
+        MagicMock(side_effect=server.requests.exceptions.Timeout),
+    )
+
+    with pytest.raises(RuntimeError, match="Timed out exchanging resource principal session token"):
+        server.fetch_rpst_from_auth(
+            "https://auth.example.com", "tenancy", "resource", private_key, "rpt", "spst"
+        )
+
+
+def test_initialize_rpst_auth_uses_arguments_before_environment(monkeypatch):
+    monkeypatch.setattr(server, "_get_region_from_imds", MagicMock(return_value="us-phoenix-1"))
+    monkeypatch.setattr(server, "load_private_key", MagicMock(return_value="private-key"))
+    monkeypatch.setattr(server, "build_security_context", MagicMock(return_value="context"))
+    monkeypatch.setattr(server, "fetch_tokens_v212", MagicMock(return_value=("rpt", "spst")))
+    monkeypatch.setattr(server, "fetch_rpst_from_auth", MagicMock(return_value=("rpst", "session-key")))
+    signer = MagicMock()
+    monkeypatch.setattr(server.oci.auth.signers, "SecurityTokenSigner", signer)
+    monkeypatch.setattr(server, "RPST_SIGNER", None)
+
+    server.initialize_rpst_auth_from_env(
+        database_endpoint="https://database.override.example.com",
+        tenancy_ocid="argument-tenancy",
+        private_key_path="/argument/key.pem",
+        resource_ocid="argument-resource",
+        rci="Y29udGV4dA==",
+        t0="2025-01-01T00:00:00Z",
+    )
+
+    server.fetch_tokens_v212.assert_called_once_with(
+        "https://database.override.example.com",
+        "argument-resource",
+        "argument-tenancy",
+        "private-key",
+        "context",
+    )
+    signer.assert_called_once_with("rpst", "session-key")
+
+
+def test_initialize_rpst_auth_rejects_missing_values(monkeypatch, capsys):
+    for name in ("TENANCY_OCID", "PRIVATE_KEY_PATH", "RESOURCE_OCID", "RCI", "T0"):
+        monkeypatch.delenv(name, raising=False)
+
+    with pytest.raises(SystemExit) as error:
+        server.initialize_rpst_auth_from_env()
+
+    assert error.value.code == 1
+    assert "TENANCY_OCID" in capsys.readouterr().err
+
+
+def test_get_database_client_supports_resource_and_instance_principals(monkeypatch):
+    database_client = MagicMock()
+    monkeypatch.setattr(server.oci.database, "DatabaseClient", database_client)
+    monkeypatch.setattr(server, "AUTH_METHOD", "resource_principal")
+    monkeypatch.setattr(server, "RPST_SIGNER", "rpst-signer")
+    monkeypatch.setattr(server, "DATABASE_ENDPOINT", "https://database.example.com")
+
+    server.get_database_client()
+    assert database_client.call_args.kwargs["service_endpoint"] == "https://database.example.com"
+    assert database_client.call_args.kwargs["signer"] == "rpst-signer"
+    assert "additional_user_agent" in database_client.call_args.kwargs["config"]
+
+    instance_signer = MagicMock(return_value="instance-signer")
+    monkeypatch.setattr(server, "AUTH_METHOD", "instance_principal")
+    monkeypatch.setattr(server.oci.auth.signers, "InstancePrincipalsSecurityTokenSigner", instance_signer)
+    server.get_database_client(region="us-ashburn-1")
+
+    instance_signer.assert_called_once_with()
+    assert database_client.call_args.args[0]["region"] == "us-ashburn-1"
+    assert database_client.call_args.kwargs["signer"] == "instance-signer"
+
+
+def test_main_prefers_cli_auth_method_and_initializes_rpst(monkeypatch):
+    initialize = MagicMock()
+    run = MagicMock()
+    monkeypatch.setattr(server, "initialize_rpst_auth_from_env", initialize)
+    monkeypatch.setattr(server.mcp, "run", run)
+    monkeypatch.setenv("AUTH_METHOD", "token")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["server", "--auth-method", "resource_principal", "--tenancy-ocid", "cli-tenancy"],
+    )
+
+    server.main()
+
+    assert server.AUTH_METHOD == "resource_principal"
+    assert initialize.call_args.kwargs["tenancy_ocid"] == "cli-tenancy"
+    run.assert_called_once_with()
 
 
 def test_oci_base_model_from_oci(monkeypatch):

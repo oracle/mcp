@@ -7,6 +7,7 @@
 
 package com.oracle.database.mcptoolkit.web;
 
+import com.oracle.database.mcptoolkit.oauth.AuthContext;
 import com.oracle.database.mcptoolkit.oauth.OAuth2Configuration;
 import com.oracle.database.mcptoolkit.oauth.OAuth2TokenValidator;
 import jakarta.servlet.Filter;
@@ -65,14 +66,21 @@ public class AuthorizationFilter implements Filter {
       }
 
       final String token = authHeader.substring("Bearer ".length()).trim();
-      if (!VALIDATOR.isTokenValid(token)) {
+      OAuth2TokenValidator.ValidationResult validationResult = VALIDATOR.validateToken(token);
+      if (!validationResult.valid()) {
         handleError(httpResponse, httpRequest);
         return;
       }
+
+      AuthContext.set(new AuthContext.AuthenticationInfo(validationResult.scopes()));
     }
 
     // token is valid
-    chain.doFilter(request, response);
+    try {
+      chain.doFilter(request, response);
+    } finally {
+      AuthContext.clear();
+    }
   }
 
   /**

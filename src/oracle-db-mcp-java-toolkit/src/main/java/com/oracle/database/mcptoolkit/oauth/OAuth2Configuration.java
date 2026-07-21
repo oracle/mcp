@@ -32,6 +32,8 @@ public class OAuth2Configuration {
   private final String clientId;
   /** The OAuth2 client secret. */
   private final String clientSecret;
+  /** Dot-separated introspection response path that contains OAuth scopes. */
+  private final String scopeClaimPath;
 
   /** Flag indicating whether authentication is enabled. */
   private final boolean isAuthenticationEnabled;
@@ -50,6 +52,7 @@ public class OAuth2Configuration {
     introspectionEndpoint = LoadedConstants.INTROSPECTION_ENDPOINT;
     clientId = LoadedConstants.CLIENT_ID;
     clientSecret = LoadedConstants.CLIENT_SECRET;
+    scopeClaimPath = LoadedConstants.OAUTH_SCOPE_CLAIM_PATH;
     isOAuth2Configured = authServer != null && introspectionEndpoint != null && clientId != null && clientSecret != null;
 
     if (!isAuthenticationEnabled)
@@ -137,6 +140,15 @@ public class OAuth2Configuration {
   }
 
   /**
+   * Returns the dot-separated claim path used to extract OAuth scopes from token introspection.
+   *
+   * @return scope claim path
+   */
+  public String getScopeClaimPath() {
+    return scopeClaimPath;
+  }
+
+  /**
    * Checks if authentication is enabled.
    *
    * @return true if authentication is enabled, false otherwise
@@ -154,4 +166,3 @@ public class OAuth2Configuration {
     return isOAuth2Configured;
   }
 }
-

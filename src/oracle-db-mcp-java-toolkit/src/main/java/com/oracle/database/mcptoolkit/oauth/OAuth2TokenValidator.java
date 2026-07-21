@@ -8,6 +8,7 @@
 package com.oracle.database.mcptoolkit.oauth;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
@@ -17,6 +18,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.util.Base64;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -50,12 +53,17 @@ public class OAuth2TokenValidator {
    *         though exceptions are logged and handled internally by returning false
    */
   public boolean isTokenValid(final String accessToken) {
+    return validateToken(accessToken).valid();
+  }
+
+  public ValidationResult validateToken(final String accessToken) {
     if (!OAUTH_CONFIG.isOAuth2Configured())
-      return TokenGenerator.getInstance().verifyToken(accessToken);
+      return new ValidationResult(TokenGenerator.getInstance().verifyToken(accessToken), Set.of());
 
     boolean isTokenValid = false;
+    Set<String> scopes = Set.of();
     if (accessToken == null || accessToken.isBlank())
-      return false;
+      return new ValidationResult(false, scopes);
 
     final var clientCredentials = "%s:%s".formatted(OAUTH_CONFIG.getClientId(), OAUTH_CONFIG.getClientSecret());
     final var encodedClientCredentials = Base64.getEncoder()
@@ -78,7 +86,11 @@ public class OAuth2TokenValidator {
         final var mapper = new ObjectMapper();
         final var jsonNode = mapper.readTree(response.body());
 
-        isTokenValid = jsonNode.get("active").asBoolean();
+        JsonNode active = jsonNode.get("active");
+        isTokenValid = active != null && active.asBoolean();
+        if (isTokenValid) {
+          scopes = extractScopes(jsonNode, OAUTH_CONFIG.getScopeClaimPath());
+        }
       }
     } catch (IOException | InterruptedException e) {
       LOG.log(Level.SEVERE, e.getMessage(), e);
@@ -88,7 +100,51 @@ public class OAuth2TokenValidator {
           .interrupt();
     }
 
-    return isTokenValid;
+    return new ValidationResult(isTokenValid, scopes);
   }
+
+  static Set<String> extractScopes(JsonNode introspectionResponse, String claimPath) {
+    if (claimPath == null || claimPath.isBlank()) {
+      claimPath = "scope";
+    }
+
+    JsonNode scopeNode = introspectionResponse;
+    for (String segment : claimPath.split("\\.")) {
+      if (segment == null || segment.isBlank()) {
+        continue;
+      }
+      scopeNode = scopeNode == null ? null : scopeNode.get(segment);
+    }
+
+    if (scopeNode == null || scopeNode.isMissingNode() || scopeNode.isNull()) {
+      LOG.warning("OAuth token introspection response does not contain a scope claim at '"
+          + claimPath + "'. Configure -Doauth.scopeClaimPath=<claim.path> if your authorization server uses a different claim.");
+      return Set.of();
+    }
+
+    Set<String> scopes = new LinkedHashSet<>();
+    if (scopeNode.isTextual()) {
+      for (String scope : scopeNode.asText().split("\\s+")) {
+        if (!scope.isBlank()) {
+          scopes.add(scope);
+        }
+      }
+      return scopes;
+    }
+
+    if (scopeNode.isArray()) {
+      for (JsonNode item : scopeNode) {
+        if (item != null && item.isTextual() && !item.asText().isBlank()) {
+          scopes.add(item.asText());
+        }
+      }
+      return scopes;
+    }
+
+    LOG.warning("OAuth scope claim at '" + claimPath + "' must be a space-delimited string or an array. Configure -Doauth.scopeClaimPath=<claim.path> if needed.");
+    return Set.of();
+  }
+
+  public record ValidationResult(boolean valid, Set<String> scopes) {}
 
 }

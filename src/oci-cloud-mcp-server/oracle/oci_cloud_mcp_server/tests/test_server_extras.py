@@ -5,7 +5,7 @@ Licensed under the UPL v1.0 https://oss.oracle.com/licenses/upl
 """
 
 from types import SimpleNamespace
-from unittest.mock import mock_open, patch
+from unittest.mock import patch
 
 import oci
 import pytest
@@ -24,65 +24,6 @@ from oracle.oci_cloud_mcp_server.server import (
     main,
     mcp,
 )
-
-
-class TestGetConfigAndSigner:
-    def test_uses_security_token_signer_when_token_exists(self):
-        cfg = {
-            "tenancy": "t",
-            "user": "u",
-            "fingerprint": "f",
-            "key_file": "/path/to/key.pem",
-            "security_token_file": "/path/to/token",
-        }
-
-        with (
-            patch("oracle.oci_cloud_mcp_server.server.oci.config.from_file") as m_from,
-            patch("oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file") as m_loadkey,
-            patch("oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner") as m_sts,
-            patch("oracle.oci_cloud_mcp_server.server.oci.signer.Signer") as m_signer,
-            patch("oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=True),
-            patch("builtins.open", mock_open(read_data="TOKEN123")),
-        ):
-            m_from.return_value = dict(cfg)  # function mutates to add UA
-            m_loadkey.return_value = object()
-            sentinel_signer = object()
-            m_sts.return_value = sentinel_signer
-
-            out_cfg, signer = _get_config_and_signer()
-
-            assert out_cfg["additional_user_agent"] == _ADDITIONAL_UA
-            assert signer is sentinel_signer
-            # should not fall back to API key signer when token path exists
-            m_signer.assert_not_called()
-
-    def test_falls_back_to_api_key_signer_when_no_token(self):
-        cfg = {
-            "tenancy": "t",
-            "user": "u",
-            "fingerprint": "f",
-            "key_file": "/path/to/key.pem",
-            "security_token_file": "/path/to/token",
-        }
-
-        with (
-            patch("oracle.oci_cloud_mcp_server.server.oci.config.from_file") as m_from,
-            patch("oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file") as m_loadkey,
-            patch("oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner") as m_sts,
-            patch("oracle.oci_cloud_mcp_server.server.oci.signer.Signer") as m_signer,
-            patch("oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=False),
-        ):
-            m_from.return_value = dict(cfg)
-            m_loadkey.return_value = object()
-            sentinel_signer = object()
-            m_signer.return_value = sentinel_signer
-
-            out_cfg, signer = _get_config_and_signer()
-
-            assert out_cfg["additional_user_agent"] == _ADDITIONAL_UA
-            assert signer is sentinel_signer
-            # no token path - STS should not be used
-            m_sts.assert_not_called()
 
 
 class TestImportClientAndModels:
@@ -299,6 +240,8 @@ class TestModelCoercionAdvanced:
 class TestMainEntrypoint:
     def test_main_runs_http_with_env(self, monkeypatch):
         called = {}
+        provider = object()
+        http_auth = SimpleNamespace(provider=provider)
 
         def fake_run(*args, **kwargs):
             called["args"] = args
@@ -311,20 +254,18 @@ class TestMainEntrypoint:
         monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
         monkeypatch.setenv("IDCS_AUDIENCE", "mcp-audience")
         monkeypatch.setenv("ORACLE_MCP_BASE_URL", "http://127.0.0.1:9999")
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server._http_auth", None)
 
         with (
-            patch("oracle.oci_cloud_mcp_server.server.OCIProvider", return_value=object()) as mock_provider,
+            patch(
+                "oracle.oci_cloud_mcp_server.server.build_idcs_http_auth",
+                return_value=http_auth,
+            ) as build_http_auth,
             patch("oracle.oci_cloud_mcp_server.server.mcp.run", side_effect=fake_run),
         ):
             main()
-        mock_provider.assert_called_once_with(
-            config_url="https://idcs.example.com/.well-known/openid-configuration",
-            client_id="client-id",
-            client_secret="client-secret",
-            audience="mcp-audience",
-            required_scopes=["openid", "profile", "email", "oci_mcp.cloud.invoke"],
-            base_url="http://127.0.0.1:9999",
-        )
+        build_http_auth.assert_called_once_with(["openid", "profile", "email", "oci_mcp.cloud.invoke"])
+        assert mcp.auth is provider
 
         assert called["kwargs"] == {
             "transport": "http",
@@ -342,19 +283,42 @@ class TestMainEntrypoint:
         monkeypatch.setenv("IDCS_AUDIENCE", "mcp-audience")
         monkeypatch.setenv("ORACLE_MCP_BASE_URL", "http://127.0.0.1:9999")
         monkeypatch.setenv("IDCS_REQUIRED_SCOPES", "[]")
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server._http_auth", None)
+        http_auth = SimpleNamespace(provider=object())
 
         with (
-            patch("oracle.oci_cloud_mcp_server.server.OCIProvider", return_value=object()) as mock_provider,
+            patch(
+                "oracle.oci_cloud_mcp_server.server.build_idcs_http_auth",
+                return_value=http_auth,
+            ) as build_http_auth,
             patch("oracle.oci_cloud_mcp_server.server.mcp.run"),
         ):
             main()
 
-        assert mock_provider.call_args.kwargs["required_scopes"] == [
+        assert build_http_auth.call_args.args[0] == [
             "openid",
             "profile",
             "email",
             "oci_mcp.cloud.invoke",
         ]
+
+    def test_main_fails_before_listener_when_common_http_auth_rejects_configuration(self, monkeypatch):
+        def reject_http_auth(_required_scopes):
+            raise ValueError("HTTP IDCS authentication requires: IDCS_CLIENT_SECRET")
+
+        monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ORACLE_MCP_PORT", "9999")
+        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server._http_auth", None)
+        monkeypatch.setattr(
+            "oracle.oci_cloud_mcp_server.server.build_idcs_http_auth",
+            reject_http_auth,
+        )
+
+        with patch("oracle.oci_cloud_mcp_server.server.mcp.run") as run:
+            with pytest.raises(ValueError, match="IDCS_CLIENT_SECRET"):
+                main()
+
+        run.assert_not_called()
 
     def test_main_runs_default_without_env(self, monkeypatch):
         called = {}
@@ -485,55 +449,13 @@ class TestInvokeErrors:
 
 
 class TestGetConfigAndSignerErrors:
-    def test_private_key_failure_raises(self):
-        cfg = {
-            "tenancy": "t",
-            "user": "u",
-            "fingerprint": "f",
-            "key_file": "/path/to/key.pem",
-            "security_token_file": "/path/to/token",
-        }
-
-        with (
-            patch("oracle.oci_cloud_mcp_server.server.oci.config.from_file") as m_from,
-            patch(
-                "oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file",
-                side_effect=Exception("bad key"),
-            ),
+    def test_common_provider_failure_is_propagated(self):
+        with patch(
+            "oracle.oci_cloud_mcp_server.server.build_auth_context",
+            side_effect=ValueError("Unable to construct the selected signer"),
         ):
-            m_from.return_value = dict(cfg)
-            with pytest.raises(Exception):
+            with pytest.raises(ValueError, match="selected signer"):
                 _get_config_and_signer()
-
-
-class TestSignerFallbackOnStsFailure:
-    def test_token_present_but_sts_raises_falls_back_to_api_key(self):
-        cfg = {
-            "tenancy": "t",
-            "user": "u",
-            "fingerprint": "f",
-            "key_file": "/path/to/key.pem",
-            "security_token_file": "/path/to/token",
-        }
-        with (
-            patch("oracle.oci_cloud_mcp_server.server.oci.config.from_file") as m_from,
-            patch("oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file") as m_loadkey,
-            patch(
-                "oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner",
-                side_effect=Exception("boom"),
-            ),
-            patch("oracle.oci_cloud_mcp_server.server.oci.signer.Signer") as m_signer,
-            patch("oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=True),
-            patch("builtins.open", mock_open(read_data="TOKEN123")),
-        ):
-            m_from.return_value = dict(cfg)
-            m_loadkey.return_value = object()
-            sentinel_signer = object()
-            m_signer.return_value = sentinel_signer
-
-            out_cfg, signer = _get_config_and_signer()
-            assert out_cfg["additional_user_agent"] == _ADDITIONAL_UA
-            assert signer is sentinel_signer
 
 
 class TestParamCoercionAndAlignmentExtras:
@@ -714,34 +636,6 @@ class TestInvokeImportFailure:
                 assert "boom" in res["error"]
 
 
-class TestSignerTokenReadFailure:
-    def test_token_file_exists_but_open_fails_falls_back(self):
-        cfg = {
-            "tenancy": "t",
-            "user": "u",
-            "fingerprint": "f",
-            "key_file": "/path/to/key.pem",
-            "security_token_file": "/path/to/token",
-        }
-        with (
-            patch("oracle.oci_cloud_mcp_server.server.oci.config.from_file") as m_from,
-            patch("oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file") as m_loadkey,
-            patch("oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=True),
-            patch("oracle.oci_cloud_mcp_server.server.oci.auth.signers.SecurityTokenSigner") as m_sts,
-            patch("oracle.oci_cloud_mcp_server.server.oci.signer.Signer") as m_signer,
-            patch("builtins.open", side_effect=Exception("io")),
-        ):
-            m_from.return_value = dict(cfg)
-            m_loadkey.return_value = object()
-            sentinel_signer = object()
-            m_signer.return_value = sentinel_signer
-
-            out_cfg, signer = _get_config_and_signer()
-            assert out_cfg["additional_user_agent"] == _ADDITIONAL_UA
-            assert signer is sentinel_signer
-            m_sts.assert_not_called()
-
-
 class TestAlignParamsSignatureRaises:
     def test_align_params_signature_exception_returns_original(self, monkeypatch):
         def fn(x):  # noqa: ARG001
@@ -894,30 +788,6 @@ class TestListClientOperationsErrorsDirect:
         monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
         with pytest.raises(Exception):
             list_client_operations("oci.fake.NotAClient")
-
-
-class TestSignerApiKeyFailure:
-    def test_api_key_signer_failure_raises(self):
-        cfg = {
-            "tenancy": "t",
-            "user": "u",
-            "fingerprint": "f",
-            "key_file": "/path/to/key.pem",
-            "security_token_file": "/path/to/token",
-        }
-        with (
-            patch("oracle.oci_cloud_mcp_server.server.oci.config.from_file") as m_from,
-            patch("oracle.oci_cloud_mcp_server.server.oci.signer.load_private_key_from_file") as m_loadkey,
-            patch("oracle.oci_cloud_mcp_server.server.os.path.exists", return_value=False),
-            patch(
-                "oracle.oci_cloud_mcp_server.server.oci.signer.Signer",
-                side_effect=Exception("signer-fail"),
-            ),
-        ):
-            m_from.return_value = dict(cfg)
-            m_loadkey.return_value = object()
-            with pytest.raises(Exception):
-                _get_config_and_signer()
 
 
 class TestListClientOperationsDetails:

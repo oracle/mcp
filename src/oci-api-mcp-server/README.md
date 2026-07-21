@@ -25,7 +25,11 @@ uvx oracle.oci-api-mcp-server
 | run_oci_command | Runs an OCI CLI command. This tool allows you to run OCI CLI commands on the user's behalf. Only provide the command after 'oci', do not include the string 'oci' in your command. |
 | get_oci_commands (Resource) | Returns helpful information on various OCI services and related commands. |
 
-⚠️ **NOTE**: All actions use the configured OCI CLI profile. Use least-privilege IAM and protect secrets.
+⚠️ **NOTE**: All actions use the configured OCI CLI profile. `run_oci_command` uses the
+selected profile's direct configuration to choose API-key or session-token authentication.
+Set `OCI_CLI_AUTH` to let the OCI CLI select authentication without an MCP-provided override.
+If the selected profile cannot be read, the server also defers to the OCI CLI. Use
+least-privilege IAM and protect secrets.
 
 ## Third-Party APIs
 

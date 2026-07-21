@@ -1,0 +1,49 @@
+[project]
+name = "oracle-mcp-common"
+version = "0.1.0"
+description = "Shared utilities for Oracle MCP Python servers"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "UPL-1.0"
+authors = [
+    {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
+]
+dependencies = [
+    "fastmcp==3.4.2",
+    "oci>=2.179.0",
+]
+
+classifiers = [
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.urls]
+Documentation = "https://github.com/oracle/mcp"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["oracle_mcp_common"]
+exclude = ["/oracle_mcp_common/tests/**"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-cov>=7.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["oracle_mcp_common/tests"]
+
+[tool.coverage.run]
+branch = true
+omit = ["**/__init__.py", "**/tests/*", "dist/*", ".venv/*"]
+
+[tool.coverage.report]
+omit = ["**/__init__.py", "**/tests/*"]
+precision = 2
+fail_under = 90

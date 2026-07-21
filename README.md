@@ -172,6 +172,14 @@ oci session authenticate --profile-name <profile_name> --region <region> --auth 
 
 For OCI MCP servers running over HTTP transport, use an OCI IAM confidential application and set `IDCS_DOMAIN`, `IDCS_CLIENT_ID`, `IDCS_CLIENT_SECRET`, `IDCS_AUDIENCE`, `ORACLE_MCP_BASE_URL`, `ORACLE_MCP_HOST`, `ORACLE_MCP_PORT`, and `OCI_REGION`. Register `${ORACLE_MCP_BASE_URL}/auth/callback` as a redirect URI in that application. HTTP requests run as the authenticated OCI IAM user and do not use the local OCI CLI profile for request authentication. `IDCS_REQUIRED_SCOPES` is optional; if unset, the server defaults to `openid profile email oci_mcp.<server_name>.invoke`. Create and grant that custom scope in your confidential application, or override it with `IDCS_REQUIRED_SCOPES`.
 
+For server authors, the shared library keeps credential resolution and HTTP
+token exchange consistent while each server retains its listener, service
+client lifecycle, and derived user agent. See the [shared authentication
+module](src/common/README.md#authentication-module) for the full configuration
+matrix and the [HTTP IDCS authentication section](src/common/README.md#http-idcs-authentication)
+for the provider and per-request token-exchange API. HTTP-derived OCI clients
+must be treated as caller-specific and must not be reused across callers.
+
 ## Client configuration
 
 Each MCP server exposes endpoints that your client can connect to. To enable this connection, just add the relevant server to your MCP client’s configuration file. You can find the list of servers under the `src` folder.

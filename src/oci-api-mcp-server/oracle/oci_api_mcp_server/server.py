@@ -14,6 +14,7 @@ from typing import Annotated
 
 import oci
 from fastmcp import FastMCP
+from oracle_mcp_common import profile_declares_security_token
 from oracle.oci_api_mcp_server import __project__, __version__
 from oracle.oci_api_mcp_server.denylist import Denylist
 from oracle.oci_api_mcp_server.utils import initAuditLogger
@@ -52,6 +53,25 @@ def _parse_oci_help_command(command: str) -> list[str]:
         raise ValueError("Command path is denied by denylist")
 
     return command_tokens
+
+
+def _get_optional_oci_auth_args(profile: str) -> list[str]:
+    """Return a CLI auth override only when the selected profile is classifiable."""
+    if "OCI_CLI_AUTH" in os.environ:
+        return []
+
+    config_file = os.getenv("OCI_CONFIG_FILE") or oci.config.DEFAULT_LOCATION
+    try:
+        uses_security_token = profile_declares_security_token(config_file, profile)
+    except ValueError:
+        logger.warning(
+            "Unable to classify OCI profile %s; allowing the OCI CLI to select authentication.",
+            profile,
+        )
+        return []
+
+    auth_type = "security_token" if uses_security_token else "api_key"
+    return ["--auth", auth_type]
 
 
 # Initialize the MCP server
@@ -175,7 +195,7 @@ def run_oci_command(
     env_copy = os.environ.copy()
     env_copy["OCI_SDK_APPEND_USER_AGENT"] = USER_AGENT
 
-    profile = os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+    profile = os.getenv("OCI_CONFIG_PROFILE") or oci.config.DEFAULT_PROFILE
     logger.info(f"run_oci_command called with command: {command} --profile {profile}")
 
     if denylist_manager.isCommandInDenyList(command):
@@ -191,7 +211,7 @@ def run_oci_command(
 
     try:
         result = subprocess.run(
-            ["oci", "--profile", profile, "--auth", "security_token"] + shlex.split(command),
+            ["oci", "--profile", profile, *_get_optional_oci_auth_args(profile), *shlex.split(command)],
             env=env_copy,
             capture_output=True,
             text=True,

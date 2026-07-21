@@ -1,10 +1,11 @@
 # Changelog
 
-## [Unreleased]
+## 2.1.0
 
 ### Changed
 
 - Updated dependency locks for FastMCP 3.4.2, OCI CLI 3.87.0, and refreshed transitive packages.
+- `run_oci_command` now chooses OCI CLI API-key or session-token authentication from the selected profile and defers to `OCI_CLI_AUTH` or the OCI CLI when the profile cannot be classified.
 
 ### Fixed
 

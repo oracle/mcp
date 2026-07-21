@@ -105,6 +105,82 @@ env_copy["OCI_SDK_APPEND_USER_AGENT"] = _ADDITIONAL_UA
 
 Note: always remove `-server` from the end of the `__project__` name; ex `oci-cloud-mcp`.
 
+## OCI SDK authentication
+
+Python MCP servers that construct OCI SDK clients should use the shared
+`oracle-mcp-common` package instead of duplicating credential resolution,
+profile parsing, environment-variable precedence, or signer construction.
+Declare a bounded dependency compatible with the shared library's public API:
+
+```toml
+dependencies = [
+    "oracle-mcp-common>=0.1.0,<0.2.0",
+]
+```
+
+Use `build_auth_context()` from `oracle_mcp_common` to obtain the selected
+authentication type, SDK config, and signer. The server remains responsible
+for its OCI client type, retry and circuit-breaker policy, derived additional
+user agent, and client lifecycle:
+
+```python
+import oci
+
+from oracle_mcp_common import build_auth_context
+
+auth_context = build_auth_context()
+config = {
+    **auth_context.config,
+    "additional_user_agent": _ADDITIONAL_UA,
+}
+client = oci.object_storage.ObjectStorageClient(
+    config,
+    signer=auth_context.signer,
+)
+```
+
+The module supports API-key, security-token, identity-domain UPST,
+instance/resource principal, delegation, and OKE workload-identity flows.
+Use `AuthOptions` only when the server needs to explicitly override its
+configured authentication inputs. Unit tests must cover every supported
+client-construction authentication path and assert the exact additional user
+agent passed to the OCI SDK.
+
+### HTTP IDCS request-token authentication
+
+For an HTTP server that authenticates callers through OCI IAM/IDCS and signs
+OCI SDK requests as the authenticated caller, use the shared HTTP policy
+instead of duplicating `OCIProvider` and `TokenExchangeSigner` setup:
+
+```python
+from fastmcp.server.dependencies import get_access_token
+
+from oracle_mcp_common import build_idcs_http_auth
+
+# Startup: the server retains the mcp.auth assignment and HTTP listener setup.
+http_auth = build_idcs_http_auth(required_scopes)
+mcp.auth = http_auth.provider
+
+# Request handling: retrieve the validated token in the server, then exchange it.
+access_token = get_access_token()
+request_auth = http_auth.context_for(access_token.token)
+config = {**request_auth.config, "additional_user_agent": _ADDITIONAL_UA}
+client = oci.object_storage.ObjectStorageClient(config, signer=request_auth.signer)
+```
+
+`build_idcs_http_auth()` validates `IDCS_DOMAIN`, `IDCS_CLIENT_ID`,
+`IDCS_CLIENT_SECRET`, `IDCS_AUDIENCE`, and `ORACLE_MCP_BASE_URL`; `context_for()`
+requires an authenticated access token and a region from an explicit argument
+or `OCI_REGION`. The common package must not inspect host/port, start a
+listener, assign `mcp.auth`, retrieve request context, create a service client,
+or set `additional_user_agent`.
+
+Each HTTP signer and OCI client is caller-specific. Do not cache either
+globally or reuse it across requests from different callers. Tests must cover
+successful provider setup and token exchange, failures before provider/signer
+construction for missing or malformed configuration, secret-safe errors, the
+exact derived user agent, and caller-specific client behavior.
+
 ## Type Definitions
 
 ### General Rules

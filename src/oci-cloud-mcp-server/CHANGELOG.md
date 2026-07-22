@@ -13,10 +13,6 @@
 - Failed safely when a directly selected session token is unreadable or invalid instead of silently falling back to API-key authentication.
 - Fixed `invoke_oci_api` pagination for OCI responses that expose records through `results`, including Logging Search `search_logs`.
 
-### Fixed
-
-- Fixed `invoke_oci_api` pagination for OCI responses that expose records through `results`, including Logging Search `search_logs`.
-
 ## 2.1.0
 
 ### Security

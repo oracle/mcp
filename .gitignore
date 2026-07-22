@@ -35,3 +35,5 @@ htmlcov/
 **/oracle-goldengate-mcp-server.env
 **/build/**
 
+
+.csis

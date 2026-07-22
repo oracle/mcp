@@ -48,7 +48,7 @@ _build:
 			echo "Building $$dir: $$name==$$version"; \
 			if [ -d $$dir/oracle/*_mcp_server ]; then \
 				init_py_file=$$(echo $$dir/oracle/*_mcp_server/__init__.py); \
-				printf '"""\nCopyright (c) 2026, Oracle and/or its affiliates.\nLicensed under the Universal Permissive License v1.0 as shown at\nhttps://oss.oracle.com/licenses/upl.\n"""\n\n' > $$init_py_file; \
+				printf '"""\nCopyright (c) 2025, 2026 Oracle and/or its affiliates.\nLicensed under the Universal Permissive License v1.0 as shown at\nhttps://oss.oracle.com/licenses/upl.\n"""\n\n' > $$init_py_file; \
 				echo "__project__ = \"$$name\"" >> $$init_py_file; \
 				echo "__version__ = \"$$version\"" >> $$init_py_file; \
 			fi; \

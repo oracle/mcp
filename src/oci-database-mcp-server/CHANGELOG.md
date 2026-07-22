@@ -2,16 +2,11 @@
 
 All notable changes to OCI Database MCP Server are documented in this file.
 
-## [Unreleased]
-
-### Added
-
-- Resource principal and instance principal authentication options for OCI Database service requests.
+## 1.2.0
 
 ### Changed
 
-- Added `cryptography` for RPST request signing and `requests` for RPST token exchange.
-
-### Fixed
-
-- Bound resource-principal token and session-token HTTP calls with explicit connect and read timeouts.
+- Moved OCI Database and Virtual Network client credential resolution and
+  signer construction to `oracle-mcp-common`, including API-key,
+  security-token, identity-domain UPST, principal, delegation, and OKE
+  workload-identity authentication modes.

@@ -11,9 +11,6 @@
 
 - Prevented a named API-key profile from inheriting `security_token_file` from `[DEFAULT]` and signing as a different principal.
 - Failed safely when a directly selected session token is unreadable or invalid instead of silently falling back to API-key authentication.
-
-### Fixed
-
 - Fixed `invoke_oci_api` pagination for OCI responses that expose records through `results`, including Logging Search `search_logs`.
 
 ## 2.1.0

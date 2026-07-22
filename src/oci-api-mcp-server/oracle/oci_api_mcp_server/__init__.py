@@ -1,8 +1,8 @@
 """
-Copyright (c) 2025, Oracle and/or its affiliates.
+Copyright (c) 2025, 2026 Oracle and/or its affiliates.
 Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
 __project__ = "oracle.oci-api-mcp-server"
-__version__ = "2.0.0"
+__version__ = "2.1.0"

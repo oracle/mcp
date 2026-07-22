@@ -15,7 +15,7 @@ SERVER_DIRS := $(filter-out $(COMMON_PROJECT_PATH),$(SUBDIRS))
 # Releasing a server also releases the common dependency first, even when a
 # single server is selected with `project=`.
 RELEASE_DIRS := $(if $(SERVER_DIRS),$(COMMON_PROJECT_PATH) $(SERVER_DIRS),$(COMMON_DIRS))
-COMMON_VERSION := $(shell python3 -c "import tomllib; print(tomllib.load(open('$(COMMON_PROJECT_PATH)/pyproject.toml', 'rb'))['project']['version'])")
+COMMON_VERSION := $(shell python -c "import tomllib; print(tomllib.load(open('$(COMMON_PROJECT_PATH)/pyproject.toml', 'rb'))['project']['version'])")
 
 PYPI_PUBLISH_URL := https://upload.pypi.org/legacy/
 PYPI_CHECK_URL := https://pypi.org/simple/
@@ -43,12 +43,12 @@ _build:
 	@set -eu; \
 	for dir in $(BUILD_DIRS); do \
 		if [ -f $$dir/pyproject.toml ]; then \
-			echo "Building $$dir"; \
-			name=$$(python3 -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['name'])"); \
-			version=$$(python3 -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['version'])"); \
+			name=$$(python -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['name'])"); \
+			version=$$(python -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['version'])"); \
+			echo "Building $$dir: $$name==$$version"; \
 			if [ -d $$dir/oracle/*_mcp_server ]; then \
 				init_py_file=$$(echo $$dir/oracle/*_mcp_server/__init__.py); \
-				printf '"""\nCopyright (c) 2025, Oracle and/or its affiliates.\nLicensed under the Universal Permissive License v1.0 as shown at\nhttps://oss.oracle.com/licenses/upl.\n"""\n\n' > $$init_py_file; \
+				printf '"""\nCopyright (c) 2025, 2026 Oracle and/or its affiliates.\nLicensed under the Universal Permissive License v1.0 as shown at\nhttps://oss.oracle.com/licenses/upl.\n"""\n\n' > $$init_py_file; \
 				echo "__project__ = \"$$name\"" >> $$init_py_file; \
 				echo "__version__ = \"$$version\"" >> $$init_py_file; \
 			fi; \
@@ -159,10 +159,10 @@ verify-published:
 	@set -eu; \
 	for dir in $(RELEASE_DIRS); do \
 		if [ -f $$dir/pyproject.toml ]; then \
-			name=$$(python3 -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['name'])"); \
-			version=$$(python3 -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['version'])"); \
+			name=$$(python -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['name'])"); \
+			version=$$(python -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['version'])"); \
 			echo "Verifying $$name==$$version from $(VERIFY_INDEX)"; \
-			uv run --isolated --no-project --python 3.13 --refresh-package "$$name" --index "$(VERIFY_INDEX)" --with "$$name==$$version" python3 -c "from importlib.metadata import version; assert version('$$name') == '$$version'"; \
+			uv run --isolated --no-project --python 3.13 --refresh-package "$$name" --index "$(VERIFY_INDEX)" --with "$$name==$$version" python -c "from importlib.metadata import version; assert version('$$name') == '$$version'"; \
 		fi; \
 	done
 

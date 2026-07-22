@@ -50,7 +50,7 @@ class TestGetDatabaseClient:
 
         mock_build_auth_context.assert_called_once_with()
         args, kwargs = mock_client.call_args
-        assert args[0]["additional_user_agent"] == "oci-database-mcp/1.0.7"
+        assert args[0]["additional_user_agent"] == "oci-database-mcp/1.1.0"
         assert args[0]["region"] == "us-phoenix-1"
         assert original_config == context_config
         assert kwargs["signer"] is signer
@@ -79,7 +79,7 @@ class TestGetDatabaseClient:
         mock_build_auth_context.assert_called_once_with()
         args, kwargs = mock_client.call_args
         assert args[0] == {
-            "additional_user_agent": "oci-database-mcp/1.0.7",
+            "additional_user_agent": "oci-database-mcp/1.1.0",
             "region": "us-ashburn-1",
         }
         assert context_config == {"region": "us-ashburn-1"}
@@ -3417,7 +3417,7 @@ async def test_get_public_ip_for_database(
     mock_vnic_response.data = mock_vnic
     mock_vcn_client.get_vnic.return_value = mock_vnic_response
 
-    config = {"additional_user_agent": "oci-database-mcp/1.0.7"}
+    config = {"additional_user_agent": "oci-database-mcp/1.1.0"}
     signer = object()
     mock_get_config_and_signer.return_value = (config, signer)
 

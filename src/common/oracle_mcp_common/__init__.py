@@ -14,6 +14,9 @@ from .auth import (
     build_auth_context,
     build_idcs_http_auth,
     profile_declares_security_token,
+    resolve_auth_type,
+    resolve_config_file,
+    resolve_profile_name,
 )
 
 __all__ = [
@@ -26,5 +29,10 @@ __all__ = [
     "build_auth_context",
     "build_idcs_http_auth",
     "profile_declares_security_token",
+    "resolve_auth_type",
+    "resolve_config_file",
+    "resolve_profile_name",
 ]
-__version__ = "0.1.0"
+
+__project__ = "oracle_mcp_common"
+__version__ = "0.1.1"

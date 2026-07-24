@@ -728,7 +728,7 @@ wheels = [
 
 [[package]]
 name = "oci"
-version = "2.182.0"
+version = "2.182.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -741,9 +741,9 @@ dependencies = [
     { name = "pytz" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/a6/20/769e5fef5006ca00b0917fc7a60d143af856ace4320af567fe83ab47f72b/oci-2.182.0.tar.gz", hash = "sha256:effdd24f808179cfa15ba1084181cadda8e09332699cdbcd2f78ebbd0a2d072e", size = 17631582, upload-time = "2026-07-14T07:21:19.742Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7e/55/1316c21a03ae3f84e0b3b73f7d6f0cefbe2ebac60de0771cc15f6e7c0036/oci-2.182.1.tar.gz", hash = "sha256:9862de221f2abe9cf8319393eec58ea59c014fd9b61afaf0a3cca163e2a508b0", size = 17635695, upload-time = "2026-07-21T05:22:52.992Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2f/b2/bd2ed4b1f29b1afe1565dd19e9cc0420fede82b9aa1c409361c18d84c554/oci-2.182.0-py3-none-any.whl", hash = "sha256:f8d7d675d1fe75721dac9aa97a11bf8b670a1814afd4969b7023fef8e3ce57d2", size = 35969385, upload-time = "2026-07-14T07:21:11.372Z" },
+    { url = "https://files.pythonhosted.org/packages/1b/49/b77ee6877540b07e48d6defb48fb444c3eafd7558473c70a43c7beeb0cd8/oci-2.182.1-py3-none-any.whl", hash = "sha256:0c616a6bc3bc458464bc3456469d8da63a1a2d2277e9314b41a1c4e76d5df523", size = 35985050, upload-time = "2026-07-21T05:22:42.379Z" },
 ]
 
 [[package]]
@@ -772,7 +772,7 @@ wheels = [
 
 [[package]]
 name = "oracle-mcp-common"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },

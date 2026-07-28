@@ -137,7 +137,9 @@ _publish:
 	for dir in $(PUBLISH_DIRS); do \
 		if [ -f $$dir/pyproject.toml ]; then \
 			echo "Publishing $$dir"; \
-			cd $$dir && uv publish --publish-url "$(PUBLISH_URL)" --check-url="$(PUBLISH_CHECK_URL)" && cd ../..; \
+			if ! (cd $$dir && uv publish --publish-url "$(PUBLISH_URL)" --check-url="$(PUBLISH_CHECK_URL)"); then \
+				echo "Publish failed for $$dir; continuing with remaining packages." >&2; \
+			fi; \
 		fi; \
 	done
 

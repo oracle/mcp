@@ -12,6 +12,7 @@ from unittest.mock import ANY, MagicMock, patch
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
+from oci.config import DEFAULT_LOCATION
 import oracle.oci_api_mcp_server.server as server
 from oracle.oci_api_mcp_server import __project__
 from oracle.oci_api_mcp_server.denylist import Denylist
@@ -27,6 +28,7 @@ class TestOCITools:
     def clear_oci_cli_auth(self, monkeypatch):
         for name in (
             "OCI_CLI_AUTH",
+            "OCI_CLI_CONFIG_FILE",
             "OCI_CONFIG_FILE",
             "OCI_CONFIG_PROFILE",
             "OCI_MCP_AUTH_TYPE",
@@ -240,6 +242,8 @@ class TestOCITools:
             mock_run.assert_called_once_with(
                 [
                     "oci",
+                    "--config-file",
+                    str(config_file),
                     "--profile",
                     "DEFAULT",
                     "--auth",
@@ -275,6 +279,8 @@ class TestOCITools:
         mock_run.assert_called_once_with(
             [
                 "oci",
+                "--config-file",
+                str(config_file),
                 "--profile",
                 "SESSION",
                 "--auth",
@@ -290,6 +296,37 @@ class TestOCITools:
             shell=False,
         )
         assert mock_run.call_args.kwargs["env"]["OCI_SDK_APPEND_USER_AGENT"] == USER_AGENT
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_api_mcp_server.server.subprocess.run")
+    async def test_run_oci_command_uses_resolved_config_file_over_cli_config_env(
+        self, mock_run, monkeypatch, tmp_path
+    ):
+        monkeypatch.delenv("OCI_MCP_AUTH_TYPE")
+        inspected_config = tmp_path / "inspected_config"
+        inspected_config.write_text("[SESSION]\nsecurity_token_file=/tmp/session-token\n")
+        cli_config = tmp_path / "cli_config"
+        cli_config.write_text("[SESSION]\ntenancy=ocid1.tenancy\n")
+        monkeypatch.setenv("OCI_CONFIG_FILE", str(inspected_config))
+        monkeypatch.setenv("OCI_CLI_CONFIG_FILE", str(cli_config))
+        monkeypatch.setenv("OCI_CONFIG_PROFILE", "SESSION")
+        mock_run.return_value = MagicMock(stdout="{}", stderr="", returncode=0)
+
+        async with Client(mcp) as client:
+            await client.call_tool("run_oci_command", {"command": "compute instance list"})
+
+        assert mock_run.call_args.args[0] == [
+            "oci",
+            "--config-file",
+            str(inspected_config),
+            "--profile",
+            "SESSION",
+            "--auth",
+            "security_token",
+            "compute",
+            "instance",
+            "list",
+        ]
 
     @pytest.mark.asyncio
     @patch("oracle.oci_api_mcp_server.server.subprocess.run")
@@ -310,6 +347,8 @@ class TestOCITools:
 
         assert mock_run.call_args.args[0] == [
             "oci",
+            "--config-file",
+            str(config_file),
             "--profile",
             "API_KEY",
             "--auth",
@@ -337,6 +376,8 @@ class TestOCITools:
 
         assert mock_run.call_args.args[0] == [
             "oci",
+            "--config-file",
+            str(config_file),
             "--profile",
             "SESSION",
             "compute",
@@ -383,6 +424,8 @@ class TestOCITools:
 
         assert mock_run.call_args.args[0] == [
             "oci",
+            "--config-file",
+            DEFAULT_LOCATION,
             "--profile",
             "DEFAULT",
             "--auth",

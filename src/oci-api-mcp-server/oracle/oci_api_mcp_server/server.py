@@ -100,7 +100,9 @@ def _parse_oci_command(command: str) -> list[str]:
     return command_tokens
 
 
-def _get_optional_oci_auth_args(profile: str, cli_env: dict[str, str]) -> list[str]:
+def _get_optional_oci_auth_args(
+    config_file: str, profile: str, cli_env: dict[str, str]
+) -> list[str]:
     """Resolve MCP auth settings into OCI CLI arguments when CLI auth is unset."""
     if "OCI_CLI_AUTH" in cli_env:
         return []
@@ -110,7 +112,7 @@ def _get_optional_oci_auth_args(profile: str, cli_env: dict[str, str]) -> list[s
         try:
             auth_type = (
                 AuthType.SECURITY_TOKEN
-                if profile_declares_security_token(resolve_config_file(), profile)
+                if profile_declares_security_token(config_file, profile)
                 else AuthType.API_KEY
             )
         except ValueError as exc:
@@ -265,6 +267,7 @@ def run_oci_command(
         logger.error("Rejected OCI command: %s", error)
         return {"error": str(error)}
 
+    config_file = resolve_config_file()
     profile = resolve_profile_name()
     logger.info(f"run_oci_command called with command: {command} --profile {profile}")
 
@@ -280,14 +283,14 @@ def run_oci_command(
         return {"error": error_message}
 
     try:
-        auth_args = _get_optional_oci_auth_args(profile, env_copy)
+        auth_args = _get_optional_oci_auth_args(config_file, profile, env_copy)
     except ValueError as error:
         logger.error("Unable to resolve OCI CLI authentication: %s", error)
         return {"error": str(error)}
 
     try:
         result = subprocess.run(
-            ["oci", "--profile", profile, *auth_args, *command_tokens],
+            ["oci", "--config-file", config_file, "--profile", profile, *auth_args, *command_tokens],
             env=env_copy,
             capture_output=True,
             text=True,

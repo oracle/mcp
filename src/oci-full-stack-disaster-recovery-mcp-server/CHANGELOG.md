@@ -2,7 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## 1.0.0
+
+### Changed
+
+- Updated dependency locks for FastMCP 3.4.4, OCI SDK 2.182.1, and refreshed authentication-related transitive packages.
+
+## 0.2.1
 
 ### Fixed
 

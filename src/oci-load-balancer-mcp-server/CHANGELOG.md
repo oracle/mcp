@@ -1,10 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## 1.0.1
 
 ### Changed
 
-- Updated dependency locks for FastMCP 3.4.2, OCI SDK 2.179.0, and refreshed authentication-related transitive packages.
+- Updated dependency locks for FastMCP 3.4.4, OCI SDK 2.182.1, and refreshed authentication-related transitive packages.
 
 ## 1.0.0
 

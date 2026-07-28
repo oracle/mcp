@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-object-storage-mcp-server"
-version = "2.0.0"
+version = "2.0.1"
 description = "OCI Object Storage Service MCP server"
 readme = "README.md"
 authors = [
@@ -10,8 +10,8 @@ license = "UPL-1.0"
 license-files = ["LICENSE.txt"]
 requires-python = ">=3.13"
 dependencies = [
-    "fastmcp==3.4.2",
-    "oci==2.179.0",
+    "fastmcp==3.4.4",
+    "oci==2.182.1",
 ]
 
 classifiers = [

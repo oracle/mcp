@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-cloud-mcp-server"
-version = "2.2.0"
+version = "2.2.1"
 description = "OCI Python SDK MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -12,7 +12,7 @@ authors = [
 dependencies = [
     "fastmcp==3.4.2",
     "oci==2.179.0",
-    "oracle-mcp-common>=0.1.0,<0.2.0",
+    "oracle-mcp-common>=0.1.2,<0.2.0",
 ]
 
 classifiers = [

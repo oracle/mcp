@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-database-mcp-server"
-version = "1.3.0"
+version = "1.3.1"
 description = "OCI Database Service MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -12,7 +12,7 @@ authors = [
 dependencies = [
     "fastmcp==3.4.4",
     "oci==2.182.1",
-    "oracle-mcp-common>=0.1.0,<0.2.0",
+    "oracle-mcp-common>=0.1.2,<0.2.0",
     "pytest-cov>=7.0.0",
 ]
 

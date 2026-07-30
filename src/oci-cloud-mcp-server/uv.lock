@@ -786,7 +786,7 @@ wheels = [
 
 [[package]]
 name = "oracle-mcp-common"
-version = "0.1.0"
+version = "0.1.2"
 source = { editable = "../common" }
 dependencies = [
     { name = "fastmcp" },
@@ -813,7 +813,7 @@ dev = [
 
 [[package]]
 name = "oracle-oci-cloud-mcp-server"
-version = "2.2.1"
+version = "2.2.2"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },

@@ -70,7 +70,7 @@ Set `OCI_MCP_AUTH_TYPE`, or pass `AuthOptions(auth_type=...)` to
 | --- | --- | --- |
 | `auto` | Selected OCI config profile | Uses `security_token` only if the selected profile directly declares `security_token_file`; otherwise uses `api_key`. |
 | `api_key` | Selected OCI config profile | Requires `tenancy`, `user`, `fingerprint`, and `key_file`. The library logs a one-time recommendation to use session-token authentication. |
-| `security_token` | Selected OCI config profile | Requires `security_token_file` directly in the selected profile, plus the API-key fields required to construct its signer. |
+| `security_token` | Selected OCI config profile | Requires `security_token_file` directly in the selected profile and `key_file` for its corresponding private key. |
 | `identity_domain_upst` | Identity Domains JWT-to-UPST token exchange | Uses file-backed JWT and client-secret inputs. See [Identity Domains token exchange](#identity-domains-token-exchange). |
 | `instance_principal` | OCI instance principal | Intended for OCI compute instances. |
 | `resource_principal` | OCI resource principal | Intended for supported OCI managed-resource environments. |

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.1.1
+
+### Changed
+
+
+- `run_oci_command` now honors `OCI_MCP_AUTH_TYPE` when `OCI_CLI_AUTH` is unset, supports direct OCI CLI auth modes, and fails safely for unsupported modes or unclassifiable automatic profile selection.
+- Updated runtime dependencies: FastMCP to 3.4.4, OCI CLI to 3.89.3, and `oracle-mcp-common` to require 0.1.1 or later (within the 0.1.x compatibility range). The shared library now requires OCI Python SDK 2.182.1 or later.
+
+### Security
+
+- Prevented command-provided OCI CLI authentication, profile, endpoint, proxy, and configuration overrides from bypassing server-managed settings.
+- `run_oci_command` now passes its resolved OCI config file explicitly to the OCI CLI, preventing a conflicting `OCI_CLI_CONFIG_FILE` from selecting different credentials than the server inspected.
+
 ## 2.1.0
 
 ### Changed

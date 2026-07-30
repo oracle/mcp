@@ -1,10 +1,16 @@
 # Changelog
 
-## 2.2.1
+## 2.2.2
 
 ### Changed
 
 - Updated dependency locks for FastMCP 3.4.4, OCI SDK 2.182.1, and refreshed authentication-related transitive packages.
+
+## 2.2.1
+
+### Changed
+
+- Updated dependency range for `oracle-mcp-common` to `>=0.1.2,<0.2.0`.
 
 ## 2.2.0
 

@@ -183,6 +183,32 @@ def test_security_token_context_reads_direct_token_and_constructs_signer(tmp_pat
     assert constructor.call_args.args == ("session-token", private_key)
 
 
+def test_security_token_context_requires_only_key_and_token_files(tmp_path, monkeypatch):
+    token_file = tmp_path / "token"
+    token_file.write_text("session-token", encoding="utf-8")
+    key_file = tmp_path / "session.pem"
+    key_file.write_text("private-key", encoding="utf-8")
+    config_file = write_config(
+        tmp_path,
+        f"[SESSION]\nkey_file = {key_file}\nsecurity_token_file = {token_file}\n",
+    )
+    private_key = object()
+    key_loader = MagicMock(return_value=private_key)
+    monkeypatch.setattr(auth.oci.signer, "load_private_key_from_file", key_loader)
+    signer = object()
+    constructor = MagicMock(return_value=signer)
+    monkeypatch.setattr(auth.oci.auth.signers, "SecurityTokenSigner", constructor)
+
+    context = auth.build_auth_context(
+        auth.AuthOptions(auth_type="security_token", config_file=str(config_file), profile_name="SESSION")
+    )
+
+    assert context.auth_type is auth.AuthType.SECURITY_TOKEN
+    assert context.signer is signer
+    assert key_loader.call_args.args == (str(key_file), None)
+    assert constructor.call_args.args == ("session-token", private_key)
+
+
 def test_security_token_requires_direct_declaration_even_if_sdk_config_inherits(tmp_path, monkeypatch, api_config):
     config_file = write_config(tmp_path, "[DEFAULT]\nsecurity_token_file = /inherited\n[API]\n")
     patch_profile(monkeypatch, {**api_config, "security_token_file": "/inherited"})

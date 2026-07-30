@@ -134,12 +134,20 @@ test-publish-servers:
 
 _publish:
 	@set -eu; \
+	publish_failed=0; \
 	for dir in $(PUBLISH_DIRS); do \
 		if [ -f $$dir/pyproject.toml ]; then \
 			echo "Publishing $$dir"; \
-			cd $$dir && uv publish --publish-url "$(PUBLISH_URL)" --check-url="$(PUBLISH_CHECK_URL)" && cd ../..; \
+			if ! (cd $$dir && uv publish --publish-url "$(PUBLISH_URL)" --check-url="$(PUBLISH_CHECK_URL)"); then \
+				echo "Publish failed for $$dir; continuing with remaining packages." >&2; \
+				publish_failed=1; \
+			fi; \
 		fi; \
-	done
+	done; \
+	if [ "$$publish_failed" -ne 0 ]; then \
+		echo "One or more package publishes failed." >&2; \
+		exit 1; \
+	fi
 
 wait-for-common:
 	@set -eu; \

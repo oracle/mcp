@@ -357,9 +357,6 @@ def _security_token_signer(config: dict[str, Any]) -> Any:
     _require_config_fields(
         config,
         "security-token authentication",
-        "tenancy",
-        "user",
-        "fingerprint",
         "key_file",
         "security_token_file",
     )

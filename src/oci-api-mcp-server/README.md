@@ -25,11 +25,18 @@ uvx oracle.oci-api-mcp-server
 | run_oci_command | Runs an OCI CLI command. This tool allows you to run OCI CLI commands on the user's behalf. Only provide the command after 'oci', do not include the string 'oci' in your command. |
 | get_oci_commands (Resource) | Returns helpful information on various OCI services and related commands. |
 
-⚠️ **NOTE**: All actions use the configured OCI CLI profile. `run_oci_command` uses the
-selected profile's direct configuration to choose API-key or session-token authentication.
-Set `OCI_CLI_AUTH` to let the OCI CLI select authentication without an MCP-provided override.
-If the selected profile cannot be read, the server also defers to the OCI CLI. Use
-least-privilege IAM and protect secrets.
+⚠️ **NOTE**: All actions use the configured OCI CLI profile. `OCI_CLI_AUTH` is authoritative:
+when it is set, `run_oci_command` adds no authentication override and lets the OCI CLI select
+authentication. Otherwise, `run_oci_command` resolves `OCI_MCP_AUTH_TYPE` using
+`oracle-mcp-common`. Supported values are `api_key`, `security_token`, `instance_principal`,
+`resource_principal`, and `oke_workload_identity`. `auto` selects API-key or session-token
+authentication from the selected profile's direct configuration. The server rejects unclassifiable
+`auto` profiles and auth modes without OCI CLI equivalents (`identity_domain_upst`,
+`instance_principal_delegation`, and `resource_principal_delegation`).
+
+The server owns OCI CLI authentication and connection configuration. Commands cannot supply
+global overrides such as `--auth`, `--profile`, `--config-file`, `--endpoint`, or `--proxy`.
+Use least-privilege IAM and protect secrets.
 
 ## Third-Party APIs
 

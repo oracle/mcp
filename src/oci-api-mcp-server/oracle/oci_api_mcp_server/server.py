@@ -12,9 +12,14 @@ from logging import Logger
 import shlex
 from typing import Annotated
 
-import oci
 from fastmcp import FastMCP
-from oracle_mcp_common import profile_declares_security_token
+from oracle_mcp_common import (
+    AuthType,
+    profile_declares_security_token,
+    resolve_auth_type,
+    resolve_config_file,
+    resolve_profile_name,
+)
 from oracle.oci_api_mcp_server import __project__, __version__
 from oracle.oci_api_mcp_server.denylist import Denylist
 from oracle.oci_api_mcp_server.utils import initAuditLogger
@@ -33,6 +38,28 @@ denylist_manager = Denylist(logger)
 
 _OCI_COMMAND_TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _OCI_HELP_COMMAND_ERROR = "OCI help accepts command paths only without options or values"
+_OCI_COMMAND_ERROR = "OCI command contains a server-managed global option"
+_SERVER_MANAGED_OCI_OPTIONS = frozenset(
+    {
+        "--auth",
+        "--auth-purpose",
+        "--cert-bundle",
+        "--cli-rc-file",
+        "--config-file",
+        "--defaults-file",
+        "--endpoint",
+        "--federation-endpoint",
+        "--profile",
+        "--proxy",
+    }
+)
+_CLI_AUTH_BY_TYPE = {
+    AuthType.API_KEY: "api_key",
+    AuthType.SECURITY_TOKEN: "security_token",
+    AuthType.INSTANCE_PRINCIPAL: "instance_principal",
+    AuthType.RESOURCE_PRINCIPAL: "resource_principal",
+    AuthType.OKE_WORKLOAD_IDENTITY: "oke_workload_identity",
+}
 
 
 def _parse_oci_help_command(command: str) -> list[str]:
@@ -55,23 +82,62 @@ def _parse_oci_help_command(command: str) -> list[str]:
     return command_tokens
 
 
-def _get_optional_oci_auth_args(profile: str) -> list[str]:
-    """Return a CLI auth override only when the selected profile is classifiable."""
-    if "OCI_CLI_AUTH" in os.environ:
-        return []
-
-    config_file = os.getenv("OCI_CONFIG_FILE") or oci.config.DEFAULT_LOCATION
+def _parse_oci_command(command: str) -> list[str]:
+    """Parse a command while preventing CLI global configuration overrides."""
     try:
-        uses_security_token = profile_declares_security_token(config_file, profile)
-    except ValueError:
-        logger.warning(
-            "Unable to classify OCI profile %s; allowing the OCI CLI to select authentication.",
-            profile,
-        )
+        command_tokens = shlex.split(command)
+    except ValueError as exc:
+        raise ValueError("OCI command is not valid shell-style syntax") from exc
+
+    if not command_tokens:
+        raise ValueError("OCI command must not be empty")
+
+    for token in command_tokens:
+        option = token.split("=", 1)[0]
+        if option in _SERVER_MANAGED_OCI_OPTIONS:
+            raise ValueError(_OCI_COMMAND_ERROR)
+
+    return command_tokens
+
+
+def _get_optional_oci_auth_args(
+    config_file: str, profile: str, cli_env: dict[str, str]
+) -> list[str]:
+    """Resolve MCP auth settings into OCI CLI arguments when CLI auth is unset."""
+    if "OCI_CLI_AUTH" in cli_env:
         return []
 
-    auth_type = "security_token" if uses_security_token else "api_key"
-    return ["--auth", auth_type]
+    auth_type = resolve_auth_type()
+    if auth_type is AuthType.AUTO:
+        try:
+            auth_type = (
+                AuthType.SECURITY_TOKEN
+                if profile_declares_security_token(config_file, profile)
+                else AuthType.API_KEY
+            )
+        except ValueError as exc:
+            raise ValueError(
+                "Unable to resolve OCI_MCP_AUTH_TYPE=auto for the selected OCI profile; "
+                "set OCI_MCP_AUTH_TYPE explicitly or provide a readable OCI config."
+            ) from exc
+
+    if auth_type is AuthType.OKE_WORKLOAD_IDENTITY:
+        token_path = cli_env.get("OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN_PATH")
+        inline_token = cli_env.get("OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN")
+        if inline_token:
+            raise ValueError(
+                "OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN is not supported by this CLI-backed server; "
+                "use OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN_PATH instead."
+            )
+        if token_path:
+            cli_env["OCI_KUBERNETES_SERVICE_ACCOUNT_TOKEN_PATH"] = token_path
+
+    cli_auth = _CLI_AUTH_BY_TYPE.get(auth_type)
+    if cli_auth is None:
+        raise ValueError(
+            f"OCI CLI does not support OCI_MCP_AUTH_TYPE={auth_type.value!r} in this server."
+        )
+    return ["--auth", cli_auth]
 
 
 # Initialize the MCP server
@@ -195,7 +261,14 @@ def run_oci_command(
     env_copy = os.environ.copy()
     env_copy["OCI_SDK_APPEND_USER_AGENT"] = USER_AGENT
 
-    profile = os.getenv("OCI_CONFIG_PROFILE") or oci.config.DEFAULT_PROFILE
+    try:
+        command_tokens = _parse_oci_command(command)
+    except ValueError as error:
+        logger.error("Rejected OCI command: %s", error)
+        return {"error": str(error)}
+
+    config_file = resolve_config_file()
+    profile = resolve_profile_name()
     logger.info(f"run_oci_command called with command: {command} --profile {profile}")
 
     if denylist_manager.isCommandInDenyList(command):
@@ -210,8 +283,14 @@ def run_oci_command(
         return {"error": error_message}
 
     try:
+        auth_args = _get_optional_oci_auth_args(config_file, profile, env_copy)
+    except ValueError as error:
+        logger.error("Unable to resolve OCI CLI authentication: %s", error)
+        return {"error": str(error)}
+
+    try:
         result = subprocess.run(
-            ["oci", "--profile", profile, *_get_optional_oci_auth_args(profile), *shlex.split(command)],
+            ["oci", "--config-file", config_file, "--profile", profile, *auth_args, *command_tokens],
             env=env_copy,
             capture_output=True,
             text=True,

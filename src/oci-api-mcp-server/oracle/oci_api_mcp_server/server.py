@@ -39,6 +39,7 @@ denylist_manager = Denylist(logger)
 _OCI_COMMAND_TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _OCI_HELP_COMMAND_ERROR = "OCI help accepts command paths only without options or values"
 _OCI_COMMAND_ERROR = "OCI command contains a server-managed global option"
+_OCI_CLI_BASE_COMMAND = ("oci", "--cli-rc-file", os.devnull)
 _SERVER_MANAGED_OCI_OPTIONS = frozenset(
     {
         "--auth",
@@ -163,8 +164,9 @@ def get_oci_commands() -> str:
 
     try:
         result = subprocess.run(
-            ["oci", "--help"],
+            [*_OCI_CLI_BASE_COMMAND, "--help"],
             env=env_copy,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             check=True,
@@ -224,8 +226,9 @@ def get_oci_command_help(command: str) -> str:
 
     try:
         result = subprocess.run(
-            ["oci", *command_tokens, "--help"],
+            [*_OCI_CLI_BASE_COMMAND, *command_tokens, "--help"],
             env=env_copy,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             check=True,
@@ -290,8 +293,17 @@ def run_oci_command(
 
     try:
         result = subprocess.run(
-            ["oci", "--config-file", config_file, "--profile", profile, *auth_args, *command_tokens],
+            [
+                *_OCI_CLI_BASE_COMMAND,
+                "--config-file",
+                config_file,
+                "--profile",
+                profile,
+                *auth_args,
+                *command_tokens,
+            ],
             env=env_copy,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             check=True,

@@ -36,6 +36,8 @@ authentication from the selected profile's direct configuration. The server reje
 
 The server owns OCI CLI authentication and connection configuration. Commands cannot supply
 global overrides such as `--auth`, `--profile`, `--config-file`, `--endpoint`, or `--proxy`.
+The server also uses an empty OCI CLI RC file, so command and parameter aliases, canned queries,
+defaults, and settings from a user CLI RC file are not applied.
 Use least-privilege IAM and protect secrets.
 
 ## Third-Party APIs

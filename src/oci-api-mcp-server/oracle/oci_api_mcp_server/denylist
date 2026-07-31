@@ -1788,6 +1788,7 @@ queue messages update-message
 queue messages update-messages
 queue queue-admin queue delete
 queue queue-admin queue update
+raw-request
 recovery protected-database delete
 recovery protected-database update
 recovery protection-policy delete

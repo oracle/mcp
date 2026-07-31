@@ -6,6 +6,7 @@ https://oss.oracle.com/licenses/upl.
 
 import importlib.metadata
 import json
+import os
 import subprocess
 from unittest.mock import ANY, MagicMock, patch
 
@@ -13,6 +14,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from oci.config import DEFAULT_LOCATION
+from oci_cli.cli_root import cli as oci_cli
 import oracle.oci_api_mcp_server.server as server
 from oracle.oci_api_mcp_server import __project__
 from oracle.oci_api_mcp_server.denylist import Denylist
@@ -56,8 +58,17 @@ class TestOCITools:
             assert result == "Help output"
             assert mock_run.call_args.kwargs["env"]["OCI_SDK_APPEND_USER_AGENT"] == USER_AGENT
             mock_run.assert_called_once_with(
-                ["oci", "compute", "instance", "list", "--help"],
+                [
+                    "oci",
+                    "--cli-rc-file",
+                    os.devnull,
+                    "compute",
+                    "instance",
+                    "list",
+                    "--help",
+                ],
                 env=ANY,
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 check=True,
@@ -89,12 +100,15 @@ class TestOCITools:
             mock_run.assert_called_once_with(
                 [
                     "oci",
+                    "--cli-rc-file",
+                    os.devnull,
                     "recovery",
                     "protected-database-collection",
                     "list-protected-databases",
                     "--help",
                 ],
                 env=ANY,
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 check=True,
@@ -162,7 +176,15 @@ class TestOCITools:
         mock_result.stderr = "Some error"
         mock_run.side_effect = subprocess.CalledProcessError(
             returncode=1,
-            cmd=["oci", "compute", "instance", "list", "--help"],
+            cmd=[
+                "oci",
+                "--cli-rc-file",
+                os.devnull,
+                "compute",
+                "instance",
+                "list",
+                "--help",
+            ],
             output=mock_result.stdout,
             stderr=mock_result.stderr,
         )
@@ -242,6 +264,8 @@ class TestOCITools:
             mock_run.assert_called_once_with(
                 [
                     "oci",
+                    "--cli-rc-file",
+                    os.devnull,
                     "--config-file",
                     str(config_file),
                     "--profile",
@@ -255,6 +279,7 @@ class TestOCITools:
                     "Shared Services",
                 ],
                 env=ANY,
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 check=True,
@@ -279,6 +304,8 @@ class TestOCITools:
         mock_run.assert_called_once_with(
             [
                 "oci",
+                "--cli-rc-file",
+                os.devnull,
                 "--config-file",
                 str(config_file),
                 "--profile",
@@ -290,6 +317,7 @@ class TestOCITools:
                 "list",
             ],
             env=ANY,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             check=True,
@@ -317,6 +345,8 @@ class TestOCITools:
 
         assert mock_run.call_args.args[0] == [
             "oci",
+            "--cli-rc-file",
+            os.devnull,
             "--config-file",
             str(inspected_config),
             "--profile",
@@ -347,6 +377,8 @@ class TestOCITools:
 
         assert mock_run.call_args.args[0] == [
             "oci",
+            "--cli-rc-file",
+            os.devnull,
             "--config-file",
             str(config_file),
             "--profile",
@@ -376,6 +408,8 @@ class TestOCITools:
 
         assert mock_run.call_args.args[0] == [
             "oci",
+            "--cli-rc-file",
+            os.devnull,
             "--config-file",
             str(config_file),
             "--profile",
@@ -424,6 +458,8 @@ class TestOCITools:
 
         assert mock_run.call_args.args[0] == [
             "oci",
+            "--cli-rc-file",
+            os.devnull,
             "--config-file",
             DEFAULT_LOCATION,
             "--profile",
@@ -490,9 +526,14 @@ class TestOCITools:
         "command",
         [
             "compute instance list --auth=api_key",
+            "compute instance list --auth-purpose service-principal",
             "compute instance list --profile OTHER",
             "compute instance list --config-file=/tmp/config",
+            "--cli-rc-file /tmp/other-rc compute instance list",
+            "--defaults-file=/tmp/other-rc compute instance list",
             "compute instance list --endpoint https://example.invalid",
+            "compute instance list --federation-endpoint https://example.invalid",
+            "--proxy http://127.0.0.1:8080 compute instance list",
         ],
     )
     @patch("oracle.oci_api_mcp_server.server.subprocess.run")
@@ -515,7 +556,7 @@ class TestOCITools:
 
         mock_run.side_effect = subprocess.CalledProcessError(
             returncode=mock_result.returncode,
-            cmd=["oci"] + command.split(),
+            cmd=["oci", "--cli-rc-file", os.devnull] + command.split(),
             output=mock_result.stdout,
             stderr=mock_result.stderr,
         )
@@ -531,6 +572,84 @@ class TestOCITools:
             }
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "raw-request --http-method GET --target-uri https://169.254.169.254",
+            "--debug raw-request --http-method=GET --target-uri=https://example.com",
+            "--connection-timeout 5 raw-request --http-method GET --target-uri https://example.com",
+            "--realm-specific-endpoint raw-request --http-method GET --target-uri https://example.com",
+            "--opc-request-id request123 raw-request --http-method GET --target-uri https://example.com",
+            "--enable-propagation True raw-request --http-method GET --target-uri https://example.com",
+            "-d raw-request --http-method GET --target-uri https://example.com",
+        ],
+    )
+    @patch("oracle.oci_api_mcp_server.server.subprocess.run")
+    async def test_run_oci_command_denies_raw_request(self, mock_run, command):
+        async with Client(mcp) as client:
+            result = (await client.call_tool("run_oci_command", {"command": command})).data
+
+        assert "error" in result
+        assert "denied by denylist" in result["error"]
+        mock_run.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_api_mcp_server.server.subprocess.run")
+    async def test_run_oci_command_allows_denylisted_words_in_option_values(self, mock_run):
+        command = "os object get --bucket-name raw-request --name safe --file /tmp/safe"
+        mock_run.return_value = MagicMock(stdout="{}", stderr="", returncode=0)
+
+        async with Client(mcp) as client:
+            result = (await client.call_tool("run_oci_command", {"command": command})).data
+
+        assert result["returncode"] == 0
+        mock_run.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_api_mcp_server.server.subprocess.run")
+    async def test_run_oci_command_disables_cli_aliases(self, mock_run):
+        command = "rr --http-method GET --target-uri https://example.com"
+        mock_run.return_value = MagicMock(stdout="{}", stderr="", returncode=0)
+
+        async with Client(mcp) as client:
+            result = (await client.call_tool("run_oci_command", {"command": command})).data
+
+        assert result["returncode"] == 0
+        assert mock_run.call_args.args[0] == [
+            "oci",
+            "--cli-rc-file",
+            os.devnull,
+            "--config-file",
+            DEFAULT_LOCATION,
+            "--profile",
+            "DEFAULT",
+            "--auth",
+            "api_key",
+            "rr",
+            "--http-method",
+            "GET",
+            "--target-uri",
+            "https://example.com",
+        ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "-dd compute instance terminate --instance-id ocid1.instance.oc1..example",
+            "compute -dd instance terminate --instance-id ocid1.instance.oc1..example",
+            "compute instance -dd terminate --instance-id ocid1.instance.oc1..example",
+        ],
+    )
+    @patch("oracle.oci_api_mcp_server.server.subprocess.run")
+    async def test_run_oci_command_denies_clustered_short_flags(self, mock_run, command):
+        async with Client(mcp) as client:
+            result = (await client.call_tool("run_oci_command", {"command": command})).data
+
+        assert "denied by denylist" in result["error"]
+        mock_run.assert_not_called()
+
+    @pytest.mark.asyncio
     @patch("oracle.oci_api_mcp_server.server.subprocess.run")
     async def test_get_oci_commands_success(self, mock_run):
         mock_result = MagicMock()
@@ -544,8 +663,9 @@ class TestOCITools:
             assert result == "OCI commands output"
             assert mock_run.call_args.kwargs["env"]["OCI_SDK_APPEND_USER_AGENT"] == USER_AGENT
             mock_run.assert_called_once_with(
-                ["oci", "--help"],
+                ["oci", "--cli-rc-file", os.devnull, "--help"],
                 env=ANY,
+                stdin=subprocess.DEVNULL,
                 capture_output=True,
                 text=True,
                 check=True,
@@ -559,7 +679,7 @@ class TestOCITools:
         mock_result.stderr = "Some error"
         mock_run.side_effect = subprocess.CalledProcessError(
             returncode=1,
-            cmd=["oci", "--help"],
+            cmd=["oci", "--cli-rc-file", os.devnull, "--help"],
             output=None,
             stderr=mock_result.stderr,
         )
@@ -595,6 +715,16 @@ class TestOCITools:
             ("--raw-output compute instance terminate --instance-id ocid1.instance.oc1..example", "compute instance terminate"),
             ("--no-retry compute instance terminate --instance-id ocid1.instance.oc1..example", "compute instance terminate"),
             ("--config-file /tmp/config compute instance terminate --instance-id ocid1.instance.oc1..example", "compute instance terminate"),
+            ("--connection-timeout 5 compute instance terminate --instance-id ocid1.instance.oc1..example", "compute instance terminate"),
+            ("--realm-specific-endpoint compute instance terminate --instance-id ocid1.instance.oc1..example", "compute instance terminate"),
+            ("--proxy http://127.0.0.1:8080 compute instance terminate", "compute instance terminate"),
+            ("--opc-request-id request123 compute instance terminate", "compute instance terminate"),
+            ("--enable-propagation=True compute instance terminate", "compute instance terminate"),
+            ("-dd compute instance terminate --instance-id ocid1.instance.oc1..example", "compute instance terminate"),
+            ("compute -dd instance terminate --instance-id ocid1.instance.oc1..example", "compute instance terminate"),
+            ("compute instance -dd terminate --instance-id ocid1.instance.oc1..example", "compute instance terminate"),
+            ("compute --proxy http://127.0.0.1:8080 instance terminate", "compute instance terminate"),
+            ("compute instance --proxy http://127.0.0.1:8080 terminate", "compute instance terminate"),
         ],
     )
     def test_denylist_preserves_command_words_after_global_options(self, command, normalized):
@@ -615,6 +745,77 @@ class TestOCITools:
         denylist.denylist = ["compute instance terminate"]
 
         assert denylist.isCommandInDenyList(command) is True
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "compute --proxy http://127.0.0.1:8080 instance terminate",
+            "compute instance --proxy http://127.0.0.1:8080 terminate",
+            "-dd compute instance terminate --instance-id ocid1.instance.oc1..example",
+            "compute -dd instance terminate --instance-id ocid1.instance.oc1..example",
+            "compute instance -dd terminate --instance-id ocid1.instance.oc1..example",
+        ],
+    )
+    def test_denylist_blocks_commands_with_interspersed_global_options(self, command):
+        denylist = Denylist(MagicMock())
+        denylist.denylist = ["compute instance terminate"]
+
+        assert denylist.isCommandInDenyList(command) is True
+
+    def test_denylist_blocks_raw_request(self):
+        denylist = Denylist(MagicMock())
+
+        for command in (
+            "raw-request --http-method GET --target-uri https://example.com",
+            "--connection-timeout 5 raw-request --http-method GET --target-uri https://example.com",
+            "--realm-specific-endpoint raw-request --http-method GET --target-uri https://example.com",
+            "--federation-endpoint https://example.com raw-request --http-method GET --target-uri https://example.com",
+            "--proxy http://127.0.0.1:8080 raw-request --http-method GET --target-uri https://example.com",
+            "--opc-request-id request123 raw-request --http-method GET --target-uri https://example.com",
+            "--auth-purpose service-principal raw-request --http-method GET --target-uri https://example.com",
+            "--enable-propagation True raw-request --http-method GET --target-uri https://example.com",
+            "-d raw-request --http-method GET --target-uri https://example.com",
+        ):
+            assert denylist.isCommandInDenyList(command) is True
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "--future-global-option value raw-request --http-method GET",
+            "--future-global-option=value raw-request --http-method GET",
+            "-x raw-request --http-method GET",
+            "--proxy",
+        ],
+    )
+    def test_denylist_fails_closed_for_ambiguous_leading_options(self, command):
+        denylist = Denylist(MagicMock())
+
+        assert denylist.isCommandInDenyList(command) is True
+
+    def test_denylist_global_options_match_oci_cli_metadata(self):
+        cli_flags = {option for param in oci_cli.params if param.is_flag for option in param.opts}
+        cli_options_with_values = {
+            option for param in oci_cli.params if not param.is_flag for option in param.opts
+        }
+
+        assert Denylist._global_flags_without_values == cli_flags
+        assert Denylist._global_options_with_values == cli_options_with_values
+
+    def test_denylist_does_not_scan_option_values_as_command_words(self):
+        denylist = Denylist(MagicMock())
+
+        command = "os object get --bucket-name raw-request --name safe --file /tmp/safe"
+
+        assert denylist.remove_params_from_command(command) == "os object get"
+        assert denylist.isCommandInDenyList(command) is False
+
+
+class TestDenylist:
+    def test_missing_denylist_fails_closed(self, tmp_path):
+        missing_denylist = tmp_path / "missing-denylist"
+
+        with pytest.raises(RuntimeError, match="Denylist file not found"):
+            Denylist(MagicMock(), str(missing_denylist))
 
 
 class TestServer:

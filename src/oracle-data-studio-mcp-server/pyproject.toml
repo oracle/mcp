@@ -10,7 +10,7 @@ authors = [
     {name = "Oracle Data Studio", email = "essbase_grp_ww@oracle.com"},
 ]
 dependencies = [
-    "fastmcp==3.2.4",
+    "fastmcp==3.4.5",
     "oracle-data-studio>=1.0.26",
     "pydantic==2.12.3",
     "keyring>=25.0.0",

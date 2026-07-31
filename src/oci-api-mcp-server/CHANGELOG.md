@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.4
+
+### Changed
+
+- Updated the FastMCP dependency and lockfile to 3.4.5.
+
 ## 2.1.3 - 2026-07-30
 
 ### Security

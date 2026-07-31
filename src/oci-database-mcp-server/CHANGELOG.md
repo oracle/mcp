@@ -2,6 +2,12 @@
 
 All notable changes to OCI Database MCP Server are documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Updated the FastMCP dependency and lockfile to 3.4.5.
+
 ## 1.3.0
 
 ### Added

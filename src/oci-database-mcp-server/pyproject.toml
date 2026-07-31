@@ -10,7 +10,7 @@ authors = [
     {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
 ]
 dependencies = [
-    "fastmcp==3.4.4",
+    "fastmcp==3.4.5",
     "oci==2.182.1",
     "oracle-mcp-common>=0.1.2,<0.2.0",
     "pytest-cov>=7.0.0",

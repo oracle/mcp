@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Updated the FastMCP dependency and lockfile to 3.4.5.
+
 ## 1.0.0
 
 Initial contribution.

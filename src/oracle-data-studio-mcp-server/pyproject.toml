@@ -1,6 +1,6 @@
 [project]
 name = "oracle.data-studio-mcp-server"
-version = "1.0.0"
+version = "1.0.1"
 description = "Oracle Data Studio MCP server — Essbase, ADP (Autonomous Database Data Platform), and Data Transforms with Oracle 23ai annotation-aware query routing"
 readme = "README.md"
 requires-python = ">=3.13"

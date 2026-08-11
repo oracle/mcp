@@ -6,7 +6,12 @@ https://oss.oracle.com/licenses/upl.
 
 from __future__ import annotations
 
+import base64
 import configparser
+import datetime
+import hashlib
+import hmac
+import json
 import logging
 import os
 from dataclasses import dataclass, field
@@ -19,7 +24,9 @@ import oci
 from fastmcp.server.auth.providers.oci import OCIProvider
 
 LOGGER = logging.getLogger(__name__)
-SESSION_AUTH_GUIDANCE = "Run `oci session authenticate` to use session-token authentication."
+SESSION_AUTH_GUIDANCE = (
+    "Run `oci session authenticate` to use session-token authentication."
+)
 COMPATIBILITY_WINDOW = (
     "Compatibility is available from 0.1.0 until the later of 180 days or two "
     "published adopter-server release waves; removal is no earlier than 0.2.0."
@@ -35,6 +42,7 @@ class AuthType(StrEnum):
     IDENTITY_DOMAIN_UPST = "identity_domain_upst"
     INSTANCE_PRINCIPAL = "instance_principal"
     RESOURCE_PRINCIPAL = "resource_principal"
+    RESOURCE_PRINCIPAL_V212 = "resource_principal_v212"
     INSTANCE_PRINCIPAL_DELEGATION = "instance_principal_delegation"
     RESOURCE_PRINCIPAL_DELEGATION = "resource_principal_delegation"
     OKE_WORKLOAD_IDENTITY = "oke_workload_identity"
@@ -60,6 +68,13 @@ class AuthOptions:
     oke_service_account_token_path: str | None = None
     oke_service_account_token: str | None = None
     tenancy_id_override: str | None = None
+    resource_principal_tenancy_id: str | None = None
+    resource_principal_resource_id: str | None = None
+    resource_principal_private_key_path: str | None = None
+    resource_principal_rci: str | None = field(default=None, repr=False)
+    resource_principal_t0: str | None = None
+    resource_principal_rpt_endpoint: str | None = None
+    resource_principal_rpst_endpoint: str | None = None
 
 
 @dataclass(frozen=True)
@@ -110,12 +125,18 @@ class IDCSHttpAuth:
     _client_secret: str = field(repr=False)
     _configured_region: str | None = field(repr=False)
 
-    def context_for(self, access_token: str | None, *, region: str | None = None) -> IDCSHttpAuthContext:
+    def context_for(
+        self, access_token: str | None, *, region: str | None = None
+    ) -> IDCSHttpAuthContext:
         """Exchange an explicitly supplied authenticated request token for OCI signing."""
         token = _nonempty(access_token)
         if not token:
-            raise ValueError("HTTP requests require an authenticated IDCS access token.")
-        resolved_region = _nonempty(region) or self._configured_region or _env("OCI_REGION")
+            raise ValueError(
+                "HTTP requests require an authenticated IDCS access token."
+            )
+        resolved_region = (
+            _nonempty(region) or self._configured_region or _env("OCI_REGION")
+        )
         if not resolved_region:
             raise ValueError("HTTP requests require an explicit region or OCI_REGION.")
         try:
@@ -127,8 +148,12 @@ class IDCSHttpAuth:
                 region=resolved_region,
             )
         except Exception as error:
-            raise ValueError("Unable to construct the HTTP IDCS token-exchange signer") from error
-        return IDCSHttpAuthContext(config={"region": resolved_region}, signer=signer, region=resolved_region)
+            raise ValueError(
+                "Unable to construct the HTTP IDCS token-exchange signer"
+            ) from error
+        return IDCSHttpAuthContext(
+            config={"region": resolved_region}, signer=signer, region=resolved_region
+        )
 
 
 @dataclass(frozen=True)
@@ -148,6 +173,13 @@ class _ResolvedInputs:
     oke_service_account_token_path: str | None
     oke_service_account_token: str | None
     tenancy_id_override: str | None
+    resource_principal_tenancy_id: str | None
+    resource_principal_resource_id: str | None
+    resource_principal_private_key_path: str | None
+    resource_principal_rci: str | None = field(repr=False)
+    resource_principal_t0: str | None
+    resource_principal_rpt_endpoint: str | None
+    resource_principal_rpst_endpoint: str | None
 
 
 @dataclass(frozen=True)
@@ -195,7 +227,9 @@ def build_idcs_http_auth(
             base_url=inputs.base_url,
         )
     except Exception as error:
-        raise ValueError("Unable to construct the HTTP IDCS authentication provider") from error
+        raise ValueError(
+            "Unable to construct the HTTP IDCS authentication provider"
+        ) from error
     return IDCSHttpAuth(
         provider=provider,
         _identity_domain_url=inputs.domain_url,
@@ -210,13 +244,17 @@ def resolve_auth_type(options: AuthOptions | None = None) -> AuthType:
     options = options or AuthOptions()
     value = _nonempty(options.auth_type) or _env("OCI_MCP_AUTH_TYPE")
     if value is None:
-        value = _legacy_env("OCI_IOT_AUTH_TYPE", "OCI_AUTH_TYPE", "ORACLE_MCP_AUTH_METHOD")
+        value = _legacy_env(
+            "OCI_IOT_AUTH_TYPE", "OCI_AUTH_TYPE", "ORACLE_MCP_AUTH_METHOD"
+        )
     normalized = _normalize_auth_type(value or AuthType.AUTO.value)
     try:
         return AuthType(normalized)
     except ValueError as error:
         supported = ", ".join(auth_type.value for auth_type in AuthType)
-        raise ValueError(f"Unsupported OCI authentication type. Supported values: {supported}") from error
+        raise ValueError(
+            f"Unsupported OCI authentication type. Supported values: {supported}"
+        ) from error
 
 
 def _resolve_inputs(options: AuthOptions | None) -> _ResolvedInputs:
@@ -226,30 +264,67 @@ def _resolve_inputs(options: AuthOptions | None) -> _ResolvedInputs:
         config_file=resolve_config_file(options),
         profile_name=resolve_profile_name(options),
         region=_resolve_region(options.region),
-        identity_domain_url=_option_or_env(options.identity_domain_url, "OCI_MCP_IDENTITY_DOMAIN_URL"),
+        identity_domain_url=_option_or_env(
+            options.identity_domain_url, "OCI_MCP_IDENTITY_DOMAIN_URL"
+        ),
         upst_jwt_file=_option_or_env(options.upst_jwt_file, "OCI_MCP_UPST_JWT_FILE"),
         identity_domain_client_id=_option_or_env(
             options.identity_domain_client_id, "OCI_MCP_IDENTITY_DOMAIN_CLIENT_ID"
         ),
         identity_domain_client_secret_file=_option_or_env(
-            options.identity_domain_client_secret_file, "OCI_MCP_IDENTITY_DOMAIN_CLIENT_SECRET_FILE"
+            options.identity_domain_client_secret_file,
+            "OCI_MCP_IDENTITY_DOMAIN_CLIENT_SECRET_FILE",
         ),
-        delegation_token_file=_option_or_env(options.delegation_token_file, "OCI_MCP_DELEGATION_TOKEN_FILE"),
-        delegation_token=_option_or_env(options.delegation_token, "OCI_MCP_DELEGATION_TOKEN"),
+        delegation_token_file=_option_or_env(
+            options.delegation_token_file, "OCI_MCP_DELEGATION_TOKEN_FILE"
+        ),
+        delegation_token=_option_or_env(
+            options.delegation_token, "OCI_MCP_DELEGATION_TOKEN"
+        ),
         oke_service_account_token_path=_option_or_env(
-            options.oke_service_account_token_path, "OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN_PATH"
+            options.oke_service_account_token_path,
+            "OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN_PATH",
         ),
-        oke_service_account_token=_option_or_env(options.oke_service_account_token, "OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN"),
-        tenancy_id_override=_option_or_env(options.tenancy_id_override, "OCI_MCP_TENANCY_ID_OVERRIDE"),
+        oke_service_account_token=_option_or_env(
+            options.oke_service_account_token, "OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN"
+        ),
+        tenancy_id_override=_option_or_env(
+            options.tenancy_id_override, "OCI_MCP_TENANCY_ID_OVERRIDE"
+        ),
+        resource_principal_tenancy_id=_option_or_env(
+            options.resource_principal_tenancy_id, "OCI_MCP_RP_TENANCY_ID"
+        ),
+        resource_principal_resource_id=_option_or_env(
+            options.resource_principal_resource_id, "OCI_MCP_RP_RESOURCE_ID"
+        ),
+        resource_principal_private_key_path=_option_or_env(
+            options.resource_principal_private_key_path, "OCI_MCP_RP_PRIVATE_KEY_PATH"
+        ),
+        resource_principal_rci=_option_or_env(
+            options.resource_principal_rci, "OCI_MCP_RP_RCI"
+        ),
+        resource_principal_t0=_option_or_env(
+            options.resource_principal_t0, "OCI_MCP_RP_T0"
+        ),
+        resource_principal_rpt_endpoint=_option_or_env(
+            options.resource_principal_rpt_endpoint, "OCI_MCP_RP_RPT_ENDPOINT"
+        ),
+        resource_principal_rpst_endpoint=_option_or_env(
+            options.resource_principal_rpst_endpoint, "OCI_MCP_RP_RPST_ENDPOINT"
+        ),
     )
 
 
-def _resolve_idcs_http_inputs(options: IDCSHttpAuthOptions | None) -> _ResolvedIDCSHttpInputs:
+def _resolve_idcs_http_inputs(
+    options: IDCSHttpAuthOptions | None,
+) -> _ResolvedIDCSHttpInputs:
     options = options or IDCSHttpAuthOptions()
     values = {
         "IDCS_DOMAIN": _option_or_env(options.domain, "IDCS_DOMAIN"),
         "IDCS_CLIENT_ID": _option_or_env(options.client_id, "IDCS_CLIENT_ID"),
-        "IDCS_CLIENT_SECRET": _option_or_env(options.client_secret, "IDCS_CLIENT_SECRET"),
+        "IDCS_CLIENT_SECRET": _option_or_env(
+            options.client_secret, "IDCS_CLIENT_SECRET"
+        ),
         "IDCS_AUDIENCE": _option_or_env(options.audience, "IDCS_AUDIENCE"),
         "ORACLE_MCP_BASE_URL": _option_or_env(options.base_url, "ORACLE_MCP_BASE_URL"),
     }
@@ -280,7 +355,11 @@ def resolve_profile_name(options: AuthOptions | None = None) -> str:
 def resolve_config_file(options: AuthOptions | None = None) -> str:
     """Resolve the OCI SDK configuration location."""
     options = options or AuthOptions()
-    return _nonempty(options.config_file) or _env("OCI_CONFIG_FILE") or oci.config.DEFAULT_LOCATION
+    return (
+        _nonempty(options.config_file)
+        or _env("OCI_CONFIG_FILE")
+        or oci.config.DEFAULT_LOCATION
+    )
 
 
 def profile_declares_security_token(config_file: str, profile_name: str) -> bool:
@@ -290,15 +369,23 @@ def profile_declares_security_token(config_file: str, profile_name: str) -> bool
         with Path(config_file).expanduser().open(encoding="utf-8") as config:
             parser.read_file(config)
     except (OSError, configparser.Error) as error:
-        raise ValueError("Unable to read OCI_CONFIG_FILE for the selected profile") from error
+        raise ValueError(
+            "Unable to read OCI_CONFIG_FILE for the selected profile"
+        ) from error
 
-    section = profile_name if profile_name != oci.config.DEFAULT_PROFILE else parser.default_section
+    section = (
+        profile_name
+        if profile_name != oci.config.DEFAULT_PROFILE
+        else parser.default_section
+    )
     if section != parser.default_section and not parser.has_section(section):
         raise ValueError("Selected OCI_CONFIG_PROFILE was not found in OCI_CONFIG_FILE")
     return _raw_profile_has_option(parser, section, "security_token_file")
 
 
-def _raw_profile_has_option(parser: configparser.ConfigParser, section: str, option: str) -> bool:
+def _raw_profile_has_option(
+    parser: configparser.ConfigParser, section: str, option: str
+) -> bool:
     """Check a section without ConfigParser's normal DEFAULT-value inheritance."""
     if section == parser.default_section:
         return option in parser.defaults()
@@ -310,10 +397,14 @@ def _raw_profile_has_option(parser: configparser.ConfigParser, section: str, opt
 def _build_profile_context(inputs: _ResolvedInputs) -> AuthContext:
     config = _load_profile(inputs.config_file, inputs.profile_name)
     selected_auth_type = inputs.auth_type
-    direct_session = profile_declares_security_token(inputs.config_file, inputs.profile_name)
+    direct_session = profile_declares_security_token(
+        inputs.config_file, inputs.profile_name
+    )
 
     if selected_auth_type is AuthType.AUTO:
-        selected_auth_type = AuthType.SECURITY_TOKEN if direct_session else AuthType.API_KEY
+        selected_auth_type = (
+            AuthType.SECURITY_TOKEN if direct_session else AuthType.API_KEY
+        )
     if selected_auth_type is AuthType.SECURITY_TOKEN and not direct_session:
         raise ValueError(
             "security_token_file must be declared directly in the selected OCI_CONFIG_PROFILE; "
@@ -324,23 +415,36 @@ def _build_profile_context(inputs: _ResolvedInputs) -> AuthContext:
         signer = _security_token_signer(config)
     else:
         signer = _api_key_signer(config)
-        _warn_once("api_key", f"API-key authentication is in use. {SESSION_AUTH_GUIDANCE}")
+        _warn_once(
+            "api_key", f"API-key authentication is in use. {SESSION_AUTH_GUIDANCE}"
+        )
 
     region = inputs.region or config.get("region")
     if region:
         config["region"] = region
-    return AuthContext(selected_auth_type, config, signer, config.get("tenancy"), region, inputs.profile_name)
+    return AuthContext(
+        selected_auth_type,
+        config,
+        signer,
+        config.get("tenancy"),
+        region,
+        inputs.profile_name,
+    )
 
 
 def _load_profile(config_file: str, profile_name: str) -> dict[str, Any]:
     try:
-        return dict(oci.config.from_file(file_location=config_file, profile_name=profile_name))
+        return dict(
+            oci.config.from_file(file_location=config_file, profile_name=profile_name)
+        )
     except Exception as error:
         raise ValueError("Unable to load the selected OCI profile") from error
 
 
 def _api_key_signer(config: dict[str, Any]) -> Any:
-    _require_config_fields(config, "API-key authentication", "tenancy", "user", "fingerprint", "key_file")
+    _require_config_fields(
+        config, "API-key authentication", "tenancy", "user", "fingerprint", "key_file"
+    )
     try:
         return oci.signer.Signer(
             tenancy=config["tenancy"],
@@ -350,7 +454,9 @@ def _api_key_signer(config: dict[str, Any]) -> Any:
             pass_phrase=config.get("pass_phrase"),
         )
     except Exception as error:
-        raise ValueError("Unable to construct the API-key signer from the selected OCI profile") from error
+        raise ValueError(
+            "Unable to construct the API-key signer from the selected OCI profile"
+        ) from error
 
 
 def _security_token_signer(config: dict[str, Any]) -> Any:
@@ -360,12 +466,18 @@ def _security_token_signer(config: dict[str, Any]) -> Any:
         "key_file",
         "security_token_file",
     )
-    token = _read_required_secret_file(config["security_token_file"], "security_token_file")
+    token = _read_required_secret_file(
+        config["security_token_file"], "security_token_file"
+    )
     try:
-        private_key = oci.signer.load_private_key_from_file(config["key_file"], config.get("pass_phrase"))
+        private_key = oci.signer.load_private_key_from_file(
+            config["key_file"], config.get("pass_phrase")
+        )
         return oci.auth.signers.SecurityTokenSigner(token, private_key)
     except Exception as error:
-        raise ValueError("Unable to construct the security-token signer from the selected OCI profile") from error
+        raise ValueError(
+            "Unable to construct the security-token signer from the selected OCI profile"
+        ) from error
 
 
 def _build_principal_context(inputs: _ResolvedInputs) -> AuthContext:
@@ -374,6 +486,8 @@ def _build_principal_context(inputs: _ResolvedInputs) -> AuthContext:
             signer = oci.auth.signers.InstancePrincipalsSecurityTokenSigner()
         elif inputs.auth_type is AuthType.RESOURCE_PRINCIPAL:
             signer = oci.auth.signers.get_resource_principals_signer()
+        elif inputs.auth_type is AuthType.RESOURCE_PRINCIPAL_V212:
+            signer = _resource_principal_v212_signer(inputs)
         elif inputs.auth_type is AuthType.INSTANCE_PRINCIPAL_DELEGATION:
             signer = oci.auth.signers.InstancePrincipalsDelegationTokenSigner(
                 delegation_token=_delegation_token(inputs)
@@ -383,27 +497,175 @@ def _build_principal_context(inputs: _ResolvedInputs) -> AuthContext:
                 delegation_token=_delegation_token(inputs)
             )
         elif inputs.auth_type is AuthType.OKE_WORKLOAD_IDENTITY:
-            signer = oci.auth.signers.get_oke_workload_identity_resource_principal_signer(
-                **_oke_signer_kwargs(inputs)
+            signer = (
+                oci.auth.signers.get_oke_workload_identity_resource_principal_signer(
+                    **_oke_signer_kwargs(inputs)
+                )
             )
         else:
             raise AssertionError(f"Unhandled auth type: {inputs.auth_type}")
     except ValueError:
         raise
     except Exception as error:
-        raise ValueError(f"Unable to construct the {inputs.auth_type.value} signer") from error
+        raise ValueError(
+            f"Unable to construct the {inputs.auth_type.value} signer"
+        ) from error
 
     signer_region = getattr(signer, "region", None)
     region = inputs.region or signer_region
     config: dict[str, Any] = {}
     if region:
         config["region"] = region
+    tenancy_id = getattr(signer, "tenancy_id", None)
+    if inputs.auth_type is AuthType.RESOURCE_PRINCIPAL_V212:
+        tenancy_id = tenancy_id or inputs.resource_principal_tenancy_id
     tenancy_id = (
-        getattr(signer, "tenancy_id", None)
+        tenancy_id
         or inputs.tenancy_id_override
         or _legacy_env("OCI_IOT_TENANCY_ID_OVERRIDE", "TENANCY_ID_OVERRIDE")
     )
     return AuthContext(inputs.auth_type, config, signer, tenancy_id, region, None)
+
+
+def _resource_principal_v212_signer(inputs: _ResolvedInputs) -> Any:
+    """Construct the SDK signer for the Database-service RPv2.1.2 exchange."""
+    required = {
+        "OCI_MCP_RP_TENANCY_ID": inputs.resource_principal_tenancy_id,
+        "OCI_MCP_RP_RESOURCE_ID": inputs.resource_principal_resource_id,
+        "OCI_MCP_RP_PRIVATE_KEY_PATH": inputs.resource_principal_private_key_path,
+        "OCI_MCP_RP_RCI": inputs.resource_principal_rci,
+        "OCI_MCP_RP_T0": inputs.resource_principal_t0,
+    }
+    missing = [name for name, value in required.items() if not value]
+    if missing:
+        raise ValueError(f"resource_principal_v212 requires: {', '.join(missing)}")
+    if not inputs.region:
+        raise ValueError(
+            "resource_principal_v212 requires an explicit region or OCI_REGION"
+        )
+
+    rpt_endpoint = _resource_principal_endpoint(
+        inputs.resource_principal_rpt_endpoint,
+        oci.regions.endpoint_for("database", region=inputs.region),
+    )
+    rpst_endpoint = _resource_principal_endpoint(
+        inputs.resource_principal_rpst_endpoint,
+        oci.regions.endpoint_for("auth", region=inputs.region),
+    )
+    private_key_path = str(
+        Path(inputs.resource_principal_private_key_path).expanduser().resolve()
+    )
+    signer_type = _resource_principal_v212_signer_type(
+        inputs.resource_principal_rci, inputs.resource_principal_t0
+    )
+    signer = signer_type(
+        resource_principal_token_endpoint=rpt_endpoint,
+        resource_principal_session_token_endpoint=rpst_endpoint,
+        resource_id=inputs.resource_principal_resource_id,
+        tenancy_id=inputs.resource_principal_tenancy_id,
+        private_key=private_key_path,
+        rp_version="2.1.2",
+        region=inputs.region,
+        security_context=_resource_principal_security_context(
+            inputs.resource_principal_rci, inputs.resource_principal_t0
+        ),
+    )
+
+    return signer
+
+
+def _resource_principal_v212_signer_type(rci: str, t0: str) -> type[Any]:
+    """Return an SDK signer subclass that creates a fresh proof for every RPT attempt."""
+    sdk_signer_type = oci.auth.signers.EphemeralResourcePrincipalV21Signer
+    if not callable(getattr(sdk_signer_type, "make_call", None)):
+        raise ValueError(
+            "Installed OCI SDK does not support RPv2.1.2 proof refresh retries"
+        )
+
+    class ResourcePrincipalV212Signer(sdk_signer_type):
+        def make_call(
+            self,
+            method: str,
+            resource_path: str,
+            path_params: Any = None,
+            header_params: Any = None,
+            body: Any = None,
+        ) -> Any:
+            if method != "get" or resource_path != self.resource_principal_token_path:
+                return super().make_call(
+                    method, resource_path, path_params, header_params, body
+                )
+
+            def request_rpt() -> Any:
+                security_context = _resource_principal_security_context(rci, t0)
+                self.security_context = security_context
+                return self.base_client.call_api(
+                    resource_path=resource_path,
+                    method=method,
+                    path_params=path_params,
+                    header_params={"security-context": security_context},
+                    body=body,
+                    response_type=oci.base_client.BYTES_RESPONSE_TYPE,
+                )
+
+            if self.retry_strategy:
+                return self.retry_strategy.make_retrying_call(request_rpt)
+            return request_rpt()
+
+    return ResourcePrincipalV212Signer
+
+
+def _resource_principal_endpoint(value: str | None, default: str) -> str:
+    endpoint = value or default
+    parsed = urlparse(endpoint)
+    if (
+        parsed.scheme != "https"
+        or not parsed.netloc
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(
+            "Resource principal exchange endpoints must be absolute https URLs without query or fragment"
+        )
+    return endpoint.rstrip("/")
+
+
+def _resource_principal_security_context(rci: str, t0: str) -> str:
+    """Build the v2.1.2 security context required by Database-service RPT retrieval."""
+    try:
+        rci_key = base64.b64decode(rci, validate=True)
+        t0_value = datetime.datetime.fromisoformat(t0.replace("Z", "+00:00"))
+        if t0_value.tzinfo is None:
+            raise ValueError
+        now = datetime.datetime.now(datetime.timezone.utc)
+        elapsed_milliseconds = int((now - t0_value).total_seconds() * 1000)
+        if not rci_key or elapsed_milliseconds < 0:
+            raise ValueError
+        digest = hmac.new(
+            rci_key, elapsed_milliseconds.to_bytes(8, "big"), hashlib.sha1
+        ).digest()
+    except (ValueError, OverflowError) as error:
+        raise ValueError(
+            "resource_principal_v212 requires a valid OCI_MCP_RP_RCI and OCI_MCP_RP_T0"
+        ) from error
+
+    offset = digest[-1] & 0x0F
+    binary = int.from_bytes(digest[offset : offset + 4], byteorder="big") & 0x7FFF_FFFF
+    return json.dumps(
+        {
+            "RPTSecurityContext": {
+                "contextVersion": "V1",
+                "keyType": "REGULAR_RPT",
+                "securitySignature": {
+                    "currentUTCTime": now.isoformat(timespec="microseconds").replace(
+                        "+00:00", "Z"
+                    ),
+                    "Signature": f"{binary % 100000000:08d}",
+                },
+            }
+        }
+    )
 
 
 def _build_token_exchange_context(inputs: _ResolvedInputs) -> AuthContext:
@@ -413,21 +675,33 @@ def _build_token_exchange_context(inputs: _ResolvedInputs) -> AuthContext:
     client_id = inputs.identity_domain_client_id
     secret_file = inputs.identity_domain_client_secret_file
     if not client_id:
-        raise ValueError("OCI_MCP_IDENTITY_DOMAIN_CLIENT_ID is required for identity_domain_upst")
-    client_secret = _read_required_secret_file(secret_file, "OCI_MCP_IDENTITY_DOMAIN_CLIENT_SECRET_FILE")
+        raise ValueError(
+            "OCI_MCP_IDENTITY_DOMAIN_CLIENT_ID is required for identity_domain_upst"
+        )
+    client_secret = _read_required_secret_file(
+        secret_file, "OCI_MCP_IDENTITY_DOMAIN_CLIENT_SECRET_FILE"
+    )
     _read_required_secret_file(jwt_file, "OCI_MCP_UPST_JWT_FILE")
     region = inputs.region
     if not region:
-        raise ValueError("identity_domain_upst requires an explicit region or OCI_REGION")
+        raise ValueError(
+            "identity_domain_upst requires an explicit region or OCI_REGION"
+        )
 
     def read_jwt() -> str:
         return _read_required_secret_file(jwt_file, "OCI_MCP_UPST_JWT_FILE")
 
     try:
-        signer = oci.auth.signers.TokenExchangeSigner(read_jwt, url, client_id, client_secret, region=region)
+        signer = oci.auth.signers.TokenExchangeSigner(
+            read_jwt, url, client_id, client_secret, region=region
+        )
     except Exception as error:
-        raise ValueError("Unable to construct the identity_domain_upst signer") from error
-    return AuthContext(AuthType.IDENTITY_DOMAIN_UPST, {"region": region}, signer, None, region, None)
+        raise ValueError(
+            "Unable to construct the identity_domain_upst signer"
+        ) from error
+    return AuthContext(
+        AuthType.IDENTITY_DOMAIN_UPST, {"region": region}, signer, None, region, None
+    )
 
 
 def _delegation_token(inputs: _ResolvedInputs) -> str:
@@ -436,7 +710,9 @@ def _delegation_token(inputs: _ResolvedInputs) -> str:
     if inline is None:
         inline = _legacy_env("OCI_IOT_DELEGATION_TOKEN")
     if token_file and inline:
-        raise ValueError("Set only OCI_MCP_DELEGATION_TOKEN_FILE; inline delegation tokens are deprecated.")
+        raise ValueError(
+            "Set only OCI_MCP_DELEGATION_TOKEN_FILE; inline delegation tokens are deprecated."
+        )
     if token_file:
         return _read_required_secret_file(token_file, "OCI_MCP_DELEGATION_TOKEN_FILE")
     if inline:
@@ -446,7 +722,9 @@ def _delegation_token(inputs: _ResolvedInputs) -> str:
             f"{COMPATIBILITY_WINDOW}",
         )
         return inline
-    raise ValueError("OCI_MCP_DELEGATION_TOKEN_FILE is required for delegation authentication")
+    raise ValueError(
+        "OCI_MCP_DELEGATION_TOKEN_FILE is required for delegation authentication"
+    )
 
 
 def _oke_signer_kwargs(inputs: _ResolvedInputs) -> dict[str, str]:
@@ -457,7 +735,9 @@ def _oke_signer_kwargs(inputs: _ResolvedInputs) -> dict[str, str]:
     if inline is None:
         inline = _legacy_env("OCI_IOT_OKE_SERVICE_ACCOUNT_TOKEN")
     if token_path and inline:
-        raise ValueError("Set only OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN_PATH; inline OKE tokens are deprecated.")
+        raise ValueError(
+            "Set only OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN_PATH; inline OKE tokens are deprecated."
+        )
     if token_path:
         return {"service_account_token_path": token_path}
     if inline:
@@ -476,10 +756,14 @@ def _resolve_region(explicit_region: str | None) -> str | None:
 
 def _validate_identity_domain_url(url: str | None) -> None:
     if not url:
-        raise ValueError("OCI_MCP_IDENTITY_DOMAIN_URL is required for identity_domain_upst")
+        raise ValueError(
+            "OCI_MCP_IDENTITY_DOMAIN_URL is required for identity_domain_upst"
+        )
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.netloc:
-        raise ValueError("OCI_MCP_IDENTITY_DOMAIN_URL must be an absolute https:// URL with a host")
+        raise ValueError(
+            "OCI_MCP_IDENTITY_DOMAIN_URL must be an absolute https:// URL with a host"
+        )
 
 
 def _normalize_idcs_domain(value: str | None) -> str:
@@ -504,8 +788,15 @@ def _validate_mcp_base_url(value: str | None) -> str:
     if not value:
         raise ValueError("ORACLE_MCP_BASE_URL is required")
     parsed = urlparse(value)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.query or parsed.fragment:
-        raise ValueError("ORACLE_MCP_BASE_URL must be an absolute http:// or https:// URL")
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(
+            "ORACLE_MCP_BASE_URL must be an absolute http:// or https:// URL"
+        )
     return value
 
 
@@ -518,11 +809,15 @@ def _normalize_required_scopes(required_scopes: Sequence[str]) -> list[str]:
     return scopes
 
 
-def _require_config_fields(config: dict[str, Any], description: str, *fields: str) -> None:
+def _require_config_fields(
+    config: dict[str, Any], description: str, *fields: str
+) -> None:
     missing = [field for field in fields if not _nonempty(config.get(field))]
     if missing:
         names = ", ".join(missing)
-        raise ValueError(f"{description} profile is missing required fields: {names}. {SESSION_AUTH_GUIDANCE}")
+        raise ValueError(
+            f"{description} profile is missing required fields: {names}. {SESSION_AUTH_GUIDANCE}"
+        )
 
 
 def _read_required_secret_file(path: str | None, variable: str) -> str:
@@ -570,7 +865,10 @@ def _legacy_env(*names: str) -> str | None:
     for name in names:
         value = _env(name)
         if value:
-            _warn_once(f"legacy_{name}", f"{name} is deprecated; use the OCI_MCP_* equivalent. {COMPATIBILITY_WINDOW}")
+            _warn_once(
+                f"legacy_{name}",
+                f"{name} is deprecated; use the OCI_MCP_* equivalent. {COMPATIBILITY_WINDOW}",
+            )
             return value
     return None
 

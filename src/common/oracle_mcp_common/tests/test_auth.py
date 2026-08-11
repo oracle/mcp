@@ -6,12 +6,13 @@ https://oss.oracle.com/licenses/upl.
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-
 from oracle_mcp_common import auth
 
 
@@ -31,6 +32,13 @@ def clear_environment(monkeypatch):
         "OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN_PATH",
         "OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN",
         "OCI_MCP_TENANCY_ID_OVERRIDE",
+        "OCI_MCP_RP_TENANCY_ID",
+        "OCI_MCP_RP_RESOURCE_ID",
+        "OCI_MCP_RP_PRIVATE_KEY_PATH",
+        "OCI_MCP_RP_RCI",
+        "OCI_MCP_RP_T0",
+        "OCI_MCP_RP_RPT_ENDPOINT",
+        "OCI_MCP_RP_RPST_ENDPOINT",
         "OCI_IOT_AUTH_TYPE",
         "OCI_IOT_DELEGATION_TOKEN",
         "OCI_IOT_OKE_SERVICE_ACCOUNT_TOKEN_PATH",
@@ -83,7 +91,10 @@ def patch_api_signer(monkeypatch):
 def test_resolve_auth_type_uses_explicit_option_over_environment(monkeypatch):
     monkeypatch.setenv("OCI_MCP_AUTH_TYPE", "security_token")
 
-    assert auth.resolve_auth_type(auth.AuthOptions(auth_type="api-key")) is auth.AuthType.API_KEY
+    assert (
+        auth.resolve_auth_type(auth.AuthOptions(auth_type="api-key"))
+        is auth.AuthType.API_KEY
+    )
 
 
 def test_resolve_auth_type_uses_canonical_environment_and_validates(monkeypatch):
@@ -106,8 +117,14 @@ def test_empty_values_are_unset_and_legacy_mode_is_mapped(monkeypatch, caplog):
 def test_profile_and_config_resolution_honor_explicit_canonical_and_legacy(monkeypatch):
     monkeypatch.setenv("OCI_CONFIG_PROFILE", "canonical")
     monkeypatch.setenv("OCI_CONFIG_FILE", "/canonical/config")
-    assert auth.resolve_profile_name(auth.AuthOptions(profile_name="explicit")) == "explicit"
-    assert auth.resolve_config_file(auth.AuthOptions(config_file="/explicit/config")) == "/explicit/config"
+    assert (
+        auth.resolve_profile_name(auth.AuthOptions(profile_name="explicit"))
+        == "explicit"
+    )
+    assert (
+        auth.resolve_config_file(auth.AuthOptions(config_file="/explicit/config"))
+        == "/explicit/config"
+    )
 
     monkeypatch.delenv("OCI_CONFIG_PROFILE")
     monkeypatch.setenv("ORACLE_MCP_AUTH_PROFILE", "legacy")
@@ -125,29 +142,44 @@ def test_profile_classifier_excludes_default_inheritance(tmp_path):
     assert auth.profile_declares_security_token(str(config_file), "DEFAULT")
 
 
-@pytest.mark.parametrize("content, profile", [("[API]\n", "MISSING"), ("not an ini file", "API")])
-def test_profile_classifier_reports_unreadable_or_missing_sections(tmp_path, content, profile):
+@pytest.mark.parametrize(
+    "content, profile", [("[API]\n", "MISSING"), ("not an ini file", "API")]
+)
+def test_profile_classifier_reports_unreadable_or_missing_sections(
+    tmp_path, content, profile
+):
     config_file = write_config(tmp_path, content)
     with pytest.raises(ValueError, match="OCI_CONFIG"):
         auth.profile_declares_security_token(str(config_file), profile)
 
 
-def test_api_key_context_uses_selected_profile_and_safe_warning(tmp_path, monkeypatch, caplog, api_config):
+def test_api_key_context_uses_selected_profile_and_safe_warning(
+    tmp_path, monkeypatch, caplog, api_config
+):
     config_file = write_config(tmp_path, "[API]\n")
     loaded = patch_profile(monkeypatch, api_config)
     signer, constructor = patch_api_signer(monkeypatch)
 
     context = auth.build_auth_context(
-        auth.AuthOptions(auth_type="api_key", config_file=str(config_file), profile_name="API")
+        auth.AuthOptions(
+            auth_type="api_key", config_file=str(config_file), profile_name="API"
+        )
     )
 
     assert context.auth_type is auth.AuthType.API_KEY
     assert context.signer is signer
     assert context.region == "us-phoenix-1"
-    assert loaded.call_args.kwargs == {"file_location": str(config_file), "profile_name": "API"}
+    assert loaded.call_args.kwargs == {
+        "file_location": str(config_file),
+        "profile_name": "API",
+    }
     assert constructor.call_args.kwargs["private_key_file_location"] == "/keys/api.pem"
     assert "API-key authentication" in caplog.text
-    auth.build_auth_context(auth.AuthOptions(auth_type="api_key", config_file=str(config_file), profile_name="API"))
+    auth.build_auth_context(
+        auth.AuthOptions(
+            auth_type="api_key", config_file=str(config_file), profile_name="API"
+        )
+    )
     assert caplog.text.count("API-key authentication") == 1
 
 
@@ -156,26 +188,42 @@ def test_api_key_missing_fields_are_actionable_and_secret_safe(tmp_path, monkeyp
     patch_profile(monkeypatch, {"tenancy": "secret-tenancy", "key_file": "/secret/key"})
 
     with pytest.raises(ValueError, match="user, fingerprint") as error:
-        auth.build_auth_context(auth.AuthOptions(auth_type="api_key", config_file=str(config_file), profile_name="API"))
+        auth.build_auth_context(
+            auth.AuthOptions(
+                auth_type="api_key", config_file=str(config_file), profile_name="API"
+            )
+        )
 
     assert "secret-tenancy" not in str(error.value)
     assert "/secret/key" not in str(error.value)
 
 
-def test_security_token_context_reads_direct_token_and_constructs_signer(tmp_path, monkeypatch, api_config):
+def test_security_token_context_reads_direct_token_and_constructs_signer(
+    tmp_path, monkeypatch, api_config
+):
     token_file = tmp_path / "token"
     token_file.write_text(" session-token \n", encoding="utf-8")
-    config_file = write_config(tmp_path, f"[SESSION]\nsecurity_token_file = {token_file}\n")
+    config_file = write_config(
+        tmp_path, f"[SESSION]\nsecurity_token_file = {token_file}\n"
+    )
     config = {**api_config, "security_token_file": str(token_file)}
     patch_profile(monkeypatch, config)
     private_key = object()
-    monkeypatch.setattr(auth.oci.signer, "load_private_key_from_file", MagicMock(return_value=private_key))
+    monkeypatch.setattr(
+        auth.oci.signer,
+        "load_private_key_from_file",
+        MagicMock(return_value=private_key),
+    )
     signer = object()
     constructor = MagicMock(return_value=signer)
     monkeypatch.setattr(auth.oci.auth.signers, "SecurityTokenSigner", constructor)
 
     context = auth.build_auth_context(
-        auth.AuthOptions(auth_type="security_token", config_file=str(config_file), profile_name="SESSION")
+        auth.AuthOptions(
+            auth_type="security_token",
+            config_file=str(config_file),
+            profile_name="SESSION",
+        )
     )
 
     assert context.auth_type is auth.AuthType.SECURITY_TOKEN
@@ -183,60 +231,54 @@ def test_security_token_context_reads_direct_token_and_constructs_signer(tmp_pat
     assert constructor.call_args.args == ("session-token", private_key)
 
 
-def test_security_token_context_requires_only_key_and_token_files(tmp_path, monkeypatch):
-    token_file = tmp_path / "token"
-    token_file.write_text("session-token", encoding="utf-8")
-    key_file = tmp_path / "session.pem"
-    key_file.write_text("private-key", encoding="utf-8")
+def test_security_token_requires_direct_declaration_even_if_sdk_config_inherits(
+    tmp_path, monkeypatch, api_config
+):
     config_file = write_config(
-        tmp_path,
-        f"[SESSION]\nkey_file = {key_file}\nsecurity_token_file = {token_file}\n",
+        tmp_path, "[DEFAULT]\nsecurity_token_file = /inherited\n[API]\n"
     )
-    private_key = object()
-    key_loader = MagicMock(return_value=private_key)
-    monkeypatch.setattr(auth.oci.signer, "load_private_key_from_file", key_loader)
-    signer = object()
-    constructor = MagicMock(return_value=signer)
-    monkeypatch.setattr(auth.oci.auth.signers, "SecurityTokenSigner", constructor)
-
-    context = auth.build_auth_context(
-        auth.AuthOptions(auth_type="security_token", config_file=str(config_file), profile_name="SESSION")
-    )
-
-    assert context.auth_type is auth.AuthType.SECURITY_TOKEN
-    assert context.signer is signer
-    assert key_loader.call_args.args == (str(key_file), None)
-    assert constructor.call_args.args == ("session-token", private_key)
-
-
-def test_security_token_requires_direct_declaration_even_if_sdk_config_inherits(tmp_path, monkeypatch, api_config):
-    config_file = write_config(tmp_path, "[DEFAULT]\nsecurity_token_file = /inherited\n[API]\n")
     patch_profile(monkeypatch, {**api_config, "security_token_file": "/inherited"})
 
     with pytest.raises(ValueError, match="declared directly"):
         auth.build_auth_context(
-            auth.AuthOptions(auth_type="security_token", config_file=str(config_file), profile_name="API")
+            auth.AuthOptions(
+                auth_type="security_token",
+                config_file=str(config_file),
+                profile_name="API",
+            )
         )
 
 
-def test_auto_uses_api_key_when_default_token_is_inherited(tmp_path, monkeypatch, api_config):
-    config_file = write_config(tmp_path, "[DEFAULT]\nsecurity_token_file = /inherited\n[API]\n")
+def test_auto_uses_api_key_when_default_token_is_inherited(
+    tmp_path, monkeypatch, api_config
+):
+    config_file = write_config(
+        tmp_path, "[DEFAULT]\nsecurity_token_file = /inherited\n[API]\n"
+    )
     patch_profile(monkeypatch, {**api_config, "security_token_file": "/inherited"})
     _, constructor = patch_api_signer(monkeypatch)
 
-    context = auth.build_auth_context(auth.AuthOptions(config_file=str(config_file), profile_name="API"))
+    context = auth.build_auth_context(
+        auth.AuthOptions(config_file=str(config_file), profile_name="API")
+    )
 
     assert context.auth_type is auth.AuthType.API_KEY
     assert constructor.called
 
 
-def test_auto_direct_unreadable_token_fails_without_api_key_fallback(tmp_path, monkeypatch, api_config):
-    config_file = write_config(tmp_path, "[SESSION]\nsecurity_token_file = /unreadable\n")
+def test_auto_direct_unreadable_token_fails_without_api_key_fallback(
+    tmp_path, monkeypatch, api_config
+):
+    config_file = write_config(
+        tmp_path, "[SESSION]\nsecurity_token_file = /unreadable\n"
+    )
     patch_profile(monkeypatch, {**api_config, "security_token_file": "/unreadable"})
     _, constructor = patch_api_signer(monkeypatch)
 
     with pytest.raises(ValueError, match="Unable to read security_token_file"):
-        auth.build_auth_context(auth.AuthOptions(config_file=str(config_file), profile_name="SESSION"))
+        auth.build_auth_context(
+            auth.AuthOptions(config_file=str(config_file), profile_name="SESSION")
+        )
 
     assert not constructor.called
 
@@ -248,18 +290,30 @@ def test_profile_region_resolution_precedence(tmp_path, monkeypatch, api_config)
     monkeypatch.setenv("OCI_REGION", "us-ashburn-1")
 
     environment_context = auth.build_auth_context(
-        auth.AuthOptions(auth_type="api_key", config_file=str(config_file), profile_name="API")
+        auth.AuthOptions(
+            auth_type="api_key", config_file=str(config_file), profile_name="API"
+        )
     )
     explicit_context = auth.build_auth_context(
-        auth.AuthOptions(auth_type="api_key", config_file=str(config_file), profile_name="API", region="eu-frankfurt-1")
+        auth.AuthOptions(
+            auth_type="api_key",
+            config_file=str(config_file),
+            profile_name="API",
+            region="eu-frankfurt-1",
+        )
     )
 
     assert environment_context.config["region"] == "us-ashburn-1"
     assert explicit_context.config["region"] == "eu-frankfurt-1"
 
 
-@pytest.mark.parametrize("url", ["http://insecure.example", "example.identity.oraclecloud.com", "https:///no-host"])
-def test_identity_domain_upst_validates_url_before_signer_construction(monkeypatch, url):
+@pytest.mark.parametrize(
+    "url",
+    ["http://insecure.example", "example.identity.oraclecloud.com", "https:///no-host"],
+)
+def test_identity_domain_upst_validates_url_before_signer_construction(
+    monkeypatch, url
+):
     constructor = MagicMock()
     monkeypatch.setattr(auth.oci.auth.signers, "TokenExchangeSigner", constructor)
     monkeypatch.setenv("OCI_MCP_IDENTITY_DOMAIN_URL", url)
@@ -307,8 +361,17 @@ def test_identity_domain_upst_constructs_with_dynamic_jwt(tmp_path, monkeypatch)
 @pytest.mark.parametrize(
     "options, variable",
     [
-        (auth.AuthOptions(auth_type="identity_domain_upst"), "OCI_MCP_IDENTITY_DOMAIN_URL"),
-        (auth.AuthOptions(auth_type="identity_domain_upst", identity_domain_url="https://example.com"), "OCI_MCP_IDENTITY_DOMAIN_CLIENT_ID"),
+        (
+            auth.AuthOptions(auth_type="identity_domain_upst"),
+            "OCI_MCP_IDENTITY_DOMAIN_URL",
+        ),
+        (
+            auth.AuthOptions(
+                auth_type="identity_domain_upst",
+                identity_domain_url="https://example.com",
+            ),
+            "OCI_MCP_IDENTITY_DOMAIN_CLIENT_ID",
+        ),
         (
             auth.AuthOptions(
                 auth_type="identity_domain_upst",
@@ -324,7 +387,9 @@ def test_identity_domain_upst_missing_inputs_are_safe(options, variable):
         auth.build_auth_context(options)
 
 
-def test_identity_domain_upst_empty_files_and_constructor_failure_are_safe(tmp_path, monkeypatch):
+def test_identity_domain_upst_empty_files_and_constructor_failure_are_safe(
+    tmp_path, monkeypatch
+):
     jwt_file = tmp_path / "jwt"
     secret_file = tmp_path / "secret"
     jwt_file.write_text("", encoding="utf-8")
@@ -342,7 +407,11 @@ def test_identity_domain_upst_empty_files_and_constructor_failure_are_safe(tmp_p
     assert "top-secret" not in str(error.value)
 
     jwt_file.write_text("jwt", encoding="utf-8")
-    monkeypatch.setattr(auth.oci.auth.signers, "TokenExchangeSigner", MagicMock(side_effect=RuntimeError("top-secret")))
+    monkeypatch.setattr(
+        auth.oci.auth.signers,
+        "TokenExchangeSigner",
+        MagicMock(side_effect=RuntimeError("top-secret")),
+    )
     with pytest.raises(ValueError, match="Unable to construct") as error:
         auth.build_auth_context(options)
     assert "top-secret" not in str(error.value)
@@ -355,14 +424,18 @@ def test_identity_domain_upst_empty_files_and_constructor_failure_are_safe(tmp_p
         (auth.AuthType.RESOURCE_PRINCIPAL, "get_resource_principals_signer", {}),
     ],
 )
-def test_principal_types_do_not_load_profiles(monkeypatch, auth_type, signer_name, expected_kwargs):
+def test_principal_types_do_not_load_profiles(
+    monkeypatch, auth_type, signer_name, expected_kwargs
+):
     signer = SimpleNamespace(region="us-phoenix-1", tenancy_id="tenant")
     constructor = MagicMock(return_value=signer)
     monkeypatch.setattr(auth.oci.auth.signers, signer_name, constructor)
     profile_loader = MagicMock()
     monkeypatch.setattr(auth.oci.config, "from_file", profile_loader)
 
-    context = auth.build_auth_context(auth.AuthOptions(auth_type=auth_type, region="us-ashburn-1"))
+    context = auth.build_auth_context(
+        auth.AuthOptions(auth_type=auth_type, region="us-ashburn-1")
+    )
 
     assert context.auth_type is auth_type
     assert context.config == {"region": "us-ashburn-1"}
@@ -371,27 +444,307 @@ def test_principal_types_do_not_load_profiles(monkeypatch, auth_type, signer_nam
     assert not profile_loader.called
 
 
+def test_resource_principal_v212_uses_sdk_exchange_signer(tmp_path, monkeypatch):
+    signer = SimpleNamespace(
+        region="us-phoenix-1",
+        _get_resource_principal_token_and_service_principal_session_token=MagicMock(),
+    )
+    constructor = MagicMock(return_value=signer)
+    monkeypatch.setattr(
+        auth.oci.auth.signers, "EphemeralResourcePrincipalV21Signer", constructor
+    )
+    monkeypatch.setattr(
+        auth, "_resource_principal_v212_signer_type", lambda *_: constructor
+    )
+    key_file = tmp_path / "resource-principal.pem"
+    key_file.write_text("private-key", encoding="utf-8")
+
+    context = auth.build_auth_context(
+        auth.AuthOptions(
+            auth_type="resource_principal_v212",
+            region="us-phoenix-1",
+            resource_principal_tenancy_id="ocid1.tenancy.oc1..example",
+            resource_principal_resource_id="ocid1.dbsystem.oc1..example",
+            resource_principal_private_key_path=str(key_file),
+            resource_principal_rci="c2VjcmV0LXJjaQ==",
+            resource_principal_t0="2020-01-01T00:00:00Z",
+            resource_principal_rpt_endpoint="https://database.example.com/",
+            resource_principal_rpst_endpoint="https://auth.example.com/",
+        )
+    )
+
+    assert context.auth_type is auth.AuthType.RESOURCE_PRINCIPAL_V212
+    assert context.config == {"region": "us-phoenix-1"}
+    assert context.signer is signer
+    assert context.tenancy_id == "ocid1.tenancy.oc1..example"
+    assert constructor.call_args.kwargs | {"security_context": "present"} == {
+        "resource_principal_token_endpoint": "https://database.example.com",
+        "resource_principal_session_token_endpoint": "https://auth.example.com",
+        "resource_id": "ocid1.dbsystem.oc1..example",
+        "tenancy_id": "ocid1.tenancy.oc1..example",
+        "private_key": str(key_file.resolve()),
+        "rp_version": "2.1.2",
+        "region": "us-phoenix-1",
+        "security_context": "present",
+    }
+    security_context = constructor.call_args.kwargs["security_context"]
+    assert (
+        json.loads(security_context)["RPTSecurityContext"]["keyType"] == "REGULAR_RPT"
+    )
+
+
+def test_resource_principal_tenancy_input_is_ignored_for_other_auth_types(monkeypatch):
+    signer = SimpleNamespace(region="us-phoenix-1", tenancy_id=None)
+    constructor = MagicMock(return_value=signer)
+    monkeypatch.setattr(
+        auth.oci.auth.signers,
+        "get_resource_principals_signer",
+        constructor,
+    )
+
+    context = auth.build_auth_context(
+        auth.AuthOptions(
+            auth_type="resource_principal",
+            resource_principal_tenancy_id="stale-rp-tenancy",
+        )
+    )
+
+    assert context.tenancy_id is None
+
+
+@pytest.mark.parametrize(
+    ("region", "database", "identity"),
+    [
+        ("us-langley-1", "oraclegovcloud.com", "oraclegovcloud.com"),
+        ("uk-gov-london-1", "oraclegovcloud.uk", "oraclegovcloud.uk"),
+        ("eu-madrid-2", "oraclecloud.eu", "oraclecloud.eu"),
+    ],
+)
+def test_resource_principal_v212_uses_realm_aware_endpoints(
+    tmp_path, monkeypatch, region, database, identity
+):
+    signer = SimpleNamespace(
+        _get_resource_principal_token_and_service_principal_session_token=MagicMock()
+    )
+    constructor = MagicMock(return_value=signer)
+    monkeypatch.setattr(
+        auth.oci.auth.signers, "EphemeralResourcePrincipalV21Signer", constructor
+    )
+    monkeypatch.setattr(
+        auth, "_resource_principal_v212_signer_type", lambda *_: constructor
+    )
+    key_file = tmp_path / "resource-principal.pem"
+    key_file.write_text("private-key", encoding="utf-8")
+
+    auth.build_auth_context(
+        auth.AuthOptions(
+            auth_type="resource_principal_v212",
+            region=region,
+            resource_principal_tenancy_id="tenant",
+            resource_principal_resource_id="resource",
+            resource_principal_private_key_path=str(key_file),
+            resource_principal_rci="c2VjcmV0LXJjaQ==",
+            resource_principal_t0="2020-01-01T00:00:00Z",
+        )
+    )
+
+    kwargs = constructor.call_args.kwargs
+    assert kwargs["resource_principal_token_endpoint"].endswith(database)
+    assert kwargs["resource_principal_session_token_endpoint"].endswith(identity)
+
+
+def test_resource_principal_security_context_has_known_signature(monkeypatch):
+    frozen = datetime(2020, 1, 1, 0, 0, 1, tzinfo=timezone.utc)
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen if tz else frozen.replace(tzinfo=None)
+
+    monkeypatch.setattr(auth.datetime, "datetime", FrozenDatetime)
+    security_context = json.loads(
+        auth._resource_principal_security_context(
+            "c2VjcmV0LXJjaQ==", "2020-01-01T00:00:00Z"
+        )
+    )
+
+    signature = security_context["RPTSecurityContext"]["securitySignature"]
+    assert signature == {
+        "currentUTCTime": "2020-01-01T00:00:01.000000Z",
+        "Signature": "65269319",
+    }
+
+
+def test_resource_principal_v212_regenerates_security_context_on_refresh(
+    tmp_path, monkeypatch
+):
+    signer = SimpleNamespace(
+        _get_resource_principal_token_and_service_principal_session_token=MagicMock()
+    )
+    constructor = MagicMock(return_value=signer)
+    monkeypatch.setattr(
+        auth.oci.auth.signers, "EphemeralResourcePrincipalV21Signer", constructor
+    )
+    monkeypatch.setattr(
+        auth, "_resource_principal_v212_signer_type", lambda *_: constructor
+    )
+    contexts = iter(["first", "second"])
+    monkeypatch.setattr(
+        auth, "_resource_principal_security_context", lambda *_: next(contexts)
+    )
+    key_file = tmp_path / "resource-principal.pem"
+    key_file.write_text("private-key", encoding="utf-8")
+    context = auth.build_auth_context(
+        auth.AuthOptions(
+            auth_type="resource_principal_v212",
+            region="us-phoenix-1",
+            resource_principal_tenancy_id="tenant",
+            resource_principal_resource_id="resource",
+            resource_principal_private_key_path=str(key_file),
+            resource_principal_rci="c2VjcmV0LXJjaQ==",
+            resource_principal_t0="2020-01-01T00:00:00Z",
+        )
+    )
+
+    assert context.signer is signer
+    assert constructor.call_args.kwargs["security_context"] == "first"
+
+
+def test_rpv212_initial_rpt_retries_regenerate_the_security_context(monkeypatch):
+    headers = []
+
+    class RetryStrategy:
+        def make_retrying_call(self, request):
+            request()
+            return request()
+
+    class SDKSigner:
+        def __init__(self, **_kwargs):
+            self.resource_principal_token_path = "/rpt"
+            self.retry_strategy = RetryStrategy()
+            self.base_client = SimpleNamespace(
+                call_api=lambda **kwargs: headers.append(kwargs["header_params"])
+            )
+            self.make_call("get", "/rpt")
+
+        def make_call(self, *_args, **_kwargs):
+            raise AssertionError("The RPv2.1.2 hook must override the SDK method")
+
+    monkeypatch.setattr(
+        auth.oci.auth.signers, "EphemeralResourcePrincipalV21Signer", SDKSigner
+    )
+    contexts = iter(["first", "second"])
+    monkeypatch.setattr(
+        auth, "_resource_principal_security_context", lambda *_: next(contexts)
+    )
+
+    signer_type = auth._resource_principal_v212_signer_type("rci", "t0")
+    signer = signer_type(security_context="initial")
+
+    assert headers == [
+        {"security-context": "first"},
+        {"security-context": "second"},
+    ]
+    assert signer.security_context == "second"
+
+
+def test_rpv212_rejects_an_sdk_without_a_retry_hook(monkeypatch):
+    class IncompatibleSDKSigner:
+        pass
+
+    monkeypatch.setattr(
+        auth.oci.auth.signers,
+        "EphemeralResourcePrincipalV21Signer",
+        IncompatibleSDKSigner,
+    )
+
+    with pytest.raises(ValueError, match="does not support RPv2.1.2"):
+        auth._resource_principal_v212_signer_type("rci", "t0")
+
+
+def test_resource_principal_rci_is_redacted_from_representations_and_errors(caplog):
+    secret = "sentinel-rci-secret"
+    options = auth.AuthOptions(resource_principal_rci=secret)
+    inputs = auth._resolve_inputs(options)
+
+    assert secret not in repr(options)
+    assert secret not in repr(inputs)
+    with pytest.raises(ValueError) as error:
+        auth._resource_principal_security_context(secret, "bad-timestamp")
+    assert secret not in str(error.value)
+    assert secret not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "t0",
+    ["bad timestamp", "2020-01-01T00:00:00", "2100-01-01T00:00:00Z"],
+)
+def test_resource_principal_security_context_rejects_invalid_timestamps(t0):
+    with pytest.raises(ValueError, match="OCI_MCP_RP_RCI and OCI_MCP_RP_T0"):
+        auth._resource_principal_security_context("c2VjcmV0LXJjaQ==", t0)
+
+
+@pytest.mark.parametrize(
+    "options, message",
+    [
+        (
+            auth.AuthOptions(
+                auth_type="resource_principal_v212", region="us-phoenix-1"
+            ),
+            "OCI_MCP_RP_TENANCY_ID",
+        ),
+        (
+            auth.AuthOptions(
+                auth_type="resource_principal_v212",
+                region="us-phoenix-1",
+                resource_principal_tenancy_id="tenant",
+                resource_principal_resource_id="resource",
+                resource_principal_private_key_path="/key",
+                resource_principal_rci="not base64",
+                resource_principal_t0="bad timestamp",
+            ),
+            "OCI_MCP_RP_RCI",
+        ),
+    ],
+)
+def test_resource_principal_v212_rejects_invalid_inputs(options, message):
+    with pytest.raises(ValueError, match=message):
+        auth.build_auth_context(options)
+
+
 @pytest.mark.parametrize(
     "auth_type, signer_name",
     [
-        (auth.AuthType.INSTANCE_PRINCIPAL_DELEGATION, "InstancePrincipalsDelegationTokenSigner"),
-        (auth.AuthType.RESOURCE_PRINCIPAL_DELEGATION, "get_resource_principal_delegation_token_signer"),
+        (
+            auth.AuthType.INSTANCE_PRINCIPAL_DELEGATION,
+            "InstancePrincipalsDelegationTokenSigner",
+        ),
+        (
+            auth.AuthType.RESOURCE_PRINCIPAL_DELEGATION,
+            "get_resource_principal_delegation_token_signer",
+        ),
     ],
 )
-def test_delegation_principal_types_read_file_tokens(tmp_path, monkeypatch, auth_type, signer_name):
+def test_delegation_principal_types_read_file_tokens(
+    tmp_path, monkeypatch, auth_type, signer_name
+):
     token_file = tmp_path / "delegation"
     token_file.write_text(" delegation-token \n", encoding="utf-8")
     signer = SimpleNamespace(region="us-phoenix-1")
     constructor = MagicMock(return_value=signer)
     monkeypatch.setattr(auth.oci.auth.signers, signer_name, constructor)
 
-    context = auth.build_auth_context(auth.AuthOptions(auth_type=auth_type, delegation_token_file=str(token_file)))
+    context = auth.build_auth_context(
+        auth.AuthOptions(auth_type=auth_type, delegation_token_file=str(token_file))
+    )
 
     assert context.signer is signer
     assert constructor.call_args.kwargs["delegation_token"] == "delegation-token"
 
 
-def test_delegation_sources_validate_conflicts_and_legacy_warning(tmp_path, monkeypatch, caplog):
+def test_delegation_sources_validate_conflicts_and_legacy_warning(
+    tmp_path, monkeypatch, caplog
+):
     token_file = tmp_path / "delegation"
     token_file.write_text("token", encoding="utf-8")
     with pytest.raises(ValueError, match="Set only OCI_MCP_DELEGATION_TOKEN_FILE"):
@@ -403,12 +756,16 @@ def test_delegation_sources_validate_conflicts_and_legacy_warning(tmp_path, monk
             )
         )
     with pytest.raises(ValueError, match="OCI_MCP_DELEGATION_TOKEN_FILE is required"):
-        auth.build_auth_context(auth.AuthOptions(auth_type="instance_principal_delegation"))
+        auth.build_auth_context(
+            auth.AuthOptions(auth_type="instance_principal_delegation")
+        )
 
     monkeypatch.setenv("OCI_IOT_DELEGATION_TOKEN", "legacy-token")
     signer = SimpleNamespace(region="us-phoenix-1")
     constructor = MagicMock(return_value=signer)
-    monkeypatch.setattr(auth.oci.auth.signers, "InstancePrincipalsDelegationTokenSigner", constructor)
+    monkeypatch.setattr(
+        auth.oci.auth.signers, "InstancePrincipalsDelegationTokenSigner", constructor
+    )
     auth.build_auth_context(auth.AuthOptions(auth_type="instance_principal_delegation"))
     assert constructor.call_args.kwargs["delegation_token"] == "legacy-token"
     assert "legacy-token" not in caplog.text
@@ -417,18 +774,26 @@ def test_delegation_sources_validate_conflicts_and_legacy_warning(tmp_path, monk
 
 def test_oke_uses_default_path_and_inline_compatibility(monkeypatch, caplog):
     constructor = MagicMock(return_value=SimpleNamespace(region="us-phoenix-1"))
-    monkeypatch.setattr(auth.oci.auth.signers, "get_oke_workload_identity_resource_principal_signer", constructor)
+    monkeypatch.setattr(
+        auth.oci.auth.signers,
+        "get_oke_workload_identity_resource_principal_signer",
+        constructor,
+    )
 
     auth.build_auth_context(auth.AuthOptions(auth_type="oke_workload_identity"))
     assert constructor.call_args.kwargs == {}
 
     auth.build_auth_context(
-        auth.AuthOptions(auth_type="oke_workload_identity", oke_service_account_token_path="/token")
+        auth.AuthOptions(
+            auth_type="oke_workload_identity", oke_service_account_token_path="/token"
+        )
     )
     assert constructor.call_args.kwargs == {"service_account_token_path": "/token"}
 
     auth.build_auth_context(
-        auth.AuthOptions(auth_type="oke_workload_identity", oke_service_account_token="inline-token")
+        auth.AuthOptions(
+            auth_type="oke_workload_identity", oke_service_account_token="inline-token"
+        )
     )
     assert constructor.call_args.kwargs == {"service_account_token": "inline-token"}
     assert "inline-token" not in caplog.text
@@ -456,17 +821,29 @@ def test_oke_conflicting_overrides_and_signer_failures_are_safe(monkeypatch):
 @pytest.mark.parametrize(
     "auth_type, signer_name, options",
     [
-        (auth.AuthType.INSTANCE_PRINCIPAL, "InstancePrincipalsSecurityTokenSigner", auth.AuthOptions(auth_type="instance_principal")),
-        (auth.AuthType.RESOURCE_PRINCIPAL, "get_resource_principals_signer", auth.AuthOptions(auth_type="resource_principal")),
+        (
+            auth.AuthType.INSTANCE_PRINCIPAL,
+            "InstancePrincipalsSecurityTokenSigner",
+            auth.AuthOptions(auth_type="instance_principal"),
+        ),
+        (
+            auth.AuthType.RESOURCE_PRINCIPAL,
+            "get_resource_principals_signer",
+            auth.AuthOptions(auth_type="resource_principal"),
+        ),
         (
             auth.AuthType.INSTANCE_PRINCIPAL_DELEGATION,
             "InstancePrincipalsDelegationTokenSigner",
-            auth.AuthOptions(auth_type="instance_principal_delegation", delegation_token="token"),
+            auth.AuthOptions(
+                auth_type="instance_principal_delegation", delegation_token="token"
+            ),
         ),
         (
             auth.AuthType.RESOURCE_PRINCIPAL_DELEGATION,
             "get_resource_principal_delegation_token_signer",
-            auth.AuthOptions(auth_type="resource_principal_delegation", delegation_token="token"),
+            auth.AuthOptions(
+                auth_type="resource_principal_delegation", delegation_token="token"
+            ),
         ),
         (
             auth.AuthType.OKE_WORKLOAD_IDENTITY,
@@ -475,10 +852,18 @@ def test_oke_conflicting_overrides_and_signer_failures_are_safe(monkeypatch):
         ),
     ],
 )
-def test_every_principal_signer_failure_is_secret_safe(monkeypatch, auth_type, signer_name, options):
-    monkeypatch.setattr(auth.oci.auth.signers, signer_name, MagicMock(side_effect=RuntimeError("private details")))
+def test_every_principal_signer_failure_is_secret_safe(
+    monkeypatch, auth_type, signer_name, options
+):
+    monkeypatch.setattr(
+        auth.oci.auth.signers,
+        signer_name,
+        MagicMock(side_effect=RuntimeError("private details")),
+    )
 
-    with pytest.raises(ValueError, match=f"Unable to construct the {auth_type.value} signer") as error:
+    with pytest.raises(
+        ValueError, match=f"Unable to construct the {auth_type.value} signer"
+    ) as error:
         auth.build_auth_context(options)
 
     assert "private details" not in str(error.value)
@@ -488,7 +873,11 @@ def test_canonical_values_override_aliases_and_tenancy_alias_is_supported(monkey
     monkeypatch.setenv("OCI_MCP_AUTH_TYPE", "instance_principal")
     monkeypatch.setenv("OCI_IOT_AUTH_TYPE", "resource_principal")
     signer = SimpleNamespace(region="us-phoenix-1", tenancy_id=None)
-    monkeypatch.setattr(auth.oci.auth.signers, "InstancePrincipalsSecurityTokenSigner", MagicMock(return_value=signer))
+    monkeypatch.setattr(
+        auth.oci.auth.signers,
+        "InstancePrincipalsSecurityTokenSigner",
+        MagicMock(return_value=signer),
+    )
     monkeypatch.setenv("TENANCY_ID_OVERRIDE", "legacy-tenancy")
 
     context = auth.build_auth_context()
@@ -530,7 +919,9 @@ def test_idcs_http_auth_builds_provider_and_creates_request_context(monkeypatch)
     monkeypatch.setattr(auth, "OCIProvider", provider_constructor)
     signer = object()
     signer_constructor = MagicMock(return_value=signer)
-    monkeypatch.setattr(auth.oci.auth.signers, "TokenExchangeSigner", signer_constructor)
+    monkeypatch.setattr(
+        auth.oci.auth.signers, "TokenExchangeSigner", signer_constructor
+    )
 
     http_auth = auth.build_idcs_http_auth(["openid", "oci_mcp.example.invoke"])
     context = http_auth.context_for("request-token")
@@ -569,7 +960,9 @@ def test_idcs_http_auth_explicit_options_and_request_region_win(monkeypatch):
     provider_constructor = MagicMock(return_value=object())
     monkeypatch.setattr(auth, "OCIProvider", provider_constructor)
     signer_constructor = MagicMock(return_value=object())
-    monkeypatch.setattr(auth.oci.auth.signers, "TokenExchangeSigner", signer_constructor)
+    monkeypatch.setattr(
+        auth.oci.auth.signers, "TokenExchangeSigner", signer_constructor
+    )
 
     http_auth = auth.build_idcs_http_auth(
         ["openid"],
@@ -601,7 +994,9 @@ def test_idcs_http_auth_explicit_options_and_request_region_win(monkeypatch):
         ({"ORACLE_MCP_BASE_URL": "mcp.example.com"}, "ORACLE_MCP_BASE_URL"),
     ],
 )
-def test_idcs_http_auth_rejects_invalid_provider_inputs_before_construction(monkeypatch, environment, message):
+def test_idcs_http_auth_rejects_invalid_provider_inputs_before_construction(
+    monkeypatch, environment, message
+):
     set_idcs_http_environment(monkeypatch, **environment)
     provider_constructor = MagicMock()
     monkeypatch.setattr(auth, "OCIProvider", provider_constructor)
@@ -617,7 +1012,9 @@ def test_idcs_http_auth_requires_scopes_and_safe_request_token_and_region(monkey
     provider_constructor = MagicMock(return_value=object())
     signer_constructor = MagicMock()
     monkeypatch.setattr(auth, "OCIProvider", provider_constructor)
-    monkeypatch.setattr(auth.oci.auth.signers, "TokenExchangeSigner", signer_constructor)
+    monkeypatch.setattr(
+        auth.oci.auth.signers, "TokenExchangeSigner", signer_constructor
+    )
 
     with pytest.raises(ValueError, match="required_scopes"):
         auth.build_idcs_http_auth([])

@@ -11,6 +11,7 @@
 ### Changed
 
 - Excluded development artifacts, local configuration, and container build files from source-distribution packages.
+- Updated the `oracle-mcp-common` compatibility requirement to 0.2.
 
 ## 2.2.2
 

@@ -13,6 +13,7 @@ All notable changes to OCI Database MCP Server are documented in this file.
 ### Changed
 
 - Excluded development artifacts, local configuration, and container build files from source-distribution packages.
+- Updated the `oracle-mcp-common` compatibility requirement to 0.2 and synchronized package metadata.
 
 ## 1.3.2
 

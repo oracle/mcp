@@ -18,7 +18,7 @@ An adopting server normally declares a bounded dependency on this package:
 
 ```toml
 dependencies = [
-  "oracle-mcp-common>=0.1.0,<0.2.0",
+  "oracle-mcp-common>=0.2.0,<0.3.0",
 ]
 ```
 
@@ -74,6 +74,7 @@ Set `OCI_MCP_AUTH_TYPE`, or pass `AuthOptions(auth_type=...)` to
 | `identity_domain_upst` | Identity Domains JWT-to-UPST token exchange | Uses file-backed JWT and client-secret inputs. See [Identity Domains token exchange](#identity-domains-token-exchange). |
 | `instance_principal` | OCI instance principal | Intended for OCI compute instances. |
 | `resource_principal` | OCI resource principal | Intended for supported OCI managed-resource environments. |
+| `resource_principal_v212` | Database-service resource-principal exchange | Builds the v2.1.2 RPT security context and uses the OCI SDK's refreshing RPST exchange signer. See [Database-service RPv2.1.2 exchange](#database-service-rpv212-exchange). |
 | `instance_principal_delegation` | Instance principal and delegation token | Requires a delegation-token file. |
 | `resource_principal_delegation` | Resource principal and delegation token | Requires a delegation-token file. |
 | `oke_workload_identity` | OKE workload identity | Uses the OCI SDK's default service-account token unless an override is supplied. |
@@ -81,6 +82,25 @@ Set `OCI_MCP_AUTH_TYPE`, or pass `AuthOptions(auth_type=...)` to
 `auto` intentionally does not probe instance, resource, delegation, or OKE
 principal environments. Select those types explicitly so a deployment's OCI
 identity remains predictable.
+
+### Database-service RPv2.1.2 exchange
+
+`resource_principal_v212` supports the Resource Principal Session token bootstrap flow.
+It requires a region and these file-safe configuration values:
+
+| Setting | `AuthOptions` field | Environment variable |
+| --- | --- | --- |
+| Tenancy OCID | `resource_principal_tenancy_id` | `OCI_MCP_RP_TENANCY_ID` |
+| Resource OCID | `resource_principal_resource_id` | `OCI_MCP_RP_RESOURCE_ID` |
+| Resource private-key file | `resource_principal_private_key_path` | `OCI_MCP_RP_PRIVATE_KEY_PATH` |
+| Resource context HMAC key (sensitive) | `resource_principal_rci` | `OCI_MCP_RP_RCI` |
+| Context base time | `resource_principal_t0` | `OCI_MCP_RP_T0` |
+
+RCI is sensitive HMAC key material: do not log it or place it in source control.
+The RPT and RPST endpoints are resolved by the OCI SDK as realm-aware `database`
+and `auth` endpoints (for example, the displayed domain is `.oraclecloud.com` in
+OC1); override them only with
+`OCI_MCP_RP_RPT_ENDPOINT` and `OCI_MCP_RP_RPST_ENDPOINT` when required.
 
 ### Configuration precedence
 

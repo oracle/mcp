@@ -35,4 +35,4 @@ __all__ = [
 ]
 
 __project__ = "oracle_mcp_common"
-__version__ = "0.1.1"
+__version__ = "0.1.2"

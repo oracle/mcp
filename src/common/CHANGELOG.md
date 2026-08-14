@@ -2,6 +2,13 @@
 
 All notable changes to `oracle-mcp-common` are documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- Build-time version metadata now synchronizes `oracle_mcp_common.__version__`
+  with the package version declared in `pyproject.toml`.
+
 ## 0.1.2
 
 ### Fixed

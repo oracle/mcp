@@ -126,6 +126,7 @@ This is the fastest way to learn:
 - client_fqn: Fully-qualified client class name, e.g. `oci.core.ComputeClient`
 - operation: Client method/operation, e.g. `list_instances`, `get_instance`, `launch_instance`, etc.
 - params: JSON object of keyword arguments as expected by the SDK method (snake_case). These are the same kwargs you would pass in the OCI Python SDK. For list operations, the server automatically paginates to return all results.
+- region: Optional OCI region identifier for this call. It configures the SDK client before the operation runs; it is not included in `params` because OCI SDK operation methods do not accept a `region` keyword argument.
 - fields: Optional top-level response fields to project from an object response or each list item after serialization, e.g. `["id", "display_name", "lifecycle_state"]`
 - max_results: Optional total result cap for paginated operations, or top-level list trim for non-paginated responses.
 - result_mode: `auto` (default), `full`, or `summary`. `auto` keeps list, summarize, and paginated results compact while leaving other operations full by default.
@@ -146,6 +147,19 @@ Example usage:
   },
   "fields": ["id", "display_name", "lifecycle_state"],
   "max_results": 10
+}
+```
+
+Cross-region example (the configured profile remains the source of the signer, tenancy, and IAM permissions):
+```json
+{
+  "client_fqn": "oci.core.ComputeClient",
+  "operation": "list_instances",
+  "region": "uk-london-1",
+  "params": {
+    "compartment_id": "ocid1.compartment.oc1..exampleuniqueID"
+  },
+  "fields": ["id", "display_name", "lifecycle_state"]
 }
 ```
 

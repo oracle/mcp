@@ -358,6 +358,30 @@ class TestImportClientInstantiation:
             inst = _import_client("oci.fake.FakeClient")
             assert isinstance(inst, FakeClient)
 
+    def test_import_client_applies_region_override_without_mutating_default_config(self):
+        class FakeClient:
+            def __init__(self, config, signer):
+                self.config = config
+
+        default_config = {"region": "us-phoenix-1", "additional_user_agent": "oci-cloud-mcp/2.2.2"}
+        fake_module = SimpleNamespace(FakeClient=FakeClient)
+
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.import_module") as m_import,
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as m_cfg,
+        ):
+            m_import.return_value = fake_module
+            m_cfg.return_value = (default_config, object())
+            instance = _import_client("oci.fake.FakeClient", region="uk-london-1")
+
+        assert instance.config == {**default_config, "region": "uk-london-1"}
+        assert instance.config is not default_config
+        assert default_config["region"] == "us-phoenix-1"
+
+    def test_import_client_rejects_unknown_region(self):
+        with pytest.raises(ValueError, match="known OCI region"):
+            _import_client("oci.fake.FakeClient", region="not-a-real-region")
+
     def test_import_client_passes_circuit_breaker_to_kwargs_capable_client(self):
         class FakeClient:
             def __init__(self, config, **kwargs):
@@ -378,6 +402,47 @@ class TestImportClientInstantiation:
         assert isinstance(inst.kwargs["circuit_breaker_strategy"], oci.circuit_breaker.CircuitBreakerStrategy)
         assert callable(inst.kwargs["circuit_breaker_callback"])
         assert inst.kwargs["signer"] is signer
+
+
+class TestInvokeRegionOverride:
+    @pytest.mark.asyncio
+    async def test_invoke_oci_api_applies_top_level_region_to_client(self):
+        class FakeResponse:
+            data = {"id": "thing"}
+            headers = {}
+
+        class FakeClient:
+            def __init__(self, config, signer):
+                seen_config.update(config)
+
+            def get_thing(self):
+                return FakeResponse()
+
+        default_config = {"region": "us-phoenix-1"}
+        seen_config = {}
+        fake_module = SimpleNamespace(FakeClient=FakeClient)
+
+        with (
+            patch("oracle.oci_cloud_mcp_server.server.import_module") as m_import,
+            patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as m_cfg,
+        ):
+            m_import.return_value = fake_module
+            m_cfg.return_value = (default_config, object())
+            async with Client(mcp) as client:
+                result = (
+                    await client.call_tool(
+                        "invoke_oci_api",
+                        {
+                            "client_fqn": "oci.fake.FakeClient",
+                            "operation": "get_thing",
+                            "region": "uk-london-1",
+                        },
+                    )
+                ).data
+
+        assert result["data"] == {"id": "thing"}
+        assert seen_config["region"] == "uk-london-1"
+        assert default_config["region"] == "us-phoenix-1"
 
 
 class TestInvokeErrors:

@@ -487,9 +487,24 @@ def _get_config_and_signer() -> Tuple[Dict[str, Any], Any]:
     return config, auth_context.signer
 
 
-def _import_client(client_fqn: str):
+def _validate_region_override(region: Optional[str]) -> Optional[str]:
+    """Validate and normalize an optional OCI region override."""
+    if region is None:
+        return None
+    if not isinstance(region, str) or not region.strip():
+        raise ValueError("region must be a non-empty OCI region identifier")
+    normalized_region = region.strip()
+    if not oci.regions.is_region(normalized_region):
+        raise ValueError("region must be a known OCI region identifier")
+    return normalized_region
+
+
+def _import_client(client_fqn: str, region: Optional[str] = None):
+    region_override = _validate_region_override(region)
     cls = _get_client_class(client_fqn)
     config, signer = _get_config_and_signer()
+    if region_override is not None:
+        config = {**config, "region": region_override}
     client_kwargs = _get_oci_client_kwargs(signer)
     try:
         init_signature = inspect.signature(cls.__init__)
@@ -1220,6 +1235,10 @@ def invoke_oci_api(
         Optional[Dict[str, Any]],
         "Keyword arguments for the SDK method (JSON object). These are the snake_case kwargs you would pass in Python.",
     ] = None,
+    region: Annotated[
+        Optional[str],
+        "Optional OCI region identifier for this client call. This configures the SDK client before invocation and is not an SDK operation parameter.",
+    ] = None,
     fields: Annotated[
         Optional[List[str]],
         "Optional top-level response fields to project after serialization, e.g. "
@@ -1247,7 +1266,7 @@ def invoke_oci_api(
         else:
             normalized_fields = None
         _validate_client_fqn(client_fqn, require_client_class=True)
-        client = _import_client(client_fqn)
+        client = _import_client(client_fqn, region=region)
         method = _resolve_public_client_method(client, client_fqn, operation)
 
         input_params = params or {}

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Added an optional per-call `region` override to `invoke_oci_api` for cross-region SDK calls without changing the configured profile default.
+
 ## 2.2.2
 
 ### Changed

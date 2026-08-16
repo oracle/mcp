@@ -25,7 +25,7 @@ PUBLISH_URL ?= $(PYPI_PUBLISH_URL)
 PUBLISH_CHECK_URL ?= $(PYPI_CHECK_URL)
 VERIFY_INDEX ?= $(PYPI_CHECK_URL)
 
-.PHONY: build build-common build-servers verify-common-version publish publish-common publish-servers \
+.PHONY: build build-common build-servers publish publish-common publish-servers \
 	test-publish test-publish-common test-publish-servers verify-published \
 	release test-release wait-for-common _build _publish test format
 
@@ -35,10 +35,6 @@ build:
 
 build-common:
 	@$(MAKE) _build BUILD_DIRS="$(COMMON_PROJECT_PATH)"
-	@$(MAKE) verify-common-version
-
-verify-common-version:
-	@python scripts/sync_common_version.py --check $(COMMON_PROJECT_PATH)
 
 build-servers:
 	@$(MAKE) _build BUILD_DIRS="$(SERVER_DIRS)"
@@ -50,13 +46,14 @@ _build:
 			name=$$(python -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['name'])"); \
 			version=$$(python -c "import tomllib; print(tomllib.load(open('$$dir/pyproject.toml', 'rb'))['project']['version'])"); \
 			echo "Building $$dir: $$name==$$version"; \
-			if [ -d $$dir/oracle/*_mcp_server ]; then \
+			if [ -f "$$dir/oracle_mcp_common/__init__.py" ]; then \
+				init_py_file="$$dir/oracle_mcp_common/__init__.py"; \
+				python -c 'from pathlib import Path; import re, sys; p = Path(sys.argv[1]); text = p.read_text(); text, count = re.subn(r"^__version__ = \".*\"$$", f"__version__ = \"{sys.argv[2]}\"", text, flags=re.MULTILINE); assert count == 1, f"Expected exactly one __version__ in {p}, found {count}"; p.write_text(text)' "$$init_py_file" "$$version"; \
+			elif [ -d $$dir/oracle/*_mcp_server ]; then \
 				init_py_file=$$(echo $$dir/oracle/*_mcp_server/__init__.py); \
 				printf '"""\nCopyright (c) 2025, 2026 Oracle and/or its affiliates.\nLicensed under the Universal Permissive License v1.0 as shown at\nhttps://oss.oracle.com/licenses/upl.\n"""\n\n' > $$init_py_file; \
 				echo "__project__ = \"$$name\"" >> $$init_py_file; \
 				echo "__version__ = \"$$version\"" >> $$init_py_file; \
-			elif [ "$$dir" = "$(COMMON_PROJECT_PATH)" ]; then \
-				python scripts/sync_common_version.py $$dir; \
 			fi; \
 			cd $$dir && uv build --clear && cd ../..; \
 		fi \

@@ -28,17 +28,18 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Update __init__.py
+        working-directory: src/${{ matrix.directory }}
         run: |
-          package_dir="src/${{ matrix.directory }}"
-          name=$(python -c "import tomllib; print(tomllib.load(open('$package_dir/pyproject.toml', 'rb'))['project']['name'])")
-          version=$(python -c "import tomllib; print(tomllib.load(open('$package_dir/pyproject.toml', 'rb'))['project']['version'])")
-          if [ "${{ matrix.directory }}" = "common" ]; then
-            python scripts/sync_common_version.py "$package_dir"
-          elif [ -d "$package_dir"/oracle/*_mcp_server ]; then
-            init_py_file=$(echo "$package_dir"/oracle/*_mcp_server/__init__.py)
-            printf '\"\"\"\nCopyright (c) 2025, 2026 Oracle and/or its affiliates.\nLicensed under the Universal Permissive License v1.0 as shown at\nhttps://oss.oracle.com/licenses/upl.\n\"\"\"\n\n' > "$init_py_file"
-            echo "__project__ = \"$name\"" >> "$init_py_file"
-            echo "__version__ = \"$version\"" >> "$init_py_file"
+          name=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['name'])")
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          if [ -f oracle_mcp_common/__init__.py ]; then
+            init_py_file=oracle_mcp_common/__init__.py
+            python -c 'from pathlib import Path; import re, sys; p = Path(sys.argv[1]); text = p.read_text(); text, count = re.subn(r"^__version__ = \".*\"$", f"__version__ = \"{sys.argv[2]}\"", text, flags=re.MULTILINE); assert count == 1, f"Expected exactly one __version__ in {p}, found {count}"; p.write_text(text)' "$init_py_file" "$version"
+          elif [ -d oracle/*_mcp_server ]; then
+            init_py_file=oracle/*_mcp_server/__init__.py
+            echo "\"\"\"\nCopyright (c) 2025, Oracle and/or its affiliates.\nLicensed under the Universal Permissive License v1.0 as shown at\nhttps://oss.oracle.com/licenses/upl.\n\"\"\"\n" > $$init_py_file; \
+            echo "__project__ = \"$name\"" >> $init_py_file
+            echo "__version__ = \"$version\"" >> $init_py_file
           fi
 
       - name: Sync

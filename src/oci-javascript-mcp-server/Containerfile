@@ -1,0 +1,14 @@
+# Copyright (c) 2026, Oracle and/or its affiliates.
+# Licensed under the Universal Permissive License v1.0 as shown at
+# https://oss.oracle.com/licenses/upl.
+
+FROM node:26-bookworm-slim@sha256:cd565714d4da3e84bfd341e31448f81d47c6362198f152345297c9c1154e6341
+
+WORKDIR /app
+
+COPY --chown=65532:65532 package.json ./package.json
+COPY --chown=65532:65532 src/facade.ts src/oci.ts src/protocol.ts src/runner.ts src/types.ts ./src/
+
+USER 65532:65532
+
+CMD ["node", "--experimental-strip-types", "--max-old-space-size=256", "/app/src/runner.ts"]

@@ -42,6 +42,12 @@ Use [`oci-api-mcp-server`](src/oci-api-mcp-server/README.md) instead when you sp
 
 Choose one of the other purpose-built servers when you already know the Oracle product or OCI domain you want to work with. These servers target specific service and product workflows rather than providing a general OCI entry point. Browse the [`src/`](src/) directories and read the relevant `src/<server>/README.md` before configuring one.
 
+For the experimental Node.js code-execution workflow, see
+[`oci-javascript-mcp-server`](src/oci-javascript-mcp-server/README.md). Its
+locally runnable process provider is explicitly development-only; production
+startup remains disabled until an approved VM-backed isolation provider is
+implemented.
+
 ### Recommended: OCI Cloud MCP Server
 
 Run the server over stdio:

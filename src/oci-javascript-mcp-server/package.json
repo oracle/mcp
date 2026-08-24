@@ -1,0 +1,57 @@
+{
+  "name": "oci-javascript-mcp-server",
+  "version": "0.1.0",
+  "description": "OCI JavaScript execution MCP server with a VM-oriented isolation provider contract",
+  "type": "module",
+  "bin": {
+    "oci-javascript-mcp-server": "src/server.ts"
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE.txt",
+    "Containerfile",
+    ".dockerignore"
+  ],
+  "scripts": {
+    "start": "node --experimental-strip-types src/server.ts",
+    "apple-container:build": "container build --pull -t localhost/oci-javascript-mcp-runner:dev .",
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "coverage": "c8 npm test",
+    "check": "tsc --noEmit",
+    "packcheck": "npm --cache \"${TMPDIR:-/tmp}/oci-javascript-mcp-server-npm-cache\" pack --dry-run --json > /dev/null",
+    "ci": "npm run coverage && npm run check && npm run packcheck",
+    "prepublishOnly": "npm run ci"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "oci-common": "^2.132.0",
+    "oci-sdk": "^2.132.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "c8": "^12.0.0",
+    "typescript": "^5.9.3"
+  },
+  "c8": {
+    "all": true,
+    "include": [
+      "src/**/*.ts"
+    ],
+    "exclude": [
+      "src/types.ts",
+      "src/runner.ts"
+    ],
+    "check-coverage": true,
+    "lines": 90,
+    "reporter": [
+      "text"
+    ]
+  },
+  "engines": {
+    "node": ">=26"
+  },
+  "packageManager": "npm@11.17.0",
+  "license": "UPL-1.0"
+}

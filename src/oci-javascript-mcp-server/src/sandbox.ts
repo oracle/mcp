@@ -35,7 +35,8 @@ const MAX_HOST_RPC_REQUEST_BYTES = positiveIntegerEnv(
 );
 const MAX_HOST_RPC_CALLS = positiveIntegerEnv("OCI_JAVASCRIPT_MAX_HOST_RPC_CALLS", 100);
 const MAX_HOST_RPC_IN_FLIGHT = positiveIntegerEnv("OCI_JAVASCRIPT_MAX_HOST_RPC_IN_FLIGHT", 4);
-const PROVIDER_TERMINATION_TIMEOUT_MS = 6000;
+const DEFAULT_PROVIDER_TERMINATION_TIMEOUT_MS = 6000;
+const MAX_PROVIDER_TERMINATION_TIMEOUT_MS = 60_000;
 const PROVIDER_RESULT_SCHEMA = z.object({
   result: z.unknown(),
   error: z.object({ message: z.string().min(1) }).passthrough().nullable(),
@@ -132,6 +133,14 @@ function validateExecution(value: unknown): IsolationExecution {
     || (typeof result !== "object" && typeof result !== "function")
     || typeof (result as { then?: unknown }).then !== "function"
     || typeof record.terminate !== "function"
+    || (
+      record.terminationTimeoutMs !== undefined
+      && (
+        !Number.isSafeInteger(record.terminationTimeoutMs)
+        || (record.terminationTimeoutMs as number) < 1
+        || (record.terminationTimeoutMs as number) > MAX_PROVIDER_TERMINATION_TIMEOUT_MS
+      )
+    )
   ) {
     throw new Error("isolation provider returned an invalid execution handle");
   }
@@ -142,7 +151,7 @@ async function terminateExecution(execution: IsolationExecution): Promise<unknow
   try {
     await withDeadline(
       Promise.resolve().then(() => execution.terminate()),
-      PROVIDER_TERMINATION_TIMEOUT_MS
+      execution.terminationTimeoutMs ?? DEFAULT_PROVIDER_TERMINATION_TIMEOUT_MS
     );
     return undefined;
   } catch (error) {

@@ -5,11 +5,11 @@ through a trusted host bridge. The sandbox receives an SDK-like `oci` binding,
 but never receives OCI credentials, the real SDK, Node built-ins, filesystem
 access, environment variables, or a network API.
 
-> **Security:** Podman is the only implemented isolation provider. On Linux, a
-> normal Podman container shares the host kernel and is not a VM boundary. The
-> deployment is responsible for selecting a Podman backend and surrounding
-> controls appropriate to its threat model; the MCP server does not perform
-> provider admission.
+> **Security:** Podman remains the compatibility default and shares the host
+> kernel. The optional `kubernetes` provider has explicit `local-development`,
+> `in-cluster`, and `kata-in-cluster` profiles. The first two provide container
+> isolation only. The Kata profile is a proof of concept, not proof of a VM
+> boundary; real-provider evidence and a current security review remain required.
 
 ## Quick start
 
@@ -53,6 +53,19 @@ is not appropriate. The default runner image is
 nonstandard Podman executable path. The provider invokes the CLI directly with
 fixed arguments and never through a shell. There is no process fallback.
 
+`OCI_JAVASCRIPT_ISOLATION_PROVIDER` accepts exactly `podman` or `kubernetes`;
+omission retains Podman. Kubernetes additionally requires
+`OCI_JAVASCRIPT_KUBERNETES_PROFILE` set to exactly `local-development`,
+`in-cluster`, or `kata-in-cluster`. Selection is trusted startup configuration,
+never MCP input, and failure never falls back to another provider, profile, or
+credential source. See the [Kubernetes profile guide](docs/kubernetes-isolation-profiles.md)
+for the complete provider matrix, configuration, preflight behavior, local
+cluster workflow, and versioned assets. Kata-specific deployment evidence is in
+the [Kata POC guide](docs/kata-kubernetes-poc.md).
+
+After publication, install and configure the `oci-javascript-mcp-server`
+command instead of invoking `node` directly.
+
 ## Tools
 
 ### `run_javascript`
@@ -89,12 +102,18 @@ not as the default way to call OCI.
 
 ## Architecture
 
+The [formal architecture and isolation design](docs/architecture-and-isolation-design.md)
+consolidates the MCP server, OCI broker, provider contract, Kubernetes engine,
+Kata profile layer, trust model, evidence gates, and open design decisions.
+
 ```text
 MCP client
   -> trusted stdio server
        -> OCI broker -> OCI SDK + host credentials -> OCI APIs
-       -> Podman isolation provider
-            -> locked-down, credential-free container
+       -> selected isolation provider
+            -> Podman container (compatibility default), or fresh Kubernetes pod
+                 -> standard runtime (local/in-cluster), or reviewed Kata RuntimeClass
+            -> locked-down, credential-free runner
                  -> fresh Node worker
                       -> isolated-vm V8 isolate
                            -> user JavaScript + injected oci proxy
@@ -109,7 +128,7 @@ the runtime backend.
 
 ## Security model
 
-- Every call receives a fresh locked-down container, worker, and isolate.
+- Every call receives a fresh locked-down provider boundary, worker, and isolate.
 - Podman runs with no network, a read-only root filesystem, no capabilities,
   `no-new-privileges`, a non-root user, and CPU, memory, process, file, and
   temporary-filesystem limits.
@@ -126,18 +145,35 @@ can cross a shared-kernel container boundary. Deployments requiring a VM-grade
 boundary must supply that boundary outside the MCP server and retain
 conservative mounts and network policy.
 
+Every Kubernetes profile uses the same fixed non-root security context and
+resources, no token or service links, no host namespace or owner reference, and
+one bounded memory-backed `/tmp`. In-cluster profiles require digest-pinned
+images, separate namespaces, fail-closed RBAC/admission preflight, and an
+independent cleanup-only reconciler. Only `kata-in-cluster` adds a preflighted
+RuntimeClass/handler. Kubernetes and raw exec errors remain trusted diagnostics
+and are never copied into MCP result fields.
+
 ## Development
 
 ```bash
 npm test         # unit and MCP stdio integration tests
 npm run coverage # subprocess-aware coverage; 90% line minimum
 npm run check    # TypeScript validation
+npm run check:kubernetes-manifests # standard/Kata manifest, admission, and RBAC checks
+npm run kubectl:dry-run:kubernetes # client-side dry run when kubectl is installed
 npm run ci       # coverage, type checking, and package verification
 ```
 
 Tests use a fake Podman control plane to validate the exact hardened CLI
 arguments and exercise the framed worker protocol without requiring Podman in
 CI. They test this server's command construction, not Podman itself.
+
+Kubernetes tests use injectable fake APIs and exec channels across all three
+profiles. They validate configuration, credential-factory selection, pod shape,
+hostile framing, startup admission probes, lifecycle races, cancellation,
+cleanup, reconciliation, and provider-compatible MCP results. The opt-in local
+cluster harness adds real standard-runtime lifecycle evidence; it never claims
+Kata, CRI, CNI, or guest-kernel evidence.
 
 The generated sandbox prelude and type-only declarations are excluded from
 source-line instrumentation; their behavior is exercised through integration

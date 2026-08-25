@@ -20,6 +20,7 @@ const DEFAULT_MEMORY_LIMIT_MB = 128;
 const DEFAULT_RESULT_BYTES = 1024 * 1024;
 const MAX_PROTOCOL_RESULT_BYTES = DEFAULT_MAX_FRAME_BYTES - 64 * 1024;
 const SAFE_IMAGE_REFERENCE = /^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,255}$/;
+const PODMAN_TERMINATION_TIMEOUT_MS = 6000;
 
 export class PodmanIsolationProvider implements IsolationProvider {
   readonly #cliPath: string;
@@ -71,7 +72,8 @@ export class PodmanIsolationProvider implements IsolationProvider {
         "OCI_JAVASCRIPT_ISOLATE_MEMORY_MB",
         DEFAULT_MEMORY_LIMIT_MB
       ),
-      maxResultBytes: Math.min(configuredResultBytes, MAX_PROTOCOL_RESULT_BYTES)
+      maxResultBytes: Math.min(configuredResultBytes, MAX_PROTOCOL_RESULT_BYTES),
+      terminationTimeoutMs: PODMAN_TERMINATION_TIMEOUT_MS
     }, () => runCleanupCommand(this.#cliPath, ["rm", "--force", "--ignore", name]));
   }
 }

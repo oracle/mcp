@@ -1,0 +1,256 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: oci-js-standard-host
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: oci-js-standard-execution
+  labels:
+    oci.oracle.com/kubernetes-profile: in-cluster
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: oci-js-standard-host
+  namespace: oci-js-standard-host
+automountServiceAccountToken: true
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: oci-js-runner
+  namespace: oci-js-standard-execution
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: oci-js-standard-reconciler
+  namespace: oci-js-standard-host
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: oci-js-standard-executor
+  namespace: oci-js-standard-execution
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: oci-js-standard-executor
+  namespace: oci-js-standard-execution
+subjects:
+  - kind: ServiceAccount
+    name: oci-js-standard-host
+    namespace: oci-js-standard-host
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: oci-js-standard-executor
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: oci-js-standard-cleanup
+  namespace: oci-js-standard-execution
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: oci-js-standard-cleanup
+  namespace: oci-js-standard-execution
+subjects:
+  - kind: ServiceAccount
+    name: oci-js-standard-reconciler
+    namespace: oci-js-standard-host
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: oci-js-standard-cleanup
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: oci-js-standard-preflight
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oci-js-standard-preflight
+subjects:
+  - kind: ServiceAccount
+    name: oci-js-standard-host
+    namespace: oci-js-standard-host
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: oci-js-standard-preflight
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: oci-js-standard-execution
+  namespace: oci-js-standard-execution
+spec:
+  hard:
+    pods: "16"
+    requests.cpu: "16"
+    limits.cpu: "16"
+    requests.memory: 8Gi
+    limits.memory: 8Gi
+    requests.ephemeral-storage: 16Gi
+    limits.ephemeral-storage: 16Gi
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: oci-js-standard-execution
+  namespace: oci-js-standard-execution
+spec:
+  limits:
+    - type: Container
+      max:
+        cpu: "4"
+        memory: 2Gi
+        ephemeral-storage: 1Gi
+      min:
+        cpu: 100m
+        memory: 128Mi
+        ephemeral-storage: 16Mi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: oci-js-standard-execution
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+  ingress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: oci-js-standard-execution
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+  egress: []
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: oci-js-standard-execution-pods-v1
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+        scope: Namespaced
+  validations:
+    - expression: request.userInfo.username == 'system:serviceaccount:oci-js-standard-host:oci-js-standard-host'
+      message: only the trusted host service account may create execution pods
+    - expression: "!has(object.metadata.ownerReferences) && object.metadata.labels['app.kubernetes.io/managed-by'] == 'oci-javascript-mcp' && object.metadata.labels['oci.oracle.com/isolation-provider'] == 'kubernetes' && object.metadata.labels['oci.oracle.com/kubernetes-profile'] == 'in-cluster' && !has(object.spec.runtimeClassName) && object.spec.serviceAccountName == 'oci-js-runner'"
+      message: standard runtime, service account, profile, and ownership must match
+    - expression: object.spec.automountServiceAccountToken == false && object.spec.enableServiceLinks == false && object.spec.restartPolicy == 'Never'
+      message: token mounting, service links, and restart behavior must remain disabled
+    - expression: object.spec.hostNetwork == false && object.spec.hostPID == false && object.spec.hostIPC == false
+      message: host namespaces are forbidden
+    - expression: size(object.spec.containers) == 1 && !has(object.spec.initContainers) && !has(object.spec.ephemeralContainers) && object.spec.containers[0].name == 'runner' && object.spec.containers[0].image == 'registry.example/oci-javascript-runner@sha256:0000000000000000000000000000000000000000000000000000000000000000'
+      message: exactly one digest-pinned runner container is required
+    - expression: object.spec.containers[0].command == ['node', '--no-node-snapshot', '--experimental-strip-types', '-e', 'setInterval(() => {}, 2147483647)'] && !has(object.spec.containers[0].env)
+      message: the fixed silent wait command and empty environment are required
+    - expression: object.spec.containers[0].securityContext.runAsNonRoot == true && object.spec.containers[0].securityContext.runAsUser == 65532 && object.spec.containers[0].securityContext.allowPrivilegeEscalation == false && object.spec.containers[0].securityContext.privileged == false && object.spec.containers[0].securityContext.readOnlyRootFilesystem == true && object.spec.containers[0].securityContext.capabilities.drop == ['ALL'] && object.spec.containers[0].securityContext.seccompProfile.type == 'RuntimeDefault'
+      message: the reviewed runner security context is required
+    - expression: size(object.spec.volumes) == 1 && object.spec.volumes[0].name == 'tmp' && object.spec.volumes[0].emptyDir.medium == 'Memory' && size(object.spec.containers[0].volumeMounts) == 1 && object.spec.containers[0].volumeMounts[0].mountPath == '/tmp'
+      message: only the bounded memory-backed temporary volume is allowed
+    - expression: object.spec.containers[0].resources.requests.cpu == object.spec.containers[0].resources.limits.cpu && object.spec.containers[0].resources.requests.memory == object.spec.containers[0].resources.limits.memory && object.spec.containers[0].resources.requests['ephemeral-storage'] == object.spec.containers[0].resources.limits['ephemeral-storage'] && object.spec.activeDeadlineSeconds >= 1 && object.spec.activeDeadlineSeconds <= 120
+      message: equal budgets, bounded storage, and active deadline are required
+    - expression: "!has(object.spec.containers[0].ports) && !has(object.spec.containers[0].volumeDevices) && !has(object.spec.containers[0].livenessProbe) && !has(object.spec.containers[0].readinessProbe) && !has(object.spec.containers[0].startupProbe) && !has(object.spec.containers[0].lifecycle)"
+      message: ports, devices, probes, and lifecycle hooks are forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: oci-js-standard-execution-pods-v1
+spec:
+  policyName: oci-js-standard-execution-pods-v1
+  validationActions: ["Deny"]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        oci.oracle.com/kubernetes-profile: in-cluster
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oci-js-standard-reconciler
+  namespace: oci-js-standard-host
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: oci-js-standard-reconciler
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: oci-js-standard-reconciler
+    spec:
+      serviceAccountName: oci-js-standard-reconciler
+      automountServiceAccountToken: true
+      containers:
+        - name: reconciler
+          image: registry.example/oci-javascript-mcp-host@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          command:
+            - node
+            - --no-node-snapshot
+            - --experimental-strip-types
+            - /app/src/kubernetes-reconciler.ts
+          env:
+            - name: OCI_JAVASCRIPT_KUBERNETES_PROFILE
+              value: in-cluster
+            - name: OCI_JAVASCRIPT_KUBERNETES_NAMESPACE
+              value: oci-js-standard-execution
+            - name: OCI_JAVASCRIPT_KUBERNETES_RECONCILE_INTERVAL_SECONDS
+              value: "30"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault

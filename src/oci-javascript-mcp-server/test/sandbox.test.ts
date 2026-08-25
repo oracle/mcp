@@ -271,6 +271,28 @@ test("sandbox reports isolation provider cleanup failures", async () => {
   assert.equal(result.error?.message, "isolation provider cleanup failed");
 });
 
+test("sandbox rejects provider termination budgets outside the trusted host clamp", async () => {
+  for (const terminationTimeoutMs of [0, 60_001, 1.5, Number.NaN]) {
+    const provider = testProvider(() => ({
+      result: Promise.resolve({
+        result: 42,
+        error: null,
+        stdout: "",
+        stderr: "",
+        exitCode: 0,
+        timedOut: false
+      }),
+      terminationTimeoutMs,
+      async terminate() {}
+    }));
+    const result = await runJavaScript("40 + 2;", {
+      hostRpc: async () => null,
+      isolationProvider: provider
+    });
+    assert.equal(result.error?.message, "isolation provider failed");
+  }
+});
+
 test("sandbox does not hide cleanup failures behind a timeout result", async () => {
   const provider = testProvider(() => ({
     result: Promise.resolve({

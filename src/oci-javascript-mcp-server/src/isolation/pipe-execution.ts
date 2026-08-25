@@ -24,12 +24,16 @@ import type {
   JsonObject,
   SandboxResult
 } from "../types.ts";
+import type { WorkerChannel } from "./worker-channel.ts";
 
-export function startPipeExecution(
-  child: ChildProcessWithoutNullStreams,
+export function startChannelExecution(
+  channel: WorkerChannel,
   code: string,
-  input: IsolationRunOptions & { memoryLimitMb: number; maxResultBytes: number },
-  afterClose?: () => Promise<void>
+  input: IsolationRunOptions & {
+    memoryLimitMb: number;
+    maxResultBytes: number;
+    terminationTimeoutMs?: number;
+  }
 ): IsolationExecution {
   const decoder = new FrameDecoder();
   let stdout = "";
@@ -42,20 +46,16 @@ export function startPipeExecution(
   const result = new Promise<SandboxResult>(resolve => {
     resolveResult = resolve;
   });
-  const close = new Promise<void>(resolve => child.once("close", () => {
+  const close = channel.closed.then(() => {
     closed = true;
-    resolve();
-  }));
+  });
   let cleanup: Promise<void> | undefined;
   const terminate = () => cleanup ??= (async () => {
     if (workerCompleted && !closed) {
       await waitForClose(close, 500);
     }
-    if (!closed) {
-      killChildTree(child);
-    }
+    await channel.stop();
     await close;
-    await afterClose?.();
   })();
 
   const finish = (value: SandboxResult, stop = false) => {
@@ -79,16 +79,16 @@ export function startPipeExecution(
     timedOut: false
   }, stop);
 
-  child.stdout.on("data", chunk => {
+  channel.output.on("data", chunk => {
     try {
       for (const message of decoder.push(chunk)) {
-        void handleWorkerMessage(message, child, input, {
+        void handleWorkerMessage(message, channel, input, {
           ready() {
             if (ready) {
               throw new ProtocolError("sandbox worker sent duplicate health message");
             }
             ready = true;
-            send(child, "execute", {
+            send(channel, "execute", {
               code,
               timeoutMs: Math.max(1, input.deadlineMs - Date.now()),
               reflectionManifest: input.reflectionManifest ?? { services: {} },
@@ -113,9 +113,9 @@ export function startPipeExecution(
       fail("sandbox protocol failed");
     }
   });
-  child.stderr.resume();
-  child.once("error", () => fail("sandbox runner failed", false));
-  child.once("close", (exitCode, signal) => {
+  channel.output.once("error", () => fail("sandbox runner failed", false));
+  channel.input.once("error", () => fail("sandbox runner failed", false));
+  channel.closed.then(({ exitCode, signal }) => {
     try {
       decoder.end();
     } catch {
@@ -130,16 +130,16 @@ export function startPipeExecution(
         false
       );
     }
-  });
+  }).catch(() => fail("sandbox runner failed", false));
 
   const timeout = setTimeout(() => {
     finish(timeoutResult(), true);
   }, Math.max(1, input.deadlineMs - Date.now()));
   timeout.unref();
   const abort = () => {
-    if (child.stdin.writable) {
+    if (channel.input.writable) {
       try {
-        send(child, "cancel");
+        send(channel, "cancel");
       } catch {
         // Forced teardown below remains authoritative.
       }
@@ -148,7 +148,44 @@ export function startPipeExecution(
   };
   input.signal.addEventListener("abort", abort, { once: true });
 
-  return { result, terminate };
+  return { result, terminate, terminationTimeoutMs: input.terminationTimeoutMs };
+}
+
+export function startPipeExecution(
+  child: ChildProcessWithoutNullStreams,
+  code: string,
+  input: IsolationRunOptions & {
+    memoryLimitMb: number;
+    maxResultBytes: number;
+    terminationTimeoutMs?: number;
+  },
+  afterClose?: () => Promise<void>
+): IsolationExecution {
+  return startChannelExecution(childProcessChannel(child, afterClose), code, input);
+}
+
+export function childProcessChannel(
+  child: ChildProcessWithoutNullStreams,
+  afterClose?: () => Promise<void>
+): WorkerChannel {
+  let statusResolve!: (value: { exitCode: number | null; signal: string | null }) => void;
+  const closed = new Promise<{ exitCode: number | null; signal: string | null }>(resolve => {
+    statusResolve = resolve;
+  });
+  child.once("close", (exitCode, signal) => statusResolve({ exitCode, signal }));
+  let stopped: Promise<void> | undefined;
+  return {
+    output: child.stdout,
+    input: child.stdin,
+    closed,
+    stop() {
+      return stopped ??= (async () => {
+        killChildTree(child);
+        await closed;
+        await afterClose?.();
+      })();
+    }
+  };
 }
 
 export function runnerEnvironment(): NodeJS.ProcessEnv {
@@ -194,7 +231,7 @@ export function runCleanupCommand(command: string, args: string[]): Promise<void
 
 async function handleWorkerMessage(
   message: JsonObject,
-  child: ChildProcessWithoutNullStreams,
+  channel: WorkerChannel,
   input: IsolationRunOptions,
   callbacks: {
     ready(): void;
@@ -232,7 +269,7 @@ async function handleWorkerMessage(
     } catch {
       rpcResult = { ok: false, error: { message: "OCI call failed" } };
     }
-    send(child, "rpc_result", { id: message.id, result: rpcResult });
+    send(channel, "rpc_result", { id: message.id, result: rpcResult });
     return;
   }
   if (message.type === "result") {
@@ -262,14 +299,14 @@ async function handleWorkerMessage(
 }
 
 function send(
-  child: ChildProcessWithoutNullStreams,
+  channel: WorkerChannel,
   type: string,
   fields: JsonObject = {}
 ): void {
-  if (!child.stdin.writable) {
+  if (!channel.input.writable) {
     throw new Error("sandbox runner channel is closed");
   }
-  child.stdin.write(encodeFrame(protocolMessage(type, fields)));
+  channel.input.write(encodeFrame(protocolMessage(type, fields)));
 }
 
 function killChildTree(child: ChildProcessWithoutNullStreams): void {

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: oci-js-host
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: oci-js-execution
+  labels:
+    oci.oracle.com/kubernetes-profile: kata-in-cluster
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

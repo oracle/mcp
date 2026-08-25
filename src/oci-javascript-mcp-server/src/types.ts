@@ -78,6 +78,8 @@ export type IsolationRunOptions = {
 
 export interface IsolationExecution {
   readonly result: Promise<unknown>;
+  /** Provider-requested cleanup allowance, bounded by the trusted host. */
+  readonly terminationTimeoutMs?: number;
   /** Idempotently stop execution and resolve after provider resources are released. */
   terminate(): Promise<void>;
 }

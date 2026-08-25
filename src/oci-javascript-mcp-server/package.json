@@ -1,7 +1,7 @@
 {
   "name": "oci-javascript-mcp-server",
   "version": "0.1.0",
-  "description": "Podman-isolated OCI JavaScript code execution MCP server",
+  "description": "Isolated OCI JavaScript code execution MCP server",
   "type": "module",
   "keywords": [
     "mcp",
@@ -21,8 +21,12 @@
   },
   "files": [
     "src/",
+    "examples/",
+    "docs/",
+    "scripts/",
     ".dockerignore",
     "Containerfile",
+    "Containerfile.host",
     "README.md",
     "LICENSE.txt"
   ],
@@ -32,14 +36,19 @@
   "scripts": {
     "start": "node --no-node-snapshot --experimental-strip-types src/server.ts",
     "podman:build": "podman build --pull -t localhost/oci-javascript-mcp-runner:dev .",
+    "docker:build": "docker build --file Containerfile -t localhost/oci-javascript-mcp-runner:dev .",
     "test": "node --no-node-snapshot --experimental-strip-types --test test/*.test.ts",
     "coverage": "c8 npm test",
     "check": "tsc --noEmit",
+    "check:kubernetes-manifests": "node --no-node-snapshot --experimental-strip-types --test test/kata-manifests.test.ts test/kubernetes-manifests.test.ts",
+    "check:kata-manifests": "npm run check:kubernetes-manifests",
+    "kubectl:dry-run:kubernetes": "node --no-node-snapshot --experimental-strip-types scripts/kubectl-dry-run-kubernetes.ts",
     "packcheck": "npm --cache \"${TMPDIR:-/tmp}/oci-javascript-mcp-server-npm-cache\" pack --dry-run --json > /dev/null",
     "ci": "npm run coverage && npm run check && npm run packcheck",
     "prepublishOnly": "npm run ci"
   },
   "dependencies": {
+    "@kubernetes/client-node": "^2.0.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "isolated-vm": "^7.0.0",
     "oci-common": "^2.132.0",
@@ -51,6 +60,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
+    "@types/ws": "^8.18.1",
     "c8": "^12.0.0",
     "typescript": "^5.9.3"
   },
@@ -73,5 +83,8 @@
     "node": ">=26"
   },
   "packageManager": "npm@11.12.1",
-  "license": "UPL-1.0"
+  "license": "UPL-1.0",
+  "allowScripts": {
+    "isolated-vm@7.0.0": true
+  }
 }

@@ -1,0 +1,46 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: oci-js-kata-execution-pods-v1
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE"]
+        resources: ["pods"]
+        scope: Namespaced
+  validations:
+    - expression: request.userInfo.username == 'system:serviceaccount:oci-js-host:oci-js-host'
+      message: only the trusted host service account may create execution pods
+    - expression: "!has(object.metadata.ownerReferences) && object.metadata.labels['app.kubernetes.io/managed-by'] == 'oci-javascript-mcp' && object.metadata.labels['oci.oracle.com/isolation-provider'] == 'kubernetes' && object.metadata.labels['oci.oracle.com/kubernetes-profile'] == 'kata-in-cluster' && object.spec.runtimeClassName == 'kata-qemu-runtime-rs' && object.spec.serviceAccountName == 'oci-js-runner'"
+      message: runtime, service account, and ownership must match the reviewed shape
+    - expression: object.spec.automountServiceAccountToken == false && object.spec.enableServiceLinks == false && object.spec.restartPolicy == 'Never'
+      message: token mounting, service links, and restart behavior must remain disabled
+    - expression: object.spec.hostNetwork == false && object.spec.hostPID == false && object.spec.hostIPC == false
+      message: host namespaces are forbidden
+    - expression: size(object.spec.containers) == 1 && !has(object.spec.initContainers) && !has(object.spec.ephemeralContainers) && object.spec.containers[0].name == 'runner' && object.spec.containers[0].image == 'registry.example/oci-javascript-runner@sha256:0000000000000000000000000000000000000000000000000000000000000000'
+      message: exactly one digest-pinned runner container is required
+    - expression: object.spec.containers[0].command == ['node', '--no-node-snapshot', '--experimental-strip-types', '-e', 'setInterval(() => {}, 2147483647)'] && !has(object.spec.containers[0].env)
+      message: the fixed silent wait command and empty environment are required
+    - expression: object.spec.containers[0].securityContext.runAsNonRoot == true && object.spec.containers[0].securityContext.runAsUser == 65532 && object.spec.containers[0].securityContext.allowPrivilegeEscalation == false && object.spec.containers[0].securityContext.privileged == false && object.spec.containers[0].securityContext.readOnlyRootFilesystem == true && object.spec.containers[0].securityContext.capabilities.drop == ['ALL'] && object.spec.containers[0].securityContext.seccompProfile.type == 'RuntimeDefault'
+      message: the reviewed runner security context is required
+    - expression: size(object.spec.volumes) == 1 && object.spec.volumes[0].name == 'tmp' && object.spec.volumes[0].emptyDir.medium == 'Memory' && size(object.spec.containers[0].volumeMounts) == 1 && object.spec.containers[0].volumeMounts[0].mountPath == '/tmp'
+      message: only the bounded memory-backed temporary volume is allowed
+    - expression: object.spec.containers[0].resources.requests.cpu == object.spec.containers[0].resources.limits.cpu && object.spec.containers[0].resources.requests.memory == object.spec.containers[0].resources.limits.memory && object.spec.containers[0].resources.requests['ephemeral-storage'] == object.spec.containers[0].resources.limits['ephemeral-storage'] && object.spec.activeDeadlineSeconds >= 1 && object.spec.activeDeadlineSeconds <= 120
+      message: equal CPU/memory budgets, bounded storage, and active deadline are required
+    - expression: "!has(object.spec.containers[0].ports) && !has(object.spec.containers[0].volumeDevices) && !has(object.spec.containers[0].livenessProbe) && !has(object.spec.containers[0].readinessProbe) && !has(object.spec.containers[0].startupProbe) && !has(object.spec.containers[0].lifecycle)"
+      message: ports, devices, probes, and lifecycle hooks are forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: oci-js-kata-execution-pods-v1
+spec:
+  policyName: oci-js-kata-execution-pods-v1
+  validationActions: ["Deny"]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        oci.oracle.com/kubernetes-profile: kata-in-cluster

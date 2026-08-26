@@ -106,14 +106,20 @@ export async function runJavaScript(
     const completedWithPendingCalls = outcome?.exitCode === 0
       && rpcState.pendingCalls.size > 0;
     rpcState.accepting = false;
+    const pendingCalls = [...rpcState.pendingCalls];
     abortController.abort();
-    if (execution) {
-      const cleanupError = await terminateExecution(execution);
-      if (cleanupError) {
-        outcome = providerFailure(cleanupError, "isolation provider cleanup failed");
-      }
+    const cleanupDeadlineMs = Date.now() + (
+      execution?.terminationTimeoutMs ?? DEFAULT_PROVIDER_TERMINATION_TIMEOUT_MS
+    );
+    const [cleanupError] = await Promise.all([
+      execution
+        ? terminateExecution(execution, cleanupDeadlineMs)
+        : Promise.resolve(undefined),
+      drainPendingCalls(pendingCalls, cleanupDeadlineMs)
+    ]);
+    if (cleanupError) {
+      outcome = providerFailure(cleanupError, "isolation provider cleanup failed");
     }
-    await Promise.allSettled([...rpcState.pendingCalls]);
     if (completedWithPendingCalls && outcome?.exitCode === 0) {
       outcome = workerFailure("JavaScript completed with unawaited OCI calls");
     }
@@ -147,15 +153,29 @@ function validateExecution(value: unknown): IsolationExecution {
   return value as IsolationExecution;
 }
 
-async function terminateExecution(execution: IsolationExecution): Promise<unknown | undefined> {
+async function terminateExecution(
+  execution: IsolationExecution,
+  cleanupDeadlineMs: number
+): Promise<unknown | undefined> {
   try {
     await withDeadline(
       Promise.resolve().then(() => execution.terminate()),
-      execution.terminationTimeoutMs ?? DEFAULT_PROVIDER_TERMINATION_TIMEOUT_MS
+      remainingMs(cleanupDeadlineMs)
     );
     return undefined;
   } catch (error) {
     return error;
+  }
+}
+
+async function drainPendingCalls(
+  pendingCalls: Promise<Json>[],
+  cleanupDeadlineMs: number
+): Promise<void> {
+  try {
+    await withDeadline(Promise.allSettled(pendingCalls), remainingMs(cleanupDeadlineMs));
+  } catch {
+    // The individual promises retain rejection observers after the shared tail expires.
   }
 }
 
@@ -222,11 +242,15 @@ function assertByteLimit(label: string, value: string, maxBytes: number): void {
 }
 
 function remainingDeadlineMs(deadlineMs: number): number {
-  const remainingMs = Math.ceil(deadlineMs - Date.now());
-  if (remainingMs <= 0) {
+  const value = remainingMs(deadlineMs);
+  if (value <= 0) {
     throw new Error("sandbox run deadline exceeded");
   }
-  return remainingMs;
+  return value;
+}
+
+function remainingMs(deadlineMs: number): number {
+  return Math.ceil(deadlineMs - Date.now());
 }
 
 async function invokeHostRpc(
@@ -277,7 +301,7 @@ async function invokeHostRpc(
       () => state.pendingCalls.delete(hostRpcPromise),
       () => state.pendingCalls.delete(hostRpcPromise)
     );
-    const value = await withDeadline(hostRpcPromise, remainingMs);
+    const value = await withAbortDeadline(hostRpcPromise, signal, remainingMs);
     if (!state.accepting) {
       return rpcEnvelopeError("sandbox run deadline exceeded");
     }
@@ -287,6 +311,36 @@ async function invokeHostRpc(
   } finally {
     state.inFlight -= 1;
   }
+}
+
+function withAbortDeadline<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+  timeoutMs: number
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", abort);
+      callback();
+    };
+    const abort = () => finish(() => reject(new Error("sandbox run deadline exceeded")));
+    const timeout = setTimeout(abort, timeoutMs);
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) {
+      abort();
+      return;
+    }
+    promise.then(
+      value => finish(() => resolve(value)),
+      error => finish(() => reject(error))
+    );
+  });
 }
 
 function rpcEnvelopeError(error: string | JsonObject): Json {

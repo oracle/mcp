@@ -125,9 +125,56 @@ test("stdio server preserves result fields through a fake Kata provider", async 
       client.callTool({ name: "run_javascript", arguments: { code: "delay-one", timeout: 10 } }),
       client.callTool({ name: "run_javascript", arguments: { code: "delay-two", timeout: 10 } })
     ]);
-    assert.deepEqual(concurrent.map(
-      response => (response.structuredContent as { result?: unknown } | undefined)?.result
-    ), [42, 42]);
+    assert.equal(concurrent.filter(
+      response => (response.structuredContent as { result?: unknown } | undefined)?.result === 42
+    ).length, 1);
+    const rejected = concurrent.find(response => response.isError === true);
+    assert(rejected);
+    assert.match(
+      (rejected.content as Array<{ text: string }>)[0]?.text ?? "",
+      /too many concurrent tool calls \(1\)/
+    );
+  } finally {
+    await client.close();
+  }
+});
+
+test("stdio timeout with unresolved host OCI work stays within one Kubernetes cleanup tail", {
+  timeout: 5000
+}, async () => {
+  const environment = cleanEnvironment();
+  environment.OCI_JAVASCRIPT_TEST_FAKE_PROFILE = "local-development";
+  environment.OCI_JAVASCRIPT_KUBERNETES_CLEANUP_TIMEOUT_SECONDS = "1";
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [
+      "--no-node-snapshot",
+      "--experimental-strip-types",
+      fileURLToPath(new URL("./fake-kubernetes-server.ts", import.meta.url))
+    ],
+    env: environment
+  });
+  const client = new Client({ name: "oci-javascript-timeout-test", version: "1.0.0" });
+  await client.connect(transport);
+  try {
+    const startedAt = Date.now();
+    const response = await client.callTool({
+      name: "run_javascript",
+      arguments: { code: "rpc-pending", timeout: 1 }
+    });
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.deepEqual(response.structuredContent, {
+      result: null,
+      error: { message: "sandbox run deadline exceeded" },
+      stdout: "",
+      stderr: "",
+      exit_code: -1,
+      timed_out: true
+    });
+    assert(elapsedMs >= 1000, `execution deadline returned too early after ${elapsedMs}ms`);
+    assert(elapsedMs < 2800, `stdio result exceeded one cleanup tail after ${elapsedMs}ms`);
+    assert.equal(JSON.stringify(response).includes("internalControlPlane"), false);
   } finally {
     await client.close();
   }

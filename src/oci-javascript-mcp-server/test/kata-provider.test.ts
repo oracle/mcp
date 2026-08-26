@@ -174,6 +174,45 @@ test("one cancelled Kata execution does not affect a concurrent execution", asyn
   assert.equal(api.pods.size, 0);
 });
 
+test("shared coordinator bounds pending OCI work and confirms Kubernetes cleanup", {
+  timeout: 4000
+}, async () => {
+  const api = new FakeKubernetesApi();
+  api.channelFactory = () => rpcWorkerChannel([{
+    binding: "oracle",
+    namespace: "oci",
+    operation: "config",
+    payload: {}
+  }], true, 42);
+  const environment = validKataEnvironment();
+  environment.OCI_JAVASCRIPT_KUBERNETES_CLEANUP_TIMEOUT_SECONDS = "1";
+  const events: KubernetesDiagnosticEvent[] = [];
+  const provider = new KubernetesIsolationProvider(
+    parseKubernetesConfig(environment),
+    api,
+    event => events.push(event)
+  );
+  await provider.preflight({ startReconciliation: false });
+
+  const startedAt = Date.now();
+  const result = await runJavaScript("pending", {
+    timeoutSeconds: 1,
+    isolationProvider: provider,
+    async hostRpc() {
+      return new Promise(() => undefined);
+    }
+  });
+  const elapsedMs = Date.now() - startedAt;
+
+  assert.equal(result.timedOut, true);
+  assert.equal(result.error?.message, "sandbox run deadline exceeded");
+  assert(elapsedMs < 2800, `Kubernetes cleanup exceeded one tail after ${elapsedMs}ms`);
+  assert.equal(api.deletedNames.length, 1);
+  assert.equal(api.pods.size, 0);
+  assert.equal(events.some(event => event.phase === "closing"), true);
+  assert.equal(events.some(event => event.phase === "deleted" && event.outcome === "succeeded"), true);
+});
+
 test("Kata failures and cancellation are sanitized and cleanup remains authoritative", async () => {
   for (const operation of ["create", "wait", "exec"] as const) {
     const api = new FakeKubernetesApi();

@@ -75,6 +75,15 @@ expression becomes `result`; logs, errors, exit status, and timeout state are
 returned separately. Every OCI call must be awaited; the host aborts outstanding
 calls and rejects a run that finishes while OCI work is still pending.
 
+The timeout is the absolute execution deadline. When execution finishes or that
+deadline expires, the host stops accepting OCI bridge work and aborts the run,
+then terminates the provider and drains a snapshot of pending OCI RPC promises
+concurrently. Both use one provider-specific, host-clamped cleanup tail; their
+allowances never accumulate serially. A never-settling OCI request therefore
+cannot delay the MCP result beyond the execution deadline plus that one tail.
+Provider cleanup failure remains authoritative, while a late OCI completion is
+observed internally and cannot change or republish the finalized result.
+
 Use the injected binding like the OCI JavaScript SDK:
 
 ```js
@@ -89,6 +98,10 @@ Static operations, constructed clients, per-client `region`, SDK pagination
 fields, and shallow `Object.keys` reflection are supported. Only API operations
 backed by SDK request types are exposed; arbitrary endpoints, credentials,
 signers, retry configuration, pagination helpers, and local utilities are not.
+Trusted-host OCI clients use the SDK no-retry policy, an explicitly disabled
+client circuit breaker, and the run's abort signal. Guest code cannot override
+retry or circuit-breaker policy; after a transient failure, issue a new complete
+execution when appropriate.
 
 Structured results are limited to 1 MiB by default. Set
 `OCI_JAVASCRIPT_MAX_RESULT_BYTES` to a positive byte count to change the limit;

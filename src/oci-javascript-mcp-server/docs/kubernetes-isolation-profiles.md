@@ -131,11 +131,21 @@ profile, runtime, or credential source.
 
 The absolute 1–120 second execution deadline includes pod creation, scheduling,
 image availability, exec connection, worker execution, OCI RPC, and result
-delivery. Abort or timeout remains authoritative in every phase. Termination
-then uses the configured cleanup tail, capped by the trusted host at 60 seconds,
-to close exec, request zero-grace deletion, and confirm NotFound. Failure to
-confirm deletion returns `isolation provider cleanup failed` even after a valid
-or timed-out worker result.
+delivery. Abort or timeout remains authoritative in every phase. At
+finalization, the host stops accepting bridge work and aborts the run, then
+starts provider termination and a rejection-observing snapshot drain of pending
+OCI calls concurrently. Both consume one configured cleanup tail, capped by the
+trusted host at 60 seconds; the drain does not receive a second tail after exec
+close and zero-grace pod deletion. Failure to confirm NotFound returns
+`isolation provider cleanup failed` even after a valid or timed-out worker
+result. An otherwise successful script with pending OCI work instead returns
+`JavaScript completed with unawaited OCI calls` within the same bound.
+
+Trusted-host OCI clients use the SDK no-retry policy, an explicitly disabled
+client circuit breaker, and the run abort signal in HTTP options. Guest code
+cannot override either policy. Cancellation therefore prevents new bridge work
+and automatic retries; a late OCI promise remains rejection-observed but cannot
+change the finalized MCP result.
 
 Every host reconciles expired pods matching the generic manager label and exact
 profile. Both in-cluster profiles deploy a separate cleanup-only reconciler with
@@ -175,6 +185,10 @@ npm run ci
 Client-side dry-run and offline fixtures do not establish server-side admission,
 RBAC effectiveness, CNI enforcement, or a Kata guest kernel. Those remain
 deferred real-cluster evidence.
+
+Lifecycle tests additionally cover permanently pending OCI work, provider
+termination and RPC draining sharing one cleanup tail, cleanup-failure
+precedence, unawaited OCI calls, and late completion after finalization.
 
 Before a future canary, bind exact image digests, identities, namespaces,
 admission policy, network controls, node/runtime profile, and descriptor output.

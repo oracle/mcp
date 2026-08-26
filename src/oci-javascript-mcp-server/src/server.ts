@@ -13,11 +13,17 @@ import { z } from "zod";
 import { createIsolationProvider } from "./isolation/provider-factory.ts";
 import { createOciReflectionManifest, createOciSdkHostRpc } from "./oci-host.ts";
 import { runJavaScript } from "./sandbox.ts";
-import type { HostRpcHandler, IsolationProvider, JsonObject } from "./types.ts";
+import type {
+  HostRpcHandler,
+  IsolationProvider,
+  JsonObject,
+  OciReflectionManifest
+} from "./types.ts";
 
 export async function startServer(options: {
   isolationProvider?: IsolationProvider;
   hostRpc?: HostRpcHandler;
+  reflectionManifest?: OciReflectionManifest;
 } = {}): Promise<void> {
 
 const MAX_CONCURRENT_TOOL_CALLS = positiveIntegerEnv(
@@ -26,7 +32,7 @@ const MAX_CONCURRENT_TOOL_CALLS = positiveIntegerEnv(
 );
 const isolationProvider = options.isolationProvider ?? await createIsolationProvider();
 const hostRpc = options.hostRpc ?? createOciSdkHostRpc();
-let reflectionManifest: ReturnType<typeof createOciReflectionManifest> | undefined;
+let reflectionManifest = options.reflectionManifest;
 const DEFAULT_TIMEOUT_SECONDS = 30;
 const MIN_TIMEOUT_SECONDS = 1;
 const MAX_TIMEOUT_SECONDS = 120;

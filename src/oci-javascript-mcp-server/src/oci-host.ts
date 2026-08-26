@@ -24,6 +24,7 @@ import { PublicError } from "./sandbox-common.ts";
 
 const require = createRequire(import.meta.url);
 const packageJson = require("../package.json") as { name?: unknown; version?: unknown };
+const sdkCommon = require("oci-common") as Record<string, any>;
 
 const ADDITIONAL_USER_AGENT = additionalUserAgent(packageJson);
 const MAX_HOST_RPC_RESPONSE_BYTES = Math.min(
@@ -44,6 +45,8 @@ type SdkBundle = {
 export type OciSdkLoader = () => SdkBundle;
 
 type OciClientConfiguration = {
+  retryConfiguration: unknown;
+  circuitBreaker: any;
   httpOptions?: { signal: AbortSignal };
 };
 
@@ -693,8 +696,12 @@ function applyClientOptions(provider: any, options: OciInvokePayload["client"]["
   provider.setRegion(options.region);
 }
 
-function createClientConfiguration(signal?: AbortSignal): OciClientConfiguration | undefined {
-  return signal ? { httpOptions: { signal } } : undefined;
+function createClientConfiguration(signal?: AbortSignal): OciClientConfiguration {
+  return {
+    retryConfiguration: sdkCommon.NoRetryConfigurationDetails,
+    circuitBreaker: new sdkCommon.CircuitBreaker({ disableClientCircuitBreaker: true }),
+    ...(signal ? { httpOptions: { signal } } : {})
+  };
 }
 
 function validateIdentifier(value: unknown, name: string): asserts value is string {

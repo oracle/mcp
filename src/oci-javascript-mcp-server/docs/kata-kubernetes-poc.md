@@ -91,11 +91,20 @@ result limits, and public-error sanitization remain above the provider.
 
 The tool timeout is end-to-end: creation, scheduling, image pull, exec setup,
 worker execution, and result delivery all consume the same 1–120 second
-deadline. Abort and timeout remain authoritative in every phase. The host then
-allows a separate bounded cleanup tail (30 seconds by default, 60 maximum) to
-close exec, request zero-grace deletion, and confirm NotFound. Unconfirmed
-deletion replaces any otherwise valid or timeout result with
-`isolation provider cleanup failed`.
+deadline. Abort and timeout remain authoritative in every phase. At
+finalization, the host rejects new bridge work and aborts the run, then closes
+exec, requests zero-grace deletion, confirms NotFound, and drains a snapshot of
+pending OCI calls. Provider termination and RPC draining run concurrently
+against one bounded cleanup tail (30 seconds by default, 60 maximum), not
+serial tails. Unconfirmed deletion replaces any otherwise valid or timeout
+result with `isolation provider cleanup failed`. A successful script that left
+OCI calls unawaited returns `JavaScript completed with unawaited OCI calls`
+within the same bound.
+
+Each trusted OCI client uses the SDK no-retry policy, a disabled client circuit
+breaker, and the run abort signal. These controls are host-owned and cannot be
+changed by guest client options. Late OCI completion cannot restore bridge
+authority or modify an already finalized result.
 
 Host reconciliation runs at startup and periodically. It deletes only labeled
 managed pods whose well-formed trusted expiry has passed and preserves every

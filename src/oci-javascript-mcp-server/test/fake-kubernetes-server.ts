@@ -29,6 +29,10 @@ if (profile !== "local-development" && profile !== "in-cluster" && profile !== "
 const environment = profile === "local-development"
   ? validLocalEnvironment()
   : profile === "in-cluster" ? validInClusterEnvironment() : validKataEnvironment();
+if (process.env.OCI_JAVASCRIPT_KUBERNETES_CLEANUP_TIMEOUT_SECONDS) {
+  environment.OCI_JAVASCRIPT_KUBERNETES_CLEANUP_TIMEOUT_SECONDS =
+    process.env.OCI_JAVASCRIPT_KUBERNETES_CLEANUP_TIMEOUT_SECONDS;
+}
 class FakeKubernetesApi implements KubernetesApi {
   readonly profile: KubernetesProfile;
   readonly pods = new Map<string, KubernetesPod>();
@@ -79,6 +83,7 @@ function workerChannel(): WorkerChannel {
   let resolve!: (status: WorkerChannelStatus) => void;
   const closed = new Promise<WorkerChannelStatus>(value => { resolve = value; });
   let pendingRpc = false;
+  let permanentlyPendingRpc = false;
   input.on("data", chunk => {
     for (const message of decoder.push(chunk)) {
       if (message.type === "execute") {
@@ -86,11 +91,17 @@ function workerChannel(): WorkerChannel {
         if (code === "provider-failure") {
           output.end();
           resolve({ exitCode: 1, signal: null });
-        } else if (code === "rpc") {
+        } else if (code === "rpc" || code === "rpc-pending") {
           pendingRpc = true;
+          permanentlyPendingRpc = code === "rpc-pending";
           output.write(encodeFrame(protocolMessage("rpc", {
             id: 1,
-            request: { binding: "oracle", namespace: "oci", operation: "config", payload: {} }
+            request: {
+              binding: "oracle",
+              namespace: "oci",
+              operation: "config",
+              payload: code === "rpc-pending" ? { testPending: true } : {}
+            }
           })));
         } else {
           if (code === "log") {
@@ -114,7 +125,7 @@ function workerChannel(): WorkerChannel {
             timedOut: false
           })));
         }
-      } else if (message.type === "rpc_result" && pendingRpc) {
+      } else if (message.type === "rpc_result" && pendingRpc && !permanentlyPendingRpc) {
         output.write(encodeFrame(protocolMessage("result", {
           result: 42,
           error: null,
@@ -149,5 +160,12 @@ const provider = await createIsolationProvider(environment, {
 
 await startServer({
   isolationProvider: provider,
-  hostRpc: async () => ({ ok: true, internalControlPlane: "must-not-leak" })
+  ...(process.env.OCI_JAVASCRIPT_KUBERNETES_CLEANUP_TIMEOUT_SECONDS
+    ? { reflectionManifest: { services: {} } }
+    : {}),
+  hostRpc: async request => (
+    request.payload.testPending === true
+      ? new Promise(() => undefined)
+      : { ok: true, internalControlPlane: "must-not-leak" }
+  )
 });

@@ -153,6 +153,49 @@ test("abort sends cancellation when possible and returns the exact timeout shape
   assert.match(written, /cancel/);
 });
 
+test("hostile frames during cancellation stay sanitized and never reach host RPC", async () => {
+  const hostileFrames = [
+    rawJsonFrame("{not-json"),
+    encodeFrame({ version: 2, type: "health", status: "ready" }),
+    encodeFrame({ version: 1, type: "health", status: "ready", extra: true }),
+    Buffer.from([0x7f, 0xff, 0xff, 0xff]),
+    Buffer.from([0, 0, 0, 1, 0xff]),
+    rawJsonFrame('{"version":1,"type":"rpc","id":1,"request":{"constructor":{}}}'),
+    Buffer.from([0, 0, 0, 2, 0x7b])
+  ];
+  for (const [index, frame] of hostileFrames.entries()) {
+    const controller = new AbortController();
+    const channel = controlledChannel();
+    let rpcCalls = 0;
+    const execution = startChannelExecution(channel, "1", {
+      ...runOptions(),
+      signal: controller.signal,
+      async hostRpc() {
+        rpcCalls += 1;
+        return { internalDiagnostic: "must-not-publish" };
+      }
+    });
+    controller.abort();
+    const result = await execution.result as SandboxResult;
+    channel.output.write(frame);
+    channel.finish({ exitCode: 1, signal: null });
+    await new Promise(resolve => setImmediate(resolve));
+
+    assert.deepEqual(result, {
+      result: null,
+      error: { message: "sandbox run deadline exceeded" },
+      stdout: "",
+      stderr: "",
+      exitCode: -1,
+      timedOut: true
+    }, `hostile cancellation frame ${index}`);
+    assert.equal(rpcCalls, 0, `hostile cancellation frame ${index}`);
+    assert.equal(JSON.stringify(result).includes("internalDiagnostic"), false);
+    await Promise.all([execution.terminate(), execution.terminate()]);
+    assert.equal(channel.stopCalls, 1);
+  }
+});
+
 function runOptions() {
   return {
     deadlineMs: Date.now() + 5000,

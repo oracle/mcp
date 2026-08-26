@@ -237,6 +237,7 @@ test("host RPC applies per-client region to a fresh provider", async () => {
 });
 
 test("host RPC applies the trusted cancellation signal to OCI clients", async () => {
+  const common = require("oci-common") as Record<string, any>;
   const calls: unknown[] = [];
   class ComputeClient {
     constructor(options: unknown, clientConfiguration: unknown) {
@@ -271,12 +272,88 @@ test("host RPC applies the trusted cancellation signal to OCI clients", async ()
 
   const constructorCall = calls[0] as {
     constructor: {
-      clientConfiguration: { httpOptions?: unknown };
+      clientConfiguration: {
+        retryConfiguration?: unknown;
+        circuitBreaker?: { circuit?: unknown; noCircuit?: boolean };
+        httpOptions?: unknown;
+      };
     };
   };
-  assert.deepEqual(constructorCall.constructor.clientConfiguration, {
-    httpOptions: { signal: abortController.signal }
-  });
+  const configuration = constructorCall.constructor.clientConfiguration;
+  assert.equal(configuration.retryConfiguration, common.NoRetryConfigurationDetails);
+  assert.equal(configuration.circuitBreaker?.circuit, null);
+  assert.equal(configuration.circuitBreaker?.noCircuit, true);
+  assert.deepEqual(configuration.httpOptions, { signal: abortController.signal });
+});
+
+test("host cancellation uses one SDK attempt, no default breaker, and closes the client", async () => {
+  const common = require("oci-common") as Record<string, any>;
+  const abortController = new AbortController();
+  let attempts = 0;
+  let closeCalls = 0;
+  class ComputeClient {
+    readonly configuration: any;
+
+    constructor(_options: unknown, configuration: any) {
+      this.configuration = configuration;
+    }
+
+    async listInstances() {
+      assert.equal(this.configuration.circuitBreaker.noCircuit, true);
+      assert.equal(this.configuration.circuitBreaker.circuit, null);
+      const retrier = common.GenericRetrier.createPreferredRetrier(
+        this.configuration.retryConfiguration,
+        undefined,
+        common.OciSdkDefaultRetryConfiguration
+      );
+      return retrier.makeServiceCall({
+        async send() {
+          attempts += 1;
+          await new Promise<void>(resolve => {
+            abortController.signal.addEventListener("abort", () => resolve(), { once: true });
+          });
+          throw Object.assign(new Error("raw aborted transport detail"), {
+            shouldBeRetried: true
+          });
+        }
+      }, {
+        method: "GET",
+        headers: new Headers(),
+        uri: "https://example.invalid/instances"
+      }, "Compute", "listInstances", "https://example.invalid/api");
+    }
+
+    close() {
+      closeCalls += 1;
+    }
+  }
+  const hostRpc = createOciSdkHostRpc(() => ({
+    sdk: {
+      ConfigFileAuthenticationDetailsProvider: class Provider {},
+      core: { ComputeClient }
+    },
+    common: {}
+  }));
+
+  const operation = hostRpc({
+    binding: "oracle",
+    namespace: "oci",
+    operation: "invoke",
+    payload: {
+      service: "core",
+      client: { name: "ComputeClient" },
+      operation: "listInstances",
+      request: {}
+    }
+  }, abortController.signal);
+  await new Promise(resolve => setImmediate(resolve));
+  abortController.abort();
+
+  await assert.rejects(operation, error => (
+    (error as { message?: unknown }).message === "raw aborted transport detail"
+  ));
+  assert.equal(attempts, 1);
+  assert.equal(closeCalls, 1);
 });
 
 test("host cancellation configuration works with the real OCI HTTP client", async () => {
@@ -326,23 +403,25 @@ test("host cancellation configuration works with the real OCI HTTP client", asyn
 test("host RPC rejects unsupported client options", async () => {
   const hostRpc = createOciSdkHostRpc(() => ({ sdk: {}, common: {} }));
 
-  await assert.rejects(
-    hostRpc({
-      binding: "oracle",
-      namespace: "oci",
-      operation: "invoke",
-      payload: {
-        service: "core",
-        client: {
-          name: "ComputeClient",
-          options: { endpoint: "https://example.invalid" } as never
-        },
-        operation: "listInstances",
-        request: {}
-      }
-    }),
-    /Unsupported OCI client option 'endpoint'.*Client options only support region/
-  );
+  for (const option of ["endpoint", "retryConfiguration", "circuitBreaker"] as const) {
+    await assert.rejects(
+      hostRpc({
+        binding: "oracle",
+        namespace: "oci",
+        operation: "invoke",
+        payload: {
+          service: "core",
+          client: {
+            name: "ComputeClient",
+            options: { [option]: {} } as never
+          },
+          operation: "listInstances",
+          request: {}
+        }
+      }),
+      new RegExp(`Unsupported OCI client option '${option}'.*Client options only support region`)
+    );
+  }
 });
 
 test("host RPC rejects malformed client regions", async () => {

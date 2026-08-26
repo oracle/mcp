@@ -200,6 +200,192 @@ test("sandbox aborts and drains OCI work before returning at the deadline", asyn
   assert(Date.now() - startedAt < 5000);
 });
 
+test("sandbox shares one cleanup tail between provider termination and RPC draining", async () => {
+  let terminateCalls = 0;
+  const provider = testProvider((_code, options) => {
+    void options.hostRpc({
+      binding: "oracle",
+      namespace: "oci",
+      operation: "config",
+      payload: {}
+    });
+    return {
+      result: Promise.resolve({
+        result: 42,
+        error: null,
+        stdout: "",
+        stderr: "",
+        exitCode: 0,
+        timedOut: false
+      }),
+      terminationTimeoutMs: 400,
+      async terminate() {
+        terminateCalls += 1;
+        await delay(140);
+      }
+    };
+  });
+
+  const startedAt = Date.now();
+  const result = await runJavaScript("oci.config(); 42;", {
+    hostRpc: async (_request, signal) => new Promise<null>(resolve => {
+      signal?.addEventListener("abort", () => {
+        setTimeout(() => resolve(null), 140);
+      }, { once: true });
+    }),
+    isolationProvider: provider
+  });
+  const elapsedMs = Date.now() - startedAt;
+
+  assert.equal(result.error?.message, "JavaScript completed with unawaited OCI calls");
+  assert.equal(terminateCalls, 1);
+  assert(elapsedMs >= 120, `cleanup returned too early after ${elapsedMs}ms`);
+  assert(elapsedMs < 250, `cleanup tails ran serially for ${elapsedMs}ms`);
+});
+
+test("sandbox bounds a permanently pending OCI RPC to one cleanup tail", {
+  timeout: 3000
+}, async () => {
+  let terminateCalls = 0;
+  const provider = testProvider((_code, options) => {
+    void options.hostRpc({
+      binding: "oracle",
+      namespace: "oci",
+      operation: "config",
+      payload: {}
+    });
+    return {
+      result: new Promise(() => undefined),
+      terminationTimeoutMs: 100,
+      async terminate() {
+        terminateCalls += 1;
+      }
+    };
+  });
+
+  const startedAt = Date.now();
+  const result = await runJavaScript("while (true) {}", {
+    timeoutSeconds: 1,
+    hostRpc: async () => new Promise(() => undefined),
+    isolationProvider: provider
+  });
+  const elapsedMs = Date.now() - startedAt;
+
+  assert.deepEqual(result, {
+    result: null,
+    error: { message: "sandbox run deadline exceeded" },
+    stdout: "",
+    stderr: "",
+    exitCode: -1,
+    timedOut: true
+  });
+  assert.equal(terminateCalls, 1);
+  assert(elapsedMs >= 1000, `execution deadline returned too early after ${elapsedMs}ms`);
+  assert(elapsedMs < 1500, `cleanup exceeded its shared tail after ${elapsedMs}ms`);
+});
+
+test("sandbox keeps cleanup failure authoritative while abandoned RPC work is pending", async () => {
+  const provider = testProvider((_code, options) => {
+    void options.hostRpc({
+      binding: "oracle",
+      namespace: "oci",
+      operation: "config",
+      payload: {}
+    });
+    return {
+      result: Promise.resolve({
+        result: null,
+        error: { message: "sandbox run deadline exceeded" },
+        stdout: "",
+        stderr: "",
+        exitCode: -1,
+        timedOut: true
+      }),
+      terminationTimeoutMs: 25,
+      async terminate() {
+        throw new Error("cleanup broke after cancellation");
+      }
+    };
+  });
+
+  const result = await runJavaScript("0;", {
+    hostRpc: async () => new Promise(() => undefined),
+    isolationProvider: provider
+  });
+
+  assert.deepEqual(result, {
+    result: null,
+    error: { message: "isolation provider cleanup failed" },
+    stdout: "",
+    stderr: "",
+    exitCode: 1,
+    timedOut: false
+  });
+});
+
+test("late OCI completion cannot change a finalized timeout result", async () => {
+  let lateCompletion = false;
+  const provider = testProvider((_code, options) => {
+    void options.hostRpc({
+      binding: "oracle",
+      namespace: "oci",
+      operation: "config",
+      payload: {}
+    });
+    return {
+      result: new Promise(() => undefined),
+      terminationTimeoutMs: 25,
+      async terminate() {}
+    };
+  });
+
+  const result = await runJavaScript("while (true) {}", {
+    timeoutSeconds: 1,
+    hostRpc: async (_request, signal) => new Promise(resolve => {
+      signal?.addEventListener("abort", () => {
+        setTimeout(() => {
+          lateCompletion = true;
+          resolve({ internalLateData: "must-not-publish" });
+        }, 75);
+      }, { once: true });
+    }),
+    isolationProvider: provider
+  });
+  const finalized = structuredClone(result);
+
+  assert.equal(lateCompletion, false);
+  await delay(100);
+  assert.equal(lateCompletion, true);
+  assert.deepEqual(result, finalized);
+  assert.equal(JSON.stringify(result).includes("internalLateData"), false);
+});
+
+test("shared coordinator bounds and cleans fake Podman with a permanently pending RPC", {
+  timeout: 12_000
+}, async () => {
+  let aborted = false;
+  const startedAt = Date.now();
+  const result = await runJavaScript("await oci.config();", {
+    timeoutSeconds: 1,
+    hostRpc: async (_request, signal) => new Promise(() => {
+      signal?.addEventListener("abort", () => { aborted = true; }, { once: true });
+    })
+  });
+  const elapsedMs = Date.now() - startedAt;
+
+  assert.deepEqual(result, {
+    result: null,
+    error: { message: "sandbox run deadline exceeded" },
+    stdout: "",
+    stderr: "",
+    exitCode: -1,
+    timedOut: true
+  });
+  assert.equal(aborted, true);
+  assert(elapsedMs >= 1000, `execution deadline returned too early after ${elapsedMs}ms`);
+  assert(elapsedMs < 8000, `Podman cleanup exceeded its single tail after ${elapsedMs}ms`);
+});
+
 test("sandbox rejects oversized results returned by an isolation provider", async () => {
   const provider = testProvider(() => ({
     result: Promise.resolve({
@@ -316,6 +502,10 @@ test("sandbox does not hide cleanup failures behind a timeout result", async () 
   assert.equal(result.timedOut, false);
   assert.equal(result.error?.message, "isolation provider cleanup failed");
 });
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
 
 test("sandbox runs JavaScript and calls host OCI RPC", async () => {
   const requests: HostRpcRequest[] = [];

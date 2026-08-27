@@ -4,5 +4,7 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
+from importlib.metadata import version as distribution_version
+
 __project__ = "oracle.oci-recovery-mcp-server"
-__version__ = "2.1.2"
+__version__ = distribution_version(__project__)

@@ -4,6 +4,8 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
+from importlib.metadata import version as distribution_version
+
 from .auth import (
     AuthContext,
     AuthType,
@@ -34,5 +36,5 @@ __all__ = [
     "resolve_profile_name",
 ]
 
-__project__ = "oracle_mcp_common"
-__version__ = "0.1.3"
+__project__ = "oracle-mcp-common"
+__version__ = distribution_version(__project__)

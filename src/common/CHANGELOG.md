@@ -2,6 +2,13 @@
 
 All notable changes to `oracle-mcp-common` are documented in this file.
 
+## Unreleased
+
+### Changed
+
+- Runtime package metadata now reads the installed distribution version, with
+  `pyproject.toml` as the single source of truth.
+
 ## 0.1.3
 
 ### Changed

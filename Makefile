@@ -46,12 +46,6 @@ _build:
 			name=$$(uv run --isolated --no-project --python 3.13 python -c "import sys, tomllib; print(tomllib.load(open(sys.argv[1], 'rb'))['project']['name'])" "$$dir/pyproject.toml") || exit 1; \
 			version=$$(uv run --isolated --no-project --python 3.13 python -c "import sys, tomllib; print(tomllib.load(open(sys.argv[1], 'rb'))['project']['version'])" "$$dir/pyproject.toml") || exit 1; \
 			echo "Building $$dir: $$name==$$version"; \
-			if [ -d $$dir/oracle/*_mcp_server ]; then \
-				init_py_file=$$(echo $$dir/oracle/*_mcp_server/__init__.py); \
-				printf '"""\nCopyright (c) 2025, 2026 Oracle and/or its affiliates.\nLicensed under the Universal Permissive License v1.0 as shown at\nhttps://oss.oracle.com/licenses/upl.\n"""\n\n' > $$init_py_file; \
-				echo "__project__ = \"$$name\"" >> $$init_py_file; \
-				echo "__version__ = \"$$version\"" >> $$init_py_file; \
-			fi; \
 			cd $$dir && uv build --clear && cd ../..; \
 		fi \
 	done

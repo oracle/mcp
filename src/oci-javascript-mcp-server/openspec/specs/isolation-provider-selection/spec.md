@@ -58,7 +58,7 @@ The server SHALL validate the selected provider, profile, credential source, ima
 - **AND** the standard in-cluster policy SHALL NOT be substituted
 
 ### Requirement: Explicit assurance posture
-The trusted provider descriptor and operator diagnostics SHALL identify the active provider and profile, credential mode, runtime policy, image policy, namespace topology, completed preflights, and unverified external controls without disclosing credentials, endpoints, raw Kubernetes errors, guest data, or resource details. A standard-runtime profile MUST NOT claim a per-execution VM boundary, and a Kata profile MUST NOT claim production approval solely from RuntimeClass lookup or pod creation.
+The trusted provider descriptor and operator diagnostics SHALL identify the active provider and profile, credential mode, runtime policy, image policy, namespace topology, completed preflights, and unverified external controls without disclosing credentials, endpoints, raw Kubernetes errors, guest data, pod names, or resource details. Admission dry-run evidence SHALL be described only as `reviewed-variants-rejected` or `unverified`, not as general admission enforcement. A standard-runtime profile MUST NOT claim a per-execution VM boundary, and a Kata profile MUST NOT claim production approval solely from RuntimeClass lookup, reviewed-variant rejection, or pod creation.
 
 #### Scenario: Standard profile descriptor
 - **WHEN** either standard-runtime profile starts successfully
@@ -66,9 +66,14 @@ The trusted provider descriptor and operator diagnostics SHALL identify the acti
 - **AND** it SHALL explicitly report that a Kata guest-kernel boundary was not requested or verified
 
 #### Scenario: Kata profile descriptor
-- **WHEN** `kata-in-cluster` starts successfully after RuntimeClass and admission preflight
-- **THEN** its descriptor SHALL record the selected RuntimeClass and handler
-- **AND** it SHALL retain explicit unverified flags for real-node, guest-kernel, CRI, CNI, PID, overhead, and provenance evidence
+- **WHEN** `kata-in-cluster` starts successfully after exact RuntimeClass and admission-variant preflight
+- **THEN** its descriptor SHALL record the selected RuntimeClass and handler and report only that reviewed variants were rejected
+- **AND** it SHALL retain explicit unverified flags for real-node, guest-kernel, CRI, CNI, PID, overhead, provenance, and exact deployed admission-policy evidence
+
+#### Scenario: Local admission gap
+- **WHEN** `local-development` accepts a reviewed unsafe variant
+- **THEN** its descriptor SHALL report admission preflight as `unverified`
+- **AND** no operator diagnostic SHALL summarize the cluster admission path as enforced
 
 ### Requirement: Provider choice preserves host controls
 Provider and profile selection SHALL NOT change the `run_javascript` contract, OCI facade, host credential ownership, supported client options, SDK request validation, execution deadline, OCI call and concurrency budgets, frame limits, result limits, or public-error sanitization.

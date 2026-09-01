@@ -13,26 +13,40 @@ import {
   PROVIDER_LABEL
 } from "./kubernetes-pod.ts";
 
+export type ReconciliationSummary = {
+  deletedNames: string[];
+  failureCount: number;
+};
+
 export async function reconcileExpiredPods(
   api: KubernetesApi,
   namespace: string,
   profile: KubernetesProfile,
-  nowMs = Date.now()
-): Promise<string[]> {
-  const deleted: string[] = [];
+  nowMs = Date.now(),
+  candidateTimeoutMs = 5_000
+): Promise<ReconciliationSummary> {
+  const summary: ReconciliationSummary = { deletedNames: [], failureCount: 0 };
   const pods = await api.listManagedPods(namespace, profile);
   for (const pod of pods) {
     const name = expiredManagedPodName(pod, namespace, profile, nowMs);
     if (!name) {
       continue;
     }
-    await api.deletePod(namespace, name);
-    if (!await api.waitForPodDeleted(namespace, name, Date.now() + 5000)) {
-      throw new Error("Kubernetes reconciliation could not confirm pod deletion");
+    const deadlineMs = Date.now() + candidateTimeoutMs;
+    const controller = new AbortController();
+    try {
+      await withCandidateDeadline((async () => {
+        await api.deletePod(namespace, name, controller.signal);
+        if (!await api.waitForPodDeleted(namespace, name, deadlineMs, controller.signal)) {
+          throw new Error("Kubernetes reconciliation could not confirm pod deletion");
+        }
+      })(), deadlineMs, controller);
+      summary.deletedNames.push(name);
+    } catch {
+      summary.failureCount += 1;
     }
-    deleted.push(name);
   }
-  return deleted;
+  return summary;
 }
 
 export function startExpiryReconciliation(
@@ -40,7 +54,7 @@ export function startExpiryReconciliation(
   namespace: string,
   profile: KubernetesProfile,
   intervalMs: number,
-  onError: () => void = () => undefined
+  onResult: (summary: ReconciliationSummary | undefined) => void = () => undefined
 ): () => void {
   let stopped = false;
   let running = false;
@@ -50,9 +64,9 @@ export function startExpiryReconciliation(
     }
     running = true;
     try {
-      await reconcileExpiredPods(api, namespace, profile);
+      onResult(await reconcileExpiredPods(api, namespace, profile));
     } catch {
-      onError();
+      onResult(undefined);
     } finally {
       running = false;
     }
@@ -64,6 +78,23 @@ export function startExpiryReconciliation(
     stopped = true;
     clearInterval(timer);
   };
+}
+
+function withCandidateDeadline<T>(
+  promise: Promise<T>,
+  deadlineMs: number,
+  controller: AbortController
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => {
+        controller.abort();
+        reject(new Error("Kubernetes reconciliation candidate timed out"));
+      },
+      Math.max(1, deadlineMs - Date.now())
+    );
+    promise.then(resolve, reject).finally(() => clearTimeout(timeout));
+  });
 }
 
 function expiredManagedPodName(

@@ -19,27 +19,31 @@ import { main, runCleanupReconciler } from "../src/kubernetes-reconciler.ts";
 test("cleanup-only reconciler recovers, uses only list/get/delete, and stops without leaks", async () => {
   const calls: string[] = [];
   let listAttempts = 0;
+  let firstDeleteAttempts = 0;
+  const pod = (name: string) => ({
+    metadata: {
+      name,
+      namespace: "execution",
+      labels: {
+        [MANAGED_BY_LABEL]: "oci-javascript-mcp",
+        [PROVIDER_LABEL]: "kubernetes",
+        [PROFILE_LABEL]: "kata-in-cluster"
+      },
+      annotations: { [EXPIRY_ANNOTATION]: new Date(Date.now() - 1000).toISOString() }
+    }
+  });
   const api = new Proxy({
     async listManagedPods() {
       calls.push("list");
       listAttempts += 1;
-      if (listAttempts === 1) {
+      return listAttempts === 1 ? [pod("failed-first"), pod("deleted-later")] : [pod("failed-first")];
+    },
+    async deletePod(_namespace: string, name: string) {
+      calls.push("delete");
+      if (name === "failed-first" && firstDeleteAttempts++ === 0) {
         throw new Error("temporary outage with raw endpoint");
       }
-      return [{
-        metadata: {
-          name: "expired",
-          namespace: "execution",
-          labels: {
-            [MANAGED_BY_LABEL]: "oci-javascript-mcp",
-            [PROVIDER_LABEL]: "kubernetes",
-            [PROFILE_LABEL]: "kata-in-cluster"
-          },
-          annotations: { [EXPIRY_ANNOTATION]: new Date(Date.now() - 1000).toISOString() }
-        }
-      }];
     },
-    async deletePod() { calls.push("delete"); },
     async waitForPodDeleted() {
       calls.push("get");
       return true;
@@ -66,9 +70,14 @@ test("cleanup-only reconciler recovers, uses only list/get/delete, and stops wit
     }
   );
   await running;
-  assert.deepEqual(calls, ["list", "list", "delete", "get"]);
+  assert.deepEqual(calls, ["list", "delete", "delete", "get", "list", "delete", "get"]);
   assert.deepEqual(events.map(event => event.outcome), ["failed", "succeeded"]);
+  assert.deepEqual(events.map(event => event.reconciliation), [
+    { successCount: 1, failureCount: 1 },
+    { successCount: 1, failureCount: 0 }
+  ]);
   assert.equal(JSON.stringify(events).includes("raw endpoint"), false);
+  assert.equal(JSON.stringify(events).includes("failed-first"), false);
 });
 
 test("cleanup-only reconciler exits immediately when already aborted", async () => {

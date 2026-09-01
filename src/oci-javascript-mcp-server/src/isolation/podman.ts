@@ -6,7 +6,6 @@
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_MAX_FRAME_BYTES } from "../protocol.ts";
 import { positiveIntegerEnv } from "../sandbox-common.ts";
 import type { IsolationExecution, IsolationProvider } from "../types.ts";
 import {
@@ -17,8 +16,6 @@ import {
 
 const DEFAULT_IMAGE = "localhost/oci-javascript-mcp-runner:dev";
 const DEFAULT_MEMORY_LIMIT_MB = 128;
-const DEFAULT_RESULT_BYTES = 1024 * 1024;
-const MAX_PROTOCOL_RESULT_BYTES = DEFAULT_MAX_FRAME_BYTES - 64 * 1024;
 const SAFE_IMAGE_REFERENCE = /^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,255}$/;
 const PODMAN_TERMINATION_TIMEOUT_MS = 6000;
 
@@ -39,10 +36,6 @@ export class PodmanIsolationProvider implements IsolationProvider {
     options: Parameters<IsolationProvider["run"]>[1]
   ): IsolationExecution {
     const name = `oci-javascript-${randomUUID()}`;
-    const configuredResultBytes = positiveIntegerEnv(
-      "OCI_JAVASCRIPT_MAX_RESULT_BYTES",
-      DEFAULT_RESULT_BYTES
-    );
     const child = spawn(this.#cliPath, [
       "run",
       "--rm",
@@ -72,7 +65,6 @@ export class PodmanIsolationProvider implements IsolationProvider {
         "OCI_JAVASCRIPT_ISOLATE_MEMORY_MB",
         DEFAULT_MEMORY_LIMIT_MB
       ),
-      maxResultBytes: Math.min(configuredResultBytes, MAX_PROTOCOL_RESULT_BYTES),
       terminationTimeoutMs: PODMAN_TERMINATION_TIMEOUT_MS
     }, () => runCleanupCommand(this.#cliPath, ["rm", "--force", "--ignore", name]));
   }

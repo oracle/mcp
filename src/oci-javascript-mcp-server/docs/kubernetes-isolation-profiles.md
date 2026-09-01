@@ -34,7 +34,7 @@ Optional strict base-10 settings are:
 
 | Variable | Default | Range |
 | --- | ---: | ---: |
-| `OCI_JAVASCRIPT_KUBERNETES_CPU_MILLICORES` | 1000 | 100–4000 |
+| `OCI_JAVASCRIPT_KUBERNETES_CPU_MILLICORES` | 100 | 100–4000 |
 | `OCI_JAVASCRIPT_KUBERNETES_MEMORY_MB` | 512 | 128–2048 |
 | `OCI_JAVASCRIPT_KUBERNETES_EPHEMERAL_STORAGE_MB` | 64 | 16–1024 |
 | `OCI_JAVASCRIPT_KUBERNETES_TMP_MB` | 16 | 1–64 |
@@ -42,6 +42,14 @@ Optional strict base-10 settings are:
 | `OCI_JAVASCRIPT_MAX_RESULT_BYTES` | 1048576 | 1–2031616 |
 | `OCI_JAVASCRIPT_KUBERNETES_CLEANUP_TIMEOUT_SECONDS` | 30 | 1–60 |
 | `OCI_JAVASCRIPT_KUBERNETES_RECONCILE_INTERVAL_SECONDS` | 30 | 5–300 |
+
+The standard and Kata example admission policies use CEL `quantity()` bounds
+for the four pod-resource settings above. Every documented CPU, memory,
+ephemeral-storage, and `/tmp` value is therefore accepted without a synchronized
+policy edit. CPU, memory, and ephemeral-storage requests must equal their
+corresponding limits and stay within 100–4000 millicores, 128–2048 MiB, and
+16–1024 MiB respectively; the memory-backed `/tmp` size must stay within
+1–64 MiB. Missing, malformed, unequal, or out-of-range values fail closed.
 
 The provider uses conservative host concurrency defaults: four active tool calls
 and 64 queued calls unless the trusted operator sets the existing bounded host
@@ -104,6 +112,31 @@ RBAC, cleanup-only RBAC, restricted Pod Security labels, ResourceQuota,
 LimitRange, default-deny NetworkPolicies, base-pod admission, and the independent
 reconciler. They contain no RuntimeClass requirement.
 
+### Synchronizing a local OCI session Secret
+
+For a local in-cluster test, the trusted host needs a Kubernetes Secret with a
+pod-compatible OCI config, its private key, and, for session authentication, its
+current security token. Run the helper after the host namespace exists:
+
+```bash
+npm run oci:sync-kubernetes-secret -- --profile DEFAULT --restart-host
+```
+
+The helper reads `OCI_CONFIG_FILE` or `~/.oci/config`, selects
+`OCI_CONFIG_PROFILE` or the specified profile, writes only the selected profile
+as `[DEFAULT]` in the Secret, rewrites credential paths to `/var/run/oci`, and
+never prints credential content. It creates `config`, `private-key.pem`, and
+when applicable `token` in `oci-js-host-oci-config` under
+`oci-js-standard-host`. For an expired OCI session, use:
+
+```bash
+npm run oci:sync-kubernetes-secret -- --profile DEFAULT --refresh-session --restart-host
+```
+
+`--dry-run` validates the selected local profile and source files without
+contacting Kubernetes. The helper intentionally never creates or mounts this
+Secret in the execution namespace.
+
 `kata-in-cluster` additionally requires:
 
 | Variable | Meaning |
@@ -118,11 +151,20 @@ boundary described in the [Kata POC guide](kata-kubernetes-poc.md).
 ## Startup, execution, and cleanup
 
 All profiles read the execution namespace, verify exact pod lifecycle and exec
-authority, and dry-run the conforming pod. In-cluster profiles fail startup if
-any shared unsafe pod variant is accepted. Kata additionally verifies the exact
-RuntimeClass/handler and requires rejection of a wrong-RuntimeClass variant.
-Local development may continue when production admission is absent, but records
-that gap and can never acquire in-cluster or Kata assurance.
+authority, and dry-run the conforming pod. The Namespace `get` access review
+names exactly the configured execution Namespace, and Kata similarly names the
+configured RuntimeClass; example ClusterRoles use matching `resourceNames`.
+Generated pod lifecycle and exec permissions remain scoped to the execution
+namespace because pod names are dynamic. In-cluster profiles fail startup if
+any identified weakening of the reviewed metadata, image, service account,
+token/service-link, command/environment, host namespace, container cardinality,
+security context, capabilities, seccomp, filesystem, resource, deadline,
+probe/hook, volume, or `/tmp` contract is accepted. Kata additionally verifies
+the exact RuntimeClass/handler and rejects a wrong-RuntimeClass variant.
+Successful dry-run evidence is reported as `reviewed-variants-rejected`, not as
+general admission enforcement; the exact deployed policy revision remains
+unverified. Local development may continue when production admission is absent,
+but records that gap and can never acquire in-cluster or Kata assurance.
 
 The server completes preflight before MCP stdio is connected. Configuration,
 authentication, RBAC, namespace, RuntimeClass, admission, or reconciliation
@@ -136,9 +178,12 @@ finalization, the host stops accepting bridge work and aborts the run, then
 starts provider termination and a rejection-observing snapshot drain of pending
 OCI calls concurrently. Both consume one configured cleanup tail, capped by the
 trusted host at 60 seconds; the drain does not receive a second tail after exec
-close and zero-grace pod deletion. Failure to confirm NotFound returns
-`isolation provider cleanup failed` even after a valid or timed-out worker
-result. An otherwise successful script with pending OCI work instead returns
+close and zero-grace pod deletion. Kubernetes channel stop and pod
+delete/NotFound confirmation start concurrently against that same cleanup
+deadline after pod creation settles, even when exec establishment is pending or
+produces a late channel. Failure to confirm either channel closure or NotFound
+returns `isolation provider cleanup failed` even after a valid or timed-out
+worker result. An otherwise successful script with pending OCI work instead returns
 `JavaScript completed with unawaited OCI calls` within the same bound.
 
 Trusted-host OCI clients use the SDK no-retry policy, an explicitly disabled
@@ -151,7 +196,11 @@ Every host reconciles expired pods matching the generic manager label and exact
 profile. Both in-cluster profiles deploy a separate cleanup-only reconciler with
 get/list/watch/delete and no create or `pods/exec`. Local development relies on
 host reconciliation. Unrelated, malformed, other-profile, wrong-namespace, and
-non-expired pods are preserved.
+non-expired pods are preserved. Each candidate consumes at most five seconds;
+delete or confirmation failure increments one aggregate failure count and does
+not block later candidates. Startup consumes the full pass before failing,
+periodic host and cleanup-only passes emit one sanitized aggregate count, and a
+failed pass does not stop future intervals.
 
 ## Diagnostics and assurance
 
@@ -159,7 +208,9 @@ Diagnostics are JSON lines on trusted stderr. Events contain only provider,
 profile, correlation ID, allowlisted phase/outcome/reason, and bounded duration.
 Descriptors identify credential mode, runtime policy, image policy, namespace
 topology, admission outcome, nested `isolated-vm`, and explicit unverified
-external controls. They exclude kubeconfig paths, endpoints, credentials, raw
+external controls, including the exact deployed admission-policy revision.
+Reconciliation events may add only bounded aggregate success and failure
+counts. They exclude kubeconfig paths, endpoints, credentials, raw
 Kubernetes errors, guest code/output, protocol frames, pod names, and resource
 details. Provider-specific data never enters MCP structured results.
 
@@ -182,9 +233,19 @@ npm run kubectl:dry-run:kubernetes
 npm run ci
 ```
 
-Client-side dry-run and offline fixtures do not establish server-side admission,
-RBAC effectiveness, CNI enforcement, or a Kata guest kernel. Those remain
-deferred real-cluster evidence.
+Offline fixtures cover default, non-default, minimum, maximum, missing,
+malformed, unequal, and out-of-range resource settings. Client-side dry-run and
+those fixtures do not establish server-side CEL evaluation or admission, RBAC
+effectiveness, CNI enforcement, or a Kata guest kernel. Those remain deferred
+real-cluster evidence.
+
+After applying both versioned example ValidatingAdmissionPolicies to a test
+cluster, set `OCI_JAVASCRIPT_RUN_REAL_KUBERNETES_ADMISSION_TESTS=true` together
+with `OCI_JAVASCRIPT_TEST_KUBERNETES_KUBECONFIG` and
+`OCI_JAVASCRIPT_TEST_KUBERNETES_CONTEXT`. `npm test` then reads both applied
+policies and requires the current observed generation to contain no
+`status.typeChecking.expressionWarnings`. Without that explicit opt-in, the
+test reports a deliberate skip and no server-side CEL evidence is claimed.
 
 Lifecycle tests additionally cover permanently pending OCI work, provider
 termination and RPC draining sharing one cleanup tail, cleanup-failure

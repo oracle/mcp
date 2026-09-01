@@ -62,6 +62,9 @@ credential source. See the [Kubernetes profile guide](docs/kubernetes-isolation-
 for the complete provider matrix, configuration, preflight behavior, local
 cluster workflow, and versioned assets. Kata-specific deployment evidence is in
 the [Kata POC guide](docs/kata-kubernetes-poc.md).
+For the verified Rancher Desktop `in-cluster` workflow, including image pinning,
+host-only OCI Secret synchronization, and Inspector connection, see the
+[local Kubernetes in-cluster setup guide](docs/kubernetes-local-in-cluster-setup.md).
 
 After publication, install and configure the `oci-javascript-mcp-server`
 command instead of invoking `node` directly.
@@ -83,6 +86,14 @@ allowances never accumulate serially. A never-settling OCI request therefore
 cannot delay the MCP result beyond the execution deadline plus that one tail.
 Provider cleanup failure remains authoritative, while a late OCI completion is
 observed internally and cannot change or republish the finalized result.
+
+The worker channel accepts one `health` transition before normal traffic and
+enters an irreversible terminal phase as soon as it accepts a result. RPC IDs
+must be positive, safe, and unique for the execution; terminal acceptance
+revokes queued RPC replies synchronously. Per-execution cumulative ingress,
+accepted-message, log, egress, frame, and result budgets bound sustained valid
+traffic as well as malformed input, and one ordered writer applies the egress
+budget while honoring transport backpressure.
 
 Use the injected binding like the OCI JavaScript SDK:
 
@@ -158,13 +169,30 @@ can cross a shared-kernel container boundary. Deployments requiring a VM-grade
 boundary must supply that boundary outside the MCP server and retain
 conservative mounts and network policy.
 
-Every Kubernetes profile uses the same fixed non-root security context and
-resources, no token or service links, no host namespace or owner reference, and
-one bounded memory-backed `/tmp`. In-cluster profiles require digest-pinned
-images, separate namespaces, fail-closed RBAC/admission preflight, and an
-independent cleanup-only reconciler. Only `kata-in-cluster` adds a preflighted
-RuntimeClass/handler. Kubernetes and raw exec errors remain trusted diagnostics
-and are never copied into MCP result fields.
+Every Kubernetes profile uses the same fixed non-root security context, no token
+or service links, no host namespace or owner reference, and one bounded
+memory-backed `/tmp`. CPU, memory, and ephemeral-storage requests must equal
+their limits and stay within the documented reviewed ranges; `/tmp` must also
+stay within its documented range. The example admission policies use CEL
+quantity bounds so every documented value is accepted without a synchronized
+policy edit. In-cluster profiles require digest-pinned
+images, separate namespaces, fail-closed exact RBAC checks, rejection of the
+reviewed admission variants, and an independent cleanup-only reconciler. Only
+`kata-in-cluster` adds a preflighted RuntimeClass/handler. Kubernetes and raw
+exec errors remain trusted diagnostics and are never copied into MCP result
+fields.
+
+Cluster-scoped preflight reads name exactly the configured execution Namespace
+and, for Kata, RuntimeClass; the example ClusterRoles apply matching
+`resourceNames`, while generated pod operations remain namespace-scoped.
+Admission evidence is reported only as `reviewed-variants-rejected` or
+`unverified`, and the exact deployed policy revision remains explicitly
+unverified. During cleanup, exec-channel stop and zero-grace pod deletion plus
+NotFound confirmation run concurrently against the same cleanup deadline; an
+unconfirmed channel close or deletion returns `isolation provider cleanup
+failed`. Reconciliation bounds each expired candidate to five seconds,
+continues after candidate failures, and emits only aggregate success/failure
+counts so later intervals continue without exposing pod names.
 
 ## Development
 
@@ -186,7 +214,12 @@ profiles. They validate configuration, credential-factory selection, pod shape,
 hostile framing, startup admission probes, lifecycle races, cancellation,
 cleanup, reconciliation, and provider-compatible MCP results. The opt-in local
 cluster harness adds real standard-runtime lifecycle evidence; it never claims
-Kata, CRI, CNI, or guest-kernel evidence.
+Kata, CRI, CNI, or guest-kernel evidence. Offline resource-range fixtures and
+client-side dry runs do not establish server-side CEL or admission enforcement.
+When both example admission policies are already applied to a configured test
+cluster, `OCI_JAVASCRIPT_RUN_REAL_KUBERNETES_ADMISSION_TESTS=true` makes the
+test suite require their observed generations to have no CEL type-checking
+warnings; otherwise that real-cluster-only evidence is deliberately skipped.
 
 The generated sandbox prelude and type-only declarations are excluded from
 source-line instrumentation; their behavior is exercised through integration

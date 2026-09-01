@@ -4,80 +4,101 @@ context: |
   Project: OCI JavaScript MCP Server.
   Stack: strict TypeScript with NodeNext, Node 26+ native TypeScript stripping,
   npm, the official MCP TypeScript SDK, OCI JavaScript SDK (`oci-sdk` and
-  `oci-common`), Zod, `isolated-vm`, and c8.
+  `oci-common`), `@kubernetes/client-node`, Zod, `isolated-vm`, and c8.
   Transport: MCP over stdio. `run_javascript` executes a complete JavaScript
   program with an SDK-shaped `oci` facade; `discover_oci` inspects installed SDK
   declarations without running guest code.
 
-  Architecture: `src/server.ts` runs the trusted MCP host and creates the sole
-  `PodmanIsolationProvider`, optionally configured with the Podman CLI path and
-  runner image environment variables. `src/sandbox.ts` starts one fresh provider
-  execution per tool call, owns deadlines, call and concurrency budgets, and
-  validates the returned result. The provider starts a locked-down Podman
-  container running `src/sandbox-worker.ts`; the worker creates an `isolated-vm`
-  V8 isolate for user code and its injected OCI facade. `src/isolation/pipe-execution.ts`
-  carries length-prefixed, versioned JSON frames between the trusted host and
-  worker.
+  Architecture: `src/server.ts` runs the trusted MCP host and uses
+  `src/isolation/provider-factory.ts` to select exactly one provider before MCP
+  stdio connects. Podman is the compatibility default; Kubernetes is explicit
+  opt-in with exactly one `local-development`, `in-cluster`, or
+  `kata-in-cluster` profile. `src/sandbox.ts` starts one fresh provider execution
+  per tool call, owns the absolute execution deadline and host RPC budgets,
+  validates the returned result, then bounds provider termination and pending
+  RPC draining within one cleanup tail. Podman starts a locked-down container;
+  Kubernetes creates one hardened pod per call, opens a non-TTY exec channel,
+  and confirms channel closure and pod deletion. Both run
+  `src/sandbox-worker.ts`, which creates a fresh `isolated-vm` V8 isolate for user
+  code and its injected OCI facade. The provider-neutral `WorkerChannel` carries
+  length-prefixed, versioned JSON frames between the trusted host and worker.
 
-  Trust boundary: the runner has no OCI credentials, config, SDK clients, MCP
-  transport, host mounts, filesystem, network, environment, or Node built-ins.
-  It receives only reflection metadata and a narrow OCI RPC bridge. The host
-  treats worker frames as hostile, rejects malformed, oversized, and unsafe
-  input, validates SDK-shaped requests, creates OCI clients with host credentials,
-  owns deadlines and call/concurrency budgets, and sanitizes public OCI errors.
-  OCI IAM remains a final backstop.
+  Trust boundary: the runner has no OCI credentials, config, SDK clients,
+  Kubernetes credentials, MCP transport, host mounts, general filesystem or
+  network access, host environment, or Node built-ins. It receives only
+  reflection metadata and a narrow OCI RPC bridge. The host treats the runner
+  and every frame as hostile, rejects malformed, oversized, ambiguous, and
+  unsafe input, validates SDK-shaped requests, creates OCI clients with host
+  credentials, owns deadlines and call/concurrency budgets, and sanitizes public
+  OCI and provider errors. Kubernetes credentials and lifecycle authority remain
+  in the trusted host. OCI IAM and the selected container/Kubernetes control
+  plane remain external backstops, not substitutes for host validation.
 
-  Provider posture: Podman is the only implemented isolation provider and there
-  is no process fallback. Each execution uses a fresh credential-free container
-  with no network, read-only root filesystem, dropped capabilities,
-  `no-new-privileges`, a non-root user, CPU, memory, process, file, and temporary
-  filesystem limits, plus forced named cleanup. A normal Linux Podman container
-  shares the host kernel and is not a VM boundary; deployments must supply any
-  required VM-grade isolation and surrounding controls outside this server.
+  Provider posture: Podman and Kubernetes are implemented; there is no process
+  provider, automatic discovery, or fallback after selection or failure. Podman
+  remains the unset default and provides shared-kernel compatibility isolation.
+  Kubernetes uses a fixed host-constructed pod and one exact profile:
+  `local-development` loads one explicit kubeconfig/context and may explicitly
+  allow a safe local image; `in-cluster` uses service-account credentials,
+  separate trusted-host and execution namespaces, a digest-pinned image, and a
+  zero-authority runner service account; `kata-in-cluster` adds only an exact,
+  preflighted RuntimeClass and handler. Standard Kubernetes profiles remain
+  shared-kernel container isolation. Kata is a functionally tested POC, not a
+  production-approved VM boundary, until real-node, CNI, runtime, image,
+  admission, operational, and security-review evidence is complete.
 
   Policy: the injected facade is SDK-shaped convenience, not enforcement. The
   host validates bridge messages and request shapes, permits only supported
   SDK-backed operations, creates clients with host authentication, and allows
   per-client `region` selection but not guest-provided endpoints, credentials,
-  signers, retry configuration, or local utilities.
+  signers, retry or circuit-breaker control, or local utilities. The host-owned
+  OCI policy is one network attempt per accepted operation, with abort-aware HTTP
+  options and the SDK default circuit breaker disabled. Guest request data must
+  not restore transport or execution controls. Reserved-tag wire values must use
+  exact schemas, and ordinary objects owning the reserved tag key must round-trip
+  through an explicit escaped-object representation without coercion.
 
   Limits: code 1 MiB; timeout 1–120 seconds (30 default); result and each log
-  stream 1 MiB; framed messages max 2 MiB; recursive decoder limits on depth,
-  strings, arrays, keys, and nodes. Preserve SDK-native use: client construction
-  supports only `region`; pagination uses request `page` and response
-  `opcNextPage`; do not add convenience APIs without a demonstrated need.
+  stream 1 MiB; framed messages max 2 MiB; bounded accepted-message, ingress,
+  egress, log, and result budgets; recursive decoder limits on depth, strings,
+  arrays, keys, and nodes. Preserve SDK-native use: client construction supports
+  only `region`; pagination uses request `page` and response `opcNextPage`; do
+  not add convenience APIs without a demonstrated need.
 
-  Primary sources: README.md; src/server.ts; src/sandbox.ts; src/oci-host.ts;
-  src/protocol.ts; src/sandbox-isolate.ts; src/isolation/; and the tests in test/.
+  Primary sources: README.md; docs/kubernetes-isolation-profiles.md;
+  docs/kata-kubernetes-poc.md; docs/architecture-and-isolation-design.md;
+  src/server.ts; src/sandbox.ts; src/oci-host.ts; src/json.ts; src/protocol.ts;
+  src/sandbox-isolate.ts; src/isolation/; examples/; and the tests in test/.
 
 rules:
   proposal:
-    - State which provider and execution mode are in scope, and whether the change affects the trusted host, untrusted runner, or their protocol.
-    - Treat Podman as the sole in-server provider and do not introduce or imply a process fallback or provider-admission mechanism.
+    - State which provider and exact Kubernetes profile are in scope, and whether the change affects the trusted host, untrusted runner, provider lifecycle, deployment controls, or their protocol.
+    - Preserve explicit startup-time provider/profile selection and fail closed without discovery, fallback, or guest-controlled selection.
     - Identify effects on SDK operation exposure, client options, host credential isolation, deadline, call, concurrency, frame, and byte budgets.
-    - Preserve the distinction between container isolation, the nested isolated-vm boundary, and VM-grade isolation supplied outside this server.
+    - Preserve the distinction between Podman or standard-Kubernetes shared-kernel isolation, the nested isolated-vm boundary, and the unverified VM-grade claim of the Kata POC.
   design:
-    - Trace the full flow from MCP tool through trusted host, Podman provider, framed channel, worker, isolated-vm facade, OCI host RPC, and cleanup.
-    - Specify message schemas, frame and recursive-decoding limits, hostile-input handling, SDK request validation, public-error sanitization, cancellation, and deterministic teardown.
-    - For a new provider, document guest credentials, mounts, network posture, resource limits, teardown behavior, and how deployment-level isolation requirements are met.
+    - Trace the full flow from MCP tool through trusted host and selected Podman or Kubernetes profile, provider-neutral framed channel, worker, isolated-vm facade, OCI host RPC, finalization, and confirmed cleanup.
+    - Specify exact message and tagged-value schemas, frame and aggregate channel budgets, recursive-decoding limits, hostile-input handling, SDK request-control validation, public-error sanitization, cancellation, and deterministic teardown.
+    - For provider or profile changes, document credential source, namespaces, image policy, pod/container shape, mounts, network posture, resource limits, preflight, reconciliation, teardown, diagnostics, and required external evidence.
     - Keep the `oci` facade SDK-shaped and ergonomic, but never treat it as enforcement.
   specs:
     - Define success results and error behavior using result, error, stdout, stderr, exit_code, and timed_out fields where applicable.
-    - Cover malformed, unknown-version, unknown-field, oversized, invalid-UTF-8, dangerous-key, and truncated protocol frames.
-    - Cover direct raw-channel attempts after runner compromise, credential and Node-global isolation, unsupported client options, and cancellation or timeout cleanup.
+    - Cover malformed, unknown-version, unknown-field, oversized, budget-exhausting, invalid-UTF-8, dangerous-key, ambiguous-tag, and truncated protocol input.
+    - Cover direct raw-channel attempts after runner compromise, credential and Node-global isolation, recursive request-control injection, exact tagged-value decoding, reserved-key object round trips, unsupported client options, and cancellation or timeout cleanup.
+    - For Kubernetes behavior, cover all three profiles, fail-closed preflight, fixed pod policy, channel-close and deletion confirmation, bounded diagnostics, reconciliation, and the limits of fake or dry-run evidence.
   tasks:
     - Separate trusted broker, runner/facade, protocol, provider lifecycle, policy, docs, and tests whenever their boundary changes.
-    - Include focused unit tests, MCP stdio integration tests, and adversarial protocol/provider tests for affected behavior.
-    - For provider or isolation changes, include migration, rollback, deployment isolation implications, and real-provider evidence.
+    - Include focused unit tests, MCP stdio integration tests, adversarial protocol/provider tests, and both-provider compatibility coverage for affected behavior.
+    - For Kubernetes or isolation changes, include manifest validation, migration, rollback, deployment isolation implications, cleanup/reconciliation checks, and clearly scoped real-provider evidence.
 
 operations:
   apply:
     guidance:
       - Keep work self-contained in this server and do not resolve or modify unrelated merge conflicts.
-      - Do not weaken Podman hardening, protocol validation, SDK request validation, public-error sanitization, credential isolation, or teardown guarantees without an explicit security rationale and tests.
-      - Update README.md for changed environment variables, provider posture, security limitations, user-visible tool behavior, or local setup.
-      - Run npm test, npm run coverage, npm run check, and npm run packcheck for server changes; use npm run ci when the worktree permits it. Coverage must remain at the configured 90% line threshold.
+      - Do not weaken Podman or Kubernetes pod hardening, profile preflight, protocol validation, SDK request validation, public-error sanitization, credential isolation, one-attempt OCI policy, or teardown guarantees without an explicit security rationale and tests.
+      - Update README.md and the relevant Kubernetes, Kata, or architecture guide for changed environment variables, provider/profile posture, deployment evidence, security limitations, user-visible tool behavior, or local setup.
+      - Run npm test, npm run coverage, npm run check, npm run packcheck, and npm run check:kubernetes-manifests for server changes; run npm run kubectl:dry-run:kubernetes when kubectl is available and use npm run ci when the worktree permits it. Coverage must remain at the configured 90% line threshold.
   archive:
     guidance:
-      - Confirm the Podman capability and deployment isolation assumptions precisely, including shared-kernel limitations.
-      - Summarize validation, adversarial coverage, cleanup/cancellation behavior, deployment assumptions, and any deferred provider work.
+      - Confirm the selected provider/profile capability and deployment isolation assumptions precisely, including shared-kernel limitations and any unverified Kata or cluster controls.
+      - Summarize validation, adversarial and both-provider coverage, cleanup/cancellation and reconciliation behavior, deployment assumptions, evidence boundaries, and deferred production-readiness work.

@@ -6,6 +6,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { AdmissionregistrationV1Api, KubeConfig } from "@kubernetes/client-node";
 import { createKubeconfigKubernetesApi } from "../src/isolation/kubernetes-api.ts";
 import { parseKubernetesConfig } from "../src/isolation/kubernetes-config.ts";
 import { KubernetesIsolationProvider } from "../src/isolation/kubernetes.ts";
@@ -13,6 +14,9 @@ import { reconcileExpiredPods } from "../src/isolation/kubernetes-reconciler.ts"
 import { runJavaScript } from "../src/sandbox.ts";
 
 const enabled = process.env.OCI_JAVASCRIPT_RUN_LOCAL_KUBERNETES_TESTS === "true";
+const admissionEvidenceEnabled = (
+  process.env.OCI_JAVASCRIPT_RUN_REAL_KUBERNETES_ADMISSION_TESTS === "true"
+);
 
 test("opt-in local cluster exercises create/watch/exec/cancel/delete/reconcile", {
   skip: enabled ? false : (
@@ -62,7 +66,15 @@ test("opt-in local cluster exercises create/watch/exec/cancel/delete/reconcile",
     const cancelled = provider.run("while (true) {}", {
       deadlineMs: Date.now() + 10_000,
       signal: controller.signal,
-      async hostRpc() { return null; }
+      async hostRpc() { return null; },
+      channelLimits: Object.freeze({
+        maxFrameBytes: 2 * 1024 * 1024,
+        maxIngressBytes: 32 * 1024 * 1024,
+        maxAcceptedMessages: 128,
+        maxLogBytes: 2 * 1024 * 1024,
+        maxEgressBytes: 32 * 1024 * 1024,
+        maxResultBytes: 1024 * 1024
+      })
     });
     controller.abort();
     assert.equal((await cancelled.result as { timedOut: boolean }).timedOut, true);
@@ -70,10 +82,33 @@ test("opt-in local cluster exercises create/watch/exec/cancel/delete/reconcile",
 
     assert.deepEqual(
       await reconcileExpiredPods(api, config.namespace, config.profile),
-      []
+      { deletedNames: [], failureCount: 0 }
     );
   } finally {
     provider.stopReconciliation();
+  }
+});
+
+test("opt-in applied admission policies have no server-side CEL type warnings", {
+  skip: admissionEvidenceEnabled ? false : (
+    "set OCI_JAVASCRIPT_RUN_REAL_KUBERNETES_ADMISSION_TESTS=true with the documented kubeconfig inputs"
+  )
+}, async () => {
+  const config = new KubeConfig();
+  config.loadFromFile(requiredTestEnv("OCI_JAVASCRIPT_TEST_KUBERNETES_KUBECONFIG"));
+  const context = requiredTestEnv("OCI_JAVASCRIPT_TEST_KUBERNETES_CONTEXT");
+  if (config.getContextObject(context) === null) {
+    throw new Error("configured Kubernetes context does not exist");
+  }
+  config.setCurrentContext(context);
+  const admission = config.makeApiClient(AdmissionregistrationV1Api);
+  for (const name of [
+    "oci-js-standard-execution-pods-v1",
+    "oci-js-kata-execution-pods-v1"
+  ]) {
+    const policy = await admission.readValidatingAdmissionPolicy({ name });
+    assert.equal(policy.status?.observedGeneration, policy.metadata?.generation, name);
+    assert.deepEqual(policy.status?.typeChecking?.expressionWarnings ?? [], [], name);
   }
 });
 

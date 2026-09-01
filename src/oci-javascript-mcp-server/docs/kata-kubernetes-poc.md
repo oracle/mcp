@@ -22,12 +22,13 @@ discovery, guest selection, or automatic Podman fallback. Podman is not a
 production-equivalent VM boundary and must not be used as a production rollback
 for an approved Kata deployment.
 
-The credential-bearing trusted host runs in `oci-js-host`. Credential-free
-execution pods run in the separate `oci-js-execution` namespace. The example
-RoleBinding names only the trusted host service account across namespaces. The
-runner service account has no authority and is never token-mounted. The
-cleanup-only reconciler runs outside the execution namespace under a third
-identity with get/list/watch/delete only—never create or `pods/exec`.
+The credential-bearing trusted host Deployment runs in `oci-js-host`.
+Credential-free execution pods run in the separate `oci-js-execution` namespace.
+The example RoleBinding names only the trusted host service account across
+namespaces. The runner service account has no authority and is never
+token-mounted. The cleanup-only reconciler runs outside the execution namespace
+under a third identity with get/list/watch/delete only—never create or
+`pods/exec`.
 
 ## Configuration
 
@@ -48,7 +49,7 @@ Optional reviewed numeric settings use strict base-10 integer grammar:
 
 | Variable | Default | Accepted range |
 | --- | ---: | ---: |
-| `OCI_JAVASCRIPT_KUBERNETES_CPU_MILLICORES` | 1000 | 100–4000 |
+| `OCI_JAVASCRIPT_KUBERNETES_CPU_MILLICORES` | 100 | 100–4000 |
 | `OCI_JAVASCRIPT_KUBERNETES_MEMORY_MB` | 512 | 128–2048 |
 | `OCI_JAVASCRIPT_KUBERNETES_EPHEMERAL_STORAGE_MB` | 64 | 16–1024 |
 | `OCI_JAVASCRIPT_KUBERNETES_TMP_MB` | 16 | 1–64 |
@@ -56,6 +57,14 @@ Optional reviewed numeric settings use strict base-10 integer grammar:
 | `OCI_JAVASCRIPT_MAX_RESULT_BYTES` | 1048576 | 1–2031616 |
 | `OCI_JAVASCRIPT_KUBERNETES_CLEANUP_TIMEOUT_SECONDS` | 30 | 1–60 |
 | `OCI_JAVASCRIPT_KUBERNETES_RECONCILE_INTERVAL_SECONDS` | 30 | 5–300 |
+
+The example Kata admission policy uses CEL `quantity()` bounds, so every
+documented CPU, memory, ephemeral-storage, and `/tmp` value is accepted without
+a synchronized policy edit. CPU, memory, and ephemeral-storage requests must
+equal their corresponding limits and remain within 100–4000 millicores,
+128–2048 MiB, and 16–1024 MiB respectively. The memory-backed `/tmp` size must
+remain within 1–64 MiB. Missing, malformed, unequal, and out-of-range values are
+rejected.
 
 The host deployment should populate the identity fields directly:
 
@@ -78,26 +87,39 @@ Startup loads only in-cluster credentials, reads the execution Namespace and
 RuntimeClass, compares the exact handler, validates namespace separation and
 the downward-API identity, and performs SelfSubjectAccessReview checks for the
 exact pod lifecycle, watch/list/delete, `pods/exec`, Namespace, and RuntimeClass
-operations. It then performs non-persistent server dry-runs: the conforming pod
-must be accepted and unsafe variants for image mutability, RuntimeClass,
-service account, token mounting, command/environment, host access, extra
-volumes, and weakened security context must all be rejected.
+operations. The Namespace and RuntimeClass access reviews name the configured
+objects exactly; the example ClusterRole applies the same `resourceNames`,
+while generated pod operations remain execution-namespace scoped. It then
+performs non-persistent server dry-runs: the conforming pod must be accepted and
+every identified weakening of metadata/profile, image/pull policy, service
+account, token/service links, restart/host namespaces, command/environment,
+container cardinality, root/security context, capabilities/seccomp/filesystem,
+resources/deadline, ports/devices/probes/hooks, volumes and `/tmp`, plus the Kata
+RuntimeClass, must be rejected. This is reported only as
+`reviewed-variants-rejected`; it does not verify the exact deployed policy
+revision or the wider admission chain.
 
 Each call creates one uniquely named pod with a fixed silent Node wait command.
 Only after the pod is Running does the host open a non-TTY Kubernetes exec
 stream and start `/app/src/sandbox-worker.ts`. The existing four-byte framed
 protocol, hostile decoder, OCI request validation, call/concurrency budgets,
 result limits, and public-error sanitization remain above the provider.
+The channel accepts exactly one health transition before running and makes
+result acceptance terminal before any later same-buffer traffic can act. RPC
+IDs are positive, safe, and execution-unique. Cumulative ingress, accepted
+message, log, egress, frame, and result limits bound sustained valid or rejected
+traffic, and the single ordered writer honors backpressure.
 
 The tool timeout is end-to-end: creation, scheduling, image pull, exec setup,
 worker execution, and result delivery all consume the same 1–120 second
 deadline. Abort and timeout remain authoritative in every phase. At
-finalization, the host rejects new bridge work and aborts the run, then closes
-exec, requests zero-grace deletion, confirms NotFound, and drains a snapshot of
-pending OCI calls. Provider termination and RPC draining run concurrently
+finalization, the host rejects new bridge work and aborts the run, then starts
+exec-channel stop and zero-grace deletion/NotFound confirmation concurrently
+after pod creation settles. Both Kubernetes cleanup operations and the snapshot
+drain of pending OCI calls share one deadline. Provider termination and RPC draining run concurrently
 against one bounded cleanup tail (30 seconds by default, 60 maximum), not
-serial tails. Unconfirmed deletion replaces any otherwise valid or timeout
-result with `isolation provider cleanup failed`. A successful script that left
+serial tails. Unconfirmed channel closure or deletion replaces any otherwise
+valid or timeout result with `isolation provider cleanup failed`. A successful script that left
 OCI calls unawaited returns `JavaScript completed with unawaited OCI calls`
 within the same bound.
 
@@ -110,7 +132,11 @@ Host reconciliation runs at startup and periodically. It deletes only labeled
 managed pods whose well-formed trusted expiry has passed and preserves every
 non-expired, malformed, or unrelated pod, including pods from another host
 replica. The independent reconciler uses the same rule so cleanup continues
-when every host replica is unavailable.
+when every host replica is unavailable. Each candidate is bounded to five
+seconds, failures are counted without stopping later candidates, and startup,
+periodic host, and cleanup-only passes consume the full summary. Diagnostics
+contain only aggregate reconciliation success/failure counts; candidate failure
+does not stop future intervals.
 
 Trusted stderr diagnostics contain only provider ID, random correlation ID,
 allowlisted phase/outcome/reason, and bounded duration. They exclude code,
@@ -118,6 +144,7 @@ guest output, protocol payloads, OCI requests/responses, Kubernetes errors,
 credentials, endpoints, events, and resource details. The provider descriptor
 explicitly marks CRI mapping, node runtime, CNI isolation, PID limits,
 RuntimeClass overhead, and image provenance as unverified external evidence.
+The exact deployed admission-policy revision is also explicitly unverified.
 
 Existing host concurrency defaults remain conservative: four active and 64
 queued tool calls unless separately configured. The POC establishes correctness
@@ -138,8 +165,10 @@ podman inspect --format '{{index .RepoDigests 0}}' registry.example/oci-javascri
 Record build provenance and configure the returned repository digest, never the
 tag, as `OCI_JAVASCRIPT_KUBERNETES_IMAGE`; set the same reviewed runner digest in the
 versioned admission policy. Build the full trusted host/reconciler image with
-`Containerfile.host`, publish it by digest, and replace the placeholder in
-`07-cleanup-reconciler.yaml`. The guest image contains only the worker and its
+`Containerfile.host`, publish it by digest, and replace the same placeholder in
+`07-cleanup-reconciler.yaml` and `08-host-deployment.yaml`. Set the reviewed
+runner digest consistently in `06-admission-policy.yaml` and
+`08-host-deployment.yaml`. The guest image contains only the worker and its
 `isolated-vm` runtime; it contains neither the Kubernetes client nor OCI SDK or
 credentials.
 
@@ -148,21 +177,53 @@ credentials.
 Assets live in `examples/kata-kubernetes/v1/` and include separate namespaces,
 restricted Pod Security labels, all three service accounts, cross-namespace
 least-privilege RBAC, quota and limits, default-deny ingress/egress policies, a
-RuntimeClass example, fail-closed ValidatingAdmissionPolicy/binding, and the
-cleanup-only Deployment.
+RuntimeClass example, fail-closed ValidatingAdmissionPolicy/binding, a hardened
+trusted-host Deployment, and the cleanup-only Deployment.
+
+Apply the versioned assets after replacing the reviewed image-digest placeholders
+and filling the RuntimeClass scheduling and overhead fields from real-node
+evidence:
+
+```bash
+kubectl apply -f examples/kata-kubernetes/v1/
+```
+
+The host is intentionally unavailable until its host-only OCI Secret exists.
+Use the existing helper to create or refresh that Secret without writing
+credential material into these versioned assets:
+
+```bash
+npm run oci:sync-kubernetes-secret -- --profile DEFAULT \
+  --namespace oci-js-host \
+  --secret-name oci-js-kata-oci-config \
+  --host-deployment oci-js-kata-host \
+  --restart-host
+```
+
+The Secret is mounted read-only only by `oci-js-kata-host`; never copy it into
+`oci-js-execution` or the cleanup reconciler. To connect the MCP Inspector to
+the trusted stdio host, use an interactive, non-TTY exec session:
+
+```bash
+npx --yes @modelcontextprotocol/inspector \
+  kubectl -n oci-js-host exec -i deployment/oci-js-kata-host -- \
+  node --no-node-snapshot --experimental-strip-types /app/src/server.ts
+```
 
 Validate offline and perform a client-side dry run:
 
 ```bash
 npm run check:kata-manifests
-npm run kubectl:dry-run:kata
+npm run kubectl:dry-run:kubernetes
 ```
 
 The kubectl command uses a temporary loopback discovery fixture so the client
-can map built-in resource kinds without credentials or a live cluster.
-Client-side parsing and offline CEL/static assertions are POC evidence.
-Server-side dry-run enforcement against the selected Kubernetes release and
-real admission chain is deliberately deferred real-cluster evidence.
+can map built-in resource kinds without credentials or a live cluster. Offline
+fixtures cover default, non-default, minimum, maximum, missing, malformed,
+unequal, and out-of-range resource values. Client-side parsing and those offline
+CEL/static assertions are POC evidence only. Server-side CEL evaluation and
+dry-run enforcement against the selected Kubernetes release and real admission
+chain are deliberately deferred real-cluster evidence.
 
 ## CRI-neutral boundary and future OKE profile
 

@@ -28,8 +28,8 @@ import {
 import type { WorkerChannel, WorkerChannelStatus } from "../src/isolation/worker-channel.ts";
 import { FrameDecoder, encodeFrame, protocolMessage } from "../src/protocol.ts";
 import { runJavaScript } from "../src/sandbox.ts";
-import type { JsonObject } from "../src/types.ts";
-import { validKataEnvironment } from "./kata-fixtures.ts";
+import type { JsonObject, SandboxResult } from "../src/types.ts";
+import { conformingPodAdmission, validKataEnvironment } from "./kata-fixtures.ts";
 
 test("Kata preflight validates exact resources, permissions, admission, and descriptor", async () => {
   const api = new FakeKubernetesApi();
@@ -46,7 +46,8 @@ test("Kata preflight validates exact resources, permissions, admission, and desc
     cniIsolationVerified: false,
     pidLimitVerified: false,
     runtimeOverheadVerified: false,
-    imageProvenanceVerified: false
+    imageProvenanceVerified: false,
+    admissionPolicyRevisionVerified: false
   });
   assert.equal(api.permissions.length, 9);
   assert.equal(api.permissions.some(item => item.resource === "pods" && item.verb === "create"), true);
@@ -54,9 +55,17 @@ test("Kata preflight validates exact resources, permissions, admission, and desc
     item => item.resource === "pods" && item.subresource === "exec" && item.verb === "create"
   ), true);
   assert.equal(api.permissions.some(
-    item => item.resource === "runtimeclasses" && item.group === "node.k8s.io"
+    item => item.resource === "runtimeclasses"
+      && item.group === "node.k8s.io"
+      && item.name === "kata-qemu-runtime-rs"
   ), true);
-  assert.equal(api.dryRunPods.length, 10);
+  assert.equal(api.permissions.some(
+    item => item.resource === "namespaces" && item.name === "oci-js-execution"
+  ), true);
+  assert.equal(api.permissions.filter(item => item.resource === "pods").every(
+    item => item.name === undefined && item.namespace === "oci-js-execution"
+  ), true);
+  assert.equal(api.dryRunPods.length, 65);
   assert.equal(api.createdPods.length, 0);
   assert.deepEqual(events.map(event => [event.phase, event.outcome]), [
     ["preflight", "started"],
@@ -105,8 +114,7 @@ test("Kata lifecycle creates a fresh pod, exchanges framed RPC, and confirms ide
   await provider.preflight({ startReconciliation: false });
   let rpcCalls = 0;
   const execution = provider.run("40 + 2", {
-    deadlineMs: Date.now() + 5000,
-    signal: new AbortController().signal,
+    ...runOptions(),
     reflectionManifest: { services: {} },
     async hostRpc(request) {
       rpcCalls += 1;
@@ -204,8 +212,14 @@ test("shared coordinator bounds pending OCI work and confirms Kubernetes cleanup
   });
   const elapsedMs = Date.now() - startedAt;
 
-  assert.equal(result.timedOut, true);
-  assert.equal(result.error?.message, "sandbox run deadline exceeded");
+  assert.deepEqual(result, {
+    result: null,
+    error: { message: "sandbox run deadline exceeded" },
+    stdout: "",
+    stderr: "",
+    exitCode: -1,
+    timedOut: true
+  });
   assert(elapsedMs < 2800, `Kubernetes cleanup exceeded one tail after ${elapsedMs}ms`);
   assert.equal(api.deletedNames.length, 1);
   assert.equal(api.pods.size, 0);
@@ -271,7 +285,126 @@ test("Kata failures and cancellation are sanitized and cleanup remains authorita
   await cleanupProvider.preflight({ startReconciliation: false });
   const cleanupExecution = cleanupProvider.run("1", runOptions());
   await cleanupExecution.result;
-  await assert.rejects(cleanupExecution.terminate(), /not confirmed/);
+  await assert.rejects(cleanupExecution.terminate(), /cleanup failed/);
+});
+
+test("Kubernetes pod creation is bounded and late or ambiguous outcomes trigger fresh deletion", async () => {
+  const never = new FakeKubernetesApi();
+  never.createHonorsAbort = true;
+  never.createBarrier = new Promise(() => undefined);
+  const neverProvider = createProvider(never);
+  await neverProvider.preflight({ startReconciliation: false });
+  const startedAt = Date.now();
+  const neverExecution = neverProvider.run("never-created", {
+    ...runOptions(),
+    deadlineMs: Date.now() + 40
+  });
+  const neverResult = await neverExecution.result as SandboxResult;
+  await neverExecution.terminate(Date.now() + 80);
+  assert.equal(neverResult.timedOut, true);
+  assert.equal(never.createSignals[0]?.aborted, true);
+  assert.equal(never.deletedNames.length, 2);
+  assert(Date.now() - startedAt < 300, "never-settling creation exceeded its lifecycle bound");
+
+  const late = new FakeKubernetesApi();
+  let releaseCreate!: () => void;
+  late.createBarrier = new Promise(resolve => { releaseCreate = resolve; });
+  const lateProvider = createProvider(late);
+  await lateProvider.preflight({ startReconciliation: false });
+  const lateExecution = lateProvider.run("late-created", runOptions());
+  await new Promise(resolve => setImmediate(resolve));
+  const primaryCleanup = lateExecution.terminate(Date.now() + 100);
+  const authoritative = structuredClone(await lateExecution.result as SandboxResult);
+  await primaryCleanup;
+  assert.equal(late.deletedNames.length, 1);
+  releaseCreate();
+  await waitFor(() => late.deletedNames.length === 2 && late.pods.size === 0);
+  assert.equal(late.createdPods.length, 1);
+  assert.equal(late.waitForRunningCalls, 0);
+  assert.equal(late.openExecCalls, 0);
+  assert.deepEqual(await lateExecution.result, authoritative);
+
+  const ambiguous = new FakeKubernetesApi();
+  let releaseAmbiguousCreate!: () => void;
+  ambiguous.createBarrier = new Promise(resolve => { releaseAmbiguousCreate = resolve; });
+  ambiguous.rejectCreateAfterPersist = true;
+  const ambiguousProvider = createProvider(ambiguous);
+  await ambiguousProvider.preflight({ startReconciliation: false });
+  const ambiguousExecution = ambiguousProvider.run("ambiguous-create", runOptions());
+  await new Promise(resolve => setImmediate(resolve));
+  const ambiguousCleanup = ambiguousExecution.terminate(Date.now() + 100);
+  const ambiguousResult = structuredClone(await ambiguousExecution.result as SandboxResult);
+  await ambiguousCleanup;
+  assert.equal(ambiguous.deletedNames.length, 1);
+  releaseAmbiguousCreate();
+  await waitFor(() => ambiguous.deletedNames.length === 2 && ambiguous.pods.size === 0);
+  assert.equal(ambiguous.createdPods.length, 1);
+  assert.equal(ambiguous.waitForRunningCalls, 0);
+  assert.equal(ambiguous.openExecCalls, 0);
+  assert.deepEqual(await ambiguousExecution.result, ambiguousResult);
+});
+
+test("Kubernetes cleanup deletes independently of pending or failed channel stop", async () => {
+  const pendingApi = new FakeKubernetesApi();
+  let releaseExec!: () => void;
+  pendingApi.execBarrier = new Promise(resolve => { releaseExec = resolve; });
+  const pendingProvider = createProvider(pendingApi);
+  await pendingProvider.preflight({ startReconciliation: false });
+  const pendingExecution = pendingProvider.run("pending", runOptions());
+  await new Promise(resolve => setImmediate(resolve));
+  const pendingTermination = pendingExecution.terminate(Date.now() + 50);
+  await waitFor(() => pendingApi.deletedNames.length === 1);
+  await assert.rejects(pendingTermination, /cleanup failed/);
+  assert.equal(pendingApi.pods.size, 0);
+  releaseExec();
+  assert.equal((await pendingExecution.result as SandboxResult).timedOut, true);
+
+  for (const channelFactory of [rejectingStopWorkerChannel, neverStoppingWorkerChannel]) {
+    const api = new FakeKubernetesApi();
+    api.channelFactory = channelFactory;
+    const provider = createProvider(api);
+    await provider.preflight({ startReconciliation: false });
+    const execution = provider.run("cleanup", runOptions());
+    await execution.result;
+    await assert.rejects(execution.terminate(Date.now() + 50), /cleanup failed/);
+    assert.equal(api.deletedNames.length, 1);
+    assert.equal(api.pods.size, 0);
+  }
+});
+
+test("Kubernetes cleanup failures override success and timeout only when cleanup is unconfirmed", async () => {
+  const channelFailure = new FakeKubernetesApi();
+  channelFailure.channelFactory = rejectingStopWorkerChannel;
+  const channelProvider = createProvider(channelFailure);
+  await channelProvider.preflight({ startReconciliation: false });
+  assert.deepEqual(await runJavaScript("cleanup", {
+    isolationProvider: channelProvider,
+    async hostRpc() { return null; }
+  }), {
+    result: null,
+    error: { message: "isolation provider cleanup failed" },
+    stdout: "",
+    stderr: "",
+    exitCode: 1,
+    timedOut: false
+  });
+  assert.equal(channelFailure.deletedNames.length, 1);
+
+  const deletionFailure = new FakeKubernetesApi();
+  deletionFailure.preserveAfterDelete = true;
+  const deletionProvider = createProvider(deletionFailure);
+  await deletionProvider.preflight({ startReconciliation: false });
+  assert.deepEqual(await runJavaScript("cleanup", {
+    isolationProvider: deletionProvider,
+    async hostRpc() { return null; }
+  }), {
+    result: null,
+    error: { message: "isolation provider cleanup failed" },
+    stdout: "",
+    stderr: "",
+    exitCode: 1,
+    timedOut: false
+  });
 });
 
 test("abort remains authoritative while pending and while connecting", async () => {
@@ -312,7 +445,7 @@ test("expiry reconciliation deletes only expired managed pods and tolerates over
   api.seedPod(otherProfile);
   assert.deepEqual(
     await reconcileExpiredPods(api, "oci-js-execution", "kata-in-cluster", now),
-    ["expired"]
+    { deletedNames: ["expired"], failureCount: 0 }
   );
   assert.equal(api.pods.has("fresh"), true);
   assert.equal(api.pods.has("malformed"), true);
@@ -326,7 +459,11 @@ test("expiry reconciliation deletes only expired managed pods and tolerates over
     "oci-js-execution",
     "kata-in-cluster",
     5,
-    () => { errors += 1; }
+    summary => {
+      if (!summary || summary.failureCount > 0) {
+        errors += 1;
+      }
+    }
   );
   await new Promise(resolve => setTimeout(resolve, 20));
   stop();
@@ -439,6 +576,50 @@ test("adversarial Kata channels remain under host request, call, concurrency, an
   assert.equal(oversizedResult.error?.message, "sandbox protocol failed");
 });
 
+test("fake Kubernetes raw channel rejects every protocol corruption with one public shape", async () => {
+  const recursive = `{"version":1,"type":"log","stream":"stdout","text":"x","extra":${"[".repeat(70)}null${"]".repeat(70)}}`;
+  const oversizedHeader = Buffer.alloc(4);
+  oversizedHeader.writeUInt32BE((2 * 1024 * 1024) + 1);
+  const truncated = Buffer.alloc(7);
+  truncated.writeUInt32BE(32);
+  truncated.write("bad", 4);
+  const hostileFrames = [
+    rawJsonFrame("{not-json"),
+    rawJsonFrame('{"version":1,"type":"health","status":NaN}'),
+    rawJsonFrame('{"version":2,"type":"log","stream":"stdout","text":"x"}'),
+    rawJsonFrame('{"version":1,"type":"unknown"}'),
+    rawJsonFrame('{"version":1,"type":"log","stream":"stdout","text":"x","extra":true}'),
+    rawJsonFrame('{"version":1,"type":"log","stream":"stdout"}'),
+    oversizedHeader,
+    Buffer.concat([Buffer.from([0, 0, 0, 1]), Buffer.from([0xff])]),
+    rawJsonFrame('{"version":1,"type":"rpc","id":1,"request":{"constructor":{}}}'),
+    rawJsonFrame(recursive),
+    truncated
+  ];
+  const api = new FakeKubernetesApi();
+  const provider = createProvider(api);
+  await provider.preflight({ startReconciliation: false });
+  let hostCalls = 0;
+  for (const [index, hostileFrame] of hostileFrames.entries()) {
+    api.channelFactory = () => rawWorkerChannel(hostileFrame);
+    assert.deepEqual(await runJavaScript("hostile", {
+      isolationProvider: provider,
+      async hostRpc() {
+        hostCalls += 1;
+        return null;
+      }
+    }), {
+      result: null,
+      error: { message: "sandbox protocol failed" },
+      stdout: "",
+      stderr: "",
+      exitCode: 1,
+      timedOut: false
+    }, `hostile raw frame ${index}`);
+  }
+  assert.equal(hostCalls, 0);
+});
+
 function createProvider(api: FakeKubernetesApi, events: KubernetesDiagnosticEvent[] = []) {
   return new KubernetesIsolationProvider(
     parseKubernetesConfig(validKataEnvironment()),
@@ -451,8 +632,30 @@ function runOptions() {
   return {
     deadlineMs: Date.now() + 5000,
     signal: new AbortController().signal,
-    async hostRpc() { return null; }
+    async hostRpc() { return null; },
+    channelLimits: testChannelLimits()
   };
+}
+
+function testChannelLimits() {
+  return Object.freeze({
+    maxFrameBytes: 2 * 1024 * 1024,
+    maxIngressBytes: 32 * 1024 * 1024,
+    maxAcceptedMessages: 128,
+    maxLogBytes: 2 * 1024 * 1024,
+    maxEgressBytes: 32 * 1024 * 1024,
+    maxResultBytes: 1024 * 1024
+  });
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.fail("condition was not reached");
 }
 
 function managedPod(name: string, expiryMs: number): KubernetesPod {
@@ -477,10 +680,14 @@ function managedPod(name: string, expiryMs: number): KubernetesPod {
 class FakeKubernetesApi implements KubernetesApi {
   runtimeHandler = "kata-qemu-runtime-rs";
   permission: (attributes: ResourceAttributes) => boolean = () => true;
-  admission: (pod: KubernetesPod) => boolean = safeAdmissionShape;
+  admission: (pod: KubernetesPod) => boolean = pod => (
+    conformingPodAdmission(pod, "kata-in-cluster")
+  );
   namespaceError: Error | undefined;
   failure: "create" | "wait" | "exec" | undefined;
+  rejectCreateAfterPersist = false;
   createBarrier: Promise<void> | undefined;
+  createHonorsAbort = false;
   waitBarrier: Promise<void> | undefined;
   execBarrier: Promise<void> | undefined;
   preserveAfterDelete = false;
@@ -488,6 +695,9 @@ class FakeKubernetesApi implements KubernetesApi {
   permissions: ResourceAttributes[] = [];
   dryRunPods: KubernetesPod[] = [];
   createdPods: KubernetesPod[] = [];
+  createSignals: AbortSignal[] = [];
+  waitForRunningCalls = 0;
+  openExecCalls = 0;
   deletedNames: string[] = [];
   pods = new Map<string, KubernetesPod>();
 
@@ -511,17 +721,45 @@ class FakeKubernetesApi implements KubernetesApi {
     return this.admission(pod);
   }
 
-  async createPod(_namespace: string, pod: KubernetesPod): Promise<void> {
+  async createPod(
+    _namespace: string,
+    pod: KubernetesPod,
+    _deadlineMs: number,
+    signal: AbortSignal
+  ): Promise<void> {
+    this.createSignals.push(signal);
     if (this.failure === "create") {
       throw new Error("raw create failure");
     }
-    await this.createBarrier;
+    if (this.createBarrier && this.createHonorsAbort) {
+      await new Promise<void>((resolve, reject) => {
+        const aborted = () => reject(new Error("create aborted"));
+        signal.addEventListener("abort", aborted, { once: true });
+        if (signal.aborted) {
+          aborted();
+          return;
+        }
+        void this.createBarrier!.then(
+          () => {
+            signal.removeEventListener("abort", aborted);
+            resolve();
+          },
+          reject
+        );
+      });
+    } else {
+      await this.createBarrier;
+    }
     const copy = structuredClone(pod);
     this.createdPods.push(copy);
     this.pods.set(copy.metadata!.name!, copy);
+    if (this.rejectCreateAfterPersist) {
+      throw new Error("create response was lost after the pod was persisted");
+    }
   }
 
   async waitForPodRunning(): Promise<void> {
+    this.waitForRunningCalls += 1;
     await this.waitBarrier;
     if (this.failure === "wait") {
       throw new Error("raw image pull secret");
@@ -529,6 +767,7 @@ class FakeKubernetesApi implements KubernetesApi {
   }
 
   async openExecChannel(): Promise<WorkerChannel> {
+    this.openExecCalls += 1;
     await this.execBarrier;
     if (this.failure === "exec") {
       throw new Error("raw websocket endpoint");
@@ -558,19 +797,6 @@ class FakeKubernetesApi implements KubernetesApi {
   seedPod(pod: KubernetesPod): void {
     this.pods.set(pod.metadata!.name!, structuredClone(pod));
   }
-}
-
-function safeAdmissionShape(pod: KubernetesPod): boolean {
-  const container = pod.spec?.containers[0];
-  return container?.image?.includes("@sha256:") === true
-    && pod.spec?.runtimeClassName === "kata-qemu-runtime-rs"
-    && pod.spec.serviceAccountName === "oci-js-runner"
-    && pod.spec.automountServiceAccountToken === false
-    && pod.spec.hostNetwork === false
-    && pod.spec.volumes?.length === 1
-    && container.env === undefined
-    && container.command?.[0] === "node"
-    && container.securityContext?.allowPrivilegeEscalation === false;
 }
 
 function successfulWorkerChannel(): WorkerChannel {
@@ -685,6 +911,41 @@ function rpcWorkerChannel(
   return channel;
 }
 
+function rawWorkerChannel(hostileFrame: Buffer): WorkerChannel {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  let resolve!: (status: WorkerChannelStatus) => void;
+  const closed = new Promise<WorkerChannelStatus>(value => { resolve = value; });
+  let stopped: Promise<void> | undefined;
+  const channel: WorkerChannel = {
+    input,
+    output,
+    closed,
+    stop() {
+      return stopped ??= (async () => {
+        input.end();
+        output.end();
+        resolve({ exitCode: 0, signal: null });
+      })();
+    }
+  };
+  setImmediate(() => {
+    output.end(Buffer.concat([
+      encodeFrame(protocolMessage("health", { status: "ready" })),
+      hostileFrame
+    ]));
+    resolve({ exitCode: 0, signal: null });
+  });
+  return channel;
+}
+
+function rawJsonFrame(value: string): Buffer {
+  const body = Buffer.from(value);
+  const header = Buffer.alloc(4);
+  header.writeUInt32BE(body.byteLength);
+  return Buffer.concat([header, body]);
+}
+
 function waitingWorkerChannel(): WorkerChannel {
   const input = new PassThrough();
   const output = new PassThrough();
@@ -722,6 +983,26 @@ function closedWorkerChannel(): WorkerChannel {
     async stop() {
       input.end();
       output.end();
+    }
+  };
+}
+
+function rejectingStopWorkerChannel(): WorkerChannel {
+  const channel = successfulWorkerChannel();
+  return {
+    ...channel,
+    async stop() {
+      throw new Error("raw WebSocket close details");
+    }
+  };
+}
+
+function neverStoppingWorkerChannel(): WorkerChannel {
+  const channel = successfulWorkerChannel();
+  return {
+    ...channel,
+    async stop() {
+      return await new Promise<void>(() => undefined);
     }
   };
 }

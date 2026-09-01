@@ -43,6 +43,10 @@ export type KubernetesDiagnosticEvent = {
   outcome: KubernetesOutcome;
   reason: KubernetesReason;
   durationMs: number;
+  reconciliation?: {
+    successCount: number;
+    failureCount: number;
+  };
 };
 
 export type KubernetesDiagnosticSink = (event: KubernetesDiagnosticEvent) => void;
@@ -57,7 +61,7 @@ export type KubernetesProviderDescriptor = {
   executionNamespace: string;
   trustedHostNamespace: string | null;
   namespacesSeparated: boolean | null;
-  admissionPreflight: "enforced" | "unverified";
+  admissionPreflight: "reviewed-variants-rejected" | "unverified";
   imagePolicy: {
     digestPinned: boolean;
     pullPolicy: "IfNotPresent" | "Never";
@@ -74,6 +78,7 @@ export type KubernetesProviderDescriptor = {
     pidLimitVerified: false;
     runtimeOverheadVerified: false;
     imageProvenanceVerified: false;
+    admissionPolicyRevisionVerified: false;
   };
 };
 
@@ -97,7 +102,7 @@ export function providerDescriptor(
       ? config.trustedHostNamespace
       : null,
     namespacesSeparated: config.credentialMode === "in-cluster" ? true : null,
-    admissionPreflight: admissionEnforced ? "enforced" : "unverified",
+    admissionPreflight: admissionEnforced ? "reviewed-variants-rejected" : "unverified",
     imagePolicy: {
       digestPinned: config.imageDigestPinned,
       pullPolicy: config.imagePullPolicy,
@@ -115,7 +120,8 @@ export function providerDescriptor(
       cniIsolationVerified: false,
       pidLimitVerified: false,
       runtimeOverheadVerified: false,
-      imageProvenanceVerified: false
+      imageProvenanceVerified: false,
+      admissionPolicyRevisionVerified: false
     }
   };
 }
@@ -131,7 +137,8 @@ export function diagnosticEvent(
   outcome: KubernetesOutcome,
   reason: KubernetesReason,
   startedMs: number,
-  nowMs = Date.now()
+  nowMs = Date.now(),
+  reconciliation?: { successCount: number; failureCount: number }
 ): KubernetesDiagnosticEvent {
   return {
     provider: "kubernetes",
@@ -140,8 +147,18 @@ export function diagnosticEvent(
     phase,
     outcome,
     reason,
-    durationMs: Math.max(0, Math.min(24 * 60 * 60 * 1000, Math.round(nowMs - startedMs)))
+    durationMs: Math.max(0, Math.min(24 * 60 * 60 * 1000, Math.round(nowMs - startedMs))),
+    ...(reconciliation ? {
+      reconciliation: {
+        successCount: safeCount(reconciliation.successCount),
+        failureCount: safeCount(reconciliation.failureCount)
+      }
+    } : {})
   };
+}
+
+function safeCount(value: number): number {
+  return Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
 
 function safeCorrelationId(value: string): string {

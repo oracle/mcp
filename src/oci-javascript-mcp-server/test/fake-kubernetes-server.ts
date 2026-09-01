@@ -17,6 +17,7 @@ import type { WorkerChannel, WorkerChannelStatus } from "../src/isolation/worker
 import { FrameDecoder, encodeFrame, protocolMessage } from "../src/protocol.ts";
 import { startServer } from "../src/server.ts";
 import {
+  conformingPodAdmission,
   validInClusterEnvironment,
   validKataEnvironment,
   validLocalEnvironment
@@ -59,21 +60,7 @@ class FakeKubernetesApi implements KubernetesApi {
 }
 
 function safePod(pod: KubernetesPod, profile: KubernetesProfile): boolean {
-  const container = pod.spec?.containers[0];
-  const expectedImage = profile === "local-development"
-    ? "oci-javascript-mcp-runner:dev"
-    : `registry.example/runner@sha256:${"a".repeat(64)}`;
-  return container?.image === expectedImage
-    && (profile === "kata-in-cluster"
-      ? pod.spec?.runtimeClassName === "kata-qemu-runtime-rs"
-      : pod.spec?.runtimeClassName === undefined)
-    && pod.spec?.serviceAccountName === "oci-js-runner"
-    && pod.spec?.automountServiceAccountToken === false
-    && pod.spec?.hostNetwork === false
-    && pod.spec?.volumes?.length === 1
-    && container.env === undefined
-    && container.command?.[0] === "node"
-    && container.securityContext?.allowPrivilegeEscalation === false;
+  return conformingPodAdmission(pod, profile);
 }
 
 function workerChannel(): WorkerChannel {

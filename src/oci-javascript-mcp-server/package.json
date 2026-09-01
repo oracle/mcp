@@ -37,6 +37,8 @@
     "start": "node --no-node-snapshot --experimental-strip-types src/server.ts",
     "podman:build": "podman build --pull -t localhost/oci-javascript-mcp-runner:dev .",
     "docker:build": "docker build --file Containerfile -t localhost/oci-javascript-mcp-runner:dev .",
+    "docker:build-host": "docker build --file Containerfile.host -t localhost/oci-javascript-mcp-host:dev .",
+    "oci:sync-kubernetes-secret": "python3 scripts/sync-oci-session-secret.py",
     "test": "node --no-node-snapshot --experimental-strip-types --test test/*.test.ts",
     "coverage": "c8 npm test",
     "check": "tsc --noEmit",

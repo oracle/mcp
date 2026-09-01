@@ -7,14 +7,17 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test from "node:test";
-import type {
-  AuthorizationV1Api,
-  CoreV1Api,
-  Exec,
-  NodeV1Api,
-  V1Pod,
-  V1Status,
-  Watch
+import {
+  HttpMethod,
+  RequestContext,
+  type ConfigurationOptions,
+  type AuthorizationV1Api,
+  type CoreV1Api,
+  type Exec,
+  type NodeV1Api,
+  type V1Pod,
+  type V1Status,
+  type Watch
 } from "@kubernetes/client-node";
 import { ClientNodeKubernetesApi, isNotFound } from "../src/isolation/kubernetes-api.ts";
 
@@ -24,12 +27,45 @@ test("client-node adapter maps namespace, RuntimeClass, authorization, create, a
   assert.deepEqual(harness.core.readNamespaceCalls, [{ name: "execution" }]);
   assert.deepEqual(await harness.api.readRuntimeClass("kata"), { handler: "kata-handler" });
   assert.equal(await harness.api.selfCan({
-    group: "",
+    name: "execution",
+    resource: "namespaces",
+    verb: "get"
+  }), true);
+  assert.equal(await harness.api.selfCan({
+    group: "node.k8s.io",
+    name: "kata-runtime",
+    resource: "runtimeclasses",
+    verb: "get"
+  }), true);
+  assert.equal(await harness.api.selfCan({
     namespace: "execution",
     resource: "pods",
     verb: "create"
   }), true);
-  assert.equal(harness.authorization.reviews[0]?.spec.resourceAttributes?.namespace, "execution");
+  assert.deepEqual(harness.authorization.reviews.map(review => (
+    review.spec.resourceAttributes
+  )), [{
+    group: "",
+    name: "execution",
+    namespace: undefined,
+    resource: "namespaces",
+    subresource: undefined,
+    verb: "get"
+  }, {
+    group: "node.k8s.io",
+    name: "kata-runtime",
+    namespace: undefined,
+    resource: "runtimeclasses",
+    subresource: undefined,
+    verb: "get"
+  }, {
+    group: "",
+    name: undefined,
+    namespace: "execution",
+    resource: "pods",
+    subresource: undefined,
+    verb: "create"
+  }]);
 
   const pod: V1Pod = { metadata: { name: "pod" } };
   assert.equal(await harness.api.dryRunCreatePod("execution", pod), true);
@@ -38,8 +74,15 @@ test("client-node adapter maps namespace, RuntimeClass, authorization, create, a
     body: pod,
     dryRun: "All"
   });
-  await harness.api.createPod("execution", pod);
+  const createController = new AbortController();
+  await harness.api.createPod(
+    "execution",
+    pod,
+    Date.now() + 1000,
+    createController.signal
+  );
   assert.equal(harness.core.createCalls[1]?.dryRun, undefined);
+  assert(harness.core.createOptions[1]);
   assert.deepEqual(
     await harness.api.listManagedPods("execution", "kata-in-cluster"),
     [{ metadata: { name: "listed" } }]
@@ -60,6 +103,50 @@ test("client-node admission probes distinguish rejection from API failure", asyn
   const unavailable = apiHarness();
   unavailable.core.createError = new Error("connection refused");
   await assert.rejects(unavailable.api.dryRunCreatePod("execution", {}), /connection refused/);
+});
+
+test("client-node pod creation propagates cancellation and deadline to the HTTP request", async () => {
+  const alreadyAborted = apiHarness();
+  const aborted = new AbortController();
+  aborted.abort();
+  await assert.rejects(
+    alreadyAborted.api.createPod("execution", {}, Date.now() + 1000, aborted.signal),
+    /deadline exceeded/
+  );
+  assert.equal(alreadyAborted.core.createCalls.length, 0);
+
+  const cancelled = apiHarness();
+  let releaseCancelled!: () => void;
+  cancelled.core.createBarrier = new Promise(resolve => { releaseCancelled = resolve; });
+  const controller = new AbortController();
+  const cancellation = cancelled.api.createPod(
+    "execution",
+    {},
+    Date.now() + 1000,
+    controller.signal
+  );
+  await new Promise(resolve => setImmediate(resolve));
+  const cancellationSignal = await configuredSignal(cancelled.core.createOptions[0]);
+  assert.equal(cancellationSignal?.aborted, false);
+  controller.abort();
+  assert.equal(cancellationSignal?.aborted, true);
+  releaseCancelled();
+  await cancellation;
+
+  const expired = apiHarness();
+  let releaseExpired!: () => void;
+  expired.core.createBarrier = new Promise(resolve => { releaseExpired = resolve; });
+  const deadline = expired.api.createPod(
+    "execution",
+    {},
+    Date.now() + 20,
+    new AbortController().signal
+  );
+  await new Promise(resolve => setTimeout(resolve, 30));
+  const deadlineSignal = await configuredSignal(expired.core.createOptions[0]);
+  assert.equal(deadlineSignal?.aborted, true);
+  releaseExpired();
+  await deadline;
 });
 
 test("client-node pod readiness handles current state, watch state, failure, abort, and watch errors", async () => {
@@ -120,7 +207,12 @@ test("client-node pod readiness handles current state, watch state, failure, abo
 
 test("client-node exec adapts non-TTY streams, bounds stderr, reports status, and stops idempotently", async () => {
   const harness = apiHarness();
-  const channel = await harness.api.openExecChannel("execution", "pod");
+  const channel = await harness.api.openExecChannel(
+    "execution",
+    "pod",
+    Date.now() + 1000,
+    new AbortController().signal
+  );
   assert.equal(harness.exec.calls[0]?.tty, false);
   assert.deepEqual(harness.exec.calls[0]?.command, [
     "node", "--no-node-snapshot", "--experimental-strip-types", "/app/src/sandbox-worker.ts"
@@ -134,14 +226,98 @@ test("client-node exec adapts non-TTY streams, bounds stderr, reports status, an
     details: { causes: [{ reason: "ExitCode", message: "7" }] }
   });
   assert.deepEqual(await channel.closed, { exitCode: 7, signal: null });
-  await Promise.all([channel.stop(), channel.stop()]);
+  await Promise.all([
+    channel.stop(Date.now() + 1000),
+    channel.stop(Date.now() + 1000)
+  ]);
   assert.equal(harness.exec.webSocket.closeCalls, 1);
 
   const errored = apiHarness();
-  const errorChannel = await errored.api.openExecChannel("execution", "pod");
+  const errorChannel = await errored.api.openExecChannel(
+    "execution",
+    "pod",
+    Date.now() + 1000,
+    new AbortController().signal
+  );
   errored.exec.webSocket.emit("error", new Error("raw websocket"));
   await assert.rejects(errorChannel.closed, /exec channel failed/);
-  await errorChannel.stop();
+  await assert.rejects(
+    errorChannel.stop(Date.now() + 1000),
+    /exec channel cleanup failed/
+  );
+
+  const neverCloses = apiHarness();
+  neverCloses.exec.webSocket.closeEmits = false;
+  const stalledChannel = await neverCloses.api.openExecChannel(
+    "execution",
+    "pod",
+    Date.now() + 1000,
+    new AbortController().signal
+  );
+  await assert.rejects(
+    stalledChannel.stop(Date.now() + 30),
+    /exec channel cleanup failed/
+  );
+  assert.equal(neverCloses.exec.webSocket.closeCalls, 1);
+});
+
+test("client-node exec establishment obeys abort and deadline and closes late sockets", async () => {
+  const alreadyAborted = apiHarness();
+  const aborted = new AbortController();
+  aborted.abort();
+  await assert.rejects(
+    alreadyAborted.api.openExecChannel("execution", "pod", Date.now() + 1000, aborted.signal),
+    /deadline exceeded/
+  );
+  assert.equal(alreadyAborted.exec.calls.length, 0);
+
+  const late = apiHarness();
+  let resolveLate!: (socket: FakeWebSocket) => void;
+  late.exec.result = new Promise(resolve => { resolveLate = resolve; });
+  await assert.rejects(
+    late.api.openExecChannel(
+      "execution",
+      "pod",
+      Date.now() + 30,
+      new AbortController().signal
+    ),
+    /deadline exceeded/
+  );
+  resolveLate(late.exec.webSocket);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(late.exec.webSocket.closeCalls, 1);
+
+  const cancelled = apiHarness();
+  let resolveCancelled!: (socket: FakeWebSocket) => void;
+  cancelled.exec.result = new Promise(resolve => { resolveCancelled = resolve; });
+  const controller = new AbortController();
+  const connection = cancelled.api.openExecChannel(
+    "execution",
+    "pod",
+    Date.now() + 1000,
+    controller.signal
+  );
+  controller.abort();
+  await assert.rejects(connection, /deadline exceeded/);
+  resolveCancelled(cancelled.exec.webSocket);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(cancelled.exec.webSocket.closeCalls, 1);
+
+  const handshake = apiHarness();
+  handshake.exec.error = new Error("wss://cluster.internal/token=secret");
+  await assert.rejects(
+    handshake.api.openExecChannel(
+      "execution",
+      "pod",
+      Date.now() + 1000,
+      new AbortController().signal
+    ),
+    error => {
+      assert.match(String(error), /Kubernetes exec channel failed/);
+      assert.equal(String(error).includes("cluster.internal"), false);
+      return true;
+    }
+  );
 });
 
 test("client-node deletion and NotFound confirmation fail closed", async () => {
@@ -169,6 +345,27 @@ test("client-node deletion and NotFound confirmation fail closed", async () => {
   assert.equal(isNotFound({ response: { statusCode: 404 } }), true);
 });
 
+test("client-node deletion propagates cancellation to HTTP requests and watches", async () => {
+  const harness = apiHarness();
+  const controller = new AbortController();
+  await harness.api.deletePod("execution", "pod", controller.signal);
+  assert.equal(await configuredSignal(harness.core.deleteOptions[0]), controller.signal);
+  assert.equal(await harness.api.podExists("execution", "pod", controller.signal), true);
+  assert.equal(await configuredSignal(harness.core.readOptions[0]), controller.signal);
+
+  const deletion = harness.api.waitForPodDeleted(
+    "execution",
+    "pod",
+    Date.now() + 1000,
+    controller.signal
+  );
+  await new Promise(resolve => setImmediate(resolve));
+  controller.abort();
+  await assert.rejects(deletion, /confirmation cancelled/);
+  assert.equal(harness.watch.abortController.signal.aborted, true);
+  assert.equal(await configuredSignal(harness.core.readOptions[1]), controller.signal);
+});
+
 function apiHarness() {
   const core = new FakeCore();
   const node = new FakeNode();
@@ -194,9 +391,13 @@ function apiHarness() {
 class FakeCore {
   readNamespaceCalls: Array<{ name: string }> = [];
   createCalls: Array<{ namespace: string; body: V1Pod; dryRun?: string }> = [];
+  createOptions: Array<ConfigurationOptions | undefined> = [];
   deleteCalls: Array<{ name: string; namespace: string; gracePeriodSeconds?: number }> = [];
+  deleteOptions: Array<ConfigurationOptions | undefined> = [];
+  readOptions: Array<ConfigurationOptions | undefined> = [];
   listCalls: Array<{ namespace: string; labelSelector?: string }> = [];
   createError: unknown;
+  createBarrier: Promise<void> | undefined;
   deleteError: unknown;
   readError: unknown;
   readPod: V1Pod = { status: { phase: "Pending" } };
@@ -206,23 +407,33 @@ class FakeCore {
     return { metadata: { name: request.name } };
   }
 
-  async createNamespacedPod(request: { namespace: string; body: V1Pod; dryRun?: string }) {
+  async createNamespacedPod(
+    request: { namespace: string; body: V1Pod; dryRun?: string },
+    options?: ConfigurationOptions
+  ) {
     this.createCalls.push(request);
+    this.createOptions.push(options);
     if (this.createError) {
       throw this.createError;
     }
+    await this.createBarrier;
     return request.body;
   }
 
-  async deleteNamespacedPod(request: { name: string; namespace: string; gracePeriodSeconds?: number }) {
+  async deleteNamespacedPod(
+    request: { name: string; namespace: string; gracePeriodSeconds?: number },
+    options?: ConfigurationOptions
+  ) {
     this.deleteCalls.push(request);
+    this.deleteOptions.push(options);
     if (this.deleteError) {
       throw this.deleteError;
     }
     return {};
   }
 
-  async readNamespacedPod() {
+  async readNamespacedPod(_request?: unknown, options?: ConfigurationOptions) {
+    this.readOptions.push(options);
     if (this.readError) {
       throw this.readError;
     }
@@ -233,6 +444,13 @@ class FakeCore {
     this.listCalls.push(request);
     return { items: [{ metadata: { name: "listed" } }] };
   }
+}
+
+async function configuredSignal(options: ConfigurationOptions | undefined): Promise<AbortSignal | undefined> {
+  const middleware = options?.middleware?.[0];
+  assert(middleware);
+  const context = new RequestContext("https://cluster.invalid/pod", HttpMethod.GET);
+  return (await middleware.pre(context).toPromise()).getSignal();
 }
 
 class FakeNode {
@@ -281,16 +499,21 @@ class FakeWebSocket extends EventEmitter {
   readyState = 1;
   readonly CLOSING = 2;
   closeCalls = 0;
+  closeEmits = true;
 
   close(): void {
     this.closeCalls += 1;
     this.readyState = 3;
-    this.emit("close");
+    if (this.closeEmits) {
+      this.emit("close");
+    }
   }
 }
 
 class FakeExec {
   webSocket = new FakeWebSocket();
+  result: Promise<FakeWebSocket> | undefined;
+  error: Error | undefined;
   calls: Array<{
     namespace: string;
     name: string;
@@ -314,6 +537,9 @@ class FakeExec {
     status: (value: V1Status) => void
   ) {
     this.calls.push({ namespace, name, command, stdout, stderr, stdin, tty, status });
-    return this.webSocket;
+    if (this.error) {
+      throw this.error;
+    }
+    return await (this.result ?? Promise.resolve(this.webSocket));
   }
 }

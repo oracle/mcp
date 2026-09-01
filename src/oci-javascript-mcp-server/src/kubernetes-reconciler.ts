@@ -32,14 +32,20 @@ export async function runCleanupReconciler(
     const started = Date.now();
     const correlationId = randomUUID();
     try {
-      await reconcileExpiredPods(api, config.namespace, config.profile);
+      const summary = await reconcileExpiredPods(api, config.namespace, config.profile);
+      const failed = summary.failureCount > 0;
       diagnostics(diagnosticEvent(
         config.profile,
         correlationId,
         "reconciling",
-        "succeeded",
-        "none",
-        started
+        failed ? "failed" : "succeeded",
+        failed ? "cleanup" : "none",
+        started,
+        Date.now(),
+        {
+          successCount: summary.deletedNames.length,
+          failureCount: summary.failureCount
+        }
       ));
     } catch {
       diagnostics(diagnosticEvent(
@@ -48,7 +54,9 @@ export async function runCleanupReconciler(
         "reconciling",
         "failed",
         "cleanup",
-        started
+        started,
+        Date.now(),
+        { successCount: 0, failureCount: 1 }
       ));
     }
     await waitForNextRun(config.reconcileIntervalMs, signal);

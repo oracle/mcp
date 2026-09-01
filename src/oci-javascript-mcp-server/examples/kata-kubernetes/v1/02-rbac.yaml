@@ -56,9 +56,11 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["namespaces"]
+    resourceNames: ["oci-js-execution"]
     verbs: ["get"]
   - apiGroups: ["node.k8s.io"]
     resources: ["runtimeclasses"]
+    resourceNames: ["kata-qemu-runtime-rs"]
     verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

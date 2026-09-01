@@ -6,6 +6,7 @@
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import {
+  DEFAULT_DECODE_LIMITS,
   FrameDecoder,
   ProtocolError,
   assertExactFields,
@@ -13,7 +14,7 @@ import {
   protocolMessage
 } from "../protocol.ts";
 import {
-  appendCapped,
+  CappedUtf8Accumulator,
   MAX_STDERR_BYTES,
   MAX_STDOUT_BYTES
 } from "../sandbox-common.ts";
@@ -31,31 +32,45 @@ export function startChannelExecution(
   code: string,
   input: IsolationRunOptions & {
     memoryLimitMb: number;
-    maxResultBytes: number;
     terminationTimeoutMs?: number;
   }
 ): IsolationExecution {
-  const decoder = new FrameDecoder();
-  let stdout = "";
-  let stderr = "";
-  let ready = false;
+  const decoder = new FrameDecoder({
+    ...DEFAULT_DECODE_LIMITS,
+    maxFrameBytes: input.channelLimits.maxFrameBytes
+  });
+  const stdout = new CappedUtf8Accumulator(MAX_STDOUT_BYTES);
+  const stderr = new CappedUtf8Accumulator(MAX_STDERR_BYTES);
+  const writer = new ChannelWriter(channel, input);
+  const seenRpcIds = new Set<number>();
+  const rpcTasks = new Set<Promise<void>>();
+  let phase: "WAIT_HEALTH" | "RUNNING" | "TERMINAL" = "WAIT_HEALTH";
+  let ingressBytes = 0;
+  let acceptedMessages = 0;
+  let logBytes = 0;
   let settled = false;
-  let workerCompleted = false;
   let closed = false;
+  let terminalWrite: Promise<void> | undefined;
   let resolveResult!: (value: SandboxResult) => void;
   const result = new Promise<SandboxResult>(resolve => {
     resolveResult = resolve;
   });
-  const close = channel.closed.then(() => {
-    closed = true;
-  });
-  let cleanup: Promise<void> | undefined;
-  const terminate = () => cleanup ??= (async () => {
-    if (workerCompleted && !closed) {
-      await waitForClose(close, 500);
+  const close = channel.closed.then(
+    () => { closed = true; },
+    () => {
+      closed = true;
+      throw new ChannelRunnerError();
     }
-    await channel.stop();
-    await close;
+  );
+  void close.catch(() => undefined);
+  let cleanup: Promise<void> | undefined;
+  const terminate = (cleanupDeadlineMs?: number) => cleanup ??= (async () => {
+    phase = "TERMINAL";
+    await terminalWrite?.catch(() => undefined);
+    await channel.stop(cleanupDeadlineMs ?? Date.now() + (input.terminationTimeoutMs ?? 5_000));
+    if (!closed) {
+      await close;
+    }
   })();
 
   const finish = (value: SandboxResult, stop = false) => {
@@ -63,11 +78,12 @@ export function startChannelExecution(
       return;
     }
     settled = true;
+    phase = "TERMINAL";
     clearTimeout(timeout);
     input.signal.removeEventListener("abort", abort);
-    resolveResult({ ...value, stdout, stderr });
+    resolveResult({ ...value, stdout: stdout.text, stderr: stderr.text });
     if (stop) {
-      void terminate();
+      void terminate().catch(() => undefined);
     }
   };
   const fail = (message: string, stop = true) => finish({
@@ -79,76 +95,204 @@ export function startChannelExecution(
     timedOut: false
   }, stop);
 
-  channel.output.on("data", chunk => {
-    try {
-      for (const message of decoder.push(chunk)) {
-        void handleWorkerMessage(message, channel, input, {
-          ready() {
-            if (ready) {
-              throw new ProtocolError("sandbox worker sent duplicate health message");
-            }
-            ready = true;
-            send(channel, "execute", {
-              code,
-              timeoutMs: Math.max(1, input.deadlineMs - Date.now()),
-              reflectionManifest: input.reflectionManifest ?? { services: {} },
-              memoryLimitMb: input.memoryLimitMb,
-              maxResultBytes: input.maxResultBytes
-            });
-          },
-          appendLog(stream, text) {
-            if (stream === "stdout") {
-              stdout = appendCapped(stdout, text, MAX_STDOUT_BYTES);
-            } else {
-              stderr = appendCapped(stderr, text, MAX_STDERR_BYTES);
-            }
-          },
-          finish(value, stop) {
-            workerCompleted = true;
-            finish(value, stop);
-          }
-        }).catch(() => fail("sandbox protocol failed"));
-      }
-    } catch {
+  const handleFailure = (error: unknown) => {
+    if (settled) {
+      void terminate().catch(() => undefined);
+      return;
+    }
+    if (error instanceof ChannelDeadlineError) {
+      finish(timeoutResult(), true);
+    } else if (error instanceof ChannelRunnerError) {
+      fail("sandbox runner failed", false);
+    } else {
       fail("sandbox protocol failed");
     }
-  });
-  channel.output.once("error", () => fail("sandbox runner failed", false));
-  channel.input.once("error", () => fail("sandbox runner failed", false));
-  channel.closed.then(({ exitCode, signal }) => {
-    try {
-      decoder.end();
-    } catch {
-      if (!settled) {
-        fail("sandbox protocol failed", false);
+  };
+
+  const startRpc = (id: number, request: JsonObject) => {
+    const task = (async () => {
+      let rpcResult: Json;
+      try {
+        rpcResult = await input.hostRpc(copyToPlainJson(request) as JsonObject);
+      } catch {
+        rpcResult = { ok: false, error: { message: "OCI call failed" } };
+      }
+      if (phase !== "RUNNING" || Date.now() >= input.deadlineMs) {
         return;
       }
-    }
-    if (!settled) {
-      fail(
-        `sandbox runner exited before returning a result (${signal ?? exitCode ?? "unknown"})`,
-        false
+      await writer.write(
+        "rpc_result",
+        { id, result: rpcResult },
+        () => phase === "RUNNING" && Date.now() < input.deadlineMs
       );
+    })();
+    rpcTasks.add(task);
+    void task.catch(handleFailure).finally(() => rpcTasks.delete(task));
+  };
+
+  const handleWorkerMessage = async (message: JsonObject): Promise<void> => {
+    if (message.type === "health") {
+      assertPhase(phase, "WAIT_HEALTH");
+      assertExactFields(message, ["version", "type", "status"]);
+      if (message.status !== "ready") {
+        throw new ProtocolError("invalid sandbox worker health status");
+      }
+      phase = "RUNNING";
+      await writer.write("execute", {
+        code,
+        timeoutMs: Math.max(1, input.deadlineMs - Date.now()),
+        reflectionManifest: input.reflectionManifest ?? { services: {} },
+        memoryLimitMb: input.memoryLimitMb,
+        maxResultBytes: input.channelLimits.maxResultBytes
+      });
+      return;
     }
-  }).catch(() => fail("sandbox runner failed", false));
+
+    assertPhase(phase, "RUNNING");
+    if (message.type === "log") {
+      assertExactFields(message, ["version", "type", "stream", "text"]);
+      if (
+        (message.stream !== "stdout" && message.stream !== "stderr")
+        || typeof message.text !== "string"
+      ) {
+        throw new ProtocolError("invalid sandbox log message");
+      }
+      const bytes = Buffer.byteLength(message.text, "utf8");
+      logBytes += bytes;
+      if (logBytes > input.channelLimits.maxLogBytes) {
+        throw new ProtocolError("sandbox channel log budget exceeded");
+      }
+      (message.stream === "stdout" ? stdout : stderr).append(message.text);
+      return;
+    }
+    if (message.type === "rpc") {
+      assertExactFields(message, ["version", "type", "id", "request"]);
+      if (
+        !Number.isSafeInteger(message.id)
+        || (message.id as number) <= 0
+        || !isObject(message.request)
+      ) {
+        throw new ProtocolError("invalid sandbox RPC message");
+      }
+      const id = message.id as number;
+      if (seenRpcIds.has(id)) {
+        throw new ProtocolError("sandbox RPC id was reused");
+      }
+      seenRpcIds.add(id);
+      startRpc(id, message.request);
+      return;
+    }
+    if (message.type === "result") {
+      assertExactFields(message, ["version", "type", "result", "error", "exitCode", "timedOut"]);
+      if (
+        !Number.isInteger(message.exitCode)
+        || typeof message.timedOut !== "boolean"
+        || (message.error !== null && !isObject(message.error))
+      ) {
+        throw new ProtocolError("invalid sandbox result message");
+      }
+      if (
+        encodedJsonBytes(message.result ?? null) + encodedJsonBytes(message.error)
+          > input.channelLimits.maxResultBytes
+      ) {
+        throw new ProtocolError("sandbox result payload exceeded its configured limit");
+      }
+      phase = "TERMINAL";
+      finish({
+        result: message.result ?? null,
+        error: message.error as SandboxResult["error"],
+        stdout: "",
+        stderr: "",
+        exitCode: message.exitCode as number,
+        timedOut: message.timedOut as boolean
+      });
+      return;
+    }
+    if (message.type === "protocol_error") {
+      assertExactFields(message, ["version", "type", "error"]);
+      if (!isObject(message.error) || typeof message.error.message !== "string") {
+        throw new ProtocolError("invalid sandbox protocol error message");
+      }
+      throw new ProtocolError("sandbox worker reported a protocol failure");
+    }
+    throw new ProtocolError(`unsupported sandbox message type '${String(message.type)}'`);
+  };
+
+  const pump = async () => {
+    try {
+      for await (const value of channel.output) {
+        const chunk = typeof value === "string" ? Buffer.from(value) : value as Buffer;
+        ingressBytes += chunk.byteLength;
+        if (ingressBytes > input.channelLimits.maxIngressBytes) {
+          throw new ProtocolError("sandbox channel ingress budget exceeded");
+        }
+        for (const message of decoder.push(chunk)) {
+          await Promise.resolve();
+          await writer.ready();
+          if (phase === "TERMINAL") {
+            void terminate().catch(() => undefined);
+            return;
+          }
+          acceptedMessages += 1;
+          if (acceptedMessages > input.channelLimits.maxAcceptedMessages) {
+            throw new ProtocolError("sandbox channel message budget exceeded");
+          }
+          await handleWorkerMessage(message);
+        }
+      }
+      decoder.end();
+      if (!settled) {
+        const status = await channel.closed;
+        fail(
+          `sandbox runner exited before returning a result (${status.signal ?? status.exitCode ?? "unknown"})`,
+          false
+        );
+      }
+    } catch (error) {
+      handleFailure(error);
+    }
+  };
 
   const timeout = setTimeout(() => {
     finish(timeoutResult(), true);
   }, Math.max(1, input.deadlineMs - Date.now()));
-  timeout.unref();
   const abort = () => {
-    if (channel.input.writable) {
-      try {
-        send(channel, "cancel");
-      } catch {
-        // Forced teardown below remains authoritative.
-      }
+    if (!settled && channel.input.writable) {
+      terminalWrite = writer.write("cancel");
     }
     finish(timeoutResult(), true);
   };
   input.signal.addEventListener("abort", abort, { once: true });
+  channel.input.once("error", () => handleFailure(new ChannelRunnerError()));
+  channel.output.once("error", () => handleFailure(new ChannelRunnerError()));
+  void channel.closed.then(
+    status => setImmediate(() => {
+      if (settled) {
+        return;
+      }
+      try {
+        decoder.end();
+      } catch (error) {
+        handleFailure(error);
+        return;
+      }
+      fail(
+        `sandbox runner exited before returning a result (${status.signal ?? status.exitCode ?? "unknown"})`,
+        false
+      );
+    }),
+    () => handleFailure(new ChannelRunnerError())
+  );
+  void pump();
+  if (input.signal.aborted) {
+    abort();
+  }
 
   return { result, terminate, terminationTimeoutMs: input.terminationTimeoutMs };
+}
+
+function encodedJsonBytes(value: Json): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
 }
 
 export function startPipeExecution(
@@ -156,7 +300,6 @@ export function startPipeExecution(
   code: string,
   input: IsolationRunOptions & {
     memoryLimitMb: number;
-    maxResultBytes: number;
     terminationTimeoutMs?: number;
   },
   afterClose?: () => Promise<void>
@@ -178,7 +321,7 @@ export function childProcessChannel(
     output: child.stdout,
     input: child.stdin,
     closed,
-    stop() {
+    stop(_cleanupDeadlineMs: number) {
       return stopped ??= (async () => {
         killChildTree(child);
         await closed;
@@ -229,84 +372,136 @@ export function runCleanupCommand(command: string, args: string[]): Promise<void
   });
 }
 
-async function handleWorkerMessage(
-  message: JsonObject,
-  channel: WorkerChannel,
-  input: IsolationRunOptions,
-  callbacks: {
-    ready(): void;
-    appendLog(stream: "stdout" | "stderr", text: string): void;
-    finish(result: SandboxResult, stop?: boolean): void;
+class ChannelWriter {
+  readonly #channel: WorkerChannel;
+  readonly #input: IsolationRunOptions;
+  #egressBytes = 0;
+  #queuedWrites = 0;
+  #tail: Promise<void> = Promise.resolve();
+  #backpressure: Promise<void> | undefined;
+  #failure: unknown;
+
+  constructor(channel: WorkerChannel, input: IsolationRunOptions) {
+    this.#channel = channel;
+    this.#input = input;
   }
-): Promise<void> {
-  if (message.type === "health") {
-    assertExactFields(message, ["version", "type", "status"]);
-    if (message.status !== "ready") {
-      throw new ProtocolError("invalid sandbox worker health status");
+
+  async ready(): Promise<void> {
+    if (this.#backpressure) {
+      await this.#backpressure;
     }
-    callbacks.ready();
-    return;
+    if (this.#failure) {
+      throw this.#failure;
+    }
   }
-  if (message.type === "log") {
-    assertExactFields(message, ["version", "type", "stream", "text"]);
-    if (
-      (message.stream !== "stdout" && message.stream !== "stderr")
-      || typeof message.text !== "string"
-    ) {
-      throw new ProtocolError("invalid sandbox log message");
+
+  write(
+    type: string,
+    fields: JsonObject = {},
+    stillAllowed: () => boolean = () => true
+  ): Promise<void> {
+    if (this.#queuedWrites >= this.#input.channelLimits.maxAcceptedMessages + 2) {
+      return Promise.reject(new ProtocolError("sandbox channel write queue budget exceeded"));
     }
-    callbacks.appendLog(message.stream, message.text);
-    return;
-  }
-  if (message.type === "rpc") {
-    assertExactFields(message, ["version", "type", "id", "request"]);
-    if (!Number.isInteger(message.id) || !isObject(message.request)) {
-      throw new ProtocolError("invalid sandbox RPC message");
-    }
-    let rpcResult: Json;
-    try {
-      rpcResult = await input.hostRpc(copyToPlainJson(message.request) as JsonObject);
-    } catch {
-      rpcResult = { ok: false, error: { message: "OCI call failed" } };
-    }
-    send(channel, "rpc_result", { id: message.id, result: rpcResult });
-    return;
-  }
-  if (message.type === "result") {
-    assertExactFields(message, ["version", "type", "result", "error", "exitCode", "timedOut"]);
-    if (
-      !Number.isInteger(message.exitCode)
-      || typeof message.timedOut !== "boolean"
-      || (message.error !== null && !isObject(message.error))
-    ) {
-      throw new ProtocolError("invalid sandbox result message");
-    }
-    callbacks.finish({
-      result: message.result ?? null,
-      error: message.error as SandboxResult["error"],
-      stdout: "",
-      stderr: "",
-      exitCode: message.exitCode as number,
-      timedOut: message.timedOut as boolean
+    this.#queuedWrites += 1;
+    const operation = this.#tail.then(async () => {
+      if (this.#failure) {
+        throw this.#failure;
+      }
+      if (!stillAllowed()) {
+        return;
+      }
+      const frame = encodeFrame(
+        protocolMessage(type, fields),
+        this.#input.channelLimits.maxFrameBytes
+      );
+      this.#egressBytes += frame.byteLength;
+      if (this.#egressBytes > this.#input.channelLimits.maxEgressBytes) {
+        throw new ProtocolError("sandbox channel egress budget exceeded");
+      }
+      if (!this.#channel.input.writable) {
+        throw new ProtocolError("sandbox runner channel is closed");
+      }
+      let accepted: boolean;
+      try {
+        accepted = this.#channel.input.write(frame);
+      } catch {
+        throw new ChannelRunnerError();
+      }
+      if (!accepted) {
+        this.#channel.output.pause();
+        this.#backpressure = waitForDrain(
+          this.#channel,
+          this.#input.deadlineMs,
+          this.#input.signal
+        );
+        try {
+          await this.#backpressure;
+        } finally {
+          this.#backpressure = undefined;
+          if (!this.#channel.output.destroyed) {
+            this.#channel.output.resume();
+          }
+        }
+      }
     });
-    return;
+    this.#tail = operation;
+    void operation.catch(error => {
+      this.#failure ??= error;
+    });
+    return operation.finally(() => {
+      this.#queuedWrites -= 1;
+    });
   }
-  if (message.type === "protocol_error") {
-    assertExactFields(message, ["version", "type", "error"]);
-    throw new ProtocolError("sandbox worker reported a protocol failure");
-  }
-  throw new ProtocolError(`unsupported sandbox message type '${String(message.type)}'`);
 }
 
-function send(
+class ChannelDeadlineError extends Error {}
+class ChannelRunnerError extends Error {}
+
+function waitForDrain(
   channel: WorkerChannel,
-  type: string,
-  fields: JsonObject = {}
+  deadlineMs: number,
+  signal: AbortSignal
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      channel.input.removeListener("drain", drained);
+      channel.input.removeListener("error", failed);
+      signal.removeEventListener("abort", aborted);
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    };
+    const drained = () => finish();
+    const failed = () => finish(new ChannelRunnerError());
+    const aborted = () => finish(new ChannelDeadlineError());
+    const remainingMs = deadlineMs - Date.now();
+    const timeout = setTimeout(aborted, Math.max(1, remainingMs));
+    channel.input.once("drain", drained);
+    channel.input.once("error", failed);
+    signal.addEventListener("abort", aborted, { once: true });
+    void channel.closed.then(failed, failed);
+    if (signal.aborted || remainingMs <= 0) {
+      aborted();
+    }
+  });
+}
+
+function assertPhase(
+  actual: "WAIT_HEALTH" | "RUNNING" | "TERMINAL",
+  expected: "WAIT_HEALTH" | "RUNNING"
 ): void {
-  if (!channel.input.writable) {
-    throw new Error("sandbox runner channel is closed");
+  if (actual !== expected) {
+    throw new ProtocolError(`sandbox message is invalid during ${actual}`);
   }
-  channel.input.write(encodeFrame(protocolMessage(type, fields)));
 }
 
 function killChildTree(child: ChildProcessWithoutNullStreams): void {
@@ -333,17 +528,6 @@ function timeoutResult(): SandboxResult {
     exitCode: -1,
     timedOut: true
   };
-}
-
-function waitForClose(close: Promise<void>, timeoutMs: number): Promise<void> {
-  return new Promise(resolve => {
-    const timeout = setTimeout(resolve, timeoutMs);
-    timeout.unref();
-    close.finally(() => {
-      clearTimeout(timeout);
-      resolve();
-    });
-  });
 }
 
 function isObject(value: Json | undefined): value is JsonObject {

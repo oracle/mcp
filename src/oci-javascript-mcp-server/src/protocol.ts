@@ -79,50 +79,81 @@ export function decodePayload(
 
 export class FrameDecoder {
   readonly #limits: DecodeLimits;
-  #buffer = Buffer.alloc(0);
+  readonly #header = Buffer.allocUnsafe(4);
+  #headerBytes = 0;
+  #segments: Buffer[] = [];
+  #bodyBytes = 0;
   #expected: number | undefined;
+  #active = false;
 
   constructor(limits: DecodeLimits = DEFAULT_DECODE_LIMITS) {
     this.#limits = limits;
   }
 
-  push(chunk: Uint8Array): ProtocolMessage[] {
-    if (chunk.byteLength === 0) {
-      return [];
+  get queuedBytes(): number {
+    return this.#headerBytes + this.#bodyBytes;
+  }
+
+  *push(chunk: Uint8Array): IterableIterator<ProtocolMessage> {
+    if (this.#active) {
+      throw new ProtocolError("frame decoder input cannot be processed concurrently");
     }
-    this.#buffer = this.#buffer.length === 0
-      ? Buffer.from(chunk)
-      : Buffer.concat([this.#buffer, chunk]);
-    const messages: ProtocolMessage[] = [];
-    while (true) {
-      if (this.#expected === undefined) {
-        if (this.#buffer.length < 4) {
+    this.#active = true;
+    try {
+      const input = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+      let offset = 0;
+      while (offset < input.length) {
+        if (this.#expected === undefined) {
+          const headerBytes = Math.min(4 - this.#headerBytes, input.length - offset);
+          input.copy(this.#header, this.#headerBytes, offset, offset + headerBytes);
+          this.#headerBytes += headerBytes;
+          offset += headerBytes;
+          if (this.#headerBytes < 4) {
+            break;
+          }
+          this.#expected = this.#header.readUInt32BE(0);
+          this.#headerBytes = 0;
+          if (this.#expected === 0) {
+            throw new ProtocolError("empty frames are not allowed");
+          }
+          if (this.#expected > this.#limits.maxFrameBytes) {
+            throw new ProtocolError(
+              `frame length ${this.#expected} exceeds limit ${this.#limits.maxFrameBytes}`
+            );
+          }
+        }
+
+        const bodyBytes = Math.min(
+          this.#expected - this.#bodyBytes,
+          input.length - offset
+        );
+        if (bodyBytes > 0) {
+          this.#segments.push(input.subarray(offset, offset + bodyBytes));
+          this.#bodyBytes += bodyBytes;
+          offset += bodyBytes;
+        }
+        if (this.#bodyBytes < this.#expected) {
           break;
         }
-        this.#expected = this.#buffer.readUInt32BE(0);
-        this.#buffer = this.#buffer.subarray(4);
-        if (this.#expected === 0) {
-          throw new ProtocolError("empty frames are not allowed");
+
+        const body = Buffer.allocUnsafe(this.#expected);
+        let bodyOffset = 0;
+        for (const segment of this.#segments) {
+          segment.copy(body, bodyOffset);
+          bodyOffset += segment.length;
         }
-        if (this.#expected > this.#limits.maxFrameBytes) {
-          throw new ProtocolError(
-            `frame length ${this.#expected} exceeds limit ${this.#limits.maxFrameBytes}`
-          );
-        }
+        this.#segments = [];
+        this.#bodyBytes = 0;
+        this.#expected = undefined;
+        yield decodePayload(body, this.#limits);
       }
-      if (this.#buffer.length < this.#expected) {
-        break;
-      }
-      const body = this.#buffer.subarray(0, this.#expected);
-      this.#buffer = this.#buffer.subarray(this.#expected);
-      this.#expected = undefined;
-      messages.push(decodePayload(body, this.#limits));
+    } finally {
+      this.#active = false;
     }
-    return messages;
   }
 
   end(): void {
-    if (this.#expected !== undefined || this.#buffer.length !== 0) {
+    if (this.#active || this.#expected !== undefined || this.#headerBytes !== 0) {
       throw new ProtocolError("truncated protocol frame");
     }
   }

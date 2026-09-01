@@ -19,5 +19,5 @@ export interface WorkerChannel {
   readonly input: Writable;
   readonly closed: Promise<WorkerChannelStatus>;
   /** Idempotently close the transport and resolve after it can no longer carry data. */
-  stop(): Promise<void>;
+  stop(cleanupDeadlineMs: number): Promise<void>;
 }

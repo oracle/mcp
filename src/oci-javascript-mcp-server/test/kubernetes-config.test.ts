@@ -14,6 +14,7 @@ import {
 } from "../src/isolation/kubernetes-config.ts";
 import { createIsolationProvider } from "../src/isolation/provider-factory.ts";
 import {
+  conformingPodAdmission,
   validInClusterEnvironment,
   validKataEnvironment,
   validLocalEnvironment
@@ -195,20 +196,10 @@ function preflightApi(runtime: "local" | "standard" | "kata"): KubernetesApi {
     async readRuntimeClass() { return { handler: "kata-qemu-runtime-rs" }; },
     async selfCan() { return true; },
     async dryRunCreatePod(_namespace, pod) {
-      const safe = pod.spec?.containers[0]?.image === (runtime === "local"
-        ? "oci-javascript-mcp-runner:dev"
-        : `registry.example/runner@sha256:${"a".repeat(64)}`)
-        && (runtime === "kata"
-          ? pod.spec?.runtimeClassName === "kata-qemu-runtime-rs"
-          : pod.spec?.runtimeClassName === undefined)
-        && pod.spec?.serviceAccountName === "oci-js-runner"
-        && pod.spec?.automountServiceAccountToken === false
-        && pod.spec?.hostNetwork === false
-        && pod.spec?.volumes?.length === 1
-        && pod.spec?.containers[0]?.env === undefined
-        && pod.spec?.containers[0]?.command?.[0] === "node"
-        && pod.spec?.containers[0]?.securityContext?.allowPrivilegeEscalation === false;
-      return safe === true;
+      const profile = runtime === "local"
+        ? "local-development"
+        : runtime === "kata" ? "kata-in-cluster" : "in-cluster";
+      return conformingPodAdmission(pod, profile);
     },
     async createPod() {},
     async waitForPodRunning() {},

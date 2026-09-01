@@ -89,8 +89,14 @@ export class KubernetesIsolationProvider implements IsolationProvider {
         ? [...SHARED_ACCESS, RUNTIME_CLASS_ACCESS]
         : SHARED_ACCESS;
       for (const permission of permissions) {
+        const name = permission.resource === "namespaces"
+          ? this.#config.namespace
+          : permission.resource === "runtimeclasses" && this.#policy.kind === "kata"
+            ? this.#policy.runtimeClassName
+            : undefined;
         const allowed = await this.#api.selfCan({
           group: permission.group,
+          name,
           namespace: permission.namespaced ? this.#config.namespace : undefined,
           resource: permission.resource,
           subresource: "subresource" in permission ? permission.subresource : undefined,
@@ -116,14 +122,21 @@ export class KubernetesIsolationProvider implements IsolationProvider {
         ...runtimeAdmissionVariants(probe, this.#policy)
       ];
       for (const variant of unsafe) {
-        if (await this.#api.dryRunCreatePod(this.#config.namespace, variant)) {
+        if (await this.#api.dryRunCreatePod(this.#config.namespace, variant.pod)) {
           if (this.#config.profile !== "local-development") {
             throw new PreflightError("admission");
           }
           admissionEnforced = false;
         }
       }
-      await reconcileExpiredPods(this.#api, this.#config.namespace, this.#config.profile);
+      const reconciliation = await reconcileExpiredPods(
+        this.#api,
+        this.#config.namespace,
+        this.#config.profile
+      );
+      if (reconciliation.failureCount > 0) {
+        throw new PreflightError("cleanup");
+      }
       this.#descriptor = providerDescriptor(this.#config, this.#policy, admissionEnforced);
       if (options.startReconciliation !== false) {
         this.#stopReconciliation ??= startExpiryReconciliation(
@@ -131,7 +144,22 @@ export class KubernetesIsolationProvider implements IsolationProvider {
           this.#config.namespace,
           this.#config.profile,
           this.#config.reconcileIntervalMs,
-          () => this.#emit(randomUUID(), "reconciling", "failed", "cleanup", Date.now())
+          summary => {
+            const failed = !summary || summary.failureCount > 0;
+            this.#emit(
+              randomUUID(),
+              "reconciling",
+              failed ? "failed" : "succeeded",
+              failed ? "cleanup" : "none",
+              Date.now(),
+              summary
+                ? {
+                    successCount: summary.deletedNames.length,
+                    failureCount: summary.failureCount
+                  }
+                : { successCount: 0, failureCount: 1 }
+            );
+          }
         );
       }
       this.#emit(correlationId, "preflight", "succeeded", "none", started);
@@ -158,12 +186,45 @@ export class KubernetesIsolationProvider implements IsolationProvider {
     const abort = () => localAbort.abort();
     options.signal.addEventListener("abort", abort, { once: true });
     let channel: WorkerChannel | undefined;
-    let createSettled: Promise<void> = Promise.resolve();
+    let channelPromise: Promise<WorkerChannel> | undefined;
+    let createSettled: Promise<void> | undefined;
     let terminating = false;
     let cleanup: Promise<void> | undefined;
+    let postCleanupDeletionRequired = false;
+    let primaryCleanupFinished = false;
+    let lateDeletion: Promise<void> | undefined;
 
     const phase = (value: KubernetesPhase) => {
       this.#emit(correlationId, value, "started", "none", started);
+    };
+
+    const deleteKnownPod = async (cleanupDeadlineMs: number, emitSuccess: boolean) => {
+      phase("deleting");
+      await deletePodByDeadline(
+        this.#api,
+        this.#config.namespace,
+        name,
+        cleanupDeadlineMs
+      );
+      phase("deleted");
+      if (emitSuccess) {
+        this.#emit(correlationId, "deleted", "succeeded", "none", started);
+      }
+    };
+
+    const startLateDeletionIfRequired = () => {
+      if (
+        lateDeletion
+        || !postCleanupDeletionRequired
+        || !primaryCleanupFinished
+      ) {
+        return;
+      }
+      lateDeletion = deleteKnownPod(
+        Date.now() + this.#config.cleanupTimeoutMs,
+        false
+      );
+      void lateDeletion.catch(() => undefined);
     };
 
     const result = (async (): Promise<SandboxResult> => {
@@ -176,8 +237,20 @@ export class KubernetesIsolationProvider implements IsolationProvider {
           correlationId,
           options.deadlineMs
         );
-        createSettled = this.#api.createPod(this.#config.namespace, pod);
-        await createSettled;
+        createSettled = this.#api.createPod(
+          this.#config.namespace,
+          pod,
+          options.deadlineMs,
+          localAbort.signal
+        );
+        const creationSettled = () => {
+          if (terminating) {
+            postCleanupDeletionRequired = true;
+            startLateDeletionIfRequired();
+          }
+        };
+        void createSettled.then(creationSettled, creationSettled);
+        await raceExecutionStage(createSettled, options.deadlineMs, localAbort.signal);
         assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
         phase("pending");
         await this.#api.waitForPodRunning(
@@ -189,14 +262,19 @@ export class KubernetesIsolationProvider implements IsolationProvider {
         assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
         phase("running");
         phase("connecting");
-        channel = await this.#api.openExecChannel(this.#config.namespace, name);
+        channelPromise = this.#api.openExecChannel(
+          this.#config.namespace,
+          name,
+          options.deadlineMs,
+          localAbort.signal
+        );
+        channel = await channelPromise;
         assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
         phase("executing");
         const execution = startChannelExecution(channel, code, {
           ...options,
           signal: localAbort.signal,
           memoryLimitMb: this.#config.isolateMemoryMb,
-          maxResultBytes: this.#config.maxResultBytes,
           terminationTimeoutMs: this.#config.cleanupTimeoutMs
         });
         const workerResult = mapKubernetesChannelResult(await execution.result as SandboxResult);
@@ -214,25 +292,48 @@ export class KubernetesIsolationProvider implements IsolationProvider {
         return timedOut ? timeoutResult() : providerFailureResult();
       }
     })();
+    const deadlineTimer = setTimeout(
+      () => localAbort.abort(),
+      Math.max(1, options.deadlineMs - Date.now())
+    );
+    void result.finally(() => clearTimeout(deadlineTimer));
 
-    const terminate = () => cleanup ??= (async () => {
+    const terminate = (requestedCleanupDeadlineMs?: number) => cleanup ??= (async () => {
       terminating = true;
       localAbort.abort();
       phase("closing");
-      await channel?.stop().catch(() => undefined);
-      await createSettled.catch(() => undefined);
-      phase("deleting");
-      await this.#api.deletePod(this.#config.namespace, name);
-      if (!await this.#api.waitForPodDeleted(
-        this.#config.namespace,
-        name,
-        Date.now() + this.#config.cleanupTimeoutMs
-      )) {
-        throw new Error("Kubernetes execution pod deletion was not confirmed");
+      const cleanupDeadlineMs = requestedCleanupDeadlineMs
+        ?? Date.now() + this.#config.cleanupTimeoutMs;
+      const stopChannel = async () => {
+        const pending = channelPromise;
+        if (!pending) {
+          return;
+        }
+        const activeChannel = channel ?? await withCleanupDeadline(
+          pending.then(value => value, () => undefined),
+          cleanupDeadlineMs
+        );
+        if (!activeChannel) {
+          return;
+        }
+        await withCleanupDeadline(
+          activeChannel.stop(cleanupDeadlineMs),
+          cleanupDeadlineMs
+        );
+      };
+      try {
+        const outcomes = await Promise.allSettled([
+          stopChannel(),
+          deleteKnownPod(cleanupDeadlineMs, true)
+        ]);
+        if (outcomes.some(outcome => outcome.status === "rejected")) {
+          throw new Error("Kubernetes execution cleanup failed");
+        }
+      } finally {
+        primaryCleanupFinished = true;
+        startLateDeletionIfRequired();
+        options.signal.removeEventListener("abort", abort);
       }
-      phase("deleted");
-      this.#emit(correlationId, "deleted", "succeeded", "none", started);
-      options.signal.removeEventListener("abort", abort);
     })();
 
     return { result, terminate, terminationTimeoutMs: this.#config.cleanupTimeoutMs };
@@ -243,7 +344,8 @@ export class KubernetesIsolationProvider implements IsolationProvider {
     phase: KubernetesPhase,
     outcome: "started" | "succeeded" | "failed" | "cancelled" | "timed_out",
     reason: KubernetesReason,
-    started: number
+    started: number,
+    reconciliation?: { successCount: number; failureCount: number }
   ): void {
     this.#diagnostics(diagnosticEvent(
       this.#config.profile,
@@ -251,8 +353,79 @@ export class KubernetesIsolationProvider implements IsolationProvider {
       phase,
       outcome,
       reason,
-      started
+      started,
+      Date.now(),
+      reconciliation
     ));
+  }
+}
+
+function withCleanupDeadline<T>(promise: Promise<T>, cleanupDeadlineMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("Kubernetes execution cleanup failed")),
+      Math.max(1, cleanupDeadlineMs - Date.now())
+    );
+    promise.then(resolve, reject).finally(() => clearTimeout(timeout));
+  });
+}
+
+function raceExecutionStage<T>(
+  promise: Promise<T>,
+  deadlineMs: number,
+  signal: AbortSignal
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", aborted);
+      callback();
+    };
+    const aborted = () => finish(() => reject(new Error("sandbox run deadline exceeded")));
+    const timeout = setTimeout(aborted, Math.max(1, deadlineMs - Date.now()));
+    signal.addEventListener("abort", aborted, { once: true });
+    if (signal.aborted || Date.now() >= deadlineMs) {
+      aborted();
+      return;
+    }
+    promise.then(
+      value => finish(() => resolve(value)),
+      error => finish(() => reject(error))
+    );
+  });
+}
+
+async function deletePodByDeadline(
+  api: KubernetesApi,
+  namespace: string,
+  name: string,
+  cleanupDeadlineMs: number
+): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    Math.max(1, cleanupDeadlineMs - Date.now())
+  );
+  try {
+    await withCleanupDeadline(
+      api.deletePod(namespace, name, controller.signal),
+      cleanupDeadlineMs
+    );
+    const deleted = await withCleanupDeadline(
+      api.waitForPodDeleted(namespace, name, cleanupDeadlineMs, controller.signal),
+      cleanupDeadlineMs
+    );
+    if (!deleted) {
+      throw new Error("Kubernetes execution pod deletion was not confirmed");
+    }
+  } finally {
+    clearTimeout(timeout);
+    controller.abort();
   }
 }
 

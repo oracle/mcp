@@ -11,7 +11,11 @@ import {
   Exec,
   KubeConfig,
   NodeV1Api,
+  Observable,
   Watch,
+  type ConfigurationOptions,
+  type RequestContext,
+  type ResponseContext,
   type V1Pod,
   type V1SelfSubjectAccessReview,
   type V1Status
@@ -23,6 +27,7 @@ export type KubernetesPod = V1Pod;
 
 export type ResourceAttributes = {
   group?: string;
+  name?: string;
   namespace?: string;
   resource: string;
   subresource?: string;
@@ -34,17 +39,32 @@ export interface KubernetesApi {
   readRuntimeClass(name: string): Promise<{ handler: string }>;
   selfCan(attributes: ResourceAttributes): Promise<boolean>;
   dryRunCreatePod(namespace: string, pod: KubernetesPod): Promise<boolean>;
-  createPod(namespace: string, pod: KubernetesPod): Promise<void>;
+  createPod(
+    namespace: string,
+    pod: KubernetesPod,
+    deadlineMs: number,
+    signal: AbortSignal
+  ): Promise<void>;
   waitForPodRunning(
     namespace: string,
     name: string,
     deadlineMs: number,
     signal: AbortSignal
   ): Promise<void>;
-  openExecChannel(namespace: string, name: string): Promise<WorkerChannel>;
-  deletePod(namespace: string, name: string): Promise<void>;
-  podExists(namespace: string, name: string): Promise<boolean>;
-  waitForPodDeleted(namespace: string, name: string, deadlineMs: number): Promise<boolean>;
+  openExecChannel(
+    namespace: string,
+    name: string,
+    deadlineMs: number,
+    signal: AbortSignal
+  ): Promise<WorkerChannel>;
+  deletePod(namespace: string, name: string, signal?: AbortSignal): Promise<void>;
+  podExists(namespace: string, name: string, signal?: AbortSignal): Promise<boolean>;
+  waitForPodDeleted(
+    namespace: string,
+    name: string,
+    deadlineMs: number,
+    signal?: AbortSignal
+  ): Promise<boolean>;
   listManagedPods(namespace: string, profile: KubernetesProfile): Promise<KubernetesPod[]>;
 }
 
@@ -70,29 +90,32 @@ function createClientNodeKubernetesApi(config: KubeConfig): KubernetesApi {
     config.makeApiClient(NodeV1Api),
     config.makeApiClient(AuthorizationV1Api),
     new Watch(config),
-    new Exec(config)
+    (deadlineMs, signal) => new Exec(deadlineKubeConfig(config, deadlineMs, signal))
   );
 }
+
+type KubernetesExec = Pick<Exec, "exec">;
+type KubernetesExecFactory = (deadlineMs: number, signal: AbortSignal) => KubernetesExec;
 
 export class ClientNodeKubernetesApi implements KubernetesApi {
   readonly #core: CoreV1Api;
   readonly #node: NodeV1Api;
   readonly #authorization: AuthorizationV1Api;
   readonly #watch: Watch;
-  readonly #exec: Exec;
+  readonly #execFactory: KubernetesExecFactory;
 
   constructor(
     core: CoreV1Api,
     node: NodeV1Api,
     authorization: AuthorizationV1Api,
     watch: Watch,
-    exec: Exec
+    exec: KubernetesExec | KubernetesExecFactory
   ) {
     this.#core = core;
     this.#node = node;
     this.#authorization = authorization;
     this.#watch = watch;
-    this.#exec = exec;
+    this.#execFactory = typeof exec === "function" ? exec : () => exec;
   }
 
   async readNamespace(name: string): Promise<void> {
@@ -111,6 +134,7 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
       spec: {
         resourceAttributes: {
           group: attributes.group ?? "",
+          name: attributes.name,
           namespace: attributes.namespace,
           resource: attributes.resource,
           subresource: attributes.subresource,
@@ -134,8 +158,24 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
     }
   }
 
-  async createPod(namespace: string, pod: KubernetesPod): Promise<void> {
-    await this.#core.createNamespacedPod({ namespace, body: pod });
+  async createPod(
+    namespace: string,
+    pod: KubernetesPod,
+    deadlineMs: number,
+    signal: AbortSignal
+  ): Promise<void> {
+    if (signal.aborted || Date.now() >= deadlineMs) {
+      throw new Error("sandbox run deadline exceeded");
+    }
+    const request = deadlineRequestSignal(deadlineMs, signal);
+    try {
+      await this.#core.createNamespacedPod(
+        { namespace, body: pod },
+        requestSignalOptions(request.signal)
+      );
+    } finally {
+      request.dispose();
+    }
   }
 
   async waitForPodRunning(
@@ -195,7 +235,15 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
     });
   }
 
-  async openExecChannel(namespace: string, name: string): Promise<WorkerChannel> {
+  async openExecChannel(
+    namespace: string,
+    name: string,
+    deadlineMs: number,
+    signal: AbortSignal
+  ): Promise<WorkerChannel> {
+    if (signal.aborted || Date.now() >= deadlineMs) {
+      throw new Error("sandbox run deadline exceeded");
+    }
     const output = new PassThrough();
     const input = new PassThrough();
     const stderr = new BoundedDiscardStream(64 * 1024);
@@ -212,19 +260,56 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
         statusResolve(status);
       }
     };
-    const webSocket = await this.#exec.exec(
-      namespace,
-      name,
-      "runner",
-      ["node", "--no-node-snapshot", "--experimental-strip-types", "/app/src/sandbox-worker.ts"],
-      output,
-      stderr,
-      input,
-      false,
-      (status: V1Status) => finish({ exitCode: statusCode(status), signal: null })
-    );
-    webSocket.once("close", () => finish({ exitCode: null, signal: null }));
+    const execPromise = Promise.resolve().then(() => this.#execFactory(deadlineMs, signal).exec(
+        namespace,
+        name,
+        "runner",
+        ["node", "--no-node-snapshot", "--experimental-strip-types", "/app/src/sandbox-worker.ts"],
+        output,
+        stderr,
+        input,
+        false,
+        (status: V1Status) => finish({ exitCode: statusCode(status), signal: null })
+      ));
+    let authorityEnded = false;
+    void execPromise.then(webSocket => {
+      if (authorityEnded) {
+        closeLateExec(webSocket, input, output, stderr);
+      }
+    }, () => undefined);
+    let webSocket: Awaited<ReturnType<KubernetesExec["exec"]>>;
+    try {
+      webSocket = await raceExecConnection(execPromise, deadlineMs, signal);
+    } catch (error) {
+      authorityEnded = true;
+      input.destroy();
+      output.destroy();
+      stderr.destroy();
+      if (signal.aborted || Date.now() >= deadlineMs) {
+        throw new Error("sandbox run deadline exceeded");
+      }
+      throw new Error("Kubernetes exec channel failed");
+    }
+
+    let transportResolve!: () => void;
+    let transportReject!: (error: Error) => void;
+    let transportSettled = false;
+    const transportClosed = new Promise<void>((resolve, reject) => {
+      transportResolve = resolve;
+      transportReject = reject;
+    });
+    webSocket.once("close", () => {
+      if (!transportSettled) {
+        transportSettled = true;
+        transportResolve();
+      }
+      finish({ exitCode: null, signal: null });
+    });
     webSocket.once("error", () => {
+      if (!transportSettled) {
+        transportSettled = true;
+        transportReject(new Error("Kubernetes exec channel cleanup failed"));
+      }
       if (!settled) {
         settled = true;
         statusReject(new Error("Kubernetes exec channel failed"));
@@ -235,7 +320,7 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
       output,
       input,
       closed,
-      stop() {
+      stop(cleanupDeadlineMs: number) {
         return stopped ??= (async () => {
           input.end();
           output.destroy();
@@ -243,15 +328,22 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
           if (webSocket.readyState < webSocket.CLOSING) {
             webSocket.close();
           }
-          await closed.catch(() => undefined);
+          try {
+            await withAbsoluteDeadline(transportClosed, cleanupDeadlineMs);
+          } catch {
+            throw new Error("Kubernetes exec channel cleanup failed");
+          }
         })();
       }
     };
   }
 
-  async deletePod(namespace: string, name: string): Promise<void> {
+  async deletePod(namespace: string, name: string, signal?: AbortSignal): Promise<void> {
     try {
-      await this.#core.deleteNamespacedPod({ name, namespace, gracePeriodSeconds: 0 });
+      await this.#core.deleteNamespacedPod(
+        { name, namespace, gracePeriodSeconds: 0 },
+        requestSignalOptions(signal)
+      );
     } catch (error) {
       if (!isNotFound(error)) {
         throw error;
@@ -259,9 +351,9 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
     }
   }
 
-  async podExists(namespace: string, name: string): Promise<boolean> {
+  async podExists(namespace: string, name: string, signal?: AbortSignal): Promise<boolean> {
     try {
-      await this.#core.readNamespacedPod({ name, namespace });
+      await this.#core.readNamespacedPod({ name, namespace }, requestSignalOptions(signal));
       return true;
     } catch (error) {
       if (isNotFound(error)) {
@@ -271,23 +363,42 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
     }
   }
 
-  async waitForPodDeleted(namespace: string, name: string, deadlineMs: number): Promise<boolean> {
-    if (!await this.podExists(namespace, name)) {
+  async waitForPodDeleted(
+    namespace: string,
+    name: string,
+    deadlineMs: number,
+    signal?: AbortSignal
+  ): Promise<boolean> {
+    if (signal?.aborted) {
+      throw new Error("Kubernetes deletion confirmation cancelled");
+    }
+    if (!await this.podExists(namespace, name, signal)) {
       return true;
     }
     return await new Promise((resolve, reject) => {
       let settled = false;
       let request: AbortController | undefined;
+      let timeout: NodeJS.Timeout | undefined;
       const finish = (deleted: boolean, error?: Error) => {
         if (settled) {
           return;
         }
         settled = true;
         clearTimeout(timeout);
+        signal?.removeEventListener("abort", cancelled);
         request?.abort();
         error ? reject(error) : resolve(deleted);
       };
-      const timeout = setTimeout(() => finish(false), Math.max(1, deadlineMs - Date.now()));
+      const cancelled = () => finish(
+        false,
+        new Error("Kubernetes deletion confirmation cancelled")
+      );
+      signal?.addEventListener("abort", cancelled, { once: true });
+      if (signal?.aborted) {
+        cancelled();
+        return;
+      }
+      timeout = setTimeout(() => finish(false), Math.max(1, deadlineMs - Date.now()));
       timeout.unref();
       void this.#watch.watch(
         `/api/v1/namespaces/${encodeURIComponent(namespace)}/pods`,
@@ -303,7 +414,7 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
           } else if (error) {
             finish(false, new Error("Kubernetes deletion watch failed"));
           } else {
-            void this.podExists(namespace, name).then(exists => finish(!exists)).catch(
+            void this.podExists(namespace, name, signal).then(exists => finish(!exists)).catch(
               () => finish(false, new Error("Kubernetes deletion confirmation failed"))
             );
           }
@@ -330,6 +441,117 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
       )
     });
     return response.items;
+  }
+}
+
+function requestSignalOptions(signal?: AbortSignal): ConfigurationOptions | undefined {
+  if (!signal) {
+    return undefined;
+  }
+  return {
+    middlewareMergeStrategy: "append",
+    middleware: [{
+      pre(context: RequestContext) {
+        context.setSignal(signal);
+        return new Observable(Promise.resolve(context));
+      },
+      post(context: ResponseContext) {
+        return new Observable(Promise.resolve(context));
+      }
+    }]
+  };
+}
+
+function deadlineRequestSignal(
+  deadlineMs: number,
+  parent: AbortSignal
+): { signal: AbortSignal; dispose(): void } {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  const timeout = setTimeout(abort, Math.max(1, deadlineMs - Date.now()));
+  parent.addEventListener("abort", abort, { once: true });
+  if (parent.aborted || Date.now() >= deadlineMs) {
+    abort();
+  }
+  return {
+    signal: controller.signal,
+    dispose() {
+      clearTimeout(timeout);
+      parent.removeEventListener("abort", abort);
+    }
+  };
+}
+
+function deadlineKubeConfig(
+  config: KubeConfig,
+  deadlineMs: number,
+  signal: AbortSignal
+): KubeConfig {
+  return {
+    getCurrentCluster: () => config.getCurrentCluster(),
+    async applyToHTTPSOptions(
+      options: Parameters<KubeConfig["applyToHTTPSOptions"]>[0]
+    ) {
+      await config.applyToHTTPSOptions(options);
+      Object.assign(options, {
+        handshakeTimeout: Math.max(1, deadlineMs - Date.now()),
+        signal
+      });
+    }
+  } as KubeConfig;
+}
+
+function raceExecConnection<T>(
+  promise: Promise<T>,
+  deadlineMs: number,
+  signal: AbortSignal
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", aborted);
+      callback();
+    };
+    const aborted = () => finish(() => reject(new Error("sandbox run deadline exceeded")));
+    const timeout = setTimeout(aborted, Math.max(1, deadlineMs - Date.now()));
+    signal.addEventListener("abort", aborted, { once: true });
+    if (signal.aborted || Date.now() >= deadlineMs) {
+      aborted();
+      return;
+    }
+    promise.then(
+      value => finish(() => resolve(value)),
+      () => finish(() => reject(new Error("Kubernetes exec channel failed")))
+    );
+  });
+}
+
+function withAbsoluteDeadline<T>(promise: Promise<T>, deadlineMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("Kubernetes exec channel cleanup failed")),
+      Math.max(1, deadlineMs - Date.now())
+    );
+    promise.then(resolve, reject).finally(() => clearTimeout(timeout));
+  });
+}
+
+function closeLateExec(
+  webSocket: Awaited<ReturnType<KubernetesExec["exec"]>>,
+  input: PassThrough,
+  output: PassThrough,
+  stderr: BoundedDiscardStream
+): void {
+  input.destroy();
+  output.destroy();
+  stderr.destroy();
+  if (webSocket.readyState < webSocket.CLOSING) {
+    webSocket.close();
   }
 }
 

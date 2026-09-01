@@ -39,6 +39,22 @@ function testProvider(run: IsolationProvider["run"]): IsolationProvider {
   return { run };
 }
 
+function providerTerminalPayloadWithEncodedBytes(totalBytes: number): SandboxResult {
+  const result = "combined";
+  const baseError = { message: "" };
+  const fixedBytes = Buffer.byteLength(JSON.stringify(result), "utf8")
+    + Buffer.byteLength(JSON.stringify(baseError), "utf8");
+  assert(totalBytes >= fixedBytes);
+  return {
+    result,
+    error: { message: "e".repeat(totalBytes - fixedBytes) },
+    stdout: "",
+    stderr: "",
+    exitCode: 1,
+    timedOut: false
+  };
+}
+
 test("Podman provider rejects unsafe executable and image inputs", () => {
   assert.throws(() => new PodmanIsolationProvider({ cliPath: "" }), /CLI path is invalid/);
   assert.throws(
@@ -85,6 +101,16 @@ test("sandbox delegates execution through the selected isolation provider", asyn
   assert.notEqual(calls[0].options.hostRpc, hostRpc);
   assert.equal(calls[0].options.signal.aborted, true);
   assert(calls[0].options.deadlineMs > Date.now());
+  const limits = calls[0].options.channelLimits;
+  assert.equal(Object.isFrozen(limits), true);
+  assert.equal(limits.maxAcceptedMessages, 104);
+  assert.equal(limits.maxIngressBytes, limits.maxAcceptedMessages * (limits.maxFrameBytes + 4));
+  assert.equal(limits.maxEgressBytes, (limits.maxAcceptedMessages - 2) * (limits.maxFrameBytes + 4));
+  assert.equal(limits.maxLogBytes, 2 * 1024 * 1024);
+  assert.equal(limits.maxResultBytes, 1024 * 1024);
+  assert.throws(() => {
+    (limits as { maxAcceptedMessages: number }).maxAcceptedMessages = Number.MAX_SAFE_INTEGER;
+  }, TypeError);
 });
 
 test("sandbox enforces the OCI call budget above isolation providers", async () => {
@@ -407,6 +433,32 @@ test("sandbox rejects oversized results returned by an isolation provider", asyn
   assert.equal(result.result, null);
   assert.equal(result.exitCode, 1);
   assert.equal(result.error?.message, "isolation provider failed");
+});
+
+test("sandbox applies one result limit to combined provider result and error values", async () => {
+  const exact = providerTerminalPayloadWithEncodedBytes(1024 * 1024);
+  const accepted = await runJavaScript("0;", {
+    hostRpc: async () => null,
+    isolationProvider: testProvider(() => ({
+      result: Promise.resolve(exact),
+      async terminate() {}
+    }))
+  });
+  assert.deepEqual(accepted, exact);
+
+  const over = providerTerminalPayloadWithEncodedBytes(1024 * 1024 + 1);
+  assert(Buffer.byteLength(JSON.stringify(over.result), "utf8") < 1024 * 1024);
+  assert(Buffer.byteLength(JSON.stringify(over.error), "utf8") < 1024 * 1024);
+  const rejected = await runJavaScript("0;", {
+    hostRpc: async () => null,
+    isolationProvider: testProvider(() => ({
+      result: Promise.resolve(over),
+      async terminate() {}
+    }))
+  });
+  assert.equal(rejected.result, null);
+  assert.equal(rejected.exitCode, 1);
+  assert.equal(rejected.error?.message, "isolation provider failed");
 });
 
 test("sandbox rejects malformed isolation provider results", async () => {

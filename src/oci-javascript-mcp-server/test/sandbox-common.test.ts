@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   appendCapped,
+  CappedUtf8Accumulator,
   formatError,
   formatPublicOciError,
   isTimeoutError,
@@ -41,6 +42,23 @@ test("sandbox common helpers enforce deadlines and numeric limits", async () => 
 test("sandbox common helpers cap UTF-8 output", () => {
   assert.equal(appendCapped("ab", "cd", 4), "abcd");
   assert.equal(Buffer.byteLength(appendCapped("ab", "cdef", 4), "utf8"), 4);
+
+  const output = new CappedUtf8Accumulator(1024 * 1024);
+  assert.equal(output.append("x".repeat(1024 * 1024)), 1024 * 1024);
+  assert.equal(output.capped, true);
+  assert.equal(output.retainedWrites, 1);
+  for (let index = 0; index < 10_000; index += 1) {
+    assert.equal(output.append("z"), 1);
+  }
+  assert.equal(output.retainedWrites, 1);
+  assert.equal(output.retainedBytes, 1024 * 1024);
+
+  const multibyte = new CappedUtf8Accumulator(5);
+  multibyte.append("🙂");
+  multibyte.append("🙂");
+  assert.equal(multibyte.text, "🙂");
+  assert.equal(multibyte.retainedBytes, 4);
+  assert.equal(multibyte.capped, true);
 });
 
 test("sandbox common helpers keep only allowlisted public OCI error details", () => {

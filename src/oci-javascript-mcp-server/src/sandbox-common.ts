@@ -4,6 +4,7 @@
  * https://oss.oracle.com/licenses/upl.
  */
 
+import { TextDecoder } from "node:util";
 import type { Json, SandboxError } from "./types.ts";
 
 export const MAX_CODE_BYTES = 1024 * 1024;
@@ -104,6 +105,77 @@ export function appendCapped(current: string, chunk: string, maxBytes: number): 
     return combined;
   }
   return Buffer.from(combined, "utf8").subarray(0, maxBytes).toString("utf8");
+}
+
+export class CappedUtf8Accumulator {
+  readonly #maxBytes: number;
+  #text = "";
+  #retainedBytes = 0;
+  #retainedWrites = 0;
+  #capped = false;
+
+  constructor(maxBytes: number) {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
+      throw new Error("UTF-8 accumulator limit must be a non-negative safe integer");
+    }
+    this.#maxBytes = maxBytes;
+  }
+
+  get text(): string {
+    return this.#text;
+  }
+
+  get retainedBytes(): number {
+    return this.#retainedBytes;
+  }
+
+  get retainedWrites(): number {
+    return this.#retainedWrites;
+  }
+
+  get capped(): boolean {
+    return this.#capped;
+  }
+
+  append(chunk: string): number {
+    const incomingBytes = Buffer.byteLength(chunk, "utf8");
+    if (this.#capped || incomingBytes === 0) {
+      return incomingBytes;
+    }
+    const remaining = this.#maxBytes - this.#retainedBytes;
+    if (incomingBytes <= remaining) {
+      this.#text += chunk;
+      this.#retainedBytes += incomingBytes;
+      this.#retainedWrites += 1;
+      this.#capped = this.#retainedBytes === this.#maxBytes;
+      return incomingBytes;
+    }
+
+    const retained = utf8Prefix(chunk, remaining);
+    if (retained.length > 0) {
+      this.#text += retained;
+      this.#retainedBytes += Buffer.byteLength(retained, "utf8");
+      this.#retainedWrites += 1;
+    }
+    this.#capped = true;
+    return incomingBytes;
+  }
+}
+
+function utf8Prefix(value: string, maxBytes: number): string {
+  if (maxBytes <= 0) {
+    return "";
+  }
+  const encoded = Buffer.from(value, "utf8");
+  let end = Math.min(maxBytes, encoded.length);
+  while (end > 0) {
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(encoded.subarray(0, end));
+    } catch {
+      end -= 1;
+    }
+  }
+  return "";
 }
 
 function errorMessage(error: unknown): string {

@@ -1,7 +1,17 @@
+# Standard in-cluster deployment. Before applying, replace both placeholder
+# image digests below and the runner digest in the admission policy with reviewed
+# repository digests. Create `oci-js-host-oci-config` in the host namespace with
+# the OCI config, key material, and any required session-authentication material.
+# Never create or mount that Secret in the execution namespace.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: oci-js-standard-host
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
 ---
 apiVersion: v1
 kind: Namespace
@@ -93,6 +103,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["namespaces"]
+    resourceNames: ["oci-js-standard-execution"]
     verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -180,18 +191,20 @@ spec:
       message: standard runtime, service account, profile, and ownership must match
     - expression: object.spec.automountServiceAccountToken == false && object.spec.enableServiceLinks == false && object.spec.restartPolicy == 'Never'
       message: token mounting, service links, and restart behavior must remain disabled
-    - expression: object.spec.hostNetwork == false && object.spec.hostPID == false && object.spec.hostIPC == false
+    - expression: (!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) && (!has(object.spec.hostPID) || object.spec.hostPID == false) && (!has(object.spec.hostIPC) || object.spec.hostIPC == false)
       message: host namespaces are forbidden
-    - expression: size(object.spec.containers) == 1 && !has(object.spec.initContainers) && !has(object.spec.ephemeralContainers) && object.spec.containers[0].name == 'runner' && object.spec.containers[0].image == 'registry.example/oci-javascript-runner@sha256:0000000000000000000000000000000000000000000000000000000000000000'
+    - expression: size(object.spec.containers) == 1 && !has(object.spec.initContainers) && !has(object.spec.ephemeralContainers) && object.spec.containers[0].name == 'runner' && object.spec.containers[0].image == 'registry.example/oci-javascript-runner@sha256:0000000000000000000000000000000000000000000000000000000000000000' && object.spec.containers[0].imagePullPolicy == 'IfNotPresent'
       message: exactly one digest-pinned runner container is required
     - expression: object.spec.containers[0].command == ['node', '--no-node-snapshot', '--experimental-strip-types', '-e', 'setInterval(() => {}, 2147483647)'] && !has(object.spec.containers[0].env)
       message: the fixed silent wait command and empty environment are required
-    - expression: object.spec.containers[0].securityContext.runAsNonRoot == true && object.spec.containers[0].securityContext.runAsUser == 65532 && object.spec.containers[0].securityContext.allowPrivilegeEscalation == false && object.spec.containers[0].securityContext.privileged == false && object.spec.containers[0].securityContext.readOnlyRootFilesystem == true && object.spec.containers[0].securityContext.capabilities.drop == ['ALL'] && object.spec.containers[0].securityContext.seccompProfile.type == 'RuntimeDefault'
+    - expression: object.spec.securityContext.runAsNonRoot == true && object.spec.securityContext.runAsUser == 65532 && object.spec.securityContext.runAsGroup == 65532 && object.spec.securityContext.fsGroup == 65532 && object.spec.securityContext.seccompProfile.type == 'RuntimeDefault'
+      message: the reviewed pod security context is required
+    - expression: object.spec.containers[0].securityContext.runAsNonRoot == true && object.spec.containers[0].securityContext.runAsUser == 65532 && object.spec.containers[0].securityContext.runAsGroup == 65532 && object.spec.containers[0].securityContext.allowPrivilegeEscalation == false && object.spec.containers[0].securityContext.privileged == false && object.spec.containers[0].securityContext.readOnlyRootFilesystem == true && object.spec.containers[0].securityContext.capabilities.drop == ['ALL'] && !has(object.spec.containers[0].securityContext.capabilities.add) && object.spec.containers[0].securityContext.seccompProfile.type == 'RuntimeDefault'
       message: the reviewed runner security context is required
-    - expression: size(object.spec.volumes) == 1 && object.spec.volumes[0].name == 'tmp' && object.spec.volumes[0].emptyDir.medium == 'Memory' && size(object.spec.containers[0].volumeMounts) == 1 && object.spec.containers[0].volumeMounts[0].mountPath == '/tmp'
+    - expression: size(object.spec.volumes) == 1 && object.spec.volumes[0].name == 'tmp' && object.spec.volumes[0].emptyDir.medium == 'Memory' && has(object.spec.volumes[0].emptyDir.sizeLimit) && quantity(object.spec.volumes[0].emptyDir.sizeLimit).compareTo(quantity('1Mi')) >= 0 && quantity(object.spec.volumes[0].emptyDir.sizeLimit).compareTo(quantity('64Mi')) <= 0 && size(object.spec.containers[0].volumeMounts) == 1 && object.spec.containers[0].volumeMounts[0].name == 'tmp' && object.spec.containers[0].volumeMounts[0].mountPath == '/tmp' && (!has(object.spec.containers[0].volumeMounts[0].readOnly) || object.spec.containers[0].volumeMounts[0].readOnly == false)
       message: only the bounded memory-backed temporary volume is allowed
-    - expression: object.spec.containers[0].resources.requests.cpu == object.spec.containers[0].resources.limits.cpu && object.spec.containers[0].resources.requests.memory == object.spec.containers[0].resources.limits.memory && object.spec.containers[0].resources.requests['ephemeral-storage'] == object.spec.containers[0].resources.limits['ephemeral-storage'] && object.spec.activeDeadlineSeconds >= 1 && object.spec.activeDeadlineSeconds <= 120
-      message: equal budgets, bounded storage, and active deadline are required
+    - expression: has(object.spec.containers[0].resources.requests.cpu) && has(object.spec.containers[0].resources.limits.cpu) && has(object.spec.containers[0].resources.requests.memory) && has(object.spec.containers[0].resources.limits.memory) && 'ephemeral-storage' in object.spec.containers[0].resources.requests && 'ephemeral-storage' in object.spec.containers[0].resources.limits && object.spec.containers[0].resources.requests.cpu == object.spec.containers[0].resources.limits.cpu && object.spec.containers[0].resources.requests.memory == object.spec.containers[0].resources.limits.memory && object.spec.containers[0].resources.requests['ephemeral-storage'] == object.spec.containers[0].resources.limits['ephemeral-storage'] && quantity(object.spec.containers[0].resources.requests.cpu).compareTo(quantity('100m')) >= 0 && quantity(object.spec.containers[0].resources.requests.cpu).compareTo(quantity('4')) <= 0 && quantity(object.spec.containers[0].resources.requests.memory).compareTo(quantity('128Mi')) >= 0 && quantity(object.spec.containers[0].resources.requests.memory).compareTo(quantity('2Gi')) <= 0 && quantity(object.spec.containers[0].resources.requests['ephemeral-storage']).compareTo(quantity('16Mi')) >= 0 && quantity(object.spec.containers[0].resources.requests['ephemeral-storage']).compareTo(quantity('1Gi')) <= 0 && object.spec.activeDeadlineSeconds >= 1 && object.spec.activeDeadlineSeconds <= 120
+      message: equal in-range CPU, memory, and ephemeral-storage budgets plus an active deadline are required
     - expression: "!has(object.spec.containers[0].ports) && !has(object.spec.containers[0].volumeDevices) && !has(object.spec.containers[0].livenessProbe) && !has(object.spec.containers[0].readinessProbe) && !has(object.spec.containers[0].startupProbe) && !has(object.spec.containers[0].lifecycle)"
       message: ports, devices, probes, and lifecycle hooks are forbidden
 ---
@@ -206,6 +219,75 @@ spec:
     namespaceSelector:
       matchLabels:
         oci.oracle.com/kubernetes-profile: in-cluster
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oci-js-standard-host
+  namespace: oci-js-standard-host
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: oci-js-standard-host
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: oci-js-standard-host
+    spec:
+      serviceAccountName: oci-js-standard-host
+      automountServiceAccountToken: true
+      containers:
+        - name: host
+          image: registry.example/oci-javascript-mcp-host@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          stdin: true
+          env:
+            - name: OCI_JAVASCRIPT_ISOLATION_PROVIDER
+              value: kubernetes
+            - name: OCI_JAVASCRIPT_KUBERNETES_PROFILE
+              value: in-cluster
+            - name: OCI_JAVASCRIPT_KUBERNETES_NAMESPACE
+              value: oci-js-standard-execution
+            - name: OCI_JAVASCRIPT_KUBERNETES_RUNNER_SERVICE_ACCOUNT
+              value: oci-js-runner
+            - name: OCI_JAVASCRIPT_KUBERNETES_IMAGE
+              value: registry.example/oci-javascript-runner@sha256:0000000000000000000000000000000000000000000000000000000000000000
+            - name: OCI_JAVASCRIPT_KUBERNETES_TRUSTED_HOST_NAMESPACE
+              valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+            - name: OCI_JAVASCRIPT_KUBERNETES_TRUSTED_HOST_POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: OCI_JAVASCRIPT_KUBERNETES_TRUSTED_HOST_POD_UID
+              valueFrom: { fieldRef: { fieldPath: metadata.uid } }
+            - name: OCI_CONFIG_FILE
+              value: /var/run/oci/config
+            - name: OCI_CONFIG_PROFILE
+              value: DEFAULT
+          volumeMounts:
+            - name: oci-config
+              mountPath: /var/run/oci
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: oci-config
+          secret:
+            secretName: oci-js-host-oci-config
+            defaultMode: 292 # octal 0444
 ---
 apiVersion: apps/v1
 kind: Deployment

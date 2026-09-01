@@ -9,12 +9,29 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { loadAllYaml } from "@kubernetes/client-node";
+import { parseKubernetesConfig } from "../src/isolation/kubernetes-config.ts";
+import {
+  buildExecutionPod,
+  runtimeAdmissionVariants,
+  unsafeAdmissionVariants
+} from "../src/isolation/kubernetes-pod.ts";
+import { runtimePolicyFor } from "../src/isolation/kubernetes-runtime-policy.ts";
+import {
+  conformingPodAdmission,
+  reviewedResourceSettings,
+  validKataEnvironment
+} from "./kata-fixtures.ts";
 
 type Manifest = {
   apiVersion: string;
   kind: string;
   metadata: { name: string; namespace?: string; labels?: Record<string, string> };
-  rules?: Array<{ apiGroups: string[]; resources: string[]; verbs: string[] }>;
+  rules?: Array<{
+    apiGroups: string[];
+    resources: string[];
+    resourceNames?: string[];
+    verbs: string[];
+  }>;
   subjects?: Array<{ kind: string; name: string; namespace?: string }>;
   roleRef?: { name: string };
   spec?: Record<string, any>;
@@ -27,7 +44,7 @@ const source = files.map(name => readFileSync(join(directory, name), "utf8")).jo
 const manifests = loadAllYaml(source) as Manifest[];
 
 test("versioned Kata assets are syntactically valid Kubernetes objects", () => {
-  assert.equal(files.length, 8);
+  assert.equal(files.length, 9);
   assert.equal(manifests.length > files.length, true);
   for (const manifest of manifests) {
     assert.match(manifest.apiVersion, /^[a-z0-9./-]+$/i);
@@ -43,6 +60,8 @@ test("trusted host and execution namespaces remain separate with restricted exec
   const namespaces = manifests.filter(item => item.kind === "Namespace");
   assert.deepEqual(namespaces.map(item => item.metadata.name), ["oci-js-host", "oci-js-execution"]);
   const execution = namespaces.find(item => item.metadata.name === "oci-js-execution")!;
+  const host = namespaces.find(item => item.metadata.name === "oci-js-host")!;
+  assert.equal(host.metadata.labels?.["pod-security.kubernetes.io/enforce"], "restricted");
   assert.equal(execution.metadata.labels?.["pod-security.kubernetes.io/enforce"], "restricted");
   assert.equal(execution.metadata.labels?.["oci.oracle.com/kubernetes-profile"], "kata-in-cluster");
   const runner = manifests.find(
@@ -78,6 +97,22 @@ test("execution grants name only the cross-namespace host and cleanup identity s
   }]);
   assert.equal(JSON.stringify(cleanupRole).includes("pods/exec"), false);
   assert.equal(cleanupRole.rules?.some(rule => rule.verbs.includes("create")), false);
+
+  const preflight = manifests.find(
+    item => item.kind === "ClusterRole" && item.metadata.name === "oci-js-kata-preflight"
+  )!;
+  assert.deepEqual(plain(preflight.rules), [{
+    apiGroups: [""],
+    resources: ["namespaces"],
+    resourceNames: ["oci-js-execution"],
+    verbs: ["get"]
+  }, {
+    apiGroups: ["node.k8s.io"],
+    resources: ["runtimeclasses"],
+    resourceNames: ["kata-qemu-runtime-rs"],
+    verbs: ["get"]
+  }]);
+  assert.equal(hostRole.rules?.every(rule => rule.resourceNames === undefined), true);
 });
 
 function plain<T>(value: T): T {
@@ -115,10 +150,63 @@ test("fail-closed admission assets identify the conforming shape and every revie
     "env",
     "hostNetwork",
     "volumes",
+    "imagePullPolicy",
+    "runAsGroup",
+    "fsGroup",
+    "capabilities.add",
+    "sizeLimit",
+    "readOnly",
     "allowPrivilegeEscalation",
     "@sha256"
   ]) {
     assert.equal(expressions.includes(requiredConstraint), true, requiredConstraint);
+  }
+  for (const constraint of [
+    "quantity(object.spec.containers[0].resources.requests.cpu).compareTo(quantity('100m')) >= 0",
+    "quantity(object.spec.containers[0].resources.requests.cpu).compareTo(quantity('4')) <= 0",
+    "quantity(object.spec.containers[0].resources.requests.memory).compareTo(quantity('128Mi')) >= 0",
+    "quantity(object.spec.containers[0].resources.requests.memory).compareTo(quantity('2Gi')) <= 0",
+    "quantity(object.spec.containers[0].resources.requests['ephemeral-storage']).compareTo(quantity('16Mi')) >= 0",
+    "quantity(object.spec.containers[0].resources.requests['ephemeral-storage']).compareTo(quantity('1Gi')) <= 0",
+    "quantity(object.spec.volumes[0].emptyDir.sizeLimit).compareTo(quantity('1Mi')) >= 0",
+    "quantity(object.spec.volumes[0].emptyDir.sizeLimit).compareTo(quantity('64Mi')) <= 0",
+    "resources.requests.cpu == object.spec.containers[0].resources.limits.cpu"
+  ]) {
+    assert.equal(expressions.includes(constraint), true, constraint);
+  }
+  assert.doesNotMatch(expressions, /quantity\([^)]*\)\s*(?:<=|>=|<|>)\s*quantity\(/);
+
+  for (const settings of reviewedResourceSettings) {
+    const config = parseKubernetesConfig({ ...validKataEnvironment(), ...settings });
+    const runtimePolicy = runtimePolicyFor(config);
+    const conforming = buildExecutionPod(
+      config,
+      runtimePolicy,
+      "oci-javascript-k8s-policy-range",
+      "correlation",
+      Date.now() + 30_000
+    );
+    assert.equal(
+      conformingPodAdmission(conforming, "kata-in-cluster"),
+      true,
+      JSON.stringify(settings)
+    );
+  }
+  const config = parseKubernetesConfig(validKataEnvironment());
+  const runtimePolicy = runtimePolicyFor(config);
+  const pod = buildExecutionPod(
+    config,
+    runtimePolicy,
+    "oci-javascript-k8s-policy-test",
+    "correlation",
+    Date.now() + 30_000
+  );
+  assert.equal(conformingPodAdmission(pod, "kata-in-cluster"), true);
+  for (const variant of [
+    ...unsafeAdmissionVariants(pod),
+    ...runtimeAdmissionVariants(pod, runtimePolicy)
+  ]) {
+    assert.equal(conformingPodAdmission(variant.pod, "kata-in-cluster"), false, variant.id);
   }
 });
 
@@ -132,4 +220,53 @@ test("cleanup reconciler is outside the execution namespace and uses its distinc
     deployment.spec?.template.spec.containers[0].command.at(-1),
     "/app/src/kubernetes-reconciler.ts"
   );
+});
+
+test("Kata assets deploy a hardened trusted host with an admission-aligned runner", () => {
+  const host = manifests.find(
+    item => item.kind === "Deployment" && item.metadata.name === "oci-js-kata-host"
+  )!;
+  const hostPod = host.spec!.template.spec;
+  const hostContainer = hostPod.containers[0];
+  const hostEnv = Object.fromEntries(hostContainer.env.map((value: any) => [value.name, value]));
+
+  assert.equal(host.metadata.namespace, "oci-js-host");
+  assert.equal(host.spec!.replicas, 1);
+  assert.equal(host.spec!.strategy.type, "Recreate");
+  assert.equal(hostPod.serviceAccountName, "oci-js-host");
+  assert.equal(hostPod.automountServiceAccountToken, true);
+  assert.equal(hostContainer.stdin, true);
+  assert.match(hostContainer.image, /oci-javascript-mcp-host@sha256:[a-f0-9]{64}$/);
+  assert.equal(hostEnv.OCI_JAVASCRIPT_ISOLATION_PROVIDER.value, "kubernetes");
+  assert.equal(hostEnv.OCI_JAVASCRIPT_KUBERNETES_PROFILE.value, "kata-in-cluster");
+  assert.equal(hostEnv.OCI_JAVASCRIPT_KUBERNETES_KATA_RUNTIME_CLASS.value, "kata-qemu-runtime-rs");
+  assert.equal(hostEnv.OCI_JAVASCRIPT_KUBERNETES_KATA_RUNTIME_HANDLER.value, "kata-qemu-runtime-rs");
+  assert.match(hostEnv.OCI_JAVASCRIPT_KUBERNETES_IMAGE.value, /@sha256:[a-f0-9]{64}$/);
+  assert.equal(
+    hostEnv.OCI_JAVASCRIPT_KUBERNETES_TRUSTED_HOST_NAMESPACE.valueFrom.fieldRef.fieldPath,
+    "metadata.namespace"
+  );
+  assert.equal(
+    hostEnv.OCI_JAVASCRIPT_KUBERNETES_TRUSTED_HOST_POD_NAME.valueFrom.fieldRef.fieldPath,
+    "metadata.name"
+  );
+  assert.equal(
+    hostEnv.OCI_JAVASCRIPT_KUBERNETES_TRUSTED_HOST_POD_UID.valueFrom.fieldRef.fieldPath,
+    "metadata.uid"
+  );
+  assert.equal(hostEnv.OCI_CONFIG_FILE.value, "/var/run/oci/config");
+  assert.equal(hostPod.volumes[0].secret.secretName, "oci-js-kata-oci-config");
+  assert.equal(hostPod.volumes[0].secret.defaultMode, 292);
+
+  const policy = manifests.find(item => item.kind === "ValidatingAdmissionPolicy")!;
+  assert.equal(
+    JSON.stringify(policy.spec?.validations).includes(hostEnv.OCI_JAVASCRIPT_KUBERNETES_IMAGE.value),
+    true
+  );
+
+  const reconciler = manifests.find(
+    item => item.kind === "Deployment" && item.metadata.name === "oci-js-kata-reconciler"
+  )!;
+  assert.equal(JSON.stringify(reconciler.spec!.template.spec).includes("OCI_CONFIG_FILE"), false);
+  assert.equal(JSON.stringify(reconciler.spec!.template.spec).includes("oci-js-kata-oci-config"), false);
 });

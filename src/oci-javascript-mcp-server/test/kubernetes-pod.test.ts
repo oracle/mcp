@@ -112,7 +112,7 @@ test("pod timing covers rounding, maximum, expiry, and invalid boundaries", () =
   );
 });
 
-test("shared and Kata-only admission variants are separate and immutable", () => {
+test("shared and Kata-only admission variants exactly cover the reviewed immutable contract", () => {
   const config = parseKubernetesConfig(validKataEnvironment());
   const policy = runtimePolicyFor(config);
   const pod = buildExecutionPod(
@@ -125,12 +125,86 @@ test("shared and Kata-only admission variants are separate and immutable", () =>
   const original = structuredClone(pod);
   const shared = unsafeAdmissionVariants(pod);
   const runtime = runtimeAdmissionVariants(pod, policy);
-  assert.equal(shared.length, 8);
-  assert.equal(runtime.length, 1);
+  const expectedSharedIds = [
+    "metadata-owner-reference",
+    "metadata-managed-by-label",
+    "metadata-provider-label",
+    "metadata-profile-label",
+    "image",
+    "image-pull-policy",
+    "service-account",
+    "service-account-token",
+    "service-links",
+    "restart-policy",
+    "host-network",
+    "host-pid",
+    "host-ipc",
+    "command",
+    "environment",
+    "container-count",
+    "container-name",
+    "init-container",
+    "ephemeral-container",
+    "pod-run-as-non-root",
+    "pod-run-as-user",
+    "pod-run-as-group",
+    "pod-fs-group",
+    "container-run-as-non-root",
+    "container-run-as-user",
+    "container-run-as-group",
+    "privilege-escalation",
+    "privileged",
+    "read-only-root-filesystem",
+    "pod-seccomp",
+    "container-seccomp",
+    "capabilities-drop",
+    "capabilities-add",
+    "ports",
+    "volume-devices",
+    "liveness-probe",
+    "readiness-probe",
+    "startup-probe",
+    "lifecycle-hook",
+    "cpu-resources",
+    "cpu-resources-unequal",
+    "cpu-resources-malformed",
+    "memory-resources",
+    "memory-resources-unequal",
+    "memory-resources-malformed",
+    "ephemeral-storage-resources",
+    "ephemeral-storage-resources-unequal",
+    "ephemeral-storage-resources-malformed",
+    "active-deadline",
+    "extra-volume",
+    "tmp-volume-source",
+    "tmp-volume-name",
+    "tmp-medium",
+    "tmp-size-limit",
+    "tmp-size-limit-malformed",
+    "tmp-size-limit-missing",
+    "extra-volume-mount",
+    "tmp-mount-name",
+    "tmp-mount-path",
+    "tmp-mount-read-only"
+  ];
+  assert.deepEqual(shared.map(variant => variant.id), expectedSharedIds);
+  assert.equal(new Set(shared.map(variant => variant.id)).size, expectedSharedIds.length);
+  assert.deepEqual(runtime.map(variant => variant.id), ["runtime-class"]);
   assert.deepEqual(pod, original);
-  assert.equal(shared.some(value => !value.spec?.containers[0]?.image?.includes("@sha256:")), true);
-  assert.equal(shared.some(value => value.spec?.automountServiceAccountToken === true), true);
-  assert.equal(shared.some(value => value.spec?.hostNetwork === true), true);
-  assert.equal(shared.some(value => value.spec?.volumes?.length === 2), true);
-  assert.equal(runtime[0]?.spec?.runtimeClassName, "wrong-runtime");
+  for (const admissionVariant of [...shared, ...runtime]) {
+    assert.notDeepEqual(admissionVariant.pod, original, admissionVariant.id);
+  }
+  assert.deepEqual(
+    shared.find(variant => variant.id === "capabilities-add")?.pod
+      .spec?.containers[0]?.securityContext?.capabilities?.drop,
+    ["ALL"]
+  );
+  for (const id of ["cpu-resources", "memory-resources", "ephemeral-storage-resources"]) {
+    const resources = shared.find(variant => variant.id === id)?.pod.spec?.containers[0]?.resources;
+    const key = id === "cpu-resources"
+      ? "cpu"
+      : id === "memory-resources" ? "memory" : "ephemeral-storage";
+    assert.equal(resources?.requests?.[key], resources?.limits?.[key], id);
+  }
+  assert.equal(runtime[0]?.pod.spec?.runtimeClassName, "wrong-runtime");
 });

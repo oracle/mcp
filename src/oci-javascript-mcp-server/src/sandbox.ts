@@ -5,6 +5,7 @@
  */
 
 import { z } from "zod";
+import { DEFAULT_MAX_FRAME_BYTES } from "./protocol.ts";
 import {
   appendCapped,
   formatError,
@@ -25,7 +26,8 @@ import type {
   Json,
   JsonObject,
   OciReflectionManifest,
-  SandboxResult
+  SandboxResult,
+  WorkerChannelLimits
 } from "./types.ts";
 
 const MAX_RESULT_BYTES = positiveIntegerEnv("OCI_JAVASCRIPT_MAX_RESULT_BYTES", 1024 * 1024);
@@ -35,6 +37,7 @@ const MAX_HOST_RPC_REQUEST_BYTES = positiveIntegerEnv(
 );
 const MAX_HOST_RPC_CALLS = positiveIntegerEnv("OCI_JAVASCRIPT_MAX_HOST_RPC_CALLS", 100);
 const MAX_HOST_RPC_IN_FLIGHT = positiveIntegerEnv("OCI_JAVASCRIPT_MAX_HOST_RPC_IN_FLIGHT", 4);
+const MAX_PROTOCOL_RESULT_BYTES = DEFAULT_MAX_FRAME_BYTES - 64 * 1024;
 const DEFAULT_PROVIDER_TERMINATION_TIMEOUT_MS = 6000;
 const MAX_PROVIDER_TERMINATION_TIMEOUT_MS = 60_000;
 const PROVIDER_RESULT_SCHEMA = z.object({
@@ -78,6 +81,7 @@ export async function runJavaScript(
   };
   const abortController = new AbortController();
   const { isolationProvider, reflectionManifest } = options;
+  const channelLimits = workerChannelLimits();
 
   let execution: IsolationExecution | undefined;
   let outcome: SandboxResult | undefined;
@@ -91,7 +95,8 @@ export async function runJavaScript(
         request,
         abortController.signal
       ),
-      reflectionManifest
+      reflectionManifest,
+      channelLimits
     }));
     const result = await withDeadline(
       execution.result,
@@ -128,6 +133,21 @@ export async function runJavaScript(
   return outcome ?? providerFailure("isolation provider returned no result");
 }
 
+function workerChannelLimits(): WorkerChannelLimits {
+  const frameWithHeaderBytes = DEFAULT_MAX_FRAME_BYTES + 4;
+  const maxBudgetedFrames = Math.floor(Number.MAX_SAFE_INTEGER / frameWithHeaderBytes);
+  const maxRpcMessages = Math.min(MAX_HOST_RPC_CALLS, maxBudgetedFrames - 4);
+  const maxAcceptedMessages = maxRpcMessages + 4;
+  return Object.freeze({
+    maxFrameBytes: DEFAULT_MAX_FRAME_BYTES,
+    maxIngressBytes: maxAcceptedMessages * frameWithHeaderBytes,
+    maxAcceptedMessages,
+    maxLogBytes: MAX_STDOUT_BYTES + MAX_STDERR_BYTES,
+    maxEgressBytes: (maxRpcMessages + 2) * frameWithHeaderBytes,
+    maxResultBytes: Math.min(MAX_RESULT_BYTES, MAX_PROTOCOL_RESULT_BYTES)
+  });
+}
+
 function validateExecution(value: unknown): IsolationExecution {
   if (!value || typeof value !== "object") {
     throw new Error("isolation provider returned an invalid execution handle");
@@ -159,7 +179,7 @@ async function terminateExecution(
 ): Promise<unknown | undefined> {
   try {
     await withDeadline(
-      Promise.resolve().then(() => execution.terminate()),
+      Promise.resolve().then(() => execution.terminate(cleanupDeadlineMs)),
       remainingMs(cleanupDeadlineMs)
     );
     return undefined;
@@ -182,19 +202,26 @@ async function drainPendingCalls(
 function validateProviderResult(value: unknown): SandboxResult {
   try {
     const record = PROVIDER_RESULT_SCHEMA.parse(value);
-    const result = copyJson(record.result, "result", MAX_RESULT_BYTES);
-    const error = record.error === null
-      ? null
-      : copyJson(record.error, "error", MAX_RESULT_BYTES) as SandboxResult["error"];
+    const result = copyJson(record.result, "result");
+    const error = copyJson(record.error, "error");
+    const terminalBytes = result.bytes + error.bytes;
+    if (terminalBytes > MAX_RESULT_BYTES) {
+      throw new Error(
+        `terminal result was ${terminalBytes} bytes, exceeding limit ${MAX_RESULT_BYTES} bytes`
+      );
+    }
     assertByteLimit("stdout", record.stdout, MAX_STDOUT_BYTES);
     assertByteLimit("stderr", record.stderr, MAX_STDERR_BYTES);
-    if ((record.exitCode === 0) !== (error === null) || (record.timedOut && !error)) {
+    if (
+      (record.exitCode === 0) !== (error.value === null)
+      || (record.timedOut && error.value === null)
+    ) {
       throw new Error("exitCode, error, and timedOut fields are inconsistent");
     }
 
     return {
-      result,
-      error,
+      result: result.value,
+      error: error.value as SandboxResult["error"],
       stdout: record.stdout,
       stderr: record.stderr,
       exitCode: record.exitCode,
@@ -207,7 +234,7 @@ function validateProviderResult(value: unknown): SandboxResult {
   }
 }
 
-function copyJson(value: unknown, label: string, maxBytes: number): Json {
+function copyJson(value: unknown, label: string): { value: Json; bytes: number } {
   let encoded: string | undefined;
   try {
     encoded = JSON.stringify(value, (_key, item: unknown) => {
@@ -228,11 +255,10 @@ function copyJson(value: unknown, label: string, maxBytes: number): Json {
   if (!encoded) {
     throw new Error(`${label} must be JSON-compatible`);
   }
-  const bytes = Buffer.byteLength(encoded, "utf8");
-  if (bytes > maxBytes) {
-    throw new Error(`${label} was ${bytes} bytes, exceeding limit ${maxBytes} bytes`);
-  }
-  return JSON.parse(encoded) as Json;
+  return {
+    value: JSON.parse(encoded) as Json,
+    bytes: Buffer.byteLength(encoded, "utf8")
+  };
 }
 
 function assertByteLimit(label: string, value: string, maxBytes: number): void {

@@ -13,7 +13,7 @@ from fastmcp import FastMCP
 
 from ..models import EventType, OperationResult
 from ..utils.clients import get_clients
-from ..utils.responses import raise_safe, response_header, to_dict
+from ..utils.responses import raise_safe, response_header, safe_error_details, to_dict
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,7 @@ def setup_transcription_notifications(
         raise ValueError("event_types must not be empty.")
     created: dict[str, Any] = {}
     notes: list[str] = []
+    current_operation = "create_topic" if topic_name else "create_subscription"
     try:
         clients = get_clients()
         resolved_topic_id = topic_id
@@ -67,6 +68,7 @@ def setup_transcription_notifications(
             created["topic"] = to_dict(topic_response.data)
 
         if subscription_protocol and subscription_endpoint:
+            current_operation = "create_subscription"
             subscription_response = clients.subscriptions.create_subscription(
                 oci.ons.models.CreateSubscriptionDetails(
                     compartment_id=compartment_id,
@@ -85,6 +87,7 @@ def setup_transcription_notifications(
         condition: dict[str, Any] = {"eventType": selected_events}
         if transcription_job_id:
             condition["data"] = {"resourceId": transcription_job_id}
+        current_operation = "create_rule"
         rule_response = clients.events.create_rule(
             oci.events.models.CreateRuleDetails(
                 display_name=rule_display_name,
@@ -118,6 +121,21 @@ def setup_transcription_notifications(
         if created:
             logger.warning(
                 "Notification setup stopped after creating: %s", ", ".join(created)
+            )
+            failure = safe_error_details(error)
+            return OperationResult(
+                operation="setup_transcription_notifications",
+                data={
+                    **created,
+                    "failure": {"operation": current_operation, **failure},
+                },
+                status=failure.get("status"),
+                opc_request_id=failure.get("request_id"),
+                notes=[
+                    *notes,
+                    f"{current_operation} failed after resources were created. "
+                    "Their identifiers are returned for inspection or cleanup.",
+                ],
             )
         raise_safe("setup_transcription_notifications", error)
 

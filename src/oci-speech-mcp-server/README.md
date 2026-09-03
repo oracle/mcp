@@ -185,10 +185,15 @@ protocol messages and send diagnostics to standard error through normal logging.
 6. For a successful job, discover task output objects and stream them into
    `OCI_SPEECH_OUTPUT_ROOT`.
 
-The uploaded input is not automatically deleted. Use Object Storage lifecycle
-rules or an explicit governance process to control retention. Local output paths
+If job creation fails after upload, the server deletes the uploaded input. If
+that cleanup also fails, the result contains the namespace, bucket, object name,
+and sanitized failure metadata so the caller can remove it explicitly. Inputs
+for successfully created jobs are retained; use Object Storage lifecycle rules
+or an explicit governance process to control their retention. Local output paths
 must be relative, cannot escape the configured root, and do not overwrite files
-unless `overwrite` is explicitly enabled.
+unless `overwrite` is explicitly enabled. Downloads are written privately to a
+same-directory temporary file and atomically moved into place only after the
+stream completes.
 
 Supported media suffixes are AAC, AC3, AMR, AU, FLAC, M4A, MKV, MP3, MP4, OGA,
 OGG, OPUS, WAV, and WEBM.
@@ -206,7 +211,9 @@ not people's identities. Both Oracle ASR and OCI Whisper support it.
 SRT can be requested as an additional output format. The model type remains an
 explicit string so model names enabled for the tenancy—including supported
 Whisper variants—can be used without a server release. Whisper prompts are
-limited to 4,000 characters.
+limited to 4,000 characters and are rejected for the Oracle model. Punctuation
+cannot be disabled for the Whisper model. Unknown future model names remain
+accepted without applying assumptions about their supported options.
 
 Use `MEDICAL` only where supported for the chosen capability and tenancy.
 Always verify current model and language availability in the
@@ -215,10 +222,11 @@ Always verify current model and language availability in the
 ## Text-to-speech
 
 Call `list_voices` to select a voice, then `synthesize_speech`. The server routes
-only these calls to `us-phoenix-1` and writes streamed output locally. Supported
-formats are MP3, PCM, OGG, and JSON. JSON is intended for WORD and SENTENCE
-speech marks. `TTS_1_STANDARD` accepts a voice; `TTS_2_NATURAL` additionally
-accepts a language code. Input can be plain text or SSML.
+only these calls to `us-phoenix-1` and writes streamed output locally using the
+same private, atomic file handling as transcription downloads. Supported formats
+are MP3, PCM, OGG, and JSON. JSON is intended for WORD and SENTENCE speech marks.
+`TTS_1_STANDARD` accepts a voice; `TTS_2_NATURAL` additionally accepts a language
+code. Input can be plain text or SSML.
 
 SSML is available only for selected `en-US` voices. The server validates a
 single `<speak>` root and the OCI-supported tags `<break>`, `<s>`, `<p>`,
@@ -267,8 +275,9 @@ enabled Events rule targeting the topic. By default the rule selects:
 
 Supplying a transcription job OCID narrows the event condition by resource ID.
 Email subscriptions remain pending until the recipient confirms them. If setup
-stops after creating one resource, the exception is reported without silently
-deleting that resource; inspect the returned OCI state before retrying.
+stops after creating resources, the tool returns their identifiers together
+with the failed setup operation and sanitized failure metadata. Inspect or clean
+up those resources before retrying to avoid duplicates.
 
 ## Realtime Speech
 

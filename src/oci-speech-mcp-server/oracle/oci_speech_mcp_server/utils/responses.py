@@ -4,7 +4,10 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
+import errno
 import logging
+import os
+import uuid
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
@@ -14,6 +17,25 @@ import oci
 from ..models import OperationResult
 
 logger = logging.getLogger(__name__)
+
+
+def safe_error_details(error: Exception) -> dict[str, Any]:
+    """Return failure metadata without paths, endpoints, or response bodies."""
+    details: dict[str, Any] = {"type": type(error).__name__}
+    if isinstance(error, oci.exceptions.ServiceError):
+        details.update(
+            status=error.status,
+            code=error.code,
+            request_id=error.request_id,
+        )
+    elif isinstance(error, oci.exceptions.RequestException):
+        return details
+    elif isinstance(error, OSError):
+        details.update(
+            errno=error.errno,
+            errno_name=errno.errorcode.get(error.errno, "UNKNOWN"),
+        )
+    return details
 
 
 def response_header(response: Any, name: str) -> str | None:
@@ -50,18 +72,23 @@ def raise_safe(operation: str, error: Exception) -> None:
             f"{operation} failed with OCI status {error.status}, code {error.code}, "
             f"request {error.request_id or 'unknown'}: {error.message}"
         ) from None
-    if isinstance(
-        error,
-        (
-            oci.exceptions.RequestException,
-            ValueError,
-            FileNotFoundError,
-            FileExistsError,
-            TimeoutError,
-        ),
-    ):
+    if isinstance(error, oci.exceptions.RequestException):
         raise RuntimeError(f"{operation} failed: {error}") from None
-    logger.error("Unexpected failure in %s", operation)
+    if isinstance(error, TimeoutError):
+        raise RuntimeError(f"{operation} failed: {error}") from None
+    if isinstance(error, OSError):
+        details = safe_error_details(error)
+        raise RuntimeError(
+            f"{operation} failed with local I/O error "
+            f"{details['errno_name']} (errno {details['errno']})."
+        ) from None
+    if isinstance(error, ValueError):
+        raise RuntimeError(f"{operation} failed: {error}") from None
+    logger.error(
+        "Unexpected %s in %s; exception text omitted to protect sensitive data",
+        type(error).__name__,
+        operation,
+    )
     raise RuntimeError(f"{operation} failed unexpectedly. Check the server log.") from None
 
 
@@ -125,10 +152,23 @@ def write_stream(data: Any, path: Path) -> int:
         chunks = [data]
     else:
         raise ValueError("OCI returned an unsupported streaming response.")
-    written = 0
-    with path.open("wb") as output:
-        for chunk in chunks:
-            if chunk:
-                output.write(chunk)
-                written += len(chunk)
-    return written
+    temporary = path.parent / f".{path.name}.{uuid.uuid4().hex}.tmp"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(temporary, flags, 0o600)
+    try:
+        written = 0
+        with os.fdopen(descriptor, "wb") as output:
+            descriptor = -1
+            for chunk in chunks:
+                if chunk:
+                    output.write(chunk)
+                    written += len(chunk)
+        os.replace(temporary, path)
+        return written
+    except Exception:
+        if descriptor >= 0:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+        raise

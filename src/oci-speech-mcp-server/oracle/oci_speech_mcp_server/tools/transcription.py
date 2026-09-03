@@ -22,9 +22,23 @@ from ..utils.responses import (
     page_items,
     raise_safe,
     response_header,
+    safe_error_details,
     to_dict,
     write_stream,
 )
+
+
+def validate_transcription_options(
+    model_type: str,
+    whisper_prompt: str | None,
+    punctuation_enabled: bool,
+) -> None:
+    """Reject known model-specific conflicts while allowing future model names."""
+    known_model = model_type.strip().upper()
+    if known_model == "ORACLE" and whisper_prompt:
+        raise ValueError("whisper_prompt is supported only when model_type=WHISPER.")
+    if known_model == "WHISPER" and not punctuation_enabled:
+        raise ValueError("punctuation_enabled must be true when model_type=WHISPER.")
 
 
 def transcription_model(
@@ -102,6 +116,7 @@ def create_transcription_job(
     freeform_tags: dict[str, str] | None = None,
 ) -> OperationResult:
     """Create a transcription job for media already in Object Storage."""
+    validate_transcription_options(model_type, whisper_prompt, punctuation_enabled)
     details = oci.ai_speech.models.CreateTranscriptionJobDetails(
         compartment_id=compartment_id,
         display_name=display_name,
@@ -414,6 +429,7 @@ def transcribe_local_file(
 ) -> OperationResult:
     """Upload a local media file, transcribe it, and optionally download results."""
     try:
+        validate_transcription_options(model_type, whisper_prompt, punctuation_enabled)
         source = validate_media_input(local_path)
         clients = get_clients()
         namespace = namespace_name
@@ -427,15 +443,6 @@ def transcribe_local_file(
         )
         if object_name.startswith("/") or ".." in Path(object_name).parts:
             raise ValueError("input_object_name must be a relative Object Storage name.")
-        with source.open("rb") as media:
-            upload_response = clients.object_storage.put_object(
-                namespace,
-                bucket_name,
-                object_name,
-                media,
-                content_length=source.stat().st_size,
-            )
-
         prefix = output_prefix or f"oci-speech-mcp/outputs/{uuid.uuid4().hex}/"
         details = oci.ai_speech.models.CreateTranscriptionJobDetails(
             compartment_id=compartment_id,
@@ -465,16 +472,56 @@ def transcribe_local_file(
             normalization=normalization(punctuation_enabled, profanity_mode),
             additional_transcription_formats=["SRT"] if include_srt else [],
         )
-        create_response = clients.speech.create_transcription_job(details)
+        with source.open("rb") as media:
+            upload_response = clients.object_storage.put_object(
+                namespace,
+                bucket_name,
+                object_name,
+                media,
+                content_length=source.stat().st_size,
+            )
+        upload_data = {
+            "namespace_name": namespace,
+            "bucket_name": bucket_name,
+            "object_name": object_name,
+            "etag": response_header(upload_response, "etag"),
+            "opc_request_id": response_header(upload_response, "opc-request-id"),
+        }
+        try:
+            create_response = clients.speech.create_transcription_job(details)
+        except Exception as create_error:
+            try:
+                clients.object_storage.delete_object(
+                    namespace, bucket_name, object_name
+                )
+            except Exception as cleanup_error:
+                return OperationResult(
+                    operation="transcribe_local_file",
+                    data={
+                        "upload": upload_data,
+                        "job": None,
+                        "downloads": [],
+                        "failure": {
+                            "operation": "create_transcription_job",
+                            **safe_error_details(create_error),
+                        },
+                        "cleanup": {
+                            "attempted": True,
+                            "succeeded": False,
+                            "error": safe_error_details(cleanup_error),
+                        },
+                    },
+                    status=getattr(create_error, "status", None),
+                    opc_request_id=getattr(create_error, "request_id", None),
+                    notes=[
+                        "Transcription job creation and uploaded-input cleanup both "
+                        "failed. The upload identity is returned for explicit cleanup."
+                    ],
+                )
+            raise
         job = create_response.data
         result_data: dict[str, Any] = {
-            "upload": {
-                "namespace_name": namespace,
-                "bucket_name": bucket_name,
-                "object_name": object_name,
-                "etag": response_header(upload_response, "etag"),
-                "opc_request_id": response_header(upload_response, "opc-request-id"),
-            },
+            "upload": upload_data,
             "job": to_dict(job),
             "downloads": [],
         }

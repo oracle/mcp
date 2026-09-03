@@ -4,6 +4,8 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
+import errno
+import stat
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -100,7 +102,17 @@ def test_response_helpers_and_safe_errors(caplog):
         responses.call_oci(
             "bad", lambda: (_ for _ in ()).throw(TypeError("private"))
         )
-    assert "Unexpected failure" in caplog.text
+    assert "Unexpected TypeError" in caplog.text
+    assert "private" not in caplog.text
+
+    with pytest.raises(RuntimeError, match=r"EACCES \(errno 13\)") as failure:
+        responses.call_oci(
+            "write",
+            lambda: (_ for _ in ()).throw(
+                PermissionError(errno.EACCES, "denied", "/sensitive/path")
+            ),
+        )
+    assert "/sensitive/path" not in str(failure.value)
 
 
 def test_pagination(mock_clients):
@@ -182,6 +194,30 @@ def test_transcription_crud_and_tasks(mock_clients):
     assert whisper.transcription_settings.additional_settings["whisperPrompt"] == "domain words"
     assert transcription_tools.normalization(False, None).filters == []
 
+    mock_clients.speech.create_transcription_job.reset_mock()
+    with pytest.raises(ValueError, match="whisper_prompt.*WHISPER"):
+        transcription_tools.create_transcription_job(
+            "compartment",
+            "display",
+            "namespace",
+            "bucket",
+            ["audio.wav"],
+            model_type="ORACLE",
+            whisper_prompt="domain words",
+        )
+    with pytest.raises(ValueError, match="punctuation_enabled.*WHISPER"):
+        transcription_tools.create_transcription_job(
+            "compartment",
+            "display",
+            "namespace",
+            "bucket",
+            ["audio.wav"],
+            model_type="WHISPER",
+            punctuation_enabled=False,
+        )
+    transcription_tools.validate_transcription_options("FUTURE_MODEL", None, False)
+    mock_clients.speech.create_transcription_job.assert_not_called()
+
     mock_clients.speech.get_transcription_job.return_value = resp(job)
     assert transcription_tools.get_transcription_job("job").data["id"] == "job"
 
@@ -248,12 +284,14 @@ def test_update_and_delete_pass_if_match(mock_clients):
 
 
 def test_stream_writer_variants(tmp_path):
+    tmp_path.chmod(0o755)
     raw_path = tmp_path / "raw"
     data = SimpleNamespace(
         raw=SimpleNamespace(stream=lambda size, decode_content: iter([b"one", b"", b"two"]))
     )
     assert responses.write_stream(data, raw_path) == 6
     assert raw_path.read_bytes() == b"onetwo"
+    assert stat.S_IMODE(raw_path.stat().st_mode) == 0o600
 
     iter_path = tmp_path / "iter"
     data = SimpleNamespace(iter_content=lambda chunk_size: iter([b"three"]))
@@ -262,6 +300,22 @@ def test_stream_writer_variants(tmp_path):
     assert responses.write_stream(b"four", byte_path) == 4
     with pytest.raises(ValueError, match="unsupported"):
         responses.write_stream(object(), tmp_path / "bad")
+
+    interrupted_path = tmp_path / "interrupted"
+
+    def interrupted_stream():
+        yield b"partial"
+        raise OSError(errno.ENOSPC, "disk full")
+
+    interrupted = SimpleNamespace(
+        raw=SimpleNamespace(
+            stream=lambda size, decode_content: interrupted_stream()
+        )
+    )
+    with pytest.raises(OSError, match="disk full"):
+        responses.write_stream(interrupted, interrupted_path)
+    assert not interrupted_path.exists()
+    assert not list(tmp_path.glob(f".{interrupted_path.name}.*.tmp"))
 
 
 def test_main(monkeypatch):

@@ -17,7 +17,9 @@ in the compartment.
 Email subscriptions remain PENDING until the recipient confirms them. Keep the
 Events rule in the same region as the Speech jobs and ensure the Events service
 is allowed to publish to the topic. The tool returns every created resource so
-partial setup can be inspected and completed safely.
+partial setup can be inspected and completed safely. A partial result also
+identifies the failed setup operation and provides sanitized failure metadata;
+inspect or remove returned resources before retrying to avoid duplicates.
 """
 
 

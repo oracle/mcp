@@ -226,6 +226,83 @@ def test_local_transcription_async_and_failed(mock_clients, monkeypatch, tmp_pat
         )
 
 
+def test_local_transcription_cleans_upload_after_create_failure(
+    mock_clients, monkeypatch, tmp_path
+):
+    audio = tmp_path / "audio.wav"
+    audio.write_bytes(b"audio")
+    monkeypatch.setenv("OCI_SPEECH_INPUT_ROOT", str(tmp_path))
+    mock_clients.object_storage.put_object.return_value = resp(None)
+    mock_clients.object_storage.delete_object.return_value = resp(None, status=204)
+    mock_clients.speech.create_transcription_job.side_effect = ValueError(
+        "job creation failed"
+    )
+
+    with pytest.raises(RuntimeError, match="job creation failed"):
+        transcription_tools.transcribe_local_file(
+            str(audio),
+            "compartment",
+            "bucket",
+            "display",
+            namespace_name="namespace",
+            input_object_name="inputs/audio.wav",
+            number_of_speakers=None,
+            whisper_prompt=None,
+            punctuation_enabled=True,
+            wait_for_completion=False,
+        )
+
+    mock_clients.object_storage.delete_object.assert_called_once_with(
+        "namespace", "bucket", "inputs/audio.wav"
+    )
+
+
+def test_local_transcription_surfaces_upload_when_cleanup_fails(
+    mock_clients, monkeypatch, tmp_path
+):
+    audio = tmp_path / "audio.wav"
+    audio.write_bytes(b"audio")
+    monkeypatch.setenv("OCI_SPEECH_INPUT_ROOT", str(tmp_path))
+    mock_clients.object_storage.put_object.return_value = resp(None)
+    mock_clients.speech.create_transcription_job.side_effect = ValueError(
+        "job creation failed"
+    )
+    mock_clients.object_storage.delete_object.side_effect = oci.exceptions.ServiceError(
+        500,
+        "InternalError",
+        {"opc-request-id": "cleanup-request"},
+        "cleanup failed",
+    )
+
+    result = transcription_tools.transcribe_local_file(
+        str(audio),
+        "compartment",
+        "bucket",
+        "display",
+        namespace_name="namespace",
+        input_object_name="inputs/audio.wav",
+        number_of_speakers=None,
+        whisper_prompt=None,
+        punctuation_enabled=True,
+        wait_for_completion=False,
+    )
+
+    assert result.data["upload"] == {
+        "namespace_name": "namespace",
+        "bucket_name": "bucket",
+        "object_name": "inputs/audio.wav",
+        "etag": "tag",
+        "opc_request_id": "req",
+    }
+    assert result.data["failure"] == {
+        "operation": "create_transcription_job",
+        "type": "ValueError",
+    }
+    assert result.data["cleanup"]["succeeded"] is False
+    assert result.data["cleanup"]["error"]["request_id"] == "cleanup-request"
+    assert "explicit cleanup" in result.notes[0]
+
+
 def test_list_voices_and_synthesis(mock_clients, monkeypatch, tmp_path):
     monkeypatch.setenv("OCI_SPEECH_OUTPUT_ROOT", str(tmp_path))
     voice = oci.ai_speech.models.VoiceSummary(voice_id="voice")
@@ -510,8 +587,22 @@ def test_notification_setup(mock_clients):
 
 def test_notification_partial_failure(mock_clients, caplog):
     topic = oci.ons.models.NotificationTopic(topic_id="topic")
+    subscription = oci.ons.models.Subscription(id="subscription")
     mock_clients.notifications.create_topic.return_value = resp(topic)
+    mock_clients.subscriptions.create_subscription.return_value = resp(subscription)
     mock_clients.events.create_rule.side_effect = ValueError("rule failed")
-    with pytest.raises(RuntimeError, match="rule failed"):
-        extras_tools.setup_transcription_notifications("c", "r", topic_name="new")
+    result = extras_tools.setup_transcription_notifications(
+        "c",
+        "r",
+        topic_name="new",
+        subscription_protocol="EMAIL",
+        subscription_endpoint="person@example.com",
+    )
+    assert result.data["topic"]["topic_id"] == "topic"
+    assert result.data["subscription"]["id"] == "subscription"
+    assert result.data["failure"] == {
+        "operation": "create_rule",
+        "type": "ValueError",
+    }
+    assert "identifiers are returned" in result.notes[-1]
     assert "stopped after creating" in caplog.text

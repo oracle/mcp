@@ -15,6 +15,7 @@ import {
   type CoreV1Api,
   type Exec,
   type NodeV1Api,
+  type ResponseContext,
   type V1Pod,
   type V1Status,
   type Watch
@@ -366,6 +367,94 @@ test("client-node deletion propagates cancellation to HTTP requests and watches"
   assert.equal(await configuredSignal(harness.core.readOptions[1]), controller.signal);
 });
 
+test("client-node deletion confirmation handles every watch completion path", async () => {
+  const alreadyCancelled = apiHarness();
+  const cancelledController = new AbortController();
+  cancelledController.abort();
+  await assert.rejects(
+    alreadyCancelled.api.waitForPodDeleted(
+      "execution", "pod", Date.now() + 1000, cancelledController.signal
+    ),
+    /confirmation cancelled/
+  );
+  assert.equal(alreadyCancelled.core.readOptions.length, 0);
+
+  const deleted = apiHarness();
+  let deletedSettled = false;
+  const deletion = deleted.api.waitForPodDeleted("execution", "pod", Date.now() + 1000)
+    .finally(() => { deletedSettled = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  deleted.watch.emitPod({ metadata: { name: "another-pod" } }, "DELETED");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(deletedSettled, false);
+  deleted.watch.emitPod({ metadata: { name: "pod" } }, "DELETED");
+  assert.equal(await deletion, true);
+
+  const notFound = apiHarness();
+  const notFoundDeletion = notFound.api.waitForPodDeleted(
+    "execution", "pod", Date.now() + 1000
+  );
+  await new Promise(resolve => setImmediate(resolve));
+  notFound.watch.finish({ statusCode: 404 });
+  assert.equal(await notFoundDeletion, true);
+
+  const watchError = apiHarness();
+  const failedDeletion = watchError.api.waitForPodDeleted(
+    "execution", "pod", Date.now() + 1000
+  );
+  await new Promise(resolve => setImmediate(resolve));
+  watchError.watch.finish(new Error("wss://cluster.internal/token=secret"));
+  await assert.rejects(failedDeletion, /Kubernetes deletion watch failed/);
+
+  const fallbackGone = apiHarness();
+  const fallbackDeletion = fallbackGone.api.waitForPodDeleted(
+    "execution", "pod", Date.now() + 1000
+  );
+  await new Promise(resolve => setImmediate(resolve));
+  fallbackGone.core.readError = { code: 404 };
+  fallbackGone.watch.finish(undefined);
+  assert.equal(await fallbackDeletion, true);
+
+  const fallbackFailed = apiHarness();
+  const fallbackFailure = fallbackFailed.api.waitForPodDeleted(
+    "execution", "pod", Date.now() + 1000
+  );
+  await new Promise(resolve => setImmediate(resolve));
+  fallbackFailed.core.readError = new Error("raw read failure");
+  fallbackFailed.watch.finish(undefined);
+  await assert.rejects(fallbackFailure, /Kubernetes deletion confirmation failed/);
+
+  const rejectedWatch = apiHarness();
+  rejectedWatch.watch.error = new Error("raw watch setup failure");
+  await assert.rejects(
+    rejectedWatch.api.waitForPodDeleted("execution", "pod", Date.now() + 1000),
+    /Kubernetes deletion watch failed/
+  );
+});
+
+test("client-node aborts a deletion watch that connects after the result settles", async () => {
+  const harness = apiHarness();
+  let connect!: (controller: AbortController) => void;
+  harness.watch.result = new Promise(resolve => { connect = resolve; });
+  const deletion = harness.api.waitForPodDeleted("execution", "pod", Date.now() + 1000);
+  await new Promise(resolve => setImmediate(resolve));
+  harness.watch.emitPod({ metadata: { name: "pod" } }, "DELETED");
+  assert.equal(await deletion, true);
+  connect(harness.watch.abortController);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(harness.watch.abortController.signal.aborted, true);
+});
+
+test("client-node request middleware preserves responses after attaching cancellation", async () => {
+  const harness = apiHarness();
+  const controller = new AbortController();
+  await harness.api.deletePod("execution", "pod", controller.signal);
+  const middleware = harness.core.deleteOptions[0]?.middleware?.[0];
+  assert(middleware);
+  const response = {} as ResponseContext;
+  assert.equal(await middleware.post(response).toPromise(), response);
+});
+
 function apiHarness() {
   const core = new FakeCore();
   const node = new FakeNode();
@@ -471,6 +560,8 @@ class FakeAuthorization {
 class FakeWatch {
   calls: unknown[] = [];
   abortController = new AbortController();
+  result: Promise<AbortController> | undefined;
+  error: Error | undefined;
   #callback: ((_phase: string, pod: V1Pod) => void) | undefined;
   #done: ((error: unknown) => void) | undefined;
 
@@ -483,7 +574,10 @@ class FakeWatch {
     this.calls.push({ path, query });
     this.#callback = callback;
     this.#done = done;
-    return this.abortController;
+    if (this.error) {
+      throw this.error;
+    }
+    return await (this.result ?? Promise.resolve(this.abortController));
   }
 
   emitPod(pod: V1Pod, event = "MODIFIED"): void {

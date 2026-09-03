@@ -8,6 +8,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { PodmanIsolationProvider } from "../src/isolation/podman.ts";
+import {
+  MAX_CODE_BYTES,
+  MAX_STDERR_BYTES,
+  MAX_STDOUT_BYTES
+} from "../src/sandbox-common.ts";
 import { runJavaScriptInIsolate } from "../src/sandbox-isolate.ts";
 import { runJavaScript as runJavaScriptWithProvider } from "../src/sandbox.ts";
 import type {
@@ -54,6 +59,73 @@ function providerTerminalPayloadWithEncodedBytes(totalBytes: number): SandboxRes
     timedOut: false
   };
 }
+
+test("isolate independently rejects oversized source", async () => {
+  await assert.rejects(
+    runJavaScriptInIsolate("x".repeat(MAX_CODE_BYTES + 1), {
+      timeoutSeconds: 10,
+      hostRpc: async () => null,
+      memoryLimitMb: 128,
+      maxResultBytes: 1024 * 1024
+    }),
+    /JavaScript code exceeds 1048576 bytes/
+  );
+});
+
+test("isolate caps stdout and stderr by UTF-8 bytes", async () => {
+  for (const [method, field, limit] of [
+    ["log", "stdout", MAX_STDOUT_BYTES],
+    ["error", "stderr", MAX_STDERR_BYTES]
+  ] as const) {
+    const result = await runJavaScriptInIsolate(
+      `console.${method}("😀".repeat(${limit}));`,
+      {
+        timeoutSeconds: 10,
+        hostRpc: async () => null,
+        memoryLimitMb: 128,
+        maxResultBytes: 1024 * 1024
+      }
+    );
+    assert.equal(result.exitCode, 1, method);
+    assert.match(result.error?.message ?? "", /exceeded limit/, method);
+    assert.equal(Buffer.byteLength(result[field], "utf8"), limit, method);
+  }
+});
+
+test("isolate sanitizes rejected host RPC and tolerates completion after disposal", async () => {
+  const rejected = await runJavaScriptInIsolate(`
+    let message;
+    try {
+      await oci.config();
+    } catch (error) {
+      message = error.message;
+    }
+    message;
+  `, {
+    timeoutSeconds: 10,
+    hostRpc: async () => { throw new Error("https://internal.example/token=secret"); },
+    memoryLimitMb: 128,
+    maxResultBytes: 1024 * 1024
+  });
+  assert.equal(rejected.result, "OCI call failed");
+  assert.equal(JSON.stringify(rejected).includes("internal.example"), false);
+
+  let hostSettled = false;
+  const timedOut = await runJavaScriptInIsolate("await oci.config();", {
+    timeoutSeconds: 1,
+    hostRpc: async () => new Promise(resolve => {
+      setTimeout(() => {
+        hostSettled = true;
+        resolve(null);
+      }, 1100);
+    }),
+    memoryLimitMb: 128,
+    maxResultBytes: 1024 * 1024
+  });
+  assert.equal(timedOut.timedOut, true);
+  await delay(150);
+  assert.equal(hostSettled, true);
+});
 
 test("Podman provider rejects unsafe executable and image inputs", () => {
   assert.throws(() => new PodmanIsolationProvider({ cliPath: "" }), /CLI path is invalid/);

@@ -90,6 +90,41 @@ test("cleanup-only reconciler exits immediately when already aborted", async () 
   }, controller.signal, () => assert.fail("must not emit"));
 });
 
+test("cleanup-only reconciler sanitizes list failures and resumes on the next interval", async () => {
+  let listAttempts = 0;
+  const api = {
+    async listManagedPods() {
+      listAttempts += 1;
+      if (listAttempts === 1) {
+        throw new Error("https://cluster.internal/pods?token=secret");
+      }
+      return [];
+    }
+  } as unknown as KubernetesApi;
+  const controller = new AbortController();
+  const events: KubernetesDiagnosticEvent[] = [];
+
+  await runCleanupReconciler(
+    api,
+    { profile: "in-cluster", namespace: "execution", reconcileIntervalMs: 1 },
+    controller.signal,
+    event => {
+      events.push(event);
+      if (events.length === 2) {
+        controller.abort();
+      }
+    }
+  );
+
+  assert.equal(listAttempts, 2);
+  assert.deepEqual(events.map(event => [event.outcome, event.reason, event.reconciliation]), [
+    ["failed", "cleanup", { successCount: 0, failureCount: 1 }],
+    ["succeeded", "none", { successCount: 0, failureCount: 0 }]
+  ]);
+  assert.equal(JSON.stringify(events).includes("cluster.internal"), false);
+  assert.equal(JSON.stringify(events).includes("secret"), false);
+});
+
 test("cleanup-only main accepts injected in-cluster seams for deterministic operation", async () => {
   const controller = new AbortController();
   controller.abort();

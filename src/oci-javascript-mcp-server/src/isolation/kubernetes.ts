@@ -280,8 +280,10 @@ export class KubernetesIsolationProvider implements IsolationProvider {
         const workerResult = mapKubernetesChannelResult(await execution.result as SandboxResult);
         this.#emit(correlationId, "executing", "succeeded", "none", started);
         return workerResult;
-      } catch {
-        const timedOut = localAbort.signal.aborted || Date.now() >= options.deadlineMs;
+      } catch (error) {
+        const timedOut = error instanceof ExecutionStageTimeoutError
+          || localAbort.signal.aborted
+          || Date.now() >= options.deadlineMs;
         this.#emit(
           correlationId,
           phaseForFailure(channel),
@@ -386,7 +388,7 @@ function raceExecutionStage<T>(
       signal.removeEventListener("abort", aborted);
       callback();
     };
-    const aborted = () => finish(() => reject(new Error("sandbox run deadline exceeded")));
+    const aborted = () => finish(() => reject(new ExecutionStageTimeoutError()));
     const timeout = setTimeout(aborted, Math.max(1, deadlineMs - Date.now()));
     signal.addEventListener("abort", aborted, { once: true });
     if (signal.aborted || Date.now() >= deadlineMs) {
@@ -399,6 +401,8 @@ function raceExecutionStage<T>(
     );
   });
 }
+
+class ExecutionStageTimeoutError extends Error {}
 
 async function deletePodByDeadline(
   api: KubernetesApi,

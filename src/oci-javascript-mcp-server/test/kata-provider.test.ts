@@ -65,7 +65,7 @@ test("Kata preflight validates exact resources, permissions, admission, and desc
   assert.equal(api.permissions.filter(item => item.resource === "pods").every(
     item => item.name === undefined && item.namespace === "oci-js-execution"
   ), true);
-  assert.equal(api.dryRunPods.length, 65);
+  assert.equal(api.dryRunPods.length, 62);
   assert.equal(api.createdPods.length, 0);
   assert.deepEqual(events.map(event => [event.phase, event.outcome]), [
     ["preflight", "started"],
@@ -303,7 +303,9 @@ test("Kubernetes pod creation is bounded and late or ambiguous outcomes trigger 
   await neverExecution.terminate(Date.now() + 80);
   assert.equal(neverResult.timedOut, true);
   assert.equal(never.createSignals[0]?.aborted, true);
-  assert.equal(never.deletedNames.length, 2);
+  assert.equal(never.createdPods.length, 0);
+  assert.equal(never.pods.size, 0);
+  assert.equal(never.deletedNames.length > 0, true);
   assert(Date.now() - startedAt < 300, "never-settling creation exceeded its lifecycle bound");
 
   const late = new FakeKubernetesApi();

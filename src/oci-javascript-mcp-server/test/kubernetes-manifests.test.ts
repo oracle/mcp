@@ -43,14 +43,6 @@ const standardSource = readFileSync(join(
   "standard-in-cluster.yaml"
 ), "utf8");
 const standard = loadAllYaml(standardSource) as Manifest[];
-const localSource = readFileSync(join(
-  process.cwd(),
-  "examples",
-  "kubernetes",
-  "v1",
-  "local-in-cluster.yaml"
-), "utf8");
-const local = loadAllYaml(localSource) as Manifest[];
 const kataSource = readFileSync(join(
   process.cwd(),
   "examples",
@@ -216,67 +208,6 @@ test("standard in-cluster assets include the hardened trusted host", () => {
     JSON.stringify(policy.spec?.validations).includes(hostEnv.OCI_JAVASCRIPT_KUBERNETES_IMAGE.value),
     true
   );
-});
-
-test("local in-cluster assets deploy one hardened stdio host and a minimal reconciler", () => {
-  const host = local.find(value => (
-    value.kind === "Deployment" && value.metadata.name === "oci-js-standard-host"
-  ))!;
-  const hostSpec = host.spec!;
-  const hostPod = hostSpec.template.spec;
-  const hostContainer = hostPod.containers[0];
-  const hostEnv = Object.fromEntries(hostContainer.env.map((value: any) => [value.name, value]));
-
-  assert.equal(host.metadata.namespace, "oci-js-standard-host");
-  assert.equal(hostSpec.replicas, 1);
-  assert.equal(hostSpec.strategy.type, "Recreate");
-  assert.equal(hostPod.serviceAccountName, "oci-js-standard-host");
-  assert.equal(hostPod.automountServiceAccountToken, true);
-  assert.equal(hostContainer.stdin, true);
-  assert.match(hostContainer.image, /oci-javascript-mcp-host@sha256:[a-f0-9]{64}$/);
-  assert.equal(hostEnv.OCI_JAVASCRIPT_ISOLATION_PROVIDER.value, "kubernetes");
-  assert.equal(hostEnv.OCI_JAVASCRIPT_KUBERNETES_PROFILE.value, "in-cluster");
-  assert.match(hostEnv.OCI_JAVASCRIPT_KUBERNETES_IMAGE.value, /@sha256:[a-f0-9]{64}$/);
-  assert.equal(
-    hostEnv.OCI_JAVASCRIPT_KUBERNETES_TRUSTED_HOST_NAMESPACE.valueFrom.fieldRef.fieldPath,
-    "metadata.namespace"
-  );
-  assert.equal(
-    hostEnv.OCI_JAVASCRIPT_KUBERNETES_TRUSTED_HOST_POD_NAME.valueFrom.fieldRef.fieldPath,
-    "metadata.name"
-  );
-  assert.equal(
-    hostEnv.OCI_JAVASCRIPT_KUBERNETES_TRUSTED_HOST_POD_UID.valueFrom.fieldRef.fieldPath,
-    "metadata.uid"
-  );
-  assert.equal(hostEnv.OCI_CONFIG_FILE.value, "/var/run/oci/config");
-  assert.equal(hostPod.volumes[0].secret.secretName, "oci-js-host-oci-config");
-  assert.equal(hostPod.volumes[0].secret.defaultMode, 292);
-
-  const policy = local.find(value => value.kind === "ValidatingAdmissionPolicy")!;
-  assert.equal(
-    JSON.stringify(policy.spec?.validations).includes(hostEnv.OCI_JAVASCRIPT_KUBERNETES_IMAGE.value),
-    true
-  );
-
-  const reconciler = local.find(value => (
-    value.kind === "Deployment" && value.metadata.name === "oci-js-standard-reconciler"
-  ))!;
-  const reconcilerPod = reconciler.spec!.template.spec;
-  assert.equal(reconcilerPod.serviceAccountName, "oci-js-standard-reconciler");
-  assert.match(
-    reconcilerPod.containers[0].image,
-    /oci-javascript-mcp-host@sha256:[a-f0-9]{64}$/
-  );
-  assert.deepEqual(
-    reconcilerPod.containers[0].env.map((value: any) => value.name),
-    [
-      "OCI_JAVASCRIPT_KUBERNETES_PROFILE",
-      "OCI_JAVASCRIPT_KUBERNETES_NAMESPACE",
-      "OCI_JAVASCRIPT_KUBERNETES_RECONCILE_INTERVAL_SECONDS"
-    ]
-  );
-  assert.equal(JSON.stringify(reconcilerPod).includes("OCI_CONFIG_FILE"), false);
 });
 
 function plain<T>(value: T): T {

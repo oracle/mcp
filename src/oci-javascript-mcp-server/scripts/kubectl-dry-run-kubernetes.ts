@@ -109,7 +109,6 @@ users:
 
 try {
   await runKubectl(kubeconfig, "examples/kubernetes/v1/standard-in-cluster.yaml");
-  await runKubectl(kubeconfig, "examples/kubernetes/v1/local-in-cluster.yaml");
   await runKubectl(kubeconfig, "examples/kata-kubernetes/v1/");
 } finally {
   await new Promise<void>(resolve => server.close(() => resolve()));

@@ -73,7 +73,16 @@ test("protocol rejects oversized frames before receiving a body", () => {
 });
 
 test("protocol rejects malformed, empty, truncated, invalid UTF-8, and unknown versions", () => {
+  assert.throws(
+    () => decodePayload(Buffer.from("{}"), { ...DEFAULT_DECODE_LIMITS, maxFrameBytes: 1 }),
+    /exceeds limit/
+  );
   assert.throws(() => decodePayload(Buffer.from("{")), /valid JSON/);
+  assert.throws(() => decodePayload(Buffer.from("[]")), /must be an object/);
+  assert.throws(
+    () => decodePayload(Buffer.from('{"version":1}')),
+    /type must be a string/
+  );
   assert.throws(() => [...new FrameDecoder().push(Buffer.alloc(4))], /empty frames/);
   const decoder = new FrameDecoder();
   [...decoder.push(Buffer.from([0, 0, 0, 2, 0x7b]))];
@@ -83,6 +92,23 @@ test("protocol rejects malformed, empty, truncated, invalid UTF-8, and unknown v
     () => decodePayload(Buffer.from('{"version":2,"type":"health"}')),
     /unsupported protocol version/
   );
+});
+
+test("protocol rejects reentrant decoder input while a frame iterator is active", () => {
+  const decoder = new FrameDecoder();
+  const frames = Buffer.concat([
+    encodeFrame(protocolMessage("health", { status: "ready" })),
+    encodeFrame(protocolMessage("log", { stream: "stdout", text: "later" }))
+  ]);
+  const iterator = decoder.push(frames);
+  assert.equal(iterator.next().value?.type, "health");
+  assert.throws(
+    () => [...decoder.push(encodeFrame(protocolMessage("cancel")))],
+    /cannot be processed concurrently/
+  );
+  assert.equal(iterator.next().value?.type, "log");
+  assert.equal(iterator.next().done, true);
+  decoder.end();
 });
 
 test("protocol rejects dangerous keys recursively without pollution", () => {
@@ -119,6 +145,17 @@ test("protocol enforces structural and allocation limits", () => {
   assert.throws(
     () => decodePayload(Buffer.from('{"version":1,"type":"x","a":1,"b":2,"c":3,"d":4}'), limits),
     /object-key/
+  );
+  assert.throws(
+    () => decodePayload(Buffer.from('{"version":1,"type":"x","a":[1,2]}'), {
+      ...limits,
+      maxNodes: 4
+    }),
+    /node limit/
+  );
+  assert.throws(
+    () => decodePayload(Buffer.from(`{"version":1,"type":"x","${"k".repeat(11)}":1}`), limits),
+    /object key exceeds limit/
   );
   assert.throws(() => encodeFrame({ value: "12345" }, 4), ProtocolError);
 });

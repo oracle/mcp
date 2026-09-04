@@ -2,19 +2,48 @@
 # Licensed under the Universal Permissive License v1.0 as shown at
 # https://oss.oracle.com/licenses/upl.
 
-FROM node:26-bookworm-slim@sha256:cd565714d4da3e84bfd341e31448f81d47c6362198f152345297c9c1154e6341
+FROM ghcr.io/oracle/oraclelinux:9-slim@sha256:1950389c3dd619841813520b4e69d7f3112c4c10f713fcb90680703d184c33ad AS node-base
+
+ARG NODE_VERSION=26.7.0
+
+RUN microdnf install ca-certificates curl libatomic tar xz \
+    && case "$(uname -m)" in \
+        x86_64) node_arch="x64"; node_checksum="982aa24dd8be4c889c6a8ab337ddff3b0896645b20f4239356e80552c16277ee" ;; \
+        aarch64) node_arch="arm64"; node_checksum="afc7a004018485092ac8985b817b0d5684472bd9472e0b57d2ab88737e50090d" ;; \
+        *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
+    esac \
+    && node_archive="node-v${NODE_VERSION}-linux-${node_arch}.tar.xz" \
+    && curl --fail --location --silent --show-error \
+        --output "${node_archive}" \
+        "https://nodejs.org/dist/v${NODE_VERSION}/${node_archive}" \
+    && echo "${node_checksum}  ${node_archive}" | sha256sum --check --strict \
+    && tar -xJf "${node_archive}" -C /usr/local --strip-components=1 --no-same-owner \
+    && rm -f "${node_archive}" \
+    && rm -rf /var/cache/dnf/* \
+    && ln -s /usr/local/bin/node /usr/local/bin/nodejs \
+    && node --version \
+    && npm --version
+
+FROM node-base AS dependencies
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends g++ make python3 \
-    && rm -rf /var/lib/apt/lists/*
+RUN microdnf install gcc-c++ make python3 \
+    && rm -rf /var/cache/dnf/*
 
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev \
     && npm cache clean --force
 
-COPY src ./src
+FROM node-base
+
+WORKDIR /app
+
+COPY --from=dependencies --chown=65532:65532 /app/node_modules ./node_modules
+
+COPY --chown=65532:65532 package.json ./package.json
+
+COPY --chown=65532:65532 src ./src
 
 USER 65532:65532
 

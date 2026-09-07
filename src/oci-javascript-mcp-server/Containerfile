@@ -1,0 +1,38 @@
+# Copyright (c) 2026, Oracle and/or its affiliates.
+# Licensed under the Universal Permissive License v1.0 as shown at
+# https://oss.oracle.com/licenses/upl.
+
+FROM node:26-bookworm-slim@sha256:cd565714d4da3e84bfd341e31448f81d47c6362198f152345297c9c1154e6341 AS dependencies
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends g++ make python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev \
+    && npm cache clean --force
+
+FROM node:26-bookworm-slim@sha256:cd565714d4da3e84bfd341e31448f81d47c6362198f152345297c9c1154e6341
+
+WORKDIR /app
+
+COPY --from=dependencies --chown=65532:65532 \
+    /app/node_modules/isolated-vm \
+    ./node_modules/isolated-vm
+COPY --from=dependencies --chown=65532:65532 \
+    /app/node_modules/node-gyp-build \
+    ./node_modules/node-gyp-build
+COPY --chown=65532:65532 \
+    src/protocol.ts \
+    src/sandbox-common.ts \
+    src/sandbox-isolate.ts \
+    src/sandbox-prelude.ts \
+    src/sandbox-worker.ts \
+    src/types.ts \
+    ./src/
+
+USER 65532:65532
+
+CMD ["node", "--no-node-snapshot", "--experimental-strip-types", "--max-old-space-size=256", "/app/src/sandbox-worker.ts"]

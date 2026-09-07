@@ -3,7 +3,7 @@ COMMON_PROJECT := common
 COMMON_PROJECT_PATH := $(SOURCE_FOLDER)/$(COMMON_PROJECT)
 COMMON_PACKAGE := oracle-mcp-common
 # These directories will be excluded from common cmds like build, install, test etc
-EXCLUDED_PROJECTS := dbtools-mcp-server mysql-mcp-server oci-pricing-mcp-server oracle-db-doc-mcp-server oracle-db-mcp-java-toolkit
+EXCLUDED_PROJECTS := dbtools-mcp-server mysql-mcp-server oci-javascript-mcp-server oci-pricing-mcp-server oracle-db-doc-mcp-server oracle-db-mcp-java-toolkit
 EXCLUDED_PROJECT_PATHS = $(addprefix $(SOURCE_FOLDER)/, $(EXCLUDED_PROJECTS))
 # This matches all paths by default. If you want to run a command on a specific package you can specify the `project` variable
 project ?= *
@@ -16,6 +16,8 @@ SERVER_DIRS := $(filter-out $(COMMON_PROJECT_PATH),$(SUBDIRS))
 # single server is selected with `project=`.
 RELEASE_DIRS := $(if $(SERVER_DIRS),$(COMMON_PROJECT_PATH) $(SERVER_DIRS),$(COMMON_DIRS))
 COMMON_VERSION := $(shell uv run --isolated --no-project --python 3.13 python -c "import tomllib; print(tomllib.load(open('$(COMMON_PROJECT_PATH)/pyproject.toml', 'rb'))['project']['version'])")
+JAVASCRIPT_SUBDIRS ?= $(SOURCE_FOLDER)/oci-javascript-mcp-server
+NPM ?= npm
 
 PYPI_PUBLISH_URL := https://upload.pypi.org/legacy/
 PYPI_CHECK_URL := https://pypi.org/simple/
@@ -27,7 +29,9 @@ VERIFY_INDEX ?= $(PYPI_CHECK_URL)
 
 .PHONY: build build-common build-servers publish publish-common publish-servers \
 	test-publish test-publish-common test-publish-servers verify-published \
-	release test-release wait-for-common _build _publish test format
+	release test-release wait-for-common _build _publish test format \
+	install sync lock lock-check lint combine-coverage e2e-tests containerize \
+	javascript-sync javascript-test javascript-check javascript-ci ci
 
 build:
 	@$(MAKE) _build BUILD_DIRS="$(COMMON_DIRS)"
@@ -46,12 +50,6 @@ _build:
 			name=$$(uv run --isolated --no-project --python 3.13 python -c "import sys, tomllib; print(tomllib.load(open(sys.argv[1], 'rb'))['project']['name'])" "$$dir/pyproject.toml") || exit 1; \
 			version=$$(uv run --isolated --no-project --python 3.13 python -c "import sys, tomllib; print(tomllib.load(open(sys.argv[1], 'rb'))['project']['version'])" "$$dir/pyproject.toml") || exit 1; \
 			echo "Building $$dir: $$name==$$version"; \
-			if [ -d $$dir/oracle/*_mcp_server ]; then \
-				init_py_file=$$(echo $$dir/oracle/*_mcp_server/__init__.py); \
-				printf '"""\nCopyright (c) 2025, 2026 Oracle and/or its affiliates.\nLicensed under the Universal Permissive License v1.0 as shown at\nhttps://oss.oracle.com/licenses/upl.\n"""\n\n' > $$init_py_file; \
-				echo "__project__ = \"$$name\"" >> $$init_py_file; \
-				echo "__version__ = \"$$version\"" >> $$init_py_file; \
-			fi; \
 			cd $$dir && uv build --clear && cd ../..; \
 		fi \
 	done
@@ -102,6 +100,44 @@ test:
 		fi \
 	done
 	$(MAKE) combine-coverage
+
+javascript-sync:
+	@set -e; \
+	for dir in $(JAVASCRIPT_SUBDIRS); do \
+		if [ -f $$dir/package.json ]; then \
+			echo "Installing JavaScript dependencies in $$dir"; \
+			( cd $$dir && $(NPM) install ) || exit 1; \
+		fi \
+	done
+
+javascript-test:
+	@set -e; \
+	for dir in $(JAVASCRIPT_SUBDIRS); do \
+		if [ -f $$dir/package.json ]; then \
+			echo "Testing JavaScript package in $$dir"; \
+			( cd $$dir && $(NPM) test ) || exit 1; \
+		fi \
+	done
+
+javascript-check:
+	@set -e; \
+	for dir in $(JAVASCRIPT_SUBDIRS); do \
+		if [ -f $$dir/package.json ]; then \
+			echo "Checking JavaScript package in $$dir"; \
+			( cd $$dir && $(NPM) run check ) || exit 1; \
+		fi \
+	done
+
+javascript-ci:
+	@set -e; \
+	for dir in $(JAVASCRIPT_SUBDIRS); do \
+		if [ -f $$dir/package.json ]; then \
+			echo "Running JavaScript CI in $$dir"; \
+			( cd $$dir && $(NPM) ci && $(NPM) run ci ) || exit 1; \
+		fi \
+	done
+
+ci: lint test javascript-ci
 
 combine-coverage:
 	uv run coverage combine

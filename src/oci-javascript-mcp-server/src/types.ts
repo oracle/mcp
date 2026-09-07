@@ -1,0 +1,87 @@
+/*
+ * Copyright (c) 2026, Oracle and/or its affiliates.
+ * Licensed under the Universal Permissive License v1.0 as shown at
+ * https://oss.oracle.com/licenses/upl.
+ */
+
+export type Json =
+  | null
+  | boolean
+  | number
+  | string
+  | Json[]
+  | { [key: string]: Json };
+
+export type JsonObject = { [key: string]: Json };
+
+export type SandboxError = JsonObject & { message: string };
+
+export type SandboxResult = {
+  result: Json;
+  error: SandboxError | null;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  timedOut: boolean;
+};
+
+export type HostRpcRequest = {
+  binding: "oracle";
+  namespace: "oci";
+  operation: "invoke" | "config" | "discover";
+  payload: JsonObject;
+};
+
+export type HostRpcHandler = (
+  request: HostRpcRequest,
+  signal?: AbortSignal
+) => Promise<Json>;
+
+export type OciReflectionManifest = {
+  services: {
+    [service: string]: {
+      clients: {
+        [client: string]: {
+          operations: string[];
+        };
+      };
+    };
+  };
+};
+
+export type OciInvokePayload = {
+  service: string;
+  client: {
+    name: string;
+    options?: {
+      region?: string;
+    };
+  };
+  operation: string;
+  request?: JsonObject;
+};
+
+export type OciDiscoverPayload = {
+  service?: string;
+  client?: string;
+  operation?: string;
+};
+
+export type IsolationHostRpc = (request: unknown) => Promise<Json>;
+
+export type IsolationRunOptions = {
+  deadlineMs: number;
+  signal: AbortSignal;
+  hostRpc: IsolationHostRpc;
+  reflectionManifest?: OciReflectionManifest;
+};
+
+export interface IsolationExecution {
+  readonly result: Promise<unknown>;
+  /** Idempotently stop execution and resolve after provider resources are released. */
+  terminate(): Promise<void>;
+}
+
+export interface IsolationProvider {
+  run(code: string, options: IsolationRunOptions): IsolationExecution;
+}

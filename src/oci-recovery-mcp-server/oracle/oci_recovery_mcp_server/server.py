@@ -18,7 +18,7 @@ https://oss.oracle.com/licenses/upl.
 # - clients:       OCI SDK client factories built on top of auth + telemetry.
 # - cache:         the bounded, thread-safe TTL cache and its tenant/caller
 #                  partition keys.
-# - regions:       the tenancy's subscribed regions, cached per tenant.
+# - regions:       the tenancy's subscribed regions, read from IAM on every call.
 # - compartments:  compartment discovery, subtree expansion and name/OCID
 #                  resolution.
 # - models:        the server's typed results and the map_* SDK adapters.

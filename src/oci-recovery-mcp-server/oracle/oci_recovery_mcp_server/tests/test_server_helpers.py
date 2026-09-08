@@ -338,32 +338,57 @@ def test_results_are_summarized_at_info_and_written_only_at_debug(monkeypatch):
     assert end["result"] == [{"id": "ocid1.protecteddatabase.oc1..secret"}]
 
 
-def test_caches_evict_expired_entries_and_stay_bounded():
+def test_cache_key_always_carries_the_tenant_and_the_caller(monkeypatch):
     """
-    The caches drop expired entries, cap at _CACHE_MAX_ENTRIES, and evict
+    A namespace is all a call site supplies; the tenant and caller are appended here.
+
+    The store is reached only through _cache_get/_cache_put, and both build their key
+    with _cache_key, so a new cache cannot repeat what the old region cache did and
+    key on the tenancy alone.
+    """
+    monkeypatch.setattr(cache, "_tenant_cache_key", lambda: "tenantA")
+    monkeypatch.setattr(cache, "_caller_cache_key", lambda: "sub:alice")
+    assert cache._cache_key("ns") == "ns|tenantA|sub:alice"
+
+    entries: dict = {}
+    cache._cache_put(entries, "ns", {"fetched_at": 1000.0}, ttl=300, now=1000.0)
+    assert list(entries) == ["ns|tenantA|sub:alice"]
+
+    # Same tenant, different caller: a separate entry, and no read across the two.
+    monkeypatch.setattr(cache, "_caller_cache_key", lambda: "sub:bob")
+    assert cache._cache_get(entries, "ns", ttl=300, now=1000.0) is None
+
+
+def test_caches_evict_expired_entries_and_stay_bounded(monkeypatch):
+    """
+    The cache drops expired entries, caps at _CACHE_MAX_ENTRIES, and evicts
     least-recently-used first -- a hit moves an entry back to the front.
 
-    Both caches are partitioned per tenant and per caller, so a hosted deployment
-    gains an entry for every person who signs in.
+    It is partitioned per tenant and per caller, so a hosted deployment gains an
+    entry for every person who signs in.
     """
+    monkeypatch.setattr(cache, "_tenant_cache_key", lambda: "t")
+    monkeypatch.setattr(cache, "_caller_cache_key", lambda: "c")
+    key = cache._cache_key
+
     entries: dict = {}
     now = 1000.0
     for index in range(cache._CACHE_MAX_ENTRIES + 5):
         cache._cache_put(entries, f"k{index}", {"fetched_at": now}, ttl=300, now=now)
     assert len(entries) == cache._CACHE_MAX_ENTRIES
-    assert "k0" not in entries  # oldest evicted first
+    assert key("k0") not in entries  # oldest evicted first
 
-    aged = {"stale": {"fetched_at": 0.0}, "fresh": {"fetched_at": now}}
+    aged = {key("stale"): {"fetched_at": 0.0}, key("fresh"): {"fetched_at": now}}
     cache._cache_put(aged, "new", {"fetched_at": now}, ttl=300, now=now)
-    assert set(aged) == {"fresh", "new"}
+    assert set(aged) == {key("fresh"), key("new")}
 
     assert cache._cache_get(aged, "stale", ttl=300, now=now) is None
     assert cache._cache_get(aged, "fresh", ttl=300, now=now) is not None
     # A hit refreshes recency, so eviction order is least-recently-used.
-    assert list(aged) == ["new", "fresh"]
+    assert list(aged) == [key("new"), key("fresh")]
 
 
-def test_cache_survives_concurrent_readers_and_writers():
+def test_cache_survives_concurrent_readers_and_writers(monkeypatch):
     """
     Reads and writes from many threads never raise and never breach the bound.
 
@@ -374,6 +399,9 @@ def test_cache_survives_concurrent_readers_and_writers():
     sweep and eviction raise "dictionary changed size during iteration" or
     StopIteration. Every key here is live, so the sweep and the bound both stay hot.
     """
+    monkeypatch.setattr(cache, "_tenant_cache_key", lambda: "t")
+    monkeypatch.setattr(cache, "_caller_cache_key", lambda: "c")
+
     entries: dict = {}
     now = 1000.0
     keys = [f"k{index}" for index in range(cache._CACHE_MAX_ENTRIES * 2)]

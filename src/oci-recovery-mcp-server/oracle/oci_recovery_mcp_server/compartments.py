@@ -53,6 +53,10 @@ def list_all_compartments_internal(only_one_page: bool, limit=100):
     return compartments
 
 
+# Names this cache within the shared store. cache._cache_key() adds the tenancy and
+# the caller, so the namespace is all a call site supplies -- and all it can.
+_CACHE_NAMESPACE = "iam:list_all_compartments"
+
 _COMPARTMENT_CACHE: dict[str, Any] = {
     "ttl_seconds": int(os.getenv("ORACLE_MCP_COMPARTMENT_CACHE_TTL_SECONDS", "300")),
     # entries: dict["<tenant_key>|<caller_key>" -> {"items": list[Any], "fetched_at": float}]
@@ -79,8 +83,7 @@ def _list_all_compartments_cached(*, request_id: Optional[str] = None) -> list[A
     now = time.time()
     ttl = float(_COMPARTMENT_CACHE.get("ttl_seconds") or 300)
     entries = _COMPARTMENT_CACHE.setdefault("entries", {})
-    cache_key = f"{cache._tenant_cache_key()}|{cache._caller_cache_key()}"
-    cached = cache._cache_get(entries, cache_key, ttl=ttl, now=now)
+    cached = cache._cache_get(entries, _CACHE_NAMESPACE, ttl=ttl, now=now)
 
     if cached and cached.get("items"):
         return cached["items"]  # type: ignore[return-value]
@@ -128,7 +131,9 @@ def _list_all_compartments_cached(*, request_id: Optional[str] = None) -> list[A
         )
         comps = []
 
-    cache._cache_put(entries, cache_key, {"items": comps, "fetched_at": now}, ttl=ttl, now=now)
+    cache._cache_put(
+        entries, _CACHE_NAMESPACE, {"items": comps, "fetched_at": now}, ttl=ttl, now=now
+    )
     return comps
 
 

@@ -168,7 +168,9 @@ the server gains two new guidance tools.
   partitioned: it served one thin tool and saved one IAM call per repeat invocation, which
   is not worth deciding authorization locally. `ORACLE_MCP_REGION_CACHE_TTL_SECONDS` is
   gone; a newly subscribed region also now appears immediately instead of up to an hour
-  later.
+  later. The key that let this happen was assembled at the call site, so it could leave the
+  caller out; keys are now built in one place from a namespace the call site supplies, and
+  the store cannot be reached with a key that skipped it.
 - **HTTP deployments now refuse local profile credentials outright.** Credential selection
   was per request, so a call that somehow ran outside an authenticated request context
   would have been signed with the operator's own credentials instead of the caller's. When

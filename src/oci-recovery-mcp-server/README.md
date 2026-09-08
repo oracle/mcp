@@ -242,9 +242,10 @@ an HTTPS URL as its `client_id` and require this server to fetch that URL, which
 a network-restricted host and surfaces as `The client ID ... was not found in the server's
 client registry`.
 
-In-process caches are partitioned by tenancy **and** by caller identity. The compartment
-listing is fetched with `access_level="ACCESSIBLE"`, so it reflects the calling identity's
-own permissions; two callers of the same deployment never share an entry.
+The in-process compartment cache is partitioned by tenancy **and** by caller identity.
+The listing is fetched with `access_level="ACCESSIBLE"`, so it reflects the calling
+identity's own permissions; two callers of the same deployment never share an entry. Cache
+keys are composed in one place, so a cache cannot be added that omits the caller.
 
 For a VPN-only deployment whose proxy uses an internal CA, clients must trust that CA's
 public root certificate. Distribute only the public root certificate, never the private key.

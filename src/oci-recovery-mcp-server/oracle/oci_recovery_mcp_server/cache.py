@@ -5,9 +5,9 @@ https://oss.oracle.com/licenses/upl.
 
 The in-process TTL/LRU cache behind the compartment lookup.
 
-Two things live here: the partition keys that decide who may see a cached entry
-(tenant, and caller where the result depends on the caller's own IAM
-permissions), and the bounded TTL store itself: a TTL sweep plus an LRU bound, so
+Two things live here: the key that decides who may see a cached entry -- namespace
+plus tenant plus caller, composed in exactly one place so no cache can be added
+that quietly omits the caller -- and the bounded TTL store itself: a TTL sweep plus an LRU bound, so
 a hosted deployment does not grow an entry per signed-in caller forever. FastMCP
 runs synchronous tools in worker threads, so every mutation is done under
 ``_CACHE_LOCK``.
@@ -73,6 +73,19 @@ def _caller_cache_key() -> str:
     return "sub:" + hashlib.sha256(str(subject).encode()).hexdigest()[:16]
 
 
+def _cache_key(namespace: str) -> str:
+    """
+    Build the key for a cached value. The only supported way to make one.
+
+    Every cached value is scoped to the tenancy and to the caller whose
+    permissions produced it. Composing that by hand at the call site is exactly
+    how the old region cache came to key on tenancy alone and hand one caller's
+    result to another, so the accessors below take a namespace and come here --
+    there is no way to reach the store with a key that skipped this.
+    """
+    return f"{namespace}|{_tenant_cache_key()}|{_caller_cache_key()}"
+
+
 _CACHE_MAX_ENTRIES = int(os.getenv("ORACLE_MCP_CACHE_MAX_ENTRIES", "256"))
 
 # FastMCP runs synchronous tools in worker threads, so two tool calls can be inside
@@ -85,12 +98,17 @@ _CACHE_MAX_ENTRIES = int(os.getenv("ORACLE_MCP_CACHE_MAX_ENTRIES", "256"))
 _CACHE_LOCK = threading.Lock()
 
 
-def _cache_get(entries: dict[str, Any], key: str, *, ttl: float, now: float) -> Optional[Any]:
+def _cache_get(
+    entries: dict[str, Any], namespace: str, *, ttl: float, now: float
+) -> Optional[Any]:
     """Return a live cache entry, refreshing its recency, or None.
 
     Reinserting on a hit makes the dict's insertion order a true LRU order, which
-    is what _cache_put evicts from.
+    is what _cache_put evicts from. The key is resolved before the lock is taken:
+    it reads the tenancy and the caller's token, and neither belongs in a critical
+    section that every other tool call is waiting on.
     """
+    key = _cache_key(namespace)
     with _CACHE_LOCK:
         cached = entries.get(key)
         if not cached:
@@ -102,7 +120,9 @@ def _cache_get(entries: dict[str, Any], key: str, *, ttl: float, now: float) -> 
         return cached
 
 
-def _cache_put(entries: dict[str, Any], key: str, value: Any, *, ttl: float, now: float) -> None:
+def _cache_put(
+    entries: dict[str, Any], namespace: str, value: Any, *, ttl: float, now: float
+) -> None:
     """Store a cache entry, sweeping expired ones and bounding the total.
 
     This cache is partitioned per tenant and per caller, so on the hosted HTTP
@@ -110,6 +130,7 @@ def _cache_put(entries: dict[str, Any], key: str, value: Any, *, ttl: float, now
     that caller's whole compartment listing. Without a bound the process grows
     with the user count for the life of the deployment.
     """
+    key = _cache_key(namespace)
     with _CACHE_LOCK:
         for expired in [
             k for k, v in entries.items() if now - float(v.get("fetched_at") or 0.0) >= ttl

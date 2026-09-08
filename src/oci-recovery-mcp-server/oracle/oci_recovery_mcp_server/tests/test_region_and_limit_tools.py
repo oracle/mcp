@@ -7,25 +7,28 @@ Tenancy region subscriptions and Recovery Service limit tools.
 """
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 
 from _helpers import _raise, _response
+from oracle.oci_recovery_mcp_server import auth
+from oracle.oci_recovery_mcp_server import clients
+from oracle.oci_recovery_mcp_server import compartments
+from oracle.oci_recovery_mcp_server import regions
 import oracle.oci_recovery_mcp_server.server as server
 
 
 def test_region_subscription_and_limit_tools_return_current_contracts(monkeypatch):
     """
     Subscribed regions are read through IAM, normalized across the snake_case and
-    camelCase attribute spellings, sorted, and cached so a second call does not
-    re-query. The limits tool then reports both Recovery Service limits for the
-    resolved region, reading them from an SDK object and a plain dict alike, and
-    passes the caller's opc_request_id through to every call.
+    camelCase attribute spellings, and sorted -- re-querying every call, since the
+    caller's own IAM policy decides whether they may read them at all. The limits
+    tool then reports both Recovery Service limits for the resolved region, reading
+    them from an SDK object and a plain dict alike, and passes the caller's
+    opc_request_id through to every call.
     """
-    region_cache = {"fetched_at": 0.0, "ttl_seconds": 3600, "items": {}}
-    monkeypatch.setattr(server, "_REGION_CACHE", region_cache)
-    monkeypatch.setattr(server, "get_tenancy", lambda: "tenancy")
+    monkeypatch.setattr(auth, "get_tenancy", lambda: "tenancy")
 
     identity_client = MagicMock()
     identity_client.list_region_subscriptions.return_value = _response(
@@ -36,19 +39,20 @@ def test_region_subscription_and_limit_tools_return_current_contracts(monkeypatc
         ]
     )
     monkeypatch.setattr(
-        server, "get_identity_client", lambda request_id=None: identity_client
+        clients, "get_identity_client", lambda request_id=None: identity_client
     )
 
-    regions = server._iam_subscribed_regions_with_status(request_id="rid")
-    assert regions == [
+    subscribed = regions._iam_subscribed_regions_with_status(request_id="rid")
+    assert subscribed == [
         {"region": "us-ashburn-1", "status": "READY"},
         {"region": "us-phoenix-1", "status": "READY"},
     ]
-    assert server._iam_subscribed_regions_with_status(request_id="rid2") == regions
-    identity_client.list_region_subscriptions.assert_called_once_with(
-        tenancy_id="tenancy"
-    )
+    assert regions._iam_subscribed_regions_with_status(request_id="rid2") == subscribed
     assert server.fetch_regions_subscribed()["total"] == 2
+    # Every one of those three lookups went back to IAM.
+    assert identity_client.list_region_subscriptions.call_args_list == [
+        call(tenancy_id="tenancy")
+    ] * 3
 
     limits_client = MagicMock()
     monkeypatch.setattr(
@@ -81,12 +85,12 @@ def test_region_subscription_and_limit_tools_return_current_contracts(monkeypatc
         ),
     ]
     monkeypatch.setattr(
-        server,
+        auth,
         "_load_oci_config_for_server",
         lambda: {"region": "us-phoenix-1"},
     )
     monkeypatch.setattr(
-        server,
+        clients,
         "get_limits_client",
         lambda region, request_id=None: limits_client,
     )
@@ -132,8 +136,8 @@ def test_metric_query_parts_are_validated_before_interpolation(monkeypatch):
         return _response([])
 
     monitoring_client.summarize_metrics_data.side_effect = summarize
-    monkeypatch.setattr(server, "get_monitoring_client", lambda **_kwargs: monitoring_client)
-    monkeypatch.setattr(server, "_compartment_ids_for_tool", lambda cid, **_kwargs: [cid])
+    monkeypatch.setattr(clients, "get_monitoring_client", lambda **_kwargs: monitoring_client)
+    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_kwargs: [cid])
 
     valid = dict(
         compartment_id="ocid1.compartment.oc1..c",

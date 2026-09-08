@@ -145,11 +145,30 @@ the server gains two new guidance tools.
   the wrong contract. They now declare `ProtectedDatabaseHealthSummary` and
   `ProtectedDatabaseRedoSummary`, which describe what is actually sent. Wire field names
   are unchanged.
-- **In-process caches grew without bound.** The compartment and region caches expired
-  entries by TTL but never removed them, and both are partitioned per tenancy and per
-  caller — so a hosted deployment gained an entry, holding that caller's whole compartment
-  listing, for every person who ever signed in. Entries are now swept on write and capped
-  at `ORACLE_MCP_CACHE_MAX_ENTRIES` with least-recently-used eviction.
+- **The in-process compartment cache grew without bound.** It expired entries by TTL but
+  never removed them, and it is partitioned per tenancy and per caller — so a hosted
+  deployment gained an entry, holding that caller's whole compartment listing, for every
+  person who ever signed in. Entries are now swept on write and capped at
+  `ORACLE_MCP_CACHE_MAX_ENTRIES` with least-recently-used eviction.
+- **The in-process cache was not thread safe.** FastMCP runs synchronous tools in worker
+  threads, so two tool calls reach the cache helpers at once, and both mutate rather than
+  only read: the reader reinserts on a hit to maintain LRU order, and the writer sweeps
+  expired entries and evicts. Concurrently that raises — `KeyError` when a reinsert races
+  a sweep of the same key, `RuntimeError: dictionary keys changed during iteration` or
+  `StopIteration` in the writer — surfacing as a failed tool call. Every mutation now runs
+  under a module lock; the upstream OCI fetch stays outside it, so a slow Identity scan
+  never serializes other tool calls.
+- **Subscribed regions were cached across callers, answering an authorization question
+  ahead of IAM.** Whether a caller may list a tenancy's region subscriptions is decided by
+  their own OCI IAM policy, and the only place that decision is made is the IAM call
+  itself. The cache was keyed by tenancy alone and consulted before that call, so on the
+  HTTP transport a caller who had never held the permission read the list whenever another
+  caller had warmed the entry, and a caller whose permission was revoked kept reading it
+  until the entry expired — up to an hour by default. The cache is removed rather than
+  partitioned: it served one thin tool and saved one IAM call per repeat invocation, which
+  is not worth deciding authorization locally. `ORACLE_MCP_REGION_CACHE_TTL_SECONDS` is
+  gone; a newly subscribed region also now appears immediately instead of up to an hour
+  later.
 - **HTTP deployments now refuse local profile credentials outright.** Credential selection
   was per request, so a call that somehow ran outside an authenticated request context
   would have been signed with the operator's own credentials instead of the caller's. When

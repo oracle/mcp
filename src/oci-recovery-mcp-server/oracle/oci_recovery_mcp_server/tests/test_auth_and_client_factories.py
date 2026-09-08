@@ -12,21 +12,24 @@ from unittest.mock import MagicMock, patch
 
 from fastmcp import Client
 
+from oracle.oci_recovery_mcp_server import auth
+from oracle.oci_recovery_mcp_server import clients
+from oracle.oci_recovery_mcp_server import telemetry
 import oracle.oci_recovery_mcp_server.server as server
 
 
 class TestProfileClientFactories:
     """Client factories now resolve apikey/session credentials through
-    oracle_mcp_common.build_auth_context() (see server._build_profile_auth_context),
+    oracle_mcp_common.build_auth_context() (see auth._build_profile_auth_context),
     so these assert the config/signer handed to the SDK constructor.
     """
 
     @patch(
-        "oracle.oci_recovery_mcp_server.server._wrap_oci_client",
+        "oracle.oci_recovery_mcp_server.telemetry._wrap_oci_client",
         side_effect=lambda client, **_: client,
     )
     @patch("oracle.oci_recovery_mcp_server.server.oci.recovery.DatabaseRecoveryClient")
-    @patch("oracle.oci_recovery_mcp_server.server._build_profile_auth_context")
+    @patch("oracle.oci_recovery_mcp_server.auth._build_profile_auth_context")
     def test_get_recovery_client_apikey_uses_profile_auth_context(
         self,
         mock_auth_context,
@@ -43,21 +46,21 @@ class TestProfileClientFactories:
             signer=signer,
         )
 
-        result = server.get_recovery_client(region="us-phoenix-1", request_id="rid")
+        result = clients.get_recovery_client(region="us-phoenix-1", request_id="rid")
 
         args, kwargs = mock_client.call_args
         assert args[0]["region"] == "us-phoenix-1"
         assert args[0]["tenancy"] == "ocid1.tenancy.oc1..t"
-        assert args[0]["additional_user_agent"].startswith(server._USER_AGENT_NAME)
+        assert args[0]["additional_user_agent"].startswith(auth._USER_AGENT_NAME)
         assert kwargs["signer"] is signer
         assert result is mock_client.return_value
 
     @patch(
-        "oracle.oci_recovery_mcp_server.server._wrap_oci_client",
+        "oracle.oci_recovery_mcp_server.telemetry._wrap_oci_client",
         side_effect=lambda client, **_: client,
     )
     @patch("oracle.oci_recovery_mcp_server.server.oci.monitoring.MonitoringClient")
-    @patch("oracle.oci_recovery_mcp_server.server._build_profile_auth_context")
+    @patch("oracle.oci_recovery_mcp_server.auth._build_profile_auth_context")
     def test_get_monitoring_client_session_uses_profile_auth_context(
         self,
         mock_auth_context,
@@ -73,7 +76,7 @@ class TestProfileClientFactories:
             config={"region": "us-ashburn-1"}, signer=signer
         )
 
-        result = server.get_monitoring_client(region="us-phoenix-1", request_id="rid")
+        result = clients.get_monitoring_client(region="us-phoenix-1", request_id="rid")
 
         args, kwargs = mock_client.call_args
         assert args[0]["region"] == "us-phoenix-1"
@@ -81,12 +84,12 @@ class TestProfileClientFactories:
         assert result is mock_client.return_value
 
     @patch(
-        "oracle.oci_recovery_mcp_server.server._wrap_oci_client",
+        "oracle.oci_recovery_mcp_server.telemetry._wrap_oci_client",
         side_effect=lambda client, **_: client,
     )
     @patch("oracle.oci_recovery_mcp_server.server.oci.recovery.DatabaseRecoveryClient")
-    @patch("oracle.oci_recovery_mcp_server.server._http_config_and_signer")
-    @patch("oracle.oci_recovery_mcp_server.server._serving_http", return_value=True)
+    @patch("oracle.oci_recovery_mcp_server.auth._http_config_and_signer")
+    @patch("oracle.oci_recovery_mcp_server.auth._serving_http", return_value=True)
     def test_http_client_uses_request_scoped_token_exchange_signer(
         self,
         _mock_serving_http,
@@ -107,8 +110,8 @@ class TestProfileClientFactories:
             ({"region": "us-phoenix-1"}, second),
         ]
 
-        server.get_recovery_client(region="us-phoenix-1", request_id="rid")
-        server.get_recovery_client(region="us-phoenix-1", request_id="rid")
+        clients.get_recovery_client(region="us-phoenix-1", request_id="rid")
+        clients.get_recovery_client(region="us-phoenix-1", request_id="rid")
 
         # A fresh signer per call: UPST signers are never cached.
         assert [call.kwargs["signer"] for call in mock_client.call_args_list] == [
@@ -141,12 +144,12 @@ def test_informational_config_reads_same_file_as_the_credentials(monkeypatch, tm
     monkeypatch.delenv("TENANCY_ID_OVERRIDE", raising=False)
     monkeypatch.delenv("ORACLE_MCP_TENANCY_ID", raising=False)
 
-    config = server._load_oci_config_for_server()
+    config = auth._load_oci_config_for_server()
 
     assert config["tenancy"] == "ocid1.tenancy.oc1..alt"
-    assert config["additional_user_agent"].startswith(server._USER_AGENT_NAME)
-    assert server.get_tenancy() == "ocid1.tenancy.oc1..alt"
-    assert server._effective_region() == "eu-frankfurt-1"
+    assert config["additional_user_agent"].startswith(auth._USER_AGENT_NAME)
+    assert auth.get_tenancy() == "ocid1.tenancy.oc1..alt"
+    assert auth._effective_region() == "eu-frankfurt-1"
 
 
 def test_profile_auth_context_defers_to_the_shared_library(monkeypatch):
@@ -162,22 +165,22 @@ def test_profile_auth_context_defers_to_the_shared_library(monkeypatch):
         captured.append(args)
         return SimpleNamespace(config={"region": "home"}, signer=object())
 
-    monkeypatch.setattr(server, "build_auth_context", fake_build_auth_context)
+    monkeypatch.setattr(auth, "build_auth_context", fake_build_auth_context)
     monkeypatch.setenv("ORACLE_MCP_AUTH_PROFILE", "PROFILE1")
-    for name in server._CANONICAL_AUTH_TYPE_ENV:
+    for name in auth._CANONICAL_AUTH_TYPE_ENV:
         monkeypatch.delenv(name, raising=False)
 
     # Only the deprecated unseparated spelling is translated.
     monkeypatch.setenv("ORACLE_MCP_AUTH_METHOD", "apikey")
-    server._build_profile_auth_context()
+    auth._build_profile_auth_context()
     # Everything else -- including an unset value, which means auto-detect -- is
     # passed through so the library resolves type and profile itself.
     monkeypatch.setenv("ORACLE_MCP_AUTH_METHOD", "session")
-    server._build_profile_auth_context()
+    auth._build_profile_auth_context()
     monkeypatch.delenv("ORACLE_MCP_AUTH_METHOD", raising=False)
-    server._build_profile_auth_context()
+    auth._build_profile_auth_context()
 
-    assert captured[0][0].auth_type == server.AuthType.API_KEY
+    assert captured[0][0].auth_type == auth.AuthType.API_KEY
     assert captured[1] == ()
     assert captured[2] == ()
 
@@ -190,7 +193,7 @@ def test_client_factories_use_profile_and_http_auth_paths(monkeypatch):
     auth context; under HTTP, from the per-request token exchange.
     """
     monkeypatch.setattr(
-        server,
+        telemetry,
         "_wrap_oci_client",
         lambda client, **kwargs: (client, kwargs["client_name"]),
     )
@@ -206,17 +209,17 @@ def test_client_factories_use_profile_and_http_auth_paths(monkeypatch):
 
     # apikey/session: config + signer come from the shared auth context.
     profile_signer = object()
-    monkeypatch.setattr(server, "_serving_http", lambda: False)
+    monkeypatch.setattr(auth, "_serving_http", lambda: False)
     monkeypatch.setattr(
-        server,
+        auth,
         "_build_profile_auth_context",
         lambda: SimpleNamespace(config={"region": "home"}, signer=profile_signer),
     )
 
-    assert server.get_recovery_client(region="us-ashburn-1")[1] == "recovery"
-    assert server.get_database_client(region="us-chicago-1")[1] == "database"
-    assert server.get_identity_client()[1] == "identity"
-    assert server.get_monitoring_client(region="us-ashburn-1")[1] == "monitoring"
+    assert clients.get_recovery_client(region="us-ashburn-1")[1] == "recovery"
+    assert clients.get_database_client(region="us-chicago-1")[1] == "database"
+    assert clients.get_identity_client()[1] == "identity"
+    assert clients.get_monitoring_client(region="us-ashburn-1")[1] == "monitoring"
     assert recovery_client.call_args.args[0]["region"] == "us-ashburn-1"
     assert database_client.call_args.args[0]["region"] == "us-chicago-1"
     # get_identity_client passes no region, so the profile's home region stands.
@@ -226,16 +229,16 @@ def test_client_factories_use_profile_and_http_auth_paths(monkeypatch):
 
     # HTTP: regional config + per-request token-exchange signer.
     http_signer = object()
-    monkeypatch.setattr(server, "_serving_http", lambda: True)
+    monkeypatch.setattr(auth, "_serving_http", lambda: True)
     monkeypatch.setenv("OCI_REGION", "us-ashburn-1")
     monkeypatch.setattr(
-        server,
+        auth,
         "_http_config_and_signer",
         lambda region=None: ({"region": region or "us-ashburn-1"}, http_signer),
     )
 
-    assert server.get_recovery_client(region="us-phoenix-1")[1] == "recovery"
-    assert server.get_database_client()[1] == "database"
+    assert clients.get_recovery_client(region="us-phoenix-1")[1] == "recovery"
+    assert clients.get_database_client()[1] == "database"
     assert recovery_client.call_args.args[0]["region"] == "us-phoenix-1"
     assert database_client.call_args.args[0]["region"] == "us-ashburn-1"
     assert recovery_client.call_args.kwargs["signer"] is http_signer
@@ -249,14 +252,14 @@ def test_limits_work_request_and_subscription_client_factories(monkeypatch):
     transport in use.
     """
     profile_signer = object()
-    monkeypatch.setattr(server, "_serving_http", lambda: False)
+    monkeypatch.setattr(auth, "_serving_http", lambda: False)
     monkeypatch.setattr(
-        server,
+        auth,
         "_build_profile_auth_context",
         lambda: SimpleNamespace(config={"region": "home-region"}, signer=profile_signer),
     )
     monkeypatch.setattr(
-        server,
+        telemetry,
         "_wrap_oci_client",
         lambda client, **kwargs: (client, kwargs["client_name"]),
     )
@@ -274,12 +277,12 @@ def test_limits_work_request_and_subscription_client_factories(monkeypatch):
         subscribed_service_client,
     )
 
-    assert server.get_limits_client(region="us-phoenix-1")[1] == "limits"
+    assert clients.get_limits_client(region="us-phoenix-1")[1] == "limits"
     assert (
-        server.get_work_request_client(region="us-chicago-1")[1] == "work_requests"
+        clients.get_work_request_client(region="us-chicago-1")[1] == "work_requests"
     )
     assert (
-        server.get_onesubscription_client(region="us-ashburn-1")[1]
+        clients.get_onesubscription_client(region="us-ashburn-1")[1]
         == "onesubscription"
     )
     assert limits_client.call_args.args[0]["region"] == "us-phoenix-1"
@@ -288,21 +291,21 @@ def test_limits_work_request_and_subscription_client_factories(monkeypatch):
     assert limits_client.call_args.kwargs["signer"] is profile_signer
 
     # No explicit region falls back to the resolved profile's home region.
-    assert server.get_limits_client()[1] == "limits"
+    assert clients.get_limits_client()[1] == "limits"
     assert limits_client.call_args.args[0]["region"] == "home-region"
 
     http_signer = object()
-    monkeypatch.setattr(server, "_serving_http", lambda: True)
+    monkeypatch.setattr(auth, "_serving_http", lambda: True)
     monkeypatch.setenv("OCI_REGION", "us-ashburn-1")
     monkeypatch.setattr(
-        server,
+        auth,
         "_http_config_and_signer",
         lambda region=None: ({"region": region or "us-ashburn-1"}, http_signer),
     )
-    assert server.get_work_request_client(region="us-sanjose-1")[1] == "work_requests"
-    assert server.get_limits_client(region="us-sanjose-1")[1] == "limits"
+    assert clients.get_work_request_client(region="us-sanjose-1")[1] == "work_requests"
+    assert clients.get_limits_client(region="us-sanjose-1")[1] == "limits"
     assert (
-        server.get_onesubscription_client(region="us-sanjose-1")[1]
+        clients.get_onesubscription_client(region="us-sanjose-1")[1]
         == "onesubscription"
     )
     assert work_request_client.call_args.kwargs["signer"] is http_signer

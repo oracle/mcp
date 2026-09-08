@@ -10,6 +10,7 @@ wrapper, and the tool logging decorator.
 import logging
 import logging.handlers
 import stat
+import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -17,6 +18,10 @@ import oci
 import pytest
 
 from _helpers import _raise, _response
+from oracle.oci_recovery_mcp_server import auth
+from oracle.oci_recovery_mcp_server import cache
+from oracle.oci_recovery_mcp_server import logging_setup
+from oracle.oci_recovery_mcp_server import telemetry
 import oracle.oci_recovery_mcp_server.server as server
 from oracle.oci_recovery_mcp_server.server import mcp
 
@@ -46,7 +51,7 @@ def test_server_helpers_handle_serialization_config_and_wrapping(monkeypatch, tm
     wrapper emits start/end and start/error event pairs while re-raising, and only
     the deprecated unseparated "apikey" spelling is still translated locally.
     """
-    monkeypatch.setattr(server, "_LOG_MAX_VALUE_CHARS", 5)
+    monkeypatch.setattr(logging_setup, "_LOG_MAX_VALUE_CHARS", 5)
     monkeypatch.setattr(
         server.oci.util,
         "to_dict",
@@ -80,7 +85,7 @@ def test_server_helpers_handle_serialization_config_and_wrapping(monkeypatch, tm
             """Fail, leaving _safe_jsonable no way to render this object."""
             raise RuntimeError("bad repr")
 
-    safe = server._safe_jsonable(
+    safe = logging_setup._safe_jsonable(
         {
             "access_token": "secret",
             "nested": ["abcdef"],
@@ -96,7 +101,7 @@ def test_server_helpers_handle_serialization_config_and_wrapping(monkeypatch, tm
     assert safe["dict"]["private_key"] == "***REDACTED***"
     assert safe["object"] == {"answer": 42}
     assert isinstance(safe["repr"], str)
-    assert server._safe_jsonable(BadRepr()) == "<unserializable>"
+    assert logging_setup._safe_jsonable(BadRepr()) == "<unserializable>"
 
     log_calls = []
     monkeypatch.setattr(
@@ -104,7 +109,7 @@ def test_server_helpers_handle_serialization_config_and_wrapping(monkeypatch, tm
         "log",
         lambda level, message: log_calls.append((level, message)),
     )
-    server._log_event(
+    logging_setup._log_event(
         "unit_event",
         request_id="rid",
         tool="tool",
@@ -114,16 +119,16 @@ def test_server_helpers_handle_serialization_config_and_wrapping(monkeypatch, tm
     assert "unit_event" in log_calls[-1][1]
 
     monkeypatch.setattr(
-        server.json,
+        logging_setup.json,
         "dumps",
         lambda *_args, **_kwargs: _raise(TypeError("cannot encode")),
     )
-    server._log_event("fallback_event", request_id="rid")
+    logging_setup._log_event("fallback_event", request_id="rid")
     assert "fallback_event" in log_calls[-1][1]
 
     wrapped_events = []
     monkeypatch.setattr(
-        server,
+        logging_setup,
         "_log_event",
         lambda event, **kwargs: wrapped_events.append((event, kwargs)),
     )
@@ -132,7 +137,7 @@ def test_server_helpers_handle_serialization_config_and_wrapping(monkeypatch, tm
         successful=MagicMock(return_value=_response(SimpleNamespace(id="ok"))),
         failing=MagicMock(side_effect=RuntimeError("boom")),
     )
-    wrapped = server._wrap_oci_client(inner, request_id="rid", client_name="database")
+    wrapped = telemetry._wrap_oci_client(inner, request_id="rid", client_name="database")
     assert wrapped.value == 3
     assert wrapped.successful("arg", key="value").data.id == "ok"
     with pytest.raises(RuntimeError, match="boom"):
@@ -146,16 +151,16 @@ def test_server_helpers_handle_serialization_config_and_wrapping(monkeypatch, tm
 
     # Auth type and profile are resolved by oracle-mcp-common, not here; the only
     # thing this server still translates is the deprecated unseparated "apikey".
-    for name in server._CANONICAL_AUTH_TYPE_ENV:
+    for name in auth._CANONICAL_AUTH_TYPE_ENV:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("ORACLE_MCP_AUTH_METHOD", "apikey")
-    assert server._deprecated_auth_method_override() is server.AuthType.API_KEY
+    assert auth._deprecated_auth_method_override() is auth.AuthType.API_KEY
     for shared_spelling in ("api-key", "api_key", "session"):
         monkeypatch.setenv("ORACLE_MCP_AUTH_METHOD", shared_spelling)
-        assert server._deprecated_auth_method_override() is None
+        assert auth._deprecated_auth_method_override() is None
     monkeypatch.delenv("ORACLE_MCP_AUTH_METHOD", raising=False)
-    assert server._deprecated_auth_method_override() is None
-    assert server._resolved_auth_type_label() == "auto"
+    assert auth._deprecated_auth_method_override() is None
+    assert auth._resolved_auth_type_label() == "auto"
     monkeypatch.delenv("ORACLE_MCP_AUTH_PROFILE", raising=False)
     monkeypatch.setenv("OCI_CONFIG_PROFILE", "PROFILE2")
 
@@ -167,7 +172,7 @@ def test_server_helpers_handle_serialization_config_and_wrapping(monkeypatch, tm
             "config_file": file_location,
         },
     )
-    loaded = server._load_oci_config_for_server()
+    loaded = auth._load_oci_config_for_server()
     assert loaded["region"] == "PROFILE2"
     assert loaded["additional_user_agent"].startswith("oci-recovery-mcp/")
 
@@ -185,28 +190,28 @@ def test_logging_tool_wrapper_tenancy_and_apikey_client_paths(monkeypatch, tmp_p
         root_logger.handlers = []
         monkeypatch.setenv("ORACLE_MCP_LOG_DIR", str(tmp_path))
         monkeypatch.setenv("ORACLE_MCP_LOG_TO_STDOUT", "yes")
-        server.setup_logging()
+        logging_setup.setup_logging()
         assert any(
-            isinstance(handler, server.RotatingFileHandler)
+            isinstance(handler, logging_setup.RotatingFileHandler)
             for handler in root_logger.handlers
         )
         assert any(
             isinstance(handler, server.logging.StreamHandler)
-            and not isinstance(handler, server.RotatingFileHandler)
+            and not isinstance(handler, logging_setup.RotatingFileHandler)
             for handler in root_logger.handlers
         )
-        server.setup_logging()
+        logging_setup.setup_logging()
     finally:
         root_logger.handlers = original_handlers
 
     phases = []
     monkeypatch.setattr(
-        server,
+        logging_setup,
         "_log_event",
         lambda _event, **kwargs: phases.append(kwargs["phase"]),
     )
 
-    @server._tool_logger("boom")
+    @telemetry._tool_logger("boom")
     def failing_tool():
         """A decorated tool that always raises, to exercise the error phase."""
         raise ValueError("bad input")
@@ -218,24 +223,24 @@ def test_logging_tool_wrapper_tenancy_and_apikey_client_paths(monkeypatch, tmp_p
     # session/apikey: explicit override wins, else the profile's tenancy.
     monkeypatch.setenv("ORACLE_MCP_AUTH_METHOD", "apikey")
     monkeypatch.setenv("TENANCY_ID_OVERRIDE", "tenancy-override")
-    assert server.get_tenancy() == "tenancy-override"
+    assert auth.get_tenancy() == "tenancy-override"
     monkeypatch.delenv("TENANCY_ID_OVERRIDE", raising=False)
     monkeypatch.delenv("ORACLE_MCP_TENANCY_ID", raising=False)
     monkeypatch.setattr(
-        server, "_load_oci_config_for_server", lambda: {"tenancy": "profile-tenancy"}
+        auth, "_load_oci_config_for_server", lambda: {"tenancy": "profile-tenancy"}
     )
-    assert server.get_tenancy() == "profile-tenancy"
+    assert auth.get_tenancy() == "profile-tenancy"
 
     # HTTP: the tenancy this deployment serves is configured, and the local profile
     # is never consulted (there is no OCI config file on a hosted server).
     monkeypatch.setenv("ORACLE_MCP_TENANCY_ID", "ocid1.tenancy.oc1..hosted")
-    monkeypatch.setattr(server, "_serving_http", lambda: True)
+    monkeypatch.setattr(auth, "_serving_http", lambda: True)
     monkeypatch.setattr(
-        server,
+        auth,
         "_load_oci_config_for_server",
         lambda: (_ for _ in ()).throw(AssertionError("HTTP must not read the OCI config")),
     )
-    assert server.get_tenancy() == "ocid1.tenancy.oc1..hosted"
+    assert auth.get_tenancy() == "ocid1.tenancy.oc1..hosted"
 
 
 def test_logging_falls_back_to_stderr_when_the_log_file_cannot_be_opened(monkeypatch, tmp_path):
@@ -256,8 +261,8 @@ def test_logging_falls_back_to_stderr_when_the_log_file_cannot_be_opened(monkeyp
     for handler in original_handlers:
         root.removeHandler(handler)
     try:
-        server.setup_logging()
-        assert server._LOG_DESTINATION == "stderr"
+        logging_setup.setup_logging()
+        assert logging_setup._LOG_DESTINATION == "stderr"
         # Diagnostics are forced to the console, so the server is never silent.
         assert any(
             isinstance(h, logging.StreamHandler)
@@ -281,7 +286,7 @@ def test_log_files_are_private_to_their_owner(monkeypatch, tmp_path):
     """
     log_file = tmp_path / "logs" / "server.log"
     log_file.parent.mkdir()
-    handler = server._PrivateRotatingFileHandler(str(log_file), encoding="utf-8")
+    handler = logging_setup._PrivateRotatingFileHandler(str(log_file), encoding="utf-8")
     try:
         handler.emit(logging.LogRecord("t", logging.INFO, __file__, 1, "entry", None, None))
         assert stat.S_IMODE(log_file.stat().st_mode) == 0o600
@@ -297,13 +302,13 @@ def test_state_directory_is_outside_the_install_tree(monkeypatch, tmp_path):
     entirely between ``uvx`` runs, which would silently discard the logs an
     operator is told to read.
     """
-    monkeypatch.delenv(server._STATE_DIR_ENV, raising=False)
+    monkeypatch.delenv(logging_setup._STATE_DIR_ENV, raising=False)
     monkeypatch.setattr(server.Path, "home", classmethod(lambda cls: tmp_path))
-    assert server._state_dir() == tmp_path / server._STATE_DIR_NAME
-    assert server._installation_id_file().parent == server._state_dir()
+    assert logging_setup._state_dir() == tmp_path / logging_setup._STATE_DIR_NAME
+    assert telemetry._installation_id_file().parent == logging_setup._state_dir()
 
-    monkeypatch.setenv(server._STATE_DIR_ENV, str(tmp_path / "elsewhere"))
-    assert server._state_dir() == tmp_path / "elsewhere"
+    monkeypatch.setenv(logging_setup._STATE_DIR_ENV, str(tmp_path / "elsewhere"))
+    assert logging_setup._state_dir() == tmp_path / "elsewhere"
 
 
 def test_results_are_summarized_at_info_and_written_only_at_debug(monkeypatch):
@@ -313,21 +318,21 @@ def test_results_are_summarized_at_info_and_written_only_at_debug(monkeypatch):
     """
     events = []
     monkeypatch.setattr(
-        server, "_log_event", lambda event, **kwargs: events.append((event, kwargs))
+        logging_setup, "_log_event", lambda event, **kwargs: events.append((event, kwargs))
     )
 
-    @server._tool_logger("demo")
+    @telemetry._tool_logger("demo")
     def demo():
         """A decorated tool returning a result that names a real-looking OCID."""
         return [{"id": "ocid1.protecteddatabase.oc1..secret"}]
 
-    monkeypatch.setattr(server, "_log_full_payloads", lambda: False)
+    monkeypatch.setattr(logging_setup, "_log_full_payloads", lambda: False)
     demo()
     end = [kwargs["payload"] for _e, kwargs in events if kwargs.get("phase") == "end"][-1]
     assert end["result_summary"] == {"type": "list", "count": 1}
     assert "result" not in end
 
-    monkeypatch.setattr(server, "_log_full_payloads", lambda: True)
+    monkeypatch.setattr(logging_setup, "_log_full_payloads", lambda: True)
     demo()
     end = [kwargs["payload"] for _e, kwargs in events if kwargs.get("phase") == "end"][-1]
     assert end["result"] == [{"id": "ocid1.protecteddatabase.oc1..secret"}]
@@ -343,19 +348,56 @@ def test_caches_evict_expired_entries_and_stay_bounded():
     """
     entries: dict = {}
     now = 1000.0
-    for index in range(server._CACHE_MAX_ENTRIES + 5):
-        server._cache_put(entries, f"k{index}", {"fetched_at": now}, ttl=300, now=now)
-    assert len(entries) == server._CACHE_MAX_ENTRIES
+    for index in range(cache._CACHE_MAX_ENTRIES + 5):
+        cache._cache_put(entries, f"k{index}", {"fetched_at": now}, ttl=300, now=now)
+    assert len(entries) == cache._CACHE_MAX_ENTRIES
     assert "k0" not in entries  # oldest evicted first
 
     aged = {"stale": {"fetched_at": 0.0}, "fresh": {"fetched_at": now}}
-    server._cache_put(aged, "new", {"fetched_at": now}, ttl=300, now=now)
+    cache._cache_put(aged, "new", {"fetched_at": now}, ttl=300, now=now)
     assert set(aged) == {"fresh", "new"}
 
-    assert server._cache_get(aged, "stale", ttl=300, now=now) is None
-    assert server._cache_get(aged, "fresh", ttl=300, now=now) is not None
+    assert cache._cache_get(aged, "stale", ttl=300, now=now) is None
+    assert cache._cache_get(aged, "fresh", ttl=300, now=now) is not None
     # A hit refreshes recency, so eviction order is least-recently-used.
     assert list(aged) == ["new", "fresh"]
+
+
+def test_cache_survives_concurrent_readers_and_writers():
+    """
+    Reads and writes from many threads never raise and never breach the bound.
+
+    FastMCP runs synchronous tools in worker threads, so two tool calls reach these
+    helpers at once. Both mutate: _cache_get reinserts on a hit to maintain LRU
+    order, and _cache_put sweeps expired entries and evicts. Unsynchronized, the
+    reinsert raises KeyError against a concurrent sweep of the same key, and the
+    sweep and eviction raise "dictionary changed size during iteration" or
+    StopIteration. Every key here is live, so the sweep and the bound both stay hot.
+    """
+    entries: dict = {}
+    now = 1000.0
+    keys = [f"k{index}" for index in range(cache._CACHE_MAX_ENTRIES * 2)]
+    errors: list[BaseException] = []
+    start = threading.Barrier(8)
+
+    def hammer():
+        """Interleave puts and gets over a shared key space until the space is spent."""
+        start.wait()
+        try:
+            for key in keys:
+                cache._cache_put(entries, key, {"fetched_at": now}, ttl=300, now=now)
+                cache._cache_get(entries, key, ttl=300, now=now)
+        except BaseException as error:  # noqa: BLE001 -- the assertion is "nothing raised"
+            errors.append(error)
+
+    threads = [threading.Thread(target=hammer) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert errors == []
+    assert len(entries) <= cache._CACHE_MAX_ENTRIES
 
 
 def test_http_deployments_refuse_to_fall_back_to_profile_credentials(monkeypatch):
@@ -366,21 +408,21 @@ def test_http_deployments_refuse_to_fall_back_to_profile_credentials(monkeypatch
     Signing a remote caller's request with the operator's own credentials would
     perform it under a different, probably broader, identity.
     """
-    monkeypatch.setattr(server, "_serving_http", lambda: False)
-    monkeypatch.setattr(server, "_http_auth", object())
+    monkeypatch.setattr(auth, "_serving_http", lambda: False)
+    monkeypatch.setattr(auth, "_http_auth", object())
     monkeypatch.setattr(
-        server, "_build_profile_auth_context", lambda: pytest.fail("profile credentials used")
+        auth, "_build_profile_auth_context", lambda: pytest.fail("profile credentials used")
     )
     with pytest.raises(RuntimeError, match="Refusing to use local profile credentials"):
-        server._config_and_signer()
+        auth._config_and_signer()
 
     # With no HTTP policy built, stdio resolves through the profile as usual.
-    monkeypatch.setattr(server, "_http_auth", None)
+    monkeypatch.setattr(auth, "_http_auth", None)
     monkeypatch.setattr(
-        server,
+        auth,
         "_build_profile_auth_context",
         lambda: SimpleNamespace(config={"region": "us-ashburn-1"}, signer=object()),
     )
-    config, signer = server._config_and_signer()
+    config, signer = auth._config_and_signer()
     assert config["region"] == "us-ashburn-1"
     assert signer is not None

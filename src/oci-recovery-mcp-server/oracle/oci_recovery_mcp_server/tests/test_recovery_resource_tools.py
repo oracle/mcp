@@ -14,6 +14,8 @@ import pytest
 
 from _helpers import _response
 import oracle.oci_recovery_mcp_server.models as models
+from oracle.oci_recovery_mcp_server import clients
+from oracle.oci_recovery_mcp_server import compartments
 import oracle.oci_recovery_mcp_server.server as server
 
 
@@ -33,12 +35,12 @@ def test_recovery_resource_tools_apply_filters_pagination_and_enrichment(monkeyp
         lambda obj: obj if isinstance(obj, dict) else getattr(obj, "__dict__", obj),
     )
     monkeypatch.setattr(
-        server,
+        clients,
         "get_recovery_client",
         lambda region=None, request_id=None: recovery_client,
     )
     monkeypatch.setattr(
-        server,
+        compartments,
         "_resolve_compartment_id",
         lambda compartment_id, **_kwargs: f"resolved-{compartment_id}",
     )
@@ -245,12 +247,12 @@ def test_protected_database_tools_fall_back_on_serialization_errors(monkeypatch)
     """
     recovery_client = MagicMock()
     monkeypatch.setattr(
-        server,
+        clients,
         "get_recovery_client",
         lambda region=None, request_id=None: recovery_client,
     )
     monkeypatch.setattr(
-        server, "_resolve_compartment_id", lambda value, **_kwargs: value
+        compartments, "_resolve_compartment_id", lambda value, **_kwargs: value
     )
 
     class FallbackSummary:
@@ -415,8 +417,8 @@ def test_list_restore_applies_status_and_sort_without_forwarding_them(monkeypatc
     client, call = _strict_client(
         "list_work_requests", {"resource_id", "limit", "page", "opc_request_id"}, items
     )
-    monkeypatch.setattr(server, "get_work_request_client", lambda *a, **k: client)
-    monkeypatch.setattr(server, "_compartment_ids_for_tool", lambda cid, **k: [cid])
+    monkeypatch.setattr(clients, "get_work_request_client", lambda *a, **k: client)
+    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **k: [cid])
     compartment = "ocid1.compartment.oc1..c"
 
     newest_first = server.list_restore(
@@ -466,8 +468,8 @@ def test_list_protection_policies_sends_the_id_filter_under_its_sdk_name(monkeyp
         },
         [SimpleNamespace(id="policy1", display_name="Policy 1")],
     )
-    monkeypatch.setattr(server, "get_recovery_client", lambda *a, **k: client)
-    monkeypatch.setattr(server, "_compartment_ids_for_tool", lambda cid, **k: [cid])
+    monkeypatch.setattr(clients, "get_recovery_client", lambda *a, **k: client)
+    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **k: [cid])
 
     policies = server.list_protection_policies(
         compartment_id="ocid1.compartment.oc1..c", id="ocid1.protectionpolicy.oc1..p"

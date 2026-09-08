@@ -14,6 +14,10 @@ import pytest
 
 from _helpers import _response
 import oracle.oci_recovery_mcp_server.models as models
+from oracle.oci_recovery_mcp_server import auth
+from oracle.oci_recovery_mcp_server import cache
+from oracle.oci_recovery_mcp_server import clients
+from oracle.oci_recovery_mcp_server import compartments
 import oracle.oci_recovery_mcp_server.server as server
 
 
@@ -26,30 +30,30 @@ def test_compartment_and_database_home_helpers_resolve_ids(monkeypatch):
     items, skips entries without one, and returns empty rather than raising when
     the Database service is unavailable.
     """
-    compartments = [
+    accessible = [
         SimpleNamespace(id="compartment-a", name="Dev"),
         SimpleNamespace(id="compartment-b", name="Prod"),
     ]
     root = SimpleNamespace(id="tenancy", name="Root")
     identity_client = MagicMock()
     identity_client.list_compartments.side_effect = [
-        _response([compartments[0]], has_next_page=True, next_page="next"),
-        _response([compartments[1]]),
+        _response([accessible[0]], has_next_page=True, next_page="next"),
+        _response([accessible[1]]),
     ]
     identity_client.get_compartment.return_value = _response(root)
-    monkeypatch.setattr(server, "get_identity_client", lambda: identity_client)
-    monkeypatch.setattr(server, "get_tenancy", lambda: "tenancy")
+    monkeypatch.setattr(clients, "get_identity_client", lambda: identity_client)
+    monkeypatch.setattr(auth, "get_tenancy", lambda: "tenancy")
 
-    assert server.list_all_compartments_internal(True, limit=25) == [
-        compartments[0],
+    assert compartments.list_all_compartments_internal(True, limit=25) == [
+        accessible[0],
         root,
     ]
     identity_client.list_compartments.reset_mock()
     identity_client.list_compartments.side_effect = [
-        _response([compartments[0]], has_next_page=True, next_page="next"),
-        _response([compartments[1]]),
+        _response([accessible[0]], has_next_page=True, next_page="next"),
+        _response([accessible[1]]),
     ]
-    all_compartments = server.list_all_compartments_internal(False, limit=25)
+    all_compartments = compartments.list_all_compartments_internal(False, limit=25)
     assert [compartment.id for compartment in all_compartments] == [
         "compartment-a",
         "tenancy",
@@ -57,30 +61,30 @@ def test_compartment_and_database_home_helpers_resolve_ids(monkeypatch):
     ]
 
     monkeypatch.setattr(
-        server,
+        compartments,
         "list_all_compartments_internal",
-        lambda _only_one_page: compartments + [root],
+        lambda _only_one_page: accessible + [root],
     )
-    assert server.get_compartment_by_name("prod").id == "compartment-b"
-    assert server.get_compartment_by_name("missing") is None
-    assert server._looks_like_ocid(" ocid1.compartment.oc1..abc ")
-    assert not server._looks_like_ocid("Dev")
-    assert server._resolve_compartment_id("ocid1.compartment.oc1..abc") == (
+    assert compartments.get_compartment_by_name("prod").id == "compartment-b"
+    assert compartments.get_compartment_by_name("missing") is None
+    assert compartments._looks_like_ocid(" ocid1.compartment.oc1..abc ")
+    assert not compartments._looks_like_ocid("Dev")
+    assert compartments._resolve_compartment_id("ocid1.compartment.oc1..abc") == (
         "ocid1.compartment.oc1..abc"
     )
-    assert server._resolve_compartment_id("Dev") == "compartment-a"
-    assert server._resolve_compartment_id(None, default_to_tenancy=True) == "tenancy"
+    assert compartments._resolve_compartment_id("Dev") == "compartment-a"
+    assert compartments._resolve_compartment_id(None, default_to_tenancy=True) == "tenancy"
     with pytest.raises(ValueError, match="required"):
-        server._resolve_compartment_id(None)
+        compartments._resolve_compartment_id(None)
     with pytest.raises(ValueError, match="cannot be empty"):
-        server._resolve_compartment_id(" ")
+        compartments._resolve_compartment_id(" ")
     with pytest.raises(ValueError, match="not found"):
-        server._resolve_compartment_id("Missing")
+        compartments._resolve_compartment_id("Missing")
     monkeypatch.setattr(
-        server, "get_compartment_by_name", lambda _name: SimpleNamespace(name="NoId")
+        compartments, "get_compartment_by_name", lambda _name: SimpleNamespace(name="NoId")
     )
     with pytest.raises(ValueError, match="Unable to resolve"):
-        server._resolve_compartment_id("NoId")
+        compartments._resolve_compartment_id("NoId")
 
     db_client = MagicMock()
     db_client.list_db_homes.return_value = _response(
@@ -92,13 +96,13 @@ def test_compartment_and_database_home_helpers_resolve_ids(monkeypatch):
             ]
         )
     )
-    monkeypatch.setattr(server, "get_database_client", lambda region=None: db_client)
-    assert server._fetch_db_home_ids_for_compartment("compartment-a") == [
+    monkeypatch.setattr(clients, "get_database_client", lambda region=None: db_client)
+    assert compartments._fetch_db_home_ids_for_compartment("compartment-a") == [
         "home1",
         "home2",
     ]
     db_client.list_db_homes.side_effect = RuntimeError("service unavailable")
-    assert server._fetch_db_home_ids_for_compartment("compartment-a") == []
+    assert compartments._fetch_db_home_ids_for_compartment("compartment-a") == []
 
 
 def test_child_compartment_helpers_use_cache_fast_path_and_fallback(monkeypatch):
@@ -111,14 +115,14 @@ def test_child_compartment_helpers_use_cache_fast_path_and_fallback(monkeypatch)
     compartment rather than failing the call.
     """
     monkeypatch.setattr(
-        server,
+        compartments,
         "_COMPARTMENT_CACHE",
         {"fetched_at": 0.0, "ttl_seconds": 300, "items": None},
     )
     monkeypatch.setattr(server.time, "time", lambda: 100.0)
-    monkeypatch.setattr(server, "get_tenancy", lambda: "tenancy")
+    monkeypatch.setattr(auth, "get_tenancy", lambda: "tenancy")
     monkeypatch.setattr(
-        server,
+        compartments,
         "list_all_compartments_internal",
         lambda _only_one_page: [
             SimpleNamespace(id="child", compartment_id="tenancy"),
@@ -131,33 +135,33 @@ def test_child_compartment_helpers_use_cache_fast_path_and_fallback(monkeypatch)
         SimpleNamespace(id="tenancy", name="Root")
     )
     monkeypatch.setattr(
-        server, "get_identity_client", lambda request_id=None: identity_client
+        clients, "get_identity_client", lambda request_id=None: identity_client
     )
 
-    cached = server._list_all_compartments_cached(request_id="rid")
+    cached = compartments._list_all_compartments_cached(request_id="rid")
     assert [compartment.id for compartment in cached] == ["child", "tenancy"]
-    assert server._list_all_compartments_cached(request_id="rid2") is cached
+    assert compartments._list_all_compartments_cached(request_id="rid2") is cached
 
-    compartments = [
+    tree = [
         SimpleNamespace(id="root", compartment_id="tenancy"),
         SimpleNamespace(id="child", compartment_id="root"),
         SimpleNamespace(id="grandchild", compartmentId="child"),
         SimpleNamespace(id="orphan"),
     ]
-    assert server._build_children_index(compartments) == {
+    assert compartments._build_children_index(tree) == {
         "tenancy": ["root"],
         "root": ["child"],
         "child": ["grandchild"],
     }
     monkeypatch.setattr(
-        server,
+        compartments,
         "_list_all_compartments_cached",
-        lambda request_id=None: compartments,
+        lambda request_id=None: tree,
     )
-    assert server._expand_compartment_scope(
+    assert compartments._expand_compartment_scope(
         "root", include_child_compartments=True
     ) == ["root", "child", "grandchild"]
-    assert server._expand_compartment_scope(
+    assert compartments._expand_compartment_scope(
         "root", include_child_compartments=False
     ) == ["root"]
 
@@ -168,23 +172,23 @@ def test_child_compartment_helpers_use_cache_fast_path_and_fallback(monkeypatch)
         _response([]),
         _response([]),
     ]
-    monkeypatch.setattr(server, "_list_all_compartments_cached", lambda **_: [])
+    monkeypatch.setattr(compartments, "_list_all_compartments_cached", lambda **_: [])
     monkeypatch.setattr(
-        server, "get_identity_client", lambda request_id=None: fallback_identity
+        clients, "get_identity_client", lambda request_id=None: fallback_identity
     )
-    assert server._expand_compartment_scope(
+    assert compartments._expand_compartment_scope(
         "root", include_child_compartments=True
     ) == ["root", "child", "sibling"]
 
     monkeypatch.setattr(
-        server, "_resolve_compartment_id", lambda value, **_kwargs: f"resolved-{value}"
+        compartments, "_resolve_compartment_id", lambda value, **_kwargs: f"resolved-{value}"
     )
     monkeypatch.setattr(
-        server,
+        compartments,
         "_expand_compartment_scope",
         MagicMock(side_effect=RuntimeError("identity unavailable")),
     )
-    assert server._compartment_ids_for_tool(
+    assert compartments._compartment_ids_for_tool(
         "Dev", fetch_for_child_compartment=True
     ) == ["resolved-Dev"]
 
@@ -200,20 +204,20 @@ def test_fetch_child_compartments_crawls_and_applies_output_options(monkeypatch)
         _response([]),
     ]
     monkeypatch.setattr(
-        server,
+        compartments,
         "_resolve_compartment_id",
         lambda compartment_id: f"resolved-{compartment_id}",
     )
     monkeypatch.setattr(
-        server,
+        compartments,
         "_expand_compartment_scope",
         lambda *_args, **_kwargs: ["resolved-Root"],
     )
     monkeypatch.setattr(
-        server, "get_identity_client", lambda request_id=None: identity_client
+        clients, "get_identity_client", lambda request_id=None: identity_client
     )
 
-    result = server.fetch_child_compartments("Root", include_self=False)
+    result = compartments.fetch_child_compartments("Root", include_self=False)
     assert result == {
         "rootCompartmentId": "resolved-Root",
         "total": 1,
@@ -221,11 +225,11 @@ def test_fetch_child_compartments_crawls_and_applies_output_options(monkeypatch)
     }
 
     monkeypatch.setattr(
-        server,
+        compartments,
         "_expand_compartment_scope",
         lambda *_args, **_kwargs: ["resolved-Root", "child", "grandchild"],
     )
-    result = server.fetch_child_compartments("Root", include_self=True, limit=2)
+    result = compartments.fetch_child_compartments("Root", include_self=True, limit=2)
     assert result["compartmentIds"] == ["resolved-Root", "child"]
 
 
@@ -245,22 +249,22 @@ def test_child_scope_tools_deduplicate_and_forward_filter_kwargs(monkeypatch):
         lambda obj: obj if isinstance(obj, dict) else getattr(obj, "__dict__", obj),
     )
     monkeypatch.setattr(
-        server,
+        clients,
         "get_recovery_client",
         lambda region=None, request_id=None: recovery_client,
     )
     monkeypatch.setattr(
-        server,
+        clients,
         "get_monitoring_client",
         lambda request_id=None: monitoring_client,
     )
     monkeypatch.setattr(
-        server,
+        clients,
         "get_work_request_client",
         lambda region=None, request_id=None: work_request_client,
     )
     monkeypatch.setattr(
-        server,
+        compartments,
         "_compartment_ids_for_tool",
         lambda compartment_id, fetch_for_child_compartment, request_id=None: [
             "compartment-a",

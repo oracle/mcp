@@ -14,6 +14,9 @@ import pytest
 
 from _helpers import _raise, _response
 import oracle.oci_recovery_mcp_server.models as models
+from oracle.oci_recovery_mcp_server import auth
+from oracle.oci_recovery_mcp_server import clients
+from oracle.oci_recovery_mcp_server import compartments
 import oracle.oci_recovery_mcp_server.server as server
 
 
@@ -26,16 +29,16 @@ def test_summary_tools_fall_back_on_counts_and_metrics(monkeypatch):
     """
     recovery_client = MagicMock()
     monkeypatch.setattr(
-        server,
+        clients,
         "get_recovery_client",
         lambda region=None, request_id=None: recovery_client,
     )
     monkeypatch.setattr(
-        server,
+        compartments,
         "_resolve_compartment_id",
         lambda compartment_id, **_kwargs: compartment_id or "tenancy",
     )
-    monkeypatch.setattr(server, "get_tenancy", lambda: "tenancy")
+    monkeypatch.setattr(auth, "get_tenancy", lambda: "tenancy")
 
     recovery_client.list_protected_databases.return_value = _response(
         [
@@ -148,12 +151,12 @@ def test_summary_serialization_fallbacks_and_error_paths(monkeypatch):
     """
     recovery_client = MagicMock()
     monkeypatch.setattr(
-        server,
+        clients,
         "get_recovery_client",
         lambda region=None, request_id=None: recovery_client,
     )
     monkeypatch.setattr(
-        server,
+        compartments,
         "_resolve_compartment_id",
         lambda compartment_id, **_kwargs: compartment_id or "tenancy",
     )
@@ -204,12 +207,12 @@ def test_backup_tools_handle_manual_paging_errors_and_destination_variants(monke
         lambda obj: obj if isinstance(obj, dict) else getattr(obj, "__dict__", obj),
     )
     monkeypatch.setattr(
-        server,
+        clients,
         "get_database_client",
         lambda region=None, request_id=None: db_client,
     )
     monkeypatch.setattr(
-        server,
+        compartments,
         "_resolve_compartment_id",
         lambda compartment_id, **_kwargs: compartment_id or "tenancy",
     )
@@ -283,12 +286,12 @@ def test_backup_destination_summary_handles_object_store_paging_and_errors(monke
         lambda obj: obj if isinstance(obj, dict) else getattr(obj, "__dict__", obj),
     )
     monkeypatch.setattr(
-        server,
+        clients,
         "get_database_client",
         lambda region=None, request_id=None: db_client,
     )
     monkeypatch.setattr(
-        server,
+        compartments,
         "_resolve_compartment_id",
         lambda compartment_id, **_kwargs: compartment_id or "tenancy",
     )
@@ -357,13 +360,13 @@ def test_summary_scans_stop_at_their_deadline_and_say_so(monkeypatch):
     """
     recovery_client = MagicMock()
     monkeypatch.setattr(
-        server, "get_recovery_client", lambda region=None, request_id=None: recovery_client
+        clients, "get_recovery_client", lambda region=None, request_id=None: recovery_client
     )
     monkeypatch.setattr(
-        server, "_resolve_compartment_id", lambda compartment_id, **_kwargs: compartment_id
+        compartments, "_resolve_compartment_id", lambda compartment_id, **_kwargs: compartment_id
     )
     monkeypatch.setattr(
-        server, "_compartment_ids_for_tool", lambda cid, **_kwargs: ["c1", "c2", "c3"]
+        compartments, "_compartment_ids_for_tool", lambda cid, **_kwargs: ["c1", "c2", "c3"]
     )
     recovery_client.list_protected_databases.return_value = _response(
         [
@@ -413,13 +416,13 @@ def test_summary_scans_report_every_compartment_when_they_finish(monkeypatch):
     """
     recovery_client = MagicMock()
     monkeypatch.setattr(
-        server, "get_recovery_client", lambda region=None, request_id=None: recovery_client
+        clients, "get_recovery_client", lambda region=None, request_id=None: recovery_client
     )
     monkeypatch.setattr(
-        server, "_resolve_compartment_id", lambda compartment_id, **_kwargs: compartment_id
+        compartments, "_resolve_compartment_id", lambda compartment_id, **_kwargs: compartment_id
     )
     monkeypatch.setattr(
-        server, "_compartment_ids_for_tool", lambda cid, **_kwargs: ["c1", "c2"]
+        compartments, "_compartment_ids_for_tool", lambda cid, **_kwargs: ["c1", "c2"]
     )
     recovery_client.list_protected_databases.return_value = _response(
         [SimpleNamespace(id="pd1", health="PROTECTED")]

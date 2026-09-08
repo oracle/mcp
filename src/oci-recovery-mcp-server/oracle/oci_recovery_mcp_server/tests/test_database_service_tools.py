@@ -14,6 +14,9 @@ import pytest
 
 from _helpers import _response
 import oracle.oci_recovery_mcp_server.models as models
+from oracle.oci_recovery_mcp_server import auth
+from oracle.oci_recovery_mcp_server import clients
+from oracle.oci_recovery_mcp_server import compartments
 import oracle.oci_recovery_mcp_server.server as server
 
 
@@ -32,22 +35,22 @@ def test_database_tools_resolve_compartment_paths_and_enrich_backups(monkeypatch
         lambda obj: obj if isinstance(obj, dict) else getattr(obj, "__dict__", obj),
     )
     monkeypatch.setattr(
-        server,
+        clients,
         "get_database_client",
         lambda region=None, request_id=None: db_client,
     )
     monkeypatch.setattr(
-        server,
+        clients,
         "get_recovery_client",
         lambda region=None, request_id=None: recovery_client,
     )
     monkeypatch.setattr(
-        server,
+        compartments,
         "_resolve_compartment_id",
         lambda compartment_id, **_kwargs: compartment_id or "tenancy",
     )
     monkeypatch.setattr(
-        server,
+        compartments,
         "_fetch_db_home_ids_for_compartment",
         lambda compartment_id, region=None: ["home1"],
     )
@@ -219,20 +222,20 @@ def test_database_child_scope_tools_deduplicate_results(monkeypatch):
         lambda obj: obj if isinstance(obj, dict) else getattr(obj, "__dict__", obj),
     )
     monkeypatch.setattr(
-        server,
+        clients,
         "get_database_client",
         lambda region=None, request_id=None: db_client,
     )
     monkeypatch.setattr(
-        server,
+        clients,
         "get_recovery_client",
         lambda region=None, request_id=None: recovery_client,
     )
     monkeypatch.setattr(
-        server, "_resolve_compartment_id", lambda value, **_kwargs: value
+        compartments, "_resolve_compartment_id", lambda value, **_kwargs: value
     )
     monkeypatch.setattr(
-        server,
+        compartments,
         "_compartment_ids_for_tool",
         lambda compartment_id, fetch_for_child_compartment, request_id=None: [
             "compartment-a",
@@ -240,7 +243,7 @@ def test_database_child_scope_tools_deduplicate_results(monkeypatch):
         ],
     )
     monkeypatch.setattr(
-        server,
+        compartments,
         "_fetch_db_home_ids_for_compartment",
         lambda compartment_id, region=None: ["home1"],
     )
@@ -403,13 +406,13 @@ def test_database_home_and_system_tools_apply_pagination_and_defaults(monkeypatc
         lambda obj: obj if isinstance(obj, dict) else getattr(obj, "__dict__", obj),
     )
     monkeypatch.setattr(
-        server,
+        clients,
         "get_database_client",
         lambda region=None, request_id=None: db_client,
     )
-    monkeypatch.setattr(server, "get_tenancy", lambda: "tenancy")
+    monkeypatch.setattr(auth, "get_tenancy", lambda: "tenancy")
     monkeypatch.setattr(
-        server,
+        compartments,
         "_resolve_compartment_id",
         lambda compartment_id, **_kwargs: f"resolved-{compartment_id}",
     )
@@ -485,17 +488,17 @@ def test_database_list_branches_and_tool_error_paths(monkeypatch):
         lambda obj: obj if isinstance(obj, dict) else getattr(obj, "__dict__", obj),
     )
     monkeypatch.setattr(
-        server,
+        clients,
         "get_database_client",
         lambda region=None, request_id=None: db_client,
     )
     monkeypatch.setattr(
-        server,
+        clients,
         "get_recovery_client",
         lambda region=None, request_id=None: recovery_client,
     )
     monkeypatch.setattr(
-        server,
+        compartments,
         "_resolve_compartment_id",
         lambda compartment_id, **_kwargs: compartment_id or "tenancy",
     )
@@ -505,14 +508,14 @@ def test_database_list_branches_and_tool_error_paths(monkeypatch):
         server.list_databases()
 
     monkeypatch.setattr(
-        server,
+        compartments,
         "_fetch_db_home_ids_for_compartment",
         lambda compartment_id, region=None: [],
     )
     assert server.list_databases(compartment_id="compartment") == []
 
     monkeypatch.setattr(
-        server,
+        compartments,
         "_fetch_db_home_ids_for_compartment",
         lambda compartment_id, region=None: ["home1"],
     )
@@ -636,12 +639,12 @@ def test_policy_correlation_survives_an_unreadable_compartment(monkeypatch):
         ]
     )
 
-    monkeypatch.setattr(server, "get_recovery_client", lambda *a, **k: recovery_client)
-    monkeypatch.setattr(server, "get_database_client", lambda *a, **k: database_client)
+    monkeypatch.setattr(clients, "get_recovery_client", lambda *a, **k: recovery_client)
+    monkeypatch.setattr(clients, "get_database_client", lambda *a, **k: database_client)
     monkeypatch.setattr(
-        server, "_compartment_ids_for_tool", lambda cid, **k: ["readable", "denied"]
+        compartments, "_compartment_ids_for_tool", lambda cid, **k: ["readable", "denied"]
     )
-    monkeypatch.setattr(server, "_resolve_compartment_id", lambda c, **k: c)
+    monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda c, **k: c)
 
     databases = server.list_databases(
         compartment_id="root", fetch_for_child_compartment=True

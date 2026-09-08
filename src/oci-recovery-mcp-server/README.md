@@ -271,7 +271,7 @@ public root certificate. Distribute only the public root certificate, never the 
 | `ORACLE_MCP_LOG_REDACT_KEYS`, `ORACLE_MCP_LOG_MAX_VALUE_CHARS` | all | Comma-separated keys redacted from logged payloads (defaults cover tokens, secrets, keys and passphrases), and the per-value truncation length (default 20000). Tool results are logged as a shape summary at `INFO` and in full only at `DEBUG`. |
 | `ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE` | all | Cap on compartments scanned when `fetch_for_child_compartment=true`. Default 200. |
 | `ORACLE_MCP_TOOL_DEADLINE_SECONDS` | all | Monotonic-time budget for compartment-subtree summary scans, checked between OCI requests. Default 120; `0` disables the limit. An in-flight request is allowed to finish; a scan that stops early returns `truncated: true` with partial counts. |
-| `ORACLE_MCP_COMPARTMENT_CACHE_TTL_SECONDS`, `ORACLE_MCP_REGION_CACHE_TTL_SECONDS`, `ORACLE_MCP_CACHE_MAX_ENTRIES` | all | In-process cache lifetimes (default 300s and 3600s) and the maximum number of cache entries kept per cache (default 256). Caches are partitioned per tenancy and per caller. |
+| `ORACLE_MCP_COMPARTMENT_CACHE_TTL_SECONDS`, `ORACLE_MCP_CACHE_MAX_ENTRIES` | all | In-process compartment cache lifetime (default 300s) and the maximum number of entries kept (default 256). The cache is partitioned per tenancy and per caller, so a listing computed with one caller's authorizations is never served to another. Subscribed regions are not cached: the caller's own IAM policy decides whether they may be read, so every lookup goes to IAM. |
 
 ## Tools
 

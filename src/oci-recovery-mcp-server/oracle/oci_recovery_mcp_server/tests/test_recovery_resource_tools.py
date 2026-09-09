@@ -16,7 +16,7 @@ from _helpers import _response
 import oracle.oci_recovery_mcp_server.models as models
 from oracle.oci_recovery_mcp_server import clients
 from oracle.oci_recovery_mcp_server import compartments
-import oracle.oci_recovery_mcp_server.server as server
+from oracle.oci_recovery_mcp_server import recovery_tools
 
 
 def test_recovery_resource_tools_apply_filters_pagination_and_enrichment(monkeypatch):
@@ -93,7 +93,7 @@ def test_recovery_resource_tools_apply_filters_pagination_and_enrichment(monkeyp
         _response(SimpleNamespace(metrics={"backupSpaceUsedInGbs": 2.5})),
     ]
 
-    protected_databases = server.list_protected_databases(
+    protected_databases = recovery_tools.list_protected_databases(
         compartment_id="compartment",
         lifecycle_state="ACTIVE",
         display_name="Protected 1",
@@ -158,7 +158,7 @@ def test_recovery_resource_tools_apply_filters_pagination_and_enrichment(monkeyp
         )
     )
 
-    protected_database = server.get_protected_database(
+    protected_database = recovery_tools.get_protected_database(
         "pd3", opc_request_id="opc", region="us-ashburn-1"
     )
     assert protected_database["id"] == "pd3"
@@ -175,7 +175,7 @@ def test_recovery_resource_tools_apply_filters_pagination_and_enrichment(monkeyp
         ),
         _response(SimpleNamespace(items=[SimpleNamespace(id="policy2")])),
     ]
-    policies = server.list_protection_policies(
+    policies = recovery_tools.list_protection_policies(
         "compartment",
         lifecycle_state="ACTIVE",
         display_name="Policy 1",
@@ -195,7 +195,7 @@ def test_recovery_resource_tools_apply_filters_pagination_and_enrichment(monkeyp
     recovery_client.get_protection_policy.return_value = _response(
         SimpleNamespace(id="policy1", display_name="Policy 1")
     )
-    assert server.get_protection_policy("policy1", opc_request_id="opc").id == "policy1"
+    assert recovery_tools.get_protection_policy("policy1", opc_request_id="opc").id == "policy1"
 
     recovery_client.list_recovery_service_subnets.return_value = _response(
         [
@@ -215,7 +215,7 @@ def test_recovery_resource_tools_apply_filters_pagination_and_enrichment(monkeyp
         ),
         RuntimeError("full subnet lookup failed"),
     ]
-    subnets = server.list_recovery_service_subnets(
+    subnets = recovery_tools.list_recovery_service_subnets(
         "compartment",
         lifecycle_state="ACTIVE",
         display_name="RSS 1",
@@ -235,7 +235,7 @@ def test_recovery_resource_tools_apply_filters_pagination_and_enrichment(monkeyp
     recovery_client.get_recovery_service_subnet.return_value = _response(
         SimpleNamespace(id="rss-single", subnet_id="subnet-single")
     )
-    assert server.get_recovery_service_subnet("rss-single").subnets == ["subnet-single"]
+    assert recovery_tools.get_recovery_service_subnet("rss-single").subnets == ["subnet-single"]
 
 
 def test_protected_database_tools_fall_back_on_serialization_errors(monkeypatch):
@@ -272,7 +272,7 @@ def test_protected_database_tools_fall_back_on_serialization_errors(monkeypatch)
             raise RuntimeError("dict unavailable")
 
     monkeypatch.setattr(
-        server,
+        recovery_tools,
         "map_protected_database_summary",
         MagicMock(side_effect=[None, FallbackSummary()]),
     )
@@ -286,7 +286,7 @@ def test_protected_database_tools_fall_back_on_serialization_errors(monkeypatch)
         "metrics lookup failed"
     )
 
-    protected_databases = server.list_protected_databases("compartment")
+    protected_databases = recovery_tools.list_protected_databases("compartment")
     assert protected_databases == [
         {
             "id": "pd-fallback",
@@ -326,7 +326,7 @@ def test_protected_database_tools_fall_back_on_serialization_errors(monkeypatch)
             raise RuntimeError("dict unavailable")
 
     monkeypatch.setattr(
-        server,
+        recovery_tools,
         "map_protected_database",
         MagicMock(return_value=FallbackProtectedDatabase()),
     )
@@ -336,7 +336,7 @@ def test_protected_database_tools_fall_back_on_serialization_errors(monkeypatch)
         "subnet lookup failed"
     )
 
-    protected_database = server.get_protected_database("pd1")
+    protected_database = recovery_tools.get_protected_database("pd1")
     assert protected_database["id"] == "pd1"
     assert "change_rate" not in protected_database
     assert "compression_ratio" not in protected_database
@@ -421,23 +421,23 @@ def test_list_restore_applies_status_and_sort_without_forwarding_them(monkeypatc
     monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **k: [cid])
     compartment = "ocid1.compartment.oc1..c"
 
-    newest_first = server.list_restore(
+    newest_first = recovery_tools.list_restore(
         compartment_id=compartment, sort_by="timeAccepted", sort_order="DESC"
     )
     assert [w.id for w in newest_first] == ["wr2", "wr1", "wr4"]
     assert "sort_by" not in call.seen and "sort_order" not in call.seen
 
-    oldest_first = server.list_restore(
+    oldest_first = recovery_tools.list_restore(
         compartment_id=compartment, sort_by="timeAccepted", sort_order="ASC"
     )
     assert [w.id for w in oldest_first] == ["wr1", "wr2", "wr4"]
 
-    failed = server.list_restore(compartment_id=compartment, status="failed")
+    failed = recovery_tools.list_restore(compartment_id=compartment, status="failed")
     assert [w.id for w in failed] == ["wr2"]
     assert "status" not in call.seen
 
     # Non-restore work requests stay excluded regardless of the filters.
-    assert [w.id for w in server.list_restore(compartment_id=compartment)] == [
+    assert [w.id for w in recovery_tools.list_restore(compartment_id=compartment)] == [
         "wr1",
         "wr2",
         "wr4",
@@ -445,7 +445,7 @@ def test_list_restore_applies_status_and_sort_without_forwarding_them(monkeypatc
 
     for field, value in (("sort_by", "bogus"), ("sort_order", "sideways")):
         with pytest.raises(ValueError, match=field):
-            server.list_restore(compartment_id=compartment, **{field: value})
+            recovery_tools.list_restore(compartment_id=compartment, **{field: value})
 
 
 def test_list_protection_policies_sends_the_id_filter_under_its_sdk_name(monkeypatch):
@@ -471,7 +471,7 @@ def test_list_protection_policies_sends_the_id_filter_under_its_sdk_name(monkeyp
     monkeypatch.setattr(clients, "get_recovery_client", lambda *a, **k: client)
     monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **k: [cid])
 
-    policies = server.list_protection_policies(
+    policies = recovery_tools.list_protection_policies(
         compartment_id="ocid1.compartment.oc1..c", id="ocid1.protectionpolicy.oc1..p"
     )
     assert [p.id for p in policies] == ["policy1"]

@@ -1137,6 +1137,7 @@ name = "oracle-oci-recovery-mcp-server"
 version = "3.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "cachetools" },
     { name = "cryptography" },
     { name = "fastmcp" },
     { name = "oci" },
@@ -1155,6 +1156,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cachetools", specifier = "==7.1.8" },
     { name = "cryptography", specifier = "==50.0.1" },
     { name = "fastmcp", specifier = "==3.4.5" },
     { name = "oci", specifier = "==2.185.1" },

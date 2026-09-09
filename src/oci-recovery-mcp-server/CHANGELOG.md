@@ -158,6 +158,50 @@ the server gains two new guidance tools.
   `StopIteration` in the writer — surfacing as a failed tool call. Every mutation now runs
   under a module lock; the upstream OCI fetch stays outside it, so a slow Identity scan
   never serializes other tool calls.
+- **Two of the four summary tools had no deadline.** `summarize_backup_space_used` reads a
+  metric per protected database across every compartment in scope, and
+  `summarize_protected_database_backup_destination` walks compartments, DB Homes and
+  pages before making up to two more calls per database it finds -- the same unbounded
+  fan-out the health and redo summaries were already budgeted for. Both now stop at
+  `ORACLE_MCP_TOOL_DEADLINE_SECONDS` and report `truncated`, and the backup-space
+  response distinguishes the compartments actually scanned (`compartmentIdsScanned`)
+  from those in scope (`compartmentIdsInScope`), so a partial total is never presented
+  as a whole-tenancy one.
+- **The tenancy override did not read the name the shared library documents.**
+  `oracle-mcp-common` reads `OCI_MCP_TENANCY_ID_OVERRIDE` and lists `ORACLE_MCP_TENANCY_ID`
+  and `TENANCY_ID_OVERRIDE` as its legacy aliases; this server read only the aliases, so a
+  deployment configured from the library's own documentation set a variable nothing here
+  looked at and the HTTP transport failed to resolve a tenancy. All three are read now,
+  canonical name first.
+- **`check_recovery_service_limits` ignored `region` and fell back to `us-ashburn-1`.**
+  The argument was accepted and discarded, and an unresolvable region silently became
+  Ashburn -- so the tool reported one region's limits as another's. `region` is honored,
+  the configured region is the fallback, and an unresolvable region now raises.
+- **`summarize_protected_database_backup_destination`: four fixes.** `max_total_databases`
+  broke out of the pagination loop only, so each further DB Home resumed appending past
+  the cap. `has_backups_db_names` was declared, sorted and returned but never appended to,
+  so it was empty on every response; it now names the databases a backup was returned for
+  (and stays empty when `include_last_backup_time` is false, since no backup is queried
+  then). The last-backup-time comparison was `str(t) > str(best)`, which orders a datetime
+  below an ISO-8601 string of the same instant because `" " < "T"`; parsed instants are
+  compared now. De-duplication ran at the end over `items` alone, leaving
+  `total_databases`, `unconfigured_count` and `counts_by_destination_type` counting every
+  occurrence, so the counts did not add up to the list beside them; the repeat is now
+  skipped before anything counts it.
+- **`fetch_regions_subscribed` described a parameter it does not have.** The tool
+  description documented a `service` argument that is not in the signature, and annotated
+  `tenancy_id` as a compartment OCID that scopes the search, which it is not and does not.
+- **The compartment cache is now `cachetools.TTLCache` rather than a hand-rolled store.**
+  The TTL sweep, the LRU ordering and the size bound were this server's code to get right
+  and to test, and none of it was specific to this server. What is specific -- and what
+  stays -- is the cache key: `cachetools.cached(key=...)` takes the partition function, so
+  the tenancy and caller are still composed in one place. A failed Identity scan now raises
+  out of the cached function instead of returning an empty list, because the decorator
+  caches whatever is returned and a cached empty listing would have answered "you have no
+  compartments" to every tool scoping through it for the rest of the TTL; the caller
+  degrades to an empty list outside the cache, as before. Behaviour is otherwise unchanged,
+  including both `ORACLE_MCP_COMPARTMENT_CACHE_TTL_SECONDS` and
+  `ORACLE_MCP_CACHE_MAX_ENTRIES`.
 - **Subscribed regions were cached across callers, answering an authorization question
   ahead of IAM.** Whether a caller may list a tenancy's region subscriptions is decided by
   their own OCI IAM policy, and the only place that decision is made is the IAM call

@@ -11,9 +11,8 @@ token. Both paths converge on ``_config_and_signer()``, which is the only thing
 the client factories need to know about.
 """
 
-import logging
 import os
-from typing import Any, Optional
+from typing import Optional
 
 import oci
 from fastmcp.server.dependencies import get_access_token, get_http_request
@@ -29,7 +28,7 @@ from oracle_mcp_common import (
     resolve_profile_name,
 )
 
-from . import __project__, __version__, logging_setup
+from . import __project__, __version__
 from .logging_setup import logger
 
 _USER_AGENT_NAME = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
@@ -409,14 +408,23 @@ def get_tenancy():
     """
     # An explicit override always wins. Over HTTP it is the only source: there is
     # no local OCI config file on a hosted deployment to read a tenancy from.
-    override = _first_env("TENANCY_ID_OVERRIDE", "ORACLE_MCP_TENANCY_ID")
+    #
+    # OCI_MCP_TENANCY_ID_OVERRIDE first, because that is the name oracle-mcp-common
+    # reads and documents; a deployment configured from the shared library's own docs
+    # was previously finding no tenancy here at all. The other two follow it for the
+    # deployments already using them.
+    override = _first_env(
+        "OCI_MCP_TENANCY_ID_OVERRIDE",
+        "ORACLE_MCP_TENANCY_ID",
+        "TENANCY_ID_OVERRIDE",
+    )
     if override:
         return override
     if _serving_http():
         raise RuntimeError(
-            "HTTP deployments must set ORACLE_MCP_TENANCY_ID (or TENANCY_ID_OVERRIDE) "
-            "to the OCID of the tenancy this server serves; there is no local OCI "
-            "config file to read it from."
+            "HTTP deployments must set OCI_MCP_TENANCY_ID_OVERRIDE (or "
+            "ORACLE_MCP_TENANCY_ID, or TENANCY_ID_OVERRIDE) to the OCID of the tenancy "
+            "this server serves; there is no local OCI config file to read it from."
         )
     config = _load_oci_config_for_server()
     return config["tenancy"]

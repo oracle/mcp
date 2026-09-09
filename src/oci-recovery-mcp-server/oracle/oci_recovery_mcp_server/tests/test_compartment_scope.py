@@ -15,10 +15,10 @@ import pytest
 from _helpers import _response
 import oracle.oci_recovery_mcp_server.models as models
 from oracle.oci_recovery_mcp_server import auth
-from oracle.oci_recovery_mcp_server import cache
+from oracle.oci_recovery_mcp_server import recovery_tools
+from oracle.oci_recovery_mcp_server import app
 from oracle.oci_recovery_mcp_server import clients
 from oracle.oci_recovery_mcp_server import compartments
-import oracle.oci_recovery_mcp_server.server as server
 
 
 def test_compartment_and_database_home_helpers_resolve_ids(monkeypatch):
@@ -114,12 +114,7 @@ def test_child_compartment_helpers_use_cache_fast_path_and_fallback(monkeypatch)
     empty. If expansion fails outright, the tool still scopes to the one resolved
     compartment rather than failing the call.
     """
-    monkeypatch.setattr(
-        compartments,
-        "_COMPARTMENT_CACHE",
-        {"fetched_at": 0.0, "ttl_seconds": 300, "items": None},
-    )
-    monkeypatch.setattr(server.time, "time", lambda: 100.0)
+    monkeypatch.setattr(app.time, "time", lambda: 100.0)
     monkeypatch.setattr(auth, "get_tenancy", lambda: "tenancy")
     monkeypatch.setattr(
         compartments,
@@ -193,46 +188,6 @@ def test_child_compartment_helpers_use_cache_fast_path_and_fallback(monkeypatch)
     ) == ["resolved-Dev"]
 
 
-def test_fetch_child_compartments_crawls_and_applies_output_options(monkeypatch):
-    """
-    fetch_child_compartments reports the resolved root, honors include_self, and
-    truncates to the requested limit.
-    """
-    identity_client = MagicMock()
-    identity_client.list_compartments.side_effect = [
-        _response([SimpleNamespace(id="child")]),
-        _response([]),
-    ]
-    monkeypatch.setattr(
-        compartments,
-        "_resolve_compartment_id",
-        lambda compartment_id: f"resolved-{compartment_id}",
-    )
-    monkeypatch.setattr(
-        compartments,
-        "_expand_compartment_scope",
-        lambda *_args, **_kwargs: ["resolved-Root"],
-    )
-    monkeypatch.setattr(
-        clients, "get_identity_client", lambda request_id=None: identity_client
-    )
-
-    result = compartments.fetch_child_compartments("Root", include_self=False)
-    assert result == {
-        "rootCompartmentId": "resolved-Root",
-        "total": 1,
-        "compartmentIds": ["child"],
-    }
-
-    monkeypatch.setattr(
-        compartments,
-        "_expand_compartment_scope",
-        lambda *_args, **_kwargs: ["resolved-Root", "child", "grandchild"],
-    )
-    result = compartments.fetch_child_compartments("Root", include_self=True, limit=2)
-    assert result["compartmentIds"] == ["resolved-Root", "child"]
-
-
 def test_child_scope_tools_deduplicate_and_forward_filter_kwargs(monkeypatch):
     """
     Every subtree-scoped tool de-duplicates resources seen in more than one
@@ -282,7 +237,7 @@ def test_child_scope_tools_deduplicate_and_forward_filter_kwargs(monkeypatch):
             is_redo_logs_shipped=True,
         )
     )
-    protected_databases = server.list_protected_databases(
+    protected_databases = recovery_tools.list_protected_databases(
         "root", fetch_for_child_compartment=True
     )
     assert [pd["id"] for pd in protected_databases] == ["pd1"]
@@ -291,7 +246,7 @@ def test_child_scope_tools_deduplicate_and_forward_filter_kwargs(monkeypatch):
         _response([SimpleNamespace(id="policy1")]),
         _response([SimpleNamespace(id="policy1"), SimpleNamespace(id="policy2")]),
     ]
-    policies = server.list_protection_policies(
+    policies = recovery_tools.list_protection_policies(
         "root", fetch_for_child_compartment=True
     )
     assert [policy.id for policy in policies] == ["policy1", "policy2"]
@@ -303,7 +258,7 @@ def test_child_scope_tools_deduplicate_and_forward_filter_kwargs(monkeypatch):
     recovery_client.get_recovery_service_subnet.side_effect = RuntimeError(
         "optional full lookup failed"
     )
-    subnets = server.list_recovery_service_subnets(
+    subnets = recovery_tools.list_recovery_service_subnets(
         "root", fetch_for_child_compartment=True
     )
     assert [subnet.id for subnet in subnets] == ["rss1", "rss2"]
@@ -321,7 +276,7 @@ def test_child_scope_tools_deduplicate_and_forward_filter_kwargs(monkeypatch):
         _response([series_a]),
         _response([series_b]),
     ]
-    metrics = server.get_recovery_service_metrics(
+    metrics = recovery_tools.get_recovery_service_metrics(
         compartment_id="root",
         start_time="2024-01-01T00:00:00Z",
         end_time="2024-01-01T01:00:00Z",
@@ -384,7 +339,7 @@ def test_child_scope_tools_deduplicate_and_forward_filter_kwargs(monkeypatch):
             [{"id": "wr2", "operation_type": "restore-database", "status": "IN_PROGRESS"}]
         ),
     ])
-    restore_requests = server.list_restore(
+    restore_requests = recovery_tools.list_restore(
         "root",
         fetch_for_child_compartment=True,
         resource_id="db1",
@@ -411,3 +366,43 @@ def test_child_scope_tools_deduplicate_and_forward_filter_kwargs(monkeypatch):
         work_request_client.list_work_requests.call_args_list[1].kwargs["page"]
         == "wr-page-2"
     )
+
+
+def test_a_failed_compartment_scan_is_not_served_from_the_cache(monkeypatch):
+    """
+    A failed Identity scan must not be cached: the next call retries.
+
+    The scan fails for any number of transient reasons, and this listing decides the
+    scope of 14 tools. Were the empty result cached, one blip would answer "you have
+    no compartments" for the whole TTL, and every one of those tools would quietly
+    return nothing while OCI was healthy again.
+    """
+    monkeypatch.setattr(auth, "get_tenancy", lambda: "tenancy")
+    monkeypatch.setattr(auth, "_serving_http", lambda: False)
+
+    identity_client = MagicMock()
+    identity_client.get_compartment.return_value = _response(
+        SimpleNamespace(id="tenancy", compartment_id=None)
+    )
+    monkeypatch.setattr(clients, "get_identity_client", lambda **_kwargs: identity_client)
+
+    calls: list[str] = []
+
+    def scan(_only_one_page):
+        """Fail once, then succeed -- the shape of a transient Identity outage."""
+        calls.append("scan")
+        if len(calls) == 1:
+            raise RuntimeError("Identity unavailable")
+        return [SimpleNamespace(id="child", compartment_id="tenancy")]
+
+    monkeypatch.setattr(compartments, "list_all_compartments_internal", scan)
+
+    assert compartments._list_all_compartments_cached(request_id="rid") == []
+    # The retry is the whole point: a cached [] would make this return [] as well.
+    recovered = compartments._list_all_compartments_cached(request_id="rid")
+    assert [getattr(c, "id", None) for c in recovered] == ["child", "tenancy"]
+    assert calls == ["scan", "scan"]
+
+    # And the good listing *is* cached -- a third call does not scan again.
+    assert compartments._list_all_compartments_cached(request_id="rid") == recovered
+    assert calls == ["scan", "scan"]

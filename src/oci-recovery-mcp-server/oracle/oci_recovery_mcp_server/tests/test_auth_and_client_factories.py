@@ -10,12 +10,11 @@ the informational config read, and every client factory.
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from fastmcp import Client
 
 from oracle.oci_recovery_mcp_server import auth
+from oracle.oci_recovery_mcp_server import recovery_tools
 from oracle.oci_recovery_mcp_server import clients
 from oracle.oci_recovery_mcp_server import telemetry
-import oracle.oci_recovery_mcp_server.server as server
 
 
 class TestProfileClientFactories:
@@ -28,7 +27,7 @@ class TestProfileClientFactories:
         "oracle.oci_recovery_mcp_server.telemetry._wrap_oci_client",
         side_effect=lambda client, **_: client,
     )
-    @patch("oracle.oci_recovery_mcp_server.server.oci.recovery.DatabaseRecoveryClient")
+    @patch("oracle.oci_recovery_mcp_server.recovery_tools.oci.recovery.DatabaseRecoveryClient")
     @patch("oracle.oci_recovery_mcp_server.auth._build_profile_auth_context")
     def test_get_recovery_client_apikey_uses_profile_auth_context(
         self,
@@ -59,7 +58,7 @@ class TestProfileClientFactories:
         "oracle.oci_recovery_mcp_server.telemetry._wrap_oci_client",
         side_effect=lambda client, **_: client,
     )
-    @patch("oracle.oci_recovery_mcp_server.server.oci.monitoring.MonitoringClient")
+    @patch("oracle.oci_recovery_mcp_server.recovery_tools.oci.monitoring.MonitoringClient")
     @patch("oracle.oci_recovery_mcp_server.auth._build_profile_auth_context")
     def test_get_monitoring_client_session_uses_profile_auth_context(
         self,
@@ -87,7 +86,7 @@ class TestProfileClientFactories:
         "oracle.oci_recovery_mcp_server.telemetry._wrap_oci_client",
         side_effect=lambda client, **_: client,
     )
-    @patch("oracle.oci_recovery_mcp_server.server.oci.recovery.DatabaseRecoveryClient")
+    @patch("oracle.oci_recovery_mcp_server.recovery_tools.oci.recovery.DatabaseRecoveryClient")
     @patch("oracle.oci_recovery_mcp_server.auth._http_config_and_signer")
     @patch("oracle.oci_recovery_mcp_server.auth._serving_http", return_value=True)
     def test_http_client_uses_request_scoped_token_exchange_signer(
@@ -202,10 +201,10 @@ def test_client_factories_use_profile_and_http_auth_paths(monkeypatch):
     database_client = MagicMock(return_value="database-client")
     identity_client = MagicMock(return_value="identity-client")
     monitoring_client = MagicMock(return_value="monitoring-client")
-    monkeypatch.setattr(server.oci.recovery, "DatabaseRecoveryClient", recovery_client)
-    monkeypatch.setattr(server.oci.database, "DatabaseClient", database_client)
-    monkeypatch.setattr(server.oci.identity, "IdentityClient", identity_client)
-    monkeypatch.setattr(server.oci.monitoring, "MonitoringClient", monitoring_client)
+    monkeypatch.setattr(recovery_tools.oci.recovery, "DatabaseRecoveryClient", recovery_client)
+    monkeypatch.setattr(recovery_tools.oci.database, "DatabaseClient", database_client)
+    monkeypatch.setattr(recovery_tools.oci.identity, "IdentityClient", identity_client)
+    monkeypatch.setattr(recovery_tools.oci.monitoring, "MonitoringClient", monitoring_client)
 
     # apikey/session: config + signer come from the shared auth context.
     profile_signer = object()
@@ -266,28 +265,17 @@ def test_limits_work_request_and_subscription_client_factories(monkeypatch):
 
     limits_client = MagicMock(return_value="limits-client")
     work_request_client = MagicMock(return_value="work-request-client")
-    subscribed_service_client = MagicMock(return_value="subscription-client")
-    monkeypatch.setattr(server.oci.limits, "LimitsClient", limits_client)
+    monkeypatch.setattr(recovery_tools.oci.limits, "LimitsClient", limits_client)
     monkeypatch.setattr(
-        server.oci.work_requests, "WorkRequestClient", work_request_client
-    )
-    monkeypatch.setattr(
-        server.oci.onesubscription,
-        "SubscribedServiceClient",
-        subscribed_service_client,
+        recovery_tools.oci.work_requests, "WorkRequestClient", work_request_client
     )
 
     assert clients.get_limits_client(region="us-phoenix-1")[1] == "limits"
     assert (
         clients.get_work_request_client(region="us-chicago-1")[1] == "work_requests"
     )
-    assert (
-        clients.get_onesubscription_client(region="us-ashburn-1")[1]
-        == "onesubscription"
-    )
     assert limits_client.call_args.args[0]["region"] == "us-phoenix-1"
     assert work_request_client.call_args.args[0]["region"] == "us-chicago-1"
-    assert subscribed_service_client.call_args.args[0]["region"] == "us-ashburn-1"
     assert limits_client.call_args.kwargs["signer"] is profile_signer
 
     # No explicit region falls back to the resolved profile's home region.
@@ -304,10 +292,5 @@ def test_limits_work_request_and_subscription_client_factories(monkeypatch):
     )
     assert clients.get_work_request_client(region="us-sanjose-1")[1] == "work_requests"
     assert clients.get_limits_client(region="us-sanjose-1")[1] == "limits"
-    assert (
-        clients.get_onesubscription_client(region="us-sanjose-1")[1]
-        == "onesubscription"
-    )
     assert work_request_client.call_args.kwargs["signer"] is http_signer
     assert limits_client.call_args.kwargs["signer"] is http_signer
-    assert subscribed_service_client.call_args.kwargs["signer"] is http_signer

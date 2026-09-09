@@ -101,18 +101,3 @@ def get_limits_client(region: str | None = None, *, request_id: Optional[str] = 
         client_name="limits",
         request_id=request_id,
     )
-
-
-def get_onesubscription_client(region: str | None = None, *, request_id: Optional[str] = None):
-    """
-    Create a OneSubscription SubscribedService client.
-
-    We use this to discover which regions a tenancy is subscribed to for a given service,
-    so we can execute compartment-scoped queries across all relevant regions.
-    """
-    return _make_client(
-        oci.onesubscription.SubscribedServiceClient,
-        region,
-        client_name="onesubscription",
-        request_id=request_id,
-    )

@@ -13,10 +13,10 @@ import pytest
 
 from _helpers import _raise, _response
 from oracle.oci_recovery_mcp_server import auth
+from oracle.oci_recovery_mcp_server import recovery_tools
 from oracle.oci_recovery_mcp_server import clients
 from oracle.oci_recovery_mcp_server import compartments
 from oracle.oci_recovery_mcp_server import regions
-import oracle.oci_recovery_mcp_server.server as server
 
 
 def test_region_subscription_and_limit_tools_return_current_contracts(monkeypatch):
@@ -48,7 +48,7 @@ def test_region_subscription_and_limit_tools_return_current_contracts(monkeypatc
         {"region": "us-phoenix-1", "status": "READY"},
     ]
     assert regions._iam_subscribed_regions_with_status(request_id="rid2") == subscribed
-    assert server.fetch_regions_subscribed()["total"] == 2
+    assert recovery_tools.fetch_regions_subscribed()["total"] == 2
     # Every one of those three lookups went back to IAM.
     assert identity_client.list_region_subscriptions.call_args_list == [
         call(tenancy_id="tenancy")
@@ -56,7 +56,7 @@ def test_region_subscription_and_limit_tools_return_current_contracts(monkeypatc
 
     limits_client = MagicMock()
     monkeypatch.setattr(
-        server.oci.util,
+        recovery_tools.oci.util,
         "to_dict",
         lambda _obj: _raise(RuntimeError("no SDK conversion")),
     )
@@ -95,9 +95,9 @@ def test_region_subscription_and_limit_tools_return_current_contracts(monkeypatc
         lambda region, request_id=None: limits_client,
     )
 
-    limits = server.check_recovery_service_limits(
+    # No region argument: the server's configured region is used.
+    limits = recovery_tools.check_recovery_service_limits(
         compartment_id="ignored",
-        region="ignored",
         opc_request_id="opc",
     )
     assert limits["compartmentId"] == "tenancy"
@@ -145,10 +145,10 @@ def test_metric_query_parts_are_validated_before_interpolation(monkeypatch):
         end_time="2026-01-02T00:00:00Z",
     )
 
-    server.get_recovery_service_metrics(**valid)
+    recovery_tools.get_recovery_service_metrics(**valid)
     assert captured["query"] == "SpaceUsedForRecoveryWindow[1h].max()"
 
-    server.get_recovery_service_metrics(
+    recovery_tools.get_recovery_service_metrics(
         **valid,
         metricName="ProtectedDatabaseSize",
         resolution="1d",
@@ -169,4 +169,50 @@ def test_metric_query_parts_are_validated_before_interpolation(monkeypatch):
     }
     for field, value in rejected.items():
         with pytest.raises(ValueError, match=field):
-            server.get_recovery_service_metrics(**valid, **{field: value})
+            recovery_tools.get_recovery_service_metrics(**valid, **{field: value})
+
+
+def test_limit_lookups_honor_the_requested_region_and_refuse_to_guess_one(monkeypatch):
+    """
+    `region` selects the region the limits are read from, and an unresolvable region is
+    an error rather than a default.
+
+    Limits differ per region, so both halves matter: the argument used to be accepted
+    and silently discarded, which answered for the configured region while the caller
+    believed they had asked about another, and the fallback used to be a hard-coded
+    us-ashburn-1, which reported one region's numbers as another's on a server whose
+    region could not be resolved. A wrong number is actionable; that is what makes it
+    worse than no number.
+    """
+    monkeypatch.setattr(auth, "get_tenancy", lambda: "tenancy")
+    limits_client = MagicMock()
+    limits_client.get_resource_availability.return_value = _response(
+        {"scope_type": "REGION", "available": 1, "used": 0}
+    )
+    built_for: list[str] = []
+
+    def limits_factory(region, request_id=None):
+        """Record the region each client is built for."""
+        built_for.append(region)
+        return limits_client
+
+    monkeypatch.setattr(clients, "get_limits_client", limits_factory)
+    monkeypatch.setattr(auth, "_load_oci_config_for_server", lambda: {"region": "us-phoenix-1"})
+
+    # The argument wins over the server's configured region.
+    assert recovery_tools.check_recovery_service_limits(region="eu-frankfurt-1")["region"] == (
+        "eu-frankfurt-1"
+    )
+    assert built_for == ["eu-frankfurt-1"]
+
+    # A blank argument is not an answer: it falls through to the configured region.
+    built_for.clear()
+    assert recovery_tools.check_recovery_service_limits(region="   ")["region"] == "us-phoenix-1"
+    assert built_for == ["us-phoenix-1"]
+
+    # With no region anywhere, the tool says so instead of picking one.
+    monkeypatch.setattr(auth, "_effective_region", lambda default=None: None)
+    with pytest.raises(ValueError, match="No OCI region could be determined"):
+        recovery_tools.check_recovery_service_limits()
+    with pytest.raises(ValueError, match="No OCI region could be determined"):
+        recovery_tools.check_recovery_service_limits(region="   ")

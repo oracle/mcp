@@ -10,20 +10,19 @@ wrapper, and the tool logging decorator.
 import logging
 import logging.handlers
 import stat
-import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-import oci
 import pytest
 
 from _helpers import _raise, _response
 from oracle.oci_recovery_mcp_server import auth
+from oracle.oci_recovery_mcp_server import recovery_tools
+from oracle.oci_recovery_mcp_server import app
 from oracle.oci_recovery_mcp_server import cache
 from oracle.oci_recovery_mcp_server import logging_setup
 from oracle.oci_recovery_mcp_server import telemetry
 import oracle.oci_recovery_mcp_server.server as server
-from oracle.oci_recovery_mcp_server.server import mcp
 
 
 def test_deadline_uses_a_monotonic_cooperative_budget(monkeypatch):
@@ -32,13 +31,13 @@ def test_deadline_uses_a_monotonic_cooperative_budget(monkeypatch):
     latches expired. A budget of zero disables the deadline entirely.
     """
     moments = iter([100.0, 100.5, 101.0])
-    monkeypatch.setattr(server.time, "monotonic", lambda: next(moments))
+    monkeypatch.setattr(app.time, "monotonic", lambda: next(moments))
 
-    deadline = server._Deadline(seconds=1.0)
+    deadline = app._Deadline(seconds=1.0)
     assert deadline.reached() is False
     assert deadline.reached() is True
 
-    disabled = server._Deadline(seconds=0)
+    disabled = app._Deadline(seconds=0)
     assert disabled.reached() is False
 
 
@@ -53,7 +52,7 @@ def test_server_helpers_handle_serialization_config_and_wrapping(monkeypatch, tm
     """
     monkeypatch.setattr(logging_setup, "_LOG_MAX_VALUE_CHARS", 5)
     monkeypatch.setattr(
-        server.oci.util,
+        recovery_tools.oci.util,
         "to_dict",
         lambda _obj: _raise(RuntimeError("no SDK conversion")),
     )
@@ -165,7 +164,7 @@ def test_server_helpers_handle_serialization_config_and_wrapping(monkeypatch, tm
     monkeypatch.setenv("OCI_CONFIG_PROFILE", "PROFILE2")
 
     monkeypatch.setattr(
-        server.oci.config,
+        recovery_tools.oci.config,
         "from_file",
         lambda file_location, profile_name: {
             "region": profile_name,
@@ -184,7 +183,7 @@ def test_logging_tool_wrapper_tenancy_and_apikey_client_paths(monkeypatch, tmp_p
     get_tenancy prefers the env override, then the profile under stdio -- while
     under HTTP it uses the configured tenancy and never touches the OCI config.
     """
-    root_logger = server.logging.getLogger()
+    root_logger = logging.getLogger()
     original_handlers = list(root_logger.handlers)
     try:
         root_logger.handlers = []
@@ -196,7 +195,7 @@ def test_logging_tool_wrapper_tenancy_and_apikey_client_paths(monkeypatch, tmp_p
             for handler in root_logger.handlers
         )
         assert any(
-            isinstance(handler, server.logging.StreamHandler)
+            isinstance(handler, logging.StreamHandler)
             and not isinstance(handler, logging_setup.RotatingFileHandler)
             for handler in root_logger.handlers
         )
@@ -303,7 +302,7 @@ def test_state_directory_is_outside_the_install_tree(monkeypatch, tmp_path):
     operator is told to read.
     """
     monkeypatch.delenv(logging_setup._STATE_DIR_ENV, raising=False)
-    monkeypatch.setattr(server.Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(logging_setup.Path, "home", classmethod(lambda cls: tmp_path))
     assert logging_setup._state_dir() == tmp_path / logging_setup._STATE_DIR_NAME
     assert telemetry._installation_id_file().parent == logging_setup._state_dir()
 
@@ -340,92 +339,26 @@ def test_results_are_summarized_at_info_and_written_only_at_debug(monkeypatch):
 
 def test_cache_key_always_carries_the_tenant_and_the_caller(monkeypatch):
     """
-    A namespace is all a call site supplies; the tenant and caller are appended here.
+    A call site supplies a namespace; the tenant and caller are appended here.
 
-    The store is reached only through _cache_get/_cache_put, and both build their key
-    with _cache_key, so a new cache cannot repeat what the old region cache did and
-    key on the tenancy alone.
+    This is the half of the cache that is not cachetools'. TTL, LRU and the size
+    bound are the library's problem now; deciding whose entry is whose is still
+    this server's, and keying on the tenancy alone is exactly what made the old
+    region cache serve one caller's answer to another.
     """
     monkeypatch.setattr(cache, "_tenant_cache_key", lambda: "tenantA")
     monkeypatch.setattr(cache, "_caller_cache_key", lambda: "sub:alice")
-    assert cache._cache_key("ns") == "ns|tenantA|sub:alice"
+    alice = cache._cache_key("ns")
+    assert alice == "ns|tenantA|sub:alice"
 
-    entries: dict = {}
-    cache._cache_put(entries, "ns", {"fetched_at": 1000.0}, ttl=300, now=1000.0)
-    assert list(entries) == ["ns|tenantA|sub:alice"]
-
-    # Same tenant, different caller: a separate entry, and no read across the two.
+    # Same tenant, different caller: a different key, so neither can read the other.
     monkeypatch.setattr(cache, "_caller_cache_key", lambda: "sub:bob")
-    assert cache._cache_get(entries, "ns", ttl=300, now=1000.0) is None
+    assert cache._cache_key("ns") != alice
 
-
-def test_caches_evict_expired_entries_and_stay_bounded(monkeypatch):
-    """
-    The cache drops expired entries, caps at _CACHE_MAX_ENTRIES, and evicts
-    least-recently-used first -- a hit moves an entry back to the front.
-
-    It is partitioned per tenant and per caller, so a hosted deployment gains an
-    entry for every person who signs in.
-    """
-    monkeypatch.setattr(cache, "_tenant_cache_key", lambda: "t")
-    monkeypatch.setattr(cache, "_caller_cache_key", lambda: "c")
-    key = cache._cache_key
-
-    entries: dict = {}
-    now = 1000.0
-    for index in range(cache._CACHE_MAX_ENTRIES + 5):
-        cache._cache_put(entries, f"k{index}", {"fetched_at": now}, ttl=300, now=now)
-    assert len(entries) == cache._CACHE_MAX_ENTRIES
-    assert key("k0") not in entries  # oldest evicted first
-
-    aged = {key("stale"): {"fetched_at": 0.0}, key("fresh"): {"fetched_at": now}}
-    cache._cache_put(aged, "new", {"fetched_at": now}, ttl=300, now=now)
-    assert set(aged) == {key("fresh"), key("new")}
-
-    assert cache._cache_get(aged, "stale", ttl=300, now=now) is None
-    assert cache._cache_get(aged, "fresh", ttl=300, now=now) is not None
-    # A hit refreshes recency, so eviction order is least-recently-used.
-    assert list(aged) == [key("new"), key("fresh")]
-
-
-def test_cache_survives_concurrent_readers_and_writers(monkeypatch):
-    """
-    Reads and writes from many threads never raise and never breach the bound.
-
-    FastMCP runs synchronous tools in worker threads, so two tool calls reach these
-    helpers at once. Both mutate: _cache_get reinserts on a hit to maintain LRU
-    order, and _cache_put sweeps expired entries and evicts. Unsynchronized, the
-    reinsert raises KeyError against a concurrent sweep of the same key, and the
-    sweep and eviction raise "dictionary changed size during iteration" or
-    StopIteration. Every key here is live, so the sweep and the bound both stay hot.
-    """
-    monkeypatch.setattr(cache, "_tenant_cache_key", lambda: "t")
-    monkeypatch.setattr(cache, "_caller_cache_key", lambda: "c")
-
-    entries: dict = {}
-    now = 1000.0
-    keys = [f"k{index}" for index in range(cache._CACHE_MAX_ENTRIES * 2)]
-    errors: list[BaseException] = []
-    start = threading.Barrier(8)
-
-    def hammer():
-        """Interleave puts and gets over a shared key space until the space is spent."""
-        start.wait()
-        try:
-            for key in keys:
-                cache._cache_put(entries, key, {"fetched_at": now}, ttl=300, now=now)
-                cache._cache_get(entries, key, ttl=300, now=now)
-        except BaseException as error:  # noqa: BLE001 -- the assertion is "nothing raised"
-            errors.append(error)
-
-    threads = [threading.Thread(target=hammer) for _ in range(8)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
-
-    assert errors == []
-    assert len(entries) <= cache._CACHE_MAX_ENTRIES
+    # Same caller, different tenant: likewise.
+    monkeypatch.setattr(cache, "_caller_cache_key", lambda: "sub:alice")
+    monkeypatch.setattr(cache, "_tenant_cache_key", lambda: "tenantB")
+    assert cache._cache_key("ns") != alice
 
 
 def test_http_deployments_refuse_to_fall_back_to_profile_credentials(monkeypatch):

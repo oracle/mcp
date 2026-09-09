@@ -10,8 +10,6 @@ from unittest.mock import MagicMock, create_autospec, patch
 import oci
 import pytest
 from fastmcp import Client
-from oracle.oci_recovery_mcp_server import clients
-from oracle.oci_recovery_mcp_server import compartments
 from oracle.oci_recovery_mcp_server.server import mcp
 
 

@@ -3,21 +3,18 @@ Copyright (c) 2025, 2026 Oracle and/or its affiliates.
 Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 
-The in-process TTL/LRU cache behind the compartment lookup.
+Who may see a cached entry.
 
-Two things live here: the key that decides who may see a cached entry -- namespace
-plus tenant plus caller, composed in exactly one place so no cache can be added
-that quietly omits the caller -- and the bounded TTL store itself: a TTL sweep plus an LRU bound, so
-a hosted deployment does not grow an entry per signed-in caller forever. FastMCP
-runs synchronous tools in worker threads, so every mutation is done under
-``_CACHE_LOCK``.
+The store itself is cachetools' -- TTL, LRU and the size bound are a solved problem
+and not this server's to re-implement. What is this server's problem is the key:
+namespace plus tenant plus caller, composed in exactly one place so that no cache
+can be added that quietly omits the caller and serves one person's result to
+another. That is what the old region cache did.
 """
 
 import hashlib
 import os
-import threading
 import uuid
-from typing import Any, Optional
 
 from . import auth
 
@@ -78,66 +75,15 @@ def _cache_key(namespace: str) -> str:
     Build the key for a cached value. The only supported way to make one.
 
     Every cached value is scoped to the tenancy and to the caller whose
-    permissions produced it. Composing that by hand at the call site is exactly
-    how the old region cache came to key on tenancy alone and hand one caller's
-    result to another, so the accessors below take a namespace and come here --
-    there is no way to reach the store with a key that skipped this.
+    permissions produced it. Composing that by hand at the call site is exactly how
+    the old region cache came to key on tenancy alone and hand one caller's result
+    to another, so a call site supplies only a namespace and the partition is
+    appended here.
     """
     return f"{namespace}|{_tenant_cache_key()}|{_caller_cache_key()}"
 
 
+# The bound each cache passes to its store as maxsize. It matters on the hosted
+# transport, where the key includes the caller: without it the process would grow an
+# entry per person signed in, each holding that caller's whole compartment listing.
 _CACHE_MAX_ENTRIES = int(os.getenv("ORACLE_MCP_CACHE_MAX_ENTRIES", "256"))
-
-# FastMCP runs synchronous tools in worker threads, so two tool calls can be inside
-# these helpers at once. Both of them reorder and evict entries, not just read them:
-# unsynchronized, the reinsert in _cache_get raises KeyError when another thread
-# sweeps the same key first, and the sweep and eviction in _cache_put raise
-# "dictionary changed size during iteration" or StopIteration. The critical sections
-# are dict operations only -- the upstream fetch happens between a _cache_get miss
-# and the _cache_put, outside the lock -- so no OCI call is ever made holding it.
-_CACHE_LOCK = threading.Lock()
-
-
-def _cache_get(
-    entries: dict[str, Any], namespace: str, *, ttl: float, now: float
-) -> Optional[Any]:
-    """Return a live cache entry, refreshing its recency, or None.
-
-    Reinserting on a hit makes the dict's insertion order a true LRU order, which
-    is what _cache_put evicts from. The key is resolved before the lock is taken:
-    it reads the tenancy and the caller's token, and neither belongs in a critical
-    section that every other tool call is waiting on.
-    """
-    key = _cache_key(namespace)
-    with _CACHE_LOCK:
-        cached = entries.get(key)
-        if not cached:
-            return None
-        if now - float(cached.get("fetched_at") or 0.0) >= ttl:
-            entries.pop(key, None)
-            return None
-        entries[key] = entries.pop(key)
-        return cached
-
-
-def _cache_put(
-    entries: dict[str, Any], namespace: str, value: Any, *, ttl: float, now: float
-) -> None:
-    """Store a cache entry, sweeping expired ones and bounding the total.
-
-    This cache is partitioned per tenant and per caller, so on the hosted HTTP
-    transport it gains an entry for every person who signs in and each one holds
-    that caller's whole compartment listing. Without a bound the process grows
-    with the user count for the life of the deployment.
-    """
-    key = _cache_key(namespace)
-    with _CACHE_LOCK:
-        for expired in [
-            k for k, v in entries.items() if now - float(v.get("fetched_at") or 0.0) >= ttl
-        ]:
-            entries.pop(expired, None)
-        entries.pop(key, None)
-        entries[key] = value
-        # Holding the lock, len() > max guarantees there is something to pop.
-        while len(entries) > _CACHE_MAX_ENTRIES:
-            entries.pop(next(iter(entries)))

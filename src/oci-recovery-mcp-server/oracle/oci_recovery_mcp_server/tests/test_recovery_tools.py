@@ -4,7 +4,6 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
-import hashlib
 from types import SimpleNamespace
 from unittest.mock import MagicMock, create_autospec, patch
 
@@ -12,6 +11,7 @@ import oci
 import pytest
 from fastmcp import Client
 from oracle.oci_recovery_mcp_server import auth
+from oracle.oci_recovery_mcp_server import recovery_tools
 from oracle.oci_recovery_mcp_server import cache
 from oracle.oci_recovery_mcp_server import clients
 from oracle.oci_recovery_mcp_server import compartments
@@ -26,7 +26,6 @@ class TestGetClientFactories:
     Request marking and client construction: the opc-request-id every OCI call
     carries, the pseudonyms inside it, and the auth each client factory resolves.
     """
-
     def test_oci_client_wrapper_adds_mcp_request_marker(self, monkeypatch):
         """
         Every wrapped SDK call carries an opc-request-id naming this installation, the
@@ -268,7 +267,7 @@ class TestGetClientFactories:
             telemetry._MCP_ACTOR_ID_CONTEXT.reset(actor_id_token)
 
     @patch("oracle.oci_recovery_mcp_server.telemetry._wrap_oci_client", side_effect=lambda client, **_: client)
-    @patch("oracle.oci_recovery_mcp_server.server.oci.recovery.DatabaseRecoveryClient")
+    @patch("oracle.oci_recovery_mcp_server.recovery_tools.oci.recovery.DatabaseRecoveryClient")
     @patch("oracle.oci_recovery_mcp_server.auth._build_profile_auth_context")
     def test_get_recovery_client_apikey_uses_oracle_mcp_common(
         self,
@@ -295,7 +294,7 @@ class TestGetClientFactories:
         assert result is mock_client.return_value
 
     @patch("oracle.oci_recovery_mcp_server.telemetry._wrap_oci_client", side_effect=lambda client, **_: client)
-    @patch("oracle.oci_recovery_mcp_server.server.oci.monitoring.MonitoringClient")
+    @patch("oracle.oci_recovery_mcp_server.recovery_tools.oci.monitoring.MonitoringClient")
     @patch("oracle.oci_recovery_mcp_server.auth._build_profile_auth_context")
     def test_get_monitoring_client_session_uses_oracle_mcp_common_signer(
         self,
@@ -317,7 +316,7 @@ class TestGetClientFactories:
         assert kwargs["signer"] is signer
         assert result is mock_client.return_value
 
-    @patch("oracle.oci_recovery_mcp_server.server.oci.config.from_file")
+    @patch("oracle.oci_recovery_mcp_server.recovery_tools.oci.config.from_file")
     def test_legacy_auth_method_spellings_all_keep_working(
         self, mock_from_file, monkeypatch
     ):
@@ -373,7 +372,7 @@ class TestGetClientFactories:
             seen["profile"] = profile_name
             return {"region": "us-ashburn-1"}
 
-        monkeypatch.setattr(server.oci.config, "from_file", fake_from_file)
+        monkeypatch.setattr(recovery_tools.oci.config, "from_file", fake_from_file)
         auth._load_oci_config_for_server()
 
         assert seen["profile"] == resolve_profile_name() == "FROM_OCI"
@@ -551,19 +550,47 @@ class TestHttpTransportAuth:
         silently serve whatever tenancy happens to be configured on the host.
         """
         monkeypatch.setattr(auth, "_serving_http", lambda: True)
-        monkeypatch.delenv("ORACLE_MCP_TENANCY_ID", raising=False)
-        monkeypatch.delenv("TENANCY_ID_OVERRIDE", raising=False)
-        with pytest.raises(RuntimeError, match="ORACLE_MCP_TENANCY_ID"):
+        for name in ("OCI_MCP_TENANCY_ID_OVERRIDE", "ORACLE_MCP_TENANCY_ID", "TENANCY_ID_OVERRIDE"):
+            monkeypatch.delenv(name, raising=False)
+        with pytest.raises(RuntimeError, match="OCI_MCP_TENANCY_ID_OVERRIDE"):
             auth.get_tenancy()
 
         monkeypatch.setenv("ORACLE_MCP_TENANCY_ID", "ocid1.tenancy.oc1..hosted")
         assert auth.get_tenancy() == "ocid1.tenancy.oc1..hosted"
 
+    def test_get_tenancy_reads_the_name_the_shared_library_documents(self, monkeypatch):
+        """
+        OCI_MCP_TENANCY_ID_OVERRIDE is honored, and outranks the older spellings.
+
+        That is the name oracle-mcp-common reads and documents, with the other two
+        listed there as its legacy aliases. This server read only the aliases, so a
+        deployment configured from the shared library's own documentation set a
+        variable nothing here looked at, and the tenancy lookup fell through to a
+        RuntimeError over HTTP.
+        """
+        monkeypatch.setattr(auth, "_serving_http", lambda: True)
+        for name in ("OCI_MCP_TENANCY_ID_OVERRIDE", "ORACLE_MCP_TENANCY_ID", "TENANCY_ID_OVERRIDE"):
+            monkeypatch.delenv(name, raising=False)
+
+        monkeypatch.setenv("OCI_MCP_TENANCY_ID_OVERRIDE", "ocid1.tenancy.oc1..canonical")
+        assert auth.get_tenancy() == "ocid1.tenancy.oc1..canonical"
+
+        # Set alongside the older names, the canonical one still wins.
+        monkeypatch.setenv("ORACLE_MCP_TENANCY_ID", "ocid1.tenancy.oc1..oracle")
+        monkeypatch.setenv("TENANCY_ID_OVERRIDE", "ocid1.tenancy.oc1..legacy")
+        assert auth.get_tenancy() == "ocid1.tenancy.oc1..canonical"
+
+        # And the legacy names keep working for deployments already using them.
+        monkeypatch.delenv("OCI_MCP_TENANCY_ID_OVERRIDE")
+        assert auth.get_tenancy() == "ocid1.tenancy.oc1..oracle"
+        monkeypatch.delenv("ORACLE_MCP_TENANCY_ID")
+        assert auth.get_tenancy() == "ocid1.tenancy.oc1..legacy"
+
     @patch(
         "oracle.oci_recovery_mcp_server.telemetry._wrap_oci_client",
         side_effect=lambda client, **_: client,
     )
-    @patch("oracle.oci_recovery_mcp_server.server.oci.recovery.DatabaseRecoveryClient")
+    @patch("oracle.oci_recovery_mcp_server.recovery_tools.oci.recovery.DatabaseRecoveryClient")
     def test_make_client_over_http_uses_the_shared_idcs_request_context(
         self, mock_client, _mock_wrap, monkeypatch
     ):
@@ -633,7 +660,7 @@ class TestHttpTransportAuth:
         monkeypatch.setattr(telemetry, "_wrap_oci_client", lambda client, **_: client)
 
         with patch("oci.auth.signers.TokenExchangeSigner"), patch(
-            "oracle.oci_recovery_mcp_server.server.oci.recovery.DatabaseRecoveryClient"
+            "oracle.oci_recovery_mcp_server.recovery_tools.oci.recovery.DatabaseRecoveryClient"
         ) as mock_client:
             clients.get_recovery_client(region="us-phoenix-1", request_id="rid")
 
@@ -1000,7 +1027,7 @@ class TestCachePartitioning:
 
     def test_compartment_cache_partitioned_by_tenant(self, monkeypatch):
         """One tenancy's compartment listing is never served to another."""
-        compartments._COMPARTMENT_CACHE["entries"].clear()
+        compartments._STORE.clear()
         seq = {"tA": [SimpleNamespace(id="cA")], "tB": [SimpleNamespace(id="cB")]}
         calls = []
 
@@ -1042,7 +1069,7 @@ class TestCachePartitioning:
         calling identity's permissions: sharing an entry would serve a
         broadly-permissioned user's compartment tree to a restricted one.
         """
-        compartments._COMPARTMENT_CACHE["entries"].clear()
+        compartments._STORE.clear()
         current = {"sub": "alice"}
         visible = {"alice": [SimpleNamespace(id="c-all")], "bob": [SimpleNamespace(id="c-few")]}
         calls = []
@@ -1087,7 +1114,7 @@ class TestCachePartitioning:
         Two callers whose tokens carry no subject and share a registered client_id are
         still kept apart, by their per-session tokens.
         """
-        compartments._COMPARTMENT_CACHE["entries"].clear()
+        compartments._STORE.clear()
         current = {"token": "token-alice"}
         visible = {
             "token-alice": [SimpleNamespace(id="c-all")],

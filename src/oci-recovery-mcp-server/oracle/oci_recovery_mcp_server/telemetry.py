@@ -13,7 +13,6 @@ invocation and every SDK call it makes.
 
 import hashlib
 import inspect
-import json
 import logging
 import os
 import re
@@ -25,7 +24,6 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from . import auth, logging_setup
-from .logging_setup import logger
 
 _MCP_OPC_REQUEST_ID_PREFIX = "rcvmcp"
 _MCP_INSTALLATION_ID_ENV = "ORACLE_MCP_INSTALLATION_ID"

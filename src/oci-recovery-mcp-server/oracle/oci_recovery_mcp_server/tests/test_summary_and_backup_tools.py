@@ -7,17 +7,20 @@ Summary tools and backup tools: health, redo status, space used, and the backup
 destination summaries built from object-store listings.
 """
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
-from _helpers import _raise, _response
+from _helpers import _response
 import oracle.oci_recovery_mcp_server.models as models
+from oracle.oci_recovery_mcp_server import app
 from oracle.oci_recovery_mcp_server import auth
+from oracle.oci_recovery_mcp_server import summarise_tools
+from oracle.oci_recovery_mcp_server import recovery_tools
 from oracle.oci_recovery_mcp_server import clients
 from oracle.oci_recovery_mcp_server import compartments
-import oracle.oci_recovery_mcp_server.server as server
 
 
 def test_summary_tools_fall_back_on_counts_and_metrics(monkeypatch):
@@ -53,7 +56,7 @@ def test_summary_tools_fall_back_on_counts_and_metrics(monkeypatch):
         _response(SimpleNamespace()),
     ]
 
-    health = server.summarize_protected_database_health(
+    health = summarise_tools.summarize_protected_database_health(
         compartment_id=None, region="us-ashburn-1"
     )
     assert health.aggregated.model_dump(by_alias=True) == {
@@ -95,7 +98,7 @@ def test_summary_tools_fall_back_on_counts_and_metrics(monkeypatch):
         _response(SimpleNamespace(metrics=SimpleNamespace(is_redo_logs_enabled=True))),
     ]
 
-    redo = server.summarize_protected_database_redo_status(
+    redo = summarise_tools.summarize_protected_database_redo_status(
         compartment_id="compartment", region="us-ashburn-1"
     )
     # The fourth entry has no id, so its redo status cannot be read at all. It is
@@ -134,7 +137,7 @@ def test_summary_tools_fall_back_on_counts_and_metrics(monkeypatch):
         _response(SimpleNamespace(metrics={})),
     ]
 
-    backup_space = server.summarize_backup_space_used(
+    backup_space = summarise_tools.summarize_backup_space_used(
         compartment_id="compartment", region="us-ashburn-1"
     )
     assert backup_space["aggregated"]["compartmentId"] == "compartment"
@@ -162,7 +165,7 @@ def test_summary_serialization_fallbacks_and_error_paths(monkeypatch):
     )
     recovery_client.list_protected_databases.return_value = _response([])
 
-    health = server.summarize_protected_database_health("compartment")
+    health = summarise_tools.summarize_protected_database_health("compartment")
     assert isinstance(health, models.ProtectedDatabaseHealthSummary)
     assert health.aggregated.model_dump(by_alias=True) == {
         "compartmentId": "compartment",
@@ -175,7 +178,7 @@ def test_summary_serialization_fallbacks_and_error_paths(monkeypatch):
         "partial": False,
     }
 
-    redo = server.summarize_protected_database_redo_status("compartment")
+    redo = summarise_tools.summarize_protected_database_redo_status("compartment")
     assert isinstance(redo, models.ProtectedDatabaseRedoSummary)
     assert redo.aggregated.model_dump(by_alias=True) == {
         "compartmentId": "compartment",
@@ -189,7 +192,7 @@ def test_summary_serialization_fallbacks_and_error_paths(monkeypatch):
 
     recovery_client.list_protected_databases.side_effect = RuntimeError("service down")
     with pytest.raises(RuntimeError, match="service down"):
-        server.summarize_backup_space_used("compartment")
+        summarise_tools.summarize_backup_space_used("compartment")
 
 
 def test_backup_tools_handle_manual_paging_errors_and_destination_variants(monkeypatch):
@@ -231,7 +234,7 @@ def test_backup_tools_handle_manual_paging_errors_and_destination_variants(monke
         next_page="ignored-when-not-aggregating",
     )
     db_client.get_database.side_effect = RuntimeError("database lookup failed")
-    backups = server.list_backups(
+    backups = recovery_tools.list_backups(
         database_id="db1",
         lifecycle_state="ACTIVE",
         type="FULL",
@@ -252,7 +255,7 @@ def test_backup_tools_handle_manual_paging_errors_and_destination_variants(monke
     }
 
     with pytest.raises(ValueError, match="Provide database_id"):
-        server.list_backups(region="us-ashburn-1")
+        recovery_tools.list_backups(region="us-ashburn-1")
 
     db_client.get_database.side_effect = None
     for destination_type, expected in (
@@ -268,7 +271,7 @@ def test_backup_tools_handle_manual_paging_errors_and_destination_variants(monke
                 "backupDestinationDetails": [{"destinationType": destination_type}],
             }
         )
-        backup = server.get_backup(f"backup-{expected}", region="us-ashburn-1")
+        backup = recovery_tools.get_backup(f"backup-{expected}", region="us-ashburn-1")
         assert backup["backup-destination-type"] == expected
         assert backup["db_unique_name"] == f"{expected}_UNQ"
 
@@ -328,13 +331,13 @@ def test_backup_destination_summary_handles_object_store_paging_and_errors(monke
             ]
         ),
     ]
-    summary = server.summarize_protected_database_backup_destination(
+    summary = summarise_tools.summarize_protected_database_backup_destination(
         compartment_id="compartment",
         region="us-ashburn-1",
         db_home_id="home-explicit",
         include_last_backup_time=False,
     )
-    assert summary.total_databases == 3
+    assert summary.total_databases == 2
     assert summary.counts_by_destination_type == {"OBJECT_STORE": 1}
     assert summary.db_names_by_destination_type == {"OBJECT_STORE": ["Object DB"]}
     assert [item.database_id for item in summary.items] == ["db-object", "db-nfs"]
@@ -342,7 +345,7 @@ def test_backup_destination_summary_handles_object_store_paging_and_errors(monke
 
     db_client.list_databases.side_effect = RuntimeError("list databases failed")
     with pytest.raises(RuntimeError, match="list databases failed"):
-        server.summarize_protected_database_backup_destination(
+        summarise_tools.summarize_protected_database_backup_destination(
             compartment_id="compartment",
             db_home_id="home-explicit",
         )
@@ -394,9 +397,9 @@ def test_summary_scans_stop_at_their_deadline_and_say_so(monkeypatch):
             self.expired = self._checks > 3
             return self.expired
 
-    monkeypatch.setattr(server, "_Deadline", _ExpiresAfterFirstItem)
+    monkeypatch.setattr(app, "_Deadline", _ExpiresAfterFirstItem)
 
-    redo = server.summarize_protected_database_redo_status(compartment_id="root")
+    redo = summarise_tools.summarize_protected_database_redo_status(compartment_id="root")
     assert redo.truncated is True
     assert redo.compartment_ids_scanned == ["c1"]
     assert len(redo.per_compartment) == 1
@@ -431,7 +434,308 @@ def test_summary_scans_report_every_compartment_when_they_finish(monkeypatch):
         SimpleNamespace(is_redo_logs_shipped=True, health="PROTECTED")
     )
 
-    health = server.summarize_protected_database_health(compartment_id="root")
+    health = summarise_tools.summarize_protected_database_health(compartment_id="root")
     assert health.truncated is False
     assert health.compartment_ids_scanned == ["c1", "c2"]
     assert [c.partial for c in health.per_compartment] == [False, False]
+
+
+def _backup_destination_db(index: int) -> dict:
+    """One AVAILABLE database row with auto-backup on, as list_databases returns it."""
+    return {
+        "id": f"db{index}",
+        "dbName": f"DB{index}",
+        "dbBackupConfig": {
+            "isAutoBackupEnabled": True,
+            "backupDestinationDetails": [{"destinationType": "OBJECT_STORE"}],
+        },
+    }
+
+
+def test_backup_destination_scan_stops_at_max_total_databases(monkeypatch):
+    """
+    max_total_databases bounds the whole scan, not one DB Home's share of it.
+
+    The cap was tested inside the pagination loop and broke only out of that, so the
+    next DB Home resumed appending and the next compartment after it -- a cap of 2
+    across three homes returned six. That is the opposite of what a caller sets a cap
+    for: the tool fans out over a whole compartment subtree, and the cap is the only
+    thing standing between a large tenancy and a very long call.
+    """
+    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_kwargs: [cid])
+    monkeypatch.setattr(
+        compartments,
+        "_fetch_db_home_ids_for_compartment",
+        lambda *_args, **_kwargs: ["home1", "home2", "home3"],
+    )
+    db_client = MagicMock()
+    # Every home has two databases, so an unbounded scan would return six.
+    db_client.list_databases.side_effect = lambda **kwargs: _response(
+        [_backup_destination_db(1), _backup_destination_db(2)]
+    )
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+
+    summary = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="compartment",
+        region="us-ashburn-1",
+        include_last_backup_time=False,
+        max_total_databases=2,
+    )
+    assert db_client.list_databases.call_count == 1  # stopped after the first home
+    assert summary.total_databases == 2
+
+
+def test_backup_destination_reports_which_databases_have_backups(monkeypatch):
+    """
+    has_backups_db_names names the databases a backup was actually returned for.
+
+    The list was declared, sorted and returned but never appended to, so the field was
+    an empty list on every response the tool has ever produced -- a caller reading it
+    would conclude nothing was backed up. It is filled only when
+    include_last_backup_time is set, since that is the flag that queries backups at all.
+    """
+    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_kwargs: [cid])
+    monkeypatch.setattr(
+        compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["home1"]
+    )
+    db_client = MagicMock()
+    db_client.list_databases.return_value = _response(
+        [_backup_destination_db(1), _backup_destination_db(2)]
+    )
+    db_client.get_database.return_value = _response(_backup_destination_db(1))
+    # db1 has a backup; db2 has none.
+    db_client.list_backups.side_effect = lambda database_id: _response(
+        [SimpleNamespace(time_ended="2026-09-01T00:00:00Z")] if database_id == "db1" else []
+    )
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+
+    summary = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="compartment",
+        region="us-ashburn-1",
+        include_last_backup_time=True,
+    )
+    assert summary.has_backups_db_names == ["DB1"]
+
+
+def test_last_backup_time_compares_instants_not_their_text(monkeypatch):
+    """
+    The newest backup wins even when the SDK reports times in different shapes.
+
+    The comparison was `str(t) > str(best)`, and the two shapes do not order against
+    each other as text: str() renders a datetime with a space separator while an
+    ISO-8601 string keeps its "T", and " " sorts below "T". So a datetime lost to any
+    string regardless of when it happened. Here the datetime is the newer of the two,
+    which the old comparison would have discarded.
+    """
+    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_kwargs: [cid])
+    monkeypatch.setattr(
+        compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["home1"]
+    )
+    # Same calendar day, so the separator is what the text comparison ends up deciding
+    # on: str(newer) is "2026-09-08 12:00:00+00:00" and " " < "T", so as plain text the
+    # newer value sorts *below* the older one.
+    newer = datetime(2026, 9, 8, 12, 0, tzinfo=timezone.utc)
+    older = "2026-09-08T00:00:00Z"
+    db_client = MagicMock()
+    db_client.list_databases.return_value = _response([_backup_destination_db(1)])
+    db_client.get_database.return_value = _response(_backup_destination_db(1))
+    db_client.list_backups.return_value = _response(
+        [SimpleNamespace(time_ended=older), SimpleNamespace(time_ended=newer)]
+    )
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+
+    summary = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="compartment",
+        region="us-ashburn-1",
+        include_last_backup_time=True,
+    )
+    assert summary.items[0].last_backup_time == newer
+
+
+def test_scan_skips_the_per_database_get_when_the_listing_already_has_the_config():
+    """
+    The per-database GET is made only when the list response omits the backup config.
+
+    On a DB Home of any size that is the difference between one call and one call per
+    database, and the list response usually carries the config already.
+    """
+    get_database = MagicMock()
+    with_config = {
+        "id": "db1",
+        "dbBackupConfig": {"backupDestinationDetails": [{"destinationType": "DBRS"}]},
+    }
+    record, types, ids = summarise_tools._backup_destinations_for(
+        with_config, get_database=get_database
+    )
+    assert types == ["DBRS"]
+    get_database.assert_not_called()
+
+    # Without it, the full record is fetched and read instead.
+    get_database.return_value = _response(
+        {"id": "db2", "dbBackupConfig": {"backupDestinationDetails": [{"type": "NFS"}]}}
+    )
+    record, types, ids = summarise_tools._backup_destinations_for(
+        {"id": "db2"}, get_database=get_database
+    )
+    assert get_database.call_args.kwargs == {"database_id": "db2"}
+    assert record["id"] == "db2"
+
+
+def test_a_database_backed_up_to_both_services_is_reported_as_dbrs():
+    """
+    DBRS wins when a database has both destinations, and unrelated types are dropped.
+
+    The tool answers "what protects this database", and the presence of Recovery
+    Service is that answer whenever it is configured -- counting such a database under
+    OBJECT_STORE as well would double it in counts_by_destination_type.
+    """
+    both = {
+        "id": "db1",
+        "dbBackupConfig": {
+            "backupDestinationDetails": [
+                {"destinationType": "OBJECT_STORE", "id": "dest-object"},
+                {"destinationType": "DBRS", "id": "dest-dbrs"},
+                {"destinationType": "NFS", "id": "dest-nfs"},
+            ]
+        },
+    }
+    _record, types, ids = summarise_tools._backup_destinations_for(
+        both, get_database=MagicMock()
+    )
+    assert types == ["DBRS"]
+    # Every id is still reported, including the one whose type was not counted.
+    assert ids == ["dest-object", "dest-dbrs", "dest-nfs"]
+
+
+def test_scan_stops_at_the_cap_across_compartments_homes_and_pages():
+    """
+    max_total_databases bounds the scan at every level, including mid-pagination.
+
+    Each of the three loops can run past the cap on its own, and the page loop is the
+    one the cap is tested in -- so this drives all three at once: two compartments,
+    two homes each, and a home that pages.
+    """
+    db_client = MagicMock()
+    db_client.list_databases.side_effect = lambda **_kwargs: _response(
+        [{"id": "a"}, {"id": "b"}], has_next_page=True, next_page="next"
+    )
+    found = summarise_tools._scan_available_databases(
+        db_client,
+        {"comp1": ["home1", "home2"], "comp2": ["home3", "home4"]},
+        max_total_databases=3,
+    )
+    assert len(found) == 3
+    # Two rows per page, so the cap is reached on the second call and nothing follows.
+    assert db_client.list_databases.call_count == 2
+
+
+def test_scan_passes_the_per_home_filters_and_omits_the_ones_not_set():
+    """
+    Optional filters reach the SDK only when set.
+
+    Passing db_name=None or limit=None through would not mean "no filter" to the
+    Database API; it would be a filter on None.
+    """
+    db_client = MagicMock()
+    db_client.list_databases.return_value = _response([{"id": "a"}])
+    summarise_tools._scan_available_databases(db_client, {"comp1": ["home1"]})
+    assert db_client.list_databases.call_args.kwargs == {
+        "compartment_id": "comp1",
+        "db_home_id": "home1",
+        "lifecycle_state": "AVAILABLE",
+    }
+
+    db_client.list_databases.reset_mock()
+    summarise_tools._scan_available_databases(
+        db_client, {"comp1": ["home1", "home2"]}, db_name="DB1", limit_per_home=5, max_db_homes=1
+    )
+    assert db_client.list_databases.call_args.kwargs["db_name"] == "DB1"
+    assert db_client.list_databases.call_args.kwargs["limit"] == 5
+    assert db_client.list_databases.call_count == 1  # max_db_homes stopped the second home
+
+
+class _ExpiresAfter:
+    """A budget that lasts a fixed number of checks, then reports itself spent."""
+
+    def __init__(self, checks: int):
+        self._left = checks
+        self.expired = False
+
+    def reached(self) -> bool:
+        """Spend one check; latch expired once the allowance runs out."""
+        if self._left <= 0:
+            self.expired = True
+        self._left -= 1
+        return self.expired
+
+
+def test_backup_space_summary_stops_at_its_deadline_and_says_so(monkeypatch):
+    """
+    The backup-space scan stops at the deadline and reports what it actually covered.
+
+    It reads one metric per protected database across every compartment in scope, the
+    same unbounded fan-out the health and redo summaries were already budgeted for --
+    this one had no budget at all. The response has to distinguish the compartments
+    scanned from those in scope: a total covering half a tenancy, presented as a whole
+    one, is worse than an answer that admits it is partial.
+    """
+    monkeypatch.setattr(
+        compartments, "_resolve_compartment_id", lambda cid, **_k: cid
+    )
+    monkeypatch.setattr(
+        compartments, "_compartment_ids_for_tool", lambda cid, **_k: ["c1", "c2", "c3"]
+    )
+    monkeypatch.setattr(app, "_Deadline", lambda *_a, **_k: _ExpiresAfter(1))
+    client = MagicMock()
+    client.list_protected_databases.return_value = _response([])
+    monkeypatch.setattr(clients, "get_recovery_client", lambda *_a, **_k: client)
+
+    out = summarise_tools.summarize_backup_space_used(compartment_id="c1")
+    assert out["truncated"] is True
+    assert out["compartmentIdsInScope"] == ["c1", "c2", "c3"]
+    # Stopped before covering them all, and says which it did cover.
+    assert len(out["compartmentIdsScanned"]) < 3
+
+
+def test_backup_destination_summary_stops_at_its_deadline(monkeypatch):
+    """
+    The destination summary stops at the deadline, in the scan and in the per-DB pass.
+
+    It is the heaviest of the four summaries -- a compartment/home/page walk, then up
+    to two more calls for every database it finds -- and it had no budget either. The
+    scanner takes it so the walk stops between requests rather than after all of them.
+    """
+    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_k: ["c1"])
+    monkeypatch.setattr(
+        compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["h1", "h2", "h3"]
+    )
+    monkeypatch.setattr(app, "_Deadline", lambda *_a, **_k: _ExpiresAfter(1))
+    db_client = MagicMock()
+    db_client.list_databases.return_value = _response([_backup_destination_db(1)])
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+
+    summary = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="c1", region="us-ashburn-1", include_last_backup_time=False
+    )
+    assert summary.truncated is True
+    # It did not walk all three homes before noticing the budget was spent.
+    assert db_client.list_databases.call_count < 3
+
+
+def test_the_scanner_stops_between_requests_not_after_all_of_them():
+    """
+    _scan_available_databases checks the budget before each call, not after the walk.
+
+    Checking afterwards would make the deadline decorative: the cost being bounded is
+    the round trips themselves, so a budget that only trims the result has already
+    spent everything it was meant to save.
+    """
+    db_client = MagicMock()
+    db_client.list_databases.return_value = _response([{"id": "a"}])
+    found = summarise_tools._scan_available_databases(
+        db_client,
+        {"c1": ["h1", "h2"], "c2": ["h3", "h4"]},
+        deadline=_ExpiresAfter(2),
+    )
+    assert db_client.list_databases.call_count <= 2
+    assert len(found) <= 2

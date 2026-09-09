@@ -20,3 +20,20 @@ def fastmcp_home(tmp_path_factory, monkeypatch):
     import fastmcp
 
     monkeypatch.setattr(fastmcp.settings, "home", tmp_path_factory.mktemp("fastmcp"))
+
+
+@pytest.fixture(autouse=True)
+def empty_compartment_cache():
+    """Start every test with an empty compartment cache.
+
+    The store is process-wide and its key ignores the call's arguments, so any test
+    that resolves a compartment scope leaves an entry two tests later can hit. Note
+    that clearing is the only thing that works: @cachetools.cached binds the store
+    at decoration time, so monkeypatching the module attribute swaps a name the
+    decorator never reads and passes while doing nothing.
+    """
+    from oracle.oci_recovery_mcp_server import compartments
+
+    compartments._STORE.clear()
+    yield
+    compartments._STORE.clear()

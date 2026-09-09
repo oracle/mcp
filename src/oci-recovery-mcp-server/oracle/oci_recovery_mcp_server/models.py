@@ -386,35 +386,6 @@ class ProtectedDatabase(OCIBaseModel):
     )
 
 
-def map_protected_database_metrics(
-    m,
-) -> ProtectedDatabaseMetrics | None:
-    """
-    Convert nested metrics object to ProtectedDatabaseMetrics.
-    Accepts either an OCI SDK model instance or plain dict, returns Pydantic model.
-    """
-    if not m:
-        return None
-    data = _oci_to_dict(m) or {}
-    return ProtectedDatabaseMetrics(
-        backup_space_used_in_gbs=getattr(m, "backup_space_used_in_gbs", None)
-        or data.get("backup_space_used_in_gbs")
-        or data.get("backupSpaceUsedInGbs"),
-        database_size_in_gbs=getattr(m, "database_size_in_gbs", None)
-        or data.get("database_size_in_gbs")
-        or data.get("databaseSizeInGbs"),
-        recoverable_window_start_time=getattr(m, "recoverable_window_start_time", None)
-        or data.get("recoverable_window_start_time")
-        or data.get("recoverableWindowStartTime"),
-        recoverable_window_end_time=getattr(m, "recoverable_window_end_time", None)
-        or data.get("recoverable_window_end_time")
-        or data.get("recoverableWindowEndTime"),
-        latest_backup_time=getattr(m, "latest_backup_time", None)
-        or data.get("latest_backup_time")
-        or data.get("latestBackupTime"),
-    )
-
-
 def map_protected_database(
     pd: "oci.recovery.models.ProtectedDatabase",
 ) -> ProtectedDatabase | None:
@@ -643,20 +614,6 @@ class ProtectionPolicyCollection(OCIBaseModel):
     )
 
 
-def map_protection_policy_collection(
-    coll: "oci.recovery.models.ProtectionPolicyCollection",
-) -> ProtectionPolicyCollection | None:
-    """
-    Convert an oci.recovery.models.ProtectionPolicyCollection to
-    oracle.oci_recovery_mcp_server.models.ProtectionPolicyCollection.
-    """
-    if coll is None:
-        return None
-    data = _oci_to_dict(coll) or {}
-    items = getattr(coll, "items", None) or data.get("items")
-    return ProtectionPolicyCollection(items=_map_list(items, map_protection_policy_summary))
-
-
 # endregion
 
 # region ProtectedDatabase Summary and Collection
@@ -831,20 +788,6 @@ class ProtectedDatabaseCollection(OCIBaseModel):
     items: Optional[List[ProtectedDatabaseSummary]] = Field(
         None, description="List of ProtectedDatabaseSummary items."
     )
-
-
-def map_protected_database_collection(
-    coll: "oci.recovery.models.ProtectedDatabaseCollection",
-) -> ProtectedDatabaseCollection | None:
-    """
-    Convert an oci.recovery.models.ProtectedDatabaseCollection to
-    oracle.oci_recovery_mcp_server.models.ProtectedDatabaseCollection.
-    """
-    if coll is None:
-        return None
-    data = _oci_to_dict(coll) or {}
-    items = getattr(coll, "items", None) or data.get("items")
-    return ProtectedDatabaseCollection(items=_map_list(items, map_protected_database_summary))
 
 
 # endregion
@@ -1060,20 +1003,6 @@ class RecoveryServiceSubnetCollection(OCIBaseModel):
     items: Optional[List[RecoveryServiceSubnetSummary]] = Field(
         None, description="List of RecoveryServiceSubnetSummary items."
     )
-
-
-def map_recovery_service_subnet_collection(
-    coll: "oci.recovery.models.RecoveryServiceSubnetCollection",
-) -> RecoveryServiceSubnetCollection | None:
-    """
-    Convert an oci.recovery.models.RecoveryServiceSubnetCollection to
-    oracle.oci_recovery_mcp_server.models.RecoveryServiceSubnetCollection.
-    """
-    if coll is None:
-        return None
-    data = _oci_to_dict(coll) or {}
-    items = getattr(coll, "items", None) or data.get("items")
-    return RecoveryServiceSubnetCollection(items=_map_list(items, map_recovery_service_subnet_summary))
 
 
 # endregion
@@ -2271,10 +2200,19 @@ class ProtectedDatabaseBackupDestinationSummary(OCIBaseModel):
         default_factory=list, description="DBs not configured for auto backup."
     )
     has_backups_db_names: List[str] = Field(
-        default_factory=list, description="DBs with backups but not configured."
+        default_factory=list,
+        description=(
+            "DBs a backup was found for. Empty when include_last_backup_time is false, "
+            "since no backup is queried then."
+        ),
     )
     items: List[ProtectedDatabaseBackupDestinationItem] = Field(
         default_factory=list, description="Per-database details."
+    )
+    truncated: bool = Field(
+        False,
+        alias="truncated",
+        description="True when the scan stopped early at its deadline, so counts are partial.",
     )
 
 

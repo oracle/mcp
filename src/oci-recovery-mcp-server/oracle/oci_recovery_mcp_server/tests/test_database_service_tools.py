@@ -15,9 +15,12 @@ import pytest
 from _helpers import _response
 import oracle.oci_recovery_mcp_server.models as models
 from oracle.oci_recovery_mcp_server import auth
+from oracle.oci_recovery_mcp_server import summarise_tools
+from oracle.oci_recovery_mcp_server import recovery_tools
+from oracle.oci_recovery_mcp_server import prompt_tools
+from oracle.oci_recovery_mcp_server import database_tools
 from oracle.oci_recovery_mcp_server import clients
 from oracle.oci_recovery_mcp_server import compartments
-import oracle.oci_recovery_mcp_server.server as server
 
 
 def test_database_tools_resolve_compartment_paths_and_enrich_backups(monkeypatch):
@@ -69,7 +72,7 @@ def test_database_tools_resolve_compartment_paths_and_enrich_backups(monkeypatch
         }
     )
 
-    databases = server.list_databases(
+    databases = database_tools.list_databases(
         compartment_id="compartment",
         system_id="system1",
         limit=10,
@@ -91,7 +94,7 @@ def test_database_tools_resolve_compartment_paths_and_enrich_backups(monkeypatch
     recovery_client.list_protected_databases.return_value = _response(
         [{"databaseId": "db1", "protectionPolicyId": "policy2"}]
     )
-    database = server.get_database("db1", region="us-ashburn-1")
+    database = database_tools.get_database("db1", region="us-ashburn-1")
     assert database.id == "db1"
     assert database.protection_policy_id == "policy2"
 
@@ -133,7 +136,7 @@ def test_database_tools_resolve_compartment_paths_and_enrich_backups(monkeypatch
         ),
     ]
 
-    backups = server.list_backups(
+    backups = recovery_tools.list_backups(
         compartment_id="compartment",
         lifecycle_state="ACTIVE",
         type="FULL",
@@ -160,7 +163,7 @@ def test_database_tools_resolve_compartment_paths_and_enrich_backups(monkeypatch
             },
         }
     )
-    backup = server.get_backup("backup1", region="us-ashburn-1")
+    backup = recovery_tools.get_backup("backup1", region="us-ashburn-1")
     assert backup["database-size-in-gbs"] == 8
     assert backup["backup-destination-type"] == "DBRS"
     assert backup["db_unique_name"] == "DB1_UNQ"
@@ -191,7 +194,7 @@ def test_database_tools_resolve_compartment_paths_and_enrich_backups(monkeypatch
     db_client.list_backups.return_value = _response(
         [SimpleNamespace(time_ended="2024-01-02T00:00:00Z")]
     )
-    summary = server.summarize_protected_database_backup_destination(
+    summary = summarise_tools.summarize_protected_database_backup_destination(
         compartment_id="compartment",
         region="us-ashburn-1",
         include_last_backup_time=True,
@@ -278,7 +281,7 @@ def test_database_child_scope_tools_deduplicate_results(monkeypatch):
             )
         ),
     ]
-    databases = server.list_databases(
+    databases = database_tools.list_databases(
         compartment_id="root",
         fetch_for_child_compartment=True,
     )
@@ -320,7 +323,7 @@ def test_database_child_scope_tools_deduplicate_results(monkeypatch):
             )
         ),
     ]
-    backups = server.list_backups(
+    backups = recovery_tools.list_backups(
         compartment_id="root",
         fetch_for_child_compartment=True,
     )
@@ -362,21 +365,23 @@ def test_database_child_scope_tools_deduplicate_results(monkeypatch):
             ]
         ),
     ]
-    summary = server.summarize_protected_database_backup_destination(
+    summary = summarise_tools.summarize_protected_database_backup_destination(
         compartment_id="root",
         fetch_for_child_compartment=True,
         db_home_id="home1",
         include_last_backup_time=False,
     )
     assert [item.database_id for item in summary.items] == ["db1", "db2"]
-    assert summary.total_databases == 3
+    # The repeated database is dropped before anything counts it, so the total matches
+    # the list beside it rather than the raw number of rows the scan fetched.
+    assert summary.total_databases == 2
 
     db_client.reset_mock()
     db_client.list_db_homes.side_effect = [
         _response([SimpleNamespace(id="home1")]),
         _response([SimpleNamespace(id="home1"), SimpleNamespace(id="home2")]),
     ]
-    homes = server.list_db_homes(
+    homes = database_tools.list_db_homes(
         compartment_id="root",
         fetch_for_child_compartment=True,
     )
@@ -387,7 +392,7 @@ def test_database_child_scope_tools_deduplicate_results(monkeypatch):
         _response([SimpleNamespace(id="system1")]),
         _response([SimpleNamespace(id="system1"), SimpleNamespace(id="system2")]),
     ]
-    systems = server.list_db_systems(
+    systems = database_tools.list_db_systems(
         compartment_id="root",
         fetch_for_child_compartment=True,
     )
@@ -425,7 +430,7 @@ def test_database_home_and_system_tools_apply_pagination_and_defaults(monkeypatc
         ),
         _response([SimpleNamespace(id="home2", display_name="Home 2")]),
     ]
-    homes = server.list_db_homes(
+    homes = database_tools.list_db_homes(
         compartment_id=None,
         db_system_id=None,
         limit=1,
@@ -442,7 +447,7 @@ def test_database_home_and_system_tools_apply_pagination_and_defaults(monkeypatc
     db_client.get_db_home.return_value = _response(
         SimpleNamespace(id="home1", display_name="Home 1")
     )
-    assert server.get_db_home("home1", region="us-ashburn-1").id == "home1"
+    assert database_tools.get_db_home("home1", region="us-ashburn-1").id == "home1"
 
     db_client.list_db_systems.side_effect = [
         _response(
@@ -452,7 +457,7 @@ def test_database_home_and_system_tools_apply_pagination_and_defaults(monkeypatc
         ),
         _response(SimpleNamespace(items=[SimpleNamespace(id="system2")])),
     ]
-    systems = server.list_db_systems(
+    systems = database_tools.list_db_systems(
         compartment_id="compartment",
         lifecycle_state="AVAILABLE",
         limit=1,
@@ -469,7 +474,7 @@ def test_database_home_and_system_tools_apply_pagination_and_defaults(monkeypatc
     db_client.get_db_system.return_value = _response(
         SimpleNamespace(id="system1", display_name="System 1")
     )
-    assert server.get_db_system("system1", region="us-ashburn-1").id == "system1"
+    assert database_tools.get_db_system("system1", region="us-ashburn-1").id == "system1"
 
 
 def test_database_list_branches_and_tool_error_paths(monkeypatch):
@@ -505,14 +510,14 @@ def test_database_list_branches_and_tool_error_paths(monkeypatch):
     recovery_client.list_protected_databases.return_value = _response([])
 
     with pytest.raises(ValueError, match="Either db_home_id"):
-        server.list_databases()
+        database_tools.list_databases()
 
     monkeypatch.setattr(
         compartments,
         "_fetch_db_home_ids_for_compartment",
         lambda compartment_id, region=None: [],
     )
-    assert server.list_databases(compartment_id="compartment") == []
+    assert database_tools.list_databases(compartment_id="compartment") == []
 
     monkeypatch.setattr(
         compartments,
@@ -531,39 +536,39 @@ def test_database_list_branches_and_tool_error_paths(monkeypatch):
             }
         ]
     )
-    databases = server.list_databases(compartment_id="compartment")
+    databases = database_tools.list_databases(compartment_id="compartment")
     assert databases[0].protection_policy_id is None
 
     db_client.list_databases.return_value = _response([{"id": "db2", "dbName": "DB2"}])
     db_client.get_database.side_effect = RuntimeError("backup config unavailable")
-    databases = server.list_databases(compartment_id="compartment", db_home_id="home1")
+    databases = database_tools.list_databases(compartment_id="compartment", db_home_id="home1")
     assert databases[0].id == "db2"
     assert databases[0].db_backup_config is None
 
     db_client.reset_mock()
     db_client.get_database.side_effect = RuntimeError("backup config unavailable")
-    databases = server.list_databases(db_home_id="home1")
+    databases = database_tools.list_databases(db_home_id="home1")
     assert databases[0].id == "db2"
     assert db_client.list_databases.call_args.kwargs == {"db_home_id": "home1"}
 
     error_cases = [
         (
-            server.list_protection_policies,
+            recovery_tools.list_protection_policies,
             {"compartment_id": "compartment"},
             "list_protection_policies",
         ),
         (
-            server.get_protection_policy,
+            recovery_tools.get_protection_policy,
             {"protection_policy_id": "policy1"},
             "get_protection_policy",
         ),
         (
-            server.list_recovery_service_subnets,
+            recovery_tools.list_recovery_service_subnets,
             {"compartment_id": "compartment"},
             "list_recovery_service_subnets",
         ),
         (
-            server.get_recovery_service_subnet,
+            recovery_tools.get_recovery_service_subnet,
             {"recovery_service_subnet_id": "rss1"},
             "get_recovery_service_subnet",
         ),
@@ -577,12 +582,12 @@ def test_database_list_branches_and_tool_error_paths(monkeypatch):
         getattr(recovery_client, method_name).side_effect = None
 
     db_error_cases = [
-        (server.get_database, {"database_id": "db1"}, "get_database"),
-        (server.get_backup, {"backup_id": "backup1"}, "get_backup"),
-        (server.list_db_homes, {"compartment_id": "compartment"}, "list_db_homes"),
-        (server.get_db_home, {"db_home_id": "home1"}, "get_db_home"),
-        (server.list_db_systems, {"compartment_id": "compartment"}, "list_db_systems"),
-        (server.get_db_system, {"db_system_id": "system1"}, "get_db_system"),
+        (database_tools.get_database, {"database_id": "db1"}, "get_database"),
+        (recovery_tools.get_backup, {"backup_id": "backup1"}, "get_backup"),
+        (database_tools.list_db_homes, {"compartment_id": "compartment"}, "list_db_homes"),
+        (database_tools.get_db_home, {"db_home_id": "home1"}, "get_db_home"),
+        (database_tools.list_db_systems, {"compartment_id": "compartment"}, "list_db_systems"),
+        (database_tools.get_db_system, {"db_system_id": "system1"}, "get_db_system"),
     ]
     for tool, kwargs, method_name in db_error_cases:
         getattr(db_client, method_name).side_effect = RuntimeError(
@@ -595,16 +600,16 @@ def test_database_list_branches_and_tool_error_paths(monkeypatch):
     # Guidance tools return the prompt text directly so clients without prompt
     # support can call them as ordinary tools.
     assert (
-        server.oci_recovery_service_dashboard_prompt()
-        == server.OCI_RECOVERY_SERVICE_DASHBOARD_PROMPT
+        prompt_tools.oci_recovery_service_dashboard_prompt()
+        == prompt_tools.OCI_RECOVERY_SERVICE_DASHBOARD_PROMPT
     )
     assert (
-        server.onboard_database_to_recovery_service()
-        == server.ONBOARD_DATABASE_TO_RECOVERY_SERVICE_PROMPT
+        prompt_tools.onboard_database_to_recovery_service()
+        == prompt_tools.ONBOARD_DATABASE_TO_RECOVERY_SERVICE_PROMPT
     )
     assert (
-        server.diagnose_recovery_service_issue()
-        == server.DIAGNOSE_RECOVERY_SERVICE_ISSUE_PROMPT
+        prompt_tools.diagnose_recovery_service_issue()
+        == prompt_tools.DIAGNOSE_RECOVERY_SERVICE_ISSUE_PROMPT
     )
 
 
@@ -646,7 +651,7 @@ def test_policy_correlation_survives_an_unreadable_compartment(monkeypatch):
     )
     monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda c, **k: c)
 
-    databases = server.list_databases(
+    databases = database_tools.list_databases(
         compartment_id="root", fetch_for_child_compartment=True
     )
 

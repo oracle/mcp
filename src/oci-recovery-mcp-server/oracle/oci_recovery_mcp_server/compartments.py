@@ -11,13 +11,13 @@ compartment listing, which is one Identity scan per caller and is therefore
 cached; the tree walking on top of it is local.
 """
 
-import json
 import logging
 import os
-import time
+import threading
 import uuid
-from typing import Annotated, Any, Optional
+from typing import Any, Optional
 
+import cachetools
 import oci
 
 from . import auth, cache, clients, logging_setup
@@ -57,17 +57,38 @@ def list_all_compartments_internal(only_one_page: bool, limit=100):
 # the caller, so the namespace is all a call site supplies -- and all it can.
 _CACHE_NAMESPACE = "iam:list_all_compartments"
 
-_COMPARTMENT_CACHE: dict[str, Any] = {
-    "ttl_seconds": int(os.getenv("ORACLE_MCP_COMPARTMENT_CACHE_TTL_SECONDS", "300")),
-    # entries: dict["<tenant_key>|<caller_key>" -> {"items": list[Any], "fetched_at": float}]
-    "entries": {},
-}
+# TTL, LRU and the size bound all come from cachetools. What stays ours is the key:
+# no library can know how this server identifies a caller. maxsize earns its keep on the
+# hosted transport, where the key includes the caller and the store therefore gains an
+# entry for every person who signs in.
+_STORE: cachetools.TTLCache = cachetools.TTLCache(
+    maxsize=cache._CACHE_MAX_ENTRIES,
+    ttl=int(os.getenv("ORACLE_MCP_COMPARTMENT_CACHE_TTL_SECONDS", "300")),
+)
+
+# cachetools takes this around the store read and the store write only; the Identity
+# scan in between runs without it, so a slow scan never serializes other tool calls.
+_STORE_LOCK = threading.Lock()
 
 
-def _list_all_compartments_cached(*, request_id: Optional[str] = None) -> list[Any]:
+def _cache_partition(**_kwargs) -> str:
     """
-    Return all accessible ACTIVE compartments in the tenancy (plus root tenancy)
-    with a small in-process TTL cache to avoid repeated Identity scans.
+    The store key. Deliberately ignores the call's arguments.
+
+    Whether a cached listing may be shown to someone depends on their own IAM
+    permissions, and that identity arrives on the request context rather than as a
+    parameter. That is precisely why the argument-keyed decorators do not fit here
+    (functools.lru_cache, cachetools.func.ttl_cache) and cachetools.cached's `key`
+    hook does.
+    """
+    return cache._cache_key(_CACHE_NAMESPACE)
+
+
+@cachetools.cached(cache=_STORE, key=_cache_partition, lock=_STORE_LOCK)
+def _fetch_all_compartments(*, request_id: Optional[str] = None) -> list[Any]:
+    """
+    Return all accessible ACTIVE compartments in the tenancy (plus root tenancy),
+    cached in-process so repeated Identity scans in one session cost one call.
 
     The cache is keyed by tenant AND caller: the listing is fetched with
     access_level="ACCESSIBLE", so it contains exactly the compartments the calling
@@ -80,17 +101,8 @@ def _list_all_compartments_cached(*, request_id: Optional[str] = None) -> list[A
         list_compartments(compartment_id_in_subtree=True, access_level="ACCESSIBLE")
       and then build a parent->children index locally to BFS the descendants.
     """
-    now = time.time()
-    ttl = float(_COMPARTMENT_CACHE.get("ttl_seconds") or 300)
-    entries = _COMPARTMENT_CACHE.setdefault("entries", {})
-    cached = cache._cache_get(entries, _CACHE_NAMESPACE, ttl=ttl, now=now)
-
-    if cached and cached.get("items"):
-        return cached["items"]  # type: ignore[return-value]
-
     rid = request_id or uuid.uuid4().hex
 
-    # Refresh cache
     try:
         comps = list_all_compartments_internal(False)
 
@@ -120,7 +132,10 @@ def _list_all_compartments_cached(*, request_id: Optional[str] = None) -> list[A
 
         comps = normalized
     except Exception as e:
-        # If identity listing fails, fall back to empty (callers will handle)
+        # Raise rather than return []: cachetools stores whatever comes back, and an
+        # empty listing cached for the full TTL would answer "you have no
+        # compartments" to all 14 tools that scope through here, long after Identity
+        # recovered. Raising keeps the failure out of the store; the caller degrades.
         logging_setup._log_event(
             "compartment_cache_refresh_failed",
             request_id=rid,
@@ -129,12 +144,22 @@ def _list_all_compartments_cached(*, request_id: Optional[str] = None) -> list[A
             payload={"error": str(e)},
             level=logging.WARNING,
         )
-        comps = []
+        raise
 
-    cache._cache_put(
-        entries, _CACHE_NAMESPACE, {"items": comps, "fetched_at": now}, ttl=ttl, now=now
-    )
     return comps
+
+
+def _list_all_compartments_cached(*, request_id: Optional[str] = None) -> list[Any]:
+    """
+    The compartment listing, or an empty list if Identity could not be reached.
+
+    Separate from _fetch_all_compartments so that the empty list never reaches the
+    store: the decorator caches a return value, so degrading has to happen outside it.
+    """
+    try:
+        return _fetch_all_compartments(request_id=request_id)
+    except Exception:
+        return []
 
 
 def _build_children_index(compartments: list[Any]) -> dict[str, list[str]]:
@@ -356,8 +381,17 @@ def _fetch_db_home_ids_for_compartment(compartment_id: str, region: Optional[str
 
 
 def get_compartment_by_name(compartment_name: str):
-    """Internal function to get compartment by name with caching"""
-    compartments = list_all_compartments_internal(False)
+    """
+    Resolve a compartment display name to its compartment, case-insensitively.
+
+    Reads the cached listing rather than scanning Identity itself. This runs on every
+    tool call given a name instead of an OCID, and the scan it would otherwise repeat
+    is the same paginated subtree walk the cache already holds. The docstring claimed
+    caching while the code went straight to OCI; this is that claim made true. The
+    cache is partitioned per caller, so a name still resolves only against the
+    compartments that caller may see.
+    """
+    compartments = _list_all_compartments_cached()
     # Search for the compartment by name
     for compartment in compartments:
         if compartment.name.lower() == compartment_name.lower():
@@ -405,124 +439,3 @@ def _resolve_compartment_id(
     if not resolved_id:
         raise ValueError(f"Unable to resolve OCID for compartment '{candidate}'.")
     return resolved_id
-
-
-def fetch_child_compartments(
-    compartment_id: Annotated[str, "Root compartment OCID to expand (included in results)."],
-    include_self: Annotated[
-        bool, "When true (default), include the given compartment_id in the output."
-    ] = True,
-    limit: Annotated[
-        Optional[int],
-        "Optional cap on how many compartmentIds to return (defaults to ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE or 200).",
-    ] = None,
-) -> dict:
-    """
-    Internal helper that expands a root compartment to its subtree.
-
-    Returns a simple JSON-like dict:
-      {
-        "rootCompartmentId": "<ocid>",
-        "total": N,
-        "compartmentIds": ["<ocid1>", "<ocid2>", ...]
-      }
-
-    Implementation notes:
-    - OCI CLI `oci iam compartment list --compartment-id <X>` returns ONLY direct children.
-    - This tool returns the full subtree under <X>.
-    - Some environments do not allow `compartment_id_in_subtree=True` even with ACCESSIBLE.
-      If subtree listing yields no children for the root, we fall back to a direct-children crawl.
-    """
-    request_id = uuid.uuid4().hex
-    compartment_id = _resolve_compartment_id(compartment_id)
-    identity_client = clients.get_identity_client(request_id=request_id)
-
-    # 1) Try fast path: use our cached full-subtree listing and BFS it.
-    scope = _expand_compartment_scope(
-        compartment_id,
-        include_child_compartments=True,
-        request_id=request_id,
-    )
-
-    # 2) If subtree expansion produced only the root, fall back to direct-children crawl.
-    # This matches the CLI semantics and works even when subtree listing is restricted.
-    if len(scope) <= 1:
-        cap = limit
-        if cap is None:
-            cap = int(os.getenv("ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE", "200"))
-
-        queue: list[str] = [compartment_id]
-        seen: set[str] = set()
-        out: list[str] = []
-
-        while queue:
-            pid = queue.pop(0)
-            if pid in seen:
-                continue
-            seen.add(pid)
-            out.append(pid)
-
-            if cap and len(out) >= cap:
-                logging_setup._log_event(
-                    "compartment_scope_capped",
-                    request_id=request_id,
-                    tool="fetch_child_compartments",
-                    phase="warn",
-                    payload={"root": compartment_id, "cap": cap},
-                    level=logging.WARNING,
-                )
-                break
-
-            next_page = None
-            while True:
-                resp = identity_client.list_compartments(
-                    compartment_id=pid,
-                    access_level="ACCESSIBLE",
-                    lifecycle_state="ACTIVE",
-                    limit=1000,
-                    page=next_page,
-                )
-                children = resp.data or []
-                for c in children:
-                    cid = getattr(c, "id", None) or getattr(c, "ocid", None)
-                    if cid and cid not in seen:
-                        queue.append(cid)
-
-                has_next = bool(getattr(resp, "has_next_page", False))
-                next_page = getattr(resp, "next_page", None) if has_next else None
-                if not has_next:
-                    break
-
-        scope = out
-
-    # include_self behavior
-    if not include_self:
-        scope = [x for x in scope if x != compartment_id]
-
-    # final cap enforcement (also applies to fast-path)
-    cap2 = limit
-    if cap2 is None:
-        cap2 = int(os.getenv("ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE", "200"))
-    if cap2 and len(scope) > cap2:
-        scope = scope[:cap2]
-
-    return {
-        "rootCompartmentId": compartment_id,
-        "total": len(scope),
-        "compartmentIds": scope,
-    }
-
-
-def get_compartment_by_name_tool(
-    name: Annotated[
-        str,
-        "Compartment display name to search for (case-insensitive). Searches all "
-        "accessible ACTIVE compartments in the tenancy, including the root tenancy.",
-    ],
-) -> str:
-    """Internal helper to return a compartment matching the provided name."""
-    compartment = get_compartment_by_name(name)
-    if compartment:
-        return str(compartment)
-    else:
-        return json.dumps({"error": f"Compartment '{name}' not found."})

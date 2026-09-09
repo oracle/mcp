@@ -7,12 +7,12 @@ https://oss.oracle.com/licenses/upl.
 import pytest
 from fastmcp import Client
 
-from oracle.oci_recovery_mcp_server.server import (
+from oracle.oci_recovery_mcp_server.prompt_tools import (
     DIAGNOSE_RECOVERY_SERVICE_ISSUE_PROMPT,
-    ONBOARD_DATABASE_TO_RECOVERY_SERVICE_PROMPT,
     OCI_RECOVERY_SERVICE_DASHBOARD_PROMPT,
-    mcp,
+    ONBOARD_DATABASE_TO_RECOVERY_SERVICE_PROMPT,
 )
+from oracle.oci_recovery_mcp_server.server import mcp
 
 
 class TestGuidanceTools:

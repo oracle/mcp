@@ -278,7 +278,13 @@ def test_metric_read_builds_one_monitoring_request_from_catalog(monkeypatch) -> 
     class Client:
         def summarize_metrics_data(self, **kwargs):
             captured.update(kwargs)
-            return SimpleNamespace(data=[{"stream": 1}, {"stream": 2}], headers={})
+            return SimpleNamespace(
+                data=[
+                    {"stream": 1, "aggregated_datapoints": [{"value": 1}, {"value": 2}]},
+                    {"stream": 2, "aggregated_datapoints": [{"value": 3}]},
+                ],
+                headers={},
+            )
 
     monkeypatch.setattr(runtime, "_client", lambda *_args: Client())
     monkeypatch.setattr(
@@ -308,7 +314,7 @@ def test_metric_read_builds_one_monitoring_request_from_catalog(monkeypatch) -> 
 
     assert captured["compartment_id"] == "ocid1.compartment.oc1..example"
     assert captured["summarize_metrics_data_details"].kwargs["query"] == 'ApplyLag[5m]{dbRole = "PHYSICAL_STANDBY"}.groupBy(primaryDbid).mean()'
-    assert result["data"] == [{"stream": 1}]
+    assert result["data"] == [{"stream": 1, "aggregated_datapoints": [{"value": 1}]}]
     assert result["mql"] == 'ApplyLag[5m]{dbRole = "PHYSICAL_STANDBY"}.groupBy(primaryDbid).mean()'
 
 
@@ -317,6 +323,7 @@ def test_metric_read_builds_one_monitoring_request_from_catalog(monkeypatch) -> 
     [
         ({"dimension_filters": {"notCataloged": "value"}}, "Unsupported dimensions"),
         ({"start_time": "2026-08-01T01:00:00Z", "end_time": "2026-08-01T00:00:00Z"}, "start_time must be earlier"),
+        ({"interval": "1m", "resolution": "5m"}, "resolution must not exceed interval"),
     ],
 )
 def test_metric_read_rejects_invalid_catalog_or_time_before_client_creation(monkeypatch, arguments, error) -> None:
@@ -342,6 +349,28 @@ def test_metric_read_rejects_invalid_catalog_or_time_before_client_creation(monk
 
     with pytest.raises(ValueError, match=error):
         runtime.invoke_registered_tool(load_registry().get_tool("read_database_and_infra_observability_metrics"), base_arguments)
+
+
+@pytest.mark.parametrize(("interval", "resolution"), [("60m", "60m"), ("1d", "1d")])
+def test_metric_read_schema_accepts_documented_duration_boundaries(interval, resolution) -> None:
+    from jsonschema import Draft202012Validator
+    from oracle.oci_db_observability_mcp_server.registry import load_registry
+
+    schema = load_registry().get_tool("read_database_and_infra_observability_metrics")["inputSchema"]
+    arguments = {
+        "compartment_id": "ocid1.compartment.oc1..example",
+        "namespace": "oracle_oci_database",
+        "metric_name": "ApplyLag",
+        "aggregation": "mean",
+        "interval": interval,
+        "resolution": resolution,
+        "start_time": "2026-08-01T00:00:00Z",
+        "end_time": "2026-08-01T01:00:00Z",
+    }
+
+    assert not list(Draft202012Validator(schema).iter_errors(arguments))
+    arguments["interval"] = "2d"
+    assert list(Draft202012Validator(schema).iter_errors(arguments))
 
 
 @pytest.mark.parametrize(

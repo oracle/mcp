@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import inspect
 import json
+from copy import copy
 from datetime import datetime
 from functools import lru_cache
 from typing import Any, Mapping, get_args, get_origin
@@ -194,6 +195,34 @@ def _parse_metric_time(value: str, field: str) -> datetime:
     return parsed
 
 
+def _monitoring_duration(value: str) -> int:
+    """Convert a schema-validated OCI Monitoring duration into minutes."""
+    amount, unit = int(value[:-1]), value[-1]
+    return amount * {"m": 1, "h": 60, "d": 60 * 24}[unit]
+
+
+def _limit_metric_streams(data: Any, max_results: int) -> list[Any]:
+    """Bound both metric streams and their aggregate datapoints before serialization."""
+    if not isinstance(data, list):
+        return data
+    limited: list[Any] = []
+    remaining_datapoints = max_results
+    for stream in data[:max_results]:
+        datapoints = stream.get("aggregated_datapoints") if isinstance(stream, Mapping) else getattr(stream, "aggregated_datapoints", None)
+        if isinstance(datapoints, list):
+            if remaining_datapoints <= 0:
+                break
+            stream = dict(stream) if isinstance(stream, Mapping) else copy(stream)
+            bounded_datapoints = datapoints[:remaining_datapoints]
+            if isinstance(stream, dict):
+                stream["aggregated_datapoints"] = bounded_datapoints
+            else:
+                stream.aggregated_datapoints = bounded_datapoints
+            remaining_datapoints -= len(bounded_datapoints)
+        limited.append(stream)
+    return limited
+
+
 def _invoke_metric_read(tool: Mapping[str, Any], arguments: Mapping[str, Any]) -> dict[str, Any]:
     catalog = load_metric_catalog()
     metric = catalog.get([{"namespace": arguments["namespace"], "name": arguments["metric_name"]}])["items"]
@@ -213,6 +242,8 @@ def _invoke_metric_read(tool: Mapping[str, Any], arguments: Mapping[str, Any]) -
     end_time = _parse_metric_time(arguments["end_time"], "end_time")
     if start_time >= end_time:
         raise ValueError("start_time must be earlier than end_time")
+    if _monitoring_duration(arguments["resolution"]) > _monitoring_duration(arguments["interval"]):
+        raise ValueError("resolution must not exceed interval")
     client = _client(str(tool["service"]), str(tool["client"]))
     details = oci.monitoring.models.SummarizeMetricsDataDetails(
         namespace=arguments["namespace"],
@@ -230,10 +261,14 @@ def _invoke_metric_read(tool: Mapping[str, Any], arguments: Mapping[str, Any]) -
         )
     except Exception as exc:
         raise RuntimeError(f"OCI operation {tool['name']} failed: {exc}") from exc
-    result = serialize_response(response)
     max_results = arguments.get("max_results")
-    if max_results is not None and isinstance(result["data"], list):
-        result["data"] = result["data"][:max_results]
+    if max_results is None:
+        result = serialize_response(response)
+    else:
+        result = {
+            "data": _serialize_data(_limit_metric_streams(getattr(response, "data", response), max_results)),
+            "nextPage": (getattr(response, "headers", {}) or {}).get("opc-next-page"),
+        }
     result["mql"] = _metric_mql(arguments)
     return result
 

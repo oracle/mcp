@@ -70,6 +70,12 @@ def test_get_and_list_validate_and_page_catalog_records() -> None:
     assert catalog.list(limit=1, cursor=first_page["nextCursor"])["nextCursor"] is None
 
 
+def test_packaged_catalog_exposes_collection_interval() -> None:
+    catalog = metric_catalog.load_metric_catalog()
+
+    assert all("collectionInterval" in record and "collectionInternal" not in record for record in catalog.records)
+
+
 @pytest.mark.parametrize(
     ("payload", "error"),
     [
@@ -87,4 +93,3 @@ def test_load_metric_catalog_rejects_invalid_packaged_data(monkeypatch, payload,
         metric_catalog.load_metric_catalog()
 
     metric_catalog.load_metric_catalog.cache_clear()
-

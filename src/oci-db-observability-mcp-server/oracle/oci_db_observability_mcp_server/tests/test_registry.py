@@ -146,14 +146,26 @@ def test_registry_values_can_be_returned_as_json() -> None:
 
 def test_packaged_schemas_match_the_locked_oci_sdk() -> None:
     registry = load_registry()
+    narrowed_alarm_tools = {
+        "list_database_and_infra_observability_alarms",
+        "get_database_and_infra_observability_alarm",
+        "list_database_and_infra_observability_alarm_states",
+    }
 
     for tool in registry.tools:
-        if tool.get("kind", "oci_sdk") != "oci_sdk" or tool.get("adapter") or "database-and-infra-observability-metric-catalog" in tool["skills"]:
+        if tool.get("kind", "oci_sdk") != "oci_sdk" or tool.get("adapter"):
             continue
         method = getattr(client_class(tool["service"], tool["client"]), tool["operation"])
         models = __import__(f"{method.__module__.rsplit('.', 1)[0]}.models", fromlist=["models"])
         schema = to_jsonable(tool["inputSchema"])
-        assert schema == schema_for_operation(method, models, schema)
+        sdk_schema = schema_for_operation(method, models, schema)
+        if tool["name"] in narrowed_alarm_tools:
+            assert schema["required"] == sdk_schema["required"]
+            assert schema["additionalProperties"] is False
+            assert set(schema["properties"]).issubset(sdk_schema["properties"])
+            assert all(schema["properties"][name] == sdk_schema["properties"][name] for name in schema["properties"])
+        else:
+            assert schema == sdk_schema
 
 
 def test_job_status_summary_requires_one_sdk_supported_scope() -> None:

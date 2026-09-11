@@ -36,7 +36,7 @@
       "description": "The percentage of space used by a tablespace, out of allocated space. For CDBs, this metric provides data for root container tablespaces.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "tablespaceName",
         "tablespaceType"
@@ -52,7 +52,7 @@
       "description": "The number of seconds the standby database is behind the primary database.",
       "unit": "seconds",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "dbRole",
         "primaryDbid",
@@ -68,7 +68,7 @@
       "description": "The elapsed time since the ApplyLag metric sample was last collected.",
       "unit": "seconds",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "dbRole",
         "primaryDbid",
@@ -84,7 +84,7 @@
       "description": "The average global cache consistent-read (CR) block receive time.",
       "unit": "milliseconds",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -101,7 +101,7 @@
       "description": "The average global cache current block receive time.",
       "unit": "milliseconds",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -118,7 +118,7 @@
       "description": "The duration of the last database backup.",
       "unit": "seconds",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "status",
         "backupType",
@@ -134,7 +134,7 @@
       "description": "The size of the last database backup.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "status",
         "backupType",
@@ -150,7 +150,7 @@
       "description": "The average number of blocks changed per second.",
       "unit": "changes per second",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -167,7 +167,7 @@
       "description": "The current blocking sessions.",
       "unit": "count",
       "statistic": "Max",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [],
       "supportedDatabaseType": [
         "PDB"
@@ -179,7 +179,7 @@
       "description": "The maximum number of CPUs available for the database, which is set to enable instance caging.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -196,7 +196,7 @@
       "description": "The number of CPUs or processors available on the database instance.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "60 minute",
+      "collectionInterval": "60 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -213,7 +213,7 @@
       "description": "The average rate of accumulation of CPU time by foreground sessions in the database instance over the time interval. The CPU time component of Average Active Sessions.",
       "unit": "seconds per second",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -230,7 +230,7 @@
       "description": "The CPU utilization expressed as a percentage, aggregated across all consumer groups. The utilization percentage is reported with respect to the number of CPUs the database is allowed to use.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -247,7 +247,7 @@
       "description": "The number of successful logons during the selected interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -264,7 +264,7 @@
       "description": "The number of SQL job executions on a single Managed Database or a Database Group, and their status. Status dimensions can be the following values: \"Succeeded\", \"Failed,\" \"InProgress.\"",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "managedDatabaseId",
         "managedDatabaseGroupId",
@@ -282,7 +282,7 @@
       "description": "The average rate of accumulation of database time (CPU + Wait) by foreground sessions in the database instance over the time interval. Also known as Average Active Sessions.",
       "unit": "seconds per second",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -299,7 +299,7 @@
       "description": "The number of seconds required to fail over to the standby database.",
       "unit": "seconds",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "dbRole",
         "primaryDbid",
@@ -315,7 +315,7 @@
       "description": "The number of user and recursive calls that executed SQL statements during the selected interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -332,7 +332,7 @@
       "description": "The flash recovery area space limit.",
       "unit": "GB",
       "statistic": "Max",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [],
       "supportedDatabaseType": [
         "CDB"
@@ -344,7 +344,7 @@
       "description": "The flash recovery area utilization.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [],
       "supportedDatabaseType": [
         "CDB"
@@ -356,7 +356,7 @@
       "description": "The global cache CR blocks received per second.",
       "unit": "blocks per second",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -373,7 +373,7 @@
       "description": "The global cache current blocks received per second.",
       "unit": "blocks per second",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -390,7 +390,7 @@
       "description": "The average internode data transfer rate.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -407,7 +407,7 @@
       "description": "The number of invalid database objects.",
       "unit": "count",
       "statistic": "Max",
-      "collectionInternal": "24 hour",
+      "collectionInterval": "24 hour",
       "dimensions": [],
       "supportedDatabaseType": [
         "PDB"
@@ -419,7 +419,7 @@
       "description": "The average number of IO operations per second.",
       "unit": "operations per second",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -439,7 +439,7 @@
       "description": "The average throughput in MB per second.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -459,7 +459,7 @@
       "description": "The average number of blocks read from SGA/Memory (buffer cache) per second.",
       "unit": "reads per second",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -476,7 +476,7 @@
       "description": "The maximum possible tablespace size. For CDBs, this metric provides data for root container tablespaces.",
       "unit": "GB",
       "statistic": "Max",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "tablespaceName",
         "tablespaceType"
@@ -492,7 +492,7 @@
       "description": "The total size of the memory pool in MB.",
       "unit": "MB",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -522,7 +522,7 @@
       "description": "The monitoring status of the resource. If metric collection fails, error information is captured in this metric.",
       "unit": "nan",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "collectionName",
         "errorSeverity",
@@ -539,7 +539,7 @@
       "description": "The number of days left before the monitoring user password expires.",
       "unit": "count",
       "statistic": "Last",
-      "collectionInternal": "24 hour",
+      "collectionInterval": "24 hour",
       "dimensions": [
         "isPerpetual"
       ],
@@ -554,7 +554,7 @@
       "description": "The non-reclaimable fast recovery area.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [],
       "supportedDatabaseType": [
         "CDB"
@@ -566,7 +566,7 @@
       "description": "The number of hard and soft parses during the selected interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -583,7 +583,7 @@
       "description": "The number of hard or soft parses per second.",
       "unit": "parses per second",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -603,7 +603,7 @@
       "description": "The number of problematic scheduled database jobs.",
       "unit": "count",
       "statistic": "Max",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "type",
         "(Broken,",
@@ -619,7 +619,7 @@
       "description": "The number of database processes.",
       "unit": "count",
       "statistic": "Max",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -635,7 +635,7 @@
       "description": "The process limit utilization.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -651,7 +651,7 @@
       "description": "The reclaimable fast recovery area.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [],
       "supportedDatabaseType": [
         "CDB"
@@ -663,7 +663,7 @@
       "description": "The flash recovery area reclaimable space.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [],
       "supportedDatabaseType": [
         "CDB"
@@ -675,7 +675,7 @@
       "description": "The current recovery window of a database.",
       "unit": "seconds",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "deviceType"
       ],
@@ -689,7 +689,7 @@
       "description": "The redo apply rate on the standby database.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "dbRole",
         "primaryDbid",
@@ -705,7 +705,7 @@
       "description": "The redo generation rate on the primary database.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [],
       "supportedDatabaseType": [
         "CDB"
@@ -717,7 +717,7 @@
       "description": "The average amount of redo generated.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -734,7 +734,7 @@
       "description": "The number of days for which database backups are retained.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [],
       "supportedDatabaseType": [
         "CDB"
@@ -746,7 +746,7 @@
       "description": "The session limit utilization.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -762,7 +762,7 @@
       "description": "The number of sessions in the database.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -779,7 +779,7 @@
       "description": "The maximum amount of space allocated by tablespace during the interval. For CDBs, this metric provides data for root container tablespaces.",
       "unit": "GB",
       "statistic": "Max",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [],
       "supportedDatabaseType": [
         "CDB",
@@ -792,7 +792,7 @@
       "description": "The maximum amount of space allocated by tablespace during the interval. For CDBs, this metric provides data for root container tablespaces.",
       "unit": "GB",
       "statistic": "Max",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "tablespaceName",
         "tablespaceType"
@@ -808,7 +808,7 @@
       "description": "The total storage used by the database at collection time, including the space used by tablespaces, flash recovery area, control files, and log files.",
       "unit": "GB",
       "statistic": "Max",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [],
       "supportedDatabaseType": [
         "CDB",
@@ -821,7 +821,7 @@
       "description": "The maximum amount of space used by tablespace during the interval. For CDBs, this metric provides data for root container tablespaces.",
       "unit": "GB",
       "statistic": "Max",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "tablespaceName",
         "tablespaceType"
@@ -837,7 +837,7 @@
       "description": "The percentage of provisioned storage capacity currently in use. Represents the total allocated space for all tablespaces.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [],
       "supportedDatabaseType": [
         "CDB",
@@ -850,7 +850,7 @@
       "description": "The percentage of the space utilized, by tablespace. For CDBs, this metric provides data for root container tablespaces.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "tablespaceName",
         "tablespaceType"
@@ -866,7 +866,7 @@
       "description": "The combined number of user commits and user rollbacks during the selected interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -883,7 +883,7 @@
       "description": "The number of committed or rolled back transactions per second.",
       "unit": "transactions per second",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -903,7 +903,7 @@
       "description": "The number of seconds of redo not yet available on the standby database.",
       "unit": "seconds",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "dbRole",
         "primaryDbid",
@@ -919,7 +919,7 @@
       "description": "The elapsed time since the TransportLagDataRefreshElapsedTime metric sample was last collected.",
       "unit": "seconds",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "dbRole",
         "primaryDbid",
@@ -935,7 +935,7 @@
       "description": "The current unprotected data window of a database.",
       "unit": "seconds",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "deviceType"
       ],
@@ -949,7 +949,7 @@
       "description": "The number of unusable indexes in the database schema.",
       "unit": "count",
       "statistic": "Max",
-      "collectionInternal": "24 hour",
+      "collectionInterval": "24 hour",
       "dimensions": [
         "schemaName"
       ],
@@ -963,7 +963,7 @@
       "description": "The usable fast recovery area.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [],
       "supportedDatabaseType": [
         "CDB"
@@ -975,7 +975,7 @@
       "description": "The flash recovery area space usage.",
       "unit": "GB",
       "statistic": "Max",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [],
       "supportedDatabaseType": [
         "CDB"
@@ -987,7 +987,7 @@
       "description": "The combined number of logons, parses, and execute calls during the selected interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -1004,7 +1004,7 @@
       "description": "The average rate of accumulation of non-idle wait time by foreground sessions in the database instance over the time interval. The wait time component of Average Active Sessions.",
       "unit": "seconds per second",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "instanceNumber",
         "instanceName",
@@ -1022,7 +1022,7 @@
       "description": "The actual number of ECPUs allocated by the service during the selected interval. This metric is available if the VM cluster uses the ECPU compute model.",
       "unit": "count",
       "statistic": "Count",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [],
       "supportedDatabaseType": [
         "CDB",
@@ -1035,7 +1035,7 @@
       "description": "The actual number of OCPUs allocated by the service during the selected interval. This metric is available if the VM cluster uses the OCPU compute model.",
       "unit": "count",
       "statistic": "Count",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [],
       "supportedDatabaseType": [
         "CDB",
@@ -1048,7 +1048,7 @@
       "description": "The capacity of the ASM disk group.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "60 minute",
+      "collectionInterval": "60 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1066,7 +1066,7 @@
       "description": "The cell server CPU utilization.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1081,7 +1081,7 @@
       "description": "The percentage of space allocated on the cell disk.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "60 minute",
+      "collectionInterval": "60 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1097,7 +1097,7 @@
       "description": "The capacity of the cell disk.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "60 minute",
+      "collectionInterval": "60 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1114,7 +1114,7 @@
       "description": "The free space available on the cell disk.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "60 minute",
+      "collectionInterval": "60 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1131,7 +1131,7 @@
       "description": "The average I/O load to the cell disk.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1148,7 +1148,7 @@
       "description": "The average I/O utilization.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1165,7 +1165,7 @@
       "description": "The average number of I/O operations for reading large blocks from a cell disk.",
       "unit": "operations per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1182,7 +1182,7 @@
       "description": "The average response time when reading large blocks from the cell disk.",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1199,7 +1199,7 @@
       "description": "The average I/O throughput per second for reading large blocks from a cell disk.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1216,7 +1216,7 @@
       "description": "The average number of I/O operations for writing large blocks to cell disk.",
       "unit": "operations per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1233,7 +1233,7 @@
       "description": "The average response time when writing large blocks to the cell disk.",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1250,7 +1250,7 @@
       "description": "The average I/O throughput per second for writing large blocks to a cell disk.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1267,7 +1267,7 @@
       "description": "The average number of read I/O operations per second.",
       "unit": "operations per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1284,7 +1284,7 @@
       "description": "The average response time per read request from cell disks (weighted by the number of requests for small or large blocks).",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1301,7 +1301,7 @@
       "description": "The average I/O throughput per second for reading small or large blocks from a cell disk.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1318,7 +1318,7 @@
       "description": "The average number of I/O operations for reading small blocks from a cell disk.",
       "unit": "operations per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1335,7 +1335,7 @@
       "description": "The average response time when reading small blocks from the cell disk.",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1352,7 +1352,7 @@
       "description": "The average I/O throughput per second for reading small blocks from a cell disk.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1369,7 +1369,7 @@
       "description": "The average number of I/O operations for writing small blocks to cell disk.",
       "unit": "operations per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1386,7 +1386,7 @@
       "description": "The average response time when writing small blocks to the cell disk.",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1403,7 +1403,7 @@
       "description": "The average I/O throughput per second for writing small blocks to a cell disk.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1420,7 +1420,7 @@
       "description": "The average number of write I/O operations per second.",
       "unit": "operations per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1437,7 +1437,7 @@
       "description": "The average response time per write request to the cell disk (weighted by the number of requests for small or large blocks).",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1454,7 +1454,7 @@
       "description": "The average I/O throughput per second for writing small or large blocks to a cell disk.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1471,7 +1471,7 @@
       "description": "The cell server memory utilization.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1486,7 +1486,7 @@
       "description": "The number of cell server open alerts.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1502,7 +1502,7 @@
       "description": "The status of the cell server.",
       "unit": "nan",
       "statistic": "Min",
-      "collectionInternal": "2 minute",
+      "collectionInterval": "2 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1517,7 +1517,7 @@
       "description": "The database flash cache usage.",
       "unit": "MB",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1535,7 +1535,7 @@
       "description": "The database I/O operations per second for reading or writing blocks from flash disks.",
       "unit": "operations per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1553,7 +1553,7 @@
       "description": "The database I/O response time per request for flash disks.",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1571,7 +1571,7 @@
       "description": "The database IORM wait time per request issued to flash disks (weighted by number of requests for small or large blocks).",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1589,7 +1589,7 @@
       "description": "The database I/O throughput for reading or writing from flash disks.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1607,7 +1607,7 @@
       "description": "The database I/O utilization for flash disks.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1625,7 +1625,7 @@
       "description": "The database IORM wait time per request for large I/O requests issued to flash disks.",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1643,7 +1643,7 @@
       "description": "The database I/O operations per second for reading or writing large blocks from flash disks.",
       "unit": "operations per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1661,7 +1661,7 @@
       "description": "The database I/O response time per request for reading or writing large blocks from flash disks.",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1679,7 +1679,7 @@
       "description": "The database I/O utilization for reading or writing large blocks from flash disks",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1697,7 +1697,7 @@
       "description": "The database IORM wait time per request for small I/O requests issued to flash disks.",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1715,7 +1715,7 @@
       "description": "The database I/O operations per second for reading or writing small blocks from flash disks.",
       "unit": "operations per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1733,7 +1733,7 @@
       "description": "The database I/O response time per request for reading or writing small blocks from flash disks.",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1751,7 +1751,7 @@
       "description": "The database I/O utilization for reading or writing small blocks from flash disks.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1769,7 +1769,7 @@
       "description": "The database I/O operations per second for reading or writing blocks from hard disks.",
       "unit": "operations per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1787,7 +1787,7 @@
       "description": "The database I/O response time per request for hard disks (weighted by number of requests for small or large blocks).",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1805,7 +1805,7 @@
       "description": "The database IORM wait time per request issued to hard disks (weighted by number of requests for small or large blocks).",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1823,7 +1823,7 @@
       "description": "The database I/O throughput for reading or writing from hard disks.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1841,7 +1841,7 @@
       "description": "The database I/O utilization for hard disks.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1859,7 +1859,7 @@
       "description": "The database IORM wait time per request for large I/O requests issued to hard disks.",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1877,7 +1877,7 @@
       "description": "The database I/O operations per second for reading or writing large blocks from hard disks.",
       "unit": "operations per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1895,7 +1895,7 @@
       "description": "The database I/O response time per request for reading or writing large blocks from hard disks.",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1913,7 +1913,7 @@
       "description": "The database I/O utilization for reading or writing large blocks from hard disks.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1931,7 +1931,7 @@
       "description": "The database IORM wait time per request for small I/O requests issued to hard disks.",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1949,7 +1949,7 @@
       "description": "The database I/O operations per second for reading or writing small blocks from hard disks.",
       "unit": "operations per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1967,7 +1967,7 @@
       "description": "The database I/O response time per request for reading or writing small blocks from hard disks.",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -1985,7 +1985,7 @@
       "description": "The database I/O utilization for reading or writing small blocks from hard disks.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2003,7 +2003,7 @@
       "description": "The number of requests to write new data into flash cache.",
       "unit": "requests per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2018,7 +2018,7 @@
       "description": "The flash cache read hit ratio. Note: If there's no flash cache activity, then the hit ratio is defaulted to 100%.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2033,7 +2033,7 @@
       "description": "The flash cache read hit ratio for keep objects. Note: If there's no flash cache activity, then the hit ratio is defaulted to 100%.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2048,7 +2048,7 @@
       "description": "The number of read requests for keep objects that did not find all the data in flash cache.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2063,7 +2063,7 @@
       "description": "The number of megabytes per second pushed out of flash cache because of the space limit for keep objects.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2078,7 +2078,7 @@
       "description": "The number of requests read from flash cache for keep objects.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2093,7 +2093,7 @@
       "description": "The I/O throughput reading large blocks from flash cache.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2108,7 +2108,7 @@
       "description": "The number of requests that overwrite existing data into flash cache.",
       "unit": "requests per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2123,7 +2123,7 @@
       "description": "The number of requests that are population writes into flash cache due to read miss.",
       "unit": "requests per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2138,7 +2138,7 @@
       "description": "The number of requests to read random I/O from flash cache.",
       "unit": "requests per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2153,7 +2153,7 @@
       "description": "The I/O throughput reading scan data from disk, as not all the data is in flash cache.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2168,7 +2168,7 @@
       "description": "The number of requests to read scan data from flash cache.",
       "unit": "requests per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2183,7 +2183,7 @@
       "description": "The size of flash cache.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2198,7 +2198,7 @@
       "description": "The I/O throughput reading small blocks from flash cache.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2213,7 +2213,7 @@
       "description": "The flash cache read hit ratio for small requests. Note: If there's no flash cache activity, then the hit ratio is defaulted to 100%.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2228,7 +2228,7 @@
       "description": "The number of requests that write data to hard disk from flash cache.",
       "unit": "requests per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2243,7 +2243,7 @@
       "description": "The flash disk space allocated to grid disks.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "60 minute",
+      "collectionInterval": "60 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2258,7 +2258,7 @@
       "description": "The flash disk usage for flash cache keep objects.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "60 minute",
+      "collectionInterval": "60 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2273,7 +2273,7 @@
       "description": "The flash disk usage for flash cache non-keep objects.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "60 minute",
+      "collectionInterval": "60 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2288,7 +2288,7 @@
       "description": "The flash disk usage for flash cache that is unused.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "60 minute",
+      "collectionInterval": "60 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2303,7 +2303,7 @@
       "description": "The flash disk usage for flash log.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "60 minute",
+      "collectionInterval": "60 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2318,7 +2318,7 @@
       "description": "The flash disk usage for metadata.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "60 minute",
+      "collectionInterval": "60 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2333,7 +2333,7 @@
       "description": "The number of redo writes exceeding the outlier threshold.",
       "unit": "nan",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2348,7 +2348,7 @@
       "description": "The smart flash logging efficiency over the past hour.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2363,7 +2363,7 @@
       "description": "The number of redo writes that are prevented from exceeding the outlier threshold.",
       "unit": "nan",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2378,7 +2378,7 @@
       "description": "The number of redo writes that are bypassed due to the size of data being greater than the available space.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2393,7 +2393,7 @@
       "description": "The number of redo writes that are bypassed due to unavailable buffer.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2408,7 +2408,7 @@
       "description": "The number of redo writes that are bypassed due to slow disk.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2423,7 +2423,7 @@
       "description": "The number of Smart Flash Logging writes serviced.",
       "unit": "operations per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2438,7 +2438,7 @@
       "description": "The Smart Flash Logging write throughput.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2453,7 +2453,7 @@
       "description": "The hard disk usage allocated to grid disks.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "60 minute",
+      "collectionInterval": "60 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2468,7 +2468,7 @@
       "description": "The hard disk space used for metadata.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "60 minute",
+      "collectionInterval": "60 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2483,7 +2483,7 @@
       "description": "The megabytes transmitted or received through the Infiniband interface.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2499,7 +2499,7 @@
       "description": "The ratio of the cumulative number of positions in the I/O queue that were skipped.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2514,7 +2514,7 @@
       "description": "The current I/O resource management mode. Note that if IORM objective = BASIC, then this metric has no meaning. A value in between 1 and 2 or between 2 and 3 indicates that the IORM objective changed in the metric period, and the precise value indicates proximity to a given objective. It's also indicative of a constantly-changing mix of workloads.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2529,7 +2529,7 @@
       "description": "The I/O resource management objective.",
       "unit": "nan",
       "statistic": "Mean",
-      "collectionInternal": "60 minute",
+      "collectionInterval": "60 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2544,7 +2544,7 @@
       "description": "The status of the storage server's management service.",
       "unit": "nan",
       "statistic": "Min",
-      "collectionInternal": "2 minute",
+      "collectionInterval": "2 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2559,7 +2559,7 @@
       "description": "The megabytes read from the flash disk by the Smart Scan I/O.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2574,7 +2574,7 @@
       "description": "The megabytes read from the hard disk by the Smart Scan I/O.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2589,7 +2589,7 @@
       "description": "The megabytes of Smart Scan I/O pass-through (sent back to the database for processing).",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2604,7 +2604,7 @@
       "description": "The megabytes saved or avoided by using Storage Index.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "15 minute",
+      "collectionInterval": "15 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2619,7 +2619,7 @@
       "description": "The allocated space in a disk group for a database.",
       "unit": "MB",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2636,7 +2636,7 @@
       "description": "The free space in a disk.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2653,7 +2653,7 @@
       "description": "The free space in a disk group.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2669,7 +2669,7 @@
       "description": "The total space in a disk group.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2685,7 +2685,7 @@
       "description": "The usable free space in a disk group.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2701,7 +2701,7 @@
       "description": "The total usable space in a disk group, subject to redundancy.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2717,7 +2717,7 @@
       "description": "The percentage of usable space used in a disk group.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2733,7 +2733,7 @@
       "description": "The percentage of space used in a disk group.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2749,7 +2749,7 @@
       "description": "The total space in a disk.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2766,7 +2766,7 @@
       "description": "The percentage of space used in a disk.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2783,7 +2783,7 @@
       "description": "The total number of IO operations processed per second by a disk group for a database.",
       "unit": "operations per second",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2801,7 +2801,7 @@
       "description": "The average size of an IO operation.",
       "unit": "MB per operation",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2819,7 +2819,7 @@
       "description": "The total IO throughput of a disk group for a database.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2837,7 +2837,7 @@
       "description": "The monitoring status of the ASM. If metric collection fails, error information is captured in this metric.",
       "unit": "nan",
       "statistic": "Min",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2855,7 +2855,7 @@
       "description": "The time taken by a disk group to process an IO request.",
       "unit": "milliseconds per request",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2873,7 +2873,7 @@
       "description": "The status of an ASM instance.",
       "unit": "nan",
       "statistic": "Min",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2889,7 +2889,7 @@
       "description": "The cluster interconnect error rate.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2905,7 +2905,7 @@
       "description": "The cluster interconnect read rate.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2921,7 +2921,7 @@
       "description": "The cluster interconnect write rate.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2937,7 +2937,7 @@
       "description": "The CPU used in the time interval.",
       "unit": "millisecond",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2953,7 +2953,7 @@
       "description": "The CPU utilization expressed as a percentage.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2969,7 +2969,7 @@
       "description": "The rate at which data is read from a disk.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -2985,7 +2985,7 @@
       "description": "The rate at which data is sent to a disk.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -3001,7 +3001,7 @@
       "description": "The total memory used.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -3017,7 +3017,7 @@
       "description": "The percentage of memory utilized.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -3033,7 +3033,7 @@
       "description": "The rate at which data is received across a network interface.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -3050,7 +3050,7 @@
       "description": "The rate at which data is sent across a network interface.",
       "unit": "MB per second",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -3067,7 +3067,7 @@
       "description": "The total storage space used.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -3084,7 +3084,7 @@
       "description": "The percentage of storage space utilized.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -3101,7 +3101,7 @@
       "description": "The total number of CPUs available.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -3117,7 +3117,7 @@
       "description": "The total amount of memory available.",
       "unit": "GB",
       "statistic": "Mean",
-      "collectionInternal": "30 minute",
+      "collectionInterval": "30 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -3133,7 +3133,7 @@
       "description": "The number of active connections at collection time.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -3148,7 +3148,7 @@
       "description": "The number of successfully established connections.",
       "unit": "connections per minute",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -3163,7 +3163,7 @@
       "description": "The maximum number of connections that the listener can handle.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -3178,7 +3178,7 @@
       "description": "The number of connections refused by the listener.",
       "unit": "connections per minute",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "resourceId",
         "resourceName",
@@ -3193,7 +3193,7 @@
       "description": "The average number of sessions that are actively executing or waiting for resources.",
       "unit": "integer",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3210,7 +3210,7 @@
       "description": "The number of sessions that have been blocking other sessions for more than 60 seconds.",
       "unit": "count",
       "statistic": "Max",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3227,7 +3227,7 @@
       "description": "The time taken to connect to an Autonomous AI Database instance in each region from a VM in the same region.",
       "unit": "Milliseconds",
       "statistic": "Max",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3244,7 +3244,7 @@
       "description": "The number of connections dropped by the client.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3261,7 +3261,7 @@
       "description": "The number of connections dropped by the server.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3278,7 +3278,7 @@
       "description": "Average rate of accumulation of CPU time by foreground sessions in the database over the time interval.",
       "unit": "seconds per second",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3295,7 +3295,7 @@
       "description": "The CPU usage expressed as a percentage, aggregated across all consumer groups. The utilization percentage is reported with respect to the number of CPUs the database is allowed to use.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3312,7 +3312,7 @@
       "description": "The number of successful logons during the selected interval.",
       "unit": "count",
       "statistic": "Count",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3329,7 +3329,7 @@
       "description": "The database is available for connections during the selected time interval (data for this metric lags by 5 minutes). Possible values for this metric: 1 = Database is Available0 = Database is UnavailableNotes for the DatabaseAvailability metric: You can set an alarm that is triggered if the database is not available (value 0). Availability is calculated based on the \"Monthly Uptime Percentage\" described in the Oracle PaaS and IaaS Public Cloud Services Pillar Document document under Delivery Policies (see Autonomous AI Database Availability Service Level Agreement). DatabaseAvailability is only set to 0 when Autonomous AI Database availability is not met. For example when there is a failure on Oracle side. Otherwise, the value is 1.If needed, you can check manual Autonomous AI Database start/stop with the following events: Autonomous AI Database - Start BeginAutonomous AI Database - Start EndAutonomous AI Database - Stop BeginAutonomous AI Database - Stop EndSee Autonomous AI Database Lifecycle Events for more information.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3346,7 +3346,7 @@
       "description": "The number of changes that were part of an update or delete operation that were made to all blocks in the SGA. Such changes generate redo log entries and become permanent changes to the database if the transaction is committed.This approximates total database work. This statistic indicates the rate at which buffers are being dirtied, during the selected time interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3363,7 +3363,7 @@
       "description": "The amount of time database user sessions spend executing database code (CPU Time + WaitTime). DB Time is used to infer database call latency, because DB Time increases in direct proportion to both database call latency (response time) and call volume.It is calculated as the average rate of accumulation of database time by foreground sessions in the database over the time interval.",
       "unit": "seconds per second",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3380,7 +3380,7 @@
       "description": "The total ECPU billed for this database (which includes ECPUs billed for Local standbys and Database Tools).",
       "unit": "count",
       "statistic": "Count",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3397,7 +3397,7 @@
       "description": "The number of user and recursive calls that executed SQL statements during the selected interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3414,7 +3414,7 @@
       "description": "Shows the total number of failed connections to the database during the selected interval.A connection is counted as failed when a connection attempt reaches the database and logs any of the following errors: ORA-12514, ORA-12519 or ORA-12529.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3431,7 +3431,7 @@
       "description": "The number of logons that failed because of an invalid user name and/or password, during the selected interval. The counter is reset to 0 by a successful login.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3448,7 +3448,7 @@
       "description": "The number of parse calls (real parses) during the selected time interval. A hard parse is an expensive operation in terms of memory use, because it requires Oracle to allocate a workheap and other memory structures and then build a parse tree.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3465,7 +3465,7 @@
       "description": "The average number of I/O operations per second.",
       "unit": "Integer",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3482,7 +3482,7 @@
       "description": "The average throughput in MB per second.",
       "unit": "Integer",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3499,7 +3499,7 @@
       "description": "The average number of logical block reads (\"db block gets\" plus \"consistent gets\") per second. Includes buffered and direct I/O.",
       "unit": "Integer",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3516,7 +3516,7 @@
       "description": "The sum of \u201cdb block gets\u201d plus \u201cconsistent gets\u201d, during the selected time interval. This includes logical reads of database blocks from either the buffer cache or process private memory.",
       "unit": "count",
       "statistic": null,
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3533,7 +3533,7 @@
       "description": "The number of hard or soft parses per second.",
       "unit": "Integer",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3550,7 +3550,7 @@
       "description": "The number of hard and soft parses during the selected interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3567,7 +3567,7 @@
       "description": "The number of parse failures during the selected time interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3584,7 +3584,7 @@
       "description": "The total time in seconds by which the Disaster Recovery peer lags behind its Primary database.For a local Disaster Recovery peer, the metric is displayed under the Primary database.For a cross region Disaster Recovery peer, this metric is displayed under the Disaster Recovery peer.",
       "unit": "Seconds",
       "statistic": "Max",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3601,7 +3601,7 @@
       "description": "The percentage of maximum available PGA memory that is utilized, aggregated across all consumer groups.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3618,7 +3618,7 @@
       "description": "The number of data blocks read from disk, during the selected time interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3635,7 +3635,7 @@
       "description": "The size in bytes of disk reads by all database instance activity including application reads, backup and recovery, and other utilities, during the selected time interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3652,7 +3652,7 @@
       "description": "The number of data blocks written to disk, during the selected time interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3669,7 +3669,7 @@
       "description": "The size in bytes of all disk writes for the database instance including application activity, backup and recovery, and other utilities, during the selected time interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3686,7 +3686,7 @@
       "description": "The time taken to display the results of a simple query on the user's screen.",
       "unit": "Milliseconds",
       "statistic": "Max",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3703,7 +3703,7 @@
       "description": "The number of queued SQL statements, aggregated across all consumer groups, during the selected interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3720,7 +3720,7 @@
       "description": "Amount of redo generated in bytes, during the selected time interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3737,7 +3737,7 @@
       "description": "The number of running SQL statements, aggregated across all consumer groups, during the selected interval.",
       "unit": "count",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3754,7 +3754,7 @@
       "description": "The number of sessions in the database.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3771,7 +3771,7 @@
       "description": "The maximum session utilization expressed as a percentage, aggregated across all consumer groups.",
       "unit": "Percent",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3788,7 +3788,7 @@
       "description": "The percentage of maximum available SGA memory utilized, aggregated across all consumer groups.",
       "unit": "Percent",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3805,7 +3805,7 @@
       "description": "The number of bytes received from the client over Oracle Net Services, during the selected time interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3822,7 +3822,7 @@
       "description": "The number of bytes received from a database link over Oracle Net Services, during the selected time interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3839,7 +3839,7 @@
       "description": "The number of bytes sent to the client from the foreground processes, during the selected time interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3856,7 +3856,7 @@
       "description": "The number of bytes sent over a database link, during the selected time interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3873,7 +3873,7 @@
       "description": "Amount of space allocated to the database for all tablespaces, during the interval.",
       "unit": "GB",
       "statistic": "Max",
-      "collectionInternal": "1 hour",
+      "collectionInterval": "1 hour",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3890,7 +3890,7 @@
       "description": "Maximum amount of storage reserved for the database during the interval.",
       "unit": "GB",
       "statistic": "Max",
-      "collectionInternal": "1 hour",
+      "collectionInterval": "1 hour",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3907,7 +3907,7 @@
       "description": "Maximum amount of space used during the interval.",
       "unit": "GB",
       "statistic": "Max",
-      "collectionInternal": "1 hour",
+      "collectionInterval": "1 hour",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3924,7 +3924,7 @@
       "description": "The percentage of the reserved maximum storage currently allocated for all database tablespaces.Represents the total reserved space for all tablespaces.",
       "unit": "percent",
       "statistic": "Mean",
-      "collectionInternal": "1 hour",
+      "collectionInterval": "1 hour",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3941,7 +3941,7 @@
       "description": "The number of committed or rolled back transactions per second.",
       "unit": "Integer",
       "statistic": "Mean",
-      "collectionInternal": "5 minute",
+      "collectionInterval": "5 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3958,7 +3958,7 @@
       "description": "The combined number of user commits and user rollbacks during the selected interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3975,7 +3975,7 @@
       "description": "The combined number of logons, parses, and execute calls during the selected interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -3992,7 +3992,7 @@
       "description": "The number of user commits during the selected time interval. When a user commits a transaction, the generated redo that reflects the changes made to database blocks must be written to disk. Commits often represent the closest thing to a user transaction rate.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -4009,7 +4009,7 @@
       "description": "Number of times users manually issue the ROLLBACK statement or an error occurs during a user's transactions, during the selected time interval.",
       "unit": "count",
       "statistic": "Sum",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",
@@ -4026,7 +4026,7 @@
       "description": "Average rate of accumulation of non-idle wait time by foreground sessions in the database over the time interval.",
       "unit": "seconds per second",
       "statistic": "Mean",
-      "collectionInternal": "1 minute",
+      "collectionInterval": "1 minute",
       "dimensions": [
         "AUTONOMOUSDBTYPE",
         "deploymentType",

@@ -552,9 +552,7 @@ def _resource_principal_v212_signer(inputs: _ResolvedInputs) -> Any:
         inputs.resource_principal_rpst_endpoint,
         oci.regions.endpoint_for("auth", region=inputs.region),
     )
-    private_key_path = str(
-        Path(inputs.resource_principal_private_key_path).expanduser().resolve()
-    )
+    private_key_path = str(Path(inputs.resource_principal_private_key_path).expanduser())
     signer_type = _resource_principal_v212_signer_type(
         inputs.resource_principal_rci, inputs.resource_principal_t0
     )

@@ -1117,7 +1117,7 @@ dev = [
 
 [[package]]
 name = "oracle-oci-api-mcp-server"
-version = "2.1.5"
+version = "2.1.6"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },

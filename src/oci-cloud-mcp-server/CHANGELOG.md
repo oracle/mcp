@@ -6,6 +6,12 @@
 
 - Updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).
 
+## 2.2.4
+
+### Changed
+
+- Published a new release carrying the `oracle-mcp-common` 0.2 compatibility requirement.
+
 ## 2.2.3
 
 ### Changed

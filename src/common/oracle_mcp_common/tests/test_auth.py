@@ -493,6 +493,39 @@ def test_resource_principal_v212_uses_sdk_exchange_signer(tmp_path, monkeypatch)
     )
 
 
+def test_resource_principal_v212_preserves_private_key_symlink(
+    tmp_path, monkeypatch
+):
+    signer = SimpleNamespace(
+        _get_resource_principal_token_and_service_principal_session_token=MagicMock()
+    )
+    constructor = MagicMock(return_value=signer)
+    monkeypatch.setattr(
+        auth.oci.auth.signers, "EphemeralResourcePrincipalV21Signer", constructor
+    )
+    monkeypatch.setattr(
+        auth, "_resource_principal_v212_signer_type", lambda *_: constructor
+    )
+    target = tmp_path / "resource-principal-v1.pem"
+    target.write_text("private-key", encoding="utf-8")
+    key_link = tmp_path / "resource-principal.pem"
+    key_link.symlink_to(target)
+
+    auth.build_auth_context(
+        auth.AuthOptions(
+            auth_type="resource_principal_v212",
+            region="us-phoenix-1",
+            resource_principal_tenancy_id="tenant",
+            resource_principal_resource_id="resource",
+            resource_principal_private_key_path=str(key_link),
+            resource_principal_rci="c2VjcmV0LXJjaQ==",
+            resource_principal_t0="2020-01-01T00:00:00Z",
+        )
+    )
+
+    assert constructor.call_args.kwargs["private_key"] == str(key_link)
+
+
 def test_resource_principal_tenancy_input_is_ignored_for_other_auth_types(monkeypatch):
     signer = SimpleNamespace(region="us-phoenix-1", tenancy_id=None)
     constructor = MagicMock(return_value=signer)

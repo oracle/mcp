@@ -260,7 +260,7 @@ authentication. Set `OCI_MCP_AUTH_TYPE` to one of:
 - `auto` (default): use a security token only when the selected profile directly declares `security_token_file`; otherwise use that profile's API key
 - `api_key` or `security_token`: explicitly select an OCI CLI-compatible profile mode
 - `identity_domain_upst`: exchange a file-backed Identity Domains JWT for an OCI UPST
-- `instance_principal`, `resource_principal`, `instance_principal_delegation`, `resource_principal_delegation`, or `oke_workload_identity`
+- `instance_principal`, `resource_principal`, `resource_principal_v212`, `instance_principal_delegation`, `resource_principal_delegation`, or `oke_workload_identity`
 
 Profile-backed modes load the default `~/.oci/config`, or the file and profile
 selected by `OCI_CONFIG_FILE` and `OCI_CONFIG_PROFILE`. `OCI_REGION` overrides
@@ -278,6 +278,13 @@ server's derived additional user-agent suffix for MCP telemetry.
 | `instance_principal_delegation`, `resource_principal_delegation` | `OCI_MCP_DELEGATION_TOKEN_FILE` |
 | `oke_workload_identity` | None by default; `OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN_PATH` optionally overrides the mounted token |
 | `identity_domain_upst` | `OCI_MCP_IDENTITY_DOMAIN_URL`, `OCI_MCP_UPST_JWT_FILE`, `OCI_MCP_IDENTITY_DOMAIN_CLIENT_ID`, `OCI_MCP_IDENTITY_DOMAIN_CLIENT_SECRET_FILE`, and `OCI_REGION` |
+| `resource_principal_v212` | `OCI_REGION`, `OCI_MCP_RP_TENANCY_ID`, `OCI_MCP_RP_RESOURCE_ID`, `OCI_MCP_RP_PRIVATE_KEY_PATH`, `OCI_MCP_RP_RCI`, and `OCI_MCP_RP_T0` |
+
+`resource_principal_v212` enables the Database-service RPv2.1.2
+resource-principal exchange. The RPT and RPST endpoints default to the
+region's OCI realm; override them only when required with
+`OCI_MCP_RP_RPT_ENDPOINT` and `OCI_MCP_RP_RPST_ENDPOINT`. Treat
+`OCI_MCP_RP_RCI` as sensitive HMAC-key material and do not log or commit it.
 
 HTTP transport authentication remains separate from `stdio`. At startup, the
 server uses `oracle-mcp-common` to configure the OCI IAM/IDCS provider from

@@ -203,6 +203,8 @@ def schema_for_operation(method: Any, models_module: Any, existing: Mapping[str,
     if required:
         existing_required = existing.get("required", []) if isinstance(existing, Mapping) else []
         result["required"] = [name for name in existing_required if name in required] + [name for name in required if name not in existing_required]
+    if isinstance(existing, Mapping) and "oneOf" in existing:
+        result["oneOf"] = existing["oneOf"]
     return result
 
 

@@ -7030,7 +7030,7 @@
     },
     {
       "name": "list_jobs",
-      "description": "Lists jobs in a compartment with optional target filters so you can locate job definitions quickly.",
+      "description": "Lists jobs in a compartment with optional target filters so you can locate job definitions quickly. For ordinary inventory requests, omit sort_by and sort_order; use them only when the user explicitly requests ordering. The OCI Python SDK documents sort_by values as TIMECREATED or NAME (case-sensitive).",
       "service": "dbm",
       "client": "DbManagementClient",
       "operation": "list_jobs",
@@ -7082,7 +7082,7 @@
               "TIMECREATED",
               "NAME"
             ],
-            "description": "The field to sort information by. Only one sortOrder can be used. The default sort order\nfor \u2018TIMECREATED\u2019 is descending and the default sort order for \u2018NAME\u2019 is ascending.\nThe \u2018NAME\u2019 sort order is case-sensitive.\n\nAllowed values are: \"TIMECREATED\", \"NAME\""
+            "description": "Optional field to sort information by. Omit for ordinary inventory/list-all requests because the live service may reject sorting even when the SDK accepts it. When ordering is explicitly requested, use exactly one of the SDK-documented, case-sensitive values: \"TIMECREATED\" or \"NAME\". The default sort order for TIMECREATED is descending and for NAME is ascending."
           },
           "sort_order": {
             "type": "string",
@@ -15474,7 +15474,7 @@
     },
     {
       "name": "summarize_job_executions_statuses",
-      "description": "Returns aggregated counts of job executions by backend status for the requested scope and time range. Use this for job-status count questions; do not route these questions to fleet resource-metric tools. The API requires at least one of managed_database_id, managed_database_group_id, or job_id. The requested interval must be no longer than one week and end_time must be earlier than the current UTC time. Report returned status names as-is; do not equate user terms such as broken with a backend status unless confirmed by the response.",
+      "description": "Returns aggregated counts of job executions by backend status for one job, Managed Database, or Managed Database Group in a compartment and time range. Use this for job-status count questions; do not route these questions to fleet resource-metric tools. Provide exactly one of id, managed_database_id, or managed_database_group_id. The requested interval must be no longer than one week and end_time must be earlier than the current UTC time. Report returned status names as-is; do not equate user terms such as broken with a backend status unless confirmed by the response.",
       "service": "dbm",
       "client": "DbManagementClient",
       "operation": "summarize_job_executions_statuses",
@@ -15494,19 +15494,15 @@
           },
           "id": {
             "type": "string",
-            "description": "The identifier of the resource."
-          },
-          "job_id": {
-            "type": "string",
-            "description": "Optional identifier of the job. At least one of managed_database_id, managed_database_group_id, or job_id is required by the API."
+            "description": "Optional identifier of the job. Provide exactly one of id, managed_database_id, or managed_database_group_id."
           },
           "managed_database_group_id": {
             "type": "string",
-            "description": "Optional OCID of the Managed Database Group. At least one of managed_database_id, managed_database_group_id, or job_id is required by the API."
+            "description": "Optional OCID of the Managed Database Group. Provide exactly one of id, managed_database_id, or managed_database_group_id."
           },
           "managed_database_id": {
             "type": "string",
-            "description": "Optional OCID of the Managed Database. At least one of managed_database_id, managed_database_group_id, or job_id is required by the API."
+            "description": "Optional OCID of the Managed Database. Provide exactly one of id, managed_database_id, or managed_database_group_id."
           },
           "name": {
             "type": "string",
@@ -15536,6 +15532,23 @@
             "type": "string"
           }
         },
+        "oneOf": [
+          {
+            "required": [
+              "id"
+            ]
+          },
+          {
+            "required": [
+              "managed_database_id"
+            ]
+          },
+          {
+            "required": [
+              "managed_database_group_id"
+            ]
+          }
+        ],
         "additionalProperties": false,
         "required": [
           "compartment_id",

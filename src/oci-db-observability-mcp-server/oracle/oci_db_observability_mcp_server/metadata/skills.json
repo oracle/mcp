@@ -27,7 +27,7 @@
     },
     {
       "name": "awr-historical-performance-analysis",
-      "description": "AWR historical summarization across CPU, waits, metrics, parameters, and system statistics. Use AWR sysstat tools for historical metrics that can be derived from documented counters. Verify required counters and a common completed interval before querying a fleet; calculate rates or percentages only when the formula and counter semantics are known. If the counters are unavailable, report the limitation and do not fan out. Do not use fixed health-summary tools as generic metric lookups.",
+      "description": "AWR historical summarization across CPU, waits, metrics, parameters, and system statistics. Before querying a fleet, classify the requested quantity as a direct metric, configuration value, status count, or derived metric. When a rate or percentage is not directly exposed, prefer AWR counter tools or reports over fixed health summaries: discover AWR identifiers, retrieve one completed interval, verify the required counters, and only then expand to the fleet. Calculate derived values only when the inputs, interval, and formula are documented; if unavailable, report the limitation and do not fan out. Do not use fixed health-summary tools as generic metric lookups.",
       "tools": [
         "summarize_awr_db_cpu_usages",
         "summarize_awr_db_metrics",
@@ -153,7 +153,7 @@
     },
     {
       "name": "database-health-and-core-metrics",
-      "description": "Read-only health and core runtime metric checks for managed databases in OCI DBM. Check target type and subtype from inventory before invoking a specialized tool such as get_cluster_cache_metric. Inspect each tool's schema and documented response scope before calling it; do not use a tool without a metric selector as a generic metric lookup. Validate metric and time constraints before any per-database fan-out; if parameter validation fails, correct the request once and do not repeat the same invalid request across the fleet.",
+      "description": "Read-only health and core runtime metric checks for managed databases in OCI DBM. Before querying a fleet, classify the requested quantity as a direct metric, configuration value, status count, or derived metric. Select a tool whose schema or documented response explicitly supports that quantity; inspect target type and subtype before invoking a specialized tool such as get_cluster_cache_metric. Do not use a tool without a metric selector as a generic metric lookup. If the selected tool lacks the requested field, inspect related skills for documented raw counters or status data before concluding that the MCP lacks the capability. Validate metric and time constraints and test the chosen path on one target before any fleet fan-out; if parameter validation fails, correct the request once and do not repeat the same invalid request across the fleet.",
       "tools": [
         "get_cluster_cache_metric",
         "get_database_home_metrics",
@@ -347,7 +347,7 @@
     },
     {
       "name": "job-orchestration-and-execution-tracking",
-      "description": "Read-only job, run, and execution inventory with status summaries in OCI Database Management. Use this skill for questions about job counts, broken or failed executions, execution status, or job health. For aggregate counts by status across a compartment or time range, prefer summarize_job_executions_statuses; use list_job_executions or list_job_runs for per-item details. These are job-status workflows, not CPU, storage, or fleet-health resource-metric workflows. Before calling a status summary, provide at least one supported target selector (managed database, managed database group, or job), use a time window no longer than one week, and set end_time before the current UTC time. Treat returned status names as backend values; do not assume that a user term such as broken maps to FAILED unless the response establishes that mapping.",
+      "description": "Read-only job, run, and execution inventory with status summaries in OCI Database Management. Use this skill for questions about job counts, broken or failed executions, execution status, or job health. For aggregate counts by status across a compartment or time range, prefer summarize_job_executions_statuses; use list_job_executions or list_job_runs for per-item details. These are job-status workflows, not CPU, storage, or fleet-health resource-metric workflows. Before calling a status summary, provide exactly one supported target selector (id for a job, managed_database_id, or managed_database_group_id), use a time window no longer than one week, and set end_time before the current UTC time. Treat returned status names as backend values; do not assume that a user term such as broken maps to FAILED unless the response establishes that mapping.",
       "tools": [
         "get_job",
         "get_job_execution",

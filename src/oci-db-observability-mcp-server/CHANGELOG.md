@@ -4,10 +4,14 @@
 
 ### Tool surface
 
+- Clarified `list_jobs` sorting guidance so ordinary inventory requests omit
+  optional sorting, while retaining the OCI SDK's documented sort values.
 - Added the `database-and-infra-observability-metric-catalog` skill with local
   metric catalog search/get/list handlers, a catalog-validated live OCI
   Monitoring metric reader, and read-only OCI Monitoring alarm definition and
   status operations.
+- Added capability-first classification, AWR fallback, and single-target
+  validation checkpoints to health and AWR skill prompts.
 
 ## 0.1.0 - 2026-08-05
 

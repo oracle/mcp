@@ -10,6 +10,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from jsonschema import Draft202012Validator
 
 from oracle.oci_db_observability_mcp_server.registry import (
     RegistryError,
@@ -147,12 +148,29 @@ def test_packaged_schemas_match_the_locked_oci_sdk() -> None:
     registry = load_registry()
 
     for tool in registry.tools:
-        if tool.get("kind") != "oci_sdk" or tool.get("adapter") or "database-and-infra-observability-metric-catalog" in tool["skills"]:
+        if tool.get("kind", "oci_sdk") != "oci_sdk" or tool.get("adapter") or "database-and-infra-observability-metric-catalog" in tool["skills"]:
             continue
         method = getattr(client_class(tool["service"], tool["client"]), tool["operation"])
         models = __import__(f"{method.__module__.rsplit('.', 1)[0]}.models", fromlist=["models"])
         schema = to_jsonable(tool["inputSchema"])
         assert schema == schema_for_operation(method, models, schema)
+
+
+def test_job_status_summary_requires_one_sdk_supported_scope() -> None:
+    schema = dict(load_registry().get_tool("summarize_job_executions_statuses")["inputSchema"])
+    validator = Draft202012Validator(schema)
+    base = {
+        "compartment_id": "compartment",
+        "start_time": "2026-01-01T00:00:00Z",
+        "end_time": "2026-01-01T01:00:00Z",
+    }
+
+    assert validator.is_valid({**base, "id": "job"})
+    assert validator.is_valid({**base, "managed_database_id": "database"})
+    assert validator.is_valid({**base, "managed_database_group_id": "group"})
+    assert not validator.is_valid(base)
+    assert not validator.is_valid({**base, "id": "job", "managed_database_id": "database"})
+    assert not validator.is_valid({**base, "job_id": "job"})
 
 
 def test_metric_catalog_skill_uses_the_pinned_monitoring_client_operations() -> None:

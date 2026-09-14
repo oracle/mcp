@@ -238,6 +238,17 @@ def _invoke_metric_read(tool: Mapping[str, Any], arguments: Mapping[str, Any]) -
     unsupported = sorted(requested_dimensions - supported_dimensions)
     if unsupported:
         raise ValueError(f"Unsupported dimensions for {arguments['namespace']}/{arguments['metric_name']}: {', '.join(unsupported)}")
+    value_constraints = metric[0].get("dimensionValues", {})
+    invalid_values = sorted(
+        name
+        for name, value in dimension_filters.items()
+        if name in value_constraints and value not in value_constraints[name]
+    )
+    if invalid_values:
+        raise ValueError(
+            f"Unsupported dimension values for {arguments['namespace']}/{arguments['metric_name']}: "
+            + ", ".join(invalid_values)
+        )
     start_time = _parse_metric_time(arguments["start_time"], "start_time")
     end_time = _parse_metric_time(arguments["end_time"], "end_time")
     if start_time >= end_time:

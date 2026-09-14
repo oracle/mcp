@@ -7,6 +7,7 @@ https://oss.oracle.com/licenses/upl.
 from __future__ import annotations
 
 import json
+from importlib.metadata import version as distribution_version
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -17,7 +18,11 @@ from oracle.oci_db_observability_mcp_server import __project__, __version__
 from oracle.oci_db_observability_mcp_server import runtime
 
 
-EXPECTED_USER_AGENT = f"{__project__.split('oracle.', 1)[1].removesuffix('-server')}/{__version__}"
+EXPECTED_USER_AGENT = f"{__project__.split('oracle.', 1)[1].removesuffix('-server')}/{distribution_version(__project__)}"
+
+
+def test_package_version_matches_installed_distribution() -> None:
+    assert __version__ == distribution_version(__project__)
 
 
 class FakeClient:

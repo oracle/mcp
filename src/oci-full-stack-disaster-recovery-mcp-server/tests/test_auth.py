@@ -8,7 +8,12 @@ Tests for OCI FSDR client authentication helpers.
 
 from __future__ import annotations
 
-from oracle.oci_fsdr_mcp_server import auth
+from oracle.oci_fsdr_mcp_server import __project__, __version__, auth
+
+
+EXPECTED_ADDITIONAL_USER_AGENT = (
+    f"{__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{__version__}"
+)
 
 
 def test_get_dr_client_caches_per_profile(monkeypatch):
@@ -57,12 +62,12 @@ def test_make_api_key_client_loads_and_validates_config(monkeypatch):
     monkeypatch.setattr(
         auth.oci.config,
         "validate_config",
-        lambda loaded_config: calls.append(("validate", loaded_config)),
+        lambda loaded_config: calls.append(("validate", loaded_config.copy())),
     )
 
     class FakeDisasterRecoveryClient:
         def __init__(self, loaded_config, signer=None):
-            calls.append(("client", loaded_config, signer))
+            calls.append(("client", loaded_config.copy(), signer))
 
     monkeypatch.setattr(
         auth.oci.disaster_recovery,
@@ -75,8 +80,15 @@ def test_make_api_key_client_loads_and_validates_config(monkeypatch):
     assert isinstance(client, FakeDisasterRecoveryClient)
     assert calls == [
         ("from_file", auth.DEFAULT_OCI_CONFIG_FILE, "FSDR_REGION1"),
-        ("validate", config),
-        ("client", config, None),
+        ("validate", {"profile": "loaded"}),
+        (
+            "client",
+            {
+                "profile": "loaded",
+                "additional_user_agent": EXPECTED_ADDITIONAL_USER_AGENT,
+            },
+            None,
+        ),
     ]
 
 
@@ -116,5 +128,5 @@ def test_make_security_token_client_uses_token_signer(monkeypatch, tmp_path):
     assert isinstance(client, FakeDisasterRecoveryClient)
     assert calls[0] == ("signer", "security-token", str(key_file))
     assert calls[1][0] == "client"
-    assert calls[1][1] == {}
+    assert calls[1][1] == {"additional_user_agent": EXPECTED_ADDITIONAL_USER_AGENT}
     assert isinstance(calls[1][2], FakeSecurityTokenSigner)

@@ -22,6 +22,7 @@ uv run oracle.oci-iot-mcp-server
 | get_digital_twin_adapter | Retrieves a specific digital twin adapter by its identifier |
 | get_digital_twin_adapter_full | Returns the full mapped digital twin adapter payload for debugging and migration workflows |
 | get_digital_twin_instance | Retrieves a specific digital twin instance by its identifier |
+| get_digital_twin_instance_full | Returns the full digital twin instance SDK payload for debugging and migration workflows |
 | get_digital_twin_instance_content | Retrieves the content of a specific digital twin instance by its identifier |
 | get_digital_twin_model | Retrieves a specific digital twin model by its identifier |
 | get_digital_twin_model_spec | Retrieves the specification of a specific digital twin model by its identifier |
@@ -58,9 +59,13 @@ uv run oracle.oci-iot-mcp-server
 | get_iot_domain_group | Retrieves a specific IoT domain group by its identifier |
 | get_work_request | Retrieves a specific work request by its identifier |
 | list_digital_twin_adapters | Lists digital twin adapters in a specified IoT domain |
+| list_digital_twin_adapters_page | Lists one SDK page of digital twin adapters and returns pagination metadata |
 | list_digital_twin_models | Lists digital twin models in a specified IoT domain |
+| list_digital_twin_models_page | Lists one SDK page of digital twin models and returns pagination metadata |
 | list_digital_twin_instances | Lists digital twin instances in a specified IoT domain |
 | list_digital_twin_relationships | Lists digital twin relationships in a specified IoT domain |
+| list_digital_twin_relationships_page | Lists one SDK page of digital twin relationships and returns pagination metadata |
+| list_all_digital_twin_relationships | Lists digital twin relationships across pages up to a bounded max item count |
 | list_iot_domain_groups | Lists IoT domain groups in a specified compartment |
 | list_iot_domains | Lists IoT domains in a specified compartment |
 | list_work_request_errors | Lists errors for a specific work request |
@@ -145,6 +150,20 @@ For ORDS-backed operator tools, set:
 
 - `get_digital_twin_instance_content` supports `should_include_metadata=true` to include digital twin
   instance metadata in the response payload.
+- Digital twin instance tools expose gateway-aware OCI IoT fields. `connectivity_type` may be `DIRECT`,
+  `INDIRECT`, `GATEWAY`, or `NONE`; indirect twins can include `gateways` with gateway digital twin
+  instance OCIDs.
+- `list_digital_twin_instances` supports SDK filters such as `connectivity_type`, model identifiers,
+  display name, lifecycle state, sort fields, page token, `id`, and `opc_request_id` while preserving
+  the existing list return shape.
+- `list_digital_twin_relationships` supports SDK filters such as display name, content path, source/target
+  twin OCIDs, lifecycle state, sort fields, page token, `id`, and `opc_request_id` while preserving the
+  existing list return shape.
+- Use `list_digital_twin_relationships_page` when an agent needs `opc_next_page` and request metadata for
+  a single SDK page. Use `list_all_digital_twin_relationships` for bounded verifier workflows that need
+  to count relationships across pages without dumping an unbounded domain.
+- Use `get_digital_twin_instance_full` when inspecting newly released SDK fields before the typed MCP
+  response model is updated.
 - List-style SDK tools return a structured payload with a `result` field containing the list of items.
 - Custom operator tools return stable `{ "ok": true, "data": ... }` or `{ "ok": false, "error": ... }`
   envelopes.
@@ -154,7 +173,7 @@ For ORDS-backed operator tools, set:
 ## Agent Workflow Guidance
 
 - `get_twin_platform_context` is the best first call when an agent needs to understand how a twin maps to
-  its domain, domain group, adapter, model, and ORDS/Data API context.
+  its domain, domain group, adapter, model, gateway topology, and ORDS/Data API context.
 - `get_latest_twin_state` is the best current-state call when an agent needs the newest observed
   snapshot, historized, raw-command, and rejected-data records without manually querying each collection.
 - `validate_twin_readiness` is the passive health check when an agent needs to confirm selector
@@ -162,6 +181,91 @@ For ORDS-backed operator tools, set:
   actually arriving.
 - These tools intentionally return structured teaching payloads rather than raw ORDS collection pages so
   an agent can reason about topology and state with fewer follow-up calls.
+
+## Gateway-Aware Twin Instances
+
+Create a gateway twin:
+
+```json
+{
+  "tool": "create_digital_twin_instance",
+  "arguments": {
+    "iot_domain_id": "ocid1.iotdomain.oc1..example",
+    "display_name": "factory-gateway-01",
+    "connectivity_type": "GATEWAY"
+  }
+}
+```
+
+Create an indirect twin through a gateway:
+
+```json
+{
+  "tool": "create_digital_twin_instance",
+  "arguments": {
+    "iot_domain_id": "ocid1.iotdomain.oc1..example",
+    "display_name": "pump-17",
+    "connectivity_type": "INDIRECT",
+    "gateways": [
+      "ocid1.iotdigitaltwininstance.oc1..gatewayexample"
+    ]
+  }
+}
+```
+
+Update an indirect twin's gateway references:
+
+```json
+{
+  "tool": "update_digital_twin_instance",
+  "arguments": {
+    "digital_twin_instance_id": "ocid1.iotdigitaltwininstance.oc1..example",
+    "gateways": [
+      "ocid1.iotdigitaltwininstance.oc1..gatewayexample"
+    ]
+  }
+}
+```
+
+List indirect twins:
+
+```json
+{
+  "tool": "list_digital_twin_instances",
+  "arguments": {
+    "iot_domain_id": "ocid1.iotdomain.oc1..example",
+    "connectivity_type": "INDIRECT",
+    "limit": 100
+  }
+}
+```
+
+List one page of relationships with pagination metadata:
+
+```json
+{
+  "tool": "list_digital_twin_relationships_page",
+  "arguments": {
+    "iot_domain_id": "ocid1.iotdomain.oc1..example",
+    "limit": 100,
+    "lifecycle_state": "ACTIVE"
+  }
+}
+```
+
+Count relationship topology across bounded pages:
+
+```json
+{
+  "tool": "list_all_digital_twin_relationships",
+  "arguments": {
+    "iot_domain_id": "ocid1.iotdomain.oc1..example",
+    "max_items": 500,
+    "page_size": 100,
+    "lifecycle_state": "ACTIVE"
+  }
+}
+```
 
 ## Friendly Identifier Rules
 
@@ -181,8 +285,8 @@ For ORDS-backed operator tools, set:
 - `get_data_api_token` returns a live bearer token and expiry metadata to the MCP caller.
 - Treat the returned bearer token as a secret and do not log, persist, or echo it beyond the intended
   caller.
-- Tokens are minted in-memory per call, are not cached across tool invocations, and must never be
-  logged.
+- Minted tokens are cached process-locally by IoT domain and credential fingerprint until expiry. The
+  cache is not persisted, is cleared by process restart, and tokens must never be logged.
 - `get_twin_platform_context`, `get_latest_twin_state`, `validate_twin_readiness`,
   `invoke_raw_command_and_wait`, `get_raw_command_by_request_id`, `list_recent_raw_commands_for_twin`,
   `list_recent_rejected_data_for_twin`, and `wait_for_twin_update` resolve ORDS access automatically
@@ -222,7 +326,7 @@ Get digital twin instance content with metadata:
 {
   "tool": "get_digital_twin_instance_content",
   "arguments": {
-    "digital_twin_instance_id": "ocid1.digitaltwininstance.oc1..example",
+    "digital_twin_instance_id": "ocid1.iotdigitaltwininstance.oc1..example",
     "should_include_metadata": true
   }
 }
@@ -257,7 +361,7 @@ Get the latest observed records for a twin:
 {
   "tool": "get_latest_twin_state",
   "arguments": {
-    "digital_twin_instance_id": "ocid1.digitaltwininstance.oc1..example"
+    "digital_twin_instance_id": "ocid1.iotdigitaltwininstance.oc1..example"
   }
 }
 ```

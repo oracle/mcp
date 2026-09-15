@@ -1,8 +1,10 @@
 """
-Copyright (c) 2025, Oracle and/or its affiliates.
+Copyright (c) 2025, 2026 Oracle and/or its affiliates.
 Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
+from importlib.metadata import version as distribution_version
+
 __project__ = "oracle.oci-monitoring-mcp-server"
-__version__ = "2.0.1"
+__version__ = distribution_version(__project__)

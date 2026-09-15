@@ -55,9 +55,9 @@ public class OAuth2Configuration {
     clientSecret = LoadedConstants.USER_TOKEN_INTROSPECTION_CLIENT_SECRET;
     isOAuth2Configured = authServer != null && introspectionEndpoint != null && clientId != null && clientSecret != null;
     isJwtValidationConfigured = "jwt".equals(LoadedConstants.USER_TOKEN_VALIDATION_MODE)
-            && !isBlank(LoadedConstants.USER_TOKEN_JWT_ISSUER)
-            && !isBlank(LoadedConstants.USER_TOKEN_JWT_JWKS_URI)
-            && !isBlank(LoadedConstants.USER_TOKEN_JWT_AUDIENCE);
+      && !isBlank(LoadedConstants.USER_TOKEN_JWT_ISSUER)
+      && !isBlank(LoadedConstants.USER_TOKEN_JWT_JWKS_URI)
+      && !isBlank(LoadedConstants.USER_TOKEN_JWT_AUDIENCE);
 
     if (!isAuthenticationEnabled)
       LOG.warning("Authentication is disabled");

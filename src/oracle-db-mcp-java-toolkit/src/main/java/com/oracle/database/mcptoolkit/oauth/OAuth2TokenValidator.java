@@ -82,7 +82,7 @@ public class OAuth2TokenValidator {
 
     if (!"introspection".equals(LoadedConstants.USER_TOKEN_VALIDATION_MODE)) {
       LOG.log(Level.WARNING, () -> "Unsupported auth.userTokenValidation.mode: "
-              + LoadedConstants.USER_TOKEN_VALIDATION_MODE);
+        + LoadedConstants.USER_TOKEN_VALIDATION_MODE);
       return new ValidationResult(false, Set.of());
     }
 
@@ -125,7 +125,7 @@ public class OAuth2TokenValidator {
         }
       } else {
         LOG.log(Level.WARNING, () -> "OAuth2 token introspection failed with HTTP "
-                + statusCode + ": " + response.body());
+          + statusCode + ": " + response.body());
       }
     } catch (IOException | InterruptedException e) {
       LOG.log(Level.SEVERE, e.getMessage(), e);
@@ -163,8 +163,8 @@ public class OAuth2TokenValidator {
     }
     if (scopeNode == null || scopeNode.isMissingNode() || scopeNode.isNull()) {
       LOG.warning("OAuth token introspection response does not contain a scope claim at '"
-              + claimPath + "'. Configure -Doauth.scopeClaimPath=<claim.path> if your authorization "
-              + "server uses a different claim.");
+        + claimPath + "'. Configure -Doauth.scopeClaimPath=<claim.path> if your authorization "
+        + "server uses a different claim.");
       return Set.of();
     }
     Set<String> scopes = new LinkedHashSet<>();
@@ -185,7 +185,7 @@ public class OAuth2TokenValidator {
       return scopes;
     }
     LOG.warning("OAuth scope claim at '" + claimPath + "' must be a space-delimited string or an "
-            + "array. Configure -Doauth.scopeClaimPath=<claim.path> if needed.");
+      + "array. Configure -Doauth.scopeClaimPath=<claim.path> if needed.");
     return Set.of();
   }
 
@@ -215,25 +215,25 @@ public class OAuth2TokenValidator {
 
       long cacheSeconds = Math.max(LoadedConstants.USER_TOKEN_JWT_JWKS_CACHE_SECONDS, 1);
       RemoteJWKSet<SecurityContext> jwkSource = new RemoteJWKSet<>(
-              new URL(LoadedConstants.USER_TOKEN_JWT_JWKS_URI),
-              null,
-              new DefaultJWKSetCache(cacheSeconds, cacheSeconds, TimeUnit.SECONDS));
+        new URL(LoadedConstants.USER_TOKEN_JWT_JWKS_URI),
+        null,
+        new DefaultJWKSetCache(cacheSeconds, cacheSeconds, TimeUnit.SECONDS));
       DefaultJWTProcessor<SecurityContext> processor = new DefaultJWTProcessor<>();
       processor.setJWSKeySelector(new JWSVerificationKeySelector<>(JWSAlgorithm.RS256, jwkSource));
 
       DefaultJWTClaimsVerifier<SecurityContext> claimsVerifier = new DefaultJWTClaimsVerifier<>(
-              Set.of(LoadedConstants.USER_TOKEN_JWT_AUDIENCE),
-              new JWTClaimsSet.Builder().issuer(LoadedConstants.USER_TOKEN_JWT_ISSUER).build(),
-              Set.of("iss", "aud", "exp"),
-              Set.of());
+        Set.of(LoadedConstants.USER_TOKEN_JWT_AUDIENCE),
+        new JWTClaimsSet.Builder().issuer(LoadedConstants.USER_TOKEN_JWT_ISSUER).build(),
+        Set.of("iss", "aud", "exp"),
+        Set.of());
       claimsVerifier.setMaxClockSkew(0);
       processor.setJWTClaimsSetVerifier(claimsVerifier);
       jwtProcessorCache = new JwtProcessorCache(
-              processor,
-              LoadedConstants.USER_TOKEN_JWT_ISSUER,
-              LoadedConstants.USER_TOKEN_JWT_JWKS_URI,
-              LoadedConstants.USER_TOKEN_JWT_AUDIENCE,
-              cacheSeconds);
+        processor,
+        LoadedConstants.USER_TOKEN_JWT_ISSUER,
+        LoadedConstants.USER_TOKEN_JWT_JWKS_URI,
+        LoadedConstants.USER_TOKEN_JWT_AUDIENCE,
+        cacheSeconds);
       return processor;
     }
   }
@@ -243,16 +243,16 @@ public class OAuth2TokenValidator {
   }
 
   private record JwtProcessorCache(
-          DefaultJWTProcessor<SecurityContext> processor,
-          String issuer,
-          String jwksUri,
-          String audience,
-          long cacheSeconds) {
+    DefaultJWTProcessor<SecurityContext> processor,
+    String issuer,
+    String jwksUri,
+    String audience,
+    long cacheSeconds) {
     private boolean matchesCurrentConfiguration() {
       return issuer.equals(LoadedConstants.USER_TOKEN_JWT_ISSUER)
-              && jwksUri.equals(LoadedConstants.USER_TOKEN_JWT_JWKS_URI)
-              && audience.equals(LoadedConstants.USER_TOKEN_JWT_AUDIENCE)
-              && cacheSeconds == Math.max(LoadedConstants.USER_TOKEN_JWT_JWKS_CACHE_SECONDS, 1);
+        && jwksUri.equals(LoadedConstants.USER_TOKEN_JWT_JWKS_URI)
+        && audience.equals(LoadedConstants.USER_TOKEN_JWT_AUDIENCE)
+        && cacheSeconds == Math.max(LoadedConstants.USER_TOKEN_JWT_JWKS_CACHE_SECONDS, 1);
     }
   }
 }

@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.2
+
+### Changed
+
+- Excluded development artifacts, local configuration, and container build files from source-distribution packages.
+
+## 1.0.1
+
+### Changed
+
+- Updated dependency locks for FastMCP 3.4.5, OCI SDK 2.182.1, and refreshed authentication-related transitive packages.
+
 ## 1.0.0
 
 ### Breaking Changes

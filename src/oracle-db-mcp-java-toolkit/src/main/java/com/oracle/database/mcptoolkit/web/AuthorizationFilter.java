@@ -44,7 +44,7 @@ public class AuthorizationFilter implements Filter {
    */
   private static final OAuth2TokenValidator VALIDATOR = new OAuth2TokenValidator();
   private static final RequestTargetValidator REQUEST_TARGET_VALIDATOR =
-          new RequestTargetValidator(LoadedConstants.HTTP_ALLOWED_ORIGINAL_HOSTS);
+    new RequestTargetValidator(LoadedConstants.HTTP_ALLOWED_ORIGINAL_HOSTS);
 
   /**
    * Intercepts incoming requests to authenticate them based on the presence and validity of an OAuth2 access token.
@@ -86,8 +86,8 @@ public class AuthorizationFilter implements Filter {
       final AuthenticatedPrincipal principal;
       try {
         principal = LoadedConstants.DEEPSEC_ENABLED
-                ? AuthenticatedPrincipal.fromValidatedDeepSecJwt(token)
-                : AuthenticatedPrincipal.fromValidatedToken(token);
+          ? AuthenticatedPrincipal.fromValidatedDeepSecJwt(token)
+          : AuthenticatedPrincipal.fromValidatedToken(token);
       } catch (IllegalArgumentException e) {
         handleError(httpResponse, httpRequest);
         return;
@@ -115,8 +115,8 @@ public class AuthorizationFilter implements Filter {
 
   private EndUserSecurityContext createEndUserSecurityContext(String endUserToken) {
     return EndUserSecurityContext.createWithToken(
-            DeepSecDatabaseTokenProvider.getToken(),
-            endUserToken);
+      DeepSecDatabaseTokenProvider.getToken(),
+      endUserToken);
   }
 
   /**
@@ -131,8 +131,8 @@ public class AuthorizationFilter implements Filter {
     final String serverURL = WebUtils.buildURLFromRequest(httpRequest);
     final String resourceMetadataURL = serverURL + "/.well-known/oauth-protected-resource";
     final String scopes = LoadedConstants.MCP_OAUTH_SCOPES == null || LoadedConstants.MCP_OAUTH_SCOPES.isBlank()
-            ? "openid"
-            : LoadedConstants.MCP_OAUTH_SCOPES;
+      ? "openid"
+      : LoadedConstants.MCP_OAUTH_SCOPES;
 
     httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
     httpResponse.setHeader("WWW-Authenticate",

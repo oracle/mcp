@@ -26,6 +26,19 @@ These instructions apply to the entire repository. More specific instructions in
 - Do not add secrets, tenancy-specific values, credentials, or local absolute paths to examples, configs, docs, or tests.
 - Do not edit generated or local output artifacts such as `htmlcov/`, `.coverage*`, `.ruff_cache/`, `.pytest_cache/`, `__pycache__/`, `dist/`, `src/logs`, or `.venv/`.
 - Keep diffs focused on the requested change; avoid unrelated formatting, import reordering, or refactors.
+- Limit the amount of code you generate. Write just enough to implement the feature and tests for it -- no unnecessary abstractions, 1-2 line wrappers or other slop.
+
+## Changelog Guidance
+
+- When changing any server under `src/<server-name>/`, check whether that server has a `CHANGELOG.md`; if it does, update it for user-visible or operator-visible changes.
+- Follow Keep a Changelog 1.1.0 principles: write changelog entries for humans, keep the newest release first, group related change types, and use ISO 8601 dates (`YYYY-MM-DD`) when adding dated release sections.
+- Prefer the standard sections `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, and `Security`.
+- Preserve this repository's existing `Breaking Changes` heading for compatibility breaks, and list those entries first within a release section.
+- Use an `## Unreleased` section for work that has not been assigned a release version yet; move entries into `## <version>` or `## <version> - YYYY-MM-DD` when a release is cut.
+- Keep entries concise and outcome-focused instead of copying commit messages. Mention changed tools, transports, authentication requirements, configuration or environment variables, response shapes, validation behavior, and security posture when relevant.
+- Do not add changelog entries for purely internal refactors, formatting-only edits, or test-only changes unless they affect users, operators, packaging, or documented behavior.
+- If multiple `src/` servers are changed, update each changed server's changelog independently when that server has one.
+- Only create a new changelog if a server doesn't have one when explicitly requested, or when the update introduces breaking changes; maintain existing src/*/CHANGELOG.md files.
 
 ## MCP Server Quality Validation
 
@@ -36,5 +49,13 @@ When validating the quality of any MCP server under `src/`:
 - If changes are scoped to a specific server, validate only that server for best-practice patterns and 90% coverage. Do not audit or require unrelated servers to meet those standards unless the change touches shared tooling or the user explicitly asks for a broader review.
 - Confirm the server includes unit tests for the MCP server code.
 - For Python MCP servers, require unit tests to enforce at least 90% coverage through `[tool.coverage.report] fail_under = 90` in `pyproject.toml`. Do not mark validation complete if the coverage threshold is lower than 90% or if coverage fails.
+- For OCI Python SDK-backed servers, require every OCI client-configuration path to derive the canonical `<user_agent_name>/<version>` `additional_user_agent` from package `__project__` and `__version__`; do not duplicate literal names or versions. Client factories may live outside `server.py`, but every path that constructs an OCI client must receive the value. Strip `-server` off the end of `__project__` when applicable; ex `oci-cloud-mcp`.
+- For OCI Python SDK-backed servers, declare `oracle-mcp-common>=0.1.0,<0.2.0` and use `oracle_mcp_common.build_auth_context()` for stdio and other configured OCI credential modes instead of duplicating credential resolution, OCI profile parsing, environment-variable precedence, or signer construction. Merge the returned `AuthContext.config` with the derived `additional_user_agent`, pass `AuthContext.signer` to each OCI client, and keep the server responsible for its client type, retry and circuit-breaker policy, and lifecycle. Use `AuthOptions` only when a server must explicitly override configured authentication inputs.
+- For an HTTP server that uses OCI IAM/IDCS request-token exchange, use `build_idcs_http_auth(required_scopes)` once for provider configuration; the server retains listener startup, `mcp.auth` assignment, request-token retrieval, and user-agent assignment. During each authenticated request, call `IDCSHttpAuth.context_for(access_token.token)` and create only caller-specific OCI SDK clients from that context. Do not inspect host/port to select credentials, call FastMCP request-context APIs from the common library, or cache an HTTP-derived signer/client globally across callers.
+- For OCI Python SDK-backed servers, require unit tests to assert the exact derived `additional_user_agent` for each supported client-construction authentication path: API-key, security-token, each supported principal-based path (for example, instance- and resource-principal), and HTTP/token-exchange.
+- For servers that invoke the OCI CLI instead of constructing OCI Python SDK clients, require the same derived value through `OCI_SDK_APPEND_USER_AGENT` in the launched process environment.
 - For non-Python or Makefile-excluded servers, follow the server's `README.md` to identify the test and coverage commands. Report a gap if the README does not document how to enforce 90% unit-test coverage.
 - Treat end-to-end tests under `tests/e2e/` as optional unless they can run without making the normal test suite slower or less reliable.
+- Don't duplicate or reinvent anything that's in the common packages (src/common) (like authentication).
+- Do not implement a server that invokes subprocesses because it's difficult to secure and it limits how and where the MCP servers can run. `oci-api-mcp-server` is the exception: it launches the OCI CLI rather than constructing OCI Python SDK clients directly.
+

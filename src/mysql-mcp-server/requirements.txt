@@ -1,3 +1,0 @@
-oci==2.173.1
-fastmcp==3.3.1
-mysql-connector-python==9.5.0

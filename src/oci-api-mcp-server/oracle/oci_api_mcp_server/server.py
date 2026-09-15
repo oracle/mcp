@@ -4,14 +4,25 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
+import importlib.metadata
 import json
 import os
+import re
+import shutil
 import subprocess
 from logging import Logger
+import shlex
+import sys
 from typing import Annotated
 
-import oci
 from fastmcp import FastMCP
+from oracle_mcp_common import (
+    AuthType,
+    profile_declares_security_token,
+    resolve_auth_type,
+    resolve_config_file,
+    resolve_profile_name,
+)
 from oracle.oci_api_mcp_server import __project__, __version__
 from oracle.oci_api_mcp_server.denylist import Denylist
 from oracle.oci_api_mcp_server.utils import initAuditLogger
@@ -27,6 +38,121 @@ initAuditLogger(logger)
 
 # Read and setup deny list
 denylist_manager = Denylist(logger)
+
+_OCI_COMMAND_TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+_OCI_HELP_COMMAND_ERROR = "OCI help accepts command paths only without options or values"
+_OCI_COMMAND_ERROR = "OCI command contains a server-managed global option"
+_OCI_CLI_VERSION = "3.89.3"
+
+
+def _resolve_oci_cli() -> str:
+    executable = shutil.which("oci", path=os.path.dirname(sys.executable))
+    if executable is None or importlib.metadata.version("oci-cli") != _OCI_CLI_VERSION:
+        raise RuntimeError(f"OCI CLI {_OCI_CLI_VERSION} is required in the MCP server environment")
+    return executable
+
+
+_OCI_CLI_BASE_COMMAND = (_resolve_oci_cli(), "--cli-rc-file", os.devnull)
+_SERVER_MANAGED_OCI_OPTIONS = frozenset(
+    {
+        "--auth",
+        "--auth-purpose",
+        "--cert-bundle",
+        "--cli-rc-file",
+        "--config-file",
+        "--defaults-file",
+        "--endpoint",
+        "--federation-endpoint",
+        "--profile",
+        "--proxy",
+    }
+)
+_CLI_AUTH_BY_TYPE = {
+    AuthType.API_KEY: "api_key",
+    AuthType.SECURITY_TOKEN: "security_token",
+    AuthType.INSTANCE_PRINCIPAL: "instance_principal",
+    AuthType.RESOURCE_PRINCIPAL: "resource_principal",
+    AuthType.OKE_WORKLOAD_IDENTITY: "oke_workload_identity",
+}
+
+
+def _parse_oci_help_command(command: str) -> list[str]:
+    try:
+        command_tokens = shlex.split(command)
+    except ValueError as exc:
+        raise ValueError(_OCI_HELP_COMMAND_ERROR) from exc
+
+    if not command_tokens:
+        raise ValueError(_OCI_HELP_COMMAND_ERROR)
+    if command_tokens[0] == "oci":
+        raise ValueError("Do not include the 'oci' executable in the command path")
+    if any(_OCI_COMMAND_TOKEN.fullmatch(token) is None for token in command_tokens):
+        raise ValueError(_OCI_HELP_COMMAND_ERROR)
+
+    command_path = " ".join(command_tokens)
+    if denylist_manager.isCommandInDenyList(command_path):
+        raise ValueError("Command path is denied by denylist")
+
+    return command_tokens
+
+
+def _parse_oci_command(command: str) -> list[str]:
+    """Parse a command while preventing CLI global configuration overrides."""
+    try:
+        command_tokens = shlex.split(command)
+    except ValueError as exc:
+        raise ValueError("OCI command is not valid shell-style syntax") from exc
+
+    if not command_tokens:
+        raise ValueError("OCI command must not be empty")
+
+    for token in command_tokens:
+        option = token.split("=", 1)[0]
+        if option in _SERVER_MANAGED_OCI_OPTIONS:
+            raise ValueError(_OCI_COMMAND_ERROR)
+
+    return command_tokens
+
+
+def _get_optional_oci_auth_args(
+    config_file: str, profile: str, cli_env: dict[str, str]
+) -> list[str]:
+    """Resolve MCP auth settings into OCI CLI arguments when CLI auth is unset."""
+    if "OCI_CLI_AUTH" in cli_env:
+        return []
+
+    auth_type = resolve_auth_type()
+    if auth_type is AuthType.AUTO:
+        try:
+            auth_type = (
+                AuthType.SECURITY_TOKEN
+                if profile_declares_security_token(config_file, profile)
+                else AuthType.API_KEY
+            )
+        except ValueError as exc:
+            raise ValueError(
+                "Unable to resolve OCI_MCP_AUTH_TYPE=auto for the selected OCI profile; "
+                "set OCI_MCP_AUTH_TYPE explicitly or provide a readable OCI config."
+            ) from exc
+
+    if auth_type is AuthType.OKE_WORKLOAD_IDENTITY:
+        token_path = cli_env.get("OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN_PATH")
+        inline_token = cli_env.get("OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN")
+        if inline_token:
+            raise ValueError(
+                "OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN is not supported by this CLI-backed server; "
+                "use OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN_PATH instead."
+            )
+        if token_path:
+            cli_env["OCI_KUBERNETES_SERVICE_ACCOUNT_TOKEN_PATH"] = token_path
+
+    cli_auth = _CLI_AUTH_BY_TYPE.get(auth_type)
+    if cli_auth is None:
+        raise ValueError(
+            f"OCI CLI does not support OCI_MCP_AUTH_TYPE={auth_type.value!r} in this server."
+        )
+    return ["--auth", cli_auth]
+
 
 # Initialize the MCP server
 mcp = FastMCP(
@@ -51,8 +177,9 @@ def get_oci_commands() -> str:
 
     try:
         result = subprocess.run(
-            ["oci", "--help"],
+            [*_OCI_CLI_BASE_COMMAND, "--help"],
             env=env_copy,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             check=True,
@@ -70,6 +197,7 @@ def get_oci_command_help(command: str) -> str:
     IMPORTANT:
       - Only provide the command _after_ 'oci' — do not include the string
         'oci' in `command`.
+      - Provide command-path tokens only. Options and option values are not accepted.
       - Never use the information returned by this tool to instruct an end
         user directly. Use it only to determine which command to run
         yourself using run_oci_command.
@@ -105,13 +233,15 @@ def get_oci_command_help(command: str) -> str:
 
     """
     logger.info(f"get_oci_command_help called with command: {command}")
+    command_tokens = _parse_oci_help_command(command)
     env_copy = os.environ.copy()
     env_copy["OCI_SDK_APPEND_USER_AGENT"] = USER_AGENT
 
     try:
         result = subprocess.run(
-            ["oci"] + command.split() + ["--help"],
+            [*_OCI_CLI_BASE_COMMAND, *command_tokens, "--help"],
             env=env_copy,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             check=True,
@@ -147,7 +277,14 @@ def run_oci_command(
     env_copy = os.environ.copy()
     env_copy["OCI_SDK_APPEND_USER_AGENT"] = USER_AGENT
 
-    profile = os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE)
+    try:
+        command_tokens = _parse_oci_command(command)
+    except ValueError as error:
+        logger.error("Rejected OCI command: %s", error)
+        return {"error": str(error)}
+
+    config_file = resolve_config_file()
+    profile = resolve_profile_name()
     logger.info(f"run_oci_command called with command: {command} --profile {profile}")
 
     if denylist_manager.isCommandInDenyList(command):
@@ -162,9 +299,24 @@ def run_oci_command(
         return {"error": error_message}
 
     try:
+        auth_args = _get_optional_oci_auth_args(config_file, profile, env_copy)
+    except ValueError as error:
+        logger.error("Unable to resolve OCI CLI authentication: %s", error)
+        return {"error": str(error)}
+
+    try:
         result = subprocess.run(
-            ["oci", "--profile", profile, "--auth", "security_token"] + command.split(),
+            [
+                *_OCI_CLI_BASE_COMMAND,
+                "--config-file",
+                config_file,
+                "--profile",
+                profile,
+                *auth_args,
+                *command_tokens,
+            ],
             env=env_copy,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             check=True,

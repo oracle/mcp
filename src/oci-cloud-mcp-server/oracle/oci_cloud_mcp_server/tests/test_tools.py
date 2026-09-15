@@ -96,7 +96,7 @@ class TestCloudSdkTools:
                 assert result["data"] == {"id": "abc", "value": "ok"}
 
     @pytest.mark.asyncio
-    async def test_invoke_oci_api_list_uses_paginator(self):
+    async def test_invoke_oci_api_list_uses_direct_pagination(self):
         class FakeResponse:
             def __init__(self, data):
                 self.data = data
@@ -107,22 +107,18 @@ class TestCloudSdkTools:
                 self.config = config
                 self.signer = signer
 
-            # existence of a list_* method is enough; paginator will be patched
+            # The list_* operation is automatically paginated.
             def list_things(self, compartment_id):
-                return FakeResponse([{"name": "x"}])
+                return FakeResponse([{"name": "a"}, {"name": "b"}, {"name": "c"}])
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
         with (
             patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
-            patch(
-                "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
-            ) as mock_pager,
         ):
             mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
-            mock_pager.return_value = FakeResponse([{"name": "a"}, {"name": "b"}, {"name": "c"}])
 
             async with Client(mcp) as client:
                 result = (
@@ -143,7 +139,7 @@ class TestCloudSdkTools:
                 assert result["data"]["item_count"] == 3
 
     @pytest.mark.asyncio
-    async def test_invoke_oci_api_dns_get_zone_records_uses_paginator(self):
+    async def test_invoke_oci_api_dns_get_zone_records_uses_direct_pagination(self):
         class FakeResponse:
             def __init__(self, data):
                 self.data = data
@@ -156,22 +152,16 @@ class TestCloudSdkTools:
 
             # non-list operation name but supports pagination via page/limit params (DNS style)
             def get_zone_records(self, zone_name, page=None, limit=None):
-                return FakeResponse([{"name": "first"}])
+                return FakeResponse([{"name": "a"}, {"name": "b"}, {"name": "c"}, {"name": "d"}])
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
         with (
             patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
-            patch(
-                "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
-            ) as mock_pager,
         ):
             mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
-            mock_pager.return_value = FakeResponse(
-                [{"name": "a"}, {"name": "b"}, {"name": "c"}, {"name": "d"}]
-            )
 
             async with Client(mcp) as client:
                 result = (
@@ -192,7 +182,7 @@ class TestCloudSdkTools:
                 assert len(result["data"]) == 4
 
     @pytest.mark.asyncio
-    async def test_invoke_oci_api_summarize_prefix_uses_paginator(self):
+    async def test_invoke_oci_api_summarize_prefix_uses_direct_pagination(self):
         class FakeResponse:
             def __init__(self, data):
                 self.data = data
@@ -205,20 +195,16 @@ class TestCloudSdkTools:
 
             # summarize_* should trigger pagination even without page/limit
             def summarize_metrics(self, compartment_id):
-                return FakeResponse([{"sum": 1}])
+                return FakeResponse([{"sum": 10}, {"sum": 20}])
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
         with (
             patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
-            patch(
-                "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
-            ) as mock_pager,
         ):
             mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
-            mock_pager.return_value = FakeResponse([{"sum": 10}, {"sum": 20}])
 
             async with Client(mcp) as client:
                 result = (
@@ -239,7 +225,7 @@ class TestCloudSdkTools:
                 assert len(result["data"]) == 2
 
     @pytest.mark.asyncio
-    async def test_invoke_oci_api_dns_get_rr_set_allowlist_uses_paginator(self):
+    async def test_invoke_oci_api_dns_get_rr_set_allowlist_uses_direct_pagination(self):
         class FakeResponse:
             def __init__(self, data):
                 self.data = data
@@ -252,20 +238,16 @@ class TestCloudSdkTools:
 
             # DNS-style op name; include page/limit in signature so pagination is detected
             def get_rr_set(self, zone_name_or_id, domain, rtype, page=None, limit=None):
-                return FakeResponse([{"rr": "first"}])
+                return FakeResponse([{"rr": 1}, {"rr": 2}, {"rr": 3}])
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
         with (
             patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
-            patch(
-                "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
-            ) as mock_pager,
         ):
             mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
-            mock_pager.return_value = FakeResponse([{"rr": 1}, {"rr": 2}, {"rr": 3}])
 
             async with Client(mcp) as client:
                 result = (

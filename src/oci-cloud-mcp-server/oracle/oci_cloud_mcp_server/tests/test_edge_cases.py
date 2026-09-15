@@ -625,23 +625,15 @@ class TestInvokeGenericException:
 
 
 class TestListPaginatorHeadersMissing:
-    def test_list_headers_object_without_get(self, monkeypatch):
+    def test_list_headers_object_without_get(self):
         # ensure list_* branch handles headers object without 'get'
         class Resp:
             def __init__(self, data):
                 self.data = data
                 self.headers = object()  # lacks .get
 
-        def fake_pager(method, **kwargs):  # noqa: ARG001
-            return Resp([1, 2])
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results",
-            fake_pager,
-        )
-
         def list_things():
-            return Resp([9])
+            return Resp([1, 2])
 
         data, opc, has_more = _call_with_pagination_if_applicable(list_things, {}, "list_things")
         assert data == [1, 2]

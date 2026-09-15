@@ -30,7 +30,7 @@
 #
 #   Scenario: List listeners for a load balancer
 #     When I send a request with the prompt "list listeners for load balancer mock-lb"
-#     Then the response should contain a list of listeners
+#     Then the response should contain a list of load balancer listeners
 #
 #   Scenario: List backend sets and backends for a load balancer
 #     When I send a request with the prompt "show backend sets and backends for load balancer mock-lb"

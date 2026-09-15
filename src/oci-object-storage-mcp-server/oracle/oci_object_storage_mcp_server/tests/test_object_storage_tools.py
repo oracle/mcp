@@ -312,6 +312,29 @@ class TestServer:
         assert signer == "signer"
         mock_signer.assert_called_once()
 
+    @patch("oracle.oci_object_storage_mcp_server.server.oci.auth.signers.TokenExchangeSigner", return_value="signer")
+    @patch("oracle.oci_object_storage_mcp_server.server.get_access_token")
+    def test_http_signer_accepts_unicode_idcs_domain(self, mock_get_access_token, mock_signer, monkeypatch):
+        mock_get_access_token.return_value = AccessToken(token="token", client_id="client", scopes=[], claims={})
+        monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
+        monkeypatch.setenv("IDCS_DOMAIN", "muenchen.xn--exmple-cua.test")
+        monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+        monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+        monkeypatch.setenv("OCI_REGION", "us-phoenix-1")
+
+        config, signer = server._get_http_config_and_signer()
+
+        assert config["region"] == "us-phoenix-1"
+        assert signer == "signer"
+        mock_signer.assert_called_once_with(
+            "token",
+            "https://muenchen.xn--exmple-cua.test",
+            "client-id",
+            "client-secret",
+            region="us-phoenix-1",
+        )
+
     @patch("oracle.oci_object_storage_mcp_server.server.get_access_token", return_value=None)
     def test_http_signer_requires_authenticated_token(self, _mock_get_access_token, monkeypatch):
         monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
@@ -361,6 +384,40 @@ class TestServer:
             transport="http",
             host=mock_env["ORACLE_MCP_HOST"],
             port=int(mock_env["ORACLE_MCP_PORT"]),
+        )
+
+    @patch("oracle.oci_object_storage_mcp_server.server.OCIProvider")
+    @patch("oracle.oci_object_storage_mcp_server.server.mcp.run")
+    @patch("os.getenv")
+    def test_main_with_custom_scopes_and_unicode_domain(self, mock_getenv, mock_mcp_run, mock_provider):
+        mock_env = {
+            "ORACLE_MCP_HOST": "1.2.3.4",
+            "ORACLE_MCP_PORT": "8888",
+            "IDCS_DOMAIN": "muenchen.xn--exmple-cua.test",
+            "IDCS_CLIENT_ID": "client-id",
+            "IDCS_CLIENT_SECRET": "client-secret",
+            "IDCS_AUDIENCE": "mcp-audience",
+            "ORACLE_MCP_BASE_URL": "https://mcp.example.com",
+            "IDCS_REQUIRED_SCOPES": "openid email custom.scope",
+        }
+
+        mock_getenv.side_effect = lambda x, d=None: mock_env.get(x, d)
+        mock_provider.return_value = MagicMock()
+
+        server.main()
+
+        mock_provider.assert_called_once_with(
+            config_url="https://muenchen.xn--exmple-cua.test/.well-known/openid-configuration",
+            client_id="client-id",
+            client_secret="client-secret",
+            audience="mcp-audience",
+            required_scopes=["openid", "email", "custom.scope"],
+            base_url="https://mcp.example.com",
+        )
+        mock_mcp_run.assert_called_once_with(
+            transport="http",
+            host="1.2.3.4",
+            port=8888,
         )
 
     @patch("oracle.oci_object_storage_mcp_server.server.mcp.run")

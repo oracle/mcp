@@ -135,7 +135,7 @@ def step_impl_delete_lb(context):
     ), "Load balancer deletion not confirmed in response."
 
 
-@then("the response should contain a list of listeners")
+@then("the response should contain a list of load balancer listeners")
 def step_impl_list_listeners(context):
     result = context.response.json()
     assert "content" in result["message"], "Response does not contain a content key."

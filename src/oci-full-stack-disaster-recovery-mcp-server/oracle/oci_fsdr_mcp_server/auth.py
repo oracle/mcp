@@ -17,7 +17,11 @@ from typing import Dict
 
 import oci
 
+from . import __project__, __version__
 from .consts import DEFAULT_OCI_AUTH_TYPE, DEFAULT_OCI_CONFIG_FILE
+
+_user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
+_ADDITIONAL_UA = f"{_user_agent_name}/{__version__}"
 
 _client_cache: Dict[str, oci.disaster_recovery.DisasterRecoveryClient] = {}
 
@@ -45,6 +49,7 @@ def _make_api_key_client(profile: str) -> oci.disaster_recovery.DisasterRecovery
         file_location=DEFAULT_OCI_CONFIG_FILE, profile_name=profile
     )
     oci.config.validate_config(config)
+    config["additional_user_agent"] = _ADDITIONAL_UA
     return oci.disaster_recovery.DisasterRecoveryClient(config)
 
 
@@ -74,4 +79,6 @@ def _make_security_token_client(profile: str) -> oci.disaster_recovery.DisasterR
         token=token,
         private_key_file_location=key_file,
     )
-    return oci.disaster_recovery.DisasterRecoveryClient(config={}, signer=signer)
+    return oci.disaster_recovery.DisasterRecoveryClient(
+        config={"additional_user_agent": _ADDITIONAL_UA}, signer=signer
+    )

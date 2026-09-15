@@ -21,6 +21,10 @@ from .models import (
     WorkRequestModel,
 )
 
+MAX_RELATIONSHIP_LIST_ITEMS = 1000
+MAX_RELATIONSHIP_PAGE_SIZE = 1000
+MAX_RELATIONSHIP_PAGES = 100
+
 
 def _normalize_items(data: Any) -> list[Any]:
     if hasattr(data, "items"):
@@ -40,6 +44,35 @@ def _map_one(method_name: str, mapper: Callable[[Any], dict], **kwargs) -> dict:
 def _map_many(method_name: str, mapper: Callable[[Any], dict], **kwargs) -> list[dict]:
     response = getattr(get_iot_client(), method_name)(**kwargs)
     return [mapper(item) for item in _normalize_items(response.data)]
+
+
+def _header_value(headers: Any, name: str):
+    if not headers:
+        return None
+    value = headers.get(name) if hasattr(headers, "get") else None
+    if value is not None:
+        return value
+    if hasattr(headers, "items"):
+        lowered = name.lower()
+        for key, candidate in headers.items():
+            if str(key).lower() == lowered:
+                return candidate
+    return None
+
+
+def _map_page(method_name: str, mapper: Callable[[Any], dict], **kwargs) -> dict:
+    response = getattr(get_iot_client(), method_name)(**kwargs)
+    headers = getattr(response, "headers", {}) or {}
+    opc_next_page = _header_value(headers, "opc-next-page")
+    opc_request_id = getattr(response, "request_id", None) or _header_value(headers, "opc-request-id")
+    return {
+        "items": [mapper(item) for item in _normalize_items(response.data)],
+        "opc_next_page": opc_next_page,
+        "opc_request_id": opc_request_id,
+        "page": kwargs.get("page"),
+        "limit": kwargs.get("limit"),
+        "has_more": bool(opc_next_page),
+    }
 
 
 def map_digital_twin_adapter(model: Any) -> dict:
@@ -142,37 +175,541 @@ def get_work_request_record(work_request_id: str) -> dict:
     return _map_one("get_work_request", map_work_request, work_request_id=work_request_id)
 
 
-def list_digital_twin_adapters_records(*, iot_domain_id: str) -> list[dict]:
-    return _map_many("list_digital_twin_adapters", map_digital_twin_adapter, iot_domain_id=iot_domain_id)
+def _digital_twin_adapters_list_kwargs(
+    *,
+    iot_domain_id: str,
+    id: str | None = None,
+    digital_twin_model_spec_uri: str | None = None,
+    digital_twin_model_id: str | None = None,
+    display_name: str | None = None,
+    lifecycle_state: str | None = None,
+    page: str | None = None,
+    limit: int | None = None,
+    sort_order: str | None = None,
+    sort_by: str | None = None,
+    opc_request_id: str | None = None,
+) -> dict:
+    kwargs = {
+        "iot_domain_id": iot_domain_id,
+        "id": id,
+        "digital_twin_model_spec_uri": digital_twin_model_spec_uri,
+        "digital_twin_model_id": digital_twin_model_id,
+        "display_name": display_name,
+        "lifecycle_state": lifecycle_state,
+        "page": page,
+        "limit": limit,
+        "sort_order": sort_order,
+        "sort_by": sort_by,
+        "opc_request_id": opc_request_id,
+    }
+    return {key: value for key, value in kwargs.items() if value is not None}
 
 
-def list_digital_twin_models_records(*, iot_domain_id: str) -> list[dict]:
-    return _map_many("list_digital_twin_models", map_digital_twin_model_summary, iot_domain_id=iot_domain_id)
+def list_digital_twin_adapters_records(
+    *,
+    iot_domain_id: str,
+    id: str | None = None,
+    digital_twin_model_spec_uri: str | None = None,
+    digital_twin_model_id: str | None = None,
+    display_name: str | None = None,
+    lifecycle_state: str | None = None,
+    page: str | None = None,
+    limit: int | None = None,
+    sort_order: str | None = None,
+    sort_by: str | None = None,
+    opc_request_id: str | None = None,
+) -> list[dict]:
+    return _map_many(
+        "list_digital_twin_adapters",
+        map_digital_twin_adapter,
+        **_digital_twin_adapters_list_kwargs(
+            iot_domain_id=iot_domain_id,
+            id=id,
+            digital_twin_model_spec_uri=digital_twin_model_spec_uri,
+            digital_twin_model_id=digital_twin_model_id,
+            display_name=display_name,
+            lifecycle_state=lifecycle_state,
+            page=page,
+            limit=limit,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
+        ),
+    )
 
 
-def list_digital_twin_instances_records(*, iot_domain_id: str, limit: int = 1000) -> list[dict]:
+def list_digital_twin_adapters_page_record(
+    *,
+    iot_domain_id: str,
+    id: str | None = None,
+    digital_twin_model_spec_uri: str | None = None,
+    digital_twin_model_id: str | None = None,
+    display_name: str | None = None,
+    lifecycle_state: str | None = None,
+    page: str | None = None,
+    limit: int | None = None,
+    sort_order: str | None = None,
+    sort_by: str | None = None,
+    opc_request_id: str | None = None,
+) -> dict:
+    return _map_page(
+        "list_digital_twin_adapters",
+        map_digital_twin_adapter,
+        **_digital_twin_adapters_list_kwargs(
+            iot_domain_id=iot_domain_id,
+            id=id,
+            digital_twin_model_spec_uri=digital_twin_model_spec_uri,
+            digital_twin_model_id=digital_twin_model_id,
+            display_name=display_name,
+            lifecycle_state=lifecycle_state,
+            page=page,
+            limit=limit,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
+        ),
+    )
+
+
+def _digital_twin_models_list_kwargs(
+    *,
+    iot_domain_id: str,
+    id: str | None = None,
+    display_name: str | None = None,
+    spec_uri_starts_with: str | None = None,
+    lifecycle_state: str | None = None,
+    page: str | None = None,
+    limit: int | None = None,
+    sort_order: str | None = None,
+    sort_by: str | None = None,
+    opc_request_id: str | None = None,
+) -> dict:
+    kwargs = {
+        "iot_domain_id": iot_domain_id,
+        "id": id,
+        "display_name": display_name,
+        "spec_uri_starts_with": spec_uri_starts_with,
+        "lifecycle_state": lifecycle_state,
+        "page": page,
+        "limit": limit,
+        "sort_order": sort_order,
+        "sort_by": sort_by,
+        "opc_request_id": opc_request_id,
+    }
+    return {key: value for key, value in kwargs.items() if value is not None}
+
+
+def list_digital_twin_models_records(
+    *,
+    iot_domain_id: str,
+    id: str | None = None,
+    display_name: str | None = None,
+    spec_uri_starts_with: str | None = None,
+    lifecycle_state: str | None = None,
+    page: str | None = None,
+    limit: int | None = None,
+    sort_order: str | None = None,
+    sort_by: str | None = None,
+    opc_request_id: str | None = None,
+) -> list[dict]:
+    return _map_many(
+        "list_digital_twin_models",
+        map_digital_twin_model_summary,
+        **_digital_twin_models_list_kwargs(
+            iot_domain_id=iot_domain_id,
+            id=id,
+            display_name=display_name,
+            spec_uri_starts_with=spec_uri_starts_with,
+            lifecycle_state=lifecycle_state,
+            page=page,
+            limit=limit,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
+        ),
+    )
+
+
+def list_digital_twin_models_page_record(
+    *,
+    iot_domain_id: str,
+    id: str | None = None,
+    display_name: str | None = None,
+    spec_uri_starts_with: str | None = None,
+    lifecycle_state: str | None = None,
+    page: str | None = None,
+    limit: int | None = None,
+    sort_order: str | None = None,
+    sort_by: str | None = None,
+    opc_request_id: str | None = None,
+) -> dict:
+    return _map_page(
+        "list_digital_twin_models",
+        map_digital_twin_model_summary,
+        **_digital_twin_models_list_kwargs(
+            iot_domain_id=iot_domain_id,
+            id=id,
+            display_name=display_name,
+            spec_uri_starts_with=spec_uri_starts_with,
+            lifecycle_state=lifecycle_state,
+            page=page,
+            limit=limit,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
+        ),
+    )
+
+
+def _digital_twin_instances_list_kwargs(
+    *,
+    iot_domain_id: str,
+    display_name: str | None = None,
+    page: str | None = None,
+    lifecycle_state: str | None = None,
+    sort_order: str | None = None,
+    sort_by: str | None = None,
+    opc_request_id: str | None = None,
+    digital_twin_model_id: str | None = None,
+    digital_twin_model_spec_uri: str | None = None,
+    connectivity_type: str | None = None,
+    id: str | None = None,
+    limit: int = 1000,
+) -> dict:
+    kwargs = {
+        "iot_domain_id": iot_domain_id,
+        "display_name": display_name,
+        "page": page,
+        "lifecycle_state": lifecycle_state,
+        "sort_order": sort_order,
+        "sort_by": sort_by,
+        "opc_request_id": opc_request_id,
+        "digital_twin_model_id": digital_twin_model_id,
+        "digital_twin_model_spec_uri": digital_twin_model_spec_uri,
+        "connectivity_type": connectivity_type,
+        "id": id,
+        "limit": limit,
+    }
+    return {key: value for key, value in kwargs.items() if value is not None}
+
+
+def list_digital_twin_instances_records(
+    *,
+    iot_domain_id: str,
+    display_name: str | None = None,
+    page: str | None = None,
+    lifecycle_state: str | None = None,
+    sort_order: str | None = None,
+    sort_by: str | None = None,
+    opc_request_id: str | None = None,
+    digital_twin_model_id: str | None = None,
+    digital_twin_model_spec_uri: str | None = None,
+    connectivity_type: str | None = None,
+    id: str | None = None,
+    limit: int = 1000,
+) -> list[dict]:
     return _map_many(
         "list_digital_twin_instances",
         map_digital_twin_instance,
-        iot_domain_id=iot_domain_id,
-        limit=limit,
+        **_digital_twin_instances_list_kwargs(
+            iot_domain_id=iot_domain_id,
+            display_name=display_name,
+            page=page,
+            lifecycle_state=lifecycle_state,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
+            digital_twin_model_id=digital_twin_model_id,
+            digital_twin_model_spec_uri=digital_twin_model_spec_uri,
+            connectivity_type=connectivity_type,
+            id=id,
+            limit=limit,
+        ),
     )
 
 
-def list_digital_twin_relationships_records(*, iot_domain_id: str) -> list[dict]:
+def list_digital_twin_instances_page_record(
+    *,
+    iot_domain_id: str,
+    display_name: str | None = None,
+    page: str | None = None,
+    lifecycle_state: str | None = None,
+    sort_order: str | None = None,
+    sort_by: str | None = None,
+    opc_request_id: str | None = None,
+    digital_twin_model_id: str | None = None,
+    digital_twin_model_spec_uri: str | None = None,
+    connectivity_type: str | None = None,
+    id: str | None = None,
+    limit: int = 1000,
+) -> dict:
+    return _map_page(
+        "list_digital_twin_instances",
+        map_digital_twin_instance,
+        **_digital_twin_instances_list_kwargs(
+            iot_domain_id=iot_domain_id,
+            display_name=display_name,
+            page=page,
+            lifecycle_state=lifecycle_state,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
+            digital_twin_model_id=digital_twin_model_id,
+            digital_twin_model_spec_uri=digital_twin_model_spec_uri,
+            connectivity_type=connectivity_type,
+            id=id,
+            limit=limit,
+        ),
+    )
+
+
+def _digital_twin_relationships_list_kwargs(
+    *,
+    iot_domain_id: str,
+    display_name: str | None = None,
+    content_path: str | None = None,
+    source_digital_twin_instance_id: str | None = None,
+    target_digital_twin_instance_id: str | None = None,
+    lifecycle_state: str | None = None,
+    page: str | None = None,
+    sort_order: str | None = None,
+    sort_by: str | None = None,
+    opc_request_id: str | None = None,
+    id: str | None = None,
+    limit: int | None = 1000,
+) -> dict:
+    kwargs = {
+        "iot_domain_id": iot_domain_id,
+        "display_name": display_name,
+        "content_path": content_path,
+        "source_digital_twin_instance_id": source_digital_twin_instance_id,
+        "target_digital_twin_instance_id": target_digital_twin_instance_id,
+        "lifecycle_state": lifecycle_state,
+        "page": page,
+        "sort_order": sort_order,
+        "sort_by": sort_by,
+        "opc_request_id": opc_request_id,
+        "id": id,
+        "limit": limit,
+    }
+    return {key: value for key, value in kwargs.items() if value is not None}
+
+
+def list_digital_twin_relationships_records(
+    *,
+    iot_domain_id: str,
+    display_name: str | None = None,
+    content_path: str | None = None,
+    source_digital_twin_instance_id: str | None = None,
+    target_digital_twin_instance_id: str | None = None,
+    lifecycle_state: str | None = None,
+    page: str | None = None,
+    sort_order: str | None = None,
+    sort_by: str | None = None,
+    opc_request_id: str | None = None,
+    id: str | None = None,
+    limit: int = 1000,
+) -> list[dict]:
     return _map_many(
         "list_digital_twin_relationships",
         map_digital_twin_relationship,
-        iot_domain_id=iot_domain_id,
+        **_digital_twin_relationships_list_kwargs(
+            iot_domain_id=iot_domain_id,
+            display_name=display_name,
+            content_path=content_path,
+            source_digital_twin_instance_id=source_digital_twin_instance_id,
+            target_digital_twin_instance_id=target_digital_twin_instance_id,
+            lifecycle_state=lifecycle_state,
+            page=page,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
+            id=id,
+            limit=limit,
+        ),
     )
 
 
-def list_iot_domain_groups_records(*, compartment_id: str) -> list[dict]:
-    return _map_many("list_iot_domain_groups", map_iot_domain_group, compartment_id=compartment_id)
+def list_digital_twin_relationships_page_record(
+    *,
+    iot_domain_id: str,
+    display_name: str | None = None,
+    content_path: str | None = None,
+    source_digital_twin_instance_id: str | None = None,
+    target_digital_twin_instance_id: str | None = None,
+    lifecycle_state: str | None = None,
+    page: str | None = None,
+    sort_order: str | None = None,
+    sort_by: str | None = None,
+    opc_request_id: str | None = None,
+    id: str | None = None,
+    limit: int = 1000,
+) -> dict:
+    return _map_page(
+        "list_digital_twin_relationships",
+        map_digital_twin_relationship,
+        **_digital_twin_relationships_list_kwargs(
+            iot_domain_id=iot_domain_id,
+            display_name=display_name,
+            content_path=content_path,
+            source_digital_twin_instance_id=source_digital_twin_instance_id,
+            target_digital_twin_instance_id=target_digital_twin_instance_id,
+            lifecycle_state=lifecycle_state,
+            page=page,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
+            id=id,
+            limit=limit,
+        ),
+    )
 
 
-def list_iot_domains_records(*, compartment_id: str) -> list[dict]:
-    return _map_many("list_iot_domains", map_iot_domain, compartment_id=compartment_id)
+def list_all_digital_twin_relationships_records(
+    *,
+    iot_domain_id: str,
+    display_name: str | None = None,
+    content_path: str | None = None,
+    source_digital_twin_instance_id: str | None = None,
+    target_digital_twin_instance_id: str | None = None,
+    lifecycle_state: str | None = None,
+    sort_order: str | None = None,
+    sort_by: str | None = None,
+    opc_request_id: str | None = None,
+    id: str | None = None,
+    max_items: int = 1000,
+    page_size: int = 100,
+) -> dict:
+    if not 1 <= max_items <= MAX_RELATIONSHIP_LIST_ITEMS:
+        raise ValueError(f"max_items must be between 1 and {MAX_RELATIONSHIP_LIST_ITEMS}")
+    if not 1 <= page_size <= MAX_RELATIONSHIP_PAGE_SIZE:
+        raise ValueError(f"page_size must be between 1 and {MAX_RELATIONSHIP_PAGE_SIZE}")
+
+    items = []
+    page = None
+    pages_fetched = 0
+    opc_next_page = None
+    opc_request_id_value = None
+    pagination_warning = None
+    requested_pages = {page}
+
+    while len(items) < max_items and pages_fetched < MAX_RELATIONSHIP_PAGES:
+        remaining = max_items - len(items)
+        page_payload = list_digital_twin_relationships_page_record(
+            iot_domain_id=iot_domain_id,
+            display_name=display_name,
+            content_path=content_path,
+            source_digital_twin_instance_id=source_digital_twin_instance_id,
+            target_digital_twin_instance_id=target_digital_twin_instance_id,
+            lifecycle_state=lifecycle_state,
+            page=page,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
+            id=id,
+            limit=min(page_size, remaining),
+        )
+        pages_fetched += 1
+        page_items = page_payload["items"]
+        items.extend(page_items[:remaining])
+        opc_next_page = page_payload.get("opc_next_page")
+        opc_request_id_value = page_payload.get("opc_request_id")
+        if not opc_next_page:
+            break
+        if opc_next_page in requested_pages:
+            pagination_warning = "Stopped relationship pagination because OCI returned a repeated opc-next-page token."
+            break
+        page = opc_next_page
+        requested_pages.add(page)
+
+    if (
+        not pagination_warning
+        and opc_next_page
+        and len(items) < max_items
+        and pages_fetched >= MAX_RELATIONSHIP_PAGES
+    ):
+        pagination_warning = (
+            f"Stopped relationship pagination after reaching the maximum of {MAX_RELATIONSHIP_PAGES} SDK pages."
+        )
+
+    result = {
+        "items": items,
+        "count": len(items),
+        "max_items": max_items,
+        "page_size": page_size,
+        "pages_fetched": pages_fetched,
+        "opc_next_page": opc_next_page,
+        "opc_request_id": opc_request_id_value,
+        "has_more": bool(opc_next_page),
+        "truncated": bool(opc_next_page),
+    }
+    if pagination_warning:
+        result["pagination_warning"] = pagination_warning
+    return result
+
+
+def list_iot_domain_groups_records(
+    *,
+    compartment_id: str,
+    id: str | None = None,
+    display_name: str | None = None,
+    lifecycle_state: str | None = None,
+    type: str | None = None,
+    page: str | None = None,
+    limit: int | None = None,
+    sort_order: str | None = None,
+    sort_by: str | None = None,
+    opc_request_id: str | None = None,
+) -> list[dict]:
+    kwargs = {
+        "compartment_id": compartment_id,
+        "id": id,
+        "display_name": display_name,
+        "lifecycle_state": lifecycle_state,
+        "type": type,
+        "page": page,
+        "limit": limit,
+        "sort_order": sort_order,
+        "sort_by": sort_by,
+        "opc_request_id": opc_request_id,
+    }
+    return _map_many(
+        "list_iot_domain_groups",
+        map_iot_domain_group,
+        **{key: value for key, value in kwargs.items() if value is not None},
+    )
+
+
+def list_iot_domains_records(
+    *,
+    compartment_id: str,
+    id: str | None = None,
+    iot_domain_group_id: str | None = None,
+    display_name: str | None = None,
+    lifecycle_state: str | None = None,
+    page: str | None = None,
+    limit: int | None = None,
+    sort_order: str | None = None,
+    sort_by: str | None = None,
+    opc_request_id: str | None = None,
+) -> list[dict]:
+    kwargs = {
+        "compartment_id": compartment_id,
+        "id": id,
+        "iot_domain_group_id": iot_domain_group_id,
+        "display_name": display_name,
+        "lifecycle_state": lifecycle_state,
+        "page": page,
+        "limit": limit,
+        "sort_order": sort_order,
+        "sort_by": sort_by,
+        "opc_request_id": opc_request_id,
+    }
+    return _map_many(
+        "list_iot_domains",
+        map_iot_domain,
+        **{key: value for key, value in kwargs.items() if value is not None},
+    )
 
 
 def list_work_request_errors_records(*, work_request_id: str) -> list[dict]:
@@ -183,8 +720,34 @@ def list_work_request_logs_records(*, work_request_id: str) -> list[dict]:
     return _map_many("list_work_request_logs", map_work_request_log, work_request_id=work_request_id)
 
 
-def list_work_requests_records(*, compartment_id: str) -> list[dict]:
-    return _map_many("list_work_requests", map_work_request, compartment_id=compartment_id)
+def list_work_requests_records(
+    *,
+    compartment_id: str,
+    id: str | None = None,
+    status: str | None = None,
+    resource_id: str | None = None,
+    page: str | None = None,
+    limit: int | None = None,
+    sort_order: str | None = None,
+    sort_by: str | None = None,
+    opc_request_id: str | None = None,
+) -> list[dict]:
+    kwargs = {
+        "compartment_id": compartment_id,
+        "id": id,
+        "status": status,
+        "resource_id": resource_id,
+        "page": page,
+        "limit": limit,
+        "sort_order": sort_order,
+        "sort_by": sort_by,
+        "opc_request_id": opc_request_id,
+    }
+    return _map_many(
+        "list_work_requests",
+        map_work_request,
+        **{key: value for key, value in kwargs.items() if value is not None},
+    )
 
 
 def build_invoke_raw_command_details(

@@ -1,14 +1,14 @@
 [project]
 name = "oracle.oci-load-balancer-mcp-server"
 
-version = "1.0.0"
+version = "1.0.2"
 description = "An OCI Model Context Protocol server for load-balancer"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "fastmcp==3.3.1",
-    "oci==2.173.1",
-    "pydantic==2.12.3",
+    "fastmcp==3.4.5",
+    "oci==2.182.1",
+    "pydantic==2.13.4",
 ]
 license = "UPL-1.0"
 license-files = ["LICENSE.txt"]
@@ -42,6 +42,31 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["oracle"]
 exclude = ["/oracle/**/tests/**"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "/.coverage*",
+  "/htmlcov/**",
+  "/.pytest_cache/**",
+  "/.ruff_cache/**",
+  "/.venv/**",
+  "/venv/**",
+  "/dist/**",
+  "/build/**",
+  "/uv.lock",
+  "**/__pycache__/**",
+  "**/*.py[cod]",
+  "/.DS_Store",
+  "/.env",
+  "/.env.*",
+  "/.claude/**",
+  "/.cline/**",
+  "/.roo/**",
+  "/.cursor/**",
+  "/mcp_settings*.json",
+  "/Containerfile",
+  "/.containerignore",
+]
 
 [tool.coverage.run]
 omit = [

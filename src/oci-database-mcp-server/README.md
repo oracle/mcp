@@ -6,15 +6,58 @@ This server provides tools to interact with the OCI Database service.
 
 ## Running the server
 
+### STDIO transport mode
+
 ```sh
 uv run oracle.oci-database-mcp-server
 ```
 
+### HTTP streaming transport mode
+
+```sh
+ORACLE_MCP_HOST=<bind_host> \
+ORACLE_MCP_PORT=<port> \
+ORACLE_MCP_BASE_URL=<public_base_url> \
+OCI_REGION=<region> \
+IDCS_DOMAIN=<idcs_domain> \
+IDCS_CLIENT_ID=<client_id> \
+IDCS_CLIENT_SECRET=<client_secret> \
+IDCS_AUDIENCE=<audience> \
+uv run oracle.oci-database-mcp-server
+```
+
+For the OCI IAM confidential application, register
+`${ORACLE_MCP_BASE_URL}/auth/callback` as the redirect URI. By default, the
+server requires `openid profile email oci_mcp.database.invoke`; set
+`IDCS_REQUIRED_SCOPES` to a space-delimited list or JSON array to override it.
+`stdio` uses the selected OCI credential mode, while HTTP exchanges each
+authenticated OCI IAM user's access token to make caller-specific OCI SDK
+requests.
+
 ## Environment Variables
 
-The server supports the following environment variables:
+The server uses `oracle-mcp-common` to resolve OCI authentication. It supports
+the following environment variables:
 
+- `OCI_MCP_AUTH_TYPE`: authentication mode. The default, `auto`, selects
+  session-token authentication when the selected profile directly declares a
+  `security_token_file`; otherwise it uses API-key authentication.
+- `OCI_CONFIG_FILE`: OCI configuration file path (default: `~/.oci/config`).
 - `OCI_CONFIG_PROFILE`: OCI configuration profile name (default: "DEFAULT")
+
+Set `OCI_MCP_AUTH_TYPE` to use a non-profile authentication mode:
+`identity_domain_upst`, `instance_principal`, `resource_principal`,
+`instance_principal_delegation`, `resource_principal_delegation`, or
+`oke_workload_identity`. Those modes use the standard `oracle-mcp-common`
+configuration and OCI SDK prerequisites.
+
+HTTP mode uses the OCI IAM/IDCS configuration shown above rather than
+`OCI_MCP_AUTH_TYPE`. `oracle-mcp-common` validates `IDCS_DOMAIN`,
+`IDCS_CLIENT_ID`, `IDCS_CLIENT_SECRET`, `IDCS_AUDIENCE`, and
+`ORACLE_MCP_BASE_URL` before the listener starts. `OCI_REGION` supplies the
+default region for request-token exchange; a tool's `region` argument overrides
+it for that request. Keep client secrets out of source control and use a secret
+manager or deployment environment to provide `IDCS_CLIENT_SECRET`.
 
 ## Tools
 
@@ -186,4 +229,3 @@ Copyright (c) 2025 Oracle and/or its affiliates.
 
 Released under the Universal Permissive License v1.0 as shown at  
 <https://oss.oracle.com/licenses/upl/>.
-

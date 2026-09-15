@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from fastmcp import Client
 from oci.exceptions import ConfigFileNotFound, InvalidConfig
 from oci.iot.models import (
     DigitalTwinAdapterInboundEnvelope,
@@ -647,6 +648,8 @@ MODEL_TOOL_CASES = [
             "display_name": "Model 1",
             "spec": '{"contents": []}',
             "description": "desc",
+            "freeform_tags": '{"env": "dev"}',
+            "defined_tags": '{"ops": {"cost": "1"}}',
             "opc_retry_token": "retry-1",
             "opc_request_id": "req-1",
         },
@@ -655,6 +658,8 @@ MODEL_TOOL_CASES = [
             "display_name": "Model 1",
             "description": "desc",
             "spec": {"contents": []},
+            "freeform_tags": {"env": "dev"},
+            "defined_tags": {"ops": {"cost": "1"}},
         },
         "expected_client_kwargs": {"opc_retry_token": "retry-1", "opc_request_id": "req-1"},
         "response_model": _simple_model("model-1", display_name="Model 1"),
@@ -699,6 +704,10 @@ MODEL_TOOL_CASES = [
             "external_key": "pump-01",
             "display_name": "Pump 01",
             "digital_twin_adapter_id": "adapter-1",
+            "digital_twin_model_id": "model-1",
+            "digital_twin_model_spec_uri": "https://example.com/models/pump.json",
+            "connectivity_type": "INDIRECT",
+            "gateways": ["gateway-1"],
             "freeform_tags": '{"env": "dev"}',
             "defined_tags": '{"ops": {"cost": "1"}}',
             "opc_retry_token": "retry-1",
@@ -710,11 +719,20 @@ MODEL_TOOL_CASES = [
             "external_key": "pump-01",
             "display_name": "Pump 01",
             "digital_twin_adapter_id": "adapter-1",
+            "digital_twin_model_id": "model-1",
+            "digital_twin_model_spec_uri": "https://example.com/models/pump.json",
+            "connectivity_type": "INDIRECT",
+            "gateways": ["gateway-1"],
             "freeform_tags": {"env": "dev"},
             "defined_tags": {"ops": {"cost": "1"}},
         },
         "expected_client_kwargs": {"opc_retry_token": "retry-1", "opc_request_id": "req-1"},
-        "response_model": _simple_model("twin-1", display_name="Pump 01"),
+        "response_model": _simple_model(
+            "twin-1",
+            display_name="Pump 01",
+            connectivity_type="INDIRECT",
+            gateways=["gateway-1"],
+        ),
     },
     {
         "tool_name": "create_digital_twin_relationship",
@@ -785,6 +803,9 @@ MODEL_TOOL_CASES = [
             "external_key": "pump-01",
             "display_name": "Pump 01",
             "digital_twin_adapter_id": "adapter-1",
+            "digital_twin_model_id": "model-1",
+            "digital_twin_model_spec_uri": "https://example.com/models/pump.json",
+            "gateways": ["gateway-1", "gateway-2"],
             "freeform_tags": '{"env": "dev"}',
             "defined_tags": '{"ops": {"cost": "1"}}',
             "if_match": "etag-1",
@@ -795,6 +816,9 @@ MODEL_TOOL_CASES = [
             "external_key": "pump-01",
             "display_name": "Pump 01",
             "digital_twin_adapter_id": "adapter-1",
+            "digital_twin_model_id": "model-1",
+            "digital_twin_model_spec_uri": "https://example.com/models/pump.json",
+            "gateways": ["gateway-1", "gateway-2"],
             "freeform_tags": {"env": "dev"},
             "defined_tags": {"ops": {"cost": "1"}},
         },
@@ -803,7 +827,12 @@ MODEL_TOOL_CASES = [
             "if_match": "etag-1",
             "opc_request_id": "req-1",
         },
-        "response_model": _simple_model("twin-1", display_name="Pump 01"),
+        "response_model": _simple_model(
+            "twin-1",
+            display_name="Pump 01",
+            connectivity_type="INDIRECT",
+            gateways=["gateway-1", "gateway-2"],
+        ),
     },
     {
         "tool_name": "update_digital_twin_model",
@@ -936,6 +965,625 @@ def test_model_mutation_tools_build_details_and_return_model_dict(monkeypatch, c
         assert getattr(details, key) == value
     for key, value in case["expected_client_kwargs"].items():
         assert captured[key] == value
+
+
+@pytest.mark.parametrize(
+    ("connectivity_type", "gateways"),
+    [
+        ("GATEWAY", None),
+        ("INDIRECT", ["gateway-1"]),
+        ("NONE", None),
+    ],
+)
+def test_create_digital_twin_instance_accepts_gateway_connectivity_modes(
+    monkeypatch,
+    connectivity_type,
+    gateways,
+):
+    captured = {}
+    monkeypatch.setattr(
+        server.oci.iot.models,
+        "CreateDigitalTwinInstanceDetails",
+        _detail_factory("CreateDigitalTwinInstanceDetails"),
+    )
+
+    def method(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            data=_simple_model(
+                "twin-1",
+                display_name="Twin 1",
+                connectivity_type=connectivity_type,
+                gateways=gateways,
+            )
+        )
+
+    monkeypatch.setattr(server, "get_iot_client", lambda: SimpleNamespace(create_digital_twin_instance=method))
+
+    result = server.create_digital_twin_instance(
+        iot_domain_id="domain-1",
+        display_name="Twin 1",
+        connectivity_type=connectivity_type,
+        gateways=gateways,
+    )
+
+    details = captured["create_digital_twin_instance_details"]
+    assert details.connectivity_type == connectivity_type
+    assert details.gateways == gateways
+    assert result["connectivity_type"] == connectivity_type
+    assert result["gateways"] == gateways
+
+
+def test_create_and_update_digital_twin_instance_accept_json_gateway_arrays(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        server.oci.iot.models,
+        "CreateDigitalTwinInstanceDetails",
+        _detail_factory("CreateDigitalTwinInstanceDetails"),
+    )
+    monkeypatch.setattr(
+        server.oci.iot.models,
+        "UpdateDigitalTwinInstanceDetails",
+        _detail_factory("UpdateDigitalTwinInstanceDetails"),
+    )
+
+    def create(**kwargs):
+        captured["create"] = kwargs
+        return SimpleNamespace(data=_simple_model("twin-1", gateways=["gateway-1"]))
+
+    def update(**kwargs):
+        captured["update"] = kwargs
+        return SimpleNamespace(data=_simple_model("twin-1", gateways=["gateway-1"]))
+
+    monkeypatch.setattr(
+        server,
+        "get_iot_client",
+        lambda: SimpleNamespace(
+            create_digital_twin_instance=create,
+            update_digital_twin_instance=update,
+        ),
+    )
+
+    server.create_digital_twin_instance(
+        iot_domain_id="domain-1",
+        gateways='["gateway-1"]',
+    )
+    server.update_digital_twin_instance(
+        digital_twin_instance_id="twin-1",
+        gateways='["gateway-1"]',
+    )
+
+    assert captured["create"]["create_digital_twin_instance_details"].gateways == ["gateway-1"]
+    assert captured["update"]["update_digital_twin_instance_details"].gateways == ["gateway-1"]
+
+
+@pytest.mark.parametrize(
+    "gateways",
+    [
+        {"gateway": "gateway-1"},
+        123,
+        ["gateway-1", 2],
+        [""],
+        '{"gateway": "gateway-1"}',
+        '"gateway-1"',
+        "null",
+        '["gateway-1", 2]',
+        '[""]',
+    ],
+)
+@pytest.mark.parametrize("operation", ["create", "update"])
+def test_create_and_update_digital_twin_instance_reject_invalid_gateways(
+    monkeypatch,
+    gateways,
+    operation,
+):
+    monkeypatch.setattr(
+        server,
+        "get_iot_client",
+        lambda: pytest.fail("invalid gateways must be rejected before invoking OCI"),
+    )
+
+    kwargs = {"gateways": gateways}
+    if operation == "create":
+        call = server.create_digital_twin_instance
+        kwargs["iot_domain_id"] = "domain-1"
+    else:
+        call = server.update_digital_twin_instance
+        kwargs["digital_twin_instance_id"] = "twin-1"
+
+    with pytest.raises(
+        ValueError,
+        match="gateways must be an array of non-empty strings or a JSON array string",
+    ):
+        call(**kwargs)
+
+
+def test_list_digital_twin_instances_forwards_sdk_filters(monkeypatch):
+    captured = {}
+
+    def list_records(**kwargs):
+        captured["kwargs"] = kwargs
+        return [{"id": "twin-1"}]
+
+    monkeypatch.setattr(
+        server,
+        "list_digital_twin_instances_records",
+        list_records,
+    )
+
+    result = server.list_digital_twin_instances(
+        iot_domain_id="domain-1",
+        display_name="Pump 01",
+        page="page-token",
+        lifecycle_state="ACTIVE",
+        sort_order="ASC",
+        sort_by="displayName",
+        opc_request_id="req-1",
+        digital_twin_model_id="model-1",
+        digital_twin_model_spec_uri="https://example.com/models/pump.json",
+        connectivity_type="INDIRECT",
+        id="twin-1",
+        limit=50,
+    )
+
+    assert result == {"result": [{"id": "twin-1"}]}
+    assert captured["kwargs"] == {
+        "iot_domain_id": "domain-1",
+        "display_name": "Pump 01",
+        "page": "page-token",
+        "lifecycle_state": "ACTIVE",
+        "sort_order": "ASC",
+        "sort_by": "displayName",
+        "opc_request_id": "req-1",
+        "digital_twin_model_id": "model-1",
+        "digital_twin_model_spec_uri": "https://example.com/models/pump.json",
+        "connectivity_type": "INDIRECT",
+        "id": "twin-1",
+        "limit": 50,
+    }
+
+
+def test_list_digital_twin_adapters_forwards_sdk_filters(monkeypatch):
+    captured = {}
+
+    def list_records(**kwargs):
+        captured["kwargs"] = kwargs
+        return [{"id": "adapter-1"}]
+
+    monkeypatch.setattr(server, "list_digital_twin_adapters_records", list_records)
+
+    result = server.list_digital_twin_adapters(
+        iot_domain_id="domain-1",
+        id="adapter-1",
+        digital_twin_model_spec_uri="dtmi:example:Pump;1",
+        digital_twin_model_id="model-1",
+        display_name="Pump Adapter",
+        lifecycle_state="ACTIVE",
+        page="page-token",
+        limit=25,
+        sort_order="ASC",
+        sort_by="displayName",
+        opc_request_id="req-1",
+    )
+
+    assert result == {"result": [{"id": "adapter-1"}]}
+    assert captured["kwargs"] == {
+        "iot_domain_id": "domain-1",
+        "id": "adapter-1",
+        "digital_twin_model_spec_uri": "dtmi:example:Pump;1",
+        "digital_twin_model_id": "model-1",
+        "display_name": "Pump Adapter",
+        "lifecycle_state": "ACTIVE",
+        "page": "page-token",
+        "limit": 25,
+        "sort_order": "ASC",
+        "sort_by": "displayName",
+        "opc_request_id": "req-1",
+    }
+
+
+def test_list_digital_twin_models_forwards_sdk_filters(monkeypatch):
+    captured = {}
+
+    def list_records(**kwargs):
+        captured["kwargs"] = kwargs
+        return [{"id": "model-1"}]
+
+    monkeypatch.setattr(server, "list_digital_twin_models_records", list_records)
+
+    result = server.list_digital_twin_models(
+        iot_domain_id="domain-1",
+        id="model-1",
+        display_name="Pump Model",
+        spec_uri_starts_with="dtmi:example:Pump",
+        lifecycle_state="ACTIVE",
+        page="page-token",
+        limit=25,
+        sort_order="DESC",
+        sort_by="timeCreated",
+        opc_request_id="req-1",
+    )
+
+    assert result == {"result": [{"id": "model-1"}]}
+    assert captured["kwargs"] == {
+        "iot_domain_id": "domain-1",
+        "id": "model-1",
+        "display_name": "Pump Model",
+        "spec_uri_starts_with": "dtmi:example:Pump",
+        "lifecycle_state": "ACTIVE",
+        "page": "page-token",
+        "limit": 25,
+        "sort_order": "DESC",
+        "sort_by": "timeCreated",
+        "opc_request_id": "req-1",
+    }
+
+
+def test_list_digital_twin_adapter_and_model_pages_return_metadata(monkeypatch):
+    captured = {}
+    adapter_payload = {
+        "items": [{"id": "adapter-1"}],
+        "opc_next_page": "adapter-next",
+        "opc_request_id": "adapter-req",
+        "page": "adapter-page",
+        "limit": 10,
+        "has_more": True,
+    }
+    model_payload = {
+        "items": [{"id": "model-1"}],
+        "opc_next_page": "model-next",
+        "opc_request_id": "model-req",
+        "page": "model-page",
+        "limit": 20,
+        "has_more": True,
+    }
+
+    def adapter_page(**kwargs):
+        captured["adapter"] = kwargs
+        return adapter_payload
+
+    def model_page(**kwargs):
+        captured["model"] = kwargs
+        return model_payload
+
+    monkeypatch.setattr(server, "list_digital_twin_adapters_page_record", adapter_page, raising=False)
+    monkeypatch.setattr(server, "list_digital_twin_models_page_record", model_page, raising=False)
+
+    adapter_result = server.list_digital_twin_adapters_page(
+        iot_domain_id="domain-1",
+        page="adapter-page",
+        limit=10,
+    )
+    model_result = server.list_digital_twin_models_page(
+        iot_domain_id="domain-1",
+        page="model-page",
+        limit=20,
+    )
+
+    assert adapter_result == {"result": adapter_payload}
+    assert model_result == {"result": model_payload}
+    assert captured["adapter"] == {
+        "iot_domain_id": "domain-1",
+        "id": None,
+        "digital_twin_model_spec_uri": None,
+        "digital_twin_model_id": None,
+        "display_name": None,
+        "lifecycle_state": None,
+        "page": "adapter-page",
+        "limit": 10,
+        "sort_order": None,
+        "sort_by": None,
+        "opc_request_id": None,
+    }
+    assert captured["model"] == {
+        "iot_domain_id": "domain-1",
+        "id": None,
+        "display_name": None,
+        "spec_uri_starts_with": None,
+        "lifecycle_state": None,
+        "page": "model-page",
+        "limit": 20,
+        "sort_order": None,
+        "sort_by": None,
+        "opc_request_id": None,
+    }
+
+
+def test_domain_group_domain_and_work_request_list_tools_forward_sdk_filters(monkeypatch):
+    captured = {}
+
+    def list_groups(**kwargs):
+        captured["groups"] = kwargs
+        return [{"id": "group-1"}]
+
+    def list_domains(**kwargs):
+        captured["domains"] = kwargs
+        return [{"id": "domain-1"}]
+
+    def list_work_requests(**kwargs):
+        captured["work_requests"] = kwargs
+        return [{"id": "wr-1"}]
+
+    monkeypatch.setattr(server, "list_iot_domain_groups_records", list_groups)
+    monkeypatch.setattr(server, "list_iot_domains_records", list_domains)
+    monkeypatch.setattr(server, "list_work_requests_records", list_work_requests)
+
+    groups = server.list_iot_domain_groups(
+        compartment_id="compartment-1",
+        id="group-1",
+        display_name="Group 1",
+        lifecycle_state="ACTIVE",
+        type="STANDARD",
+        page="group-page",
+        limit=25,
+        sort_order="ASC",
+        sort_by="displayName",
+        opc_request_id="group-req",
+    )
+    domains = server.list_iot_domains(
+        compartment_id="compartment-1",
+        id="domain-1",
+        iot_domain_group_id="group-1",
+        display_name="Domain 1",
+        lifecycle_state="ACTIVE",
+        page="domain-page",
+        limit=50,
+        sort_order="DESC",
+        sort_by="timeCreated",
+        opc_request_id="domain-req",
+    )
+    work_requests = server.list_work_requests(
+        compartment_id="compartment-1",
+        id="wr-1",
+        status="SUCCEEDED",
+        resource_id="domain-1",
+        page="wr-page",
+        limit=10,
+        sort_order="DESC",
+        sort_by="timeAccepted",
+        opc_request_id="wr-req",
+    )
+
+    assert groups == {"result": [{"id": "group-1"}]}
+    assert domains == {"result": [{"id": "domain-1"}]}
+    assert work_requests == {"result": [{"id": "wr-1"}]}
+    assert captured == {
+        "groups": {
+            "compartment_id": "compartment-1",
+            "id": "group-1",
+            "display_name": "Group 1",
+            "lifecycle_state": "ACTIVE",
+            "type": "STANDARD",
+            "page": "group-page",
+            "limit": 25,
+            "sort_order": "ASC",
+            "sort_by": "displayName",
+            "opc_request_id": "group-req",
+        },
+        "domains": {
+            "compartment_id": "compartment-1",
+            "id": "domain-1",
+            "iot_domain_group_id": "group-1",
+            "display_name": "Domain 1",
+            "lifecycle_state": "ACTIVE",
+            "page": "domain-page",
+            "limit": 50,
+            "sort_order": "DESC",
+            "sort_by": "timeCreated",
+            "opc_request_id": "domain-req",
+        },
+        "work_requests": {
+            "compartment_id": "compartment-1",
+            "id": "wr-1",
+            "status": "SUCCEEDED",
+            "resource_id": "domain-1",
+            "page": "wr-page",
+            "limit": 10,
+            "sort_order": "DESC",
+            "sort_by": "timeAccepted",
+            "opc_request_id": "wr-req",
+        },
+    }
+
+
+def test_list_digital_twin_relationships_forwards_sdk_filters(monkeypatch):
+    captured = {}
+
+    def list_records(**kwargs):
+        captured["kwargs"] = kwargs
+        return [{"id": "rel-1"}]
+
+    monkeypatch.setattr(
+        server,
+        "list_digital_twin_relationships_records",
+        list_records,
+    )
+
+    result = server.list_digital_twin_relationships(
+        iot_domain_id="domain-1",
+        display_name="Floor contains Room",
+        content_path="contains",
+        source_digital_twin_instance_id="floor-1",
+        target_digital_twin_instance_id="room-1",
+        lifecycle_state="ACTIVE",
+        page="page-token",
+        sort_order="ASC",
+        sort_by="displayName",
+        opc_request_id="req-1",
+        id="rel-1",
+        limit=50,
+    )
+
+    assert result == {"result": [{"id": "rel-1"}]}
+    assert captured["kwargs"] == {
+        "iot_domain_id": "domain-1",
+        "display_name": "Floor contains Room",
+        "content_path": "contains",
+        "source_digital_twin_instance_id": "floor-1",
+        "target_digital_twin_instance_id": "room-1",
+        "lifecycle_state": "ACTIVE",
+        "page": "page-token",
+        "sort_order": "ASC",
+        "sort_by": "displayName",
+        "opc_request_id": "req-1",
+        "id": "rel-1",
+        "limit": 50,
+    }
+
+
+def test_list_digital_twin_relationships_page_returns_metadata(monkeypatch):
+    captured = {}
+    payload = {
+        "items": [{"id": "rel-1"}],
+        "opc_next_page": "next-token",
+        "opc_request_id": "req-1",
+        "page": "page-token",
+        "limit": 10,
+        "has_more": True,
+    }
+
+    def list_page_record(**kwargs):
+        captured["kwargs"] = kwargs
+        return payload
+
+    monkeypatch.setattr(
+        server,
+        "list_digital_twin_relationships_page_record",
+        list_page_record,
+        raising=False,
+    )
+
+    result = server.list_digital_twin_relationships_page(
+        iot_domain_id="domain-1",
+        page="page-token",
+        limit=10,
+    )
+
+    assert result == {"result": payload}
+    assert captured["kwargs"] == {
+        "iot_domain_id": "domain-1",
+        "display_name": None,
+        "content_path": None,
+        "source_digital_twin_instance_id": None,
+        "target_digital_twin_instance_id": None,
+        "lifecycle_state": None,
+        "page": "page-token",
+        "sort_order": None,
+        "sort_by": None,
+        "opc_request_id": None,
+        "id": None,
+        "limit": 10,
+    }
+
+
+def test_list_all_digital_twin_relationships_returns_bounded_payload(monkeypatch):
+    captured = {}
+    payload = {
+        "items": [{"id": "rel-1"}, {"id": "rel-2"}],
+        "count": 2,
+        "max_items": 50,
+        "page_size": 25,
+        "pages_fetched": 1,
+        "opc_next_page": None,
+        "opc_request_id": "req-1",
+        "has_more": False,
+        "truncated": False,
+    }
+
+    def list_all_records(**kwargs):
+        captured["kwargs"] = kwargs
+        return payload
+
+    monkeypatch.setattr(
+        server,
+        "list_all_digital_twin_relationships_records",
+        list_all_records,
+        raising=False,
+    )
+
+    result = server.list_all_digital_twin_relationships(
+        iot_domain_id="domain-1",
+        lifecycle_state="ACTIVE",
+        max_items=50,
+        page_size=25,
+    )
+
+    assert result == {"result": payload}
+    assert captured["kwargs"] == {
+        "iot_domain_id": "domain-1",
+        "display_name": None,
+        "content_path": None,
+        "source_digital_twin_instance_id": None,
+        "target_digital_twin_instance_id": None,
+        "lifecycle_state": "ACTIVE",
+        "sort_order": None,
+        "sort_by": None,
+        "opc_request_id": None,
+        "id": None,
+        "max_items": 50,
+        "page_size": 25,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("max_items", 0, "greater than or equal to 1"),
+        ("max_items", 1001, "less than or equal to 1000"),
+        ("page_size", 0, "greater than or equal to 1"),
+        ("page_size", 1001, "less than or equal to 1000"),
+    ],
+)
+async def test_list_all_digital_twin_relationships_rejects_out_of_bounds_fastmcp_calls(
+    field,
+    value,
+    message,
+):
+    async with Client(server.mcp) as client:
+        with pytest.raises(Exception, match=message):
+            await client.call_tool(
+                "list_all_digital_twin_relationships",
+                {
+                    "iot_domain_id": "domain-1",
+                    field: value,
+                },
+            )
+
+
+def test_get_digital_twin_instance_full_returns_raw_sdk_payload(monkeypatch):
+    captured = {}
+
+    def get_digital_twin_instance(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            data={
+                "id": "twin-1",
+                "connectivity_type": "INDIRECT",
+                "gateways": ["gateway-1"],
+                "new_sdk_field": {"kept": True},
+            }
+        )
+
+    monkeypatch.setattr(
+        server,
+        "get_iot_client",
+        lambda: SimpleNamespace(get_digital_twin_instance=get_digital_twin_instance),
+    )
+
+    result = server.get_digital_twin_instance_full(
+        digital_twin_instance_id="twin-1",
+        opc_request_id="req-1",
+    )
+
+    assert result["ok"] is True
+    assert result["data"]["connectivity_type"] == "INDIRECT"
+    assert result["data"]["gateways"] == ["gateway-1"]
+    assert result["data"]["new_sdk_field"] == {"kept": True}
+    assert captured == {
+        "digital_twin_instance_id": "twin-1",
+        "opc_request_id": "req-1",
+    }
 
 
 RESPONSE_TOOL_CASES = [

@@ -56,8 +56,8 @@ When executing a tool, the MCP server determines which datasource to use based o
 1. If the tool specifies a datasource, that datasource is used.
 
 2. If the tool does not specify a datasource, the server looks for a default datasource:
-  * First, it checks whether a datasource was provided via system properties (`db.url`, `db.user`, `db.password) (Higher priority).
-  * If no system property datasource is available, it falls back to the first datasource defined in the YAML file, if present.
+* First, it checks whether a datasource was provided via system properties (`db.url`, `db.user`, `db.password) (Higher priority).
+* If no system property datasource is available, it falls back to the first datasource defined in the YAML file, if present.
 
 3. If no datasource can be resolved and the tool requires one (e.g., SQL-based tools), the server reports a configuration error.
 
@@ -520,7 +520,7 @@ _Note: The `mcp-admin` toolset is focused on protected runtime configuration and
   ```jsonc
   { "name": "hotels-by-rating", "remove": true }
   ```
-  
+
 ---
 
 ## 4. Installation

@@ -1,10 +1,6 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
 name = "oracle.oci-fsdr-mcp-server"
-version = "0.2.1"
+version = "1.0.1"
 description = "OCI Full Stack Disaster Recovery MCP Server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -12,14 +8,27 @@ license = { text = "Universal Permissive License v 1.0" }
 license-files = ["LICENSE.txt"]
 keywords = ["oci", "oracle", "disaster-recovery", "mcp", "fsdr"]
 dependencies = [
-    "fastmcp==3.3.1",
-    "oci>=2.132.0",
+    "fastmcp==3.4.5",
+    "oci==2.182.1",
     "pydantic>=2.0.0",
+]
+
+classifiers = [
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.13",
 ]
 
 [project.scripts]
 "oracle.oci-fsdr-mcp-server" = "oracle.oci_fsdr_mcp_server.server:main"
 oci-fsdr-mcp = "oracle.oci_fsdr_mcp_server.server:main"
+
+[project.urls]
+Changelog = "https://github.com/oracle/mcp/blob/main/src/oci-full-stack-disaster-recovery-mcp-server/CHANGELOG.md"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project.optional-dependencies]
 dev = [
@@ -37,6 +46,32 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["oracle"]
+exclude = ["/oracle/**/tests/**"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "/.coverage*",
+  "/htmlcov/**",
+  "/.pytest_cache/**",
+  "/.ruff_cache/**",
+  "/.venv/**",
+  "/venv/**",
+  "/dist/**",
+  "/build/**",
+  "/uv.lock",
+  "**/__pycache__/**",
+  "**/*.py[cod]",
+  "/.DS_Store",
+  "/.env",
+  "/.env.*",
+  "/.claude/**",
+  "/.cline/**",
+  "/.roo/**",
+  "/.cursor/**",
+  "/mcp_settings*.json",
+  "/Containerfile",
+  "/.containerignore",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

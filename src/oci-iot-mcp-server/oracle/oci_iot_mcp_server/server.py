@@ -17,7 +17,7 @@ import httpx
 import oci
 from fastmcp import FastMCP
 from oci.exceptions import ConfigFileNotFound, InvalidConfig
-from pydantic import TypeAdapter
+from pydantic import Field, TypeAdapter
 
 from . import __project__, __version__
 from .agent_workflows import (
@@ -37,9 +37,13 @@ from .control_plane import (
     get_iot_domain_group_record,
     get_iot_domain_record,
     get_work_request_record,
+    list_all_digital_twin_relationships_records,
+    list_digital_twin_adapters_page_record,
     list_digital_twin_adapters_records,
     list_digital_twin_instances_records,
+    list_digital_twin_models_page_record,
     list_digital_twin_models_records,
+    list_digital_twin_relationships_page_record,
     list_digital_twin_relationships_records,
     list_iot_domain_groups_records,
     list_iot_domains_records,
@@ -99,6 +103,19 @@ def _parse_json_input(value, field_name: str):
             logger.error(f"Invalid JSON for {field_name}: {exc}")
             raise ValueError(f"Invalid JSON for {field_name}: {exc}") from exc
     return value
+
+
+def _parse_string_list_input(value, field_name: str):
+    if value is None:
+        return None
+    parsed = _parse_json_input(value, field_name)
+    if not isinstance(parsed, list) or any(
+        not isinstance(item, str) or not item.strip() for item in parsed
+    ):
+        raise ValueError(
+            f"{field_name} must be an array of non-empty strings or a JSON array string"
+        )
+    return parsed
 
 
 def _response_to_dict(response):
@@ -993,13 +1010,67 @@ def get_work_request(
     description="Lists digital twin adapters in a specified IoT domain."
 )
 def list_digital_twin_adapters(
-    iot_domain_id: Annotated[str, "The IoT domain identifier"]
+    iot_domain_id: Annotated[str, "The IoT domain identifier"],
+    id: Annotated[Optional[str], "Filter by digital twin adapter identifier"] = None,
+    digital_twin_model_spec_uri: Annotated[Optional[str], "Filter by digital twin model specification URI"] = None,
+    digital_twin_model_id: Annotated[Optional[str], "Filter by digital twin model OCID"] = None,
+    display_name: Annotated[Optional[str], "Filter by display name"] = None,
+    lifecycle_state: Annotated[Optional[str], "Filter by lifecycle state"] = None,
+    page: Annotated[Optional[str], "Page token for a single SDK list page"] = None,
+    limit: Annotated[Optional[int], "The limit of results"] = None,
+    sort_order: Annotated[Optional[str], "Sort order"] = None,
+    sort_by: Annotated[Optional[str], "Sort field"] = None,
+    opc_request_id: Annotated[Optional[str], "A unique Oracle-assigned identifier for the request"] = None,
 ):
     return _result_payload(
         _delegate(
             f"Error listing digital twin adapters for domain {iot_domain_id}",
             list_digital_twin_adapters_records,
             iot_domain_id=iot_domain_id,
+            id=id,
+            digital_twin_model_spec_uri=digital_twin_model_spec_uri,
+            digital_twin_model_id=digital_twin_model_id,
+            display_name=display_name,
+            lifecycle_state=lifecycle_state,
+            page=page,
+            limit=limit,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
+        )
+    )
+
+@tool(
+    description="Lists one SDK page of digital twin adapters and returns pagination metadata."
+)
+def list_digital_twin_adapters_page(
+    iot_domain_id: Annotated[str, "The IoT domain identifier"],
+    id: Annotated[Optional[str], "Filter by digital twin adapter identifier"] = None,
+    digital_twin_model_spec_uri: Annotated[Optional[str], "Filter by digital twin model specification URI"] = None,
+    digital_twin_model_id: Annotated[Optional[str], "Filter by digital twin model OCID"] = None,
+    display_name: Annotated[Optional[str], "Filter by display name"] = None,
+    lifecycle_state: Annotated[Optional[str], "Filter by lifecycle state"] = None,
+    page: Annotated[Optional[str], "Page token for a single SDK list page"] = None,
+    limit: Annotated[Optional[int], "The limit of results"] = None,
+    sort_order: Annotated[Optional[str], "Sort order"] = None,
+    sort_by: Annotated[Optional[str], "Sort field"] = None,
+    opc_request_id: Annotated[Optional[str], "A unique Oracle-assigned identifier for the request"] = None,
+):
+    return _result_payload(
+        _delegate(
+            f"Error listing digital twin adapter page for domain {iot_domain_id}",
+            list_digital_twin_adapters_page_record,
+            iot_domain_id=iot_domain_id,
+            id=id,
+            digital_twin_model_spec_uri=digital_twin_model_spec_uri,
+            digital_twin_model_id=digital_twin_model_id,
+            display_name=display_name,
+            lifecycle_state=lifecycle_state,
+            page=page,
+            limit=limit,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
         )
     )
 
@@ -1007,13 +1078,63 @@ def list_digital_twin_adapters(
     description="Lists digital twin models in a specified IoT domain."
 )
 def list_digital_twin_models(
-    iot_domain_id: Annotated[str, "The IoT domain identifier"]
+    iot_domain_id: Annotated[str, "The IoT domain identifier"],
+    id: Annotated[Optional[str], "Filter by digital twin model identifier"] = None,
+    display_name: Annotated[Optional[str], "Filter by display name"] = None,
+    spec_uri_starts_with: Annotated[Optional[str], "Filter by model spec URI prefix"] = None,
+    lifecycle_state: Annotated[Optional[str], "Filter by lifecycle state"] = None,
+    page: Annotated[Optional[str], "Page token for a single SDK list page"] = None,
+    limit: Annotated[Optional[int], "The limit of results"] = None,
+    sort_order: Annotated[Optional[str], "Sort order"] = None,
+    sort_by: Annotated[Optional[str], "Sort field"] = None,
+    opc_request_id: Annotated[Optional[str], "A unique Oracle-assigned identifier for the request"] = None,
 ):
     return _result_payload(
         _delegate(
             f"Error listing digital twin models for domain {iot_domain_id}",
             list_digital_twin_models_records,
             iot_domain_id=iot_domain_id,
+            id=id,
+            display_name=display_name,
+            spec_uri_starts_with=spec_uri_starts_with,
+            lifecycle_state=lifecycle_state,
+            page=page,
+            limit=limit,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
+        )
+    )
+
+@tool(
+    description="Lists one SDK page of digital twin models and returns pagination metadata."
+)
+def list_digital_twin_models_page(
+    iot_domain_id: Annotated[str, "The IoT domain identifier"],
+    id: Annotated[Optional[str], "Filter by digital twin model identifier"] = None,
+    display_name: Annotated[Optional[str], "Filter by display name"] = None,
+    spec_uri_starts_with: Annotated[Optional[str], "Filter by model spec URI prefix"] = None,
+    lifecycle_state: Annotated[Optional[str], "Filter by lifecycle state"] = None,
+    page: Annotated[Optional[str], "Page token for a single SDK list page"] = None,
+    limit: Annotated[Optional[int], "The limit of results"] = None,
+    sort_order: Annotated[Optional[str], "Sort order"] = None,
+    sort_by: Annotated[Optional[str], "Sort field"] = None,
+    opc_request_id: Annotated[Optional[str], "A unique Oracle-assigned identifier for the request"] = None,
+):
+    return _result_payload(
+        _delegate(
+            f"Error listing digital twin model page for domain {iot_domain_id}",
+            list_digital_twin_models_page_record,
+            iot_domain_id=iot_domain_id,
+            id=id,
+            display_name=display_name,
+            spec_uri_starts_with=spec_uri_starts_with,
+            lifecycle_state=lifecycle_state,
+            page=page,
+            limit=limit,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
         )
     )
 
@@ -1022,13 +1143,33 @@ def list_digital_twin_models(
 )
 def list_digital_twin_instances(
     iot_domain_id: Annotated[str, "The IoT domain identifier"],
-    limit: Annotated[int, "The limit of results"] = 1000
+    display_name: Annotated[Optional[str], "Filter by display name"] = None,
+    page: Annotated[Optional[str], "Page token for a single SDK list page"] = None,
+    lifecycle_state: Annotated[Optional[str], "Filter by lifecycle state"] = None,
+    sort_order: Annotated[Optional[str], "Sort order"] = None,
+    sort_by: Annotated[Optional[str], "Sort field"] = None,
+    opc_request_id: Annotated[Optional[str], "A unique Oracle-assigned identifier for the request"] = None,
+    digital_twin_model_id: Annotated[Optional[str], "Filter by digital twin model OCID"] = None,
+    digital_twin_model_spec_uri: Annotated[Optional[str], "Filter by digital twin model specification URI"] = None,
+    connectivity_type: Annotated[Optional[str], "Filter by connectivity type: DIRECT, INDIRECT, GATEWAY, or NONE"] = None,
+    id: Annotated[Optional[str], "Filter by digital twin instance identifier"] = None,
+    limit: Annotated[int, "The limit of results"] = 1000,
 ):
     return _result_payload(
         _delegate(
             f"Error listing digital twin instances for domain {iot_domain_id}",
             list_digital_twin_instances_records,
             iot_domain_id=iot_domain_id,
+            display_name=display_name,
+            page=page,
+            lifecycle_state=lifecycle_state,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
+            digital_twin_model_id=digital_twin_model_id,
+            digital_twin_model_spec_uri=digital_twin_model_spec_uri,
+            connectivity_type=connectivity_type,
+            id=id,
             limit=limit,
         )
     )
@@ -1037,13 +1178,123 @@ def list_digital_twin_instances(
     description="Lists digital twin relationships in a specified IoT domain."
 )
 def list_digital_twin_relationships(
-    iot_domain_id: Annotated[str, "The IoT domain identifier"]
+    iot_domain_id: Annotated[str, "The IoT domain identifier"],
+    display_name: Annotated[Optional[str], "Filter by display name"] = None,
+    content_path: Annotated[Optional[str], "Filter by relationship content path"] = None,
+    source_digital_twin_instance_id: Annotated[Optional[str], "Filter by source digital twin instance OCID"] = None,
+    target_digital_twin_instance_id: Annotated[Optional[str], "Filter by target digital twin instance OCID"] = None,
+    lifecycle_state: Annotated[Optional[str], "Filter by lifecycle state"] = None,
+    page: Annotated[Optional[str], "Page token for a single SDK list page"] = None,
+    sort_order: Annotated[Optional[str], "Sort order"] = None,
+    sort_by: Annotated[Optional[str], "Sort field"] = None,
+    opc_request_id: Annotated[Optional[str], "A unique Oracle-assigned identifier for the request"] = None,
+    id: Annotated[Optional[str], "Filter by digital twin relationship identifier"] = None,
+    limit: Annotated[int, "The limit of results"] = 1000,
 ):
     return _result_payload(
         _delegate(
             f"Error listing digital twin relationships for domain {iot_domain_id}",
             list_digital_twin_relationships_records,
             iot_domain_id=iot_domain_id,
+            display_name=display_name,
+            content_path=content_path,
+            source_digital_twin_instance_id=source_digital_twin_instance_id,
+            target_digital_twin_instance_id=target_digital_twin_instance_id,
+            lifecycle_state=lifecycle_state,
+            page=page,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
+            id=id,
+            limit=limit,
+        )
+    )
+
+
+@tool(
+    description="Lists one SDK page of digital twin relationships and returns pagination metadata."
+)
+def list_digital_twin_relationships_page(
+    iot_domain_id: Annotated[str, "The IoT domain identifier"],
+    display_name: Annotated[Optional[str], "Filter by display name"] = None,
+    content_path: Annotated[Optional[str], "Filter by relationship content path"] = None,
+    source_digital_twin_instance_id: Annotated[Optional[str], "Filter by source digital twin instance OCID"] = None,
+    target_digital_twin_instance_id: Annotated[Optional[str], "Filter by target digital twin instance OCID"] = None,
+    lifecycle_state: Annotated[Optional[str], "Filter by lifecycle state"] = None,
+    page: Annotated[Optional[str], "Page token for a single SDK list page"] = None,
+    sort_order: Annotated[Optional[str], "Sort order"] = None,
+    sort_by: Annotated[Optional[str], "Sort field"] = None,
+    opc_request_id: Annotated[Optional[str], "A unique Oracle-assigned identifier for the request"] = None,
+    id: Annotated[Optional[str], "Filter by digital twin relationship identifier"] = None,
+    limit: Annotated[int, "The limit of results"] = 1000,
+):
+    return _result_payload(
+        _delegate(
+            f"Error listing digital twin relationship page for domain {iot_domain_id}",
+            list_digital_twin_relationships_page_record,
+            iot_domain_id=iot_domain_id,
+            display_name=display_name,
+            content_path=content_path,
+            source_digital_twin_instance_id=source_digital_twin_instance_id,
+            target_digital_twin_instance_id=target_digital_twin_instance_id,
+            lifecycle_state=lifecycle_state,
+            page=page,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
+            id=id,
+            limit=limit,
+        )
+    )
+
+
+@tool(
+    description="Lists digital twin relationships across pages up to a bounded max item count."
+)
+def list_all_digital_twin_relationships(
+    iot_domain_id: Annotated[str, "The IoT domain identifier"],
+    display_name: Annotated[Optional[str], "Filter by display name"] = None,
+    content_path: Annotated[Optional[str], "Filter by relationship content path"] = None,
+    source_digital_twin_instance_id: Annotated[Optional[str], "Filter by source digital twin instance OCID"] = None,
+    target_digital_twin_instance_id: Annotated[Optional[str], "Filter by target digital twin instance OCID"] = None,
+    lifecycle_state: Annotated[Optional[str], "Filter by lifecycle state"] = None,
+    sort_order: Annotated[Optional[str], "Sort order"] = None,
+    sort_by: Annotated[Optional[str], "Sort field"] = None,
+    opc_request_id: Annotated[Optional[str], "A unique Oracle-assigned identifier for the request"] = None,
+    id: Annotated[Optional[str], "Filter by digital twin relationship identifier"] = None,
+    max_items: Annotated[
+        int,
+        Field(
+            description="Maximum number of relationships to return across pages",
+            ge=1,
+            le=1000,
+        ),
+    ] = 1000,
+    page_size: Annotated[
+        int,
+        Field(
+            description="Maximum number of relationships to request per SDK page",
+            ge=1,
+            le=1000,
+        ),
+    ] = 100,
+):
+    return _result_payload(
+        _delegate(
+            f"Error listing digital twin relationships across pages for domain {iot_domain_id}",
+            list_all_digital_twin_relationships_records,
+            iot_domain_id=iot_domain_id,
+            display_name=display_name,
+            content_path=content_path,
+            source_digital_twin_instance_id=source_digital_twin_instance_id,
+            target_digital_twin_instance_id=target_digital_twin_instance_id,
+            lifecycle_state=lifecycle_state,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
+            id=id,
+            max_items=max_items,
+            page_size=page_size,
         )
     )
 
@@ -1051,13 +1302,31 @@ def list_digital_twin_relationships(
     description="Lists IoT domain groups in a specified compartment."
 )
 def list_iot_domain_groups(
-    compartment_id: Annotated[str, "Compartment containing IoT Domain Groups"]
+    compartment_id: Annotated[str, "Compartment containing IoT Domain Groups"],
+    id: Annotated[Optional[str], "Filter by IoT domain group identifier"] = None,
+    display_name: Annotated[Optional[str], "Filter by display name"] = None,
+    lifecycle_state: Annotated[Optional[str], "Filter by lifecycle state"] = None,
+    type: Annotated[Optional[str], "Filter by IoT domain group type"] = None,
+    page: Annotated[Optional[str], "Page token for a single SDK list page"] = None,
+    limit: Annotated[Optional[int], "The limit of results"] = None,
+    sort_order: Annotated[Optional[str], "Sort order"] = None,
+    sort_by: Annotated[Optional[str], "Sort field"] = None,
+    opc_request_id: Annotated[Optional[str], "A unique Oracle-assigned identifier for the request"] = None,
 ):
     return _result_payload(
         _delegate(
             f"Error listing IoT domain groups for compartment {compartment_id}",
             list_iot_domain_groups_records,
             compartment_id=compartment_id,
+            id=id,
+            display_name=display_name,
+            lifecycle_state=lifecycle_state,
+            type=type,
+            page=page,
+            limit=limit,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
         )
     )
 
@@ -1065,13 +1334,31 @@ def list_iot_domain_groups(
     description="Lists IoT domains in a specified compartment."
 )
 def list_iot_domains(
-    compartment_id: Annotated[str, "Compartment containing IoT Domains"]
+    compartment_id: Annotated[str, "Compartment containing IoT Domains"],
+    id: Annotated[Optional[str], "Filter by IoT domain identifier"] = None,
+    iot_domain_group_id: Annotated[Optional[str], "Filter by containing IoT domain group identifier"] = None,
+    display_name: Annotated[Optional[str], "Filter by display name"] = None,
+    lifecycle_state: Annotated[Optional[str], "Filter by lifecycle state"] = None,
+    page: Annotated[Optional[str], "Page token for a single SDK list page"] = None,
+    limit: Annotated[Optional[int], "The limit of results"] = None,
+    sort_order: Annotated[Optional[str], "Sort order"] = None,
+    sort_by: Annotated[Optional[str], "Sort field"] = None,
+    opc_request_id: Annotated[Optional[str], "A unique Oracle-assigned identifier for the request"] = None,
 ):
     return _result_payload(
         _delegate(
             f"Error listing IoT domains for compartment {compartment_id}",
             list_iot_domains_records,
             compartment_id=compartment_id,
+            id=id,
+            iot_domain_group_id=iot_domain_group_id,
+            display_name=display_name,
+            lifecycle_state=lifecycle_state,
+            page=page,
+            limit=limit,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
         )
     )
 
@@ -1107,13 +1394,29 @@ def list_work_request_logs(
     description="Lists work requests in a specified compartment."
 )
 def list_work_requests(
-    compartment_id: Annotated[str, "The compartment ID containing the work requests"]
+    compartment_id: Annotated[str, "The compartment ID containing the work requests"],
+    id: Annotated[Optional[str], "Filter by work request identifier"] = None,
+    status: Annotated[Optional[str], "Filter by work request status"] = None,
+    resource_id: Annotated[Optional[str], "Filter by affected resource identifier"] = None,
+    page: Annotated[Optional[str], "Page token for a single SDK list page"] = None,
+    limit: Annotated[Optional[int], "The limit of results"] = None,
+    sort_order: Annotated[Optional[str], "Sort order"] = None,
+    sort_by: Annotated[Optional[str], "Sort field"] = None,
+    opc_request_id: Annotated[Optional[str], "A unique Oracle-assigned identifier for the request"] = None,
 ):
     return _result_payload(
         _delegate(
             f"Error listing work requests for compartment {compartment_id}",
             list_work_requests_records,
             compartment_id=compartment_id,
+            id=id,
+            status=status,
+            resource_id=resource_id,
+            page=page,
+            limit=limit,
+            sort_order=sort_order,
+            sort_by=sort_by,
+            opc_request_id=opc_request_id,
         )
     )
 
@@ -1129,6 +1432,11 @@ def create_digital_twin_model(
         "The DTDL v3 digital twin model specification as a JSON object or JSON string",
     ],
     description: Annotated[Optional[str], "A short description of the digital twin model"] = None,
+    freeform_tags: Annotated[Optional[dict[str, str] | str], "Free-form tags as an object or JSON string"] = None,
+    defined_tags: Annotated[
+        Optional[dict[str, dict[str, Any]] | str],
+        "Defined tags as an object or JSON string",
+    ] = None,
     opc_retry_token: Annotated[Optional[str], "A retry token for safely retrying the request"] = None,
     opc_request_id: Annotated[Optional[str], "A unique Oracle-assigned identifier for the request"] = None,
 ):
@@ -1138,6 +1446,8 @@ def create_digital_twin_model(
             display_name=display_name,
             description=description,
             spec=_parse_json_input(spec, "spec"),
+            freeform_tags=_parse_json_input(freeform_tags, "freeform_tags"),
+            defined_tags=_parse_json_input(defined_tags, "defined_tags"),
         )
 
         kwargs = {"create_digital_twin_model_details": create_digital_twin_model_details}
@@ -1238,6 +1548,14 @@ def create_digital_twin_instance(
         Optional[str],
         "The URI of the digital twin model specification",
     ] = None,
+    connectivity_type: Annotated[
+        Optional[str],
+        "Digital twin connectivity type: DIRECT, INDIRECT, GATEWAY, or NONE",
+    ] = None,
+    gateways: Annotated[
+        Optional[list[str] | str],
+        "Gateway digital twin instance OCIDs for indirectly connected twins as an array or JSON string",
+    ] = None,
     freeform_tags: Annotated[Optional[dict[str, str] | str], "Free-form tags as an object or JSON string"] = None,
     defined_tags: Annotated[
         Optional[dict[str, dict[str, Any]] | str],
@@ -1256,6 +1574,8 @@ def create_digital_twin_instance(
             digital_twin_adapter_id=digital_twin_adapter_id,
             digital_twin_model_id=digital_twin_model_id,
             digital_twin_model_spec_uri=digital_twin_model_spec_uri,
+            connectivity_type=connectivity_type,
+            gateways=_parse_string_list_input(gateways, "gateways"),
             freeform_tags=_parse_json_input(freeform_tags, "freeform_tags"),
             defined_tags=_parse_json_input(defined_tags, "defined_tags"),
         )
@@ -1559,6 +1879,10 @@ def update_digital_twin_instance(
         Optional[str],
         "The URI of the digital twin model specification",
     ] = None,
+    gateways: Annotated[
+        Optional[list[str] | str],
+        "Gateway digital twin instance OCIDs for indirectly connected twins as an array or JSON string",
+    ] = None,
     freeform_tags: Annotated[Optional[dict[str, str] | str], "Free-form tags as an object or JSON string"] = None,
     defined_tags: Annotated[
         Optional[dict[str, dict[str, Any]] | str],
@@ -1582,6 +1906,7 @@ def update_digital_twin_instance(
             digital_twin_adapter_id=digital_twin_adapter_id,
             digital_twin_model_id=digital_twin_model_id,
             digital_twin_model_spec_uri=digital_twin_model_spec_uri,
+            gateways=_parse_string_list_input(gateways, "gateways"),
             freeform_tags=_parse_json_input(freeform_tags, "freeform_tags"),
             defined_tags=_parse_json_input(defined_tags, "defined_tags"),
         )
@@ -2577,6 +2902,20 @@ def get_digital_twin_adapter_full(
     digital_twin_adapter_id: Annotated[str, "The digital twin adapter OCID"],
 ):
     return _as_tool_result(get_digital_twin_adapter_record(digital_twin_adapter_id))
+
+
+@tool(
+    description="Return the full digital twin instance SDK payload for debugging and migration workflows."
+)
+def get_digital_twin_instance_full(
+    digital_twin_instance_id: Annotated[str, "The digital twin instance OCID"],
+    opc_request_id: Annotated[Optional[str], "A unique Oracle-assigned identifier for the request"] = None,
+):
+    kwargs = {"digital_twin_instance_id": digital_twin_instance_id}
+    if opc_request_id is not None:
+        kwargs["opc_request_id"] = opc_request_id
+    response = get_iot_client().get_digital_twin_instance(**kwargs)
+    return _as_tool_result(oci.util.to_dict(response.data))
 
 
 @tool(description="Return the control-plane and domain-context resources that explain how a twin is wired into OCI IoT.")

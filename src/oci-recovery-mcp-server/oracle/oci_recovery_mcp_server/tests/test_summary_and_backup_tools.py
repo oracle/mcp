@@ -410,6 +410,15 @@ def test_summary_scans_stop_at_their_deadline_and_say_so(monkeypatch):
     # half-scanned compartment for one that really contains a single database.
     assert redo.per_compartment[0].partial is True
     assert redo.per_compartment[0].total == 1
+    # The tenancy-wide totals are built separately from the per-compartment rows,
+    # and were left unflagged: truncated=True above an aggregate claiming to be whole.
+    assert redo.aggregated.partial is True
+
+    health = summarise_tools.summarize_protected_database_health(compartment_id="root")
+    assert health.truncated is True
+    assert health.compartment_ids_scanned == ["c1"]
+    assert health.per_compartment[0].partial is True
+    assert health.aggregated.partial is True
 
 
 def test_summary_scans_report_every_compartment_when_they_finish(monkeypatch):
@@ -438,6 +447,7 @@ def test_summary_scans_report_every_compartment_when_they_finish(monkeypatch):
     assert health.truncated is False
     assert health.compartment_ids_scanned == ["c1", "c2"]
     assert [c.partial for c in health.per_compartment] == [False, False]
+    assert health.aggregated.partial is False
 
 
 def _backup_destination_db(index: int) -> dict:
@@ -515,6 +525,65 @@ def test_backup_destination_reports_which_databases_have_backups(monkeypatch):
         include_last_backup_time=True,
     )
     assert summary.has_backups_db_names == ["DB1"]
+
+
+def test_backup_destination_counts_add_up_when_a_database_cannot_be_read(monkeypatch):
+    """
+    A database whose config cannot be read is left out of every count, total included.
+
+    It used to be marked seen before the read, so a failed GET still counted toward
+    total_databases while appearing in no list or per-type count beside it -- the
+    same mismatch the de-dupe exists to prevent -- and a duplicate of it later in
+    the scan was skipped rather than retried.
+    """
+    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_kwargs: [cid])
+    monkeypatch.setattr(
+        compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["home1"]
+    )
+    # No backup config on the rows, so each one needs a GET.
+    rows = [{"id": "db1", "dbName": "DB1"}, {"id": "db2", "dbName": "DB2"}, {"id": "db2", "dbName": "DB2"}]
+    db_client = MagicMock()
+    db_client.list_databases.return_value = _response(rows)
+    calls = {"db2": 0}
+
+    def _get_database(database_id):
+        """db1 reads fine; db2 fails on its first read and succeeds on the retry."""
+        if database_id == "db2":
+            calls["db2"] += 1
+            if calls["db2"] == 1:
+                raise RuntimeError("database lookup failed")
+            return _response(_backup_destination_db(2))
+        return _response(_backup_destination_db(1))
+
+    db_client.get_database.side_effect = _get_database
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+
+    summary = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="compartment",
+        region="us-ashburn-1",
+        include_last_backup_time=False,
+    )
+    assert calls["db2"] == 2  # the duplicate row was retried, not skipped
+    assert [it.database_id for it in summary.items] == ["db1", "db2"]
+    assert summary.total_databases == len(summary.items)
+    assert (
+        sum(summary.counts_by_destination_type.values()) + summary.unconfigured_count
+        == summary.total_databases
+    )
+
+    # When the database never reads, it is absent everywhere rather than only from the lists.
+    db_client.get_database.side_effect = lambda database_id: (
+        (_ for _ in ()).throw(RuntimeError("database lookup failed"))
+        if database_id == "db2"
+        else _response(_backup_destination_db(1))
+    )
+    summary = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="compartment",
+        region="us-ashburn-1",
+        include_last_backup_time=False,
+    )
+    assert [it.database_id for it in summary.items] == ["db1"]
+    assert summary.total_databases == 1
 
 
 def test_last_backup_time_compares_instants_not_their_text(monkeypatch):

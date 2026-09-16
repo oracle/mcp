@@ -209,6 +209,7 @@ def summarize_protected_database_health(
             alert=alert,
             unknown=unknown,
             total=total,
+            partial=deadline.expired,
         )
         if deadline.expired:
             logger.warning(
@@ -399,6 +400,7 @@ def summarize_protected_database_redo_status(
             disabled=disabled,
             unknown=unknown,
             total=total,
+            partial=deadline.expired,
         )
         if deadline.expired:
             logger.warning(
@@ -1089,10 +1091,13 @@ def summarize_protected_database_backup_destination(
                     continue
                 if sid in seen_database_ids:
                     continue
-                seen_database_ids.add(sid)
                 db_name_val = _get(s, "db_name", "dbName")
 
                 d_dict, dest_types, dest_ids = _backup_destinations_for(s, get_database=get_db)
+                # Marked seen only once its config is read. Marked before, a failed read
+                # still counted toward total_databases while appearing in no other count
+                # or list, and a later duplicate of it was skipped instead of retried.
+                seen_database_ids.add(sid)
 
                 auto_enabled = _is_auto_backup_enabled(d_dict)
                 # Configured strictly when auto-backup is enabled

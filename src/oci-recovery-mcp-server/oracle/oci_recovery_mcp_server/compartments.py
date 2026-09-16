@@ -14,13 +14,12 @@ cached; the tree walking on top of it is local.
 import logging
 import os
 import threading
-import uuid
 from typing import Any, Optional
 
 import cachetools
 import oci
 
-from . import auth, cache, clients, logging_setup
+from . import auth, cache, clients, logging_setup, telemetry
 
 
 def list_all_compartments_internal(only_one_page: bool, limit=100):
@@ -101,7 +100,7 @@ def _fetch_all_compartments(*, request_id: Optional[str] = None) -> list[Any]:
         list_compartments(compartment_id_in_subtree=True, access_level="ACCESSIBLE")
       and then build a parent->children index locally to BFS the descendants.
     """
-    rid = request_id or uuid.uuid4().hex
+    rid = request_id or telemetry._current_request_id()
 
     try:
         comps = list_all_compartments_internal(False)
@@ -212,7 +211,7 @@ def _expand_compartment_scope(
         return [root_compartment_id]
 
     cap = int(os.getenv("ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE", "200"))
-    rid = request_id or uuid.uuid4().hex
+    rid = request_id or telemetry._current_request_id()
 
     # ---------------- Primary: cached full-subtree listing ----------------
     try:
@@ -326,7 +325,7 @@ def _compartment_ids_for_tool(
     if not fetch_for_child_compartment:
         return [resolved_root]
 
-    rid = request_id or uuid.uuid4().hex
+    rid = request_id or telemetry._current_request_id()
 
     try:
         ids = _expand_compartment_scope(

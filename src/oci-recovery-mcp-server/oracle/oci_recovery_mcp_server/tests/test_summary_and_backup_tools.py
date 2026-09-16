@@ -514,7 +514,7 @@ def test_backup_destination_reports_which_databases_have_backups(monkeypatch):
     )
     db_client.get_database.return_value = _response(_backup_destination_db(1))
     # db1 has a backup; db2 has none.
-    db_client.list_backups.side_effect = lambda database_id: _response(
+    db_client.list_backups.side_effect = lambda database_id, **_kwargs: _response(
         [SimpleNamespace(time_ended="2026-09-01T00:00:00Z")] if database_id == "db1" else []
     )
     monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
@@ -546,7 +546,7 @@ def test_backup_destination_counts_add_up_when_a_database_cannot_be_read(monkeyp
     db_client.list_databases.return_value = _response(rows)
     calls = {"db2": 0}
 
-    def _get_database(database_id):
+    def _get_database(database_id, **_kwargs):
         """db1 reads fine; db2 fails on its first read and succeeds on the retry."""
         if database_id == "db2":
             calls["db2"] += 1
@@ -572,7 +572,7 @@ def test_backup_destination_counts_add_up_when_a_database_cannot_be_read(monkeyp
     )
 
     # When the database never reads, it is absent everywhere rather than only from the lists.
-    db_client.get_database.side_effect = lambda database_id: (
+    db_client.get_database.side_effect = lambda database_id, **_kwargs: (
         (_ for _ in ()).throw(RuntimeError("database lookup failed"))
         if database_id == "db2"
         else _response(_backup_destination_db(1))
@@ -789,6 +789,81 @@ def test_backup_destination_summary_stops_at_its_deadline(monkeypatch):
     assert summary.truncated is True
     # It did not walk all three homes before noticing the budget was spent.
     assert db_client.list_databases.call_count < 3
+
+
+def test_summary_deadlines_start_before_discovery(monkeypatch):
+    """
+    The budget starts when the tool does, so discovery is charged against it.
+
+    It used to start only after compartment expansion and, for the destination
+    summary, after one list_db_homes call per compartment in scope -- up to 200 calls
+    in a row the deadline never saw. Here the budget is spent before discovery, so
+    no DB Home lookup may be made and the result must say it is truncated.
+    """
+    order = []
+    monkeypatch.setattr(
+        compartments,
+        "_compartment_ids_for_tool",
+        lambda cid, **_k: order.append("expand") or ["c1", "c2", "c3"],
+    )
+    fetch_homes = MagicMock(return_value=["h1"])
+    monkeypatch.setattr(compartments, "_fetch_db_home_ids_for_compartment", fetch_homes)
+    monkeypatch.setattr(
+        app, "_Deadline", lambda *_a, **_k: order.append("deadline") or _ExpiresAfter(0)
+    )
+    db_client = MagicMock()
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+
+    summary = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="c1", region="us-ashburn-1", include_last_backup_time=False
+    )
+    assert order == ["deadline", "expand"]
+    fetch_homes.assert_not_called()
+    db_client.list_databases.assert_not_called()
+    assert summary.truncated is True
+
+    recovery_client = MagicMock()
+    monkeypatch.setattr(clients, "get_recovery_client", lambda *_a, **_k: recovery_client)
+    monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda cid, **_k: cid)
+    for tool in (
+        summarise_tools.summarize_protected_database_health,
+        summarise_tools.summarize_protected_database_redo_status,
+        summarise_tools.summarize_backup_space_used,
+    ):
+        order.clear()
+        tool(compartment_id="c1")
+        assert order == ["deadline", "expand"], tool.__name__
+
+
+def test_backup_destination_retries_its_per_database_reads_within_a_bound(monkeypatch):
+    """
+    get_database and list_backups are called with a short, bounded retry strategy.
+
+    Neither retries by default in the OCI SDK, so a single throttled or transient 5xx
+    response dropped that database from the summary. The SDK's own default strategy
+    is not a substitute: it retries for up to ten minutes, far past the tool deadline.
+    """
+    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_k: [cid])
+    monkeypatch.setattr(
+        compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["home1"]
+    )
+    db_client = MagicMock()
+    db_client.list_databases.return_value = _response([{"id": "db1", "dbName": "DB1"}])
+    db_client.get_database.return_value = _response(_backup_destination_db(1))
+    db_client.list_backups.return_value = _response([])
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+
+    summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="c1", region="us-ashburn-1", include_last_backup_time=True
+    )
+    strategy = summarise_tools._PER_DATABASE_RETRY_STRATEGY
+    assert db_client.get_database.call_args.kwargs["retry_strategy"] is strategy
+    assert db_client.list_backups.call_args.kwargs["retry_strategy"] is strategy
+    limits = {
+        type(checker).__name__: checker for checker in strategy.checkers.checkers
+    }
+    assert limits["LimitBasedRetryChecker"].max_attempts == 3
+    assert limits["TotalTimeExceededRetryChecker"].time_limit_seconds == 10
 
 
 def test_the_scanner_stops_between_requests_not_after_all_of_them():

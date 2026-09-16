@@ -188,6 +188,50 @@ class TestGetClientFactories:
         assert telemetry._MCP_ACTOR_ID_CONTEXT.get() == "unknown"
         assert telemetry._MCP_TOOL_ID_CONTEXT.get() == "unknown"
 
+    def test_a_tool_call_and_its_oci_calls_share_one_request_id(self, monkeypatch):
+        """
+        The tool_call events, the oci_call events and the opc-request-id all carry the
+        id the decorator generated.
+
+        Each used to mint its own: the decorator one, the tool body another, and any
+        client built without an explicit id a third. The logs then had nothing joining
+        a tool invocation to the OCI requests it made, which is the whole point of
+        logging both.
+        """
+        monkeypatch.setattr(telemetry, "_mcp_actor_id", lambda: "abcdef")
+        monkeypatch.setenv("ORACLE_MCP_INSTALLATION_ID", "installation-id")
+        monkeypatch.setattr(auth, "_config_and_signer", lambda region=None: ({}, None))
+        events = []
+        monkeypatch.setattr(
+            telemetry.logging_setup, "_log_event", lambda event, **kwargs: events.append((event, kwargs))
+        )
+
+        class FakeClient:
+            """A client whose one operation echoes back the request id it was given."""
+
+            def __init__(self, config, signer=None):
+                """Accept the config and signer the factory passes."""
+
+            def get_resource(self, **kwargs):
+                """Return the opc_request_id the wrapper injected."""
+                return kwargs["opc_request_id"]
+
+        @telemetry._tool_logger("list_protected_databases")
+        def fake_tool():
+            """Build a client the way a helper does -- with no request id -- and call it."""
+            return clients._make_client(FakeClient, client_name="recovery").get_resource()
+
+        opc_request_id = fake_tool()
+
+        ids = {kwargs["request_id"] for event, kwargs in events}
+        assert len(ids) == 1
+        (request_id,) = ids
+        assert {event for event, _ in events} == {"tool_call", "oci_call"}
+        assert opc_request_id.endswith("lpd" + telemetry._marker_fragment(request_id, 6))
+        # Outside a tool call there is nothing to correlate with, so each id is fresh.
+        assert telemetry._MCP_REQUEST_ID_CONTEXT.get() is None
+        assert telemetry._current_request_id() != telemetry._current_request_id()
+
     def test_oci_client_wrapper_skips_operations_without_opc_request_id(self):
         """
         An SDK operation that does not accept the kwarg is called without it, rather

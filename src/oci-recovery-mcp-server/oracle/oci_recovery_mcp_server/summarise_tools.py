@@ -9,7 +9,7 @@ single resource, which is why this is the only family that needs ``app._Deadline
 to bound how long that fan-out may run.
 """
 
-import uuid
+import functools
 from datetime import datetime, timezone
 from typing import Annotated, Any, Optional
 
@@ -65,7 +65,11 @@ def summarize_protected_database_health(
     or transitional).
     """
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
+        # Started before compartment and DB Home discovery, not after: on a wide scope
+        # discovery is itself a long run of sequential calls, and a budget that starts
+        # once it is done does not bound the call the client is waiting on.
+        deadline = app._Deadline()
         client = clients.get_recovery_client(region, request_id=request_id)
         comp_id = compartment_id or auth.get_tenancy()
         comp_ids = compartments._compartment_ids_for_tool(
@@ -81,7 +85,6 @@ def summarize_protected_database_health(
         scanned = 0
 
         per_compartment: list[dict] = []
-        deadline = app._Deadline()
         scanned_compartments: list[str] = []
 
         has_next_page = True
@@ -260,7 +263,11 @@ def summarize_protected_database_redo_status(
     is_redo_logs_shipped (true=enabled, false=disabled).
     """
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
+        # Started before compartment and DB Home discovery, not after: on a wide scope
+        # discovery is itself a long run of sequential calls, and a budget that starts
+        # once it is done does not bound the call the client is waiting on.
+        deadline = app._Deadline()
         client = clients.get_recovery_client(region, request_id=request_id)
         comp_id = compartment_id or auth.get_tenancy()
         comp_ids = compartments._compartment_ids_for_tool(
@@ -273,7 +280,6 @@ def summarize_protected_database_redo_status(
         disabled = 0
         unknown = 0
         per_compartment: list[dict] = []
-        deadline = app._Deadline()
         scanned_compartments: list[str] = []
 
         has_next_page = True
@@ -455,7 +461,11 @@ def summarize_backup_space_used(
     Returns: compartmentId, region, totalDatabasesScanned, sumBackupSpaceUsedInGBs.
     """
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
+        # Started before compartment and DB Home discovery, not after: on a wide scope
+        # discovery is itself a long run of sequential calls, and a budget that starts
+        # once it is done does not bound the call the client is waiting on.
+        deadline = app._Deadline()
         comp_id = compartments._resolve_compartment_id(compartment_id, default_to_tenancy=True)
         client = clients.get_recovery_client(region, request_id=request_id)
         comp_ids = compartments._compartment_ids_for_tool(
@@ -468,11 +478,6 @@ def summarize_backup_space_used(
         scanned = 0
         missing_metrics = 0
         per_compartment: list[dict] = []
-        # This tool reads one metric per protected database across every compartment in
-        # scope, so it has the same unbounded fan-out the health and redo summaries are
-        # already budgeted for. Without the budget a large tenancy turns one call into
-        # hundreds of sequential round trips, long past the point an MCP client waits.
-        deadline = app._Deadline()
         scanned_compartments: list[str] = []
 
         for each_comp in comp_ids:
@@ -918,6 +923,22 @@ def _backup_destinations_for(summary_row: Any, *, get_database) -> tuple[dict, l
     return record, types, list(dict.fromkeys([i for i in ids if i]))
 
 
+# The Database service operations read per database below (get_database, list_backups)
+# do not retry by default in the OCI SDK, so one throttled or transient 5xx response
+# would drop that database from the summary. The SDK's DEFAULT_RETRY_STRATEGY is no
+# answer on its own: it keeps going for up to 10 minutes, far past the tool deadline.
+# So: throttling, timeouts and transient service errors only, three attempts, and a
+# ceiling of a few seconds per read.
+_PER_DATABASE_RETRY_STRATEGY = oci.retry.RetryStrategyBuilder(
+    max_attempts_check=True,
+    max_attempts=3,
+    total_elapsed_time_check=True,
+    total_elapsed_time_seconds=10,
+    retry_max_wait_between_calls_seconds=4,
+    service_error_check=True,
+).get_retry_strategy()
+
+
 def _scan_available_databases(
     db_client,
     home_ids_by_compartment: dict[str, list[str]],
@@ -1029,7 +1050,11 @@ def summarize_protected_database_backup_destination(
     carrying counts, name lists and per-database detail.
     """
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
+        # Started before compartment and DB Home discovery, not after: on a wide scope
+        # discovery is itself a long run of sequential calls, and a budget that starts
+        # once it is done does not bound the call the client is waiting on.
+        deadline = app._Deadline()
         db_client = clients.get_database_client(region, request_id=request_id)
         if not compartment_id:
             compartment_id = auth.get_tenancy()
@@ -1044,13 +1069,12 @@ def summarize_protected_database_backup_destination(
         # NOTE: db_home_id is a single home; we do NOT expand it across compartments.
         home_ids_by_comp: dict[str, list[str]] = {}
         for each_comp in comp_ids:
+            if deadline.reached():
+                break
             home_ids_by_comp[each_comp] = (
                 [db_home_id] if db_home_id else compartments._fetch_db_home_ids_for_compartment(each_comp, region=region)
             )
 
-        # Two OCI calls per database on top of the compartment/home/page walk, so this
-        # is the heaviest fan-out of the four summaries and needs the same budget.
-        deadline = app._Deadline()
         db_summaries = _scan_available_databases(
             db_client,
             home_ids_by_comp,
@@ -1069,8 +1093,8 @@ def summarize_protected_database_backup_destination(
         unconfigured_names: list[str] = []
         has_backups_names: list[str] = []
 
-        get_db = db_client.get_database
-        list_bk = db_client.list_backups
+        get_db = functools.partial(db_client.get_database, retry_strategy=_PER_DATABASE_RETRY_STRATEGY)
+        list_bk = functools.partial(db_client.list_backups, retry_strategy=_PER_DATABASE_RETRY_STRATEGY)
 
         # Overlapping compartment scopes can return the same database more than once.
         # De-duplicating here rather than at the end is what keeps the response

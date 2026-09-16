@@ -10,7 +10,6 @@ for the target region, construct the SDK client, and wrap it so every call it
 makes is logged and carries this server's request id.
 """
 
-import uuid
 from typing import Any, Callable, Optional
 
 import oci
@@ -29,7 +28,7 @@ def _make_client(
     """Construct and wrap an OCI SDK client for the current call's credentials."""
     config, signer = auth._config_and_signer(region)
     client = ctor(config, signer=signer)
-    rid = request_id or uuid.uuid4().hex
+    rid = request_id or telemetry._current_request_id()
     return telemetry._wrap_oci_client(client, request_id=rid, client_name=client_name)
 
 

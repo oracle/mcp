@@ -9,7 +9,6 @@ tenancy's subscribed regions -- the list and get tool for each.
 """
 
 import re
-import uuid
 from typing import Annotated, Any, Optional
 
 import oci
@@ -91,7 +90,7 @@ def list_protected_databases(
     """
     try:
         # Keep tool behavior intact; only add correlation-id based logging via wrapped client
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
         client = clients.get_recovery_client(region, request_id=request_id)
 
         results: list[ProtectedDatabaseSummary] = []
@@ -319,7 +318,7 @@ def get_protected_database(
     a ProtectedDatabase model mapped from the OCI SDK response.
     """
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
         client = clients.get_recovery_client(region, request_id=request_id)
 
         # Optional request ID passthrough
@@ -496,7 +495,7 @@ def check_recovery_service_limits(
       GET /20190729/services/autonomous-recovery-service/limits/<limitName>/resourceAvailability
     """
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
         resolved_compartment_id = auth.get_tenancy()
         # No hard-coded fallback: limits are per region, so silently answering for
         # us-ashburn-1 when the region could not be resolved reports another region's
@@ -597,7 +596,7 @@ def fetch_regions_subscribed(
     so it does not narrow the lookup. When omitted, the server's own tenancy is
     used.
     """
-    request_id = uuid.uuid4().hex
+    request_id = telemetry._current_request_id()
     if not tenancy_id:
         tenancy_id = auth.get_tenancy()
     subscribed = regions._iam_subscribed_regions_with_status(request_id=request_id)
@@ -643,7 +642,7 @@ def list_protection_policies(
     a list of ProtectionPolicy models mapped from the OCI SDK response.
     """
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
         client = clients.get_recovery_client(region, request_id=request_id)
 
         results: list[ProtectionPolicy] = []
@@ -725,7 +724,7 @@ def get_protection_policy(
     a ProtectionPolicy model mapped from the OCI SDK response.
     """
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
         client = clients.get_recovery_client(region, request_id=request_id)
 
         kwargs = {}
@@ -787,7 +786,7 @@ def list_recovery_service_subnets(
     a list of RecoveryServiceSubnet models mapped from the OCI SDK response.
     """
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
         client = clients.get_recovery_client(region, request_id=request_id)
 
         results: list[RecoveryServiceSubnet] = []
@@ -895,7 +894,7 @@ def get_recovery_service_subnet(
     a RecoveryServiceSubnet model mapped from the OCI SDK response.
     """
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
         client = clients.get_recovery_client(region, request_id=request_id)
 
         kwargs = {}
@@ -1069,7 +1068,7 @@ def get_recovery_service_metrics(
         filter_clause = f'{{resourceId="{resource_id}"}}'
 
     # Build Monitoring query against Recovery metrics namespace
-    request_id = uuid.uuid4().hex
+    request_id = telemetry._current_request_id()
     monitoring_client = clients.get_monitoring_client(request_id=request_id)
     namespace = "oci_recovery_service"
     # Query format: MetricName[resolution]{filters}.aggregation()
@@ -1163,7 +1162,7 @@ def list_restore(
     ``page`` and ``limit`` only apply when it is turned off.
     """
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
         client = clients.get_work_request_client(region, request_id=request_id)
 
         def _is_restore_operation(operation: Optional[str]) -> bool:
@@ -1286,7 +1285,7 @@ def list_backups(
     from the raw SDK object for fields the model mapper leaves unset.
     """
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
         client = clients.get_database_client(region, request_id=request_id)
 
         def _to_dict(o):
@@ -1540,7 +1539,7 @@ def get_backup(
     Mirrors the simpler logic used in rcv_mcp_server/fast_server.py without additional enrichment.
     """
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
         client = clients.get_database_client(region, request_id=request_id)
         resp = client.get_backup(backup_id=backup_id)
         mapped = map_backup(resp.data)

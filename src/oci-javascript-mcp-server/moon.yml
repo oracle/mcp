@@ -4,10 +4,28 @@ workspace:
       - 'containerize'
 
 tasks:
+  compile:
+    description: 'Generates protobuf bindings and compiles the npm entry point'
+    type: 'build'
+    script: 'rm -rf dist && buf generate && tsc -p tsconfig.build.json'
+    inputs:
+      - 'src/**/*'
+      - '!src/generated/**/*'
+      - 'proto/**/*'
+      - 'buf.gen.yaml'
+      - 'tsconfig*.json'
+      - 'package.json'
+      - 'package-lock.json'
+    outputs:
+      - 'src/generated/**/*'
+      - 'dist/**/*.js'
+
   test:
     description: 'Runs unit and MCP integration tests with coverage'
     type: 'test'
     command: 'c8 node --no-node-snapshot --experimental-strip-types --test test/*.test.ts'
+    deps:
+      - 'compile'
     inputs:
       - 'src/**/*'
       - 'test/**/*'
@@ -17,6 +35,8 @@ tasks:
   check:
     description: 'Checks TypeScript types'
     command: 'tsc --noEmit'
+    deps:
+      - 'compile'
     inputs:
       - 'src/**/*'
       - 'test/**/*'
@@ -27,9 +47,14 @@ tasks:
   build:
     description: 'Builds the npm package tarball'
     type: 'build'
-    script: 'rm -rf dist && mkdir dist && npm pack --pack-destination dist'
+    script: 'rm -f dist/*.tgz && npm pack --pack-destination dist'
+    deps:
+      - 'compile'
     inputs:
       - 'src/**/*'
+      - 'proto/**/*'
+      - 'buf.gen.yaml'
+      - 'CHANGELOG.md'
       - 'README.md'
       - 'LICENSE.txt'
       - 'Containerfile'

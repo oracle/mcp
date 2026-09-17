@@ -18,9 +18,9 @@ import type {
   OciInvokePayload,
   OciReflectionManifest
 } from "./types.ts";
-import { fromJson, toJson } from "./json.ts";
+import { fromJson } from "./json.ts";
 import { DEFAULT_DECODE_LIMITS, DEFAULT_MAX_FRAME_BYTES } from "./protocol.ts";
-import { PublicError } from "./sandbox-common.ts";
+import { positiveIntegerEnv, PublicError } from "./sandbox-common.ts";
 
 const require = createRequire(import.meta.url);
 const packageJson = require("../package.json") as { name?: unknown; version?: unknown };
@@ -129,16 +129,18 @@ function loadDefaultSdk(): SdkBundle {
 function hostConfig(loadSdk: OciSdkLoader): Json {
   const provider = authenticationProvider(loadSdk);
   const userId = providerUserId(provider) ?? sessionTokenSubject(provider);
-  return toJson({
-    tenancyId: callOptional(provider, "getTenantId"),
+  const tenancyId = callOptional(provider, "getTenantId");
+  const fingerprint = callOptional(provider, "getFingerprint");
+  return {
+    ...(tenancyId === undefined ? {} : { tenancyId }),
     userId,
-    fingerprint: callOptional(provider, "getFingerprint"),
+    ...(fingerprint === undefined ? {} : { fingerprint }),
     region: callOptional(provider, "getRegion")?.regionId ?? callOptional(provider, "getRegionId") ?? null,
     principal: userId ? {
       type: userId.startsWith("ocid1.user.") ? "user" : "unknown",
       id: userId
     } : null
-  });
+  };
 }
 
 function providerUserId(provider: any): string | null {
@@ -241,7 +243,7 @@ function discover(loadSdk: OciSdkLoader, payload: OciDiscoverPayload): Json {
   const { sdk } = loadSdk();
 
   if (!payload.service) {
-    return toJson({ type: "index", services: serviceNames(sdk) });
+    return { type: "index", services: serviceNames(sdk) };
   }
 
   validateIdentifier(payload.service, "service");
@@ -253,7 +255,7 @@ function discover(loadSdk: OciSdkLoader, payload: OciDiscoverPayload): Json {
   const clients = clientNames(serviceModule);
 
   if (!payload.client) {
-    return toJson({ type: "service", service: payload.service, clients });
+    return { type: "service", service: payload.service, clients };
   }
 
   validateIdentifier(payload.client, "client");
@@ -265,12 +267,12 @@ function discover(loadSdk: OciSdkLoader, payload: OciDiscoverPayload): Json {
   const operations = operationNames(payload.service, ClientClass);
 
   if (!payload.operation) {
-    return toJson({
+    return {
       type: "client",
       service: payload.service,
       client: payload.client,
       operations
-    });
+    };
   }
 
   validateIdentifier(payload.operation, "operation");
@@ -288,7 +290,7 @@ function discover(loadSdk: OciSdkLoader, payload: OciDiscoverPayload): Json {
     payload.operation
   );
 
-  return toJson({
+  return {
     type: "operation",
     service: payload.service,
     client: payload.client,
@@ -296,7 +298,7 @@ function discover(loadSdk: OciSdkLoader, payload: OciDiscoverPayload): Json {
     requestShape: operationDetails?.requestShape
       ?? "Pass the OCI JavaScript SDK request object as a plain object.",
     ...(operationDetails ?? {})
-  });
+  };
 }
 
 function serviceNames(sdk: Record<string, any>): string[] {
@@ -363,7 +365,7 @@ function isSdkApiOperation(packageRoot: string | null, operation: string): boole
 function discoverOperationShape(
   service: string,
   operation: string
-): Record<string, unknown> | null {
+): JsonObject | null {
   const packageRoot = sdkServicePackageRoot(service);
   if (!packageRoot) {
     return null;
@@ -482,7 +484,7 @@ function blockBody(source: string, startPattern: RegExp): string | null {
   return null;
 }
 
-function discoverResponseShape(packageRoot: string, operation: string): Record<string, unknown> | null {
+function discoverResponseShape(packageRoot: string, operation: string): JsonObject | null {
   const clientSourcePath = join(packageRoot, "lib", "client.js");
   if (!existsSync(clientSourcePath)) {
     return null;
@@ -514,8 +516,8 @@ function discoverResponseShape(packageRoot: string, operation: string): Record<s
 function requestExample(
   requestFields: FieldDiscovery[],
   models: Record<string, ModelDiscovery>
-): Record<string, unknown> {
-  const example: Record<string, unknown> = {};
+): JsonObject {
+  const example: JsonObject = {};
   for (const field of requestFields.filter(field => field.required)) {
     example[field.name] = exampleForField(field, models, 0);
   }
@@ -526,11 +528,11 @@ function exampleForField(
   field: FieldDiscovery,
   models: Record<string, ModelDiscovery>,
   depth: number
-): unknown {
+): Json {
   const firstModel = field.modelRefs?.[0];
   if (firstModel && depth < MAX_DISCOVERY_MODEL_DEPTH) {
     const modelFields = models[firstModel]?.fields ?? [];
-    const value: Record<string, unknown> = {};
+    const value: JsonObject = {};
     for (const modelField of modelFields.filter(modelField => modelField.required)) {
       value[modelField.name] = exampleForField(modelField, models, depth + 1);
     }
@@ -798,9 +800,6 @@ function consumeResponseBudget(value: unknown, budget: ResponseBudget): void {
       + "Narrow the request or use pagination."
     );
   }
-  if (typeof value === "function" || typeof value === "symbol") {
-    throw new PublicError(`OCI response contained unsupported ${typeof value} value`);
-  }
   if (typeof value === "string") {
     consumeResponseBytes(budget, Buffer.byteLength(value, "utf8"));
   } else if (value instanceof Uint8Array) {
@@ -824,18 +823,4 @@ function consumeResponseBytes(
       + "Pass a smaller limit or narrow the request."
     );
   }
-}
-
-function positiveIntegerEnv(name: string, fallback: number): number {
-  const value = integerEnv(name, fallback);
-  return value > 0 ? value : fallback;
-}
-
-function integerEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (raw === undefined) {
-    return fallback;
-  }
-  const value = Number.parseInt(raw, 10);
-  return Number.isFinite(value) ? value : fallback;
 }

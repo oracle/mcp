@@ -5,6 +5,7 @@
  */
 
 import { z } from "zod";
+import { DEFAULT_MAX_FRAME_BYTES } from "./protocol.ts";
 import {
   appendCapped,
   formatError,
@@ -25,7 +26,8 @@ import type {
   Json,
   JsonObject,
   OciReflectionManifest,
-  SandboxResult
+  SandboxResult,
+  WorkerChannelLimits
 } from "./types.ts";
 
 const MAX_RESULT_BYTES = positiveIntegerEnv("OCI_JAVASCRIPT_MAX_RESULT_BYTES", 1024 * 1024);
@@ -35,7 +37,9 @@ const MAX_HOST_RPC_REQUEST_BYTES = positiveIntegerEnv(
 );
 const MAX_HOST_RPC_CALLS = positiveIntegerEnv("OCI_JAVASCRIPT_MAX_HOST_RPC_CALLS", 100);
 const MAX_HOST_RPC_IN_FLIGHT = positiveIntegerEnv("OCI_JAVASCRIPT_MAX_HOST_RPC_IN_FLIGHT", 4);
-const PROVIDER_TERMINATION_TIMEOUT_MS = 6000;
+const MAX_PROTOCOL_RESULT_BYTES = DEFAULT_MAX_FRAME_BYTES - 64 * 1024;
+const DEFAULT_PROVIDER_TERMINATION_TIMEOUT_MS = 6000;
+const MAX_PROVIDER_TERMINATION_TIMEOUT_MS = 60_000;
 const PROVIDER_RESULT_SCHEMA = z.object({
   result: z.unknown(),
   error: z.object({ message: z.string().min(1) }).passthrough().nullable(),
@@ -77,6 +81,7 @@ export async function runJavaScript(
   };
   const abortController = new AbortController();
   const { isolationProvider, reflectionManifest } = options;
+  const channelLimits = workerChannelLimits();
 
   let execution: IsolationExecution | undefined;
   let outcome: SandboxResult | undefined;
@@ -90,7 +95,8 @@ export async function runJavaScript(
         request,
         abortController.signal
       ),
-      reflectionManifest
+      reflectionManifest,
+      channelLimits
     }));
     const result = await withDeadline(
       execution.result,
@@ -105,20 +111,41 @@ export async function runJavaScript(
     const completedWithPendingCalls = outcome?.exitCode === 0
       && rpcState.pendingCalls.size > 0;
     rpcState.accepting = false;
+    const pendingCalls = [...rpcState.pendingCalls];
     abortController.abort();
-    if (execution) {
-      const cleanupError = await terminateExecution(execution);
-      if (cleanupError) {
-        outcome = providerFailure(cleanupError, "isolation provider cleanup failed");
-      }
+    const cleanupDeadlineMs = Date.now() + (
+      execution?.terminationTimeoutMs ?? DEFAULT_PROVIDER_TERMINATION_TIMEOUT_MS
+    );
+    const [cleanupError] = await Promise.all([
+      execution
+        ? terminateExecution(execution, cleanupDeadlineMs)
+        : Promise.resolve(undefined),
+      drainPendingCalls(pendingCalls, cleanupDeadlineMs)
+    ]);
+    if (cleanupError) {
+      outcome = providerFailure(cleanupError, "isolation provider cleanup failed");
     }
-    await Promise.allSettled([...rpcState.pendingCalls]);
     if (completedWithPendingCalls && outcome?.exitCode === 0) {
       outcome = workerFailure("JavaScript completed with unawaited OCI calls");
     }
   }
 
   return outcome ?? providerFailure("isolation provider returned no result");
+}
+
+function workerChannelLimits(): WorkerChannelLimits {
+  const frameWithHeaderBytes = DEFAULT_MAX_FRAME_BYTES + 4;
+  const maxBudgetedFrames = Math.floor(Number.MAX_SAFE_INTEGER / frameWithHeaderBytes);
+  const maxRpcMessages = Math.min(MAX_HOST_RPC_CALLS, maxBudgetedFrames - 4);
+  const maxAcceptedMessages = maxRpcMessages + 4;
+  return Object.freeze({
+    maxFrameBytes: DEFAULT_MAX_FRAME_BYTES,
+    maxIngressBytes: maxAcceptedMessages * frameWithHeaderBytes,
+    maxAcceptedMessages,
+    maxLogBytes: MAX_STDOUT_BYTES + MAX_STDERR_BYTES,
+    maxEgressBytes: (maxRpcMessages + 2) * frameWithHeaderBytes,
+    maxResultBytes: Math.min(MAX_RESULT_BYTES, MAX_PROTOCOL_RESULT_BYTES)
+  });
 }
 
 function validateExecution(value: unknown): IsolationExecution {
@@ -132,17 +159,28 @@ function validateExecution(value: unknown): IsolationExecution {
     || (typeof result !== "object" && typeof result !== "function")
     || typeof (result as { then?: unknown }).then !== "function"
     || typeof record.terminate !== "function"
+    || (
+      record.terminationTimeoutMs !== undefined
+      && (
+        !Number.isSafeInteger(record.terminationTimeoutMs)
+        || (record.terminationTimeoutMs as number) < 1
+        || (record.terminationTimeoutMs as number) > MAX_PROVIDER_TERMINATION_TIMEOUT_MS
+      )
+    )
   ) {
     throw new Error("isolation provider returned an invalid execution handle");
   }
   return value as IsolationExecution;
 }
 
-async function terminateExecution(execution: IsolationExecution): Promise<unknown | undefined> {
+async function terminateExecution(
+  execution: IsolationExecution,
+  cleanupDeadlineMs: number
+): Promise<unknown | undefined> {
   try {
     await withDeadline(
-      Promise.resolve().then(() => execution.terminate()),
-      PROVIDER_TERMINATION_TIMEOUT_MS
+      Promise.resolve().then(() => execution.terminate(cleanupDeadlineMs)),
+      remainingMs(cleanupDeadlineMs)
     );
     return undefined;
   } catch (error) {
@@ -150,22 +188,40 @@ async function terminateExecution(execution: IsolationExecution): Promise<unknow
   }
 }
 
+async function drainPendingCalls(
+  pendingCalls: Promise<Json>[],
+  cleanupDeadlineMs: number
+): Promise<void> {
+  try {
+    await withDeadline(Promise.allSettled(pendingCalls), remainingMs(cleanupDeadlineMs));
+  } catch {
+    // The individual promises retain rejection observers after the shared tail expires.
+  }
+}
+
 function validateProviderResult(value: unknown): SandboxResult {
   try {
     const record = PROVIDER_RESULT_SCHEMA.parse(value);
-    const result = copyJson(record.result, "result", MAX_RESULT_BYTES);
-    const error = record.error === null
-      ? null
-      : copyJson(record.error, "error", MAX_RESULT_BYTES) as SandboxResult["error"];
+    const result = copyJson(record.result, "result");
+    const error = copyJson(record.error, "error");
+    const terminalBytes = result.bytes + error.bytes;
+    if (terminalBytes > MAX_RESULT_BYTES) {
+      throw new Error(
+        `terminal result was ${terminalBytes} bytes, exceeding limit ${MAX_RESULT_BYTES} bytes`
+      );
+    }
     assertByteLimit("stdout", record.stdout, MAX_STDOUT_BYTES);
     assertByteLimit("stderr", record.stderr, MAX_STDERR_BYTES);
-    if ((record.exitCode === 0) !== (error === null) || (record.timedOut && !error)) {
+    if (
+      (record.exitCode === 0) !== (error.value === null)
+      || (record.timedOut && error.value === null)
+    ) {
       throw new Error("exitCode, error, and timedOut fields are inconsistent");
     }
 
     return {
-      result,
-      error,
+      result: result.value,
+      error: error.value as SandboxResult["error"],
       stdout: record.stdout,
       stderr: record.stderr,
       exitCode: record.exitCode,
@@ -178,7 +234,7 @@ function validateProviderResult(value: unknown): SandboxResult {
   }
 }
 
-function copyJson(value: unknown, label: string, maxBytes: number): Json {
+function copyJson(value: unknown, label: string): { value: Json; bytes: number } {
   let encoded: string | undefined;
   try {
     encoded = JSON.stringify(value, (_key, item: unknown) => {
@@ -199,11 +255,10 @@ function copyJson(value: unknown, label: string, maxBytes: number): Json {
   if (!encoded) {
     throw new Error(`${label} must be JSON-compatible`);
   }
-  const bytes = Buffer.byteLength(encoded, "utf8");
-  if (bytes > maxBytes) {
-    throw new Error(`${label} was ${bytes} bytes, exceeding limit ${maxBytes} bytes`);
-  }
-  return JSON.parse(encoded) as Json;
+  return {
+    value: JSON.parse(encoded) as Json,
+    bytes: Buffer.byteLength(encoded, "utf8")
+  };
 }
 
 function assertByteLimit(label: string, value: string, maxBytes: number): void {
@@ -213,11 +268,15 @@ function assertByteLimit(label: string, value: string, maxBytes: number): void {
 }
 
 function remainingDeadlineMs(deadlineMs: number): number {
-  const remainingMs = Math.ceil(deadlineMs - Date.now());
-  if (remainingMs <= 0) {
+  const value = remainingMs(deadlineMs);
+  if (value <= 0) {
     throw new Error("sandbox run deadline exceeded");
   }
-  return remainingMs;
+  return value;
+}
+
+function remainingMs(deadlineMs: number): number {
+  return Math.ceil(deadlineMs - Date.now());
 }
 
 async function invokeHostRpc(
@@ -268,7 +327,7 @@ async function invokeHostRpc(
       () => state.pendingCalls.delete(hostRpcPromise),
       () => state.pendingCalls.delete(hostRpcPromise)
     );
-    const value = await withDeadline(hostRpcPromise, remainingMs);
+    const value = await withAbortDeadline(hostRpcPromise, signal, remainingMs);
     if (!state.accepting) {
       return rpcEnvelopeError("sandbox run deadline exceeded");
     }
@@ -278,6 +337,36 @@ async function invokeHostRpc(
   } finally {
     state.inFlight -= 1;
   }
+}
+
+function withAbortDeadline<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+  timeoutMs: number
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", abort);
+      callback();
+    };
+    const abort = () => finish(() => reject(new Error("sandbox run deadline exceeded")));
+    const timeout = setTimeout(abort, timeoutMs);
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) {
+      abort();
+      return;
+    }
+    promise.then(
+      value => finish(() => resolve(value)),
+      error => finish(() => reject(error))
+    );
+  });
 }
 
 function rpcEnvelopeError(error: string | JsonObject): Json {

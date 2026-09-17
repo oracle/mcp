@@ -8,22 +8,31 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { PodmanIsolationProvider } from "./isolation/podman.ts";
+import { createIsolationProvider } from "./isolation/provider-factory.ts";
 import { createOciReflectionManifest, createOciSdkHostRpc } from "./oci-host.ts";
 import { runJavaScript } from "./sandbox.ts";
-import type { JsonObject } from "./types.ts";
+import type {
+  HostRpcHandler,
+  IsolationProvider,
+  JsonObject,
+  OciReflectionManifest
+} from "./types.ts";
+
+export async function startServer(options: {
+  isolationProvider?: IsolationProvider;
+  hostRpc?: HostRpcHandler;
+  reflectionManifest?: OciReflectionManifest;
+} = {}): Promise<void> {
 
 const MAX_CONCURRENT_TOOL_CALLS = positiveIntegerEnv(
   "OCI_JAVASCRIPT_MAX_CONCURRENT_TOOL_CALLS",
   4
 );
-const isolationProvider = new PodmanIsolationProvider({
-  cliPath: process.env.OCI_JAVASCRIPT_PODMAN_CLI,
-  image: process.env.OCI_JAVASCRIPT_PODMAN_IMAGE
-});
-const hostRpc = createOciSdkHostRpc();
-let reflectionManifest: ReturnType<typeof createOciReflectionManifest> | undefined;
+const isolationProvider = options.isolationProvider ?? await createIsolationProvider();
+const hostRpc = options.hostRpc ?? createOciSdkHostRpc();
+let reflectionManifest = options.reflectionManifest;
 const DEFAULT_TIMEOUT_SECONDS = 30;
 const MIN_TIMEOUT_SECONDS = 1;
 const MAX_TIMEOUT_SECONDS = 120;
@@ -156,4 +165,9 @@ function positiveIntegerEnv(name: string, fallback: number): number {
   }
   const value = Number.parseInt(raw, 10);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  await startServer();
 }

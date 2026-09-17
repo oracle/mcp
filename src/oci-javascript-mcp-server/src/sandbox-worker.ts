@@ -5,6 +5,8 @@
  * https://oss.oracle.com/licenses/upl.
  */
 
+import { takeCoverage } from "node:v8";
+
 import {
   DEFAULT_DECODE_LIMITS,
   FrameDecoder,
@@ -31,6 +33,7 @@ const decoder = new FrameDecoder({
 const pendingRpc = new Map<number, PendingRpc>();
 let nextRpcId = 1;
 let running = false;
+let terminal = false;
 
 send("health", { status: "ready" });
 process.stdin.on("data", chunk => {
@@ -45,18 +48,25 @@ process.stdin.on("data", chunk => {
   }
 });
 process.stdin.on("end", () => {
+  if (terminal) {
+    return;
+  }
   try {
     decoder.end();
   } catch (error) {
     fatal(error);
     return;
   }
+  terminal = true;
   rejectPending(new Error("sandbox host channel closed"));
   process.exitCode = 1;
 });
 process.stdin.resume();
 
 async function handleMessage(message: JsonObject): Promise<void> {
+  if (terminal) {
+    return;
+  }
   if (message.type === "execute") {
     assertExactFields(message, [
       "version",
@@ -106,8 +116,10 @@ async function handleMessage(message: JsonObject): Promise<void> {
 
   if (message.type === "cancel") {
     assertExactFields(message, ["version", "type"]);
+    terminal = true;
     rejectPending(new Error("sandbox execution cancelled"));
-    process.exit(124);
+    exitWorker(124);
+    return;
   }
 
   throw new ProtocolError(`unsupported host message type '${String(message.type)}'`);
@@ -163,20 +175,40 @@ function send(type: string, fields: JsonObject = {}): void {
 }
 
 function sendAndExit(type: string, fields: JsonObject, exitCode: number): void {
+  if (terminal) {
+    return;
+  }
+  terminal = true;
+  if (process.env.NODE_V8_COVERAGE) {
+    try {
+      takeCoverage();
+    } catch {
+      // Coverage collection must never affect the worker protocol result.
+    }
+  }
   process.stdout.write(
     encodeFrame(protocolMessage(type, fields)),
-    () => process.exit(exitCode)
+    () => exitWorker(exitCode)
   );
 }
 
 function fatal(_error: unknown): void {
   try {
-    send("protocol_error", { error: { message: "sandbox protocol failure" } });
+    sendAndExit(
+      "protocol_error",
+      { error: { message: "sandbox protocol failure" } },
+      70
+    );
   } catch {
     // The channel may already be unusable.
+    exitWorker(70);
   }
   rejectPending(new Error("sandbox protocol failure"));
-  process.exit(70);
+}
+
+function exitWorker(exitCode: number): void {
+  process.exitCode = exitCode;
+  process.stdin.destroy();
 }
 
 function rejectPending(error: Error): void {

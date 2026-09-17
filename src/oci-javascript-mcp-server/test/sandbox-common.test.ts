@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   appendCapped,
+  CappedUtf8Accumulator,
   formatError,
   formatPublicOciError,
   isTimeoutError,
@@ -41,6 +42,31 @@ test("sandbox common helpers enforce deadlines and numeric limits", async () => 
 test("sandbox common helpers cap UTF-8 output", () => {
   assert.equal(appendCapped("ab", "cd", 4), "abcd");
   assert.equal(Buffer.byteLength(appendCapped("ab", "cdef", 4), "utf8"), 4);
+
+  const output = new CappedUtf8Accumulator(1024 * 1024);
+  assert.equal(output.append("x".repeat(1024 * 1024)), 1024 * 1024);
+  assert.equal(output.capped, true);
+  assert.equal(output.retainedWrites, 1);
+  for (let index = 0; index < 10_000; index += 1) {
+    assert.equal(output.append("z"), 1);
+  }
+  assert.equal(output.retainedWrites, 1);
+  assert.equal(output.retainedBytes, 1024 * 1024);
+
+  const multibyte = new CappedUtf8Accumulator(5);
+  multibyte.append("🙂");
+  multibyte.append("🙂");
+  assert.equal(multibyte.text, "🙂");
+  assert.equal(multibyte.retainedBytes, 4);
+  assert.equal(multibyte.capped, true);
+
+  assert.throws(() => new CappedUtf8Accumulator(-1), /non-negative safe integer/);
+  assert.throws(() => new CappedUtf8Accumulator(Number.NaN), /non-negative safe integer/);
+  const empty = new CappedUtf8Accumulator(0);
+  assert.equal(empty.append(""), 0);
+  assert.equal(empty.append("not-retained"), 12);
+  assert.equal(empty.text, "");
+  assert.equal(empty.capped, true);
 });
 
 test("sandbox common helpers keep only allowlisted public OCI error details", () => {
@@ -89,4 +115,35 @@ test("sandbox common helpers keep only allowlisted public OCI error details", ()
   assert.deepEqual(formatError({ name: "NamedFailure" }), { message: "NamedFailure", name: "NamedFailure" });
   assert.deepEqual(formatError({}), { message: "OCI call failed" });
   assert.deepEqual(formatError("plain failure"), { message: "plain failure" });
+
+  const responseOnly = Object.assign(new Error("raw failure"), {
+    response: {
+      status: 429,
+      headers: { "opc-request-id": "response-request-id" }
+    }
+  });
+  assert.deepEqual(formatPublicOciError(responseOnly), {
+    message: "OCI call failed",
+    statusCode: 429,
+    opcRequestId: "response-request-id"
+  });
+
+  const hostileGetters = {
+    get message() { throw new Error("secret message getter"); },
+    get name() { throw new Error("secret name getter"); },
+    statusCode: Number.POSITIVE_INFINITY,
+    code: 42n,
+    response: {
+      headers: {
+        get() { throw new Error("secret header getter"); }
+      }
+    },
+    toString() { return "SafeFailure"; }
+  };
+  assert.deepEqual(formatError(hostileGetters), {
+    message: "SafeFailure",
+    code: "42",
+    statusCode: "Infinity"
+  });
+  assert.equal(JSON.stringify(formatPublicOciError(hostileGetters)).includes("secret"), false);
 });

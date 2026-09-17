@@ -69,17 +69,29 @@ export type OciDiscoverPayload = {
 
 export type IsolationHostRpc = (request: unknown) => Promise<Json>;
 
+export type WorkerChannelLimits = Readonly<{
+  maxFrameBytes: number;
+  maxIngressBytes: number;
+  maxAcceptedMessages: number;
+  maxLogBytes: number;
+  maxEgressBytes: number;
+  maxResultBytes: number;
+}>;
+
 export type IsolationRunOptions = {
   deadlineMs: number;
   signal: AbortSignal;
   hostRpc: IsolationHostRpc;
   reflectionManifest?: OciReflectionManifest;
+  channelLimits: WorkerChannelLimits;
 };
 
 export interface IsolationExecution {
   readonly result: Promise<unknown>;
+  /** Provider-requested cleanup allowance, bounded by the trusted host. */
+  readonly terminationTimeoutMs?: number;
   /** Idempotently stop execution and resolve after provider resources are released. */
-  terminate(): Promise<void>;
+  terminate(cleanupDeadlineMs?: number): Promise<void>;
 }
 
 export interface IsolationProvider {

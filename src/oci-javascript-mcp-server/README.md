@@ -5,11 +5,11 @@ through a trusted host bridge. The sandbox receives an SDK-like `oci` binding,
 but never receives OCI credentials, the real SDK, Node built-ins, filesystem
 access, environment variables, or a network API.
 
-> **Security:** Podman is the only implemented isolation provider. On Linux, a
-> normal Podman container shares the host kernel and is not a VM boundary. The
-> deployment is responsible for selecting a Podman backend and surrounding
-> controls appropriate to its threat model; the MCP server does not perform
-> provider admission.
+> **Security:** Podman remains the compatibility default and shares the host
+> kernel. The optional `kubernetes` provider has explicit `local-development`,
+> `in-cluster`, and `kata-in-cluster` profiles. The first two provide container
+> isolation only. The Kata profile is a proof of concept, not proof of a VM
+> boundary; real-provider evidence and a current security review remain required.
 
 ## Quick start
 
@@ -53,6 +53,22 @@ is not appropriate. The default runner image is
 nonstandard Podman executable path. The provider invokes the CLI directly with
 fixed arguments and never through a shell. There is no process fallback.
 
+`OCI_JAVASCRIPT_ISOLATION_PROVIDER` accepts exactly `podman` or `kubernetes`;
+omission retains Podman. Kubernetes additionally requires
+`OCI_JAVASCRIPT_KUBERNETES_PROFILE` set to exactly `local-development`,
+`in-cluster`, or `kata-in-cluster`. Selection is trusted startup configuration,
+never MCP input, and failure never falls back to another provider, profile, or
+credential source. See the [Kubernetes profile guide](docs/kubernetes-isolation-profiles.md)
+for the complete provider matrix, configuration, preflight behavior, local
+cluster workflow, and versioned assets. Kata-specific deployment evidence is in
+the [Kata POC guide](docs/kata-kubernetes-poc.md).
+For the verified Rancher Desktop `in-cluster` workflow, including image pinning,
+host-only OCI Secret synchronization, and Inspector connection, see the
+[local Kubernetes in-cluster setup guide](docs/kubernetes-local-in-cluster-setup.md).
+
+After publication, install and configure the `oci-javascript-mcp-server`
+command instead of invoking `node` directly.
+
 ## Tools
 
 ### `run_javascript`
@@ -61,6 +77,23 @@ Runs `code` with an optional timeout of 1–120 seconds (default 30). The final
 expression becomes `result`; logs, errors, exit status, and timeout state are
 returned separately. Every OCI call must be awaited; the host aborts outstanding
 calls and rejects a run that finishes while OCI work is still pending.
+
+The timeout is the absolute execution deadline. When execution finishes or that
+deadline expires, the host stops accepting OCI bridge work and aborts the run,
+then terminates the provider and drains a snapshot of pending OCI RPC promises
+concurrently. Both use one provider-specific, host-clamped cleanup tail; their
+allowances never accumulate serially. A never-settling OCI request therefore
+cannot delay the MCP result beyond the execution deadline plus that one tail.
+Provider cleanup failure remains authoritative, while a late OCI completion is
+observed internally and cannot change or republish the finalized result.
+
+The worker channel accepts one `health` transition before normal traffic and
+enters an irreversible terminal phase as soon as it accepts a result. RPC IDs
+must be positive, safe, and unique for the execution; terminal acceptance
+revokes queued RPC replies synchronously. Per-execution cumulative ingress,
+accepted-message, log, egress, frame, and result budgets bound sustained valid
+traffic as well as malformed input, and one ordered writer applies the egress
+budget while honoring transport backpressure.
 
 Use the injected binding like the OCI JavaScript SDK:
 
@@ -76,6 +109,10 @@ Static operations, constructed clients, per-client `region`, SDK pagination
 fields, and shallow `Object.keys` reflection are supported. Only API operations
 backed by SDK request types are exposed; arbitrary endpoints, credentials,
 signers, retry configuration, pagination helpers, and local utilities are not.
+Trusted-host OCI clients use the SDK no-retry policy, an explicitly disabled
+client circuit breaker, and the run's abort signal. Guest code cannot override
+retry or circuit-breaker policy; after a transient failure, issue a new complete
+execution when appropriate.
 
 Structured results are limited to 1 MiB by default. Set
 `OCI_JAVASCRIPT_MAX_RESULT_BYTES` to a positive byte count to change the limit;
@@ -89,12 +126,18 @@ not as the default way to call OCI.
 
 ## Architecture
 
+The [formal architecture and isolation design](docs/architecture-and-isolation-design.md)
+consolidates the MCP server, OCI broker, provider contract, Kubernetes engine,
+Kata profile layer, trust model, evidence gates, and open design decisions.
+
 ```text
 MCP client
   -> trusted stdio server
        -> OCI broker -> OCI SDK + host credentials -> OCI APIs
-       -> Podman isolation provider
-            -> locked-down, credential-free container
+       -> selected isolation provider
+            -> Podman container (compatibility default), or fresh Kubernetes pod
+                 -> standard runtime (local/in-cluster), or reviewed Kata RuntimeClass
+            -> locked-down, credential-free runner
                  -> fresh Node worker
                       -> isolated-vm V8 isolate
                            -> user JavaScript + injected oci proxy
@@ -109,7 +152,7 @@ the runtime backend.
 
 ## Security model
 
-- Every call receives a fresh locked-down container, worker, and isolate.
+- Every call receives a fresh locked-down provider boundary, worker, and isolate.
 - Podman runs with no network, a read-only root filesystem, no capabilities,
   `no-new-privileges`, a non-root user, and CPU, memory, process, file, and
   temporary-filesystem limits.
@@ -126,18 +169,57 @@ can cross a shared-kernel container boundary. Deployments requiring a VM-grade
 boundary must supply that boundary outside the MCP server and retain
 conservative mounts and network policy.
 
+Every Kubernetes profile uses the same fixed non-root security context, no token
+or service links, no host namespace or owner reference, and one bounded
+memory-backed `/tmp`. CPU, memory, and ephemeral-storage requests must equal
+their limits and stay within the documented reviewed ranges; `/tmp` must also
+stay within its documented range. The example admission policies use CEL
+quantity bounds so every documented value is accepted without a synchronized
+policy edit. In-cluster profiles require digest-pinned
+images, separate namespaces, fail-closed exact RBAC checks, rejection of the
+reviewed admission variants, and an independent cleanup-only reconciler. Only
+`kata-in-cluster` adds a preflighted RuntimeClass/handler. Kubernetes and raw
+exec errors remain trusted diagnostics and are never copied into MCP result
+fields.
+
+Cluster-scoped preflight reads name exactly the configured execution Namespace
+and, for Kata, RuntimeClass; the example ClusterRoles apply matching
+`resourceNames`, while generated pod operations remain namespace-scoped.
+Admission evidence is reported only as `reviewed-variants-rejected` or
+`unverified`, and the exact deployed policy revision remains explicitly
+unverified. During cleanup, exec-channel stop and zero-grace pod deletion plus
+NotFound confirmation run concurrently against the same cleanup deadline; an
+unconfirmed channel close or deletion returns `isolation provider cleanup
+failed`. Reconciliation bounds each expired candidate to five seconds,
+continues after candidate failures, and emits only aggregate success/failure
+counts so later intervals continue without exposing pod names.
+
 ## Development
 
 ```bash
 npm test         # unit and MCP stdio integration tests
 npm run coverage # subprocess-aware coverage; 90% line minimum
 npm run check    # TypeScript validation
+npm run check:kubernetes-manifests # standard/Kata manifest, admission, and RBAC checks
+npm run kubectl:dry-run:kubernetes # client-side dry run when kubectl is installed
 npm run ci       # coverage, type checking, and package verification
 ```
 
 Tests use a fake Podman control plane to validate the exact hardened CLI
 arguments and exercise the framed worker protocol without requiring Podman in
 CI. They test this server's command construction, not Podman itself.
+
+Kubernetes tests use injectable fake APIs and exec channels across all three
+profiles. They validate configuration, credential-factory selection, pod shape,
+hostile framing, startup admission probes, lifecycle races, cancellation,
+cleanup, reconciliation, and provider-compatible MCP results. The opt-in local
+cluster harness adds real standard-runtime lifecycle evidence; it never claims
+Kata, CRI, CNI, or guest-kernel evidence. Offline resource-range fixtures and
+client-side dry runs do not establish server-side CEL or admission enforcement.
+When both example admission policies are already applied to a configured test
+cluster, `OCI_JAVASCRIPT_RUN_REAL_KUBERNETES_ADMISSION_TESTS=true` makes the
+test suite require their observed generations to have no CEL type-checking
+warnings; otherwise that real-cluster-only evidence is deliberately skipped.
 
 The generated sandbox prelude and type-only declarations are excluded from
 source-line instrumentation; their behavior is exercised through integration

@@ -6,7 +6,7 @@ https://oss.oracle.com/licenses/upl.
 Request, actor and installation identifiers, and the call/tool log wrappers.
 
 Everything here exists to make one OCI call traceable end to end: the
-``opc-request-id`` stamped on outbound SDK calls, the anonymous per-installation
+``opc-request-id`` stamped on outbound SDK calls, the pseudonymous per-installation
 and per-caller markers embedded in it, and the decorators that log a tool
 invocation and every SDK call it makes.
 """
@@ -33,6 +33,10 @@ _MCP_ACTOR_ID_LENGTH = 6
 _MCP_REQUEST_ID_LENGTH = 6
 _MCP_ACTOR_ID_CONTEXT: ContextVar[str] = ContextVar("mcp_actor_id", default="unknown")
 _MCP_TOOL_ID_CONTEXT: ContextVar[str] = ContextVar("mcp_tool_id", default="unknown")
+# The tool call's correlation id. _tool_logger sets it, and everything that runs inside
+# the call -- the tool body, helpers, every OCI client -- reads it instead of minting its
+# own, so the tool_call and oci_call events and the opc-request-id all share one id.
+_MCP_REQUEST_ID_CONTEXT: ContextVar[Optional[str]] = ContextVar("mcp_request_id", default=None)
 # Used only when a request is made outside an active FastMCP session. It is not
 # persisted, so it cannot identify a person across server restarts.
 _MCP_SERVER_INSTANCE_ID = uuid.uuid4().hex
@@ -81,6 +85,11 @@ def _installation_id_file() -> Path:
     return logging_setup._state_dir() / "installation-id"
 
 
+def _current_request_id() -> str:
+    """The active tool call's request id, or a fresh one outside a tool call."""
+    return _MCP_REQUEST_ID_CONTEXT.get() or uuid.uuid4().hex
+
+
 def _mcp_installation_id() -> str:
     """Return a durable opaque ID for this local install or hosted deployment."""
     configured = (os.getenv(_MCP_INSTALLATION_ID_ENV) or "").strip()
@@ -114,7 +123,16 @@ def _mcp_installation_id() -> str:
 
 
 def _mcp_actor_id() -> str:
-    """Return a privacy-safe opaque identifier for the active MCP user/session."""
+    """
+    Return a pseudonymous identifier for the active MCP user/session.
+
+    Pseudonymous, not anonymous: it is a truncated hash of the caller's identity, so
+    it stays stable per caller and anyone who already knows that identity can
+    recompute it. What it does is keep the raw identity (an IDCS ``sub`` is often a
+    username or email) out of ``opc-request-id``, a value that gets copied into logs
+    and support tickets. It hides nothing from OCI, which authenticates the same
+    caller from the credentials signing every request that carries it.
+    """
     principal = None
     scope = None
     access_token = auth._current_access_token()
@@ -333,6 +351,7 @@ def _tool_logger(tool_name: str):
             """Log the call's start, end and any error, then return the tool's result."""
             request_id = uuid.uuid4().hex
             start = time.time()
+            request_id_token = _MCP_REQUEST_ID_CONTEXT.set(request_id)
             actor_id_token = _MCP_ACTOR_ID_CONTEXT.set(_mcp_actor_id())
             tool_id_token = _MCP_TOOL_ID_CONTEXT.set(tool_name)
             logging_setup._log_event(
@@ -380,6 +399,7 @@ def _tool_logger(tool_name: str):
             finally:
                 _MCP_TOOL_ID_CONTEXT.reset(tool_id_token)
                 _MCP_ACTOR_ID_CONTEXT.reset(actor_id_token)
+                _MCP_REQUEST_ID_CONTEXT.reset(request_id_token)
 
         return _wrapped
 

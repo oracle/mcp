@@ -9,7 +9,6 @@ Database Service resource.
 """
 
 import logging
-import uuid
 from typing import Annotated, Optional
 
 import oci
@@ -86,7 +85,7 @@ def list_databases(
     Service protection policy where one can be found.
     """
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
         client = clients.get_database_client(region, request_id=request_id)
         if compartment_id:
             compartment_id = compartments._resolve_compartment_id(compartment_id)
@@ -306,7 +305,7 @@ def get_database(
     returns.
     """
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
         client = clients.get_database_client(region, request_id=request_id)
         resp = client.get_database(database_id=database_id)
         mapped = map_database(resp.data)
@@ -390,7 +389,7 @@ def list_db_homes(
     DB Homes before listing what lives in them. Paging is handled internally.
     """
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
         client = clients.get_database_client(region, request_id=request_id)
         if not compartment_id and not db_system_id:
             compartment_id = auth.get_tenancy()
@@ -453,7 +452,7 @@ def get_db_home(
 ) -> DatabaseHome:
     """Retrieves a DB Home by OCID and maps it to the server model."""
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
         client = clients.get_database_client(region, request_id=request_id)
         resp = client.get_db_home(db_home_id=db_home_id)
         return map_database_home(resp.data)
@@ -491,7 +490,7 @@ def list_db_systems(
     compartment subtree.
     """
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
         client = clients.get_database_client(region, request_id=request_id)
         if not compartment_id:
             compartment_id = auth.get_tenancy()
@@ -555,7 +554,7 @@ def get_db_system(
 ) -> DbSystem:
     """Retrieves a DB System by OCID and maps it to the server model."""
     try:
-        request_id = uuid.uuid4().hex
+        request_id = telemetry._current_request_id()
         client = clients.get_database_client(region, request_id=request_id)
         resp = client.get_db_system(db_system_id=db_system_id)
         return map_db_system(resp.data)

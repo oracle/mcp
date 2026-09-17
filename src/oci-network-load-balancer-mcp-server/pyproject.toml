@@ -45,6 +45,7 @@ exclude = [
   "/dist/**",
   "/build/**",
   "/uv.lock",
+  "/moon.yml",
   "**/__pycache__/**",
   "**/*.py[cod]",
   "/.DS_Store",

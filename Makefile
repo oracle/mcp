@@ -140,9 +140,9 @@ javascript-ci:
 ci: lint test javascript-ci
 
 combine-coverage:
-	uv run coverage combine
-	uv run coverage html
-	uv run coverage report --fail-under=90
+	uv tool run coverage combine
+	uv tool run coverage html
+	uv tool run coverage report --fail-under=90
 
 publish:
 	@$(MAKE) publish-common PUBLISH_URL="$(PYPI_PUBLISH_URL)" PUBLISH_CHECK_URL="$(PYPI_CHECK_URL)"

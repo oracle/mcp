@@ -1143,7 +1143,6 @@ dependencies = [
     { name = "oci" },
     { name = "oracle-mcp-common" },
     { name = "pydantic" },
-    { name = "python-dotenv" },
 ]
 
 [package.dev-dependencies]
@@ -1162,7 +1161,6 @@ requires-dist = [
     { name = "oci", specifier = "==2.185.1" },
     { name = "oracle-mcp-common", editable = "../common" },
     { name = "pydantic", specifier = "==2.13.4" },
-    { name = "python-dotenv", specifier = ">=1.0.0" },
 ]
 
 [package.metadata.requires-dev]

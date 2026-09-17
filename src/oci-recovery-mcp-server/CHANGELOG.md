@@ -44,8 +44,6 @@ the server gains two new guidance tools.
   secret so it is stable across restarts and workers without being configured.
   Deployments that mounted a `.oauth_state` directory must persist the new location
   instead; an ephemeral home directory forces clients to re-register after a restart.
-  `FASTMCP_HOME` is resolved when FastMCP is imported, before the server reads its env
-  file, so it must be exported rather than set in that file.
 - HTTP-mode UPST signers are no longer cached process-wide; a fresh signer is built for
   every tool call from the caller's own request-scoped token.
 
@@ -60,8 +58,6 @@ the server gains two new guidance tools.
   call it. This brings the tool count to 25.
 - `list_protected_databases` now reports retention-lock status and Cloud-Protect-managed
   vs. Database-Service-managed classification.
-- `.env` file support (`ORACLE_MCP_ENV_FILE`) so local configuration can live in one file
-  instead of exported environment variables.
 - OCI requests now carry an `opc-request-id` stamped with opaque installation, caller,
   and tool markers, so a customer-reported call can be traced in service logs without
   identifying the user.

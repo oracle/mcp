@@ -51,16 +51,15 @@ The 2.x variables `ORACLE_MCP_AUTH_METHOD` (`session`/`apikey`) and
 `ORACLE_MCP_AUTH_PROFILE` remain supported, so existing configurations keep working,
 but they are optional and no longer needed.
 
-Configuration comes from environment variables, which may also be placed in a `.env`
-file next to the server.
-
-The server loads `.env` from the working directory or a parent directory. Set `ORACLE_MCP_ENV_FILE` to use a specific configuration file; explicitly exported variables take precedence.
+Configuration comes from environment variables. Set them in the MCP client's `env`
+block, as in the examples below, or export them in the shell or service that starts the
+server.
 
 ### Local MCP client configuration (from source)
 
 Configure an MCP client to start the server with `uv`. `--directory` points at this
-project so `uv` uses its lockfile and `.env`, and works regardless of the client's own
-working directory:
+project so `uv` uses its lockfile, and works regardless of the client's own working
+directory:
 
 ```json
 {
@@ -75,8 +74,7 @@ working directory:
         "oracle.oci-recovery-mcp-server"
       ],
       "env": {
-        "ORACLE_MCP_AUTH_METHOD": "session",
-        "ORACLE_MCP_AUTH_PROFILE": "DEFAULT"
+        "OCI_CONFIG_PROFILE": "DEFAULT"
       }
     }
   }
@@ -107,17 +105,12 @@ To pin a version, use `uvx oracle.oci-recovery-mcp-server@3.0.0`.
       "command": "uvx",
       "args": ["oracle.oci-recovery-mcp-server"],
       "env": {
-        "ORACLE_MCP_AUTH_METHOD": "session",
-        "ORACLE_MCP_AUTH_PROFILE": "DEFAULT"
+        "OCI_CONFIG_PROFILE": "DEFAULT"
       }
     }
   }
 }
 ```
-
-`uvx` runs from the client's working directory, which may not be where your `.env` lives.
-Either set the variables in the `env` block above, as shown, or point
-`ORACLE_MCP_ENV_FILE` at an absolute path.
 
 Installing the package into a persistent tool environment instead of the `uvx` cache also
 works:
@@ -205,9 +198,10 @@ overrides it for that request. `OCI_MCP_TENANCY_ID_OVERRIDE` is required over HT
 compartment and region discovery need a tenancy OCID and there is no local OCI config
 file to read one from.
 
-These settings can equally live in the server's `.env` file, with the exception of
-`FASTMCP_HOME` (see below). Keep client secrets out of source control and supply
-`IDCS_CLIENT_SECRET` from a secret manager or the deployment environment.
+Supply them as environment variables of the server process, for example through a
+systemd `EnvironmentFile=` or a container's `--env-file`. Keep client secrets out of
+source control and supply `IDCS_CLIENT_SECRET` from a secret manager or the deployment
+environment.
 
 Client configuration needs only the URL:
 
@@ -231,8 +225,7 @@ derived from the client secret, so keys survive restarts and multiple workers wi
 being configured anywhere. Treat that directory as secret material, exclude it from
 images, and give it persistent storage in a container deployment — a fresh directory on
 every restart forces all clients to re-register. `FASTMCP_HOME` is resolved when FastMCP
-is imported, before the server reads its env file, so it must be exported rather than set
-in `.env`. Rotating the client secret invalidates already-issued tokens, and clients sign
+is imported, so it must be set in the environment before the server starts. Rotating the client secret invalidates already-issued tokens, and clients sign
 in again.
 
 Clients register through Dynamic Client Registration at `/register`, an exchange that
@@ -262,7 +255,6 @@ Only what you need to configure. Behaviour not listed here has working defaults.
 | `OCI_CONFIG_FILE`, `OCI_CONFIG_PROFILE` | Which OCI config file and profile to authenticate with. Default `~/.oci/config` and `DEFAULT`. |
 | `OCI_MCP_AUTH_TYPE` | Authentication mode. Defaults to `auto`, which picks session-token when the profile declares a `security_token_file` and API-key otherwise. |
 | `OCI_MCP_TENANCY_ID_OVERRIDE` | Use a different tenancy than the one in the profile. |
-| `ORACLE_MCP_ENV_FILE` | Path to a specific `.env` file instead of searching upwards from the working directory. Real environment variables always win over the file. |
 
 **HTTP deployment**
 
@@ -274,7 +266,7 @@ Only what you need to configure. Behaviour not listed here has working defaults.
 | `OCI_MCP_TENANCY_ID_OVERRIDE` | Required. Tenancy OCID used for compartment and region discovery; there is no local OCI config file to read one from. |
 | `OCI_REGION` | Default region for the request-token exchange. A tool's `region` argument overrides it per request. |
 | `IDCS_REQUIRED_SCOPES` | Required scopes, written bare, as a space-delimited list or JSON array. Defaults to `openid profile email oci_mcp.recovery.invoke`. |
-| `FASTMCP_HOME` | Where OAuth state is persisted. Contains secret material, so export it rather than putting it in `.env`. |
+| `FASTMCP_HOME` | Where OAuth state is persisted. Contains secret material. |
 
 **Tuning the large-tenancy scans**
 

@@ -9,7 +9,7 @@ license-files = ["LICENSE.txt"]
 keywords = ["oci", "oracle", "disaster-recovery", "mcp", "fsdr"]
 dependencies = [
     "fastmcp==3.4.5",
-    "oci==2.182.1",
+    "oci==2.185.1",
     "pydantic>=2.0.0",
 ]
 

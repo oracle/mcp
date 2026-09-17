@@ -11,7 +11,7 @@ authors = [
 ]
 dependencies = [
     "fastmcp==3.4.5",
-    "oci==2.182.1",
+    "oci==2.185.1",
     "oracle-mcp-common>=0.1.2,<0.2.0",
     "pytest-cov>=7.0.0",
 ]

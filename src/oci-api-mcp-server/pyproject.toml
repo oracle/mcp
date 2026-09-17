@@ -11,7 +11,7 @@ authors = [
 ]
 dependencies = [
     "fastmcp==3.4.5",
-    "oci-cli==3.89.3",
+    "oci-cli==3.92.0",
     "oracle-mcp-common>=0.1.2,<0.2.0",
 ]
 

@@ -11,8 +11,12 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev \
+RUN npm ci --include=dev \
     && npm cache clean --force
+
+COPY buf.gen.yaml ./
+COPY proto/ ./proto/
+RUN npm run proto:generate
 
 FROM node:26-bookworm-slim@sha256:cd565714d4da3e84bfd341e31448f81d47c6362198f152345297c9c1154e6341
 
@@ -24,7 +28,18 @@ COPY --from=dependencies --chown=65532:65532 \
 COPY --from=dependencies --chown=65532:65532 \
     /app/node_modules/node-gyp-build \
     ./node_modules/node-gyp-build
+COPY --from=dependencies --chown=65532:65532 \
+    /app/node_modules/@grpc/grpc-js \
+    ./node_modules/@grpc/grpc-js
+COPY --from=dependencies --chown=65532:65532 \
+    /app/node_modules/@js-sdsl/ordered-map \
+    ./node_modules/@js-sdsl/ordered-map
+COPY --from=dependencies --chown=65532:65532 \
+    /app/node_modules/@bufbuild/protobuf \
+    ./node_modules/@bufbuild/protobuf
+COPY --from=dependencies --chown=65532:65532 /app/src/generated/runner.ts ./src/generated/runner.ts
 COPY --chown=65532:65532 \
+    src/grpc.ts \
     src/protocol.ts \
     src/sandbox-common.ts \
     src/sandbox-isolate.ts \

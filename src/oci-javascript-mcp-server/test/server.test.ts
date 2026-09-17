@@ -20,6 +20,8 @@ test("stdio server advertises and executes its MCP tools", async () => {
     new URL("./fake-podman.ts", import.meta.url)
   );
   environment.OCI_JAVASCRIPT_PODMAN_IMAGE = "test-runner:dev";
+  environment.OCI_JAVASCRIPT_MAX_RESULT_BYTES = "1500000";
+  environment.OCI_JAVASCRIPT_MAX_CONCURRENT_TOOL_CALLS = "1";
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [
@@ -71,6 +73,36 @@ test("stdio server advertises and executes its MCP tools", async () => {
     };
     assert.equal(discovery.type, "index");
     assert.equal(Array.isArray(discovery.services), true);
+
+    for (const length of [1_500_000 - 2, 1_500_000]) {
+      const response = await client.callTool({
+        name: "run_javascript", arguments: { code: `"x".repeat(${length})`, timeout: 10 }
+      });
+      const value = response.structuredContent as Record<string, unknown>;
+      if (length < 1_500_000) {
+        assert.equal(value.exit_code, 0);
+        assert.equal((value.result as string).length, length);
+      } else {
+        assert.equal(value.exit_code, 1);
+        assert.match((value.error as { message: string }).message, /exceeding result limit 1500000 bytes/);
+      }
+    }
+
+    const controller = new AbortController();
+    const cancelled = assert.rejects(client.callTool({
+      name: "run_javascript", arguments: { code: "while (true) {}", timeout: 30 }
+    }, undefined, { signal: controller.signal }), /abort/i);
+    const busy = await client.callTool({ name: "discover_oci", arguments: {} });
+    assert.equal(busy.isError, true);
+    controller.abort();
+    await cancelled;
+    const cleanupDeadline = Date.now() + 5000;
+    while (true) {
+      const next = await client.callTool({ name: "discover_oci", arguments: {} });
+      if (!next.isError) break;
+      assert(Date.now() < cleanupDeadline, "cancelled execution must release its slot before its deadline");
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
   } finally {
     await client.close();
   }

@@ -121,12 +121,15 @@ export async function runJavaScriptInIsolate(
           `Sandbox result was ${resultBytes} bytes, exceeding result limit ${options.maxResultBytes} bytes`
         );
       }
+      if (output.exceeded) {
+        throw new Error("Sandbox output exceeded limit");
+      }
       return {
         result,
         error: null,
         stdout: output.stdout,
         stderr: output.stderr,
-        exitCode: output.exceeded ? 1 : 0,
+        exitCode: 0,
         timedOut: false
       };
     } catch (error) {

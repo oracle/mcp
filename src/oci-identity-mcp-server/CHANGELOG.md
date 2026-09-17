@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.0.3
+
+### Changed
+
+- Excluded development artifacts, local configuration, and container build files from source-distribution packages.
+
 ## 3.0.2
 
 ### Changed

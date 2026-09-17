@@ -1,4 +1,5 @@
 **/__pycache__/**
+node_modules/
 
 # Virtual environment
 venv/
@@ -26,6 +27,7 @@ venv.bak/
 
 .coverage*
 htmlcov/
+coverage/
 
 # Maven
 **/target/

@@ -16,7 +16,7 @@ COPY --chown=oracle:oracle . /app
 
 # Install dependencies
 RUN pip3.13 install --no-cache-dir uv && \
-  uv --no-cache sync --locked --all-extras
+  uv --no-cache sync --no-sources --all-extras --no-editable
 
 # Change user
 USER oracle

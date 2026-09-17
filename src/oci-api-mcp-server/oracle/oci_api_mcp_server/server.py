@@ -4,12 +4,15 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
+import importlib.metadata
 import json
 import os
 import re
+import shutil
 import subprocess
 from logging import Logger
 import shlex
+import sys
 from typing import Annotated
 
 from fastmcp import FastMCP
@@ -39,7 +42,17 @@ denylist_manager = Denylist(logger)
 _OCI_COMMAND_TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _OCI_HELP_COMMAND_ERROR = "OCI help accepts command paths only without options or values"
 _OCI_COMMAND_ERROR = "OCI command contains a server-managed global option"
-_OCI_CLI_BASE_COMMAND = ("oci", "--cli-rc-file", os.devnull)
+_OCI_CLI_VERSION = "3.89.3"
+
+
+def _resolve_oci_cli() -> str:
+    executable = shutil.which("oci", path=os.path.dirname(sys.executable))
+    if executable is None or importlib.metadata.version("oci-cli") != _OCI_CLI_VERSION:
+        raise RuntimeError(f"OCI CLI {_OCI_CLI_VERSION} is required in the MCP server environment")
+    return executable
+
+
+_OCI_CLI_BASE_COMMAND = (_resolve_oci_cli(), "--cli-rc-file", os.devnull)
 _SERVER_MANAGED_OCI_OPTIONS = frozenset(
     {
         "--auth",

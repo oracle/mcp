@@ -2,6 +2,12 @@
 
 All notable changes to OCI Database MCP Server are documented in this file.
 
+## 1.3.3
+
+### Changed
+
+- Excluded development artifacts, local configuration, and container build files from source-distribution packages.
+
 ## 1.3.2
 
 ### Changed

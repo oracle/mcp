@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.7
+
+### Changed
+
+- Excluded development artifacts, local configuration, and container build files from source-distribution packages.
+
 ## 1.0.6
 
 ### Changed

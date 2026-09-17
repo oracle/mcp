@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-networking-mcp-server"
-version = "2.0.1"
+version = "2.0.2"
 description = "OCI Networking Service MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -33,6 +33,31 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["oracle"]
 exclude = ["/oracle/**/tests/**"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "/.coverage*",
+  "/htmlcov/**",
+  "/.pytest_cache/**",
+  "/.ruff_cache/**",
+  "/.venv/**",
+  "/venv/**",
+  "/dist/**",
+  "/build/**",
+  "/uv.lock",
+  "**/__pycache__/**",
+  "**/*.py[cod]",
+  "/.DS_Store",
+  "/.env",
+  "/.env.*",
+  "/.claude/**",
+  "/.cline/**",
+  "/.roo/**",
+  "/.cursor/**",
+  "/mcp_settings*.json",
+  "/Containerfile",
+  "/.containerignore",
+]
 
 [dependency-groups]
 dev = [

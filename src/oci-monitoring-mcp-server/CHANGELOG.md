@@ -6,6 +6,12 @@
 
 - Added subscribed-region discovery and an optional `region` parameter to Monitoring tools, allowing queries outside the configured region.
 
+## 2.0.3
+
+### Changed
+
+- Excluded development artifacts, local configuration, and container build files from source-distribution packages.
+
 ## 2.0.2
 
 ### Changed

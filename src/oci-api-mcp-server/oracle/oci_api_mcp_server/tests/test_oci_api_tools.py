@@ -7,13 +7,17 @@ https://oss.oracle.com/licenses/upl.
 import importlib.metadata
 import json
 import os
+from pathlib import Path
+import runpy
 import subprocess
 from unittest.mock import ANY, MagicMock, patch
 
+import click
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 from oci.config import DEFAULT_LOCATION
+from oci_cli import dynamic_loader
 from oci_cli.cli_root import cli as oci_cli
 import oracle.oci_api_mcp_server.server as server
 from oracle.oci_api_mcp_server import __project__
@@ -23,6 +27,10 @@ from oracle.oci_api_mcp_server.server import mcp
 __version__ = importlib.metadata.version(__project__)
 user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
 USER_AGENT = f"{user_agent_name}/{__version__}"
+OCI_CLI = server._OCI_CLI_BASE_COMMAND[0]
+DENYLIST_GENERATOR = runpy.run_path(
+    str(Path(__file__).parents[5] / "scripts" / "oci-api-denylist-generator.py")
+)
 
 
 class TestOCITools:
@@ -59,7 +67,7 @@ class TestOCITools:
             assert mock_run.call_args.kwargs["env"]["OCI_SDK_APPEND_USER_AGENT"] == USER_AGENT
             mock_run.assert_called_once_with(
                 [
-                    "oci",
+                    OCI_CLI,
                     "--cli-rc-file",
                     os.devnull,
                     "compute",
@@ -99,7 +107,7 @@ class TestOCITools:
             assert result == "Help output"
             mock_run.assert_called_once_with(
                 [
-                    "oci",
+                    OCI_CLI,
                     "--cli-rc-file",
                     os.devnull,
                     "recovery",
@@ -177,7 +185,7 @@ class TestOCITools:
         mock_run.side_effect = subprocess.CalledProcessError(
             returncode=1,
             cmd=[
-                "oci",
+                OCI_CLI,
                 "--cli-rc-file",
                 os.devnull,
                 "compute",
@@ -263,7 +271,7 @@ class TestOCITools:
             }
             mock_run.assert_called_once_with(
                 [
-                    "oci",
+                    OCI_CLI,
                     "--cli-rc-file",
                     os.devnull,
                     "--config-file",
@@ -303,7 +311,7 @@ class TestOCITools:
 
         mock_run.assert_called_once_with(
             [
-                "oci",
+                OCI_CLI,
                 "--cli-rc-file",
                 os.devnull,
                 "--config-file",
@@ -344,7 +352,7 @@ class TestOCITools:
             await client.call_tool("run_oci_command", {"command": "compute instance list"})
 
         assert mock_run.call_args.args[0] == [
-            "oci",
+            OCI_CLI,
             "--cli-rc-file",
             os.devnull,
             "--config-file",
@@ -376,7 +384,7 @@ class TestOCITools:
             await client.call_tool("run_oci_command", {"command": "compute instance list"})
 
         assert mock_run.call_args.args[0] == [
-            "oci",
+            OCI_CLI,
             "--cli-rc-file",
             os.devnull,
             "--config-file",
@@ -407,7 +415,7 @@ class TestOCITools:
             await client.call_tool("run_oci_command", {"command": "compute instance list"})
 
         assert mock_run.call_args.args[0] == [
-            "oci",
+            OCI_CLI,
             "--cli-rc-file",
             os.devnull,
             "--config-file",
@@ -457,7 +465,7 @@ class TestOCITools:
             await client.call_tool("run_oci_command", {"command": "compute instance list"})
 
         assert mock_run.call_args.args[0] == [
-            "oci",
+            OCI_CLI,
             "--cli-rc-file",
             os.devnull,
             "--config-file",
@@ -556,7 +564,7 @@ class TestOCITools:
 
         mock_run.side_effect = subprocess.CalledProcessError(
             returncode=mock_result.returncode,
-            cmd=["oci", "--cli-rc-file", os.devnull] + command.split(),
+            cmd=[OCI_CLI, "--cli-rc-file", os.devnull] + command.split(),
             output=mock_result.stdout,
             stderr=mock_result.stderr,
         )
@@ -616,7 +624,7 @@ class TestOCITools:
 
         assert result["returncode"] == 0
         assert mock_run.call_args.args[0] == [
-            "oci",
+            OCI_CLI,
             "--cli-rc-file",
             os.devnull,
             "--config-file",
@@ -650,6 +658,31 @@ class TestOCITools:
         mock_run.assert_not_called()
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "os object bulk-delete --namespace n --bucket-name b --force",
+            "ocvs cluster delete --cluster-id ocid1.cluster.oc1..example --force",
+            "generative-ai api-key delete --api-key-id ocid1.generativeaiapikey.oc1..example",
+            "budgets budget budget update --budget-id ocid1.budget.oc1..example",
+            (
+                "mysql db-system controlled-update "
+                "--db-system-id ocid1.mysqldbsystem.oc1..example"
+            ),
+            "session terminate",
+        ],
+    )
+    @patch("oracle.oci_api_mcp_server.server.subprocess.run")
+    async def test_run_oci_command_denies_canonical_destructive_actions(
+        self, mock_run, command
+    ):
+        async with Client(mcp) as client:
+            result = (await client.call_tool("run_oci_command", {"command": command})).data
+
+        assert "denied by denylist" in result["error"]
+        mock_run.assert_not_called()
+
+    @pytest.mark.asyncio
     @patch("oracle.oci_api_mcp_server.server.subprocess.run")
     async def test_get_oci_commands_success(self, mock_run):
         mock_result = MagicMock()
@@ -663,7 +696,7 @@ class TestOCITools:
             assert result == "OCI commands output"
             assert mock_run.call_args.kwargs["env"]["OCI_SDK_APPEND_USER_AGENT"] == USER_AGENT
             mock_run.assert_called_once_with(
-                ["oci", "--cli-rc-file", os.devnull, "--help"],
+                [OCI_CLI, "--cli-rc-file", os.devnull, "--help"],
                 env=ANY,
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
@@ -679,7 +712,7 @@ class TestOCITools:
         mock_result.stderr = "Some error"
         mock_run.side_effect = subprocess.CalledProcessError(
             returncode=1,
-            cmd=["oci", "--cli-rc-file", os.devnull, "--help"],
+            cmd=[OCI_CLI, "--cli-rc-file", os.devnull, "--help"],
             output=None,
             stderr=mock_result.stderr,
         )
@@ -817,8 +850,126 @@ class TestDenylist:
         with pytest.raises(RuntimeError, match="Denylist file not found"):
             Denylist(MagicMock(), str(missing_denylist))
 
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "db cloud-vm-cluster get-update --update-id update-id",
+            "db cloud-vm-cluster list-update-histories --cloud-vm-cluster-id cluster-id",
+            "devops repository create-or-update-git-branch-details",
+            "devops project cancel-cascading-delete --project-id project-id",
+            (
+                "db autonomous-database "
+                "create-autonomous-database-undelete-autonomous-database-details"
+            ),
+        ],
+    )
+    def test_reviewed_denylist_excludes_read_cancel_and_create_commands(self, command):
+        denylist = Denylist(MagicMock())
+
+        assert denylist.isCommandInDenyList(command) is False
+
+    @pytest.mark.parametrize(
+        "command_path",
+        [
+            ("os", "object", "bulk-delete"),
+            ("ocvs", "cluster", "delete"),
+            ("generative-ai", "api-key", "delete"),
+            ("budgets", "budget", "budget", "update"),
+            ("mysql", "db-system", "controlled-update"),
+            ("session", "terminate"),
+        ],
+    )
+    def test_destructive_action_regressions_are_canonical_cli_paths(self, command_path):
+        dynamic_loader.load_service(command_path[0])
+        command = oci_cli
+
+        for command_word in command_path:
+            assert isinstance(command, click.Group)
+            command = click.Group.get_command(command, None, command_word)
+            assert command is not None
+
+    @pytest.mark.parametrize(
+        ("command", "expected"),
+        [
+            ("os object bulk-delete", True),
+            ("data-safe alert alerts-update", True),
+            ("identity-domains mapped-attribute patch", True),
+            ("os object resume-put", True),
+            ("service-catalog service-catalog-association bulk-replace", True),
+            ("devops repository create-or-update-git-branch-details", False),
+            ("db cloud-vm-cluster get-update", False),
+            ("devops project cancel-cascading-delete", False),
+            (
+                "db autonomous-database "
+                "create-autonomous-database-undelete-autonomous-database-details",
+                False,
+            ),
+        ],
+    )
+    def test_denylist_generator_classifies_compound_actions(self, command, expected):
+        assert DENYLIST_GENERATOR["is_denied_command"](command) is expected
+
+    def test_denylist_generator_preserves_mandatory_commands(self):
+        assert DENYLIST_GENERATOR["get_denied_commands"]([]) == ["raw-request"]
+
+    def test_denylist_generator_does_not_follow_output_symlinks(self, tmp_path):
+        target = tmp_path / "target"
+        output = tmp_path / "denylist"
+        target.write_text("keep me")
+        try:
+            output.symlink_to(target)
+        except OSError:
+            pytest.skip("Symbolic links are not available")
+
+        DENYLIST_GENERATOR["write_file"](output, "replacement")
+
+        assert target.read_text() == "keep me"
+        assert output.read_text() == "replacement"
+        assert not output.is_symlink()
+
+    def test_packaged_denylist_matches_classified_cli_commands(self):
+        expected = set(
+            DENYLIST_GENERATOR["get_denied_commands"](
+                DENYLIST_GENERATOR["get_canonical_commands"]()
+            )
+        )
+        actual = set(Denylist(MagicMock()).denylist)
+        missing = sorted(expected - actual)
+        stale = sorted(actual - expected)
+
+        assert not missing and not stale, (
+            f"Missing denylist paths: {missing}; stale paths: {stale}"
+        )
+
 
 class TestServer:
+    def test_oci_cli_uses_server_environment(self):
+        assert Path(OCI_CLI).parent == Path(server.sys.executable).parent
+        assert importlib.metadata.version("oci-cli") == server._OCI_CLI_VERSION
+        assert f"oci-cli=={server._OCI_CLI_VERSION}" in importlib.metadata.requires(__project__)
+
+    @patch("oracle.oci_api_mcp_server.server.importlib.metadata.version")
+    @patch("oracle.oci_api_mcp_server.server.shutil.which")
+    def test_resolve_oci_cli_success(self, mock_which, mock_version):
+        mock_which.return_value = "/server-environment/bin/oci"
+        mock_version.return_value = server._OCI_CLI_VERSION
+
+        assert server._resolve_oci_cli() == "/server-environment/bin/oci"
+
+    @patch("oracle.oci_api_mcp_server.server.importlib.metadata.version")
+    @patch("oracle.oci_api_mcp_server.server.shutil.which", return_value=None)
+    def test_resolve_oci_cli_fails_when_executable_is_missing(self, _, mock_version):
+        with pytest.raises(RuntimeError, match="OCI CLI 3.89.3 is required"):
+            server._resolve_oci_cli()
+
+        mock_version.assert_not_called()
+
+    @patch("oracle.oci_api_mcp_server.server.importlib.metadata.version", return_value="3.89.2")
+    @patch("oracle.oci_api_mcp_server.server.shutil.which", return_value="/server/bin/oci")
+    def test_resolve_oci_cli_fails_when_version_mismatches(self, *_):
+        with pytest.raises(RuntimeError, match="OCI CLI 3.89.3 is required"):
+            server._resolve_oci_cli()
+
     @patch("oracle.oci_api_mcp_server.server.mcp.run")
     @patch("os.getenv")
     def test_main_without_host_and_port(self, mock_getenv, mock_mcp_run):

@@ -26,6 +26,7 @@ These instructions apply to the entire repository. More specific instructions in
 - Do not add secrets, tenancy-specific values, credentials, or local absolute paths to examples, configs, docs, or tests.
 - Do not edit generated or local output artifacts such as `htmlcov/`, `.coverage*`, `.ruff_cache/`, `.pytest_cache/`, `__pycache__/`, `dist/`, `src/logs`, or `.venv/`.
 - Keep diffs focused on the requested change; avoid unrelated formatting, import reordering, or refactors.
+- Limit the amount of code you generate. Write just enough to implement the feature and tests for it -- no unnecessary abstractions, 1-2 line wrappers or other slop.
 
 ## Changelog Guidance
 
@@ -55,3 +56,6 @@ When validating the quality of any MCP server under `src/`:
 - For servers that invoke the OCI CLI instead of constructing OCI Python SDK clients, require the same derived value through `OCI_SDK_APPEND_USER_AGENT` in the launched process environment.
 - For non-Python or Makefile-excluded servers, follow the server's `README.md` to identify the test and coverage commands. Report a gap if the README does not document how to enforce 90% unit-test coverage.
 - Treat end-to-end tests under `tests/e2e/` as optional unless they can run without making the normal test suite slower or less reliable.
+- Don't duplicate or reinvent anything that's in the common packages (src/common) (like authentication).
+- Do not implement a server that invokes subprocesses because it's difficult to secure and it limits how and where the MCP servers can run. `oci-api-mcp-server` is the exception: it launches the OCI CLI rather than constructing OCI Python SDK clients directly.
+

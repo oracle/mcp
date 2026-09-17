@@ -6,6 +6,12 @@
 
 - Added subscribed-region discovery and optional region selection for Logging tools.
 
+## 2.0.3
+
+### Changed
+
+- Excluded development artifacts, local configuration, and container build files from source-distribution packages.
+
 ## 2.0.2
 
 ### Changed

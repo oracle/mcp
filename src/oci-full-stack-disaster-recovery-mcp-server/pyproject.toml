@@ -69,6 +69,8 @@ exclude = [
   "/.roo/**",
   "/.cursor/**",
   "/mcp_settings*.json",
+  "/Containerfile",
+  "/.containerignore",
 ]
 
 [tool.pytest.ini_options]

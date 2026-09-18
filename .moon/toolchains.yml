@@ -1,0 +1,19 @@
+javascript:
+  packageManager: 'npm'
+  inferTasksFromScripts: true
+
+node: {}
+
+npm: {}
+
+unstable_python:
+  packageManager: 'uv'
+
+unstable_uv:
+  syncArgs:
+    - '--locked'
+    - '--all-extras'
+    - '--dev'
+    - '--no-managed-python'
+    - '--no-python-downloads'
+    - '--no-progress'

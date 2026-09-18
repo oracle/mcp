@@ -13,6 +13,9 @@ venv.bak/
 # Python uv
 .python-version
 
+# moon
+.moon/cache/
+
 # VScode
 .vscode
 

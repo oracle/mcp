@@ -97,7 +97,12 @@ the server gains two new guidance tools.
   lot of volume and a lot of customer data at rest. Log files are also created `0600` now,
   on each rotation, so they are not readable by other users of the host.
 - Updated dependency locks for FastMCP 3.4.5, OCI SDK 2.185.1,
-  Cryptography 50.0.1, and Pydantic 2.13.4.
+  Cryptography 
+  
+  
+  
+  
+  , and Pydantic 2.13.4.
 - README now documents all supported environment variables and the hosted OAuth setup
   inline.
 
@@ -240,6 +245,11 @@ the server gains two new guidance tools.
   `~/.oci/config` is absent, and this server resolved `ORACLE_MCP_AUTH_PROFILE` before
   `OCI_CONFIG_PROFILE` while the shared library resolves them in the opposite order, so
   these lookups could resolve a different profile than the request signer.
+## Unreleased
+
+### Security
+
+- Updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).
 
 ## 2.1.2
 

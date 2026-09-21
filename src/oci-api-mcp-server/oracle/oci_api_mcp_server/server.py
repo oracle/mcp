@@ -42,7 +42,7 @@ denylist_manager = Denylist(logger)
 _OCI_COMMAND_TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _OCI_HELP_COMMAND_ERROR = "OCI help accepts command paths only without options or values"
 _OCI_COMMAND_ERROR = "OCI command contains a server-managed global option"
-_OCI_CLI_VERSION = "3.89.3"
+_OCI_CLI_VERSION = "3.92.0"
 
 
 def _resolve_oci_cli() -> str:

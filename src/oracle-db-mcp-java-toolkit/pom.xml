@@ -32,7 +32,7 @@
 
     <properties>
         <java.version>17</java.version>
-        <mcp.version>0.12.1</mcp.version>
+        <mcp.version>0.18.4</mcp.version>
         <ojdbc.version>23.26.2.0.0</ojdbc.version>
         <snakeYaml.version>2.5</snakeYaml.version>
         <logAnalyzer.version>1.0.0</logAnalyzer.version>

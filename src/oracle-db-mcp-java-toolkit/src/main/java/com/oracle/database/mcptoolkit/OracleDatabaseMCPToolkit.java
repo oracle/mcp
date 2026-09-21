@@ -7,7 +7,7 @@
 
 package com.oracle.database.mcptoolkit;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.modelcontextprotocol.json.McpJsonDefaults;
 import com.oracle.database.mcptoolkit.oauth.OAuth2Configuration;
 import com.oracle.database.mcptoolkit.web.AuthorizationFilter;
 import com.oracle.database.mcptoolkit.web.RedirectOAuthToOpenIDServlet;
@@ -65,7 +65,7 @@ public class OracleDatabaseMCPToolkit {
       }
       case "stdio" -> {
         serverInstance = McpServer
-          .sync(new StdioServerTransportProvider(new ObjectMapper()))
+          .sync(new StdioServerTransportProvider(McpJsonDefaults.getMapper()))
           .serverInfo("oracle-db-mcp-toolkit", "1.0.0")
           .capabilities(McpSchema.ServerCapabilities.builder()
              .tools(true)
@@ -100,7 +100,7 @@ public class OracleDatabaseMCPToolkit {
       validateHttpSecurityConfiguration();
       HttpServletStreamableServerTransportProvider transport =
         HttpServletStreamableServerTransportProvider.builder()
-          .objectMapper(new ObjectMapper())
+          .jsonMapper(McpJsonDefaults.getMapper())
           .keepAliveInterval(Duration.ofSeconds(60))
           .mcpEndpoint("/mcp")
           .build();

@@ -31,6 +31,7 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
 import java.text.ParseException;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -222,10 +223,10 @@ public class OAuth2TokenValidator {
       processor.setJWSKeySelector(new JWSVerificationKeySelector<>(JWSAlgorithm.RS256, jwkSource));
 
       DefaultJWTClaimsVerifier<SecurityContext> claimsVerifier = new DefaultJWTClaimsVerifier<>(
-        Set.of(LoadedConstants.USER_TOKEN_JWT_AUDIENCE),
-        new JWTClaimsSet.Builder().issuer(LoadedConstants.USER_TOKEN_JWT_ISSUER).build(),
-        Set.of("iss", "aud", "exp"),
-        Set.of());
+              Collections.singleton(LoadedConstants.USER_TOKEN_JWT_AUDIENCE),
+              new JWTClaimsSet.Builder().issuer(LoadedConstants.USER_TOKEN_JWT_ISSUER).build(),
+              Set.of("iss", "aud", "exp"),
+              Set.of());
       claimsVerifier.setMaxClockSkew(0);
       processor.setJWTClaimsSetVerifier(claimsVerifier);
       jwtProcessorCache = new JwtProcessorCache(

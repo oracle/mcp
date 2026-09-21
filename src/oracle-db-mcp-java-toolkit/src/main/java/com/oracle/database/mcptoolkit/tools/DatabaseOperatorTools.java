@@ -107,7 +107,7 @@ public final class DatabaseOperatorTools {
          .name("read-query")
          .title("Read Query")
          .description("Run a SELECT and return rows as JSON. (Optionally accepts txId to run inside an open transaction.)")
-         .inputSchema(ToolSchemas.SQL_ONLY)
+         .inputSchema(jsonSchema(ToolSchemas.SQL_ONLY))
          .build())
       .callHandler((exchange, callReq) -> tryCall(() -> {
         try (DatabaseOperatorTools.ConnLease lease = acquireConnection(config, callReq.arguments().get("txId"))) {
@@ -132,7 +132,7 @@ public final class DatabaseOperatorTools {
          .name("write-query")
          .title("Write Query")
          .description("Execute DML (inside a transaction if txId is provided) or DML/DDL in autocommit mode.")
-         .inputSchema(ToolSchemas.SQL_ONLY)
+         .inputSchema(jsonSchema(ToolSchemas.SQL_ONLY))
          .build())
       .callHandler((exchange, callReq) -> tryCall(() -> {
         try (DatabaseOperatorTools.ConnLease lease = acquireConnection(config, callReq.arguments().get("txId"))) {
@@ -159,7 +159,7 @@ public final class DatabaseOperatorTools {
          .name("table")
          .title("Table Management")
          .description("Manage database tables. action=create (needs sql), drop (needs table), list (no args), describe (needs table).")
-         .inputSchema(ToolSchemas.TABLE_MANAGEMENT)
+         .inputSchema(jsonSchema(ToolSchemas.TABLE_MANAGEMENT))
          .build())
       .callHandler((exchange, callReq) -> {
         String action = String.valueOf(callReq.arguments().getOrDefault("action", ""));
@@ -287,7 +287,7 @@ public final class DatabaseOperatorTools {
          .name("transaction")
          .title("Transaction")
          .description("Manage JDBC transactions. Use action=start to begin (returns txId), resume to verify, commit to commit, rollback to rollback.")
-         .inputSchema(ToolSchemas.TRANSACTION)
+         .inputSchema(jsonSchema(ToolSchemas.TRANSACTION))
          .build())
       .callHandler((exchange, callReq) -> {
         String action = String.valueOf(callReq.arguments().getOrDefault("action", ""));
@@ -343,7 +343,7 @@ public final class DatabaseOperatorTools {
          .name("db-ping")
          .title("DB Ping")
          .description("Checks connectivity and round-trip latency; returns user, schema, DB name, and version.")
-         .inputSchema(ToolSchemas.NO_INPUT_SCHEMA)
+         .inputSchema(jsonSchema(ToolSchemas.NO_INPUT_SCHEMA))
          .build())
       .callHandler((exchange, callReq) -> tryCall(() -> {
         long connStart = System.nanoTime();
@@ -400,7 +400,7 @@ public final class DatabaseOperatorTools {
          .name("db-session-context")
          .title("DB Session Context")
          .description("Returns database session identity, activated DeepSec roles, and provider-specific IAM roles or groups for diagnostics.")
-         .inputSchema(ToolSchemas.NO_INPUT_SCHEMA)
+         .inputSchema(jsonSchema(ToolSchemas.NO_INPUT_SCHEMA))
          .build())
       .callHandler((exchange, callReq) -> tryCall(() -> {
         try (Connection c = openConnection(config, null);
@@ -448,7 +448,7 @@ public final class DatabaseOperatorTools {
          .name("db-metrics-range")
          .title("DB Metrics")
          .description("Returns Oracle DB metrics from V$SYSSTAT (cumulative counters only).")
-         .inputSchema(ToolSchemas.NO_INPUT_SCHEMA)
+         .inputSchema(jsonSchema(ToolSchemas.NO_INPUT_SCHEMA))
          .build())
       .callHandler((exchange, callReq) -> tryCall(() -> {
         try (Connection c = openConnection(config, null);
@@ -498,7 +498,7 @@ public final class DatabaseOperatorTools {
             Note to model:
             If the sql is a dml operation and it was actually executed No permanent data changes were committed. When explaining the plan, mention this statement will be rolled back
           """)
-         .inputSchema(ToolSchemas.EXPLAIN_PLAN)
+         .inputSchema(jsonSchema(ToolSchemas.EXPLAIN_PLAN))
          .build())
       .callHandler((exchange, callReq) -> tryCall(() -> {
         try (Connection c = openConnection(config, null)) {

@@ -63,6 +63,13 @@ import java.lang.reflect.Field;
  * <p>The connection pool uses minimal settings (1 connection).
  */
 public class Utils {
+  public static McpSchema.JsonSchema jsonSchema(String schema) {
+    try {
+      return new ObjectMapper().readValue(schema, McpSchema.JsonSchema.class);
+    } catch (IOException e) {
+      throw new IllegalArgumentException("Invalid tool input schema", e);
+    }
+  }
   private static final Logger LOG = Logger.getLogger(Utils.class.getName());
   private static final Pattern SAFE_IDENT = Pattern.compile("[A-Za-z0-9_$.#]+");
 
@@ -195,7 +202,7 @@ public class Utils {
             .name(tc.name)
             .title(tc.name)
             .description(tc.description)
-            .inputSchema(tc.buildInputSchemaJson())
+            .inputSchema(jsonSchema(tc.buildInputSchemaJson()))
             .build()
         )
         .callHandler((exchange, callReq) -> tryCall(() -> {

@@ -38,6 +38,10 @@
       "statistic": "Mean",
       "collectionInterval": "30 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "tablespaceName",
         "tablespaceType"
       ],
@@ -54,6 +58,10 @@
       "statistic": "Mean",
       "collectionInterval": "5 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "dbRole",
         "primaryDbid",
         "primaryDbUniqueName"
@@ -70,6 +78,10 @@
       "statistic": "Mean",
       "collectionInterval": "5 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "dbRole",
         "primaryDbid",
         "primaryDbUniqueName"
@@ -86,6 +98,10 @@
       "statistic": "Mean",
       "collectionInterval": "5 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -103,6 +119,10 @@
       "statistic": "Mean",
       "collectionInterval": "5 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -120,6 +140,10 @@
       "statistic": "Mean",
       "collectionInterval": "30 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "status",
         "backupType",
         "deviceType"
@@ -136,6 +160,10 @@
       "statistic": "Mean",
       "collectionInterval": "30 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "status",
         "backupType",
         "deviceType"
@@ -152,6 +180,10 @@
       "statistic": "Mean",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -168,7 +200,12 @@
       "unit": "count",
       "statistic": "Max",
       "collectionInterval": "15 minute",
-      "dimensions": [],
+      "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType"
+      ],
       "supportedDatabaseType": [
         "PDB"
       ]
@@ -181,6 +218,10 @@
       "statistic": "Mean",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -198,6 +239,10 @@
       "statistic": "Mean",
       "collectionInterval": "60 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -215,6 +260,10 @@
       "statistic": "Mean",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -232,6 +281,10 @@
       "statistic": "Mean",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -249,6 +302,10 @@
       "statistic": "Sum",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -266,6 +323,10 @@
       "statistic": "Sum",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "managedDatabaseId",
         "managedDatabaseGroupId",
         "jobId",
@@ -284,6 +345,10 @@
       "statistic": "Mean",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -301,6 +366,10 @@
       "statistic": "Mean",
       "collectionInterval": "5 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "dbRole",
         "primaryDbid",
         "primaryDbUniqueName"
@@ -317,6 +386,10 @@
       "statistic": "Sum",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -333,7 +406,12 @@
       "unit": "GB",
       "statistic": "Max",
       "collectionInterval": "15 minute",
-      "dimensions": [],
+      "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType"
+      ],
       "supportedDatabaseType": [
         "CDB"
       ]
@@ -345,7 +423,12 @@
       "unit": "percent",
       "statistic": "Mean",
       "collectionInterval": "15 minute",
-      "dimensions": [],
+      "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType"
+      ],
       "supportedDatabaseType": [
         "CDB"
       ]
@@ -358,6 +441,10 @@
       "statistic": "Mean",
       "collectionInterval": "5 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -375,6 +462,10 @@
       "statistic": "Mean",
       "collectionInterval": "5 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -392,6 +483,10 @@
       "statistic": "Mean",
       "collectionInterval": "5 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -408,7 +503,12 @@
       "unit": "count",
       "statistic": "Max",
       "collectionInterval": "24 hour",
-      "dimensions": [],
+      "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType"
+      ],
       "supportedDatabaseType": [
         "PDB"
       ]
@@ -421,6 +521,10 @@
       "statistic": "Mean",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName",
@@ -441,6 +545,10 @@
       "statistic": "Mean",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName",
@@ -461,6 +569,10 @@
       "statistic": "Mean",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -478,6 +590,10 @@
       "statistic": "Max",
       "collectionInterval": "30 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "tablespaceName",
         "tablespaceType"
       ],
@@ -494,6 +610,10 @@
       "statistic": "Mean",
       "collectionInterval": "15 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName",
@@ -524,6 +644,10 @@
       "statistic": "Mean",
       "collectionInterval": "5 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "collectionName",
         "errorSeverity",
         "errorCode"
@@ -541,6 +665,10 @@
       "statistic": "Last",
       "collectionInterval": "24 hour",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "isPerpetual"
       ],
       "supportedDatabaseType": [
@@ -555,7 +683,12 @@
       "unit": "percent",
       "statistic": "Mean",
       "collectionInterval": "15 minute",
-      "dimensions": [],
+      "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType"
+      ],
       "supportedDatabaseType": [
         "CDB"
       ]
@@ -568,6 +701,10 @@
       "statistic": "Sum",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -585,6 +722,10 @@
       "statistic": "Mean",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName",
@@ -605,6 +746,10 @@
       "statistic": "Max",
       "collectionInterval": "15 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "type",
         "(Broken,",
         "Failed)"
@@ -621,6 +766,10 @@
       "statistic": "Max",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -637,6 +786,10 @@
       "statistic": "Mean",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -652,7 +805,12 @@
       "unit": "percent",
       "statistic": "Mean",
       "collectionInterval": "15 minute",
-      "dimensions": [],
+      "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType"
+      ],
       "supportedDatabaseType": [
         "CDB"
       ]
@@ -664,7 +822,12 @@
       "unit": "GB",
       "statistic": "Mean",
       "collectionInterval": "15 minute",
-      "dimensions": [],
+      "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType"
+      ],
       "supportedDatabaseType": [
         "CDB"
       ]
@@ -677,6 +840,10 @@
       "statistic": "Mean",
       "collectionInterval": "15 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "deviceType"
       ],
       "supportedDatabaseType": [
@@ -691,6 +858,10 @@
       "statistic": "Mean",
       "collectionInterval": "5 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "dbRole",
         "primaryDbid",
         "primaryDbUniqueName"
@@ -706,7 +877,12 @@
       "unit": "MB per second",
       "statistic": "Mean",
       "collectionInterval": "5 minute",
-      "dimensions": [],
+      "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType"
+      ],
       "supportedDatabaseType": [
         "CDB"
       ]
@@ -719,6 +895,10 @@
       "statistic": "Mean",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -735,7 +915,12 @@
       "unit": "count",
       "statistic": "Mean",
       "collectionInterval": "15 minute",
-      "dimensions": [],
+      "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType"
+      ],
       "supportedDatabaseType": [
         "CDB"
       ]
@@ -748,6 +933,10 @@
       "statistic": "Mean",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -764,6 +953,10 @@
       "statistic": "Mean",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -780,7 +973,12 @@
       "unit": "GB",
       "statistic": "Max",
       "collectionInterval": "30 minute",
-      "dimensions": [],
+      "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType"
+      ],
       "supportedDatabaseType": [
         "CDB",
         "PDB"
@@ -794,6 +992,10 @@
       "statistic": "Max",
       "collectionInterval": "30 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "tablespaceName",
         "tablespaceType"
       ],
@@ -809,7 +1011,12 @@
       "unit": "GB",
       "statistic": "Max",
       "collectionInterval": "30 minute",
-      "dimensions": [],
+      "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType"
+      ],
       "supportedDatabaseType": [
         "CDB",
         "PDB"
@@ -823,6 +1030,10 @@
       "statistic": "Max",
       "collectionInterval": "30 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "tablespaceName",
         "tablespaceType"
       ],
@@ -838,7 +1049,12 @@
       "unit": "percent",
       "statistic": "Mean",
       "collectionInterval": "30 minute",
-      "dimensions": [],
+      "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType"
+      ],
       "supportedDatabaseType": [
         "CDB",
         "PDB"
@@ -852,6 +1068,10 @@
       "statistic": "Mean",
       "collectionInterval": "30 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "tablespaceName",
         "tablespaceType"
       ],
@@ -868,6 +1088,10 @@
       "statistic": "Sum",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -885,6 +1109,10 @@
       "statistic": "Mean",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName",
@@ -905,6 +1133,10 @@
       "statistic": "Mean",
       "collectionInterval": "5 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "dbRole",
         "primaryDbid",
         "primaryDbUniqueName"
@@ -921,6 +1153,10 @@
       "statistic": "Mean",
       "collectionInterval": "5 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "dbRole",
         "primaryDbid",
         "primaryDbUniqueName"
@@ -937,6 +1173,10 @@
       "statistic": "Mean",
       "collectionInterval": "15 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "deviceType"
       ],
       "supportedDatabaseType": [
@@ -951,6 +1191,10 @@
       "statistic": "Max",
       "collectionInterval": "24 hour",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "schemaName"
       ],
       "supportedDatabaseType": [
@@ -964,7 +1208,12 @@
       "unit": "percent",
       "statistic": "Mean",
       "collectionInterval": "15 minute",
-      "dimensions": [],
+      "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType"
+      ],
       "supportedDatabaseType": [
         "CDB"
       ]
@@ -976,7 +1225,12 @@
       "unit": "GB",
       "statistic": "Max",
       "collectionInterval": "15 minute",
-      "dimensions": [],
+      "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType"
+      ],
       "supportedDatabaseType": [
         "CDB"
       ]
@@ -989,6 +1243,10 @@
       "statistic": "Sum",
       "collectionInterval": "1 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName"
@@ -1006,6 +1264,10 @@
       "statistic": "Mean",
       "collectionInterval": "5 minute",
       "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType",
         "instanceNumber",
         "instanceName",
         "hostName",
@@ -1023,7 +1285,12 @@
       "unit": "count",
       "statistic": "Count",
       "collectionInterval": "1 minute",
-      "dimensions": [],
+      "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType"
+      ],
       "supportedDatabaseType": [
         "CDB",
         "PDB"
@@ -1036,7 +1303,12 @@
       "unit": "count",
       "statistic": "Count",
       "collectionInterval": "1 minute",
-      "dimensions": [],
+      "dimensions": [
+        "resourceId",
+        "resourceName",
+        "resourceType",
+        "deploymentType"
+      ],
       "supportedDatabaseType": [
         "CDB",
         "PDB"
@@ -1056,9 +1328,15 @@
         "deploymentType",
         "asmInstance",
         "diskGroupName",
-        "cellDiskType[HardDisk|FlashDisk]"
+        "cellDiskType"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1087,9 +1365,15 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]"
+        "cellDiskType"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1103,10 +1387,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1120,10 +1410,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1137,10 +1433,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1154,10 +1456,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1171,10 +1479,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1188,10 +1502,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1205,10 +1525,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1222,10 +1548,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1239,10 +1571,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1256,10 +1594,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1273,10 +1617,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1290,10 +1640,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1307,10 +1663,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1324,10 +1686,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1341,10 +1709,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1358,10 +1732,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1375,10 +1755,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1392,10 +1778,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1409,10 +1801,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1426,10 +1824,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1443,10 +1847,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1460,10 +1870,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "cellDiskType[HardDisk|FlashDisk]",
+        "cellDiskType",
         "cellDiskName"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "cellDiskType": [
+          "HardDisk",
+          "FlashDisk"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1492,9 +1908,16 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "severity[warning|info|critical]"
+        "severity"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "severity": [
+          "warning",
+          "info",
+          "critical"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1524,10 +1947,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1542,10 +1969,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1560,10 +1991,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1578,10 +2013,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1596,10 +2035,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1614,10 +2057,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1632,10 +2079,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1650,10 +2101,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1668,10 +2123,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1686,10 +2145,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1704,10 +2167,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1722,10 +2189,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1740,10 +2211,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1758,10 +2233,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1776,10 +2255,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1794,10 +2277,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1812,10 +2299,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1830,10 +2321,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1848,10 +2343,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1866,10 +2365,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1884,10 +2387,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1902,10 +2409,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1920,10 +2431,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1938,10 +2453,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1956,10 +2475,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1974,10 +2497,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -1992,10 +2519,14 @@
         "exadataInfrastructureId",
         "deploymentType",
         "databaseName",
-        "type",
-        "[db]"
+        "type"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "type": [
+          "db"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",
@@ -2489,9 +3020,15 @@
         "resourceName",
         "exadataInfrastructureId",
         "deploymentType",
-        "operationType=[sent|received]"
+        "operationType"
       ],
-      "supportedDatabaseType": []
+      "supportedDatabaseType": [],
+      "dimensionValues": {
+        "operationType": [
+          "sent",
+          "received"
+        ]
+      }
     },
     {
       "namespace": "oracle_oci_exadata",

@@ -76,6 +76,23 @@ def test_packaged_catalog_exposes_collection_interval() -> None:
     assert all("collectionInterval" in record and "collectionInternal" not in record for record in catalog.records)
 
 
+def test_packaged_catalog_normalizes_common_and_annotated_dimensions() -> None:
+    catalog = metric_catalog.load_metric_catalog()
+    records = list(catalog.records)
+    database_records = [record for record in records if record["namespace"] == "oracle_oci_database"]
+    cell_disk_capacity = next(
+        record
+        for record in records
+        if record["namespace"] == "oracle_oci_exadata" and record["name"] == "CellDiskCapacity"
+    )
+
+    assert database_records
+    assert all({"resourceId", "resourceName", "resourceType", "deploymentType"}.issubset(record["dimensions"]) for record in database_records)
+    assert all("[" not in dimension and "]" not in dimension and "=" not in dimension for record in records for dimension in record["dimensions"])
+    assert "cellDiskType" in cell_disk_capacity["dimensions"]
+    assert cell_disk_capacity["dimensionValues"]["cellDiskType"] == ("HardDisk", "FlashDisk")
+
+
 @pytest.mark.parametrize(
     ("payload", "error"),
     [

@@ -324,6 +324,91 @@ def test_metric_read_builds_one_monitoring_request_from_catalog(monkeypatch) -> 
 
 
 @pytest.mark.parametrize(
+    ("namespace", "metric_name", "dimension_filters", "group_by", "expected_query"),
+    [
+        (
+            "oracle_oci_database",
+            "CpuUtilization",
+            {"resourceId": "ocid1.database.oc1..example"},
+            "resourceId",
+            'CpuUtilization[5m]{resourceId = "ocid1.database.oc1..example"}.groupBy(resourceId).mean()',
+        ),
+        (
+            "oracle_oci_exadata",
+            "CellDiskCapacity",
+            {"cellDiskType": "HardDisk"},
+            None,
+            'CellDiskCapacity[5m]{cellDiskType = "HardDisk"}.mean()',
+        ),
+    ],
+)
+def test_metric_read_accepts_normalized_catalog_dimensions(monkeypatch, namespace, metric_name, dimension_filters, group_by, expected_query) -> None:
+    from oracle.oci_db_observability_mcp_server.registry import load_registry
+
+    captured: dict[str, object] = {}
+
+    class Details:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    class Client:
+        def summarize_metrics_data(self, **kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(data=[], headers={})
+
+    monkeypatch.setattr(runtime, "_client", lambda *_args: Client())
+    monkeypatch.setattr(runtime, "identity_bootstrap_client", lambda: SimpleNamespace(get_compartment=lambda **_kwargs: None))
+    monkeypatch.setattr(runtime.oci.monitoring, "models", SimpleNamespace(SummarizeMetricsDataDetails=Details))
+    arguments = {
+        "compartment_id": "ocid1.compartment.oc1..example",
+        "namespace": namespace,
+        "metric_name": metric_name,
+        "dimension_filters": dimension_filters,
+        "aggregation": "mean",
+        "interval": "5m",
+        "resolution": "1m",
+        "start_time": "2026-08-01T00:00:00Z",
+        "end_time": "2026-08-01T01:00:00Z",
+    }
+    if group_by:
+        arguments["group_by"] = group_by
+
+    runtime.invoke_registered_tool(load_registry().get_tool("read_database_and_infra_observability_metrics"), arguments)
+
+    assert captured["summarize_metrics_data_details"].kwargs["query"] == expected_query
+
+
+@pytest.mark.parametrize(
+    ("metric_name", "dimension_filters", "error"),
+    [
+        ("CellDiskCapacity", {"cellDiskType[HardDisk|FlashDisk]": "HardDisk"}, "Unsupported dimensions"),
+        ("CellDiskCapacity", {"cellDiskType": "UnknownDisk"}, "Unsupported dimension values"),
+    ],
+)
+def test_metric_read_rejects_annotation_dimensions_and_invalid_allowed_values(monkeypatch, metric_name, dimension_filters, error) -> None:
+    from oracle.oci_db_observability_mcp_server.registry import load_registry
+
+    monkeypatch.setattr(runtime, "_client", lambda *_args: pytest.fail("invalid dimensions must not create an OCI client"))
+    monkeypatch.setattr(runtime, "identity_bootstrap_client", lambda: SimpleNamespace(get_compartment=lambda **_kwargs: None))
+
+    with pytest.raises(ValueError, match=error):
+        runtime.invoke_registered_tool(
+            load_registry().get_tool("read_database_and_infra_observability_metrics"),
+            {
+                "compartment_id": "ocid1.compartment.oc1..example",
+                "namespace": "oracle_oci_exadata",
+                "metric_name": metric_name,
+                "dimension_filters": dimension_filters,
+                "aggregation": "mean",
+                "interval": "5m",
+                "resolution": "1m",
+                "start_time": "2026-08-01T00:00:00Z",
+                "end_time": "2026-08-01T01:00:00Z",
+            },
+        )
+
+
+@pytest.mark.parametrize(
     "arguments, error",
     [
         ({"dimension_filters": {"notCataloged": "value"}}, "Unsupported dimensions"),

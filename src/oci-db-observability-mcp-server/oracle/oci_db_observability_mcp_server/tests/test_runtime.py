@@ -342,6 +342,41 @@ def test_metric_read_builds_one_monitoring_request_from_catalog(monkeypatch) -> 
             "ioType",
             'IOPS[5m]{ioType = "Read"}.groupBy(ioType).mean()',
         ),
+        (
+            "oracle_oci_database",
+            "IOThroughput",
+            {"ioType": "Write"},
+            "ioType",
+            'IOThroughput[5m]{ioType = "Write"}.groupBy(ioType).mean()',
+        ),
+        (
+            "oracle_oci_database",
+            "MemoryUsage",
+            {"memoryType": "SGA", "memoryPool": "BufferCache"},
+            "memoryPool",
+            'MemoryUsage[5m]{memoryPool = "BufferCache", memoryType = "SGA"}.groupBy(memoryPool).mean()',
+        ),
+        (
+            "oracle_oci_database",
+            "ParsesByType",
+            {"parseType": "HardParse"},
+            "parseType",
+            'ParsesByType[5m]{parseType = "HardParse"}.groupBy(parseType).mean()',
+        ),
+        (
+            "oracle_oci_database",
+            "ProblematicScheduledDBMSJobs",
+            {"type": "Broken"},
+            "type",
+            'ProblematicScheduledDBMSJobs[5m]{type = "Broken"}.groupBy(type).mean()',
+        ),
+        (
+            "oracle_oci_database",
+            "TransactionsByStatus",
+            {"transactionStatus": "Committed"},
+            "transactionStatus",
+            'TransactionsByStatus[5m]{transactionStatus = "Committed"}.groupBy(transactionStatus).mean()',
+        ),
     ],
 )
 def test_metric_read_accepts_normalized_catalog_dimensions(monkeypatch, namespace, metric_name, dimension_filters, group_by, expected_query) -> None:

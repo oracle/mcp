@@ -335,6 +335,13 @@ def test_metric_read_builds_one_monitoring_request_from_catalog(monkeypatch) -> 
             None,
             'CellDiskCapacity[5m]{cellDiskType = "HardDisk"}.mean()',
         ),
+        (
+            "oracle_oci_database",
+            "IOPS",
+            {"ioType": "Read"},
+            "ioType",
+            'IOPS[5m]{ioType = "Read"}.groupBy(ioType).mean()',
+        ),
     ],
 )
 def test_metric_read_accepts_normalized_catalog_dimensions(monkeypatch, namespace, metric_name, dimension_filters, group_by, expected_query) -> None:
@@ -374,13 +381,15 @@ def test_metric_read_accepts_normalized_catalog_dimensions(monkeypatch, namespac
 
 
 @pytest.mark.parametrize(
-    ("metric_name", "dimension_filters", "error"),
+    ("namespace", "metric_name", "dimension_filters", "error"),
     [
-        ("CellDiskCapacity", {"cellDiskType[HardDisk|FlashDisk]": "HardDisk"}, "Unsupported dimensions"),
-        ("CellDiskCapacity", {"cellDiskType": "UnknownDisk"}, "Unsupported dimension values"),
+        ("oracle_oci_exadata", "CellDiskCapacity", {"cellDiskType[HardDisk|FlashDisk]": "HardDisk"}, "Unsupported dimensions"),
+        ("oracle_oci_exadata", "CellDiskCapacity", {"cellDiskType": "UnknownDisk"}, "Unsupported dimension values"),
+        ("oracle_oci_database", "IOPS", {"(Read,": "anything"}, "Unsupported dimensions"),
+        ("oracle_oci_database", "IOPS", {"ioType": "Other"}, "Unsupported dimension values"),
     ],
 )
-def test_metric_read_rejects_annotation_dimensions_and_invalid_allowed_values(monkeypatch, metric_name, dimension_filters, error) -> None:
+def test_metric_read_rejects_annotation_dimensions_and_invalid_allowed_values(monkeypatch, namespace, metric_name, dimension_filters, error) -> None:
     from oracle.oci_db_observability_mcp_server.registry import load_registry
 
     monkeypatch.setattr(runtime, "_client", lambda *_args: pytest.fail("invalid dimensions must not create an OCI client"))
@@ -391,7 +400,7 @@ def test_metric_read_rejects_annotation_dimensions_and_invalid_allowed_values(mo
             load_registry().get_tool("read_database_and_infra_observability_metrics"),
             {
                 "compartment_id": "ocid1.compartment.oc1..example",
-                "namespace": "oracle_oci_exadata",
+                "namespace": namespace,
                 "metric_name": metric_name,
                 "dimension_filters": dimension_filters,
                 "aggregation": "mean",

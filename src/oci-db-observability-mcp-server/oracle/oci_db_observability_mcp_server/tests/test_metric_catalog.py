@@ -7,6 +7,7 @@ https://oss.oracle.com/licenses/upl.
 from __future__ import annotations
 
 import json
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -88,9 +89,12 @@ def test_packaged_catalog_normalizes_common_and_annotated_dimensions() -> None:
 
     assert database_records
     assert all({"resourceId", "resourceName", "resourceType", "deploymentType"}.issubset(record["dimensions"]) for record in database_records)
-    assert all("[" not in dimension and "]" not in dimension and "=" not in dimension for record in records for dimension in record["dimensions"])
+    assert all(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", dimension) for record in records for dimension in record["dimensions"])
     assert "cellDiskType" in cell_disk_capacity["dimensions"]
     assert cell_disk_capacity["dimensionValues"]["cellDiskType"] == ("HardDisk", "FlashDisk")
+    for name in ("IOPS", "IOThroughput"):
+        metric = next(record for record in database_records if record["name"] == name)
+        assert metric["dimensionValues"]["ioType"] == ("Read", "Write")
 
 
 @pytest.mark.parametrize(

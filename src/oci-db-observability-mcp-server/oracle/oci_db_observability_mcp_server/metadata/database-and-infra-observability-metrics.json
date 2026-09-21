@@ -528,10 +528,14 @@
         "instanceNumber",
         "instanceName",
         "hostName",
-        "ioType",
-        "(Read,",
-        "Write)"
+        "ioType"
       ],
+      "dimensionValues": {
+        "ioType": [
+          "Read",
+          "Write"
+        ]
+      },
       "supportedDatabaseType": [
         "CDB",
         "PDB"
@@ -552,10 +556,14 @@
         "instanceNumber",
         "instanceName",
         "hostName",
-        "ioType",
-        "(Read,",
-        "Write)"
+        "ioType"
       ],
+      "dimensionValues": {
+        "ioType": [
+          "Read",
+          "Write"
+        ]
+      },
       "supportedDatabaseType": [
         "CDB",
         "PDB"
@@ -618,19 +626,25 @@
         "instanceName",
         "hostName",
         "memoryType",
-        "(SGA,",
-        "PGA)",
-        "memoryPool",
-        "(AllocatedPGA,",
-        "BufferCache,",
-        "FixedSGA,",
-        "JavaPool,",
-        "LargePool,",
-        "LogBuffer,",
-        "OtherPools,",
-        "SharedPool,",
-        "StreamsPool)"
+        "memoryPool"
       ],
+      "dimensionValues": {
+        "memoryType": [
+          "SGA",
+          "PGA"
+        ],
+        "memoryPool": [
+          "AllocatedPGA",
+          "BufferCache",
+          "FixedSGA",
+          "JavaPool",
+          "LargePool",
+          "LogBuffer",
+          "OtherPools",
+          "SharedPool",
+          "StreamsPool"
+        ]
+      },
       "supportedDatabaseType": [
         "CDB",
         "PDB"
@@ -729,10 +743,14 @@
         "instanceNumber",
         "instanceName",
         "hostName",
-        "parseType",
-        "(HardParse,",
-        "SoftParse)"
+        "parseType"
       ],
+      "dimensionValues": {
+        "parseType": [
+          "HardParse",
+          "SoftParse"
+        ]
+      },
       "supportedDatabaseType": [
         "CDB",
         "PDB"
@@ -750,10 +768,14 @@
         "resourceName",
         "resourceType",
         "deploymentType",
-        "type",
-        "(Broken,",
-        "Failed)"
+        "type"
       ],
+      "dimensionValues": {
+        "type": [
+          "Broken",
+          "Failed"
+        ]
+      },
       "supportedDatabaseType": [
         "PDB"
       ]
@@ -1116,10 +1138,14 @@
         "instanceNumber",
         "instanceName",
         "hostName",
-        "transactionStatus",
-        "(Committed,",
-        "RolledBack)"
+        "transactionStatus"
       ],
+      "dimensionValues": {
+        "transactionStatus": [
+          "Committed",
+          "RolledBack"
+        ]
+      },
       "supportedDatabaseType": [
         "CDB",
         "PDB"

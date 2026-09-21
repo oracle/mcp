@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- Updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).
+- Updated OCI CLI to 3.92.0 and refreshed the denylist for its mutating command surface.
+
 ## 2.1.5
 
 ### Security

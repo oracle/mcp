@@ -1,0 +1,75 @@
+inheritedBy:
+  file: 'pyproject.toml'
+
+fileGroups:
+  sources:
+    - 'oracle/**/*'
+    - 'oracle_mcp_common/**/*'
+    - '!oracle/**/tests/**/*'
+    - '!oracle_mcp_common/tests/**/*'
+  tests:
+    - 'oracle/**/tests/**/*'
+    - 'oracle_mcp_common/tests/**/*'
+    - 'tests/**/*'
+  buildFiles:
+    - '**/*'
+    - '!.coverage*'
+    - '!dist/**/*'
+    - '!htmlcov/**/*'
+
+tasks:
+  lock-check:
+    description: 'Verifies that uv.lock is current'
+    command: 'uv lock --check'
+    inputs:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - project: '^'
+        filter:
+          - 'pyproject.toml'
+
+  test:
+    description: 'Runs unit tests with branch coverage'
+    type: 'test'
+    command:
+      - 'uv'
+      - 'run'
+      - 'pytest'
+      - '--cov=.'
+      - '--cov-branch'
+      - '--cov-report=html'
+      - '--cov-report=term-missing'
+    env:
+      COVERAGE_FILE: '$workspaceRoot/.coverage.$project'
+    inputs:
+      - '@group(sources)'
+      - '@group(tests)'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - project: '^'
+        filter:
+          - 'oracle/**/*'
+          - '!oracle/**/tests/**/*'
+          - 'oracle_mcp_common/**/*'
+          - '!oracle_mcp_common/tests/**/*'
+          - 'pyproject.toml'
+    outputs:
+      - '/.coverage.$project'
+      - 'htmlcov/**/*'
+
+  build:
+    description: 'Builds wheel and source distributions'
+    command: 'uv build --clear'
+    inputs:
+      - '@group(buildFiles)'
+    outputs:
+      - 'dist/**/*'
+
+  install-check:
+    description: 'Verifies that the project can be installed'
+    command: 'uv pip install .'
+    deps:
+      - target: 'test'
+      - target: 'build'
+    options:
+      cache: false

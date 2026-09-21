@@ -550,6 +550,28 @@ To run both the Python and JavaScript checks from the repository root:
 make ci
 ```
 
+### Running tasks with moon
+
+The standard Python server projects and the JavaScript MCP server can also be
+orchestrated with [moon](https://moonrepo.dev/). Tool versions are pinned in
+`.prototools`; after installing [proto](https://moonrepo.dev/docs/proto/install),
+install the pinned tools and run tasks from the repository root:
+
+```bash
+proto install
+moon run oci-compute-mcp-server:test
+moon run oci-javascript-mcp-server:ci
+moon run :lint
+moon run :build
+```
+
+Moon uses each project's language-specific package definition: `pyproject.toml`
+and `uv.lock` for Python, and `package.json` and `package-lock.json` for
+JavaScript. The JavaScript tasks are inferred from the existing npm scripts.
+Other projects excluded from the repository-level Make targets are not part of
+this Moon rollout and continue to use the validation commands in their own
+README.
+
 ## Publishing
 
 ### Publish & verify test packages

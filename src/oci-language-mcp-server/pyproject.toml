@@ -1,0 +1,96 @@
+[project]
+name = "oracle.oci-language-mcp-server"
+version = "0.1.0"
+description = "Production MCP server exposing OCI Language shared pretrained capabilities."
+readme = "README.md"
+requires-python = ">=3.13"
+license = "UPL-1.0"
+license-files = ["LICENSE.txt"]
+authors = [
+    {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
+]
+keywords = ["oci", "language", "nlp", "translation", "pii", "mcp", "model-context-protocol"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Text Processing :: Linguistic",
+]
+dependencies = [
+    "fastmcp==3.4.2",
+    "oci==2.179.0",
+    "oracle-mcp-common>=0.1.2,<0.2.0",
+    "pydantic==2.12.3",
+    "pydantic-settings>=2,<3",
+    "structlog>=24,<26",
+    "uvicorn>=0.34,<1",
+    "urllib3>=2.6.2,<2.7",
+]
+
+[project.scripts]
+"oracle.oci-language-mcp-server" = "oracle.oci_language_mcp_server.server:main"
+
+[project.urls]
+Changelog = "https://github.com/oracle/mcp/blob/main/src/oci-language-mcp-server/CHANGELOG.md"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["oracle"]
+exclude = ["/oracle/**/tests/**"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"oracle/oci_language_mcp_server/prompts/server_instructions.md" = "oracle/oci_language_mcp_server/prompts/server_instructions.md"
+
+[tool.uv.sources]
+oracle-mcp-common = { workspace = true }
+
+[tool.uv.workspace]
+members = ["../common"]
+
+[dependency-groups]
+dev = [
+    "jsonschema>=4,<5",
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.2.0",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.14.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["oracle/oci_language_mcp_server/tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+addopts = "--import-mode=importlib"
+filterwarnings = [
+    "ignore:authlib.jose module is deprecated:authlib.deprecate.AuthlibDeprecationWarning",
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "RUF"]
+
+[tool.coverage.run]
+omit = [
+    "**/__init__.py",
+    "**/tests/*",
+    "dist/*",
+    ".venv/*",
+]
+
+[tool.coverage.report]
+omit = [
+    "**/__init__.py",
+    "**/tests/*",
+]
+precision = 2
+fail_under = 90

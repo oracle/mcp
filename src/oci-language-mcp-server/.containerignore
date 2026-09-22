@@ -1,0 +1,15 @@
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+htmlcov
+.coverage*
+dist
+build
+*.egg-info
+config/docker/runtime.env
+config/docker/secrets.env
+config/docker/*token*
+config/docker/*secret*

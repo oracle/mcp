@@ -43,7 +43,6 @@ def test_stdio_client_uses_common_auth_context_and_user_agent(monkeypatch, auth_
     )
     build_context = Mock(return_value=context)
     monkeypatch.setattr(runtime, "build_auth_context", build_context)
-    monkeypatch.setattr(runtime, "get_access_token", lambda: None)
     monkeypatch.setattr(runtime, "client_class", lambda _service, _client: FakeClient)
 
     client = runtime._client("opsi", "OperationsInsightsClient")
@@ -52,59 +51,6 @@ def test_stdio_client_uses_common_auth_context_and_user_agent(monkeypatch, auth_
     assert client.signer is signer
     assert client.config == {"region": "us-phoenix-1", "additional_user_agent": EXPECTED_USER_AGENT}
     assert context.auth_type == auth_type
-
-
-def test_http_clients_are_caller_specific_and_not_cached(monkeypatch) -> None:
-    runtime._stdio_client.cache_clear()
-    first_signer, second_signer = object(), object()
-    contexts = {
-        "first-token": SimpleNamespace(config={"region": "us-chicago-1"}, signer=first_signer),
-        "second-token": SimpleNamespace(config={"region": "us-chicago-1"}, signer=second_signer),
-    }
-    calls: list[str] = []
-
-    def context_for(token: str):
-        calls.append(token)
-        return contexts[token]
-
-    tokens = iter([SimpleNamespace(token="first-token"), SimpleNamespace(token="second-token")])
-    monkeypatch.setattr(runtime, "_http_auth", SimpleNamespace(context_for=context_for))
-    monkeypatch.setattr(runtime, "get_access_token", lambda: next(tokens))
-    monkeypatch.setattr(runtime, "build_auth_context", lambda: pytest.fail("HTTP must not use stdio credentials"))
-    monkeypatch.setattr(runtime, "client_class", lambda _service, _client: FakeClient)
-
-    first = runtime._client("opsi", "OperationsInsightsClient")
-    second = runtime._client("opsi", "OperationsInsightsClient")
-
-    assert calls == ["first-token", "second-token"]
-    assert first is not second
-    assert first.signer is first_signer
-    assert second.signer is second_signer
-    assert first.config["additional_user_agent"] == EXPECTED_USER_AGENT
-    assert second.config["additional_user_agent"] == EXPECTED_USER_AGENT
-
-
-def test_http_access_token_requires_initialized_policy(monkeypatch) -> None:
-    monkeypatch.setattr(runtime, "_http_auth", None)
-
-    with pytest.raises(RuntimeError, match="policy has not been initialized"):
-        runtime._get_config_and_signer(SimpleNamespace(token="caller-token"))
-
-
-def test_identity_bootstrap_uses_http_context(monkeypatch) -> None:
-    signer = object()
-    monkeypatch.setattr(
-        runtime,
-        "_http_auth",
-        SimpleNamespace(context_for=lambda token: SimpleNamespace(config={"region": "us-ashburn-1"}, signer=signer)),
-    )
-    monkeypatch.setattr(runtime, "get_access_token", lambda: SimpleNamespace(token="caller-token"))
-    monkeypatch.setattr(runtime, "client_class", lambda _service, _client: FakeClient)
-
-    client = runtime.identity_bootstrap_client()
-
-    assert isinstance(client, FakeClient)
-    assert client.signer is signer
 
 
 def test_invoke_validates_before_creating_sdk_client(monkeypatch) -> None:

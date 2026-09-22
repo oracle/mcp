@@ -28,7 +28,6 @@
 
 - Configured OCI authentication through `oracle-mcp-common`, including
   API-key, security-token, instance-principal, and resource-principal flows.
-- OCI IAM/IDCS request-token authentication for HTTP deployments.
 
 ### Tool surface
 

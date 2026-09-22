@@ -2,9 +2,8 @@
 
 This package provides one MCP server for OCI Operations Insights (OPSI),
 Database Management (DBM), and OCI Monitoring observability workflows. It
-exposes three read-only compartment discovery tools plus four catalog discovery
-and invocation tools. The catalog contains read-only OCI SDK bindings and
-packaged metadata handlers.
+exposes catalog discovery and invocation tools. Use `oci-identity-mcp-server`
+for compartment discovery and pass the resulting OCID to this server.
 
 ## Running
 
@@ -20,43 +19,11 @@ Use a named OCI CLI profile when required:
 OCI_CONFIG_PROFILE=<profile_name> uvx oracle.oci-db-observability-mcp-server
 ```
 
-### HTTP streaming
-
-```sh
-ORACLE_MCP_HOST=<bind_host> \
-ORACLE_MCP_PORT=<port> \
-ORACLE_MCP_BASE_URL=<public_base_url> \
-OCI_REGION=<region> \
-IDCS_DOMAIN=<idcs_domain> \
-IDCS_CLIENT_ID=<client_id> \
-IDCS_CLIENT_SECRET=<client_secret> \
-IDCS_AUDIENCE=<audience> \
-uvx oracle.oci-db-observability-mcp-server
-```
-
-Register `${ORACLE_MCP_BASE_URL}/auth/callback` in the OCI IAM confidential
-application. If `IDCS_REQUIRED_SCOPES` is unset, the default scope is
-`oci_mcp.db_observability.invoke` together with the standard OpenID scopes.
-The server uses `oracle-mcp-common` 0.1.2 or later for OCI authentication.
-
 ## Discovery workflow
 
-1. For a compartment-scoped operation, use a user-provided compartment OCID.
-   For a name lookup, call `resolve_oci_compartment`; it searches the configured
-   discovery roots and returns matching OCIDs and paths. Configure one or more
-   comma-separated roots independently of OCI authentication:
-
-   ```sh
-   DBO_MCP_TENANCY_IDS=<tenancy_ocid>[,<another_tenancy_ocid>]
-   ```
-
-   Use the `id` from a unique match as `compartment_id` in subsequent operations.
-   If there are multiple matches, ask the user to select a returned path. If no
-   roots are configured, provide `root_compartment_ids` to the resolver or ask
-   the user for a root; do not invent an OCID. `list_oci_compartments` supports
-   direct browsing below an explicit root, or uses the configured root when
-   exactly one is configured. If the user provides an OCID, call
-   `get_oci_compartment` to validate it when needed.
+1. For a compartment-scoped operation, use `oci-identity-mcp-server` to list
+   compartments or resolve a compartment name. Use the returned compartment
+   OCID as `compartment_id`; do not invent an OCID.
 2. Call `list_dbo_skills` when the relevant capability is not already known.
 3. Call `list_dbo_tools` for selected skills when the required operation is not
    already known.

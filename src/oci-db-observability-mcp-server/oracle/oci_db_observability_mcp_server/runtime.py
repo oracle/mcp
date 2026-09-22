@@ -16,8 +16,7 @@ from typing import Any, Mapping, get_args, get_origin
 
 import oci
 from jsonschema import Draft202012Validator
-from fastmcp.server.dependencies import get_access_token
-from oracle_mcp_common import IDCSHttpAuth, build_auth_context
+from oracle_mcp_common import build_auth_context
 
 from . import __project__, __version__
 from .metric_catalog import MetricCatalogError, load_metric_catalog
@@ -25,27 +24,10 @@ from .registry import client_class, compartment_requirements
 from .sdk_schema import parameter_docs
 
 _USER_AGENT = f"{__project__.split('oracle.', 1)[1].removesuffix('-server')}/{__version__}"
-_http_auth: IDCSHttpAuth | None = None
 
 
-def configure_http_auth(policy: IDCSHttpAuth) -> None:
-    """Configure caller-scoped OCI authentication for HTTP transport."""
-    global _http_auth
-    _http_auth = policy
-
-
-def _get_http_config_and_signer(access_token: Any) -> tuple[dict[str, Any], Any]:
-    """Build caller-specific OCI SDK authentication for one HTTP request."""
-    if _http_auth is None:
-        raise RuntimeError("HTTP authentication policy has not been initialized.")
-    context = _http_auth.context_for(access_token.token if access_token else None)
-    return ({**context.config, "additional_user_agent": _USER_AGENT}, context.signer)
-
-
-def _get_config_and_signer(access_token: Any | None = None) -> tuple[dict[str, Any], Any]:
-    """Resolve HTTP caller credentials or configured stdio OCI credentials."""
-    if access_token is not None:
-        return _get_http_config_and_signer(access_token)
+def _get_config_and_signer() -> tuple[dict[str, Any], Any]:
+    """Resolve configured STDIO OCI credentials."""
     context = build_auth_context()
     return ({**context.config, "additional_user_agent": _USER_AGENT}, context.signer)
 
@@ -57,16 +39,12 @@ def _stdio_client(service: str, client_name: str) -> Any:
 
 
 def _client(service: str, client_name: str) -> Any:
-    access_token = get_access_token()
-    if access_token is None:
-        return _stdio_client(service, client_name)
-    config, signer = _get_config_and_signer(access_token)
-    return client_class(service, client_name)(config, signer=signer)
+    return _stdio_client(service, client_name)
 
 
 def identity_bootstrap_client() -> Any:
     """Create the Identity client for explicit compartment lookups."""
-    config, signer = _get_config_and_signer(get_access_token())
+    config, signer = _get_config_and_signer()
     client = client_class("identity", "IdentityClient")(config, signer=signer)
     return client
 

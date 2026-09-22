@@ -79,7 +79,7 @@ public class McpAdminTools {
                     .name("list-credentials")
                     .title("List Credentials")
                     .description("List DBMS_CLOUD credentials available in the current schema.")
-                    .inputSchema(ToolSchemas.NO_INPUT_SCHEMA)
+                    .inputSchema(Utils.jsonSchema(ToolSchemas.NO_INPUT_SCHEMA))
             .build())
             .callHandler((exchange, callReq) -> {
               try {
@@ -145,7 +145,7 @@ public class McpAdminTools {
          .name("list-tools")
          .title("List Tools")
          .description("List all available tools with their descriptions.")
-         .inputSchema(ToolSchemas.NO_INPUT_SCHEMA)
+         .inputSchema(Utils.jsonSchema(ToolSchemas.NO_INPUT_SCHEMA))
          .build())
       .callHandler((exchange, callReq) -> {
         try {
@@ -267,7 +267,7 @@ public class McpAdminTools {
          .name("edit-tools")
          .title("Edit/Add Tools")
          .description("Create or update YAML-defined tools in the config file. Changes are auto-reloaded.")
-         .inputSchema(ToolSchemas.EDIT_TOOL_SCHEMA)
+         .inputSchema(Utils.jsonSchema(ToolSchemas.EDIT_TOOL_SCHEMA))
          .build())
       .callHandler((exchange, callReq) -> {
         try {

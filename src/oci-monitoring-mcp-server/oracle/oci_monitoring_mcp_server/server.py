@@ -44,7 +44,7 @@ mcp = FastMCP(
 )
 
 
-def _get_http_config_and_signer():
+def _get_http_config_and_signer(region: Optional[str] = None):
     if not (os.getenv("ORACLE_MCP_HOST") and os.getenv("ORACLE_MCP_PORT")):
         return None, None
     token = get_access_token()
@@ -57,7 +57,7 @@ def _get_http_config_and_signer():
         raise RuntimeError(
             "HTTP requests require IDCS authentication. Set IDCS_DOMAIN, IDCS_CLIENT_ID, and IDCS_CLIENT_SECRET."
         )
-    region = os.getenv("OCI_REGION")
+    region = region or os.getenv("OCI_REGION")
     if not region:
         raise RuntimeError("HTTP requests require OCI_REGION.")
     config = {"region": region}
@@ -86,25 +86,77 @@ def _get_oci_client_kwargs(signer=None):
     return kwargs
 
 
-def get_monitoring_client():
+def get_monitoring_client(region: Optional[str] = None):
     logger.info("entering get_monitoring_client")
-    config, signer = _get_http_config_and_signer()
+    config, signer = _get_http_config_and_signer(region)
     if signer is not None:
         return oci.monitoring.MonitoringClient(config, **_get_oci_client_kwargs(signer))
     config = oci.config.from_file(
         file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
         profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
+    if region is not None:
+        config["region"] = region
     user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
     config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
 
     private_key = oci.signer.load_private_key_from_file(config["key_file"])
     token_file = os.path.expanduser(config["security_token_file"])
-    token = None
     with open(token_file, "r") as f:
         token = f.read()
     signer = oci.auth.signers.SecurityTokenSigner(token, private_key)
     return oci.monitoring.MonitoringClient(config, **_get_oci_client_kwargs(signer))
+
+
+def _region_field():
+    """Create the optional region parameter shared by Monitoring tools."""
+    return Field(
+        None,
+        description="OCI region identifier to query, such as us-ashburn-1. "
+        "Use list_subscribed_regions to discover regions available to the tenancy. "
+        "If omitted, the configured region is used.",
+        examples=["us-ashburn-1"],
+    )
+
+
+@mcp.tool(
+    name="list_subscribed_regions",
+    description="List OCI regions subscribed to the tenancy. Use a returned region with the region parameter on Monitoring tools.",
+)
+def list_subscribed_regions(
+    tenancy_id: Annotated[
+        Optional[str],
+        "Tenancy OCID. Normally omitted for stdio because it is read from the configured OCI credentials. Required for HTTP requests because the request token does not expose the tenancy OCID.",
+    ] = None,
+) -> list[str]:
+    """Return region identifiers available to the authenticated tenancy."""
+    config, signer = _get_http_config_and_signer()
+    if signer is None:
+        config = oci.config.from_file(
+            file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+            profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
+        )
+        user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
+        config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
+        configured_tenancy_id = config.get("tenancy")
+        if config.get("security_token_file"):
+            private_key = oci.signer.load_private_key_from_file(config["key_file"])
+            with open(os.path.expanduser(config["security_token_file"]), "r") as token_file:
+                signer = oci.auth.signers.SecurityTokenSigner(token_file.read(), private_key)
+    else:
+        configured_tenancy_id = None
+    resolved_tenancy_id = tenancy_id or configured_tenancy_id
+    if not resolved_tenancy_id:
+        raise ValueError(
+            "tenancy_id is required to list subscribed regions for HTTP authentication."
+        )
+    client = oci.identity.IdentityClient(config, **_get_oci_client_kwargs(signer))
+    response = client.list_region_subscriptions(tenancy_id=resolved_tenancy_id)
+    return [
+        subscription.region_name
+        for subscription in response.data
+        if subscription.region_name
+    ]
 
 
 @mcp.tool(name="list_alarms", description="Lists all alarms in a given compartment")
@@ -114,8 +166,12 @@ def list_alarms(
         "The ID of the compartment containing the resources"
         "monitored by the metric that you are searching for.",
     ],
+    region: Annotated[
+        Optional[str],
+        "OCI region identifier to query. Use list_subscribed_regions to discover available regions; if omitted, the configured region is used.",
+    ] = None,
 ) -> list[AlarmSummary] | str:
-    monitoring_client = get_monitoring_client()
+    monitoring_client = get_monitoring_client(region)
     response: Response | None = monitoring_client.list_alarms(compartment_id=compartment_id)
     if response is None:
         logger.error("Received None response from list_metrics")
@@ -135,6 +191,7 @@ def list_alarms(
 async def list_metric_definitions(
     context: Context,
     compartment_id: str = CompartmentField,
+    region: Optional[str] = _region_field(),
     group_by: Optional[List[str]] = Field(
         None,
         description="Group metrics by these fields in the response. "
@@ -169,7 +226,7 @@ async def list_metric_definitions(
 ) -> List[Metric] | str:
     try:
         # Create client
-        monitoring_client = get_monitoring_client()
+        monitoring_client = get_monitoring_client(region)
 
         list_metrics_details = ListMetricsDetails(
             name=metric_name,
@@ -235,6 +292,7 @@ async def get_metrics_data(
             "BytesReceived[1h].mean()",
         ],
     ),
+    region: Optional[str] = _region_field(),
     start_time: Optional[str] = Field(
         "2025-11-04T18:17:00.000Z",
         description="The beginning of the time range to use when searching for metric data points. "
@@ -284,7 +342,7 @@ async def get_metrics_data(
         logger.info(f"Calling get metrics data with these parameters: {query}")
 
         # Create client
-        monitoring_client = get_monitoring_client()
+        monitoring_client = get_monitoring_client(region)
 
         # Call Summarize metrics data api and process the results
         summarize_metrics_data_details = SummarizeMetricsDataDetails(

@@ -227,6 +227,35 @@ class TestMonitoringTools:
         result = call_tool_result.structured_content["result"]
         assert result == "There was no response returned from the Monitoring API"
 
+    @pytest.mark.asyncio
+    @patch("oracle.oci_monitoring_mcp_server.server.get_monitoring_client")
+    async def test_monitoring_tools_use_requested_region(self, mock_get_client):
+        mock_get_client.return_value.summarize_metrics_data.return_value = Mock(data=[])
+        mock_get_client.return_value.list_metrics.return_value = Mock(data=[])
+        mock_get_client.return_value.list_alarms.return_value = Mock(data=[])
+
+        await server.get_metrics_data(
+            Mock(error=AsyncMock()),
+            compartment_id="compartment1",
+            query="CpuUtilization[1m].mean()",
+            region="eu-frankfurt-1",
+            start_time="2023-01-01T00:00:00Z",
+            end_time="2023-01-01T01:00:00Z",
+            namespace="oci_compute",
+        )
+        await server.list_metric_definitions(
+            Mock(error=AsyncMock()),
+            compartment_id="compartment1",
+            region="eu-frankfurt-1",
+        )
+        server.list_alarms("compartment1", region="eu-frankfurt-1")
+
+        assert [call.args for call in mock_get_client.call_args_list] == [
+            ("eu-frankfurt-1",),
+            ("eu-frankfurt-1",),
+            ("eu-frankfurt-1",),
+        ]
+
 
 class TestInternals:
     def test_prepare_time_parameters(self):
@@ -355,6 +384,38 @@ class TestReadFile:
 
 
 class TestGetClient:
+    @patch("oracle.oci_monitoring_mcp_server.server.oci.identity.IdentityClient")
+    @patch("oracle.oci_monitoring_mcp_server.server.oci.config.from_file")
+    @patch("oracle.oci_monitoring_mcp_server.server._get_http_config_and_signer", return_value=(None, None))
+    def test_list_subscribed_regions_uses_profile_tenancy(
+        self, _mock_http_auth, mock_from_file, mock_identity_client
+    ):
+        mock_from_file.return_value = {"tenancy": "tenancy", "region": "us-ashburn-1"}
+        mock_identity_client.return_value.list_region_subscriptions.return_value = Mock(
+            data=[Mock(region_name="us-ashburn-1"), Mock(region_name="eu-frankfurt-1")]
+        )
+
+        assert server.list_subscribed_regions() == ["us-ashburn-1", "eu-frankfurt-1"]
+        mock_identity_client.return_value.list_region_subscriptions.assert_called_once_with(
+            tenancy_id="tenancy"
+        )
+
+    @patch("oracle.oci_monitoring_mcp_server.server.oci.auth.signers.TokenExchangeSigner", return_value="signer")
+    @patch("oracle.oci_monitoring_mcp_server.server.get_access_token")
+    def test_http_client_uses_requested_region(self, mock_get_access_token, mock_signer, monkeypatch):
+        mock_get_access_token.return_value = AccessToken(token="token", client_id="client", scopes=[], claims={})
+        monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
+        monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
+        monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+        monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+
+        config, signer = server._get_http_config_and_signer("eu-frankfurt-1")
+
+        assert config["region"] == "eu-frankfurt-1"
+        assert signer == "signer"
+        assert mock_signer.call_args.kwargs["region"] == "eu-frankfurt-1"
+
     @patch("oracle.oci_monitoring_mcp_server.server.oci.monitoring.MonitoringClient")
     @patch("oracle.oci_monitoring_mcp_server.server._get_http_config_and_signer")
     def test_get_monitoring_client_http(self, mock_http_config_and_signer, mock_client):

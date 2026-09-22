@@ -7,7 +7,7 @@ https://oss.oracle.com/licenses/upl.
 import os
 import urllib.parse
 from logging import Logger
-from typing import Optional
+from typing import Annotated, Optional
 
 import oci
 from fastmcp import FastMCP
@@ -40,7 +40,7 @@ logger = Logger(__name__, level="INFO")
 mcp = FastMCP(name=__project__)
 
 
-def _get_http_config_and_signer():
+def _get_http_config_and_signer(region: Optional[str] = None):
     if not (os.getenv("ORACLE_MCP_HOST") and os.getenv("ORACLE_MCP_PORT")):
         return None, None
     token = get_access_token()
@@ -53,7 +53,7 @@ def _get_http_config_and_signer():
         raise RuntimeError(
             "HTTP requests require IDCS authentication. Set IDCS_DOMAIN, IDCS_CLIENT_ID, and IDCS_CLIENT_SECRET."
         )
-    region = os.getenv("OCI_REGION")
+    region = region or os.getenv("OCI_REGION")
     if not region:
         raise RuntimeError("HTTP requests require OCI_REGION.")
     config = {"region": region}
@@ -82,15 +82,17 @@ def _get_oci_client_kwargs(signer=None):
     return kwargs
 
 
-def get_logging_client():
+def get_logging_client(region: Optional[str] = None):
     logger.info("entering get_logging_client")
-    config, signer = _get_http_config_and_signer()
+    config, signer = _get_http_config_and_signer(region)
     if signer is not None:
         return oci.logging.LoggingManagementClient(config, **_get_oci_client_kwargs(signer))
     config = oci.config.from_file(
         file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
         profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
+    if region is not None:
+        config["region"] = region
 
     private_key = oci.signer.load_private_key_from_file(config["key_file"])
     token_file = os.path.expanduser(config["security_token_file"])
@@ -101,15 +103,17 @@ def get_logging_client():
     return oci.logging.LoggingManagementClient(config, **_get_oci_client_kwargs(signer))
 
 
-def get_logging_search_client():
+def get_logging_search_client(region: Optional[str] = None):
     logger.info("entering get_logging_client")
-    config, signer = _get_http_config_and_signer()
+    config, signer = _get_http_config_and_signer(region)
     if signer is not None:
         return oci.loggingsearch.LogSearchClient(config, **_get_oci_client_kwargs(signer))
     config = oci.config.from_file(
         file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
         profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
+    if region is not None:
+        config["region"] = region
 
     private_key = oci.signer.load_private_key_from_file(config["key_file"])
     token_file = os.path.expanduser(config["security_token_file"])
@@ -120,12 +124,52 @@ def get_logging_search_client():
     return oci.loggingsearch.LogSearchClient(config, **_get_oci_client_kwargs(signer))
 
 
+def _region_field():
+    return Field(
+        None,
+        description="OCI region identifier to query, such as us-ashburn-1. Use list_subscribed_regions to discover available regions. If omitted, the configured region is used.",
+        examples=["us-ashburn-1"],
+    )
+
+
+@mcp.tool(
+    name="list_subscribed_regions",
+    description="List OCI regions subscribed to the tenancy. Use a returned region with the region parameter on Logging tools.",
+)
+def list_subscribed_regions(
+    tenancy_id: Annotated[
+        Optional[str],
+        "Tenancy OCID. Normally omitted for stdio because it is read from the configured OCI credentials. Required for HTTP requests.",
+    ] = None,
+) -> list[str]:
+    config, signer = _get_http_config_and_signer()
+    if signer is None:
+        config = oci.config.from_file(
+            file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
+            profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
+        )
+        configured_tenancy_id = config.get("tenancy")
+        if config.get("security_token_file"):
+            private_key = oci.signer.load_private_key_from_file(config["key_file"])
+            with open(os.path.expanduser(config["security_token_file"]), "r") as token_file:
+                signer = oci.auth.signers.SecurityTokenSigner(token_file.read(), private_key)
+    else:
+        configured_tenancy_id = None
+    resolved_tenancy_id = tenancy_id or configured_tenancy_id
+    if not resolved_tenancy_id:
+        raise ValueError("tenancy_id is required to list subscribed regions for HTTP authentication.")
+    client = oci.identity.IdentityClient(config, **_get_oci_client_kwargs(signer))
+    response = client.list_region_subscriptions(tenancy_id=resolved_tenancy_id)
+    return [subscription.region_name for subscription in response.data if subscription.region_name]
+
+
 @mcp.tool(
     description="List Log Groups in a given compartment."
     "Only use this tool if the user specifically mentions Log Groups"
 )
 def list_log_groups(
     compartment_id: str = Field(..., description="The OCID of the compartment"),
+    region: Optional[str] = _region_field(),
     limit: Optional[int] = Field(
         None,
         description="The maximum amount of resources to return. If None, there is no limit.",
@@ -135,7 +179,7 @@ def list_log_groups(
     log_groups: list[LogGroupSummary] = []
 
     try:
-        client = get_logging_client()
+        client = get_logging_client(region)
 
         response: oci.response.Response = None
         has_next_page = True
@@ -170,9 +214,10 @@ def list_log_groups(
 )
 def get_log_group(
     log_group_id: str = Field(..., description="The OCID of the log group that the log belongs to."),
+    region: Optional[str] = _region_field(),
 ) -> LogGroup:
     try:
-        client = get_logging_client()
+        client = get_logging_client(region)
 
         response: oci.response.Response = client.get_log_group(log_group_id=log_group_id)
         data: oci.logging.models.Log = response.data
@@ -190,6 +235,7 @@ def get_log_group(
 )
 def list_logs(
     log_group_id: str = Field(..., description="The OCID of the log group to list logs from."),
+    region: Optional[str] = _region_field(),
     limit: Optional[int] = Field(
         None,
         description="The maximum amount of resources to return. If None, there is no limit.",
@@ -199,7 +245,7 @@ def list_logs(
     logs: list[LogSummary] = []
 
     try:
-        client = get_logging_client()
+        client = get_logging_client(region)
 
         response: oci.response.Response = None
         has_next_page = True
@@ -235,9 +281,10 @@ def list_logs(
 def get_log(
     log_id: str = Field(..., description="The OCID of the log"),
     log_group_id: str = Field(..., description="The OCID of the log group that the log belongs to."),
+    region: Optional[str] = _region_field(),
 ) -> Log:
     try:
-        client = get_logging_client()
+        client = get_logging_client(region)
 
         response: oci.response.Response = client.get_log(log_group_id=log_group_id, log_id=log_id)
         data: oci.logging.models.Log = response.data
@@ -331,6 +378,7 @@ def search_logs(
         "The time must be supplied in UTC timezone.",
     ),
     search_query: str = Field(..., description="The log search query. "),
+    region: Optional[str] = _region_field(),
     limit: Optional[int] = Field(
         10,
         description="The maximum amount of resources to return. Value cannot be None.",
@@ -340,7 +388,7 @@ def search_logs(
     page: Optional[str] = Field(None, description="The next page token for the search_logs API call. "),
 ) -> SearchResponse:
     try:
-        client = get_logging_search_client()
+        client = get_logging_search_client(region)
 
         search_logs_details = oci.loggingsearch.models.SearchLogsDetails(
             time_start=time_start,

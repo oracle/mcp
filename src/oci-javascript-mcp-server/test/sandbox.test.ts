@@ -5,9 +5,17 @@
  */
 
 import assert from "node:assert/strict";
+import childProcess from "node:child_process";
+import { EventEmitter } from "node:events";
+import { syncBuiltinESMExports } from "node:module";
+import { PassThrough } from "node:stream";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { Server, ServerCredentials } from "@grpc/grpc-js";
 import { PodmanIsolationProvider } from "../src/isolation/podman.ts";
+import { RUNNER_SERVICE, RunnerClient } from "../src/grpc.ts";
+import type { RunnerServer } from "../src/generated/runner.ts";
+import { MAX_CODE_BYTES, MAX_STDERR_BYTES, MAX_STDOUT_BYTES } from "../src/sandbox-common.ts";
 import { runJavaScriptInIsolate } from "../src/sandbox-isolate.ts";
 import { runJavaScript as runJavaScriptWithProvider } from "../src/sandbox.ts";
 import type {
@@ -47,6 +55,168 @@ test("Podman provider rejects unsafe executable and image inputs", () => {
   );
 });
 
+test("Podman removes the execution network even when creation reports failure", async t => {
+  const spawn = t.mock.method(childProcess, "spawn", (_command: string, args: string[]) => {
+    const child = new EventEmitter();
+    queueMicrotask(() => child.emit("close", args[1] === "create" ? 1 : 0));
+    return child as childProcess.ChildProcess;
+  });
+  syncBuiltinESMExports();
+  t.after(() => {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  });
+  const execution = new PodmanIsolationProvider().run("42", {
+    deadlineMs: Date.now() + 10_000,
+    signal: new AbortController().signal,
+    hostRpc: async () => null
+  });
+  await assert.rejects(execution.result, /Podman command exited unsuccessfully/);
+  await execution.terminate();
+  const commands = spawn.mock.calls.map(call => call.arguments[1]);
+  const network = commands[0].at(-1);
+  assert.deepEqual(commands, [
+    ["network", "create", "--internal", "--disable-dns", network],
+    ["network", "rm", "--ignore", network]
+  ]);
+});
+
+for (const scenario of ["early exit", "spawn error", "missing input", "cancel"] as const) {
+  test(`Podman owns process and resource cleanup: ${scenario}`, { timeout: 5000 }, async t => {
+    const controller = new AbortController();
+    const runner = new childProcess.ChildProcess();
+    runner.stdin = scenario === "missing input" ? null : new PassThrough();
+    const kill = t.mock.method(runner, "kill", () => {
+      Object.assign(runner, { signalCode: "SIGKILL" });
+      queueMicrotask(() => runner.emit("close", null, "SIGKILL"));
+      return true;
+    });
+    const spawn = t.mock.method(childProcess, "spawn", (_command: string, args: string[]) => {
+      if (args[0] === "run") {
+        queueMicrotask(() => {
+          if (scenario === "cancel") controller.abort();
+          if (scenario === "spawn error") runner.emit("error", new Error("private runtime error"));
+          if (scenario === "early exit" || scenario === "spawn error") {
+            Object.assign(runner, { exitCode: 1 });
+            runner.emit("close", 1, null);
+          }
+        });
+        return runner;
+      }
+      const command = new EventEmitter();
+      queueMicrotask(() => command.emit("close", 0));
+      return command as childProcess.ChildProcess;
+    });
+    syncBuiltinESMExports();
+    t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+    const execution = new PodmanIsolationProvider().run("42", {
+      deadlineMs: Date.now() + 30_000,
+      signal: controller.signal,
+      hostRpc: async () => assert.fail("no OCI calls expected")
+    });
+    if (scenario === "cancel") {
+      assert.equal((await execution.result).timedOut, true);
+    } else {
+      await assert.rejects(execution.result, /sandbox runner (exited|failed|input)/);
+    }
+    await Promise.all([execution.terminate(), execution.terminate()]);
+    const commands = spawn.mock.calls.map(call => call.arguments[1]);
+    const name = commands[0].at(-1);
+    assert.deepEqual(commands.slice(-2), [
+      ["rm", "--force", "--ignore", name],
+      ["network", "rm", "--ignore", name]
+    ]);
+    assert.equal(commands.length, 4);
+    assert.equal(kill.mock.callCount(), scenario === "missing input" || scenario === "cancel" ? 1 : 0);
+  });
+}
+
+test("Podman removes resources when its run CLI never closes", { timeout: 5000 }, async t => {
+  const runner = new childProcess.ChildProcess();
+  runner.stdin = new PassThrough();
+  const kill = t.mock.method(runner, "kill", () => true);
+  let started!: () => void;
+  const running = new Promise<void>(resolve => { started = resolve; });
+  const spawn = t.mock.method(childProcess, "spawn", (_command: string, args: string[]) => {
+    if (args[0] === "run") {
+      queueMicrotask(started);
+      return runner;
+    }
+    const command = new EventEmitter();
+    queueMicrotask(() => command.emit("close", 0));
+    return command as childProcess.ChildProcess;
+  });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  const execution = new PodmanIsolationProvider().run("42", {
+    deadlineMs: Date.now() + 30_000,
+    signal: new AbortController().signal,
+    hostRpc: async () => null
+  });
+  await running;
+  await assert.rejects(execution.terminate(), /sandbox runner did not close/);
+  const commands = spawn.mock.calls.map(call => call.arguments[1]);
+  const name = commands[0].at(-1);
+  assert.deepEqual(commands.slice(-2), [
+    ["rm", "--force", "--ignore", name],
+    ["network", "rm", "--ignore", name]
+  ]);
+  assert.equal(kill.mock.callCount(), 1);
+});
+
+test("Podman trusts gRPC status after receiving a result", { timeout: 5000 }, async t => {
+  const runner = new childProcess.ChildProcess();
+  runner.stdin = new PassThrough();
+  const server = new Server();
+  const handlers: RunnerServer = { session(call) {
+    call.on("error", () => {});
+    call.on("data", message => {
+      if (message.execute) call.write({ result: {
+        resultJson: Buffer.from("42"), errorJson: Buffer.from("null"),
+        exitCode: 0, timedOut: false, stdoutUtf16le: Buffer.alloc(0), stderrUtf16le: Buffer.alloc(0)
+      } });
+    });
+    call.on("end", () => {
+      runner.emit("close", 0, null);
+      setTimeout(() => call.end(), 10);
+    });
+  } };
+  server.addService(RUNNER_SERVICE, handlers);
+  let port = 0;
+  let bootstrap = "";
+  runner.stdin.on("data", chunk => { bootstrap += String(chunk); });
+  const bound = new Promise<void>((resolve, reject) => runner.stdin!.on("end", () => {
+    const tls = JSON.parse(bootstrap) as { clientCert: string; serverKey: string; serverCert: string };
+    server.bindAsync(`127.0.0.1:${port}`, ServerCredentials.createSsl(
+      Buffer.from(tls.clientCert),
+      [{ private_key: Buffer.from(tls.serverKey), cert_chain: Buffer.from(tls.serverCert) }],
+      true
+    ), error => error ? reject(error) : resolve());
+  }));
+  const spawn = t.mock.method(childProcess, "spawn", (_command: string, args: string[]) => {
+    if (args[0] === "run") {
+      port = Number(args[args.indexOf("--publish") + 1].split(":")[1]);
+      return runner;
+    }
+    const command = new EventEmitter();
+    queueMicrotask(() => command.emit("close", 0));
+    return command as childProcess.ChildProcess;
+  });
+  syncBuiltinESMExports();
+  t.after(() => { server.forceShutdown(); t.mock.restoreAll(); syncBuiltinESMExports(); });
+  const execution = new PodmanIsolationProvider().run("42", {
+    deadlineMs: Date.now() + 5000,
+    signal: new AbortController().signal,
+    hostRpc: async () => null
+  });
+  await bound;
+  const result = await execution.result;
+  await execution.terminate();
+  assert.equal(result.result, 42);
+  assert.equal(result.exitCode, 0);
+  assert.equal(spawn.mock.callCount(), 4);
+});
+
 test("sandbox delegates execution through the selected isolation provider", async () => {
   const expected: SandboxResult = {
     result: 42,
@@ -77,7 +247,7 @@ test("sandbox delegates execution through the selected isolation provider", asyn
     isolationProvider: provider
   });
 
-  assert.deepEqual(result, expected);
+  assert.equal(result, expected); // The transport already validated this result.
   assert.equal(terminated, true);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].code, "40 + 2;");
@@ -129,121 +299,68 @@ test("sandbox enforces the OCI call budget above isolation providers", async () 
   });
 });
 
-test("sandbox rejects invalid OCI requests above isolation providers", async () => {
-  let hostCalls = 0;
-  const provider = testProvider((_code, options) => ({
-    result: options.hostRpc({ operation: "invoke" }).then(rpcResult => ({
-      result: rpcResult,
-      error: null,
-      stdout: "",
-      stderr: "",
-      exitCode: 0,
-      timedOut: false
-    })),
-    async terminate() {}
-  }));
-
-  const result = await runJavaScript("0;", {
-    hostRpc: async () => {
-      hostCalls += 1;
-      return {};
-    },
-    isolationProvider: provider
-  });
-
-  assert.equal(hostCalls, 0);
-  assert.deepEqual(result.result, {
-    ok: false,
-    error: "invalid OCI bridge request"
-  });
-});
-
-test("sandbox aborts and drains OCI work before returning at the deadline", async () => {
-  let signal: AbortSignal | undefined;
-  let rpcSettled = false;
-  let terminateCalls = 0;
-  const provider = testProvider((_code, options) => {
-    signal = options.signal;
-    void options.hostRpc({
+for (const cancellation of [false, true]) {
+  test(`sandbox aborts and drains OCI work on ${cancellation ? "cancellation" : "deadline"}`, { timeout: 5000 }, async () => {
+    const controller = new AbortController();
+    let signal: AbortSignal | undefined;
+    let rpcSettled = false;
+    let terminateCalls = 0;
+    let hostCalls = 0;
+    const request: HostRpcRequest = {
       binding: "oracle",
       namespace: "oci",
       operation: "config",
       payload: {}
-    });
-    return {
-      result: new Promise(() => undefined),
-      async terminate() {
-        terminateCalls += 1;
-      }
     };
+    const provider = testProvider((_code, options) => {
+      signal = options.signal;
+      void options.hostRpc(request);
+      return {
+        result: new Promise(() => undefined),
+        async terminate() {
+          terminateCalls += 1;
+          // Teardown must not admit new OCI work after aborting the accepted call.
+          await options.hostRpc(request);
+        }
+      };
+    });
+
+    const startedAt = Date.now();
+    const result = await runJavaScript("while (true) {}", {
+      timeoutSeconds: cancellation ? 30 : 1,
+      signal: controller.signal,
+      hostRpc: async (_request, rpcSignal) => new Promise<null>(resolve => {
+        hostCalls += 1;
+        rpcSignal?.addEventListener("abort", () => {
+          setTimeout(() => {
+            rpcSettled = true;
+            resolve(null);
+          }, 25);
+        }, { once: true });
+        if (cancellation) controller.abort();
+      }),
+      isolationProvider: provider
+    });
+
+    assert.equal(result.timedOut, !cancellation);
+    assert.equal(result.exitCode, cancellation ? 1 : -1);
+    assert.equal(result.error?.message, cancellation ? "sandbox execution cancelled" : "sandbox run deadline exceeded");
+    assert.equal(signal?.aborted, true);
+    assert.equal(rpcSettled, true);
+    assert.equal(terminateCalls, 1);
+    assert.equal(hostCalls, 1);
+    assert(Date.now() - startedAt < 5000);
   });
+}
 
-  const startedAt = Date.now();
-  const result = await runJavaScript("while (true) {}", {
-    timeoutSeconds: 1,
-    hostRpc: async (_request, rpcSignal) => new Promise<null>(resolve => {
-      rpcSignal?.addEventListener("abort", () => {
-        setTimeout(() => {
-          rpcSettled = true;
-          resolve(null);
-        }, 25);
-      }, { once: true });
-    }),
-    isolationProvider: provider
+test("a pre-cancelled execution never starts the provider", async () => {
+  const result = await runJavaScript("42", {
+    signal: AbortSignal.abort(),
+    hostRpc: async () => assert.fail("OCI must not start"),
+    isolationProvider: testProvider(() => assert.fail("provider must not start"))
   });
-
-  assert.equal(result.timedOut, true);
-  assert.equal(result.exitCode, -1);
-  assert.equal(signal?.aborted, true);
-  assert.equal(rpcSettled, true);
-  assert.equal(terminateCalls, 1);
-  assert(Date.now() - startedAt < 5000);
-});
-
-test("sandbox rejects oversized results returned by an isolation provider", async () => {
-  const provider = testProvider(() => ({
-    result: Promise.resolve({
-      result: "x".repeat(1024 * 1024),
-      error: null,
-      stdout: "",
-      stderr: "",
-      exitCode: 0,
-      timedOut: false
-    }),
-    async terminate() {}
-  }));
-
-  const result = await runJavaScript("0;", {
-    hostRpc: async () => null,
-    isolationProvider: provider
-  });
-
-  assert.equal(result.result, null);
-  assert.equal(result.exitCode, 1);
-  assert.equal(result.error?.message, "isolation provider failed");
-});
-
-test("sandbox rejects malformed isolation provider results", async () => {
-  const provider = testProvider(() => ({
-    result: Promise.resolve({
-      result: Number.NaN,
-      error: null,
-      stdout: "",
-      stderr: "",
-      exitCode: 0,
-      timedOut: false
-    }),
-    async terminate() {}
-  }));
-
-  const result = await runJavaScript("0;", {
-    hostRpc: async () => null,
-    isolationProvider: provider
-  });
-
-  assert.equal(result.result, null);
-  assert.equal(result.exitCode, 1);
-  assert.equal(result.error?.message, "isolation provider failed");
+  assert.equal(result.error?.message, "sandbox execution cancelled");
+  assert.equal(result.timedOut, false);
 });
 
 test("sandbox reports isolation provider cleanup failures", async () => {
@@ -294,6 +411,59 @@ test("sandbox does not hide cleanup failures behind a timeout result", async () 
   assert.equal(result.timedOut, false);
   assert.equal(result.error?.message, "isolation provider cleanup failed");
 });
+
+test("sandbox preserves source and log strings across gRPC", async () => {
+  const text = "\ud800|\udfff|😀|é|e\u0301|\0";
+  const result = await runJavaScript(
+    `const text = "${text}"; console.log(text); console.error(String.fromCharCode(0xdfff)); text;`,
+    { timeoutSeconds: 10, hostRpc: async () => null }
+  );
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.error, null);
+  assert.equal(result.result, text);
+  assert.equal(result.stdout, text + "\n");
+  assert.equal(result.stderr, "\udfff\n");
+});
+
+test("sandbox accepts source, combined logs, and result within their byte limits", async () => {
+  const prefix = `console.log("x".repeat(${MAX_STDOUT_BYTES - 2}));
+    console.error("x".repeat(${MAX_STDERR_BYTES - 2})); return "x".repeat(${1024 * 1024 - 2});\n`;
+  const code = prefix + "\n".repeat(MAX_CODE_BYTES - Buffer.byteLength(prefix));
+  const result = await runJavaScript(code, { timeoutSeconds: 10, hostRpc: async () => null });
+  assert.equal(Buffer.byteLength(code), MAX_CODE_BYTES);
+  assert.equal(result.exitCode, 0);
+  assert.equal(Buffer.byteLength(JSON.stringify(result.result)), 1024 * 1024);
+  assert.equal(Buffer.byteLength(result.stdout), MAX_STDOUT_BYTES - 1);
+  assert.equal(Buffer.byteLength(result.stderr), MAX_STDERR_BYTES - 1);
+});
+
+test("caught output-limit errors remain structured script failures", async () => {
+  const result = await runJavaScript(
+    `try { console.log("x".repeat(${MAX_STDOUT_BYTES})); } catch {} 42;`,
+    { hostRpc: async () => null }
+  );
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.error?.message, "Sandbox output exceeded limit");
+  assert.equal(Buffer.byteLength(result.stdout), MAX_STDOUT_BYTES);
+});
+
+for (const invalid of ["manifest", "missing deadline"] as const) {
+  test(`worker rejects invalid host input: ${invalid}`, async t => {
+    if (invalid === "missing deadline") {
+      const session = RunnerClient.prototype.session;
+      t.mock.method(RunnerClient.prototype, "session", function (this: RunnerClient, ...args: Parameters<RunnerClient["session"]>) {
+        return session.call(this, args[0]);
+      });
+    }
+    const result = await runJavaScript("42", {
+      timeoutSeconds: 10,
+      hostRpc: async () => null,
+      reflectionManifest: invalid === "manifest" ? [] as unknown as OciReflectionManifest : undefined
+    });
+    assert.equal(result.exitCode, 1);
+    assert.equal(result.error?.message, "sandbox protocol failed");
+  });
+}
 
 test("sandbox runs JavaScript and calls host OCI RPC", async () => {
   const requests: HostRpcRequest[] = [];
@@ -491,7 +661,7 @@ test("sandbox returns a trailing expression as structured result", async () => {
   assert.equal(result.result, 42);
 });
 
-test("sandbox rejects oversized structured results before parent IPC", async () => {
+test("sandbox rejects oversized structured results before host RPC", async () => {
   const result = await runJavaScript(
     `"x".repeat(1024 * 1024);`,
     {
@@ -1030,6 +1200,34 @@ test("sandbox rejects provider completion while accepted OCI work is pending", a
   assert.equal(result.exitCode, 1);
   assert.equal(result.error?.message, "JavaScript completed with unawaited OCI calls");
   assert.equal(rpcSettled, true);
+});
+
+test("sandbox bounds cleanup when accepted OCI work ignores cancellation", { timeout: 10_000 }, async () => {
+  const provider = testProvider((_code, options) => {
+    queueMicrotask(() => void options.hostRpc({
+      binding: "oracle",
+      namespace: "oci",
+      operation: "config",
+      payload: {}
+    }));
+    return {
+      result: Promise.resolve({
+        result: "completed",
+        error: null,
+        stdout: "",
+        stderr: "",
+        exitCode: 0,
+        timedOut: false
+      }),
+      async terminate() {}
+    };
+  });
+  const result = await runJavaScript("0;", {
+    hostRpc: async () => new Promise(() => {}),
+    isolationProvider: provider
+  });
+  assert.equal(result.error?.message, "OCI cleanup did not complete");
+  assert.equal(result.exitCode, 1);
 });
 
 test("sandbox supports explicitly awaited host RPC chains", async () => {

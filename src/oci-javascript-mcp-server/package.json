@@ -20,38 +20,53 @@
     "directory": "src/oci-javascript-mcp-server"
   },
   "files": [
+    "dist/",
     "src/",
+    "src/generated/runner.ts",
+    "proto/",
+    "buf.gen.yaml",
     ".dockerignore",
     "Containerfile",
+    "CHANGELOG.md",
     "README.md",
     "LICENSE.txt"
   ],
   "bin": {
-    "oci-javascript-mcp-server": "src/server.ts"
+    "oci-javascript-mcp-server": "dist/server.js"
   },
   "scripts": {
     "start": "node --no-node-snapshot --experimental-strip-types src/server.ts",
     "podman:build": "podman build --pull -t localhost/oci-javascript-mcp-runner:dev .",
+    "build": "npm run proto:generate && tsc -p tsconfig.build.json",
+    "pretest": "npm run build",
     "test": "node --no-node-snapshot --experimental-strip-types --test test/*.test.ts",
     "coverage": "c8 npm test",
+    "precheck": "npm run proto:generate",
     "check": "tsc --noEmit",
+    "proto:generate": "buf generate",
+    "prepack": "npm run build",
     "packcheck": "npm --cache \"${TMPDIR:-/tmp}/oci-javascript-mcp-server-npm-cache\" pack --dry-run --json > /dev/null",
-    "ci": "npm run coverage && npm run check && npm run packcheck",
+    "ci": "npm run build && npm run coverage && npm run check && npm run packcheck",
     "prepublishOnly": "npm run ci"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "2.15.0",
+    "@grpc/grpc-js": "^1.14.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "isolated-vm": "^7.0.0",
     "oci-common": "^2.132.0",
     "oci-sdk": "^2.132.0",
+    "selfsigned": "^3.0.1",
     "zod": "^4.4.3"
   },
   "overrides": {
     "uuid": "11.1.1"
   },
   "devDependencies": {
+    "@bufbuild/buf": "1.73.0",
     "@types/node": "^25.9.1",
     "c8": "^12.0.0",
+    "ts-proto": "2.12.4",
     "typescript": "^5.9.3"
   },
   "c8": {
@@ -60,6 +75,7 @@
       "src/**/*.ts"
     ],
     "exclude": [
+      "src/generated/**",
       "src/sandbox-prelude.ts",
       "src/types.ts"
     ],

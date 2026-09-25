@@ -1,0 +1,55 @@
+[project]
+name = "oracle.oci-identity-policy-mcp-server"
+version = "0.1.0"
+description = "Zero-code OCI Identity Policy MCP server wrapper via oci-policy-analysis package"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "UPL-1.0"
+license-files = ["LICENSE.txt"]
+authors = [
+    {name = "Andrew Gregory", email = "andrew.gregory@oracle.com"},
+]
+dependencies = [
+    "oci-policy-analysis[mcp]>=6.5.1",
+]
+
+classifiers = [
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.scripts]
+"oracle.oci-identity-policy-mcp-server" = "oci_policy_analysis.mcp_server:main"
+
+[project.urls]
+Changelog = "https://github.com/oracle/mcp/blob/main/src/oci-identity-policy-mcp-server/CHANGELOG.md"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-cov>=7.0.0",
+]
+
+[tool.coverage.run]
+omit = [
+    "dist/*",
+    "scripts/*",
+    ".venv/*",
+]
+
+[tool.coverage.report]
+precision = 2
+fail_under = 90
+
+[tool.hatch.build.targets.wheel]
+only-include = [
+    "README.md",
+    "README-FULL.md",
+    "LICENSE.txt",
+    "CHANGELOG.md",
+]

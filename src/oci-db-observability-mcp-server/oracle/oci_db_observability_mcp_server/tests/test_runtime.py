@@ -33,7 +33,6 @@ class FakeClient:
 
 @pytest.mark.parametrize("auth_type", ["api_key", "security_token", "instance_principal"])
 def test_stdio_client_uses_common_auth_context_and_user_agent(monkeypatch, auth_type) -> None:
-    runtime._stdio_client.cache_clear()
     signer = object()
     context = SimpleNamespace(
         auth_type=auth_type,
@@ -51,6 +50,23 @@ def test_stdio_client_uses_common_auth_context_and_user_agent(monkeypatch, auth_
     assert client.signer is signer
     assert client.config == {"region": "us-phoenix-1", "additional_user_agent": EXPECTED_USER_AGENT}
     assert context.auth_type == auth_type
+
+
+def test_client_reresolves_authentication_for_each_invocation(monkeypatch) -> None:
+    first = SimpleNamespace(config={"region": "us-phoenix-1"}, signer="first")
+    second = SimpleNamespace(config={"region": "us-ashburn-1"}, signer="second")
+    build_context = Mock(side_effect=[first, second])
+    monkeypatch.setattr(runtime, "build_auth_context", build_context)
+    monkeypatch.setattr(runtime, "client_class", lambda _service, _client: FakeClient)
+
+    first_client = runtime._client("opsi", "OperationsInsightsClient")
+    second_client = runtime._client("opsi", "OperationsInsightsClient")
+
+    assert build_context.call_count == 2
+    assert first_client.signer == "first"
+    assert second_client.signer == "second"
+    assert first_client.config["region"] == "us-phoenix-1"
+    assert second_client.config["region"] == "us-ashburn-1"
 
 
 def test_invoke_validates_before_creating_sdk_client(monkeypatch) -> None:

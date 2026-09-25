@@ -10,7 +10,6 @@ from __future__ import annotations
 import inspect
 import json
 from datetime import datetime
-from functools import lru_cache
 from typing import Any, Mapping, get_args, get_origin
 
 import oci
@@ -31,14 +30,10 @@ def _get_config_and_signer() -> tuple[dict[str, Any], Any]:
     return ({**context.config, "additional_user_agent": _USER_AGENT}, context.signer)
 
 
-@lru_cache(maxsize=None)
-def _stdio_client(service: str, client_name: str) -> Any:
+def _client(service: str, client_name: str) -> Any:
+    """Create an OCI client using the current STDIO authentication context."""
     config, signer = _get_config_and_signer()
     return client_class(service, client_name)(config, signer=signer)
-
-
-def _client(service: str, client_name: str) -> Any:
-    return _stdio_client(service, client_name)
 
 
 def _serialize_data(data: Any) -> Any:

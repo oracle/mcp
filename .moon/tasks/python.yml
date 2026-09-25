@@ -16,6 +16,10 @@ fileGroups:
     - '!.coverage*'
     - '!dist/**/*'
     - '!htmlcov/**/*'
+    - '!.venv/**/*'
+    - '!**/__pycache__/**/*'
+    - '!.pytest_cache/**/*'
+    - '!.ruff_cache/**/*'
 
 tasks:
   lock-check:
@@ -73,3 +77,18 @@ tasks:
       - target: 'build'
     options:
       cache: false
+
+  publish:
+    description: 'Uploads a release-built distribution to the configured Python index'
+    type: 'run'
+    inputs:
+      - 'pyproject.toml'
+    script: |
+      if [ "$RELEASE_PUBLISH" != "1" ] || [ -z "$UV_PUBLISH_URL" ] || [ -z "$UV_PUBLISH_CHECK_URL" ]; then
+        echo 'Publish requires the release workflow and explicit registry settings' >&2
+        exit 1
+      fi
+      uv publish --publish-url "$UV_PUBLISH_URL" --check-url "$UV_PUBLISH_CHECK_URL" dist/*
+    options:
+      cache: false
+      runInCI: false

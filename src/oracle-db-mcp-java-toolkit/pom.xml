@@ -32,12 +32,13 @@
 
     <properties>
         <java.version>17</java.version>
-        <mcp.version>0.12.1</mcp.version>
-        <ojdbc.version>23.9.0.25.07</ojdbc.version>
+        <mcp.version>0.18.4</mcp.version>
+        <ojdbc.version>23.26.2.0.0</ojdbc.version>
         <snakeYaml.version>2.5</snakeYaml.version>
         <logAnalyzer.version>1.0.0</logAnalyzer.version>
         <tomcat.version>11.0.22</tomcat.version>
         <junit.version>5.10.0</junit.version>
+        <nimbus-jose-jwt.version>10.6</nimbus-jose-jwt.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -66,6 +67,12 @@
             <groupId>org.yaml</groupId>
             <artifactId>snakeyaml</artifactId>
             <version>${snakeYaml.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
+            <version>${nimbus-jose-jwt.version}</version>
         </dependency>
 
         <!-- Log Analyzer -->

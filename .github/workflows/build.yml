@@ -22,6 +22,8 @@ jobs:
         run: |
           moon_version=$(sed -n 's/^moon = "=\([0-9][0-9.]*\)"$/\1/p' .prototools)
           test -n "$moon_version"
+          # Temporary: the package's ci script builds explicitly because --ignore-scripts
+          # skips npm's pretest/prepack hooks. Remove when Moon declares the build dependency.
           npx --yes --ignore-scripts --package="@moonrepo/cli@$moon_version" -- \
             moon run root:lint :lock-check :install-check \
               oci-javascript-mcp-server:ci

@@ -46,7 +46,7 @@
     "proto:generate": "buf generate",
     "prepack": "npm run build",
     "packcheck": "npm --cache \"${TMPDIR:-/tmp}/oci-javascript-mcp-server-npm-cache\" pack --dry-run --json > /dev/null",
-    "ci": "npm run coverage && npm run check && npm run packcheck",
+    "ci": "npm run build && npm run coverage && npm run check && npm run packcheck",
     "prepublishOnly": "npm run ci"
   },
   "dependencies": {

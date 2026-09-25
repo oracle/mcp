@@ -8,7 +8,7 @@ COPY . .
 RUN mvn -B -q -DskipTests clean package
 
 # ---------- 2) Runtime stage ----------
-FROM container-registry.oracle.com/java/openjdk:17@sha256:82cc9efbe316236933eb4fb8c0606c536dfbfc545f2e728ebed728b729f3eb1b
+FROM container-registry.oracle.com/java/openjdk:17@sha256:854a4b5d81a6962f589c86e96f65500d9f1f151d7fbcb4bb0d90020f581bdfdb
 
 RUN useradd -r -u 10001 appuser && \
     mkdir -p /app /ext && chown -R appuser:appuser /app /ext

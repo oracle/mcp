@@ -195,7 +195,6 @@
         "list_awr_database_snapshots",
         "list_awr_databases",
         "list_sql_plans",
-        "list_sql_searches",
         "list_sql_texts",
         "summarize_awr_database_cpu_usages",
         "summarize_awr_database_metrics",
@@ -205,13 +204,7 @@
         "summarize_awr_database_sysstats",
         "summarize_awr_database_top_wait_events",
         "summarize_awr_database_wait_event_buckets",
-        "summarize_awr_database_wait_events",
-        "summarize_sql_insights",
-        "summarize_sql_plan_insights",
-        "summarize_sql_response_time_distributions",
-        "summarize_sql_statistics",
-        "summarize_sql_statistics_time_series",
-        "summarize_sql_statistics_time_series_by_plan"
+        "summarize_awr_database_wait_events"
       ]
     },
     {

@@ -85,8 +85,8 @@ def describe_dbo_tool(
 @mcp.tool(
     description="Invoke one registered Oracle Database Observability operation. The supplied arguments object must "
                 "conform exactly to the selected tool's known `inputSchema`. For an operation with compartment "
-                "requirements, provide a real compartment OCID or resolve a user-provided name from a user-provided "
-                "root compartment OCID; do not invent an OCID. Use `describe_dbo_tool` first when that schema is "
+                "requirements, provide a real compartment OCID. Use `oci-identity-mcp-server` to resolve a "
+                "user-provided compartment name; do not invent an OCID. Use `describe_dbo_tool` first when that schema is "
                 "unavailable, outdated, or uncertain. This is the sole endpoint that executes catalog "
                 "operations."
 )

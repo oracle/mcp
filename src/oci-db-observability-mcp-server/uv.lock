@@ -781,11 +781,9 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "openapi-pydantic" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
-    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -799,11 +797,9 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "openapi-pydantic", specifier = ">=0.5.1" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", specifier = ">=1.2.0" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
 ]
 
 [[package]]

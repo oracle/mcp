@@ -72,31 +72,6 @@ def test_invoke_validates_before_creating_sdk_client(monkeypatch) -> None:
         runtime.invoke_registered_tool(tool, {})
 
 
-def test_invoke_rejects_an_inaccessible_compartment_before_creating_service_client(monkeypatch) -> None:
-    tool = {
-        "name": "example_tool",
-        "service": "opsi",
-        "client": "OperationsInsightsClient",
-        "operation": "get_example",
-        "inputSchema": {
-            "type": "object",
-            "properties": {"compartment_id": {"type": "string"}},
-            "required": ["compartment_id"],
-            "additionalProperties": False,
-        },
-    }
-
-    class IdentityClient:
-        def get_compartment(self, **_kwargs):
-            raise oci.exceptions.ServiceError(404, "NotAuthorizedOrNotFound", {}, "not found")
-
-    monkeypatch.setattr(runtime, "identity_bootstrap_client", IdentityClient)
-    monkeypatch.setattr(runtime, "_client", lambda *_args: pytest.fail("service client must not be created"))
-
-    with pytest.raises(ValueError, match="invalid or inaccessible"):
-        runtime.invoke_registered_tool(tool, {"compartment_id": "ocid1.compartment.oc1..unknown"})
-
-
 @pytest.mark.parametrize(
     ("tool_name", "arguments"),
     [
@@ -238,11 +213,6 @@ def test_metric_read_builds_one_monitoring_request_from_catalog(monkeypatch) -> 
             )
 
     monkeypatch.setattr(runtime, "_client", lambda *_args: Client())
-    monkeypatch.setattr(
-        runtime,
-        "identity_bootstrap_client",
-        lambda: SimpleNamespace(get_compartment=lambda **_kwargs: None),
-    )
     monkeypatch.setattr(runtime.oci.monitoring, "models", SimpleNamespace(SummarizeMetricsDataDetails=Details))
     tool = load_registry().get_tool("read_database_and_infra_observability_metrics")
 
@@ -259,13 +229,15 @@ def test_metric_read_builds_one_monitoring_request_from_catalog(monkeypatch) -> 
             "resolution": "1m",
             "start_time": "2026-08-01T00:00:00Z",
             "end_time": "2026-08-01T01:00:00Z",
-            "max_results": 1,
         },
     )
 
     assert captured["compartment_id"] == "ocid1.compartment.oc1..example"
     assert captured["summarize_metrics_data_details"].kwargs["query"] == 'ApplyLag[5m]{dbRole = "PHYSICAL_STANDBY"}.groupBy(primaryDbid).mean()'
-    assert result["data"] == [{"stream": 1, "aggregated_datapoints": [{"value": 1}]}]
+    assert result["data"] == [
+        {"stream": 1, "aggregated_datapoints": [{"value": 1}, {"value": 2}]},
+        {"stream": 2, "aggregated_datapoints": [{"value": 3}]},
+    ]
     assert result["mql"] == 'ApplyLag[5m]{dbRole = "PHYSICAL_STANDBY"}.groupBy(primaryDbid).mean()'
 
 
@@ -345,7 +317,6 @@ def test_metric_read_accepts_normalized_catalog_dimensions(monkeypatch, namespac
             return SimpleNamespace(data=[], headers={})
 
     monkeypatch.setattr(runtime, "_client", lambda *_args: Client())
-    monkeypatch.setattr(runtime, "identity_bootstrap_client", lambda: SimpleNamespace(get_compartment=lambda **_kwargs: None))
     monkeypatch.setattr(runtime.oci.monitoring, "models", SimpleNamespace(SummarizeMetricsDataDetails=Details))
     arguments = {
         "compartment_id": "ocid1.compartment.oc1..example",
@@ -379,7 +350,6 @@ def test_metric_read_rejects_annotation_dimensions_and_invalid_allowed_values(mo
     from oracle.oci_db_observability_mcp_server.registry import load_registry
 
     monkeypatch.setattr(runtime, "_client", lambda *_args: pytest.fail("invalid dimensions must not create an OCI client"))
-    monkeypatch.setattr(runtime, "identity_bootstrap_client", lambda: SimpleNamespace(get_compartment=lambda **_kwargs: None))
 
     with pytest.raises(ValueError, match=error):
         runtime.invoke_registered_tool(
@@ -421,12 +391,6 @@ def test_metric_read_rejects_invalid_catalog_or_time_before_client_creation(monk
     }
     base_arguments.update(arguments)
     monkeypatch.setattr(runtime, "_client", lambda *_args: pytest.fail("invalid metric read must not create an OCI client"))
-    monkeypatch.setattr(
-        runtime,
-        "identity_bootstrap_client",
-        lambda: SimpleNamespace(get_compartment=lambda **_kwargs: None),
-    )
-
     with pytest.raises(ValueError, match=error):
         runtime.invoke_registered_tool(load_registry().get_tool("read_database_and_infra_observability_metrics"), base_arguments)
 
@@ -475,12 +439,6 @@ def test_alarm_tools_each_make_one_pinned_sdk_operation(monkeypatch, tool_name, 
             return invoke
 
     monkeypatch.setattr(runtime, "_client", lambda *_args: Client())
-    monkeypatch.setattr(
-        runtime,
-        "identity_bootstrap_client",
-        lambda: SimpleNamespace(get_compartment=lambda **_kwargs: None),
-    )
-
     result = runtime.invoke_registered_tool(load_registry().get_tool(tool_name), arguments)
 
     assert calls == [(operation, arguments)]

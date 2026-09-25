@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import inspect
 import json
-from copy import copy
 from datetime import datetime
 from functools import lru_cache
 from typing import Any, Mapping, get_args, get_origin
@@ -40,13 +39,6 @@ def _stdio_client(service: str, client_name: str) -> Any:
 
 def _client(service: str, client_name: str) -> Any:
     return _stdio_client(service, client_name)
-
-
-def identity_bootstrap_client() -> Any:
-    """Create the Identity client for explicit compartment lookups."""
-    config, signer = _get_config_and_signer()
-    client = client_class("identity", "IdentityClient")(config, signer=signer)
-    return client
 
 
 def _serialize_data(data: Any) -> Any:
@@ -124,29 +116,9 @@ def _require_compartment_scope(tool: Mapping[str, Any], arguments: Mapping[str, 
         argument = requirement["argument"]
         if requirement["required"] and not arguments.get(argument):
             raise ValueError(
-                f"{tool['name']} requires {argument}. Ask the user for a compartment OCID, or for a "
-                "configured compartment discovery root to resolve a supplied compartment name. Do not invent an OCID."
+                f"{tool['name']} requires {argument}. Ask the user for a compartment OCID or use "
+                "oci-identity-mcp-server to resolve a supplied compartment name. Do not invent an OCID."
             )
-
-
-def _validate_compartment_scope(tool: Mapping[str, Any], arguments: Mapping[str, Any]) -> None:
-    """Reject invalid or inaccessible catalog compartment scopes before dispatch."""
-    requirements = compartment_requirements(tool)
-    values = {str(arguments[requirement["argument"]]) for requirement in requirements if arguments.get(requirement["argument"])}
-    if not values:
-        return
-    client = identity_bootstrap_client()
-    for compartment_id in values:
-        try:
-            client.get_compartment(compartment_id=compartment_id)
-        except oci.exceptions.ServiceError as exc:
-            if exc.code == "NotAuthorizedOrNotFound" or exc.status in {403, 404}:
-                raise ValueError(
-                    f"The supplied compartment OCID {compartment_id} is invalid or inaccessible to the configured "
-                    "OCI identity. Ask the user for a valid compartment OCID, or use a configured compartment "
-                    "discovery root to resolve a compartment name."
-                ) from exc
-            raise RuntimeError(f"Unable to validate compartment OCID {compartment_id}: {exc}") from exc
 
 
 def _metric_mql(arguments: Mapping[str, Any]) -> str:
@@ -177,28 +149,6 @@ def _monitoring_duration(value: str) -> int:
     """Convert a schema-validated OCI Monitoring duration into minutes."""
     amount, unit = int(value[:-1]), value[-1]
     return amount * {"m": 1, "h": 60, "d": 60 * 24}[unit]
-
-
-def _limit_metric_streams(data: Any, max_results: int) -> list[Any]:
-    """Bound both metric streams and their aggregate datapoints before serialization."""
-    if not isinstance(data, list):
-        return data
-    limited: list[Any] = []
-    remaining_datapoints = max_results
-    for stream in data[:max_results]:
-        datapoints = stream.get("aggregated_datapoints") if isinstance(stream, Mapping) else getattr(stream, "aggregated_datapoints", None)
-        if isinstance(datapoints, list):
-            if remaining_datapoints <= 0:
-                break
-            stream = dict(stream) if isinstance(stream, Mapping) else copy(stream)
-            bounded_datapoints = datapoints[:remaining_datapoints]
-            if isinstance(stream, dict):
-                stream["aggregated_datapoints"] = bounded_datapoints
-            else:
-                stream.aggregated_datapoints = bounded_datapoints
-            remaining_datapoints -= len(bounded_datapoints)
-        limited.append(stream)
-    return limited
 
 
 def _invoke_metric_read(tool: Mapping[str, Any], arguments: Mapping[str, Any]) -> dict[str, Any]:
@@ -250,14 +200,7 @@ def _invoke_metric_read(tool: Mapping[str, Any], arguments: Mapping[str, Any]) -
         )
     except Exception as exc:
         raise RuntimeError(f"OCI operation {tool['name']} failed: {exc}") from exc
-    max_results = arguments.get("max_results")
-    if max_results is None:
-        result = serialize_response(response)
-    else:
-        result = {
-            "data": _serialize_data(_limit_metric_streams(getattr(response, "data", response), max_results)),
-            "nextPage": (getattr(response, "headers", {}) or {}).get("opc-next-page"),
-        }
+    result = serialize_response(response)
     result["mql"] = _metric_mql(arguments)
     return result
 
@@ -278,7 +221,6 @@ def invoke_registered_tool(tool: Mapping[str, Any], arguments: dict[str, Any]) -
     errors = sorted(Draft202012Validator(dict(tool["inputSchema"])).iter_errors(arguments), key=lambda error: list(error.path))
     if errors:
         raise ValueError(f"Invalid arguments: {errors[0].message}")
-    _validate_compartment_scope(tool, arguments)
     if tool.get("kind") == "metadata":
         return _invoke_metadata_tool(tool, arguments)
     if tool.get("adapter") == "monitoring.metric_read":

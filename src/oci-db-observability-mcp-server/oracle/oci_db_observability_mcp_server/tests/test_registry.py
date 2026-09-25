@@ -82,8 +82,8 @@ def test_packaged_registry_has_expected_shape() -> None:
     registry = load_registry()
 
     assert len(registry.skills) == 35
-    assert len(registry.tools) == 236
-    assert len({tool["name"] for tool in registry.tools}) == 236
+    assert len(registry.tools) == 229
+    assert len({tool["name"] for tool in registry.tools}) == 229
     assert all(tool["inputSchema"]["type"] == "object" for tool in registry.tools)
     assert all(tool["inputSchema"].get("additionalProperties") in (False, {"type": "string"}) for tool in registry.tools)
     assert "retrieve_data" not in {tool["name"] for tool in registry.tools}

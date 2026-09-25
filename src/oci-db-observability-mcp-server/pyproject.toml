@@ -61,11 +61,9 @@ exclude = [
 
 [dependency-groups]
 dev = [
-    "openapi-pydantic>=0.5.1",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.2.0",
     "pytest-cov>=7.0.0",
-    "pyyaml>=6.0.3",
 ]
 
 [tool.coverage.run]

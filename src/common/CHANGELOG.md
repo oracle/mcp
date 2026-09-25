@@ -13,6 +13,12 @@ All notable changes to `oracle-mcp-common` are documented in this file.
 - Runtime package metadata now reads the installed distribution version, with
   `pyproject.toml` as the single source of truth.
 
+## 0.2.0
+
+### Added
+
+- Added RPv2.1.2 authentication with refreshed time-bound security contexts and realm-aware bootstrap endpoints.
+
 ## 0.1.3
 
 ### Changed

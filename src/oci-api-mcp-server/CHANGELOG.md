@@ -7,6 +7,12 @@
 - Updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).
 - Updated OCI CLI to 3.92.0 and refreshed the denylist for its mutating command surface.
 
+## 2.1.6
+
+### Changed
+
+- Published a new release carrying the `oracle-mcp-common` 0.2 compatibility requirement.
+
 ## 2.1.5
 
 ### Security
@@ -16,6 +22,7 @@
 - Prevented the denylist generator from following destination symlinks when writing files.
 - Restricted execution to OCI CLI 3.89.3 installed in the MCP server environment.
 - Excluded development artifacts, local configuration, and container build files from source-distribution packages.
+- Updated the `oracle-mcp-common` compatibility requirement to 0.2.
 
 ## 2.1.4
 

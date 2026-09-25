@@ -127,7 +127,7 @@ Declare a bounded dependency compatible with the shared library's public API:
 
 ```toml
 dependencies = [
-    "oracle-mcp-common>=0.1.0,<0.2.0",
+    "oracle-mcp-common>=0.2.0,<0.3.0",
 ]
 ```
 

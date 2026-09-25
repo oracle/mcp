@@ -46,22 +46,19 @@ uvx oracle.oci-recovery-mcp-server
 
 Register `${ORACLE_MCP_BASE_URL}/auth/callback` in the OCI IAM confidential application. If `IDCS_REQUIRED_SCOPES` is unset, the default is `openid profile email oci_mcp.recovery.invoke`. `stdio` uses the configured OCI CLI profile; HTTP uses the authenticated OCI IAM user.
 
-## Install
+## Local development
 
-From this repository root:
-
-```
-make build
-uv pip install ./src/oci-recovery-mcp-server
-```
-
-Or directly inside the package directory:
+From the repository root, test and launch this checkout:
 
 ```
-cd src/oci-recovery-mcp-server
-uv build
-uv pip install .
+moon run oci-recovery-mcp-server:test
+uv --directory src/oci-recovery-mcp-server run --locked oracle.oci-recovery-mcp-server
 ```
+
+`uv run` maintains this project's environment and uses the local `src/common`
+dependency. Run `moon run oci-recovery-mcp-server:build` to check the package,
+`moon run root:lint` after Python source changes, and `moon run root:format` to
+format Python source.
 
 ## Tools
 
@@ -85,15 +82,6 @@ uv pip install .
 - get_db_home(db_home_id, region=None) -> DatabaseHome
 - list_db_systems(compartment_id=None, lifecycle_state=None, limit=None, page=None, region=None) -> list[DbSystemSummary]
 - get_db_system(db_system_id, region=None) -> DbSystem
-
-## Development
-
-- Code style/format/lint/test tasks are managed via Makefile:
-  - `make build` — builds all sub-packages
-  - `make install` — installs all sub-packages into current environment
-  - `make test` — runs unit tests
-  - `make lint` — runs linters
-  - `make format` — formats code
 
 ## License
 

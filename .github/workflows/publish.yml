@@ -1,0 +1,221 @@
+name: Publish package
+
+on:
+  workflow_dispatch:
+    inputs:
+      registry:
+        description: Registry to publish to
+        required: true
+        type: choice
+        options:
+          - testpypi
+          - pypi
+          - npm
+      project:
+        description: Moon project ID to publish (for example, oci-api-mcp-server)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ inputs.registry }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_PROJECT: ${{ inputs.project }}
+      RELEASE_REGISTRY: ${{ inputs.registry }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '26.8.1'
+          package-manager-cache: false
+
+      - name: Install pinned Moon
+        run: |
+          moon_version=$(sed -n 's/^moon = "=\([0-9][0-9.]*\)"$/\1/p' .prototools)
+          test -n "$moon_version"
+          npm install --global --ignore-scripts "@moonrepo/cli@$moon_version"
+
+      - name: Validate release target
+        run: |
+          test "$GITHUB_REF" = refs/heads/main
+          case "$RELEASE_REGISTRY" in
+            npm)
+              test "$RELEASE_PROJECT" = oci-javascript-mcp-server
+              ;;
+            pypi|testpypi)
+              if [ "$RELEASE_PROJECT" != all-python ]; then
+                [[ "$RELEASE_PROJECT" =~ ^[a-z0-9][a-z0-9-]*$ ]]
+                test -f "src/$RELEASE_PROJECT/pyproject.toml"
+              fi
+              ;;
+            *) exit 1 ;;
+          esac
+          if [ "$RELEASE_PROJECT" != all-python ]; then
+            moon project "$RELEASE_PROJECT" >/dev/null
+          fi
+
+      - name: Test and build with Moon
+        run: |
+          moon run root:lint :lock-check :install-check \
+            oci-javascript-mcp-server:test \
+            oci-javascript-mcp-server:check \
+            oci-javascript-mcp-server:build
+          moon run root:combine-coverage
+
+      - name: Save package distributions
+        if: inputs.project != 'all-python'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-project-dist
+          path: src/${{ inputs.project }}/dist/
+          if-no-files-found: error
+
+      - name: Save common distributions
+        if: inputs.registry != 'npm' && inputs.project != 'common' && inputs.project != 'all-python'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-common-dist
+          path: src/common/dist/
+          if-no-files-found: error
+
+      - name: Bundle all Python distributions
+        if: inputs.project == 'all-python'
+        run: tar -czf release-python-dists.tar.gz src/*/dist/*.whl src/*/dist/*.tar.gz
+
+      - name: Save all Python distributions
+        if: inputs.project == 'all-python'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-python-dists
+          path: release-python-dists.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.registry }}
+    env:
+      RELEASE_PROJECT: ${{ inputs.project }}
+      MOON_TOOLCHAIN_FORCE_GLOBALS: 'true'
+      UV_PUBLISH_URL: ${{ inputs.registry == 'testpypi' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
+      UV_PUBLISH_CHECK_URL: ${{ inputs.registry == 'testpypi' && 'https://test.pypi.org/simple/' || 'https://pypi.org/simple/' }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '26.8.1'
+          registry-url: 'https://registry.npmjs.org/'
+          package-manager-cache: false
+
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        if: inputs.registry != 'npm'
+        with:
+          version: '0.12.1'
+          enable-cache: false
+
+      - name: Install pinned Moon
+        run: |
+          moon_version=$(sed -n 's/^moon = "=\([0-9][0-9.]*\)"$/\1/p' .prototools)
+          test -n "$moon_version"
+          npm install --global --ignore-scripts "@moonrepo/cli@$moon_version"
+
+      - name: Install pinned npm
+        if: inputs.registry == 'npm'
+        run: |
+          npm_version=$(sed -n 's/^npm = "=\([0-9][0-9.]*\)"$/\1/p' .prototools)
+          test -n "$npm_version"
+          npm install --global --ignore-scripts "npm@$npm_version"
+
+      - name: Download package distributions
+        if: inputs.project != 'all-python'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-project-dist
+          path: src/${{ inputs.project }}/dist/
+
+      - name: Download common distributions
+        if: inputs.registry != 'npm' && inputs.project != 'common' && inputs.project != 'all-python'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-common-dist
+          path: src/common/dist/
+
+      - name: Download all Python distributions
+        if: inputs.project == 'all-python'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-python-dists
+          path: .
+
+      - name: Restore all Python distributions
+        if: inputs.project == 'all-python'
+        run: tar -xzf release-python-dists.tar.gz
+
+      - name: Publish common with Moon
+        if: inputs.registry != 'npm' && inputs.project != 'common'
+        env:
+          RELEASE_PUBLISH: '1'
+          UV_PUBLISH_TOKEN: ${{ inputs.registry == 'testpypi' && secrets.TEST_PYPI_TOKEN || secrets.PYPI_TOKEN }}
+        run: |
+          test -n "$UV_PUBLISH_TOKEN"
+          moon exec --no-actions --ignore-ci-checks --upstream=none common:publish
+
+      - name: Wait for common on the package index
+        if: inputs.registry != 'npm' && inputs.project != 'common'
+        run: |
+          common_version=$(python3 -c 'import tomllib; print(tomllib.load(open("src/common/pyproject.toml", "rb"))["project"]["version"])')
+          index_url=${UV_PUBLISH_CHECK_URL%/}
+          for attempt in {1..12}; do
+            if curl --fail --silent "$index_url/oracle-mcp-common/" | grep --fixed-strings --quiet "oracle_mcp_common-$common_version"; then
+              exit 0
+            fi
+            echo "Waiting for oracle-mcp-common==$common_version ($attempt/12)"
+            sleep 5
+          done
+          echo "oracle-mcp-common==$common_version is not available on $index_url" >&2
+          exit 1
+
+      - name: Publish Python package with Moon
+        if: inputs.registry != 'npm' && inputs.project != 'all-python'
+        env:
+          RELEASE_PUBLISH: '1'
+          UV_PUBLISH_TOKEN: ${{ inputs.registry == 'testpypi' && secrets.TEST_PYPI_TOKEN || secrets.PYPI_TOKEN }}
+        run: |
+          test -n "$UV_PUBLISH_TOKEN"
+          moon exec --no-actions --ignore-ci-checks --upstream=none "$RELEASE_PROJECT:publish"
+
+      - name: Publish all Python servers with Moon
+        if: inputs.project == 'all-python'
+        env:
+          RELEASE_PUBLISH: '1'
+          UV_PUBLISH_TOKEN: ${{ inputs.registry == 'testpypi' && secrets.TEST_PYPI_TOKEN || secrets.PYPI_TOKEN }}
+        run: |
+          test -n "$UV_PUBLISH_TOKEN"
+          moon projects --json | jq -r '.[].id' | while IFS= read -r project; do
+            if [ "$project" != common ] && [ -f "src/$project/pyproject.toml" ]; then
+              moon exec --no-actions --ignore-ci-checks --upstream=none "$project:publish"
+            fi
+          done
+
+      - name: Publish npm package with Moon
+        if: inputs.registry == 'npm'
+        env:
+          RELEASE_PUBLISH: '1'
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          test -n "$NODE_AUTH_TOKEN"
+          moon exec --no-actions --ignore-ci-checks --upstream=none oci-javascript-mcp-server:publish

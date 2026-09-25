@@ -1,6 +1,5 @@
 javascript:
   packageManager: 'npm'
-  inferTasksFromScripts: true
 
 node: {}
 

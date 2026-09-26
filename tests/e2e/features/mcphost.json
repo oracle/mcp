@@ -7,6 +7,10 @@
       "command": "uv",
       "args": [
         "run",
+        "--project",
+        "../../../src/oci-cloud-guard-mcp-server",
+        "--locked",
+        "--no-dev",
         "oracle.oci-cloud-guard-mcp-server"
       ],
       "env": {
@@ -27,6 +31,10 @@
       "command": "uv",
       "args": [
         "run",
+        "--project",
+        "../../../src/oci-compute-mcp-server",
+        "--locked",
+        "--no-dev",
         "oracle.oci-compute-mcp-server"
       ],
       "env": {
@@ -47,6 +55,10 @@
       "command": "uv",
       "args": [
         "run",
+        "--project",
+        "../../../src/oci-compute-instance-agent-mcp-server",
+        "--locked",
+        "--no-dev",
         "oracle.oci-compute-instance-agent-mcp-server"
       ],
       "env": {
@@ -67,6 +79,10 @@
       "command": "uv",
       "args": [
         "run",
+        "--project",
+        "../../../src/oci-faaas-mcp-server",
+        "--locked",
+        "--no-dev",
         "oracle.oci-faaas-mcp-server"
       ],
       "env": {
@@ -85,6 +101,10 @@
       "command": "uv",
       "args": [
         "run",
+        "--project",
+        "../../../src/oci-identity-mcp-server",
+        "--locked",
+        "--no-dev",
         "python",
         "-c",
         "import sys; sys.path.insert(0, 'mocks'); import sitecustomize; from oracle.oci_identity_mcp_server.server import main; main()"
@@ -109,6 +129,10 @@
       "command": "uv",
       "args": [
         "run",
+        "--project",
+        "../../../src/oci-logging-mcp-server",
+        "--locked",
+        "--no-dev",
         "oracle.oci-logging-mcp-server"
       ],
       "env": {
@@ -129,6 +153,10 @@
       "command": "uv",
       "args": [
         "run",
+        "--project",
+        "../../../src/oci-migration-mcp-server",
+        "--locked",
+        "--no-dev",
         "oracle.oci-migration-mcp-server"
       ],
       "env": {
@@ -149,6 +177,10 @@
       "command": "uv",
       "args": [
         "run",
+        "--project",
+        "../../../src/oci-monitoring-mcp-server",
+        "--locked",
+        "--no-dev",
         "oracle.oci-monitoring-mcp-server"
       ],
       "env": {
@@ -169,6 +201,10 @@
       "command": "uv",
       "args": [
         "run",
+        "--project",
+        "../../../src/oci-networking-mcp-server",
+        "--locked",
+        "--no-dev",
         "oracle.oci-networking-mcp-server"
       ],
       "env": {
@@ -189,6 +225,10 @@
       "command": "uv",
       "args": [
         "run",
+        "--project",
+        "../../../src/oci-network-load-balancer-mcp-server",
+        "--locked",
+        "--no-dev",
         "python",
         "-c",
         "import sys; sys.path.insert(0, 'mocks'); import sitecustomize; from oracle.oci_network_load_balancer_mcp_server.server import main; main()"
@@ -213,6 +253,10 @@
       "command": "uv",
       "args": [
         "run",
+        "--project",
+        "../../../src/oci-object-storage-mcp-server",
+        "--locked",
+        "--no-dev",
         "python",
         "-c",
         "import sys; sys.path.insert(0, 'mocks'); import sitecustomize; from oracle.oci_object_storage_mcp_server.server import main; main()"
@@ -237,6 +281,10 @@
       "command": "uv",
       "args": [
         "run",
+        "--project",
+        "../../../src/oci-registry-mcp-server",
+        "--locked",
+        "--no-dev",
         "oracle.oci-registry-mcp-server"
       ],
       "env": {
@@ -257,6 +305,10 @@
       "command": "uv",
       "args": [
         "run",
+        "--project",
+        "../../../src/oci-resource-search-mcp-server",
+        "--locked",
+        "--no-dev",
         "python",
         "-c",
         "import sys; sys.path.insert(0, 'mocks'); import sitecustomize; from oracle.oci_resource_search_mcp_server.server import main; main()"
@@ -281,6 +333,10 @@
       "command": "uv",
       "args": [
         "run",
+        "--project",
+        "../../../src/oci-usage-mcp-server",
+        "--locked",
+        "--no-dev",
         "python",
         "-c",
         "import sys; sys.path.insert(0, 'mocks'); import sitecustomize; from oracle.oci_usage_mcp_server.server import main; main()"

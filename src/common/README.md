@@ -265,11 +265,11 @@ explicit `--auth` flag is appropriate.
 From the repository root, run the package test suite with:
 
 ```bash
-make test project=common
+moon run common:test
 ```
 
 Run the repository Python lint check after source changes:
 
 ```bash
-make lint
+moon run root:lint
 ```

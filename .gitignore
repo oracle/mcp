@@ -15,6 +15,7 @@ venv.bak/
 
 # moon
 .moon/cache/
+dist/
 
 # VScode
 .vscode

@@ -46,6 +46,9 @@ jobs:
           test -n "$moon_version"
           npm install --global --ignore-scripts "@moonrepo/cli@$moon_version"
 
+      - name: Install Moon toolchains
+        run: moon setup
+
       - name: Validate release target
         run: |
           test "$GITHUB_REF" = refs/heads/main

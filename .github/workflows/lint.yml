@@ -24,5 +24,7 @@ jobs:
         moon_version=$(sed -n 's/^moon = "=\([0-9][0-9.]*\)"$/\1/p' .prototools)
         test -n "$moon_version"
         npm install --global --ignore-scripts "@moonrepo/cli@$moon_version"
+    - name: Install Moon toolchains
+      run: moon setup
     - name: Lint and check uv locks with Moon
       run: moon run root:lint :lock-check

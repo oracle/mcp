@@ -16,6 +16,16 @@ from oracle.oci_logging_mcp_server.server import mcp
 
 
 class TestRegionSupport:
+    @pytest.mark.parametrize("region", ["attacker.example", "attacker/path", "user@attacker"])
+    def test_rejects_unsafe_region_before_creating_clients(self, region):
+        with pytest.raises(ValueError, match="OCI region identifier"):
+            server.get_logging_client(region)
+        with pytest.raises(ValueError, match="OCI region identifier"):
+            server.get_logging_search_client(region)
+
+    def test_normalizes_valid_region(self):
+        assert server._validate_region("EU-FRANKFURT-1") == "eu-frankfurt-1"
+
     def test_client_kwargs_without_signer(self):
         assert "signer" not in server._get_oci_client_kwargs()
 
@@ -40,6 +50,9 @@ class TestRegionSupport:
         )
 
         assert server.list_subscribed_regions() == ["us-ashburn-1", "eu-frankfurt-1"]
+        assert mock_from_file.return_value["additional_user_agent"] == (
+            f"oci-logging-mcp/{server.__version__}"
+        )
         mock_identity_client.return_value.list_region_subscriptions.assert_called_once_with(
             tenancy_id="tenancy"
         )

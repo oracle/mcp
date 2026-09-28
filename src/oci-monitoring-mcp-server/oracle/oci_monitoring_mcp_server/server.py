@@ -5,6 +5,7 @@ https://oss.oracle.com/licenses/upl.
 """
 
 import os
+import re
 from datetime import datetime, timezone
 from logging import Logger
 from typing import Annotated, List, Optional, Tuple
@@ -43,6 +44,18 @@ mcp = FastMCP(
     "Monitoring Logs, Metrics, and Alarms.",
 )
 
+_REGION_IDENTIFIER = re.compile(r"^[a-z][a-z0-9-]*$")
+
+
+def _validate_region(region: Optional[str]) -> Optional[str]:
+    """Reject values that OCI SDK endpoint construction could treat as a hostname."""
+    if region is None:
+        return None
+    normalized_region = region.lower()
+    if not _REGION_IDENTIFIER.fullmatch(normalized_region):
+        raise ValueError("region must be an OCI region identifier.")
+    return normalized_region
+
 
 def _get_http_config_and_signer(region: Optional[str] = None):
     if not (os.getenv("ORACLE_MCP_HOST") and os.getenv("ORACLE_MCP_PORT")):
@@ -57,6 +70,8 @@ def _get_http_config_and_signer(region: Optional[str] = None):
         raise RuntimeError(
             "HTTP requests require IDCS authentication. Set IDCS_DOMAIN, IDCS_CLIENT_ID, and IDCS_CLIENT_SECRET."
         )
+    if region is not None:
+        region = _validate_region(region)
     region = region or os.getenv("OCI_REGION")
     if not region:
         raise RuntimeError("HTTP requests require OCI_REGION.")
@@ -96,6 +111,7 @@ def get_monitoring_client(region: Optional[str] = None):
         profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
     if region is not None:
+        region = _validate_region(region)
         config["region"] = region
     user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
     config["additional_user_agent"] = f"{user_agent_name}/{__version__}"

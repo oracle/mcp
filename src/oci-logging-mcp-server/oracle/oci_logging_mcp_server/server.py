@@ -5,6 +5,7 @@ https://oss.oracle.com/licenses/upl.
 """
 
 import os
+import re
 import urllib.parse
 from logging import Logger
 from typing import Annotated, Optional
@@ -39,6 +40,18 @@ logger = Logger(__name__, level="INFO")
 
 mcp = FastMCP(name=__project__)
 
+_REGION_IDENTIFIER = re.compile(r"^[a-z][a-z0-9-]*$")
+
+
+def _validate_region(region: Optional[str]) -> Optional[str]:
+    """Reject values that OCI SDK endpoint construction could treat as a hostname."""
+    if region is None:
+        return None
+    normalized_region = region.lower()
+    if not _REGION_IDENTIFIER.fullmatch(normalized_region):
+        raise ValueError("region must be an OCI region identifier.")
+    return normalized_region
+
 
 def _get_http_config_and_signer(region: Optional[str] = None):
     if not (os.getenv("ORACLE_MCP_HOST") and os.getenv("ORACLE_MCP_PORT")):
@@ -53,6 +66,8 @@ def _get_http_config_and_signer(region: Optional[str] = None):
         raise RuntimeError(
             "HTTP requests require IDCS authentication. Set IDCS_DOMAIN, IDCS_CLIENT_ID, and IDCS_CLIENT_SECRET."
         )
+    if region is not None:
+        region = _validate_region(region)
     region = region or os.getenv("OCI_REGION")
     if not region:
         raise RuntimeError("HTTP requests require OCI_REGION.")
@@ -92,6 +107,7 @@ def get_logging_client(region: Optional[str] = None):
         profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
     if region is not None:
+        region = _validate_region(region)
         config["region"] = region
 
     private_key = oci.signer.load_private_key_from_file(config["key_file"])
@@ -113,6 +129,7 @@ def get_logging_search_client(region: Optional[str] = None):
         profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
     if region is not None:
+        region = _validate_region(region)
         config["region"] = region
 
     private_key = oci.signer.load_private_key_from_file(config["key_file"])
@@ -148,6 +165,8 @@ def list_subscribed_regions(
             file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
             profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
         )
+        user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
+        config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
         configured_tenancy_id = config.get("tenancy")
         if config.get("security_token_file"):
             private_key = oci.signer.load_private_key_from_file(config["key_file"])

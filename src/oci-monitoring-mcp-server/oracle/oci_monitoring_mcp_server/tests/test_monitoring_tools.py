@@ -258,6 +258,14 @@ class TestMonitoringTools:
 
 
 class TestInternals:
+    @pytest.mark.parametrize("region", ["attacker.example", "attacker/path", "user@attacker"])
+    def test_rejects_unsafe_region_before_creating_client(self, region):
+        with pytest.raises(ValueError, match="OCI region identifier"):
+            server.get_monitoring_client(region)
+
+    def test_normalizes_valid_region(self):
+        assert server._validate_region("EU-FRANKFURT-1") == "eu-frankfurt-1"
+
     def test_prepare_time_parameters(self):
         start, end = server._prepare_time_parameters("2023-01-01T00:00:00Z", None)
         assert isinstance(start, datetime)

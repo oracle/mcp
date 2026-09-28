@@ -17,11 +17,13 @@ from oracle.oci_logging_mcp_server.server import mcp
 
 class TestRegionSupport:
     @pytest.mark.parametrize("region", ["attacker.example", "attacker/path", "user@attacker"])
-    def test_rejects_unsafe_region_before_creating_clients(self, region):
+    @patch("oracle.oci_logging_mcp_server.server.oci.config.from_file")
+    def test_rejects_unsafe_region_before_creating_clients(self, mock_from_file, region):
         with pytest.raises(ValueError, match="OCI region identifier"):
             server.get_logging_client(region)
         with pytest.raises(ValueError, match="OCI region identifier"):
             server.get_logging_search_client(region)
+        assert mock_from_file.call_count == 2
 
     def test_normalizes_valid_region(self):
         assert server._validate_region("EU-FRANKFURT-1") == "eu-frankfurt-1"

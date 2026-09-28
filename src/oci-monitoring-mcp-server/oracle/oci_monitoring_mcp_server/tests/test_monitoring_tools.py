@@ -259,9 +259,11 @@ class TestMonitoringTools:
 
 class TestInternals:
     @pytest.mark.parametrize("region", ["attacker.example", "attacker/path", "user@attacker"])
-    def test_rejects_unsafe_region_before_creating_client(self, region):
+    @patch("oracle.oci_monitoring_mcp_server.server.oci.config.from_file")
+    def test_rejects_unsafe_region_before_creating_client(self, mock_from_file, region):
         with pytest.raises(ValueError, match="OCI region identifier"):
             server.get_monitoring_client(region)
+        mock_from_file.assert_called_once()
 
     def test_normalizes_valid_region(self):
         assert server._validate_region("EU-FRANKFURT-1") == "eu-frankfurt-1"

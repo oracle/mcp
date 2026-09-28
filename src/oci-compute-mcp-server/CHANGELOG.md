@@ -6,6 +6,10 @@
 
 - `launch_instance` can now use an existing boot volume as its source by accepting `boot_volume_id`.
 
+### Fixed
+
+- `launch_instance` rejects empty `boot_volume_id` values instead of launching from the default image.
+
 ### Security
 
 - Updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).

@@ -224,7 +224,7 @@ def launch_instance(
     boot_volume_id: Optional[str] = Field(
         None,
         description=(
-            "The OCID of an existing boot volume to use as the instance source. "
+            "The non-empty OCID of an existing boot volume to use as the instance source. "
             "When provided, this takes precedence over image_id."
         ),
     ),
@@ -242,6 +242,9 @@ def launch_instance(
     ),
 ) -> Instance:
     try:
+        if boot_volume_id is not None and not boot_volume_id.strip():
+            raise ValueError("boot_volume_id must not be empty when provided.")
+
         client = get_compute_client()
 
         source_details = (

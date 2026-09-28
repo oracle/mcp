@@ -176,6 +176,24 @@ class TestComputeTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_launch_instance_rejects_empty_boot_volume_id(self, mock_get_client):
+        async with Client(mcp) as client:
+            with pytest.raises(fastmcp.exceptions.ToolError, match="boot_volume_id must not be empty"):
+                await client.call_tool(
+                    "launch_instance",
+                    {
+                        "compartment_id": "test_compartment",
+                        "display_name": "test_instance",
+                        "availability_domain": "AD1",
+                        "boot_volume_id": "",
+                        "subnet_id": "subnet1",
+                    },
+                )
+
+        mock_get_client.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
     async def test_launch_instance_exception(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client

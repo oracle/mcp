@@ -142,6 +142,56 @@ class TestComputeTools:
             assert result["id"] == "instance1"
             assert result["lifecycle_state"] == "PROVISIONING"
 
+            source_details = mock_client.launch_instance.call_args.args[0].source_details
+            assert isinstance(source_details, oci.core.models.InstanceSourceViaImageDetails)
+            assert source_details.image_id == "image1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_launch_instance_from_boot_volume(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_launch_response = create_autospec(oci.response.Response)
+        mock_launch_response.data = oci.core.models.Instance(
+            id="instance1", display_name="Instance 1", lifecycle_state="PROVISIONING"
+        )
+        mock_client.launch_instance.return_value = mock_launch_response
+
+        async with Client(mcp) as client:
+            await client.call_tool(
+                "launch_instance",
+                {
+                    "compartment_id": "test_compartment",
+                    "display_name": "test_instance",
+                    "availability_domain": "AD1",
+                    "boot_volume_id": "ocid1.bootvolume.oc1..example",
+                    "subnet_id": "subnet1",
+                },
+            )
+
+        source_details = mock_client.launch_instance.call_args.args[0].source_details
+        assert isinstance(source_details, oci.core.models.InstanceSourceViaBootVolumeDetails)
+        assert source_details.boot_volume_id == "ocid1.bootvolume.oc1..example"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_launch_instance_rejects_empty_boot_volume_id(self, mock_get_client):
+        async with Client(mcp) as client:
+            with pytest.raises(fastmcp.exceptions.ToolError, match="boot_volume_id must not be empty"):
+                await client.call_tool(
+                    "launch_instance",
+                    {
+                        "compartment_id": "test_compartment",
+                        "display_name": "test_instance",
+                        "availability_domain": "AD1",
+                        "boot_volume_id": "",
+                        "subnet_id": "subnet1",
+                    },
+                )
+
+        mock_get_client.assert_not_called()
+
     @pytest.mark.asyncio
     @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
     async def test_launch_instance_exception(self, mock_get_client):

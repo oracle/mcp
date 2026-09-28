@@ -164,6 +164,19 @@ async def test_map_source_details():
 
 
 @pytest.mark.asyncio
+async def test_map_boot_volume_source_details():
+    oci_sd = oci.core.models.InstanceSourceViaBootVolumeDetails(
+        source_type="bootVolume",
+        boot_volume_id="ocid1.bootvolume.oc1..example",
+    )
+
+    result = map_source_details(oci_sd)
+    assert isinstance(result, InstanceSourceDetails)
+    assert result.source_type == "bootVolume"
+    assert result.boot_volume_id == "ocid1.bootvolume.oc1..example"
+
+
+@pytest.mark.asyncio
 async def test_map_agent_config():
     oci_acfg = oci.core.models.InstanceAgentConfig(
         is_monitoring_disabled=True,

@@ -39,7 +39,7 @@ public class WellKnownServlet extends HttpServlet {
    */
   @Override
   protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-    if (!OAUTH2_CONFIG.isOAuth2Configured() || !OAUTH2_CONFIG.isAuthenticationEnabled()) {
+    if (!OAUTH2_CONFIG.isAuthorizationServerConfigured() || !OAUTH2_CONFIG.isAuthenticationEnabled()) {
       response.setStatus(HttpServletResponse.SC_NO_CONTENT);
       return;
     }

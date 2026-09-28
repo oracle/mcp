@@ -1,0 +1,10 @@
+*
+!package.json
+!package-lock.json
+!src/
+!src/protocol.ts
+!src/sandbox-common.ts
+!src/sandbox-isolate.ts
+!src/sandbox-prelude.ts
+!src/sandbox-worker.ts
+!src/types.ts

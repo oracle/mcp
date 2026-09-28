@@ -9,7 +9,7 @@ EXCLUDED_PROJECT_PATHS = $(addprefix $(SOURCE_FOLDER)/, $(EXCLUDED_PROJECTS))
 project ?= *
 # These are the directories that will be built
 DIRS := $(wildcard $(SOURCE_FOLDER)/$(project))
-SUBDIRS := $(filter-out $(EXCLUDED_PROJECT_PATHS), $(DIRS))
+SUBDIRS ?= $(filter-out $(EXCLUDED_PROJECT_PATHS), $(DIRS))
 COMMON_DIRS := $(filter $(COMMON_PROJECT_PATH),$(SUBDIRS))
 SERVER_DIRS := $(filter-out $(COMMON_PROJECT_PATH),$(SUBDIRS))
 # Releasing a server also releases the common dependency first, even when a

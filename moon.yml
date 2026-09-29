@@ -2,7 +2,12 @@ id: 'root'
 
 fileGroups:
   pythonSources:
-    - '**/*.py'
+    - 'src/**/*.py'
+    - 'scripts/**/*.py'
+    - 'tests/**/*.py'
+    - '!src/*/.venv/**/*'
+    - '!src/*/node_modules/**/*'
+    - '!tests/.venv/**/*'
 
 tasks:
   lint:
@@ -30,7 +35,8 @@ tasks:
 
   combine-coverage:
     description: 'Combines project coverage reports'
-    command: 'make combine-coverage'
+    type: 'run'
+    script: 'uv tool run coverage combine && uv tool run coverage html && uv tool run coverage report --fail-under=90'
     toolchains:
       - 'unstable_python'
       - 'unstable_uv'
@@ -41,3 +47,19 @@ tasks:
       - 'htmlcov/**/*'
     options:
       cache: false
+      runInCI: true
+
+  e2e-tests:
+    description: 'Runs optional end-to-end feature tests'
+    type: 'run'
+    command: 'uv run --project tests --locked --no-dev behave tests/e2e/features'
+    toolchains:
+      - 'unstable_python'
+      - 'unstable_uv'
+    inputs:
+      - 'tests/e2e/**/*'
+      - 'tests/pyproject.toml'
+      - 'tests/uv.lock'
+    options:
+      cache: false
+      runInCI: false

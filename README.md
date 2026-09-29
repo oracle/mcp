@@ -132,7 +132,7 @@ https://podman.io/docs/installation
 You can build the container image using the following command. The command shows building the container image for the oci-api-mcp-server.
 
 ```sh
-SUBDIRS=src/oci-api-mcp-server make containerize
+moon run oci-api-mcp-server:containerize
 ```
 The above command builds the container image tagged as `oracle.oci-api-mcp-server:latest`.
 
@@ -392,41 +392,36 @@ For Windows - **TODO**
 
 ## Local development
 
-This section will help you set up your environment to prepare it for local development if you wish to [contribute](#contributing) changes.
+Install [proto](https://moonrepo.dev/docs/proto/install) and run `proto install`
+from the repository root before using Moon. For a Python server, run its tests
+with Moon and launch its source checkout directly with `uv`:
 
-1. Set up python virtual environment and install dev requirements
-    ```sh
-    uv venv --python 3.13 --seed
-    source .venv/bin/activate        # On Windows: .venv\Scripts\activate
-    uv pip install -r requirements-dev.txt
-    ```
+```sh
+moon run oci-api-mcp-server:test
+uv --directory src/oci-api-mcp-server run --locked oracle.oci-api-mcp-server
+```
 
-2.  Locally build and install servers within the virtual environment
-    ```sh
-    make build
-    make install
-    ```
-**Note**: If you want to run commands in a single server project, you can add the `project` variable to only run commands for that specific project
-For example: `make project=oci-compute-mcp-server build` will only build the compute mcp server
+`uv run` creates and updates the server project's own `.venv` from its lockfile.
+The API server's `common` dependency resolves to this repository's `src/common`.
+Build a distribution only when you need to check packaging, with
+`moon run oci-api-mcp-server:build`.
 
-3. Add desired servers to your MCP client configuration, but run them using the locally installed server package instead
+To load this checkout in an MCP client, use the absolute path to the server
+project. For example:
 
-Below is an example MCP client configuration for a typical python server using the local server package
-
-*(For Node.js/Java/other servers, follow respective instructions in that server’s README)*
-
-For macOS/Linux:
 ```json
 {
   "mcpServers": {
     "oracle-oci-api-mcp-server": {
       "command": "uv",
       "args": [
+        "--directory",
+        "<absolute path to this repo>/src/oci-api-mcp-server",
         "run",
+        "--locked",
         "oracle.oci-api-mcp-server"
       ],
       "env": {
-        "VIRTUAL_ENV": "<path to your cloned repo>/mcp/.venv",
         "FASTMCP_LOG_LEVEL": "ERROR"
       }
     }
@@ -434,7 +429,9 @@ For macOS/Linux:
 }
 ```
 
-where `<path to your cloned repo>` is the absolute path to wherever you cloned this repo that will help point to the venv created above (e.g. `/Users/myuser/dev/mcp/.venv`)
+For other servers, use their project directory and the executable declared in
+their `pyproject.toml`. For Node.js, Java, or other runtimes, follow the server's
+README.
 
 ### JavaScript MCP servers
 
@@ -443,19 +440,9 @@ Most servers in this repository are Python packages managed with `uv`. JavaScrip
 The OCI JavaScript MCP server lives in `src/oci-javascript-mcp-server`:
 
 ```sh
-cd src/oci-javascript-mcp-server
-npm install
-npm test
-npm run check
-```
-
-From the repository root, you can run the JavaScript package targets with:
-
-```sh
-make javascript-sync
-make javascript-test
-make javascript-check
-make javascript-ci
+moon run oci-javascript-mcp-server:test
+moon run oci-javascript-mcp-server:check
+moon run oci-javascript-mcp-server:build
 ```
 
 ## Directory Structure
@@ -478,40 +465,19 @@ Each server subdirectory includes its own `README.md` with language/runtime deta
 
 ### Testing with a Local Development MCP Server
 
-You can modify the settings of your MCP client to run your local server. Open your client json settings file and
-update it as needed. For instance:
+Use the [local development MCP client configuration](#local-development) above
+to launch the checkout. Changes to Python source are available on the next
+server start; no build or installation into a shared environment is needed.
 
-```json
-{
-  "mcpServers": {
-    "oracle-oci-api-mcp-server": {
-      "type": "stdio",
-      "command": "uv",
-      "args": [
-        "run",
-        "oracle.oci-api-mcp-server"
-      ],
-      "env": {
-        "VIRTUAL_ENV": "<path to your cloned repo>/oci-mcp/.venv",
-        "FASTMCP_LOG_LEVEL": "ERROR"
-      }
-    }
-  }
-}
-```
-
-where `<absolute path to your server code>` is the absolute path to the server code, for instance
-`/Users/myuser/dev/oci-mcp/src/oci-identity-mcp-server/oracle/oci_identity_mcp_server`.
-
-To build and test servers running in HTTP transport mode:
+To test an HTTP-capable server locally:
 ```bash
-make build
-make install
+moon run oci-api-mcp-server:test
 ```
 
 then start the server:
 ```bash
-VIRTUAL_ENV=$(pwd)/.venv ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8888 uv run oracle.oci-api-mcp-server
+ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8888 \
+  uv --directory src/oci-api-mcp-server run --locked oracle.oci-api-mcp-server
 ```
 
 ### Inspector
@@ -527,9 +493,10 @@ server, you can run:
 ```sh
 npx @modelcontextprotocol/inspector \
   uv \
-  --directory <absolute path to your server code> \
+  --directory "<absolute path to this repo>/src/oci-api-mcp-server" \
   run \
-  server.py
+  --locked \
+  oracle.oci-api-mcp-server
 ```
 
 Inspector will run your server on localhost (for instance: http://127.0.0.1:6274) which should automatically open the
@@ -538,21 +505,16 @@ tool for debugging and development.
 ### Running tests
 
 ```bash
-make lint
-make test
-make javascript-test
-make javascript-check
-```
-
-To run both the Python and JavaScript checks from the repository root:
-
-```bash
-make ci
+moon run root:lint :lock-check :install-check \
+  oci-javascript-mcp-server:test \
+  oci-javascript-mcp-server:check \
+  oci-javascript-mcp-server:build
+moon run root:combine-coverage
 ```
 
 ### Running tasks with moon
 
-The standard Python server projects and the JavaScript MCP server can also be
+The standard Python server projects and the JavaScript MCP server are
 orchestrated with [moon](https://moonrepo.dev/). Tool versions are pinned in
 `.prototools`; after installing [proto](https://moonrepo.dev/docs/proto/install),
 install the pinned tools and run tasks from the repository root:
@@ -560,48 +522,49 @@ install the pinned tools and run tasks from the repository root:
 ```bash
 proto install
 moon run oci-compute-mcp-server:test
-moon run oci-javascript-mcp-server:ci
-moon run :lint
+moon run oci-javascript-mcp-server:test
+moon run root:lint
 moon run :build
 ```
 
 Moon uses each project's language-specific package definition: `pyproject.toml`
 and `uv.lock` for Python, and `package.json` and `package-lock.json` for
-JavaScript. The JavaScript tasks are inferred from the existing npm scripts.
-Other projects excluded from the repository-level Make targets are not part of
-this Moon rollout and continue to use the validation commands in their own
-README.
+JavaScript. Build, test, and publish tasks are defined in Moon.
+Other projects excluded from Moon continue to use the validation commands in
+their own README. Use `uv lock` or `uv sync` from a Python project's directory
+when updating or syncing that project's dependencies.
+
+Optional end-to-end tests can be run with `moon run root:e2e-tests` after
+following the setup in `tests/README.md`. Python container images with a
+`Containerfile` can be built with `moon run <project>:containerize`.
 
 ## Publishing
 
-### Publish & verify test packages
+Use the manually dispatched [Publish package](.github/workflows/publish.yml)
+workflow from `main`. Select `pypi` or `testpypi` with a Python Moon project ID
+or `all-python` to release every Moon-managed Python package. Select `npm` with
+`oci-javascript-mcp-server` for the JavaScript package. Moon runs checks and
+build before the workflow passes the distributions to its publish job. Releasing
+a Python server publishes `oracle-mcp-common` first and waits for it to appear
+on the selected index. Ordinary CI never invokes the publish tasks.
 
-Publish packages to PyPI test registry:
-```bash
-UV_PUBLISH_TOKEN=$(cat /path/to/testpypi/token-file) make test-publish
-```
+Configure the `pypi`, `testpypi`, and `npm` GitHub environments with release
+approval rules and their respective `PYPI_TOKEN`, `TEST_PYPI_TOKEN`, and
+`NPM_TOKEN` secrets before running the workflow. The publish job reads only the
+secret for its selected registry. The Moon publish tasks require the release
+workflow's `RELEASE_PUBLISH` flag, and Python publishing also requires an
+explicit upload and check URL.
 
-Verify installation:
-```bash
-uv run --index=https://test.pypi.org/simple <mcp server package>
-```
-example:
-```bash
-uv run --index=https://test.pypi.org/simple oracle.oci-api-mcp-server
-```
-
-### Publish packages
-
->[!IMPORTANT]
-> NOTE: The `UV_PUBLISH_TOKEN` differs for Test PyPI and PyPI.
+To verify a Test PyPI package after publishing:
 
 ```bash
-UV_PUBLISH_TOKEN=$(cat /path/to/pypi/token-file) make publish
+uvx --refresh-package oracle.oci-api-mcp-server \
+  --index https://test.pypi.org/simple \
+  --from 'oracle.oci-api-mcp-server==<published-version>' \
+  oracle.oci-api-mcp-server
 ```
 
-JavaScript packages are published separately through npm. Before publishing
-`src/oci-javascript-mcp-server`, run `npm run ci` from that package directory;
-the repository-level `make publish` target publishes only the Python packages.
+Replace `<published-version>` with the version you released.
 
 ## Contributing
 

@@ -53,6 +53,17 @@ def parameter_docs(method: Any) -> dict[str, tuple[str, bool, str]]:
     return result
 
 
+def _csv_serialized_arguments(method: Any) -> set[str]:
+    """Return arguments the generated SDK serializes as CSV query parameters."""
+    source = inspect.getsource(method)
+    return set(
+        re.findall(
+            r"generate_collection_format_param\(\s*kwargs\.get\(['\"]([a-zA-Z0-9_]+)['\"]",
+            source,
+        )
+    )
+
+
 def _split_generic(value: str) -> tuple[str, str] | None:
     match = re.fullmatch(r"(list|dict)\[(.*)\]", value)
     if match:
@@ -185,6 +196,7 @@ def schema_for_operation(method: Any, models_module: Any, existing: Mapping[str,
     """Build the strict input schema for an SDK operation and preserve known constraints."""
     docs = parameter_docs(method)
     expected = expected_kwargs(method)
+    csv_arguments = _csv_serialized_arguments(method)
     if set(docs) - TRANSPORT_KWARGS != expected:
         raise ValueError(f"SDK documentation and expected_kwargs differ for {method.__qualname__}")
     existing_properties = existing.get("properties", {}) if isinstance(existing, Mapping) else {}
@@ -193,6 +205,8 @@ def schema_for_operation(method: Any, models_module: Any, existing: Mapping[str,
     for name in sorted(expected):
         type_name, is_required, description = docs[name]
         schema = schema_for_type(type_name, models_module, description)
+        if name in csv_arguments and schema.get("type") == "array":
+            schema["items"] = {"type": "string"}
         _preserve_constraints(schema, existing_properties.get(name))
         if isinstance(existing_properties.get(name), Mapping) and "description" in existing_properties[name]:
             schema["description"] = existing_properties[name]["description"]

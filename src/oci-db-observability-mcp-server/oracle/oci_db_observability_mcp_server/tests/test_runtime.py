@@ -13,6 +13,7 @@ from unittest.mock import Mock
 
 import pytest
 import oci
+from jsonschema import Draft202012Validator
 
 from oracle.oci_db_observability_mcp_server import __project__, __version__
 from oracle.oci_db_observability_mcp_server import runtime
@@ -102,6 +103,18 @@ def test_registered_tool_rejects_invalid_sdk_schema_arguments_before_client_crea
 
     with pytest.raises(ValueError, match="Invalid arguments"):
         runtime.invoke_registered_tool(load_registry().get_tool(tool_name), arguments)
+
+
+def test_awr_report_requires_csv_instance_numbers_before_client_creation(monkeypatch) -> None:
+    from oracle.oci_db_observability_mcp_server.registry import load_registry
+
+    tool = load_registry().get_tool("get_awr_db_report")
+    arguments = {"managed_database_id": "database", "awr_db_id": "awr", "inst_nums": ["1"]}
+    assert Draft202012Validator(tool["inputSchema"]).is_valid(arguments)
+
+    monkeypatch.setattr(runtime, "_client", lambda *_args: pytest.fail("client must not be created"))
+    with pytest.raises(ValueError, match="Invalid arguments"):
+        runtime.invoke_registered_tool(tool, {**arguments, "inst_nums": [1]})
 
 
 def test_response_serialization_and_model_helpers(monkeypatch) -> None:

@@ -241,7 +241,7 @@
           "inst_nums": {
             "type": "array",
             "items": {
-              "type": "integer"
+              "type": "string"
             },
             "description": "The optional multiple value query parameter to filter the database instance numbers."
           },

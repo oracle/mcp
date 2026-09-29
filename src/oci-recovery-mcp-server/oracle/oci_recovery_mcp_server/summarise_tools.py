@@ -72,7 +72,7 @@ def summarize_protected_database_health(
         deadline = app._Deadline()
         client = clients.get_recovery_client(region, request_id=request_id)
         comp_id = compartment_id or auth.get_tenancy()
-        comp_ids = compartments._compartment_ids_for_tool(
+        comp_ids, scope_complete = compartments._compartment_scope_for_tool(
             comp_id,
             fetch_for_child_compartment=fetch_for_child_compartment,
             request_id=request_id,
@@ -212,7 +212,7 @@ def summarize_protected_database_health(
             alert=alert,
             unknown=unknown,
             total=total,
-            partial=deadline.expired,
+            partial=deadline.expired or not scope_complete,
         )
         if deadline.expired:
             logger.warning(
@@ -227,7 +227,7 @@ def summarize_protected_database_health(
             aggregated=aggregated,
             per_compartment=per_compartment,
             compartmentIdsScanned=scanned_compartments,
-            truncated=deadline.expired,
+            truncated=deadline.expired or not scope_complete,
         )
     except Exception as e:
         logger.error(f"Error in summarize_protected_database_health tool: {str(e)}")
@@ -270,7 +270,7 @@ def summarize_protected_database_redo_status(
         deadline = app._Deadline()
         client = clients.get_recovery_client(region, request_id=request_id)
         comp_id = compartment_id or auth.get_tenancy()
-        comp_ids = compartments._compartment_ids_for_tool(
+        comp_ids, scope_complete = compartments._compartment_scope_for_tool(
             comp_id,
             fetch_for_child_compartment=fetch_for_child_compartment,
             request_id=request_id,
@@ -406,7 +406,7 @@ def summarize_protected_database_redo_status(
             disabled=disabled,
             unknown=unknown,
             total=total,
-            partial=deadline.expired,
+            partial=deadline.expired or not scope_complete,
         )
         if deadline.expired:
             logger.warning(
@@ -421,7 +421,7 @@ def summarize_protected_database_redo_status(
             aggregated=aggregated,
             per_compartment=per_compartment,
             compartmentIdsScanned=scanned_compartments,
-            truncated=deadline.expired,
+            truncated=deadline.expired or not scope_complete,
         )
     except Exception as e:
         logger.error(f"Error in summarize_protected_database_redo_status tool: {e}")
@@ -468,7 +468,7 @@ def summarize_backup_space_used(
         deadline = app._Deadline()
         comp_id = compartments._resolve_compartment_id(compartment_id, default_to_tenancy=True)
         client = clients.get_recovery_client(region, request_id=request_id)
-        comp_ids = compartments._compartment_ids_for_tool(
+        comp_ids, scope_complete = compartments._compartment_scope_for_tool(
             comp_id,
             fetch_for_child_compartment=fetch_for_child_compartment,
             request_id=request_id,
@@ -644,7 +644,7 @@ def summarize_backup_space_used(
             "compartmentIdsScanned": scanned_compartments,
             "compartmentIdsInScope": comp_ids,
             "missingMetricsCount": missing_metrics,
-            "truncated": deadline.expired,
+            "truncated": deadline.expired or not scope_complete,
         }
         # logger.info(f"Returning dict result: {result}")
         # return result
@@ -1059,7 +1059,7 @@ def summarize_protected_database_backup_destination(
         if not compartment_id:
             compartment_id = auth.get_tenancy()
 
-        comp_ids = compartments._compartment_ids_for_tool(
+        comp_ids, scope_complete = compartments._compartment_scope_for_tool(
             compartment_id,
             fetch_for_child_compartment=fetch_for_child_compartment,
             request_id=request_id,
@@ -1092,6 +1092,7 @@ def summarize_protected_database_backup_destination(
         unconfigured = 0
         unconfigured_names: list[str] = []
         has_backups_names: list[str] = []
+        unreadable_names: list[str] = []
 
         get_db = functools.partial(db_client.get_database, retry_strategy=_PER_DATABASE_RETRY_STRATEGY)
         list_bk = functools.partial(db_client.list_backups, retry_strategy=_PER_DATABASE_RETRY_STRATEGY)
@@ -1104,11 +1105,16 @@ def summarize_protected_database_backup_destination(
         # them. Skipping the repeat before any of them is touched fixes all of them at
         # once.
         seen_database_ids: set[str] = set()
+        # Databases whose config could not be read, by id. Reported as UNREADABLE
+        # rather than dropped: otherwise a scan where every read failed returns
+        # total_databases=0, indistinguishable from a compartment with no databases.
+        unreadable: dict[str, str] = {}
 
         # Iterate each DB summary, fetch full DB to inspect backup config and infer destinations
         for s in db_summaries:
             if deadline.reached():
                 break
+            sid = db_name_val = None
             try:
                 sid = _get(s, "id")
                 if not sid:
@@ -1169,9 +1175,19 @@ def summarize_protected_database_backup_destination(
                     )
                 )
             except Exception:
-                # Continue on per-DB errors to maximize overall coverage
-                continue
+                # Keep scanning the rest; this one is reported below unless a later
+                # duplicate of it reads successfully.
+                if sid and sid not in seen_database_ids:
+                    unreadable[sid] = db_name_val or sid
 
+        for sid, name in unreadable.items():
+            if sid in seen_database_ids:
+                continue
+            seen_database_ids.add(sid)
+            unreadable_names.append(name)
+            items.append(
+                ProtectedDatabaseBackupDestinationItem(database_id=sid, db_name=name, status="UNREADABLE")
+            )
 
         items = sorted(
             items,
@@ -1194,8 +1210,10 @@ def summarize_protected_database_backup_destination(
             db_names_by_destination_type=db_names_by_type,
             unconfigured_db_names=unconfigured_names,
             has_backups_db_names=has_backups_names,
+            unreadable_count=len(unreadable_names),
+            unreadable_db_names=_uniq_sorted(unreadable_names),
             items=items,
-            truncated=deadline.expired,
+            truncated=deadline.expired or not scope_complete,
         )
     except Exception as e:
         logger.error(f"Error in summarize_protected_database_backup_destination tool: {e}")

@@ -109,8 +109,9 @@ class ProtectedDatabaseHealthCounts(OCIBaseModel):
         False,
         alias="partial",
         description=(
-            "True when the deadline stopped this scan part-way, so these counts cover only "
-            "some of the compartment's protected databases."
+            "True when these counts cover only some of the protected databases in scope: "
+            "the deadline stopped the scan part-way or, on the aggregate, not every "
+            "compartment in the subtree was included."
         ),
     )
 
@@ -161,8 +162,9 @@ class ProtectedDatabaseRedoCounts(OCIBaseModel):
         False,
         alias="partial",
         description=(
-            "True when the deadline stopped this scan part-way, so these counts cover only "
-            "some of the compartment's protected databases."
+            "True when these counts cover only some of the protected databases in scope: "
+            "the deadline stopped the scan part-way or, on the aggregate, not every "
+            "compartment in the subtree was included."
         ),
     )
 
@@ -191,7 +193,11 @@ class ProtectedDatabaseHealthSummary(OCIBaseModel):
     truncated: bool = Field(
         False,
         alias="truncated",
-        description="True when the scan stopped early at its deadline, so counts are partial.",
+        description=(
+            "True when counts are partial: the scan stopped early at its deadline, or "
+            "the compartment subtree was capped by ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE "
+            "or could not be fully read."
+        ),
     )
 
 
@@ -219,7 +225,11 @@ class ProtectedDatabaseRedoSummary(OCIBaseModel):
     truncated: bool = Field(
         False,
         alias="truncated",
-        description="True when the scan stopped early at its deadline, so counts are partial.",
+        description=(
+            "True when counts are partial: the scan stopped early at its deadline, or "
+            "the compartment subtree was capped by ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE "
+            "or could not be fully read."
+        ),
     )
 
 
@@ -2169,7 +2179,13 @@ class ProtectedDatabaseBackupDestinationItem(OCIBaseModel):
 
     database_id: str = Field(..., description="Database OCID.")
     db_name: Optional[str] = Field(None, description="Database name.")
-    status: Optional[str] = Field(None, description="CONFIGURED | HAS_BACKUPS | UNCONFIGURED")
+    status: Optional[str] = Field(
+        None,
+        description=(
+            "CONFIGURED | UNCONFIGURED | UNREADABLE. UNREADABLE means the database's "
+            "backup configuration could not be read, so its destination is not known."
+        ),
+    )
     destination_types: List[str] = Field(
         default_factory=list,
         description="Backup destination type(s) (e.g., DBRS, OSS, NFS).",
@@ -2188,7 +2204,10 @@ class ProtectedDatabaseBackupDestinationSummary(OCIBaseModel):
 
     compartment_id: Optional[str] = Field(None, description="Compartment OCID.")
     region: Optional[str] = Field(None, description="Region.")
-    total_databases: int = Field(0, description="Total databases scanned.")
+    total_databases: int = Field(
+        0,
+        description="Total databases scanned, including those whose configuration could not be read.",
+    )
     unconfigured_count: int = Field(0, description="Count of databases without configured automatic backups.")
     counts_by_destination_type: Dict[str, int] = Field(
         default_factory=dict, description="Counts by destination type."
@@ -2206,13 +2225,27 @@ class ProtectedDatabaseBackupDestinationSummary(OCIBaseModel):
             "since no backup is queried then."
         ),
     )
+    unreadable_count: int = Field(
+        0,
+        description=(
+            "Databases found whose backup configuration could not be read (for example, "
+            "the GET kept failing after retries). Counted in total_databases."
+        ),
+    )
+    unreadable_db_names: List[str] = Field(
+        default_factory=list, description="DBs whose backup configuration could not be read."
+    )
     items: List[ProtectedDatabaseBackupDestinationItem] = Field(
         default_factory=list, description="Per-database details."
     )
     truncated: bool = Field(
         False,
         alias="truncated",
-        description="True when the scan stopped early at its deadline, so counts are partial.",
+        description=(
+            "True when counts are partial: the scan stopped early at its deadline, or "
+            "the compartment subtree was capped by ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE "
+            "or could not be fully read."
+        ),
     )
 
 

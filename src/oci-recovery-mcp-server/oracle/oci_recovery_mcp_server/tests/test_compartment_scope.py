@@ -155,10 +155,10 @@ def test_child_compartment_helpers_use_cache_fast_path_and_fallback(monkeypatch)
     )
     assert compartments._expand_compartment_scope(
         "root", include_child_compartments=True
-    ) == ["root", "child", "grandchild"]
+    ) == (["root", "child", "grandchild"], True)
     assert compartments._expand_compartment_scope(
         "root", include_child_compartments=False
-    ) == ["root"]
+    ) == (["root"], True)
 
     fallback_identity = MagicMock()
     fallback_identity.list_compartments.side_effect = [
@@ -173,7 +173,7 @@ def test_child_compartment_helpers_use_cache_fast_path_and_fallback(monkeypatch)
     )
     assert compartments._expand_compartment_scope(
         "root", include_child_compartments=True
-    ) == ["root", "child", "sibling"]
+    ) == (["root", "child", "sibling"], True)
 
     monkeypatch.setattr(
         compartments, "_resolve_compartment_id", lambda value, **_kwargs: f"resolved-{value}"
@@ -186,6 +186,80 @@ def test_child_compartment_helpers_use_cache_fast_path_and_fallback(monkeypatch)
     assert compartments._compartment_ids_for_tool(
         "Dev", fetch_for_child_compartment=True
     ) == ["resolved-Dev"]
+    # The root alone stands in for a subtree that was never read, so it is not
+    # reported as complete.
+    assert compartments._compartment_scope_for_tool(
+        "Dev", fetch_for_child_compartment=True
+    ) == (["resolved-Dev"], False)
+
+
+def test_subtree_expansion_reports_when_the_cap_drops_compartments(monkeypatch):
+    """
+    A subtree larger than ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE is cut to the cap and
+    reported incomplete, on both the cached path and the Identity crawl. A subtree
+    of exactly the cap loses nothing and is reported complete.
+    """
+    tree = [SimpleNamespace(id=f"c{i}", compartment_id="root") for i in range(4)]
+    monkeypatch.setattr(compartments, "_list_all_compartments_cached", lambda **_: tree)
+
+    monkeypatch.setenv("ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE", "3")
+    assert compartments._expand_compartment_scope(
+        "root", include_child_compartments=True
+    ) == (["root", "c0", "c1"], False)
+
+    monkeypatch.setenv("ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE", "5")
+    assert compartments._expand_compartment_scope(
+        "root", include_child_compartments=True
+    ) == (["root", "c0", "c1", "c2", "c3"], True)
+
+    identity_client = MagicMock()
+    identity_client.list_compartments.side_effect = [
+        _response([SimpleNamespace(id="a"), SimpleNamespace(id="b")]),
+        _response([]),
+    ]
+    monkeypatch.setattr(compartments, "_list_all_compartments_cached", lambda **_: [])
+    monkeypatch.setattr(clients, "get_identity_client", lambda request_id=None: identity_client)
+    monkeypatch.setenv("ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE", "2")
+    assert compartments._expand_compartment_scope(
+        "root", include_child_compartments=True
+    ) == (["root", "a"], False)
+
+
+def test_subtree_expansion_is_incomplete_when_identity_cannot_be_read(monkeypatch):
+    """
+    When neither the cached listing nor the Identity crawl can be read, the root is
+    returned alone and marked incomplete: whether it has children is unknown, and a
+    root-only scope must not pass for a leaf compartment. A crawl that fails part-way
+    keeps what it found. A genuine leaf, where the crawl succeeds, stays complete.
+    """
+    monkeypatch.setattr(
+        compartments,
+        "_list_all_compartments_cached",
+        MagicMock(side_effect=RuntimeError("identity unavailable")),
+    )
+    monkeypatch.setattr(
+        clients,
+        "get_identity_client",
+        MagicMock(side_effect=RuntimeError("identity unavailable")),
+    )
+    assert compartments._expand_compartment_scope(
+        "root", include_child_compartments=True
+    ) == (["root"], False)
+
+    identity_client = MagicMock()
+    identity_client.list_compartments.side_effect = [
+        _response([SimpleNamespace(id="child")]),
+        RuntimeError("throttled"),
+    ]
+    monkeypatch.setattr(clients, "get_identity_client", lambda request_id=None: identity_client)
+    assert compartments._expand_compartment_scope(
+        "root", include_child_compartments=True
+    ) == (["root", "child"], False)
+
+    identity_client.list_compartments.side_effect = [_response([])]
+    assert compartments._expand_compartment_scope(
+        "root", include_child_compartments=True
+    ) == (["root"], True)
 
 
 def test_child_scope_tools_deduplicate_and_forward_filter_kwargs(monkeypatch):

@@ -103,6 +103,20 @@ the server gains two new guidance tools.
 
 ### Fixed
 
+- **Summary tools no longer present a partial compartment subtree as complete.**
+  With `fetch_for_child_compartment=true`, `summarize_protected_database_health`,
+  `summarize_protected_database_redo_status`, `summarize_backup_space_used`, and
+  `summarize_protected_database_backup_destination` now set `truncated` (and the
+  aggregate's `partial`) when `ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE` dropped
+  compartments, or when Identity could not be read to expand the subtree. Before, only
+  the deadline set these flags. A subtree of exactly the cap is no longer reported as
+  capped.
+- **`summarize_protected_database_backup_destination` no longer drops databases it
+  cannot read.** A database whose backup configuration still fails to read after
+  retries now appears in `items` with status `UNREADABLE`, is counted in
+  `total_databases`, and is listed in the new `unreadable_count` and
+  `unreadable_db_names` fields. Before, it was silently left out, so a scope where
+  every read failed reported `total_databases=0`, the same as an empty compartment.
 - **`list_restore` failed whenever `status`, `sort_by`, or `sort_order` was passed.** All
   three were advertised in the tool schema and forwarded straight into
   `oci.work_requests.WorkRequestClient.list_work_requests`, which accepts only

@@ -369,7 +369,7 @@ def test_summary_scans_stop_at_their_deadline_and_say_so(monkeypatch):
         compartments, "_resolve_compartment_id", lambda compartment_id, **_kwargs: compartment_id
     )
     monkeypatch.setattr(
-        compartments, "_compartment_ids_for_tool", lambda cid, **_kwargs: ["c1", "c2", "c3"]
+        compartments, "_compartment_scope_for_tool", lambda cid, **_kwargs: (["c1", "c2", "c3"], True)
     )
     recovery_client.list_protected_databases.return_value = _response(
         [
@@ -434,7 +434,7 @@ def test_summary_scans_report_every_compartment_when_they_finish(monkeypatch):
         compartments, "_resolve_compartment_id", lambda compartment_id, **_kwargs: compartment_id
     )
     monkeypatch.setattr(
-        compartments, "_compartment_ids_for_tool", lambda cid, **_kwargs: ["c1", "c2"]
+        compartments, "_compartment_scope_for_tool", lambda cid, **_kwargs: (["c1", "c2"], True)
     )
     recovery_client.list_protected_databases.return_value = _response(
         [SimpleNamespace(id="pd1", health="PROTECTED")]
@@ -448,6 +448,47 @@ def test_summary_scans_report_every_compartment_when_they_finish(monkeypatch):
     assert health.compartment_ids_scanned == ["c1", "c2"]
     assert [c.partial for c in health.per_compartment] == [False, False]
     assert health.aggregated.partial is False
+
+
+def test_summary_scans_are_truncated_when_the_compartment_cap_drops_some(monkeypatch):
+    """
+    A subtree larger than ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE is scanned only up to
+    the cap. Every summary must then say it is truncated and flag its aggregate as
+    partial -- it used to report the capped subset as the whole tenancy. The
+    compartments that were scanned were read in full, so they are not flagged.
+    """
+    monkeypatch.setenv("ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE", "3")
+    tree = [SimpleNamespace(id=f"c{i}", compartment_id="root") for i in range(4)]
+    monkeypatch.setattr(compartments, "_list_all_compartments_cached", lambda **_: tree)
+    monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda cid, **_k: cid)
+    recovery_client = MagicMock()
+    monkeypatch.setattr(clients, "get_recovery_client", lambda *_a, **_k: recovery_client)
+    recovery_client.list_protected_databases.return_value = _response(
+        [SimpleNamespace(id="pd1", health="PROTECTED", is_redo_logs_shipped=True)]
+    )
+    monkeypatch.setattr(compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: [])
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: MagicMock())
+
+    for tool in (
+        summarise_tools.summarize_protected_database_health,
+        summarise_tools.summarize_protected_database_redo_status,
+    ):
+        summary = tool(compartment_id="root", fetch_for_child_compartment=True)
+        assert summary.truncated is True, tool.__name__
+        assert summary.compartment_ids_scanned == ["root", "c0", "c1"]
+        assert summary.aggregated.partial is True
+        assert [c.partial for c in summary.per_compartment] == [False, False, False]
+
+    space = summarise_tools.summarize_backup_space_used(
+        compartment_id="root", fetch_for_child_compartment=True
+    )
+    assert space["truncated"] is True
+    assert space["compartmentIdsInScope"] == ["root", "c0", "c1"]
+
+    destination = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="root", fetch_for_child_compartment=True
+    )
+    assert destination.truncated is True
 
 
 def _backup_destination_db(index: int) -> dict:
@@ -472,7 +513,7 @@ def test_backup_destination_scan_stops_at_max_total_databases(monkeypatch):
     for: the tool fans out over a whole compartment subtree, and the cap is the only
     thing standing between a large tenancy and a very long call.
     """
-    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_kwargs: [cid])
+    monkeypatch.setattr(compartments, "_compartment_scope_for_tool", lambda cid, **_kwargs: ([cid], True))
     monkeypatch.setattr(
         compartments,
         "_fetch_db_home_ids_for_compartment",
@@ -504,7 +545,7 @@ def test_backup_destination_reports_which_databases_have_backups(monkeypatch):
     would conclude nothing was backed up. It is filled only when
     include_last_backup_time is set, since that is the flag that queries backups at all.
     """
-    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_kwargs: [cid])
+    monkeypatch.setattr(compartments, "_compartment_scope_for_tool", lambda cid, **_kwargs: ([cid], True))
     monkeypatch.setattr(
         compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["home1"]
     )
@@ -529,14 +570,15 @@ def test_backup_destination_reports_which_databases_have_backups(monkeypatch):
 
 def test_backup_destination_counts_add_up_when_a_database_cannot_be_read(monkeypatch):
     """
-    A database whose config cannot be read is left out of every count, total included.
+    A database whose config cannot be read is reported as UNREADABLE: it counts
+    toward total_databases, has its own count and name list, and appears in items.
 
-    It used to be marked seen before the read, so a failed GET still counted toward
-    total_databases while appearing in no list or per-type count beside it -- the
-    same mismatch the de-dupe exists to prevent -- and a duplicate of it later in
-    the scan was skipped rather than retried.
+    Dropping it made a failed read look like an absent database -- a scope where
+    every GET failed read total_databases=0, the same as an empty compartment. A
+    duplicate of it later in the scan is still retried, and a successful retry
+    replaces the failure.
     """
-    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_kwargs: [cid])
+    monkeypatch.setattr(compartments, "_compartment_scope_for_tool", lambda cid, **_kwargs: ([cid], True))
     monkeypatch.setattr(
         compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["home1"]
     )
@@ -570,8 +612,9 @@ def test_backup_destination_counts_add_up_when_a_database_cannot_be_read(monkeyp
         sum(summary.counts_by_destination_type.values()) + summary.unconfigured_count
         == summary.total_databases
     )
+    assert summary.unreadable_count == 0
 
-    # When the database never reads, it is absent everywhere rather than only from the lists.
+    # When the database never reads, it is still reported, as UNREADABLE.
     db_client.get_database.side_effect = lambda database_id, **_kwargs: (
         (_ for _ in ()).throw(RuntimeError("database lookup failed"))
         if database_id == "db2"
@@ -582,8 +625,30 @@ def test_backup_destination_counts_add_up_when_a_database_cannot_be_read(monkeyp
         region="us-ashburn-1",
         include_last_backup_time=False,
     )
-    assert [it.database_id for it in summary.items] == ["db1"]
-    assert summary.total_databases == 1
+    assert [(it.database_id, it.status) for it in summary.items] == [
+        ("db1", "CONFIGURED"),
+        ("db2", "UNREADABLE"),
+    ]
+    assert summary.total_databases == 2
+    assert summary.unreadable_count == 1
+    assert summary.unreadable_db_names == ["DB2"]
+    assert (
+        sum(summary.counts_by_destination_type.values())
+        + summary.unconfigured_count
+        + summary.unreadable_count
+        == summary.total_databases
+    )
+
+    # Every read failing is not an empty compartment.
+    db_client.get_database.side_effect = RuntimeError("database lookup failed")
+    summary = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="compartment",
+        region="us-ashburn-1",
+        include_last_backup_time=False,
+    )
+    assert summary.total_databases == 2
+    assert summary.unreadable_count == 2
+    assert summary.unreadable_db_names == ["DB1", "DB2"]
 
 
 def test_last_backup_time_compares_instants_not_their_text(monkeypatch):
@@ -596,7 +661,7 @@ def test_last_backup_time_compares_instants_not_their_text(monkeypatch):
     string regardless of when it happened. Here the datetime is the newer of the two,
     which the old comparison would have discarded.
     """
-    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_kwargs: [cid])
+    monkeypatch.setattr(compartments, "_compartment_scope_for_tool", lambda cid, **_kwargs: ([cid], True))
     monkeypatch.setattr(
         compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["home1"]
     )
@@ -752,7 +817,7 @@ def test_backup_space_summary_stops_at_its_deadline_and_says_so(monkeypatch):
         compartments, "_resolve_compartment_id", lambda cid, **_k: cid
     )
     monkeypatch.setattr(
-        compartments, "_compartment_ids_for_tool", lambda cid, **_k: ["c1", "c2", "c3"]
+        compartments, "_compartment_scope_for_tool", lambda cid, **_k: (["c1", "c2", "c3"], True)
     )
     monkeypatch.setattr(app, "_Deadline", lambda *_a, **_k: _ExpiresAfter(1))
     client = MagicMock()
@@ -774,7 +839,7 @@ def test_backup_destination_summary_stops_at_its_deadline(monkeypatch):
     to two more calls for every database it finds -- and it had no budget either. The
     scanner takes it so the walk stops between requests rather than after all of them.
     """
-    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_k: ["c1"])
+    monkeypatch.setattr(compartments, "_compartment_scope_for_tool", lambda cid, **_k: (["c1"], True))
     monkeypatch.setattr(
         compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["h1", "h2", "h3"]
     )
@@ -803,8 +868,8 @@ def test_summary_deadlines_start_before_discovery(monkeypatch):
     order = []
     monkeypatch.setattr(
         compartments,
-        "_compartment_ids_for_tool",
-        lambda cid, **_k: order.append("expand") or ["c1", "c2", "c3"],
+        "_compartment_scope_for_tool",
+        lambda cid, **_k: order.append("expand") or (["c1", "c2", "c3"], True),
     )
     fetch_homes = MagicMock(return_value=["h1"])
     monkeypatch.setattr(compartments, "_fetch_db_home_ids_for_compartment", fetch_homes)
@@ -843,7 +908,7 @@ def test_backup_destination_retries_its_per_database_reads_within_a_bound(monkey
     response dropped that database from the summary. The SDK's own default strategy
     is not a substitute: it retries for up to ten minutes, far past the tool deadline.
     """
-    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_k: [cid])
+    monkeypatch.setattr(compartments, "_compartment_scope_for_tool", lambda cid, **_k: ([cid], True))
     monkeypatch.setattr(
         compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["home1"]
     )

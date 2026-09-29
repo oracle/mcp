@@ -13,10 +13,10 @@ These instructions apply to the entire repository. More specific instructions in
 
 ## Validation
 
-- For Python MCP servers with `pyproject.toml` that are not listed in `EXCLUDED_PROJECTS`, run `make test project=<server-name>` to test one server, for example `make test project=oci-compute-mcp-server`.
-- Some servers are excluded from common Makefile targets through `EXCLUDED_PROJECTS`. For any excluded server, do not rely on `make build`, `make install`, `make test`, or related repository-level targets; follow that server's `README.md` for validation and report a gap if the README does not document validation commands.
-- Run `make lint` after Python source changes.
-- Run `make test` when a change affects shared behavior across multiple non-excluded servers.
+- For Moon-managed Python MCP servers, run `moon run <server-name>:test` to test one server, for example `moon run oci-compute-mcp-server:test`.
+- The Python servers excluded from Moon are `dbtools-mcp-server`, `mysql-mcp-server`, `oci-pricing-mcp-server`, `oracle-db-doc-mcp-server`, and `oracle-db-mcp-java-toolkit`. Follow each excluded server's `README.md` for validation and report a gap if it does not document validation commands.
+- Run `moon run root:lint` after Python source changes.
+- Run `moon run :test` and `moon run root:combine-coverage` when a change affects shared behavior across multiple Moon-managed Python servers.
 - For non-Python servers, read the server's `README.md` and run its documented test command.
 - Do not mark validation complete until the relevant commands pass.
 
@@ -54,8 +54,7 @@ When validating the quality of any MCP server under `src/`:
 - For an HTTP server that uses OCI IAM/IDCS request-token exchange, use `build_idcs_http_auth(required_scopes)` once for provider configuration; the server retains listener startup, `mcp.auth` assignment, request-token retrieval, and user-agent assignment. During each authenticated request, call `IDCSHttpAuth.context_for(access_token.token)` and create only caller-specific OCI SDK clients from that context. Do not inspect host/port to select credentials, call FastMCP request-context APIs from the common library, or cache an HTTP-derived signer/client globally across callers.
 - For OCI Python SDK-backed servers, require unit tests to assert the exact derived `additional_user_agent` for each supported client-construction authentication path: API-key, security-token, each supported principal-based path (for example, instance- and resource-principal), and HTTP/token-exchange.
 - For servers that invoke the OCI CLI instead of constructing OCI Python SDK clients, require the same derived value through `OCI_SDK_APPEND_USER_AGENT` in the launched process environment.
-- For non-Python or Makefile-excluded servers, follow the server's `README.md` to identify the test and coverage commands. Report a gap if the README does not document how to enforce 90% unit-test coverage.
+- For non-Python or Moon-excluded servers, follow the server's `README.md` to identify the test and coverage commands. Report a gap if the README does not document how to enforce 90% unit-test coverage.
 - Treat end-to-end tests under `tests/e2e/` as optional unless they can run without making the normal test suite slower or less reliable.
 - Don't duplicate or reinvent anything that's in the common packages (src/common) (like authentication).
 - Do not implement a server that invokes subprocesses because it's difficult to secure and it limits how and where the MCP servers can run. `oci-api-mcp-server` is the exception: it launches the OCI CLI rather than constructing OCI Python SDK clients directly.
-

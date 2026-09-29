@@ -18,15 +18,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run Moon CI
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '26.8.1'
+          package-manager-cache: false
+
+      - name: Install pinned Moon
         run: |
           moon_version=$(sed -n 's/^moon = "=\([0-9][0-9.]*\)"$/\1/p' .prototools)
           test -n "$moon_version"
-          npx --yes --ignore-scripts --package="@moonrepo/cli@$moon_version" -- \
-            moon run root:lint :lock-check :install-check \
-              oci-javascript-mcp-server:ci
-          npx --yes --ignore-scripts --package="@moonrepo/cli@$moon_version" -- \
-            moon run root:combine-coverage
+          npm install --global --ignore-scripts "@moonrepo/cli@$moon_version"
+
+      - name: Install Moon toolchains
+        run: moon setup
+
+      - name: Run Moon CI
+        run: |
+          moon run root:lint :lock-check :install-check \
+            oci-javascript-mcp-server:test \
+            oci-javascript-mcp-server:check \
+            oci-javascript-mcp-server:build
+          moon run root:combine-coverage
 
       - name: Upload combined coverage report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

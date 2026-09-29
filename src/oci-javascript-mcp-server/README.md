@@ -19,8 +19,8 @@ build toolchain is also needed when installing `isolated-vm` on the host.
 From this directory:
 
 ```bash
-npm install
-npm run podman:build
+proto install
+moon run oci-javascript-mcp-server:runner-build
 npm start
 ```
 
@@ -129,11 +129,15 @@ conservative mounts and network policy.
 ## Development
 
 ```bash
-npm test         # unit and MCP stdio integration tests
-npm run coverage # subprocess-aware coverage; 90% line minimum
-npm run check    # TypeScript validation
-npm run ci       # coverage, type checking, and package verification
+moon run oci-javascript-mcp-server:test   # unit and MCP stdio integration tests; 90% line minimum
+moon run oci-javascript-mcp-server:check  # TypeScript validation
+moon run oci-javascript-mcp-server:build  # create the npm package tarball
 ```
+
+Moon installs the locked npm dependencies before running package tasks.
+Publish through the manually dispatched `Publish package` GitHub Actions
+workflow, selecting the `npm` registry and `oci-javascript-mcp-server` project.
+It builds and tests before running Moon's publish task with npm credentials.
 
 Tests use a fake Podman control plane to validate the exact hardened CLI
 arguments and exercise the framed worker protocol without requiring Podman in

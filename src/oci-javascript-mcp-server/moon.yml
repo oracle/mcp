@@ -1,0 +1,65 @@
+workspace:
+  inheritedTasks:
+    exclude:
+      - 'containerize'
+
+tasks:
+  test:
+    description: 'Runs unit and MCP integration tests with coverage'
+    type: 'test'
+    command: 'c8 node --no-node-snapshot --experimental-strip-types --test test/*.test.ts'
+    inputs:
+      - 'src/**/*'
+      - 'test/**/*'
+      - 'package.json'
+      - 'package-lock.json'
+
+  check:
+    description: 'Checks TypeScript types'
+    command: 'tsc --noEmit'
+    inputs:
+      - 'src/**/*'
+      - 'test/**/*'
+      - 'tsconfig.json'
+      - 'package.json'
+      - 'package-lock.json'
+
+  build:
+    description: 'Builds the npm package tarball'
+    type: 'build'
+    script: 'rm -rf dist && mkdir dist && npm pack --pack-destination dist'
+    inputs:
+      - 'src/**/*'
+      - 'README.md'
+      - 'LICENSE.txt'
+      - 'Containerfile'
+      - '.dockerignore'
+      - 'package.json'
+      - 'package-lock.json'
+    outputs:
+      - 'dist/*.tgz'
+    options:
+      cache: false
+
+  runner-build:
+    description: 'Builds the Podman runner image'
+    type: 'run'
+    command: 'podman build --pull -t localhost/oci-javascript-mcp-runner:dev .'
+    options:
+      cache: false
+      runInCI: false
+
+  publish:
+    description: 'Uploads the release-built npm package'
+    type: 'run'
+    inputs:
+      - 'package.json'
+    script: |
+      if [ "$RELEASE_PUBLISH" != "1" ]; then
+        echo 'Publish requires the release workflow' >&2
+        exit 1
+      fi
+      npm publish dist/*.tgz --registry=https://registry.npmjs.org/
+    options:
+      cache: false
+      runInCI: false

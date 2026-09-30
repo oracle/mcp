@@ -2177,13 +2177,16 @@ class ProtectedDatabaseBackupDestinationItem(OCIBaseModel):
     How one database is backed up, as reported by the backup destination summary.
     """
 
-    database_id: str = Field(..., description="Database OCID.")
+    database_id: Optional[str] = Field(
+        None, description="Database OCID. Null only when the listing returned the database without one."
+    )
     db_name: Optional[str] = Field(None, description="Database name.")
     status: Optional[str] = Field(
         None,
         description=(
-            "CONFIGURED | UNCONFIGURED | UNREADABLE. UNREADABLE means the database's "
-            "backup configuration could not be read, so its destination is not known."
+            "CONFIGURED | UNCONFIGURED | UNREADABLE. UNREADABLE means the database was "
+            "found but its backup configuration could not be read, so its destination "
+            "is not known."
         ),
     )
     destination_types: List[str] = Field(
@@ -2206,7 +2209,10 @@ class ProtectedDatabaseBackupDestinationSummary(OCIBaseModel):
     region: Optional[str] = Field(None, description="Region.")
     total_databases: int = Field(
         0,
-        description="Total databases scanned, including those whose configuration could not be read.",
+        description=(
+            "Databases found by the listing, whether or not their configuration could be "
+            "read. On a truncated scan some may not appear in any other count."
+        ),
     )
     unconfigured_count: int = Field(0, description="Count of databases without configured automatic backups.")
     counts_by_destination_type: Dict[str, int] = Field(
@@ -2244,7 +2250,7 @@ class ProtectedDatabaseBackupDestinationSummary(OCIBaseModel):
         description=(
             "True when counts are partial: the scan stopped early at its deadline, or "
             "the compartment subtree was capped by ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE "
-            "or could not be fully read."
+            "or could not be fully read, or a compartment's DB Homes could not be listed."
         ),
     )
 

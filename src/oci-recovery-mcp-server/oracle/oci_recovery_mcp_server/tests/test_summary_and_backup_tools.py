@@ -278,8 +278,8 @@ def test_backup_tools_handle_manual_paging_errors_and_destination_variants(monke
 
 def test_backup_destination_summary_handles_object_store_paging_and_errors(monkeypatch):
     """
-    The destination summary walks every database page, counts a database it cannot
-    identify in the total but not in any group, reads the auto-backup flag from
+    The destination summary walks every database page, reports a database listed
+    without an id as UNREADABLE rather than dropping it, reads the auto-backup flag from
     both the nested config and the top level, and propagates a listing failure.
     """
     db_client = MagicMock()
@@ -337,10 +337,11 @@ def test_backup_destination_summary_handles_object_store_paging_and_errors(monke
         db_home_id="home-explicit",
         include_last_backup_time=False,
     )
-    assert summary.total_databases == 2
+    assert summary.total_databases == 3
     assert summary.counts_by_destination_type == {"OBJECT_STORE": 1}
     assert summary.db_names_by_destination_type == {"OBJECT_STORE": ["Object DB"]}
-    assert [item.database_id for item in summary.items] == ["db-object", "db-nfs"]
+    assert summary.unreadable_db_names == ["Missing Id"]
+    assert [item.database_id for item in summary.items] == ["db-object", None, "db-nfs"]
     assert db_client.list_databases.call_args_list[1].kwargs["page"] == "db-page-2"
 
     db_client.list_databases.side_effect = RuntimeError("list databases failed")
@@ -649,6 +650,40 @@ def test_backup_destination_counts_add_up_when_a_database_cannot_be_read(monkeyp
     assert summary.total_databases == 2
     assert summary.unreadable_count == 2
     assert summary.unreadable_db_names == ["DB1", "DB2"]
+
+
+def test_backup_destination_is_truncated_when_db_homes_cannot_be_listed(monkeypatch):
+    """
+    A compartment whose DB Homes cannot be listed is not an empty compartment.
+
+    Discovery used to swallow the failure and return no homes, so the summary came
+    back successful with total_databases=0. It now reports what it did find and
+    marks itself truncated.
+    """
+    monkeypatch.setattr(
+        compartments, "_compartment_scope_for_tool", lambda cid, **_k: (["c1", "c2"], True)
+    )
+    db_client = MagicMock()
+    db_client.list_db_homes.side_effect = lambda compartment_id, **_k: (
+        _response([SimpleNamespace(id="home1")])
+        if compartment_id == "c1"
+        else (_ for _ in ()).throw(RuntimeError("not authorized"))
+    )
+    db_client.list_databases.return_value = _response([_backup_destination_db(1)])
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+
+    summary = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="root", fetch_for_child_compartment=True, include_last_backup_time=False
+    )
+    assert summary.truncated is True
+    assert summary.total_databases == 1
+
+    db_client.list_db_homes.side_effect = RuntimeError("not authorized")
+    summary = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="root", fetch_for_child_compartment=True, include_last_backup_time=False
+    )
+    assert summary.truncated is True
+    assert summary.total_databases == 0
 
 
 def test_last_backup_time_compares_instants_not_their_text(monkeypatch):

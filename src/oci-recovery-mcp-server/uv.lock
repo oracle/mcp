@@ -1107,7 +1107,7 @@ wheels = [
 
 [[package]]
 name = "oracle-mcp-common"
-version = "0.1.3"
+version = "0.1.4"
 source = { editable = "../common" }
 dependencies = [
     { name = "fastmcp" },

@@ -525,7 +525,7 @@ def set_idcs_http_environment(monkeypatch, **overrides):
 
 def test_idcs_http_auth_builds_provider_and_creates_request_context(monkeypatch):
     set_idcs_http_environment(monkeypatch)
-    provider = object()
+    provider = MagicMock()
     provider_constructor = MagicMock(return_value=provider)
     monkeypatch.setattr(auth, "OCIProvider", provider_constructor)
     signer = object()
@@ -566,7 +566,7 @@ def test_idcs_http_auth_explicit_options_and_request_region_win(monkeypatch):
         ORACLE_MCP_BASE_URL="https://environment.example.com",
         OCI_REGION="us-ashburn-1",
     )
-    provider_constructor = MagicMock(return_value=object())
+    provider_constructor = MagicMock(return_value=MagicMock())
     monkeypatch.setattr(auth, "OCIProvider", provider_constructor)
     signer_constructor = MagicMock(return_value=object())
     monkeypatch.setattr(auth.oci.auth.signers, "TokenExchangeSigner", signer_constructor)
@@ -614,7 +614,7 @@ def test_idcs_http_auth_rejects_invalid_provider_inputs_before_construction(monk
 
 def test_idcs_http_auth_requires_scopes_and_safe_request_token_and_region(monkeypatch):
     set_idcs_http_environment(monkeypatch, OCI_REGION=None)
-    provider_constructor = MagicMock(return_value=object())
+    provider_constructor = MagicMock(return_value=MagicMock())
     signer_constructor = MagicMock()
     monkeypatch.setattr(auth, "OCIProvider", provider_constructor)
     monkeypatch.setattr(auth.oci.auth.signers, "TokenExchangeSigner", signer_constructor)
@@ -639,7 +639,7 @@ def test_idcs_http_auth_sanitizes_token_exchange_failures(monkeypatch):
     secret = "client-secret-value"
     token = "request-token-value"
     set_idcs_http_environment(monkeypatch, IDCS_CLIENT_SECRET=secret)
-    monkeypatch.setattr(auth, "OCIProvider", MagicMock(return_value=object()))
+    monkeypatch.setattr(auth, "OCIProvider", MagicMock(return_value=MagicMock()))
     monkeypatch.setattr(
         auth.oci.auth.signers,
         "TokenExchangeSigner",
@@ -653,3 +653,73 @@ def test_idcs_http_auth_sanitizes_token_exchange_failures(monkeypatch):
     assert secret not in str(error.value)
     assert token not in str(error.value)
     assert secret not in repr(http_auth)
+
+
+class _FakeProvider:
+    """Stands in for OCIProvider, recording what reaches IDCS through each hook."""
+
+    def __init__(self, **kwargs):
+        self.required_scopes = list(kwargs["required_scopes"])
+        self._cimd_manager = object()
+        self.authorize_scopes = None
+
+    def update_default_scopes(self, scopes):
+        self.default_scopes = list(scopes)
+
+    def _build_upstream_authorize_url(self, txn_id, transaction):
+        self.authorize_scopes = list(transaction["scopes"])
+        return "https://idcs.example.com/authorize"
+
+    def _prepare_scopes_for_upstream_refresh(self, scopes):
+        return scopes
+
+
+@pytest.mark.parametrize("audience", ["https://mcp.example.com/", "mcp-audience"])
+def test_idcs_http_auth_qualifies_resource_scopes_upstream_only(monkeypatch, audience):
+    """Resource scopes reach IDCS qualified exactly once; required_scopes stay bare.
+
+    Primary audiences need not be URLs, and clients send back the qualified scopes the
+    provider advertised, so an already-qualified scope must not be qualified again.
+    """
+    set_idcs_http_environment(monkeypatch, IDCS_AUDIENCE=audience)
+    monkeypatch.setattr(auth, "OCIProvider", _FakeProvider)
+    provider = auth.build_idcs_http_auth(["openid", "offline_access", "oci_mcp.x.invoke"]).provider
+    qualified = ["openid", "offline_access", f"{audience}oci_mcp.x.invoke"]
+
+    assert provider.required_scopes == ["openid", "offline_access", "oci_mcp.x.invoke"]
+    assert provider.default_scopes == qualified
+    provider._build_upstream_authorize_url("txn", {"scopes": ["openid", "oci_mcp.x.invoke"]})
+    assert provider.authorize_scopes == ["openid", f"{audience}oci_mcp.x.invoke"]
+    provider._build_upstream_authorize_url("txn", {"scopes": qualified})
+    assert provider.authorize_scopes == qualified
+    provider._build_upstream_authorize_url("txn", {})
+    assert provider.authorize_scopes == qualified
+    assert provider._prepare_scopes_for_upstream_refresh(["oci_mcp.x.invoke"]) == [f"{audience}oci_mcp.x.invoke"]
+    assert provider._prepare_scopes_for_upstream_refresh([]) == qualified
+    assert provider._cimd_manager is not None
+
+
+def test_idcs_http_auth_can_disable_cimd(monkeypatch):
+    set_idcs_http_environment(monkeypatch)
+    monkeypatch.setattr(auth, "OCIProvider", _FakeProvider)
+
+    http_auth = auth.build_idcs_http_auth(["openid"], auth.IDCSHttpAuthOptions(enable_cimd=False))
+
+    assert http_auth.provider._cimd_manager is None
+
+
+def test_idcs_http_auth_fails_startup_when_fastmcp_drops_a_hook(monkeypatch):
+    """A renamed FastMCP hook fails startup instead of silently breaking sign-in."""
+    set_idcs_http_environment(monkeypatch)
+    monkeypatch.setattr(auth, "OCIProvider", lambda **_kwargs: object())
+    with pytest.raises(RuntimeError, match="update_default_scopes"):
+        auth.build_idcs_http_auth(["openid"])
+
+    class _NoCimd(_FakeProvider):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            del self._cimd_manager
+
+    monkeypatch.setattr(auth, "OCIProvider", _NoCimd)
+    with pytest.raises(RuntimeError, match="_cimd_manager"):
+        auth.build_idcs_http_auth(["openid"], auth.IDCSHttpAuthOptions(enable_cimd=False))

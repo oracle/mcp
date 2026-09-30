@@ -86,7 +86,8 @@ the server gains two new guidance tools.
   as "The client ID ... was not found in the server's client registry", which reads like
   a client bug. Clients now register with DCR against `/register`, which never leaves the
   host. Startup fails loudly if a future FastMCP release renames the private attribute
-  this relies on.
+  this relies on. The server turns it off through `oracle-mcp-common`'s
+  `IDCSHttpAuthOptions(enable_cimd=False)`, and now requires `oracle-mcp-common>=0.1.4`.
 - **Logs now live in `~/.oci-recovery-mcp/logs`, not in the install tree.** The default
   log directory was resolved relative to the package, which put it inside the virtualenv:
   read-only on a hardened deployment, and discarded with the environment on every `uvx`
@@ -117,6 +118,12 @@ the server gains two new guidance tools.
   `total_databases`, and is listed in the new `unreadable_count` and
   `unreadable_db_names` fields. Before, it was silently left out, so a scope where
   every read failed reported `total_databases=0`, the same as an empty compartment.
+  `total_databases` now counts every database the listing returned, before any
+  per-database read. A database listed without an id is also reported as `UNREADABLE`
+  (with a null `database_id`) instead of being dropped.
+- **`summarize_protected_database_backup_destination` no longer reports a compartment
+  whose DB Homes cannot be listed as empty.** Discovery used to swallow the failure,
+  so the summary succeeded with fewer (or zero) databases. It now sets `truncated`.
 - **`list_restore` failed whenever `status`, `sort_by`, or `sort_order` was passed.** All
   three were advertised in the tool schema and forwarded straight into
   `oci.work_requests.WorkRequestClient.list_work_requests`, which accepts only
@@ -243,6 +250,9 @@ the server gains two new guidance tools.
   built from the bare scopes stored on the refresh token and would otherwise have killed
   every session at its first refresh an hour after an apparently successful sign-in.
   Startup fails loudly if a future FastMCP release drops the hooks this relies on.
+  Qualification now lives in `oracle-mcp-common` (0.1.4), and a scope that already starts
+  with the audience is no longer qualified a second time, which broke sign-in for
+  non-URL primary audiences.
 - **Compartment cache could serve one caller's compartments to another.** The compartment
   listing is fetched with `access_level="ACCESSIBLE"`, so it contains exactly what the
   calling identity may see, but it was cached per tenancy only. In a hosted deployment a

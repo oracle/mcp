@@ -55,7 +55,7 @@ def test_database_tools_resolve_compartment_paths_and_enrich_backups(monkeypatch
     monkeypatch.setattr(
         compartments,
         "_fetch_db_home_ids_for_compartment",
-        lambda compartment_id, region=None: ["home1"],
+        lambda compartment_id, region=None, **_k: ["home1"],
     )
 
     recovery_client.list_protected_databases.return_value = _response(
@@ -248,7 +248,7 @@ def test_database_child_scope_tools_deduplicate_results(monkeypatch):
     monkeypatch.setattr(
         compartments,
         "_fetch_db_home_ids_for_compartment",
-        lambda compartment_id, region=None: ["home1"],
+        lambda compartment_id, region=None, **_k: ["home1"],
     )
     recovery_client.list_protected_databases.return_value = _response([])
 
@@ -522,7 +522,7 @@ def test_database_list_branches_and_tool_error_paths(monkeypatch):
     monkeypatch.setattr(
         compartments,
         "_fetch_db_home_ids_for_compartment",
-        lambda compartment_id, region=None: ["home1"],
+        lambda compartment_id, region=None, **_k: ["home1"],
     )
     recovery_client.list_protected_databases.side_effect = RuntimeError(
         "recovery unavailable"

@@ -361,11 +361,14 @@ def _compartment_scope_for_tool(
     return [resolved_root], False
 
 
-def _fetch_db_home_ids_for_compartment(compartment_id: str, region: Optional[str] = None) -> list[str]:
+def _fetch_db_home_ids_for_compartment(
+    compartment_id: str, region: Optional[str] = None, *, raise_errors: bool = False
+) -> list[str]:
     """
     Helper: enumerate DB Home OCIDs in a compartment.
     Used when a tool needs a db_home_id but the caller omitted it.
-    Returns a list of DB Home OCIDs (may be empty).
+    Returns a list of DB Home OCIDs (may be empty). With raise_errors, a failed
+    listing raises instead of returning empty, for callers that must tell the two apart.
     """
     try:
         client = clients.get_database_client(region)
@@ -394,6 +397,8 @@ def _fetch_db_home_ids_for_compartment(compartment_id: str, region: Optional[str
                 ids.append(hid)
         return ids
     except Exception:
+        if raise_errors:
+            raise
         # Conservative: on error, return empty so callers can react (e.g., empty results)
         return []
 

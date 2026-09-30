@@ -1,0 +1,19 @@
+# Copyright (c) 2026, Oracle and/or its affiliates.
+# Licensed under the Universal Permissive License v1.0 as shown at
+# https://oss.oracle.com/licenses/upl.
+
+version: v2
+clean: true
+inputs:
+  - directory: proto
+plugins:
+  - local: protoc-gen-ts_proto
+    out: src/generated
+    opt:
+      - outputServices=grpc-js
+      - env=node
+      - enumsAsLiterals=true
+      - useOptionals=messages
+      - outputJsonMethods=false
+      - outputPartialMethods=false
+      - importSuffix=.ts

@@ -20,31 +20,41 @@
     "directory": "src/oci-javascript-mcp-server"
   },
   "files": [
+    "dist/**/*.js",
     "src/",
+    "src/generated/runner.ts",
+    "proto/",
+    "buf.gen.yaml",
     ".dockerignore",
     "Containerfile",
+    "CHANGELOG.md",
     "README.md",
     "LICENSE.txt"
   ],
   "bin": {
-    "oci-javascript-mcp-server": "src/server.ts"
+    "oci-javascript-mcp-server": "dist/server.js"
   },
   "scripts": {
     "start": "node --no-node-snapshot --experimental-strip-types src/server.ts"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "2.15.0",
+    "@grpc/grpc-js": "^1.14.4",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "isolated-vm": "^7.0.0",
     "oci-common": "^2.132.0",
     "oci-sdk": "^2.132.0",
+    "selfsigned": "^3.0.1",
     "zod": "^4.4.3"
   },
   "overrides": {
     "uuid": "11.1.1"
   },
   "devDependencies": {
+    "@bufbuild/buf": "1.73.0",
     "@types/node": "^25.9.1",
     "c8": "^12.0.0",
+    "ts-proto": "2.12.4",
     "typescript": "^5.9.3"
   },
   "c8": {
@@ -53,6 +63,7 @@
       "src/**/*.ts"
     ],
     "exclude": [
+      "src/generated/**",
       "src/sandbox-prelude.ts",
       "src/types.ts"
     ],

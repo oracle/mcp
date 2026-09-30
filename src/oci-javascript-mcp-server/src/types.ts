@@ -67,7 +67,8 @@ export type OciDiscoverPayload = {
   operation?: string;
 };
 
-export type IsolationHostRpc = (request: unknown) => Promise<Json>;
+/** Requests must be validated by the provider's host-side transport first. */
+export type IsolationHostRpc = (request: HostRpcRequest) => Promise<Json>;
 
 export type IsolationRunOptions = {
   deadlineMs: number;
@@ -77,7 +78,8 @@ export type IsolationRunOptions = {
 };
 
 export interface IsolationExecution {
-  readonly result: Promise<unknown>;
+  /** Validated at the provider's host-side transport boundary. */
+  readonly result: Promise<SandboxResult>;
   /** Idempotently stop execution and resolve after provider resources are released. */
   terminate(): Promise<void>;
 }

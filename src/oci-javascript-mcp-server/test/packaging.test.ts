@@ -28,7 +28,8 @@ test("npm package runs from node_modules with compiled bindings", { timeout: 30_
   for (const path of [
     "dist/server.js", "dist/generated/runner.js", "dist/isolation/grpc-execution.js",
     "src/generated/runner.ts", "src/grpc.ts", "proto/runner.proto",
-    "buf.gen.yaml", "Containerfile", ".dockerignore"
+    "buf.gen.yaml", "Containerfile", ".dockerignore",
+    "runner/package.json", "runner/package-lock.json"
   ]) {
     assert.ok(files.has(path), `package is missing ${path}`);
   }

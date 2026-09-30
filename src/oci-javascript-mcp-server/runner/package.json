@@ -1,0 +1,20 @@
+{
+  "name": "oci-javascript-mcp-runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Runtime and build dependencies for the OCI JavaScript sandbox container",
+  "type": "module",
+  "dependencies": {
+    "@bufbuild/protobuf": "2.15.0",
+    "@grpc/grpc-js": "^1.14.4",
+    "isolated-vm": "^7.0.0"
+  },
+  "engines": {
+    "node": ">=26"
+  },
+  "license": "UPL-1.0",
+  "devDependencies": {
+    "@bufbuild/buf": "1.73.0",
+    "ts-proto": "2.12.4"
+  }
+}

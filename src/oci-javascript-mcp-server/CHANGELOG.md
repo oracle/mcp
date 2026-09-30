@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Keep `isolated-vm` out of host runtime dependencies and install the runner's
+  dependencies from a separate manifest, pruning code generators from the image.
 - Preserve OCI status codes, service codes, operation details, and request IDs in
   uncaught `run_javascript` errors so callers can assess failures and retry decisions.
 

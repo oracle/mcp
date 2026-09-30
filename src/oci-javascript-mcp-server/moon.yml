@@ -31,6 +31,7 @@ tasks:
       - 'test/**/*'
       - 'package.json'
       - 'package-lock.json'
+      - 'runner/*.json'
 
   check:
     description: 'Checks TypeScript types'
@@ -61,6 +62,7 @@ tasks:
       - '.dockerignore'
       - 'package.json'
       - 'package-lock.json'
+      - 'runner/*.json'
     outputs:
       - 'dist/*.tgz'
     options:

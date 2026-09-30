@@ -13,8 +13,10 @@ access, environment variables, or a network API.
 
 ## Quick start
 
-Requires Node.js 26 or newer, rootless Podman, and an OCI SDK configuration. A
-native build toolchain is also needed when installing `isolated-vm` on the host.
+Requires Node.js 26 or newer, rootless Podman, and an OCI SDK configuration.
+Production host installs omit `isolated-vm`; the container build installs it for
+the runner. Building and testing from source also installs the addon and may
+require a native build toolchain.
 
 From this directory:
 
@@ -154,6 +156,23 @@ boundary must supply that boundary outside the MCP server and retain
 conservative mounts and network policy.
 
 ## Development
+
+Run `npm ci --include=dev` to install test and development dependencies, including
+`isolated-vm`. This requires a native build toolchain when no prebuilt addon is
+available. The container build supplies its own build toolchain.
+
+The root manifest includes host runtime dependencies and development dependencies
+for the combined host and runner tests. `runner/package.json` and its lockfile
+define the container's runtime dependencies and development dependencies for
+protobuf generation. The Containerfile installs both, generates the bindings,
+and prunes development dependencies before copying modules into the final image.
+Both runner build files are included in the published package so the image can
+also be built from the package contents.
+
+When updating dependencies shared by the root and runner manifests, update both
+declarations and regenerate both lockfiles. Keep the resolved versions aligned
+so local tests exercise the same addon, gRPC libraries, and generators as the
+container.
 
 ```bash
 moon run oci-javascript-mcp-server:compile # generate bindings and compile the npm entry point

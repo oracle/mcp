@@ -1,9 +1,10 @@
 *
-!package.json
-!package-lock.json
 !buf.gen.yaml
 !proto/
 !proto/runner.proto
+!runner/
+!runner/package.json
+!runner/package-lock.json
 !src/
 !src/grpc.ts
 !src/protocol.ts

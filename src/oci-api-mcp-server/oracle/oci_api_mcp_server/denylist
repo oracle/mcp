@@ -161,6 +161,10 @@ batch batch-task-profile delete
 batch batch-task-profile update
 bds auto-scale-config delete
 bds bds-api-key delete
+bds bds-capacity-reservation delete
+bds bds-capacity-reservation update
+bds bds-capacity-reservation-configuration delete
+bds bds-capacity-reservation-configuration update
 bds bds-certificate-configuration delete
 bds bds-metastore-configuration delete
 bds bds-metastore-configuration update
@@ -339,6 +343,8 @@ cloud-migrations replication-schedule update
 cloud-migrations target-asset delete
 cloud-migrations target-asset update
 cloud-migrations target-asset update-target-asset-update-olvm-target-asset-details
+cluster-health diagnosis-store delete
+cluster-health diagnosis-store update
 compute capacity-reservation delete
 compute capacity-reservation update
 compute capacity-topology delete
@@ -749,12 +755,6 @@ db autonomous-container-database update
 db autonomous-container-database-dataguard update
 db autonomous-database delete
 db autonomous-database update
-db autonomous-database update-autonomous-database-aws-key-details
-db autonomous-database update-autonomous-database-azure-key-details
-db autonomous-database update-autonomous-database-gcp-key-details
-db autonomous-database update-autonomous-database-oci-key-details
-db autonomous-database update-autonomous-database-okv-key-details
-db autonomous-database update-autonomous-database-oracle-managed-key-details
 db autonomous-database-backup delete
 db autonomous-database-backup update
 db autonomous-database-software-image delete
@@ -767,6 +767,8 @@ db backup delete
 db backup update
 db backup-destination delete
 db backup-destination update
+db basecc-vm-cluster delete
+db basecc-vm-cluster update
 db cloud-autonomous-vm-cluster delete
 db cloud-autonomous-vm-cluster update
 db cloud-exa-infra delete
@@ -893,6 +895,8 @@ dbtools-runtime database-api-gateway-config-pool-api-spec delete
 dbtools-runtime database-api-gateway-config-pool-auto-api-spec delete
 dbtools-runtime execute-grantee delete
 dbtools-runtime public-synonym delete
+ddfs instance delete
+ddfs instance update
 delegate-access-control delegation-control delete
 delegate-access-control delegation-control update
 delegate-access-control delegation-subscription delete
@@ -1008,6 +1012,15 @@ distributed-database distributed-db-private-endpoint-service distributed-databas
 distributed-database distributed-db-service distributed-database delete
 distributed-database distributed-db-service distributed-database patch
 distributed-database distributed-db-service distributed-database update
+distributed-database-v26 distributed-autonomous-db-service distributed-autonomous-database delete
+distributed-database-v26 distributed-autonomous-db-service distributed-autonomous-database patch
+distributed-database-v26 distributed-autonomous-db-service distributed-autonomous-database update
+distributed-database-v26 distributed-db-private-endpoint-service distributed-database-private-endpoint delete
+distributed-database-v26 distributed-db-private-endpoint-service distributed-database-private-endpoint patch
+distributed-database-v26 distributed-db-private-endpoint-service distributed-database-private-endpoint update
+distributed-database-v26 distributed-db-service distributed-database delete
+distributed-database-v26 distributed-db-service distributed-database patch
+distributed-database-v26 distributed-db-service distributed-database update
 dns record domain delete
 dns record domain patch
 dns record domain update
@@ -1201,6 +1214,8 @@ generative-ai model delete
 generative-ai model update
 generative-ai semantic-store delete
 generative-ai semantic-store update
+generative-ai semantic-store update-semantic-store-custom-semantic-store-model-selection
+generative-ai semantic-store update-semantic-store-default-semantic-store-model-selection
 generative-ai vector-store-connector delete
 generative-ai vector-store-connector update
 generative-ai vector-store-connector update-vector-store-connector-oci-object-storage-configuration
@@ -1232,6 +1247,7 @@ generative-ai-agent-runtime session update
 goldengate certificate delete
 goldengate connection delete
 goldengate connection remove-lock
+goldengate connection update-ai-model-connection
 goldengate connection update-amazon-kinesis-connection
 goldengate connection update-amazon-redshift-connection
 goldengate connection update-amazon-s3-connection
@@ -1463,6 +1479,9 @@ iot domain delete
 iot domain update
 iot domain-group delete
 iot domain-group update
+iot flow-runtime delete
+iot flow-runtime update
+iot flow-runtime update-flows
 jms blocklist delete
 jms crypto-analysis-result delete
 jms drs-file delete
@@ -1610,6 +1629,9 @@ marketplace publication update
 marketplace-private-offer attachment attachment delete
 marketplace-private-offer offer offer delete
 marketplace-private-offer offer offer update
+marketplace-private-offer offer-quote offer-quote delete
+marketplace-private-offer offer-quote offer-quote update
+marketplace-private-offer quote-attachment quote-attachment delete
 marketplace-publisher artifact delete
 marketplace-publisher artifact update
 marketplace-publisher artifact update-artifact-update-container-image-artifact-details
@@ -1675,6 +1697,8 @@ monitoring alarm-suppression delete
 monitoring suppression remove
 mysql backup delete
 mysql backup update
+mysql blue-green-deployment delete
+mysql blue-green-deployment update
 mysql channel delete
 mysql channel update-from-mysql
 mysql configuration delete
@@ -2030,6 +2054,8 @@ queue queue-admin consumer-group update
 queue queue-admin queue delete
 queue queue-admin queue update
 raw-request
+recovery long-term-backup delete
+recovery long-term-backup update
 recovery protected-database delete
 recovery protected-database update
 recovery protection-policy delete

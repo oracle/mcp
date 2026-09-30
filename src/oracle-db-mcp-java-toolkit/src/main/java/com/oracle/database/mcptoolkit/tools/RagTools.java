@@ -96,7 +96,7 @@ public class RagTools {
          .name("similarity-search")
          .title("Similarity Search")
          .description("Semantic vector similarity over a table with (text, embedding) columns")
-         .inputSchema(SIMILARITY_SEARCH)
+         .inputSchema(jsonSchema(SIMILARITY_SEARCH))
          .build())
       .callHandler((exchange, callReq) -> tryCall(() -> {
         try (Connection c = openConnection(config, null)) {
@@ -154,7 +154,7 @@ public class RagTools {
          .name("vector-store")
          .title("Vector Store")
          .description("Manage vector stores. action=create (needs tableName), list (no args).")
-         .inputSchema(VECTOR_STORE)
+         .inputSchema(jsonSchema(VECTOR_STORE))
          .build())
       .callHandler((exchange, callReq) -> {
         String action = String.valueOf(callReq.arguments().getOrDefault("action", ""));
@@ -213,7 +213,7 @@ public class RagTools {
          .name("vector-model")
          .title("Vector Model")
          .description("Manage ONNX embedding models. action=list (no args), drop (needs modelName).")
-         .inputSchema(VECTOR_MODEL)
+         .inputSchema(jsonSchema(VECTOR_MODEL))
          .build())
       .callHandler((exchange, callReq) -> {
         String action = String.valueOf(callReq.arguments().getOrDefault("action", ""));
@@ -266,7 +266,7 @@ public class RagTools {
                  + "action=bucket (matching files in an OCI bucket). "
                  + "All actions run in the background — returns a taskId immediately. "
                  + "Show the taskId to the user and wait for them to ask for a status check.")
-         .inputSchema(EMBED)
+         .inputSchema(jsonSchema(EMBED))
          .build())
       .callHandler((exchange, callReq) -> {
         String action = String.valueOf(callReq.arguments().getOrDefault("action", ""));
@@ -452,7 +452,7 @@ public class RagTools {
          .name("task")
          .title("Task")
          .description("Track background embedding tasks. action=status (needs taskId), list (supports limit/offset), cancel (needs taskId).")
-         .inputSchema(TASK)
+         .inputSchema(jsonSchema(TASK))
          .build())
       .callHandler((exchange, callReq) -> {
         String action = String.valueOf(callReq.arguments().getOrDefault("action", ""));

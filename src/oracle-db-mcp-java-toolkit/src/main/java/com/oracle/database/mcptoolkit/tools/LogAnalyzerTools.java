@@ -105,7 +105,7 @@ public final class LogAnalyzerTools {
         .name("jdbc-analyzer")
         .title("Oracle JDBC Log Analyzer")
         .description(JDBC_ANALYZER_DESCRIPTION)
-        .inputSchema(ToolSchemas.JDBC_ANALYZER_SCHEMA)
+        .inputSchema(Utils.jsonSchema(ToolSchemas.JDBC_ANALYZER_SCHEMA))
         .build())
       .callHandler((exchange, callReq) -> Utils.tryCall( () -> {
         final var args = callReq.arguments();
@@ -197,7 +197,7 @@ public final class LogAnalyzerTools {
         .name("rdbms-analyzer")
         .title("RDBMS/SQLNet Trace Analyzer")
         .description(RDBMS_ANALYZER_DESCRIPTION)
-        .inputSchema(ToolSchemas.RDBMS_ANALYZER_SCHEMA)
+        .inputSchema(Utils.jsonSchema(ToolSchemas.RDBMS_ANALYZER_SCHEMA))
         .build())
       .callHandler((exchange, callReq) -> Utils.tryCall(() -> {
         final var args = callReq.arguments();

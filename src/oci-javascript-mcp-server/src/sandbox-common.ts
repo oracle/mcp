@@ -4,7 +4,7 @@
  * https://oss.oracle.com/licenses/upl.
  */
 
-import { TextDecoder } from "node:util";
+import { DEFAULT_MAX_FRAME_BYTES } from "./protocol.ts";
 import type { Json, SandboxError } from "./types.ts";
 
 export const MAX_CODE_BYTES = 1024 * 1024;
@@ -13,20 +13,36 @@ export const MIN_TIMEOUT_SECONDS = 1;
 export const MAX_TIMEOUT_SECONDS = 120;
 export const MAX_STDOUT_BYTES = 1024 * 1024;
 export const MAX_STDERR_BYTES = 1024 * 1024;
+export const MAX_HOST_RPC_CALLS = positiveIntegerEnv("OCI_JAVASCRIPT_MAX_HOST_RPC_CALLS", 100);
+export const MAX_RESULT_BYTES = Math.min(
+  positiveIntegerEnv("OCI_JAVASCRIPT_MAX_RESULT_BYTES", 1024 * 1024),
+  DEFAULT_MAX_FRAME_BYTES - 64 * 1024
+);
+export const MAX_HOST_RPC_REQUEST_BYTES = positiveIntegerEnv(
+  "OCI_JAVASCRIPT_MAX_HOST_RPC_REQUEST_BYTES",
+  1024 * 1024
+);
 
 export class PublicError extends Error {}
 
-export function withDeadline<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+export function withDeadline<T>(promise: Promise<T>, timeoutMs: number, signal?: AbortSignal): Promise<T> {
   if (timeoutMs <= 0) {
     return Promise.reject(new Error("sandbox run deadline exceeded"));
   }
   let timeout: NodeJS.Timeout;
-  return new Promise((resolve, reject) => {
+  let abort: () => void;
+  return new Promise<T>((resolve, reject) => {
+    abort = () => reject(signal?.reason);
     timeout = setTimeout(
       () => reject(new Error("sandbox run deadline exceeded")),
       timeoutMs
     );
-    promise.then(resolve, reject).finally(() => clearTimeout(timeout));
+    promise.then(resolve, reject);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+  }).finally(() => {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
   });
 }
 
@@ -99,83 +115,19 @@ export function formatPublicOciError(error: unknown): SandboxError {
   return details;
 }
 
-export function appendCapped(current: string, chunk: string, maxBytes: number): string {
+export function appendCapped(current: string, chunk: string, maxBytes: number): {
+  text: string;
+  limitReached: boolean;
+} {
   const combined = current + chunk;
-  if (Buffer.byteLength(combined, "utf8") <= maxBytes) {
-    return combined;
+  const bytes = Buffer.byteLength(combined, "utf8");
+  if (bytes <= maxBytes) {
+    return { text: combined, limitReached: bytes === maxBytes };
   }
-  return Buffer.from(combined, "utf8").subarray(0, maxBytes).toString("utf8");
-}
-
-export class CappedUtf8Accumulator {
-  readonly #maxBytes: number;
-  #text = "";
-  #retainedBytes = 0;
-  #retainedWrites = 0;
-  #capped = false;
-
-  constructor(maxBytes: number) {
-    if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
-      throw new Error("UTF-8 accumulator limit must be a non-negative safe integer");
-    }
-    this.#maxBytes = maxBytes;
-  }
-
-  get text(): string {
-    return this.#text;
-  }
-
-  get retainedBytes(): number {
-    return this.#retainedBytes;
-  }
-
-  get retainedWrites(): number {
-    return this.#retainedWrites;
-  }
-
-  get capped(): boolean {
-    return this.#capped;
-  }
-
-  append(chunk: string): number {
-    const incomingBytes = Buffer.byteLength(chunk, "utf8");
-    if (this.#capped || incomingBytes === 0) {
-      return incomingBytes;
-    }
-    const remaining = this.#maxBytes - this.#retainedBytes;
-    if (incomingBytes <= remaining) {
-      this.#text += chunk;
-      this.#retainedBytes += incomingBytes;
-      this.#retainedWrites += 1;
-      this.#capped = this.#retainedBytes === this.#maxBytes;
-      return incomingBytes;
-    }
-
-    const retained = utf8Prefix(chunk, remaining);
-    if (retained.length > 0) {
-      this.#text += retained;
-      this.#retainedBytes += Buffer.byteLength(retained, "utf8");
-      this.#retainedWrites += 1;
-    }
-    this.#capped = true;
-    return incomingBytes;
-  }
-}
-
-function utf8Prefix(value: string, maxBytes: number): string {
-  if (maxBytes <= 0) {
-    return "";
-  }
-  const encoded = Buffer.from(value, "utf8");
-  let end = Math.min(maxBytes, encoded.length);
-  while (end > 0) {
-    try {
-      return new TextDecoder("utf-8", { fatal: true }).decode(encoded.subarray(0, end));
-    } catch {
-      end -= 1;
-    }
-  }
-  return "";
+  const buffer = Buffer.alloc(maxBytes);
+  // Buffer.write never writes a partial UTF-8 character.
+  const written = buffer.write(combined, "utf8");
+  return { text: buffer.toString("utf8", 0, written), limitReached: true };
 }
 
 function errorMessage(error: unknown): string {

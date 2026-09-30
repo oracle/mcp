@@ -85,6 +85,7 @@ test("execution grants name only the cross-namespace host and cleanup identity s
     item => item.kind === "Role" && item.metadata.name === "oci-js-kata-executor"
   )!;
   assert.equal(hostRole.rules?.some(rule => rule.resources.includes("pods/exec")), true);
+  assert.equal(hostRole.rules?.some(rule => rule.resources.includes("pods/portforward")), true);
   assert.equal(hostRole.rules?.some(rule => rule.verbs.includes("create")), true);
 
   const cleanupRole = manifests.find(
@@ -96,6 +97,7 @@ test("execution grants name only the cross-namespace host and cleanup identity s
     verbs: ["get", "list", "watch", "delete"]
   }]);
   assert.equal(JSON.stringify(cleanupRole).includes("pods/exec"), false);
+  assert.equal(JSON.stringify(cleanupRole).includes("pods/portforward"), false);
   assert.equal(cleanupRole.rules?.some(rule => rule.verbs.includes("create")), false);
 
   const preflight = manifests.find(

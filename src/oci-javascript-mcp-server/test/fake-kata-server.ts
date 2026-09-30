@@ -42,7 +42,12 @@ const fakeKataProvider: IsolationProvider = {
         };
       }
       if (code.includes("rpc")) {
-        await options.hostRpc({ request: "fake-kata-rpc" });
+        await options.hostRpc({
+          binding: "oracle",
+          namespace: "oci",
+          operation: "config",
+          payload: { request: "fake-kata-rpc" }
+        });
       }
       return {
         result: 42,

@@ -2,76 +2,86 @@
 
 ## Purpose
 
-Define a bounded, phase-safe trusted-host channel for every untrusted isolation runner so valid hostile traffic cannot consume unbounded host resources or retain OCI bridge authority after completion.
+Define a bounded, phase-safe protobuf gRPC channel for every untrusted isolation
+runner so hostile traffic cannot consume unbounded host resources or retain OCI
+bridge authority after completion.
 
 ## Requirements
 
-### Requirement: Frame assembly is bounded and linear
-The trusted host SHALL assemble length-prefixed frames without repeatedly copying the complete partial frame for each input fragment. Undecoded queued bytes MUST remain bounded by the four-byte header plus the configured per-frame limit, currently 2 MiB, and completed frames SHALL flow into bounded message handling without accumulating an unbounded decoded-message array.
+### Requirement: Protobuf gRPC messages are bounded and validated
+The trusted host SHALL use the versioned protobuf v4 bidirectional Session
+service for runner traffic. It SHALL configure finite send and receive limits,
+validate that every envelope contains exactly one known message body, decode
+opaque JSON fields with strict UTF-8, dangerous-key, depth, node, string, array,
+object-key, and byte limits, and preserve JavaScript source and log code units
+through bounded UTF-16LE fields. Unknown protobuf fields MUST NOT become
+application fields.
 
-#### Scenario: Legal frame arrives one byte at a time
-- **WHEN** an untrusted runner fragments a legal maximum-sized frame across a high number of small channel reads
-- **THEN** the host SHALL decode or reject it with work and allocation growth proportional to the frame size rather than the square of the fragment count
-- **AND** the absolute execution deadline SHALL remain authoritative
+#### Scenario: Oversized or malformed runner message
+- **WHEN** a compromised runner sends an oversized protobuf message, a malformed
+  envelope, invalid bounded text, invalid JSON, or excessive recursive structure
+- **THEN** the host SHALL fail the gRPC session with a sanitized protocol result
+- **AND** it SHALL invoke no OCI operation from the rejected message
 
-#### Scenario: Frame cannot fit within the queue bound
-- **WHEN** a frame length exceeds the configured 2 MiB limit or queued undecoded bytes would exceed the header-plus-frame bound
-- **THEN** the host SHALL terminate the exchange with `result` set to `null`, `error.message` set to `sandbox protocol failed`, bounded `stdout` and `stderr`, `exit_code` set to `1`, and `timed_out` set to `false`
+### Requirement: Traffic and results are bounded per execution
+The trusted host SHALL apply host-owned message, OCI request, OCI call,
+concurrency, log, and terminal-result limits. The terminal result limit SHALL
+cover the encoded result and error values and SHALL be enforced independently
+of worker-side validation. Waiting on OCI work, transport backpressure, or final
+gRPC status MUST NOT extend the absolute execution deadline.
 
-### Requirement: Channel traffic, results, and writes are bounded per execution
-The trusted host SHALL apply finite, host-owned cumulative ingress-byte, accepted-message, log-byte, result-byte, and egress-byte budgets to each execution in addition to the existing per-frame, OCI request, OCI call, and OCI concurrency limits. The trusted host MUST enforce the configured result-byte limit over the sum of the encoded terminal `result` and `error` values when accepting a terminal result from the hostile channel, independently of any cooperative worker-side validation. It SHALL process message acceptance and protocol state transitions in order, pause channel input while bounded work is pending, serialize outbound writes, and honor writable-stream backpressure. Exhausting a channel budget SHALL fail closed, and waiting for backpressure MUST NOT extend the absolute execution deadline.
+#### Scenario: Valid RPC flood
+- **WHEN** a compromised runner sends sustained schema-valid RPC messages
+- **THEN** the host SHALL stop the execution at a finite call, concurrency,
+  request, message, or deadline budget
+- **AND** rejecting one message SHALL invoke no additional OCI operation
 
-#### Scenario: Valid message flood
-- **WHEN** a compromised runner sends sustained schema-valid RPC, rejected-RPC, or log frames without exceeding any individual frame limit
-- **THEN** the host SHALL stop the execution at a finite cumulative budget without unbounded heap, queued writes, or asynchronous handler growth
-- **AND** no channel budget rejection SHALL invoke an additional OCI operation
+### Requirement: Protocol phases revoke authority
+The host SHALL accept exactly one execution request and one terminal result.
+Only positive, unique RPC identifiers for accepted in-flight requests SHALL
+receive replies. Accepting a terminal result SHALL synchronously revoke queued
+and future OCI replies, and success SHALL require the final successful gRPC
+status rather than receipt of result bytes alone.
 
-#### Scenario: Runner stops reading host responses
-- **WHEN** the worker-side consumer stalls and a trusted-host write reports backpressure
-- **THEN** the host SHALL wait for drain before issuing the next write while channel input remains paused
-- **AND** failure to drain before the remaining deadline SHALL produce the authoritative timeout result and bounded teardown
+#### Scenario: Runner exits after sending result bytes
+- **WHEN** result bytes arrive but the gRPC session finishes with a failure status
+- **THEN** the host SHALL reject the execution as a sanitized protocol failure
+- **AND** provider cleanup SHALL remain authoritative
 
-#### Scenario: Log cap has already been reached
-- **WHEN** later valid log frames arrive after `stdout` or `stderr` has reached its 1 MiB retained-output cap
-- **THEN** the host SHALL discard or reject the excess without repeatedly concatenating, rescanning, or copying the retained 1 MiB value
-- **AND** the cumulative channel log budget SHALL still advance
+#### Scenario: RPC arrives after terminal acceptance
+- **WHEN** a runner sends or queues an OCI request after its terminal result
+- **THEN** the host SHALL not invoke OCI for that request
+- **AND** no reply SHALL be written after terminal acceptance
 
-#### Scenario: Combined raw terminal values exceed the configured result limit
-- **WHEN** a compromised runner sends a schema-valid terminal message whose encoded `result` and `error` values are each within the host-owned configured result-byte limit but their encoded sizes sum to more than that limit while the complete frame remains below the per-frame limit
-- **THEN** the trusted host SHALL reject the message before accepting or publishing the terminal result
-- **AND** it SHALL return the sanitized protocol-failure result and begin bounded provider teardown without relying on worker-side result validation
-
-#### Scenario: Concurrent executions experience pressure
-- **WHEN** one execution exhausts channel budgets or stalls on backpressure while another execution exchanges valid messages
-- **THEN** each execution SHALL retain independent channel state, budgets, cancellation, OCI call/concurrency accounting, result fields, and teardown
-
-### Requirement: Worker protocol phases and RPC identifiers are strict
-The trusted host SHALL enforce exactly one ordered `WAIT_HEALTH -> RUNNING -> TERMINAL` lifecycle. `WAIT_HEALTH` SHALL accept only one valid ready health message; `RUNNING` SHALL accept only valid log, RPC, result, and protocol-error messages; entering `TERMINAL` SHALL synchronously revoke further bridge acceptance before resolving the terminal result. RPC identifiers MUST be positive safe integers and MUST NOT be reused within an execution, including after their responses complete.
-
-#### Scenario: Message arrives before health
-- **WHEN** a runner sends log, RPC, result, protocol-error, or duplicate health traffic before completing the single health transition
-- **THEN** the host SHALL return the sanitized protocol-failure result
-- **AND** it SHALL invoke no OCI operation from the invalid sequence
-
-#### Scenario: Duplicate or unsafe RPC identifier
-- **WHEN** a runner sends a non-positive, non-safe-integer, in-flight duplicate, or previously completed RPC identifier
-- **THEN** the host SHALL terminate the exchange as a protocol failure
-- **AND** the duplicate or unsafe request SHALL not reach the OCI broker
-
-#### Scenario: Terminal result and later work share one read
-- **WHEN** a valid terminal result is followed in the same channel read by an RPC, malformed frame, duplicate result, or any other message
-- **THEN** the host SHALL synchronously reject all post-terminal bridge work and stop the channel
-- **AND** no post-terminal frame SHALL invoke OCI, alter captured output, or replace the single authoritative result
-
-### Requirement: Existing hostile-input and isolation controls remain authoritative
-The bounded channel SHALL preserve exact message schemas, strict UTF-8 and JSON decoding, protocol-version checks, dangerous-key and recursive-structure limits, host-owned OCI request validation, credential and Node-global isolation, unsupported-client-option rejection, public-error sanitization, and cancellation cleanup across Podman and all Kubernetes profiles.
-
-#### Scenario: Malformed raw channel attempt
-- **WHEN** a compromised runner sends malformed JSON, an unknown version or field, an oversized or truncated frame, invalid UTF-8, a dangerous key, or excessive recursive structure
-- **THEN** the host SHALL return the sanitized protocol-failure result without invoking OCI from that frame
-- **AND** provider teardown SHALL remain bounded and authoritative
+### Requirement: OCI authority remains in the trusted host
+The gRPC channel SHALL carry only the narrow validated OCI broker contract.
+Channel possession SHALL grant no credential, signer, endpoint, raw SDK client,
+Kubernetes, filesystem, process, or network authority.
 
 #### Scenario: Raw authority escalation attempt
-- **WHEN** a compromised runner uses the raw channel to request credentials, Node globals, an endpoint, signer, retry configuration, unsupported client option, or unsupported OCI operation
-- **THEN** the trusted host SHALL reject the request under the existing broker and isolation policy
-- **AND** channel possession SHALL grant no additional OCI, Kubernetes, filesystem, network, or host authority
+- **WHEN** a compromised runner requests credentials, Node globals, an endpoint,
+  signer, retry configuration, unsupported client option, or unsupported OCI operation
+- **THEN** the trusted host SHALL reject the request under the existing broker policy
+- **AND** provider teardown SHALL remain bounded and authoritative
+
+### Requirement: Execution-scoped mutual TLS
+Every execution SHALL use fresh server and client identities. The worker SHALL
+receive its server private key, certificate, and the host public certificate over
+its provider-owned bootstrap stream; it SHALL never receive the host private key.
+Podman SHALL expose the runner only on host loopback. Kubernetes SHALL start the
+runner with pods/exec, keep the bootstrap stream open, wait for an explicit
+readiness line after gRPC bind succeeds, and carry exactly one loopback host
+connection through pods/portforward. No legacy framed transport or fallback MAY
+be used.
+
+#### Scenario: Bootstrap or readiness is invalid
+- **WHEN** TLS bootstrap input is empty, malformed, oversized, incomplete, or has
+  unknown fields, or runner readiness is partial, duplicated, oversized, or unexpected
+- **THEN** startup SHALL fail without opening an application session
+- **AND** all provider resources SHALL still be cleaned up
+
+#### Scenario: Kubernetes gRPC connection
+- **WHEN** a Kubernetes runner becomes ready
+- **THEN** the trusted host SHALL open one loopback-only port-forward to runner port 50051
+- **AND** no Service, host port, host networking, declared container port, or
+  non-loopback host listener SHALL be created

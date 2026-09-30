@@ -18,7 +18,7 @@ const admissionEvidenceEnabled = (
   process.env.OCI_JAVASCRIPT_RUN_REAL_KUBERNETES_ADMISSION_TESTS === "true"
 );
 
-test("opt-in local cluster exercises create/watch/exec/cancel/delete/reconcile", {
+test("opt-in local cluster exercises create/watch/exec/port-forward/gRPC/cancel/delete/reconcile", {
   skip: enabled ? false : (
     "set OCI_JAVASCRIPT_RUN_LOCAL_KUBERNETES_TESTS=true and the documented test variables"
   )
@@ -66,15 +66,7 @@ test("opt-in local cluster exercises create/watch/exec/cancel/delete/reconcile",
     const cancelled = provider.run("while (true) {}", {
       deadlineMs: Date.now() + 10_000,
       signal: controller.signal,
-      async hostRpc() { return null; },
-      channelLimits: Object.freeze({
-        maxFrameBytes: 2 * 1024 * 1024,
-        maxIngressBytes: 32 * 1024 * 1024,
-        maxAcceptedMessages: 128,
-        maxLogBytes: 2 * 1024 * 1024,
-        maxEgressBytes: 32 * 1024 * 1024,
-        maxResultBytes: 1024 * 1024
-      })
+      async hostRpc() { return null; }
     });
     controller.abort();
     assert.equal((await cancelled.result as { timedOut: boolean }).timedOut, true);

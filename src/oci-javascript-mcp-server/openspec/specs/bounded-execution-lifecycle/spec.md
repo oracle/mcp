@@ -68,7 +68,7 @@ The server SHALL continue to reject a script that otherwise completes successful
 - **THEN** the server SHALL abort the pending work and return a structured non-timeout error indicating unawaited OCI calls within the cleanup tail
 
 ### Requirement: Cancellation preserves protocol and isolation controls
-Cancellation and bounded draining SHALL NOT relax framed-worker validation, request validation, credential isolation, client-option restrictions, byte limits, or public-error sanitization.
+Cancellation and bounded draining SHALL NOT relax protobuf gRPC worker validation, request validation, credential isolation, client-option restrictions, byte limits, or public-error sanitization.
 
 #### Scenario: Malformed frame arrives during cancellation
 - **WHEN** a runner sends a malformed, unknown-version, unknown-field, oversized, invalid-UTF-8, dangerous-key, or truncated protocol frame while cancellation is in progress

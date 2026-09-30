@@ -63,6 +63,25 @@ test("host RPC config returns principal from config-file user", async () => {
   });
 });
 
+test("host RPC config preserves null and omitted metadata fields", async () => {
+  for (const getter of [undefined, () => undefined, () => null]) {
+    class Provider {}
+    if (getter) {
+      Object.assign(Provider.prototype, { getTenantId: getter, getFingerprint: getter });
+    }
+    const result = await withTemporaryOciConfig("[DEFAULT]\n", async () => {
+      const hostRpc = createOciSdkHostRpc(() => ({
+        sdk: { ConfigFileAuthenticationDetailsProvider: Provider }, common: {}
+      }));
+      return hostRpc({ binding: "oracle", namespace: "oci", operation: "config", payload: {} });
+    });
+    assert.deepEqual(result, {
+      ...(getter && getter() === undefined ? {} : { tenancyId: null, fingerprint: null }),
+      userId: null, region: null, principal: null
+    });
+  }
+});
+
 test("host RPC config derives only principal id from session token", async () => {
   const token = fakeJwt({
     sub: "ocid1.user.oc1..sessionuser",
@@ -799,6 +818,7 @@ test("host RPC discovers JavaScript SDK request and response shapes", async () =
     }
   });
   assert.ok(result && typeof result === "object" && !Array.isArray(result));
+  assert.deepEqual(result, JSON.parse(JSON.stringify(result)));
   const details = result as Record<string, any>;
 
   assert.equal(details.type, "operation");

@@ -1,7 +1,7 @@
 # Kubernetes Isolation Profiles
 
 The `kubernetes` isolation provider runs each `run_javascript` call in one fresh,
-credential-free pod while preserving the existing hostile framed channel,
+credential-free pod while using the shared execution-scoped protobuf gRPC transport,
 host-owned OCI broker, nested `isolated-vm`, deadlines, call budgets, result
 shape, forced deletion, and expiry reconciliation. It never auto-detects a
 credential source or runtime and never falls back to Podman or another profile.
@@ -89,8 +89,9 @@ The real-cluster lifecycle harness is opt-in. Set
 `OCI_JAVASCRIPT_RUN_LOCAL_KUBERNETES_TESTS=true` plus
 `OCI_JAVASCRIPT_TEST_KUBERNETES_KUBECONFIG`, `_CONTEXT`, `_NAMESPACE`, and
 `_IMAGE`; optionally set `_RUNNER_SERVICE_ACCOUNT`. `npm test` otherwise reports
-a clear skip. This harness exercises namespace access, create, watch, exec,
-framed execution, cancellation, deletion confirmation, and reconciliation. It
+a clear skip. This harness exercises namespace access, create, watch, exec
+bootstrap, port-forwarded gRPC execution, cancellation, deletion confirmation,
+and reconciliation. It
 is standard-runtime lifecycle evidence only and never Kata evidence.
 
 ## In-cluster profiles
@@ -172,7 +173,8 @@ failure is authoritative. Guest code is never retried through another provider,
 profile, runtime, or credential source.
 
 The absolute 1–120 second execution deadline includes pod creation, scheduling,
-image availability, exec connection, worker execution, OCI RPC, and result
+image availability, exec bootstrap, gRPC readiness, port-forward connection,
+worker execution, OCI RPC, and result
 delivery. Abort or timeout remains authoritative in every phase. At
 finalization, the host stops accepting bridge work and aborts the run, then
 starts provider termination and a rejection-observing snapshot drain of pending
@@ -180,8 +182,8 @@ OCI calls concurrently. Both consume one configured cleanup tail, capped by the
 trusted host at 60 seconds; the drain does not receive a second tail after exec
 close and zero-grace pod deletion. Kubernetes channel stop and pod
 delete/NotFound confirmation start concurrently against that same cleanup
-deadline after pod creation settles, even when exec establishment is pending or
-produces a late channel. Failure to confirm either channel closure or NotFound
+deadline after pod creation settles, even when transport establishment is pending.
+Failure to confirm the gRPC session, tunnel, runner closure, or NotFound
 returns `isolation provider cleanup failed` even after a valid or timed-out
 worker result. An otherwise successful script with pending OCI work instead returns
 `JavaScript completed with unawaited OCI calls` within the same bound.
@@ -194,7 +196,7 @@ change the finalized MCP result.
 
 Every host reconciles expired pods matching the generic manager label and exact
 profile. Both in-cluster profiles deploy a separate cleanup-only reconciler with
-get/list/watch/delete and no create or `pods/exec`. Local development relies on
+get/list/watch/delete and no create, `pods/exec`, or `pods/portforward`. Local development relies on
 host reconciliation. Unrelated, malformed, other-profile, wrong-namespace, and
 non-expired pods are preserved. Each candidate consumes at most five seconds;
 delete or confirmation failure increments one aggregate failure count and does

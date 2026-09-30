@@ -5,7 +5,6 @@
  */
 
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
 import test from "node:test";
 import {
   HttpMethod,
@@ -13,11 +12,9 @@ import {
   type ConfigurationOptions,
   type AuthorizationV1Api,
   type CoreV1Api,
-  type Exec,
   type NodeV1Api,
   type ResponseContext,
   type V1Pod,
-  type V1Status,
   type Watch
 } from "@kubernetes/client-node";
 import { ClientNodeKubernetesApi, isNotFound } from "../src/isolation/kubernetes-api.ts";
@@ -206,121 +203,6 @@ test("client-node pod readiness handles current state, watch state, failure, abo
   await assert.rejects(errorPromise, /pod watch failed/);
 });
 
-test("client-node exec adapts non-TTY streams, bounds stderr, reports status, and stops idempotently", async () => {
-  const harness = apiHarness();
-  const channel = await harness.api.openExecChannel(
-    "execution",
-    "pod",
-    Date.now() + 1000,
-    new AbortController().signal
-  );
-  assert.equal(harness.exec.calls[0]?.tty, false);
-  assert.deepEqual(harness.exec.calls[0]?.command, [
-    "node", "--no-node-snapshot", "--experimental-strip-types", "/app/src/sandbox-worker.ts"
-  ]);
-  let output = "";
-  channel.output.on("data", chunk => { output += chunk.toString("utf8"); });
-  harness.exec.calls[0]!.stdout.write("worker");
-  harness.exec.calls[0]!.stderr.write(Buffer.alloc(128 * 1024));
-  assert.equal(output, "worker");
-  harness.exec.calls[0]!.status({
-    details: { causes: [{ reason: "ExitCode", message: "7" }] }
-  });
-  assert.deepEqual(await channel.closed, { exitCode: 7, signal: null });
-  await Promise.all([
-    channel.stop(Date.now() + 1000),
-    channel.stop(Date.now() + 1000)
-  ]);
-  assert.equal(harness.exec.webSocket.closeCalls, 1);
-
-  const errored = apiHarness();
-  const errorChannel = await errored.api.openExecChannel(
-    "execution",
-    "pod",
-    Date.now() + 1000,
-    new AbortController().signal
-  );
-  errored.exec.webSocket.emit("error", new Error("raw websocket"));
-  await assert.rejects(errorChannel.closed, /exec channel failed/);
-  await assert.rejects(
-    errorChannel.stop(Date.now() + 1000),
-    /exec channel cleanup failed/
-  );
-
-  const neverCloses = apiHarness();
-  neverCloses.exec.webSocket.closeEmits = false;
-  const stalledChannel = await neverCloses.api.openExecChannel(
-    "execution",
-    "pod",
-    Date.now() + 1000,
-    new AbortController().signal
-  );
-  await assert.rejects(
-    stalledChannel.stop(Date.now() + 30),
-    /exec channel cleanup failed/
-  );
-  assert.equal(neverCloses.exec.webSocket.closeCalls, 1);
-});
-
-test("client-node exec establishment obeys abort and deadline and closes late sockets", async () => {
-  const alreadyAborted = apiHarness();
-  const aborted = new AbortController();
-  aborted.abort();
-  await assert.rejects(
-    alreadyAborted.api.openExecChannel("execution", "pod", Date.now() + 1000, aborted.signal),
-    /deadline exceeded/
-  );
-  assert.equal(alreadyAborted.exec.calls.length, 0);
-
-  const late = apiHarness();
-  let resolveLate!: (socket: FakeWebSocket) => void;
-  late.exec.result = new Promise(resolve => { resolveLate = resolve; });
-  await assert.rejects(
-    late.api.openExecChannel(
-      "execution",
-      "pod",
-      Date.now() + 30,
-      new AbortController().signal
-    ),
-    /deadline exceeded/
-  );
-  resolveLate(late.exec.webSocket);
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(late.exec.webSocket.closeCalls, 1);
-
-  const cancelled = apiHarness();
-  let resolveCancelled!: (socket: FakeWebSocket) => void;
-  cancelled.exec.result = new Promise(resolve => { resolveCancelled = resolve; });
-  const controller = new AbortController();
-  const connection = cancelled.api.openExecChannel(
-    "execution",
-    "pod",
-    Date.now() + 1000,
-    controller.signal
-  );
-  controller.abort();
-  await assert.rejects(connection, /deadline exceeded/);
-  resolveCancelled(cancelled.exec.webSocket);
-  await new Promise(resolve => setImmediate(resolve));
-  assert.equal(cancelled.exec.webSocket.closeCalls, 1);
-
-  const handshake = apiHarness();
-  handshake.exec.error = new Error("wss://cluster.internal/token=secret");
-  await assert.rejects(
-    handshake.api.openExecChannel(
-      "execution",
-      "pod",
-      Date.now() + 1000,
-      new AbortController().signal
-    ),
-    error => {
-      assert.match(String(error), /Kubernetes exec channel failed/);
-      assert.equal(String(error).includes("cluster.internal"), false);
-      return true;
-    }
-  );
-});
-
 test("client-node deletion and NotFound confirmation fail closed", async () => {
   const harness = apiHarness();
   await harness.api.deletePod("execution", "pod");
@@ -460,19 +342,20 @@ function apiHarness() {
   const node = new FakeNode();
   const authorization = new FakeAuthorization();
   const watch = new FakeWatch();
-  const exec = new FakeExec();
   return {
     core,
     node,
     authorization,
     watch,
-    exec,
     api: new ClientNodeKubernetesApi(
       core as unknown as CoreV1Api,
       node as unknown as NodeV1Api,
       authorization as unknown as AuthorizationV1Api,
       watch as unknown as Watch,
-      exec as unknown as Exec
+      {
+        startRunner: async () => { throw new Error("unused"); },
+        openTunnel: async () => { throw new Error("unused"); }
+      }
     )
   };
 }
@@ -586,54 +469,5 @@ class FakeWatch {
 
   finish(error: unknown): void {
     this.#done?.(error);
-  }
-}
-
-class FakeWebSocket extends EventEmitter {
-  readyState = 1;
-  readonly CLOSING = 2;
-  closeCalls = 0;
-  closeEmits = true;
-
-  close(): void {
-    this.closeCalls += 1;
-    this.readyState = 3;
-    if (this.closeEmits) {
-      this.emit("close");
-    }
-  }
-}
-
-class FakeExec {
-  webSocket = new FakeWebSocket();
-  result: Promise<FakeWebSocket> | undefined;
-  error: Error | undefined;
-  calls: Array<{
-    namespace: string;
-    name: string;
-    command: string[];
-    stdout: NodeJS.WritableStream;
-    stderr: NodeJS.WritableStream;
-    stdin: NodeJS.ReadableStream;
-    tty: boolean;
-    status: (status: V1Status) => void;
-  }> = [];
-
-  async exec(
-    namespace: string,
-    name: string,
-    _container: string,
-    command: string[],
-    stdout: NodeJS.WritableStream,
-    stderr: NodeJS.WritableStream,
-    stdin: NodeJS.ReadableStream,
-    tty: boolean,
-    status: (value: V1Status) => void
-  ) {
-    this.calls.push({ namespace, name, command, stdout, stderr, stdin, tty, status });
-    if (this.error) {
-      throw this.error;
-    }
-    return await (this.result ?? Promise.resolve(this.webSocket));
   }
 }

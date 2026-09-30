@@ -4,7 +4,6 @@
  * https://oss.oracle.com/licenses/upl.
  */
 
-import { PassThrough, Writable } from "node:stream";
 import {
   AuthorizationV1Api,
   CoreV1Api,
@@ -12,6 +11,7 @@ import {
   KubeConfig,
   NodeV1Api,
   Observable,
+  PortForward,
   Watch,
   type ConfigurationOptions,
   type RequestContext,
@@ -20,7 +20,13 @@ import {
   type V1SelfSubjectAccessReview,
   type V1Status
 } from "@kubernetes/client-node";
-import type { WorkerChannel, WorkerChannelStatus } from "./worker-channel.ts";
+import type { RunnerTlsBootstrap } from "../grpc-tls.ts";
+import {
+  ClientNodeKubernetesGrpcTransport,
+  type KubernetesGrpcTransport,
+  type KubernetesGrpcTunnel,
+  type KubernetesRunnerHandle
+} from "./kubernetes-grpc.ts";
 import type { KubernetesProfile } from "./kubernetes-config.ts";
 
 export type KubernetesPod = V1Pod;
@@ -51,12 +57,20 @@ export interface KubernetesApi {
     deadlineMs: number,
     signal: AbortSignal
   ): Promise<void>;
-  openExecChannel(
+  startRunner(
     namespace: string,
     name: string,
+    bootstrap: RunnerTlsBootstrap,
     deadlineMs: number,
     signal: AbortSignal
-  ): Promise<WorkerChannel>;
+  ): Promise<KubernetesRunnerHandle>;
+  openTunnel(
+    namespace: string,
+    name: string,
+    targetPort: number,
+    deadlineMs: number,
+    signal: AbortSignal
+  ): Promise<KubernetesGrpcTunnel>;
   deletePod(namespace: string, name: string, signal?: AbortSignal): Promise<void>;
   podExists(namespace: string, name: string, signal?: AbortSignal): Promise<boolean>;
   waitForPodDeleted(
@@ -90,32 +104,32 @@ function createClientNodeKubernetesApi(config: KubeConfig): KubernetesApi {
     config.makeApiClient(NodeV1Api),
     config.makeApiClient(AuthorizationV1Api),
     new Watch(config),
-    (deadlineMs, signal) => new Exec(deadlineKubeConfig(config, deadlineMs, signal))
+    new ClientNodeKubernetesGrpcTransport(
+      (deadlineMs, signal) => new Exec(deadlineKubeConfig(config, deadlineMs, signal)),
+      (deadlineMs, signal) => new PortForward(deadlineKubeConfig(config, deadlineMs, signal))
+    )
   );
 }
-
-type KubernetesExec = Pick<Exec, "exec">;
-type KubernetesExecFactory = (deadlineMs: number, signal: AbortSignal) => KubernetesExec;
 
 export class ClientNodeKubernetesApi implements KubernetesApi {
   readonly #core: CoreV1Api;
   readonly #node: NodeV1Api;
   readonly #authorization: AuthorizationV1Api;
   readonly #watch: Watch;
-  readonly #execFactory: KubernetesExecFactory;
+  readonly #grpcTransport: KubernetesGrpcTransport;
 
   constructor(
     core: CoreV1Api,
     node: NodeV1Api,
     authorization: AuthorizationV1Api,
     watch: Watch,
-    exec: KubernetesExec | KubernetesExecFactory
+    grpcTransport: KubernetesGrpcTransport
   ) {
     this.#core = core;
     this.#node = node;
     this.#authorization = authorization;
     this.#watch = watch;
-    this.#execFactory = typeof exec === "function" ? exec : () => exec;
+    this.#grpcTransport = grpcTransport;
   }
 
   async readNamespace(name: string): Promise<void> {
@@ -235,107 +249,24 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
     });
   }
 
-  async openExecChannel(
+  startRunner(
     namespace: string,
     name: string,
+    bootstrap: RunnerTlsBootstrap,
     deadlineMs: number,
     signal: AbortSignal
-  ): Promise<WorkerChannel> {
-    if (signal.aborted || Date.now() >= deadlineMs) {
-      throw new Error("sandbox run deadline exceeded");
-    }
-    const output = new PassThrough();
-    const input = new PassThrough();
-    const stderr = new BoundedDiscardStream(64 * 1024);
-    let statusResolve!: (status: WorkerChannelStatus) => void;
-    let statusReject!: (error: Error) => void;
-    let settled = false;
-    const closed = new Promise<WorkerChannelStatus>((resolve, reject) => {
-      statusResolve = resolve;
-      statusReject = reject;
-    });
-    const finish = (status: WorkerChannelStatus) => {
-      if (!settled) {
-        settled = true;
-        statusResolve(status);
-      }
-    };
-    const execPromise = Promise.resolve().then(() => this.#execFactory(deadlineMs, signal).exec(
-        namespace,
-        name,
-        "runner",
-        ["node", "--no-node-snapshot", "--experimental-strip-types", "/app/src/sandbox-worker.ts"],
-        output,
-        stderr,
-        input,
-        false,
-        (status: V1Status) => finish({ exitCode: statusCode(status), signal: null })
-      ));
-    let authorityEnded = false;
-    void execPromise.then(webSocket => {
-      if (authorityEnded) {
-        closeLateExec(webSocket, input, output, stderr);
-      }
-    }, () => undefined);
-    let webSocket: Awaited<ReturnType<KubernetesExec["exec"]>>;
-    try {
-      webSocket = await raceExecConnection(execPromise, deadlineMs, signal);
-    } catch (error) {
-      authorityEnded = true;
-      input.destroy();
-      output.destroy();
-      stderr.destroy();
-      if (signal.aborted || Date.now() >= deadlineMs) {
-        throw new Error("sandbox run deadline exceeded");
-      }
-      throw new Error("Kubernetes exec channel failed");
-    }
+  ): Promise<KubernetesRunnerHandle> {
+    return this.#grpcTransport.startRunner(namespace, name, bootstrap, deadlineMs, signal);
+  }
 
-    let transportResolve!: () => void;
-    let transportReject!: (error: Error) => void;
-    let transportSettled = false;
-    const transportClosed = new Promise<void>((resolve, reject) => {
-      transportResolve = resolve;
-      transportReject = reject;
-    });
-    webSocket.once("close", () => {
-      if (!transportSettled) {
-        transportSettled = true;
-        transportResolve();
-      }
-      finish({ exitCode: null, signal: null });
-    });
-    webSocket.once("error", () => {
-      if (!transportSettled) {
-        transportSettled = true;
-        transportReject(new Error("Kubernetes exec channel cleanup failed"));
-      }
-      if (!settled) {
-        settled = true;
-        statusReject(new Error("Kubernetes exec channel failed"));
-      }
-    });
-    let stopped: Promise<void> | undefined;
-    return {
-      output,
-      input,
-      closed,
-      stop(cleanupDeadlineMs: number) {
-        return stopped ??= (async () => {
-          input.end();
-          output.destroy();
-          stderr.destroy();
-          if (webSocket.readyState < webSocket.CLOSING) {
-            webSocket.close();
-          }
-          try {
-            await withAbsoluteDeadline(transportClosed, cleanupDeadlineMs);
-          } catch {
-            throw new Error("Kubernetes exec channel cleanup failed");
-          }
-        })();
-      }
-    };
+  openTunnel(
+    namespace: string,
+    name: string,
+    targetPort: number,
+    deadlineMs: number,
+    signal: AbortSignal
+  ): Promise<KubernetesGrpcTunnel> {
+    return this.#grpcTransport.openTunnel(namespace, name, targetPort, deadlineMs, signal);
   }
 
   async deletePod(namespace: string, name: string, signal?: AbortSignal): Promise<void> {
@@ -499,85 +430,6 @@ function deadlineKubeConfig(
       });
     }
   } as KubeConfig;
-}
-
-function raceExecConnection<T>(
-  promise: Promise<T>,
-  deadlineMs: number,
-  signal: AbortSignal
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const finish = (callback: () => void) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timeout);
-      signal.removeEventListener("abort", aborted);
-      callback();
-    };
-    const aborted = () => finish(() => reject(new Error("sandbox run deadline exceeded")));
-    const timeout = setTimeout(aborted, Math.max(1, deadlineMs - Date.now()));
-    signal.addEventListener("abort", aborted, { once: true });
-    if (signal.aborted || Date.now() >= deadlineMs) {
-      aborted();
-      return;
-    }
-    promise.then(
-      value => finish(() => resolve(value)),
-      () => finish(() => reject(new Error("Kubernetes exec channel failed")))
-    );
-  });
-}
-
-function withAbsoluteDeadline<T>(promise: Promise<T>, deadlineMs: number): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(
-      () => reject(new Error("Kubernetes exec channel cleanup failed")),
-      Math.max(1, deadlineMs - Date.now())
-    );
-    promise.then(resolve, reject).finally(() => clearTimeout(timeout));
-  });
-}
-
-function closeLateExec(
-  webSocket: Awaited<ReturnType<KubernetesExec["exec"]>>,
-  input: PassThrough,
-  output: PassThrough,
-  stderr: BoundedDiscardStream
-): void {
-  input.destroy();
-  output.destroy();
-  stderr.destroy();
-  if (webSocket.readyState < webSocket.CLOSING) {
-    webSocket.close();
-  }
-}
-
-class BoundedDiscardStream extends Writable {
-  readonly #limit: number;
-  #bytes = 0;
-
-  constructor(limit: number) {
-    super();
-    this.#limit = limit;
-  }
-
-  override _write(
-    chunk: Buffer | string,
-    _encoding: BufferEncoding,
-    callback: (error?: Error | null) => void
-  ): void {
-    this.#bytes = Math.min(this.#limit, this.#bytes + Buffer.byteLength(chunk));
-    callback();
-  }
-}
-
-function statusCode(status: V1Status): number | null {
-  const cause = status.details?.causes?.find(item => item.reason === "ExitCode");
-  const value = cause?.message === undefined ? NaN : Number(cause.message);
-  return Number.isSafeInteger(value) ? value : null;
 }
 
 export function isNotFound(error: unknown): boolean {

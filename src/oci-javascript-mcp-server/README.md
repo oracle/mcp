@@ -13,14 +13,15 @@ access, environment variables, or a network API.
 
 ## Quick start
 
-Requires Node.js 26 or newer, Podman, and an OCI SDK configuration. A native
-build toolchain is also needed when installing `isolated-vm` on the host.
+Requires Node.js 26 or newer, rootless Podman, and an OCI SDK configuration. A
+native build toolchain is also needed when installing `isolated-vm` on the host.
 
 From this directory:
 
 ```bash
-npm install
-npm run podman:build
+proto install
+moon run oci-javascript-mcp-server:compile
+moon run oci-javascript-mcp-server:runner-build
 npm start
 ```
 
@@ -87,13 +88,11 @@ cannot delay the MCP result beyond the execution deadline plus that one tail.
 Provider cleanup failure remains authoritative, while a late OCI completion is
 observed internally and cannot change or republish the finalized result.
 
-The worker channel accepts one `health` transition before normal traffic and
-enters an irreversible terminal phase as soon as it accepts a result. RPC IDs
-must be positive, safe, and unique for the execution; terminal acceptance
-revokes queued RPC replies synchronously. Per-execution cumulative ingress,
-accepted-message, log, egress, frame, and result budgets bound sustained valid
-traffic as well as malformed input, and one ordered writer applies the egress
-budget while honoring transport backpressure.
+The worker accepts exactly one protobuf gRPC session and enters an irreversible
+terminal phase as soon as it accepts a result. RPC IDs must be positive, safe,
+and unique for the execution; terminal acceptance revokes queued RPC replies
+synchronously. Per-execution message, log, request, call, concurrency, and
+result budgets remain host-owned and the absolute deadline stays authoritative.
 
 Use the injected binding like the OCI JavaScript SDK:
 
@@ -135,13 +134,14 @@ MCP client
   -> trusted stdio server
        -> OCI broker -> OCI SDK + host credentials -> OCI APIs
        -> selected isolation provider
-            -> Podman container (compatibility default), or fresh Kubernetes pod
+            -> Podman: private network + loopback port, or
+            -> Kubernetes: fresh pod + exec bootstrap + loopback port-forward
                  -> standard runtime (local/in-cluster), or reviewed Kata RuntimeClass
             -> locked-down, credential-free runner
                  -> fresh Node worker
                       -> isolated-vm V8 isolate
                            -> user JavaScript + injected oci proxy
-                 <-> bounded framed pipe <-> OCI broker
+                 <-> bounded gRPC session <-> OCI broker
 ```
 
 The host owns credentials, OCI clients, request validation, deadlines, budgets,
@@ -150,12 +150,36 @@ receive reflection metadata and a narrow RPC bridge, but no credential or
 signer. The `IsolationProvider` seam keeps these host controls independent of
 the runtime backend.
 
+The host's gRPC boundary decodes and validates runner data once; the coordinator
+consumes typed results without re-serializing them. gRPC owns the session and
+channel, while the isolation provider owns process/container lifecycle and cleanup.
+
+The internal gRPC contract is defined in `proto/runner.proto`. The v4 `Session`
+uses direction-specific protobuf messages for execution, OCI RPCs, and a final
+result containing stdout/stderr. gRPC supplies readiness, deadlines, cancellation,
+and protocol-failure status. The runner derives its execution budget from the
+session deadline; the host retains its overall execution watchdog.
+Source code and log text use bounded UTF-16LE bytes,
+preserving JavaScript code units including unpaired surrogates; dynamic OCI data retains
+bounded UTF-8 JSON and structural validation. Protobuf does not replace
+execution budgets, protocol-state checks, or OCI authorization.
+
+The v4 endpoint is incompatible with earlier endpoints.
+Rebuild the runner image when updating the host; no fallback or execution replay
+is provided. The public MCP tools and response fields are unchanged.
+
 ## Security model
 
 - Every call receives a fresh locked-down provider boundary, worker, and isolate.
-- Podman runs with no network, a read-only root filesystem, no capabilities,
-  `no-new-privileges`, a non-root user, and CPU, memory, process, file, and
-  temporary-filesystem limits.
+- Podman uses a fresh internal network with no external route and publishes only
+  the runner's gRPC port to host loopback. The container also has a read-only
+  root filesystem, no capabilities, `no-new-privileges`, a non-root user, and
+  CPU, memory, process, file, and temporary-filesystem limits.
+- Each execution gets fresh mutual-TLS identities. The runner receives its
+  server key and the host's public certificate, never the host's private key.
+- Kubernetes uses exec only for the TLS bootstrap and runner lifecycle, then
+  carries the same mTLS gRPC session over one host-loopback `pods/portforward`
+  connection. It creates no Service and declares no container port.
 - Sandbox code cannot import Node modules or directly access files or networks.
 - Credentials, signers, SDK clients, and HTTPS remain in the trusted host.
 - The host validates each request and enforces deadlines, message and result
@@ -176,10 +200,11 @@ their limits and stay within the documented reviewed ranges; `/tmp` must also
 stay within its documented range. The example admission policies use CEL
 quantity bounds so every documented value is accepted without a synchronized
 policy edit. In-cluster profiles require digest-pinned
-images, separate namespaces, fail-closed exact RBAC checks, rejection of the
+images, separate namespaces, fail-closed exact RBAC checks including trusted-host
+`pods/exec` and `pods/portforward`, rejection of the
 reviewed admission variants, and an independent cleanup-only reconciler. Only
-`kata-in-cluster` adds a preflighted RuntimeClass/handler. Kubernetes and raw
-exec errors remain trusted diagnostics and are never copied into MCP result
+`kata-in-cluster` adds a preflighted RuntimeClass/handler. Kubernetes exec and
+port-forward errors remain trusted diagnostics and are never copied into MCP result
 fields.
 
 Cluster-scoped preflight reads name exactly the configured execution Namespace
@@ -187,9 +212,9 @@ and, for Kata, RuntimeClass; the example ClusterRoles apply matching
 `resourceNames`, while generated pod operations remain namespace-scoped.
 Admission evidence is reported only as `reviewed-variants-rejected` or
 `unverified`, and the exact deployed policy revision remains explicitly
-unverified. During cleanup, exec-channel stop and zero-grace pod deletion plus
-NotFound confirmation run concurrently against the same cleanup deadline; an
-unconfirmed channel close or deletion returns `isolation provider cleanup
+unverified. During cleanup, the gRPC session, loopback tunnel, exec runner, and
+zero-grace pod deletion plus NotFound confirmation share one absolute cleanup
+deadline; an unconfirmed transport close or deletion returns `isolation provider cleanup
 failed`. Reconciliation bounds each expired candidate to five seconds,
 continues after candidate failures, and emits only aggregate success/failure
 counts so later intervals continue without exposing pod names.
@@ -197,21 +222,22 @@ counts so later intervals continue without exposing pod names.
 ## Development
 
 ```bash
-npm test         # unit and MCP stdio integration tests
-npm run coverage # subprocess-aware coverage; 90% line minimum
-npm run check    # TypeScript validation
-npm run check:kubernetes-manifests # standard/Kata manifest, admission, and RBAC checks
-npm run kubectl:dry-run:kubernetes # client-side dry run when kubectl is installed
-npm run ci       # coverage, type checking, and package verification
+moon run oci-javascript-mcp-server:compile # generate bindings and compile the npm entry point
+moon run oci-javascript-mcp-server:test   # unit and MCP stdio integration tests; 90% line minimum
+moon run oci-javascript-mcp-server:check  # TypeScript validation
+moon run oci-javascript-mcp-server:build  # create the npm package tarball
+moon run oci-javascript-mcp-server:check-kubernetes-manifests # RBAC/admission manifests
+moon run oci-javascript-mcp-server:kubectl-dry-run-kubernetes # optional local kubectl check
 ```
 
-Tests use a fake Podman control plane to validate the exact hardened CLI
-arguments and exercise the framed worker protocol without requiring Podman in
-CI. They test this server's command construction, not Podman itself.
+Moon installs the locked npm dependencies before running package tasks.
+Publish through the manually dispatched `Publish package` GitHub Actions
+workflow, selecting the `npm` registry and `oci-javascript-mcp-server` project.
+It builds and tests before running Moon's publish task with npm credentials.
 
-Kubernetes tests use injectable fake APIs and exec channels across all three
+Kubernetes tests use injectable fake APIs and gRPC transports across all three
 profiles. They validate configuration, credential-factory selection, pod shape,
-hostile framing, startup admission probes, lifecycle races, cancellation,
+protobuf/mTLS exchange, startup admission probes, lifecycle races, cancellation,
 cleanup, reconciliation, and provider-compatible MCP results. The opt-in local
 cluster harness adds real standard-runtime lifecycle evidence; it never claims
 Kata, CRI, CNI, or guest-kernel evidence. Offline resource-range fixtures and
@@ -221,9 +247,31 @@ cluster, `OCI_JAVASCRIPT_RUN_REAL_KUBERNETES_ADMISSION_TESTS=true` makes the
 test suite require their observed generations to have no CEL type-checking
 warnings; otherwise that real-cluster-only evidence is deliberately skipped.
 
-The generated sandbox prelude and type-only declarations are excluded from
-source-line instrumentation; their behavior is exercised through integration
-tests.
+Commit `proto/runner.proto`, `buf.gen.yaml`, and the dependency lockfile, not
+`src/generated/` or `dist/`. Tests, type checks, and npm packaging depend on
+Moon's compile task, which generates the codecs and gRPC bindings using the
+pinned Buf CLI and `ts-proto` dependencies. Run the compile task after schema
+changes before launching the server directly; no separate `protoc` installation
+is needed.
+
+The published entry point runs compiled JavaScript from `dist/`, including the
+generated bindings; Node does not strip TypeScript under `node_modules`.
+The container generates its bindings in its build stage and copies them into
+the final image without the generators or schema files. Neither runtime performs
+schema loading or code generation.
+Wire-format fixtures and gRPC integration tests exercise the generated bindings;
+a packaging test starts the tarball under `node_modules` and executes an MCP call.
+Never reuse field numbers; reserve removed fields and use a new service version
+for incompatible semantics.
+
+Tests use a fake Podman control plane to validate the exact hardened CLI
+arguments and exercise the same mTLS gRPC session used by the real runner
+without requiring Podman in CI. They test this server's command construction,
+not Podman itself.
+
+Generated protobuf codecs, the sandbox prelude, and type-only declarations are
+excluded from source-line instrumentation; wire-format and integration tests
+exercise their behavior.
 
 ## License
 

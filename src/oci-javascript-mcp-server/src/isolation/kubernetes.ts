@@ -5,6 +5,8 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { createGrpcTlsBootstrap } from "../grpc-tls.ts";
+import { MAX_RESULT_BYTES } from "../sandbox-common.ts";
 import type { IsolationExecution, IsolationProvider, SandboxResult } from "../types.ts";
 import type { KubernetesApi, ResourceAttributes } from "./kubernetes-api.ts";
 import type { KubernetesConfig } from "./kubernetes-config.ts";
@@ -26,9 +28,12 @@ import {
   runtimePolicyFor,
   type KubernetesRuntimePolicy
 } from "./kubernetes-runtime-policy.ts";
-import { startChannelExecution } from "./pipe-execution.ts";
+import { startGrpcExecution } from "./grpc-execution.ts";
 import { reconcileExpiredPods, startExpiryReconciliation } from "./kubernetes-reconciler.ts";
-import type { WorkerChannel } from "./worker-channel.ts";
+import type {
+  KubernetesGrpcTunnel,
+  KubernetesRunnerHandle
+} from "./kubernetes-grpc.ts";
 
 const POD_NAME_PREFIX = "oci-javascript-k8s-";
 const SHARED_ACCESS: ReadonlyArray<Omit<ResourceAttributes, "namespace"> & {
@@ -41,7 +46,9 @@ const SHARED_ACCESS: ReadonlyArray<Omit<ResourceAttributes, "namespace"> & {
   { resource: "pods", verb: "watch", namespaced: true },
   { resource: "pods", verb: "delete", namespaced: true },
   { resource: "pods", subresource: "exec", verb: "create", namespaced: true },
-  { resource: "pods", subresource: "exec", verb: "get", namespaced: true }
+  { resource: "pods", subresource: "exec", verb: "get", namespaced: true },
+  { resource: "pods", subresource: "portforward", verb: "create", namespaced: true },
+  { resource: "pods", subresource: "portforward", verb: "get", namespaced: true }
 ];
 const RUNTIME_CLASS_ACCESS = {
   group: "node.k8s.io",
@@ -185,8 +192,12 @@ export class KubernetesIsolationProvider implements IsolationProvider {
     const localAbort = new AbortController();
     const abort = () => localAbort.abort();
     options.signal.addEventListener("abort", abort, { once: true });
-    let channel: WorkerChannel | undefined;
-    let channelPromise: Promise<WorkerChannel> | undefined;
+    let runner: KubernetesRunnerHandle | undefined;
+    let runnerPromise: Promise<KubernetesRunnerHandle> | undefined;
+    let tunnel: KubernetesGrpcTunnel | undefined;
+    let tunnelPromise: Promise<KubernetesGrpcTunnel> | undefined;
+    let grpcExecution: IsolationExecution | undefined;
+    let grpcCompleted = false;
     let createSettled: Promise<void> | undefined;
     let terminating = false;
     let cleanup: Promise<void> | undefined;
@@ -213,17 +224,8 @@ export class KubernetesIsolationProvider implements IsolationProvider {
     };
 
     const startLateDeletionIfRequired = () => {
-      if (
-        lateDeletion
-        || !postCleanupDeletionRequired
-        || !primaryCleanupFinished
-      ) {
-        return;
-      }
-      lateDeletion = deleteKnownPod(
-        Date.now() + this.#config.cleanupTimeoutMs,
-        false
-      );
+      if (lateDeletion || !postCleanupDeletionRequired || !primaryCleanupFinished) return;
+      lateDeletion = deleteKnownPod(Date.now() + this.#config.cleanupTimeoutMs, false);
       void lateDeletion.catch(() => undefined);
     };
 
@@ -262,33 +264,62 @@ export class KubernetesIsolationProvider implements IsolationProvider {
         assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
         phase("running");
         phase("connecting");
-        channelPromise = this.#api.openExecChannel(
+        const tls = createGrpcTlsBootstrap();
+        runnerPromise = this.#api.startRunner(
           this.#config.namespace,
           name,
+          tls.runner,
           options.deadlineMs,
           localAbort.signal
         );
-        channel = await channelPromise;
+        runner = await runnerPromise;
+        assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
+        tunnelPromise = this.#api.openTunnel(
+          this.#config.namespace,
+          name,
+          50051,
+          options.deadlineMs,
+          localAbort.signal
+        );
+        tunnel = await tunnelPromise;
         assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
         phase("executing");
-        const execution = startChannelExecution(channel, code, {
-          ...options,
-          signal: localAbort.signal,
-          memoryLimitMb: this.#config.isolateMemoryMb,
-          terminationTimeoutMs: this.#config.cleanupTimeoutMs
+        grpcExecution = startGrpcExecution(
+          tunnel.address,
+          tls.credentials,
+          code,
+          {
+            ...options,
+            signal: localAbort.signal,
+            memoryLimitMb: this.#config.isolateMemoryMb,
+            maxResultBytes: MAX_RESULT_BYTES
+          }
+        );
+        const prematureRunner = runner.closed.then(() => {
+          if (!grpcCompleted) throw new Error("Kubernetes runner exited before final gRPC status");
+          return new Promise<SandboxResult>(() => {});
         });
-        const workerResult = mapKubernetesChannelResult(await execution.result as SandboxResult);
+        const prematureTunnel = tunnel.closed.then(() => {
+          if (!grpcCompleted) throw new Error("Kubernetes port-forward closed before final gRPC status");
+          return new Promise<SandboxResult>(() => {});
+        });
+        const grpcResult = grpcExecution.result.then(value => {
+          grpcCompleted = true;
+          return value;
+        });
+        const workerResult = await Promise.race([grpcResult, prematureRunner, prematureTunnel]);
         this.#emit(correlationId, "executing", "succeeded", "none", started);
         return workerResult;
       } catch (error) {
         const timedOut = error instanceof ExecutionStageTimeoutError
           || localAbort.signal.aborted
           || Date.now() >= options.deadlineMs;
+        const connected = runner !== undefined || tunnel !== undefined || grpcExecution !== undefined;
         this.#emit(
           correlationId,
-          phaseForFailure(channel),
+          phaseForFailure(connected),
           timedOut ? "timed_out" : "failed",
-          timedOut ? "deadline" : (channel ? "channel" : "api"),
+          timedOut ? "deadline" : (connected ? "channel" : "api"),
           started
         );
         return timedOut ? timeoutResult() : providerFailureResult();
@@ -306,31 +337,23 @@ export class KubernetesIsolationProvider implements IsolationProvider {
       phase("closing");
       const cleanupDeadlineMs = requestedCleanupDeadlineMs
         ?? Date.now() + this.#config.cleanupTimeoutMs;
-      const stopChannel = async () => {
-        const pending = channelPromise;
-        if (!pending) {
-          return;
-        }
-        const activeChannel = channel ?? await withCleanupDeadline(
-          pending.then(value => value, () => undefined),
-          cleanupDeadlineMs
-        );
-        if (!activeChannel) {
-          return;
-        }
-        await withCleanupDeadline(
-          activeChannel.stop(cleanupDeadlineMs),
-          cleanupDeadlineMs
-        );
+      const resolvePending = async <T>(active: T | undefined, pending: Promise<T> | undefined) => {
+        if (active) return active;
+        if (!pending) return undefined;
+        return await withCleanupDeadline(pending.then(value => value, () => undefined), cleanupDeadlineMs);
       };
+      const errors: unknown[] = [];
       try {
-        const outcomes = await Promise.allSettled([
-          stopChannel(),
-          deleteKnownPod(cleanupDeadlineMs, true)
-        ]);
-        if (outcomes.some(outcome => outcome.status === "rejected")) {
-          throw new Error("Kubernetes execution cleanup failed");
-        }
+        await withCleanupDeadline(grpcExecution?.terminate(cleanupDeadlineMs) ?? Promise.resolve(),
+          cleanupDeadlineMs).catch(error => errors.push(error));
+        tunnel = await resolvePending(tunnel, tunnelPromise);
+        await withCleanupDeadline(tunnel?.stop(cleanupDeadlineMs) ?? Promise.resolve(),
+          cleanupDeadlineMs).catch(error => errors.push(error));
+        runner = await resolvePending(runner, runnerPromise);
+        await withCleanupDeadline(runner?.stop(cleanupDeadlineMs) ?? Promise.resolve(),
+          cleanupDeadlineMs).catch(error => errors.push(error));
+        await deleteKnownPod(cleanupDeadlineMs, true).catch(error => errors.push(error));
+        if (errors.length > 0) throw new Error("Kubernetes execution cleanup failed");
       } finally {
         primaryCleanupFinished = true;
         startLateDeletionIfRequired();
@@ -448,8 +471,8 @@ function assertExecutionActive(deadlineMs: number, signal: AbortSignal, terminat
   }
 }
 
-function phaseForFailure(channel: WorkerChannel | undefined): KubernetesPhase {
-  return channel ? "executing" : "pending";
+function phaseForFailure(connected: boolean): KubernetesPhase {
+  return connected ? "executing" : "pending";
 }
 
 function providerFailureResult(): SandboxResult {
@@ -472,11 +495,4 @@ function timeoutResult(): SandboxResult {
     exitCode: -1,
     timedOut: true
   };
-}
-
-function mapKubernetesChannelResult(result: SandboxResult): SandboxResult {
-  const message = result.error?.message;
-  return message === "sandbox runner failed" || message?.startsWith("sandbox runner exited")
-    ? providerFailureResult()
-    : result;
 }

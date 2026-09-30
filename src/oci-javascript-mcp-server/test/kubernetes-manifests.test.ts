@@ -87,6 +87,8 @@ test("standard RBAC and admission omit RuntimeClass while Kata remains additive"
     value.kind === "Role" && value.metadata.name === "oci-js-standard-executor"
   ))!;
   assert.equal(executor.rules?.every(rule => rule.resourceNames === undefined), true);
+  assert.equal(executor.rules?.some(rule => rule.resources.includes("pods/exec")), true);
+  assert.equal(executor.rules?.some(rule => rule.resources.includes("pods/portforward")), true);
   const standardPolicy = standard.find(value => value.kind === "ValidatingAdmissionPolicy")!;
   const standardExpressions = JSON.stringify(standardPolicy.spec?.validations);
   assert.equal(standardExpressions.includes("!has(object.spec.runtimeClassName)"), true);
@@ -158,6 +160,7 @@ test("standard cleanup reconciler has no create or exec authority", () => {
     verbs: ["get", "list", "watch", "delete"]
   }]);
   assert.equal(JSON.stringify(cleanup).includes("pods/exec"), false);
+  assert.equal(JSON.stringify(cleanup).includes("pods/portforward"), false);
   assert.equal(cleanup.rules?.some(rule => rule.verbs.includes("create")), false);
   const deployment = standard.find(value => (
     value.kind === "Deployment" && value.metadata.name === "oci-js-standard-reconciler"

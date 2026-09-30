@@ -27,8 +27,8 @@ Credential-free execution pods run in the separate `oci-js-execution` namespace.
 The example RoleBinding names only the trusted host service account across
 namespaces. The runner service account has no authority and is never
 token-mounted. The cleanup-only reconciler runs outside the execution namespace
-under a third identity with get/list/watch/delete only—never create or
-`pods/exec`.
+under a third identity with get/list/watch/delete only—never create,
+`pods/exec`, or `pods/portforward`.
 
 ## Configuration
 
@@ -86,7 +86,7 @@ tolerations, selectors, or security-context overrides are not accepted.
 Startup loads only in-cluster credentials, reads the execution Namespace and
 RuntimeClass, compares the exact handler, validates namespace separation and
 the downward-API identity, and performs SelfSubjectAccessReview checks for the
-exact pod lifecycle, watch/list/delete, `pods/exec`, Namespace, and RuntimeClass
+exact pod lifecycle, watch/list/delete, `pods/exec`, `pods/portforward`, Namespace, and RuntimeClass
 operations. The Namespace and RuntimeClass access reviews name the configured
 objects exactly; the example ClusterRole applies the same `resourceNames`,
 while generated pod operations remain execution-namespace scoped. It then
@@ -101,24 +101,23 @@ revision or the wider admission chain.
 
 Each call creates one uniquely named pod with a fixed silent Node wait command.
 Only after the pod is Running does the host open a non-TTY Kubernetes exec
-stream and start `/app/src/sandbox-worker.ts`. The existing four-byte framed
-protocol, hostile decoder, OCI request validation, call/concurrency budgets,
-result limits, and public-error sanitization remain above the provider.
-The channel accepts exactly one health transition before running and makes
-result acceptance terminal before any later same-buffer traffic can act. RPC
-IDs are positive, safe, and execution-unique. Cumulative ingress, accepted
-message, log, egress, frame, and result limits bound sustained valid or rejected
-traffic, and the single ordered writer honors backpressure.
+stream and start `/app/src/sandbox-worker.ts`. It writes one execution-scoped
+mTLS bootstrap without closing exec stdin, waits for the exact readiness line,
+then forwards one loopback host connection through `pods/portforward` to runner
+port 50051. The same protobuf gRPC v4 session, OCI request validation,
+call/concurrency budgets, result limits, final-status requirement, and
+public-error sanitization used by Podman remain above the provider. No Service,
+declared container port, legacy framed fallback, or execution replay is used.
 
-The tool timeout is end-to-end: creation, scheduling, image pull, exec setup,
-worker execution, and result delivery all consume the same 1–120 second
+The tool timeout is end-to-end: creation, scheduling, image pull, exec bootstrap,
+readiness, port-forward setup, worker execution, and result delivery all consume the same 1–120 second
 deadline. Abort and timeout remain authoritative in every phase. At
-finalization, the host rejects new bridge work and aborts the run, then starts
-exec-channel stop and zero-grace deletion/NotFound confirmation concurrently
-after pod creation settles. Both Kubernetes cleanup operations and the snapshot
-drain of pending OCI calls share one deadline. Provider termination and RPC draining run concurrently
+finalization, the host rejects new bridge work and aborts the run, then stops
+the gRPC session, loopback tunnel, exec runner, and performs zero-grace
+deletion/NotFound confirmation against one absolute deadline. Kubernetes cleanup
+and the snapshot drain of pending OCI calls share that deadline. Provider termination and RPC draining run concurrently
 against one bounded cleanup tail (30 seconds by default, 60 maximum), not
-serial tails. Unconfirmed channel closure or deletion replaces any otherwise
+serial tails. Unconfirmed transport closure or deletion replaces any otherwise
 valid or timeout result with `isolation provider cleanup failed`. A successful script that left
 OCI calls unawaited returns `JavaScript completed with unawaited OCI calls`
 within the same bound.

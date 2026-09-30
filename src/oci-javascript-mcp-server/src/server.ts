@@ -8,10 +8,17 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { createIsolationProvider } from "./isolation/provider-factory.ts";
 import { createOciReflectionManifest, createOciSdkHostRpc } from "./oci-host.ts";
+import {
+  DEFAULT_TIMEOUT_SECONDS,
+  MAX_TIMEOUT_SECONDS,
+  MIN_TIMEOUT_SECONDS,
+  positiveIntegerEnv
+} from "./sandbox-common.ts";
 import { runJavaScript } from "./sandbox.ts";
 import type {
   HostRpcHandler,
@@ -33,9 +40,6 @@ const MAX_CONCURRENT_TOOL_CALLS = positiveIntegerEnv(
 const isolationProvider = options.isolationProvider ?? await createIsolationProvider();
 const hostRpc = options.hostRpc ?? createOciSdkHostRpc();
 let reflectionManifest = options.reflectionManifest;
-const DEFAULT_TIMEOUT_SECONDS = 30;
-const MIN_TIMEOUT_SECONDS = 1;
-const MAX_TIMEOUT_SECONDS = 120;
 let activeToolCalls = 0;
 
 const server = new McpServer({
@@ -79,11 +83,12 @@ server.registerTool(
       readOnlyHint: false
     }
   },
-  async args => {
+  async (args, extra) => {
     return jsonToolResult(await limitToolCall(async () => {
       reflectionManifest ??= createOciReflectionManifest();
       const result = await runJavaScript(args.code, {
         timeoutSeconds: args.timeout,
+        signal: extra.signal,
         hostRpc,
         reflectionManifest,
         isolationProvider
@@ -158,16 +163,11 @@ async function limitToolCall<T>(callback: () => Promise<T>): Promise<T> {
   }
 }
 
-function positiveIntegerEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (raw === undefined) {
-    return fallback;
-  }
-  const value = Number.parseInt(raw, 10);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (
+  process.argv[1]
+  && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])
+) {
   await startServer();
 }

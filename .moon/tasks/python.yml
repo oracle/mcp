@@ -1,0 +1,94 @@
+inheritedBy:
+  file: 'pyproject.toml'
+
+fileGroups:
+  sources:
+    - 'oracle/**/*'
+    - 'oracle_mcp_common/**/*'
+    - '!oracle/**/tests/**/*'
+    - '!oracle_mcp_common/tests/**/*'
+  tests:
+    - 'oracle/**/tests/**/*'
+    - 'oracle_mcp_common/tests/**/*'
+    - 'tests/**/*'
+  buildFiles:
+    - '**/*'
+    - '!.coverage*'
+    - '!dist/**/*'
+    - '!htmlcov/**/*'
+    - '!.venv/**/*'
+    - '!**/__pycache__/**/*'
+    - '!.pytest_cache/**/*'
+    - '!.ruff_cache/**/*'
+
+tasks:
+  lock-check:
+    description: 'Verifies that uv.lock is current'
+    command: 'uv lock --check'
+    inputs:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - project: '^'
+        filter:
+          - 'pyproject.toml'
+
+  test:
+    description: 'Runs unit tests with branch coverage'
+    type: 'test'
+    command:
+      - 'uv'
+      - 'run'
+      - 'pytest'
+      - '--cov=.'
+      - '--cov-branch'
+      - '--cov-report=html'
+      - '--cov-report=term-missing'
+    env:
+      COVERAGE_FILE: '$workspaceRoot/.coverage.$project'
+    inputs:
+      - '@group(sources)'
+      - '@group(tests)'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - project: '^'
+        filter:
+          - 'oracle/**/*'
+          - '!oracle/**/tests/**/*'
+          - 'oracle_mcp_common/**/*'
+          - '!oracle_mcp_common/tests/**/*'
+          - 'pyproject.toml'
+    outputs:
+      - '/.coverage.$project'
+      - 'htmlcov/**/*'
+
+  build:
+    description: 'Builds wheel and source distributions'
+    command: 'uv build --clear'
+    inputs:
+      - '@group(buildFiles)'
+    outputs:
+      - 'dist/**/*'
+
+  install-check:
+    description: 'Verifies that the project can be installed'
+    command: 'uv pip install .'
+    deps:
+      - target: 'test'
+      - target: 'build'
+    options:
+      cache: false
+
+  publish:
+    description: 'Uploads a release-built distribution to the configured Python index'
+    type: 'run'
+    inputs:
+      - 'pyproject.toml'
+    script: |
+      if [ "$RELEASE_PUBLISH" != "1" ] || [ -z "$UV_PUBLISH_URL" ] || [ -z "$UV_PUBLISH_CHECK_URL" ]; then
+        echo 'Publish requires the release workflow and explicit registry settings' >&2
+        exit 1
+      fi
+      uv publish --publish-url "$UV_PUBLISH_URL" --check-url "$UV_PUBLISH_CHECK_URL" dist/*
+    options:
+      cache: false
+      runInCI: false

@@ -32,8 +32,12 @@ RUN microdnf install gcc-c++ make python3 \
     && rm -rf /var/cache/dnf/*
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev \
+RUN npm ci --include=dev \
     && npm cache clean --force
+
+COPY buf.gen.yaml ./
+COPY proto/ ./proto/
+RUN npx --no-install buf generate
 
 FROM node-base
 
@@ -45,7 +49,19 @@ COPY --from=dependencies --chown=65532:65532 \
 COPY --from=dependencies --chown=65532:65532 \
     /app/node_modules/node-gyp-build \
     ./node_modules/node-gyp-build
+COPY --from=dependencies --chown=65532:65532 \
+    /app/node_modules/@grpc/grpc-js \
+    ./node_modules/@grpc/grpc-js
+COPY --from=dependencies --chown=65532:65532 \
+    /app/node_modules/@js-sdsl/ordered-map \
+    ./node_modules/@js-sdsl/ordered-map
+COPY --from=dependencies --chown=65532:65532 \
+    /app/node_modules/@bufbuild/protobuf \
+    ./node_modules/@bufbuild/protobuf
+COPY --from=dependencies --chown=65532:65532 /app/src/generated/runner.ts ./src/generated/runner.ts
 COPY --chown=65532:65532 \
+    src/grpc.ts \
+    src/grpc-tls.ts \
     src/protocol.ts \
     src/sandbox-common.ts \
     src/sandbox-isolate.ts \

@@ -44,7 +44,7 @@ test("local development reports optional admission gaps without claiming Kata ev
   assert.equal(provider.descriptor?.externalEvidence.kataGuestKernelRequested, false);
   assert.equal(provider.descriptor?.externalEvidence.kataGuestKernelVerified, false);
   assert.equal(api.runtimeClassReads, 0);
-  assert.equal(api.permissions.length, 8);
+  assert.equal(api.permissions.length, 10);
   assert.equal(JSON.stringify(events).includes("kubeconfig"), false);
 });
 
@@ -199,7 +199,8 @@ class ProfileApi implements KubernetesApi {
   }
   async createPod() {}
   async waitForPodRunning() {}
-  async openExecChannel(): Promise<never> { throw new Error("unused"); }
+  async startRunner(): Promise<never> { throw new Error("unused"); }
+  async openTunnel(): Promise<never> { throw new Error("unused"); }
   async deletePod(_namespace: string, name: string, signal?: AbortSignal) {
     assert(signal);
     this.deleteSignals.push(signal);

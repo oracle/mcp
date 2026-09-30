@@ -579,51 +579,25 @@ function authenticationProvider(loadSdk: OciSdkLoader): any {
   const configFile = process.env.OCI_CONFIG_FILE
     ? resolve(process.env.OCI_CONFIG_FILE)
     : join(homedir(), ".oci", "config");
-  const profile = process.env.OCI_CONFIG_PROFILE ?? "DEFAULT";
-  const profileConfig = readProfile(configFile, profile);
-
-  if (profileConfig.security_token_file && typeof common.SessionAuthDetailProvider === "function") {
-    return new common.SessionAuthDetailProvider(configFile, profile);
-  }
-
-  const Provider = sdk.ConfigFileAuthenticationDetailsProvider
-    ?? common.ConfigFileAuthenticationDetailsProvider;
-  if (typeof Provider !== "function") {
-    throw new PublicError("OCI JavaScript SDK authentication provider is unavailable");
-  }
-  return new Provider(configFile, profile);
-}
-
-function readProfile(configFile: string, profile: string): Record<string, string> {
-  if (!existsSync(configFile)) {
-    return {};
-  }
-  const wanted = profile.toUpperCase();
-  const result: Record<string, string> = {};
-  let active = false;
-
-  for (const rawLine of readFileSync(configFile, "utf8").split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#") || line.startsWith(";")) {
-      continue;
+  const profile = process.env.OCI_CONFIG_PROFILE || "DEFAULT";
+  // The SDK logs missing DEFAULT profiles to stdout. Both operations are synchronous.
+  const info = console.info;
+  console.info = console.error;
+  try {
+    const profileConfig = common.ConfigFileReader.parseFileFromPath(configFile, profile);
+    if (profileConfig.get("security_token_file") && typeof common.SessionAuthDetailProvider === "function") {
+      return new common.SessionAuthDetailProvider(configFile, profile);
     }
-    const section = line.match(/^\[(.+)]$/);
-    if (section) {
-      active = section[1].toUpperCase() === wanted;
-      continue;
+
+    const Provider = sdk.ConfigFileAuthenticationDetailsProvider
+      ?? common.ConfigFileAuthenticationDetailsProvider;
+    if (typeof Provider !== "function") {
+      throw new PublicError("OCI JavaScript SDK authentication provider is unavailable");
     }
-    if (!active) {
-      continue;
-    }
-    const equalsIndex = line.indexOf("=");
-    if (equalsIndex === -1) {
-      continue;
-    }
-    const key = line.slice(0, equalsIndex).trim();
-    const value = line.slice(equalsIndex + 1).trim();
-    result[key] = value;
+    return new Provider(configFile, profile);
+  } finally {
+    console.info = info;
   }
-  return result;
 }
 
 function decodeRequest(request: JsonObject): Record<string, any> {

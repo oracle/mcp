@@ -1,9 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 ### Fixed
 
+- Select OCI session-token authentication using SDK profile inheritance and
+  keep profile diagnostics off MCP stdout.
 - Keep `isolated-vm` out of host runtime dependencies and install the runner's
   dependencies from a separate manifest, pruning code generators from the image.
 - Preserve OCI status codes, service codes, operation details, and request IDs in

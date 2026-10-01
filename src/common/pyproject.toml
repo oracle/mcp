@@ -1,6 +1,6 @@
 [project]
 name = "oracle-mcp-common"
-version = "0.1.3"
+version = "0.2.0"
 description = "Shared utilities for Oracle MCP Python servers"
 readme = "README.md"
 requires-python = ">=3.13"

@@ -6,6 +6,12 @@
 
 - Updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).
 
+## 2.1.0 - 2026-08-14
+
+### Added
+
+- Added subscribed-region discovery and an optional `region` parameter to Monitoring tools, allowing queries outside the configured region.
+
 ## 2.0.3
 
 ### Changed

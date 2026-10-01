@@ -12,6 +12,9 @@ jobs:
   ci:
     name: CI
     runs-on: ubuntu-latest
+    env:
+      MOON_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      MOON_HEAD: ${{ github.sha }}
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -34,13 +37,13 @@ jobs:
 
       - name: Run Moon CI
         run: |
-          moon run root:lint :lock-check :install-check \
-            oci-javascript-mcp-server:test \
-            oci-javascript-mcp-server:check \
-            oci-javascript-mcp-server:build
-          moon run root:combine-coverage
+          moon ci --include-relations :lint :lock-check :install-check :test :check :build
+          if compgen -G '.coverage.*' > /dev/null; then
+            moon run root:combine-coverage
+          fi
 
       - name: Upload combined coverage report
+        if: ${{ hashFiles('.coverage') != '' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: all-in-one-coverage-report

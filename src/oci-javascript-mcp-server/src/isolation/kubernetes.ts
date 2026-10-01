@@ -5,7 +5,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { createGrpcTlsBootstrap } from "../grpc-tls.ts";
+import { createGrpcTlsBootstrap } from "../grpc-tls-host.ts";
 import { MAX_RESULT_BYTES } from "../sandbox-common.ts";
 import type { IsolationExecution, IsolationProvider, SandboxResult } from "../types.ts";
 import type { KubernetesApi, ResourceAttributes } from "./kubernetes-api.ts";

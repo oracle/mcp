@@ -10,6 +10,15 @@
 
 ### Added
 
+- Add an opt-in Kubernetes isolation provider with `local-development`,
+  `in-cluster`, and `kata-in-cluster` profiles. Podman remains the default;
+  provider and profile selection is explicit and fails closed at startup.
+- Run each Kubernetes execution in a fresh, credential-free pod with bounded
+  deletion and expiry reconciliation. Add versioned standard and Kata deployment
+  examples, including separate host, runner, and cleanup identities.
+- Add a Kata proof-of-concept profile with an exact RuntimeClass and handler
+  check, digest-pinned runner image, admission checks, and a deployment guide.
+- Add a Moon `k8s-build` task to build the Kubernetes runner and host Docker images.
 - Build-generated TypeScript codecs and gRPC bindings, tested before release and
   included in the npm package and runner image rather than source control. No
   runtime schema loading or generation is required. Wire-format compatibility
@@ -17,6 +26,11 @@
 
 ### Changed
 
+- Harden the in-cluster and Kata profiles with scoped RBAC, fail-closed pod
+  admission checks, reviewed resource ranges, and a cleanup-only reconciler.
+  Add a helper to sync host OCI credentials into a host-only Kubernetes Secret.
+- Clarify local in-cluster image digest lookup, all four manifest replacements,
+  and rollout verification, and update setup commands to use the existing tools.
 - Migrate the Kubernetes isolation provider from the removed framed pipe to the
   shared protobuf gRPC v4 transport, bootstrapped over `pods/exec` and carried
   through one execution-scoped loopback `pods/portforward` connection with mTLS.
@@ -31,6 +45,8 @@
 
 ### Fixed
 
+- Keep host-only certificate generation out of the runner image so Podman and Kubernetes executions can start.
+- Generate protobuf bindings when building the host image so fresh checkouts do not need a prior compile.
 - Truncate oversized stdout/stderr at UTF-8 character boundaries so output-limit
   errors remain structured results rather than gRPC protocol failures.
 - Preserve the remaining gRPC deadline inside the isolate, including subsecond

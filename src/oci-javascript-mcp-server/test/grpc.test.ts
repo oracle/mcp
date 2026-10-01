@@ -18,11 +18,8 @@ import {
   type HostMessage,
   type RunnerMessage
 } from "../src/grpc.ts";
-import {
-  createGrpcTlsBootstrap,
-  readRunnerTlsBootstrap,
-  RUNNER_READY_LINE
-} from "../src/grpc-tls.ts";
+import { createGrpcTlsBootstrap } from "../src/grpc-tls-host.ts";
+import { readRunnerTlsBootstrap, RUNNER_READY_LINE } from "../src/grpc-tls.ts";
 import { DEFAULT_DECODE_LIMITS, decodeJson, encodePayload } from "../src/protocol.ts";
 import type { RunnerServer } from "../src/generated/runner.ts";
 import { startGrpcExecution } from "../src/isolation/grpc-execution.ts";

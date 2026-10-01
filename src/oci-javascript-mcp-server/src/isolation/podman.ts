@@ -7,7 +7,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
-import { createGrpcTlsBootstrap } from "../grpc-tls.ts";
+import { createGrpcTlsBootstrap } from "../grpc-tls-host.ts";
 import { MAX_RESULT_BYTES, positiveIntegerEnv } from "../sandbox-common.ts";
 import type { IsolationExecution, IsolationProvider } from "../types.ts";
 import { startGrpcExecution } from "./grpc-execution.ts";

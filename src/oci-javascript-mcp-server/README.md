@@ -226,6 +226,7 @@ moon run oci-javascript-mcp-server:compile # generate bindings and compile the n
 moon run oci-javascript-mcp-server:test   # unit and MCP stdio integration tests; 90% line minimum
 moon run oci-javascript-mcp-server:check  # TypeScript validation
 moon run oci-javascript-mcp-server:build  # create the npm package tarball
+moon run oci-javascript-mcp-server:k8s-build # build the Kubernetes runner and host Docker images
 moon run oci-javascript-mcp-server:check-kubernetes-manifests # RBAC/admission manifests
 moon run oci-javascript-mcp-server:kubectl-dry-run-kubernetes # optional local kubectl check
 ```

@@ -32,7 +32,12 @@ RUN microdnf install gcc-c++ make python3 \
     && rm -rf /var/cache/dnf/*
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev \
+RUN npm ci --include=dev
+
+COPY buf.gen.yaml ./
+COPY proto/ ./proto/
+RUN npx --no-install buf generate \
+    && npm prune --omit=dev \
     && npm cache clean --force
 
 FROM node-base
@@ -44,6 +49,7 @@ COPY --from=dependencies --chown=65532:65532 /app/node_modules ./node_modules
 COPY --chown=65532:65532 package.json ./package.json
 
 COPY --chown=65532:65532 src ./src
+COPY --from=dependencies --chown=65532:65532 /app/src/generated/runner.ts ./src/generated/runner.ts
 
 USER 65532:65532
 

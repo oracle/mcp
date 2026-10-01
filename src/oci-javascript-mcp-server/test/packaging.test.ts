@@ -28,7 +28,8 @@ test("npm package runs from node_modules with compiled bindings", { timeout: 30_
   for (const path of [
     "dist/server.js", "dist/generated/runner.js", "dist/isolation/grpc-execution.js",
     "dist/isolation/kubernetes.js", "dist/isolation/kubernetes-grpc.js",
-    "src/generated/runner.ts", "src/grpc.ts", "src/grpc-tls.ts", "proto/runner.proto",
+    "src/generated/runner.ts", "src/grpc.ts", "src/grpc-tls.ts", "src/grpc-tls-host.ts",
+    "proto/runner.proto",
     "buf.gen.yaml", "Containerfile", "Containerfile.host", ".dockerignore",
     "examples/kubernetes/v1/standard-in-cluster.yaml",
     "examples/kata-kubernetes/v1/02-rbac.yaml",

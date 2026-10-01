@@ -36,21 +36,53 @@ An image ID or a mutable tag is not a substitute for a repository digest.
 
 ## 1. Build, make available, and pin the images
 
-Build the two images from this package:
+For Rancher Desktop using the Moby container engine, confirm Docker targets the
+local cluster's image store:
 
 ```sh
-npm ci
-npm run docker:build
-npm run docker:build-host
+docker context show
 ```
 
-Import or publish the images through the image store used by the target cluster,
-then obtain their repository digests. Before applying the manifest, set:
+The expected context is `rancher-desktop`. If another context is selected, use
+`docker context use rancher-desktop` before building.
 
-- the host/reconciler image at the two Deployment container `image` fields;
-- the runner image in `OCI_JAVASCRIPT_KUBERNETES_IMAGE`; and
-- **the identical runner digest** in the admission-policy expression that
-  requires `object.spec.containers[0].image`.
+From the repository root, build both images, including after local code changes:
+
+```sh
+moon run oci-javascript-mcp-server:k8s-build
+```
+
+Read the full repository-digest references from the newly built images:
+
+```sh
+docker image inspect localhost/oci-javascript-mcp-host:dev \
+  --format '{{index .RepoDigests 0}}'
+docker image inspect localhost/oci-javascript-mcp-runner:dev \
+  --format '{{index .RepoDigests 0}}'
+```
+
+Each output must be a full `localhost/...@sha256:<64 lowercase hex characters>`
+reference. Copy the `RepoDigests` reference, not the image `Id` or the `:dev` tag.
+If no repository digest is available, import or publish the images through the
+image store used by the target cluster and obtain their repository digests there
+before continuing. For a registry-backed deployment, use the registry repository
+references instead of `localhost/...`.
+
+In `src/oci-javascript-mcp-server/examples/kubernetes/v1/local-in-cluster.yaml`,
+replace all four image references:
+
+| Location | Replacement |
+| --- | --- |
+| Deployment `oci-js-standard-host`, container `host`, `image` | Full host repository-digest reference |
+| Deployment `oci-js-standard-reconciler`, container `reconciler`, `image` | The same host reference |
+| Host environment variable `OCI_JAVASCRIPT_KUBERNETES_IMAGE`, `value` | Full runner repository-digest reference |
+| Admission-policy expression `object.spec.containers[0].image == '...'` | The same runner reference inside the quotes |
+
+Find-and-replace the old full host reference throughout this file, then do the
+same for the old full runner reference. Each occurs twice. **The runner reference
+in the host environment and admission policy must be identical**; a mismatch
+causes admission to reject runner pods. Reapply this manifest after every digest
+update, using the next step.
 
 The runner image uses `IfNotPresent`. This is intentional: in-cluster profiles
 reject tags and do not permit the `local-development` profile's local-image
@@ -75,6 +107,10 @@ This creates the following required controls:
 | Resource and network bounds | Execution-namespace quota, limit range, and default-deny ingress and egress NetworkPolicies. |
 | Availability and cleanup | One trusted host Deployment and a separate reconciler Deployment that can delete expired managed runner pods but cannot create or exec them. |
 
+Changing the Deployment image references automatically starts a rollout; no
+separate rollout restart is needed for an image update. If the OCI Secret is
+already configured and current, proceed directly to the verification in step 4.
+
 The host deployment may remain unavailable until the OCI Secret is created. That
 is expected; do not bypass the Secret mount or put the Secret in the execution
 namespace.
@@ -89,21 +125,23 @@ prints credential content.
 First, validate the selected local profile without changing the cluster:
 
 ```sh
-npm run oci:sync-kubernetes-secret -- --profile DEFAULT --dry-run
+python3 scripts/sync-oci-session-secret.py \
+  --context rancher-desktop --profile DEFAULT --dry-run
 ```
 
 Then create or update the Secret and restart the trusted host so it reloads the
 mount:
 
 ```sh
-npm run oci:sync-kubernetes-secret -- --profile DEFAULT --restart-host
+python3 scripts/sync-oci-session-secret.py \
+  --context rancher-desktop --profile DEFAULT --restart-host
 ```
 
 For an expired OCI session profile, refresh before updating the Secret:
 
 ```sh
-npm run oci:sync-kubernetes-secret -- \
-  --profile DEFAULT --refresh-session --restart-host
+python3 scripts/sync-oci-session-secret.py \
+  --context rancher-desktop --profile DEFAULT --refresh-session --restart-host
 ```
 
 The Secret contains `config` and `private-key.pem`, plus `token` for a session
@@ -112,6 +150,18 @@ data. The example `oci-js-host-oci-config.secret.local.yaml` is intentionally a
 local-only template, not a place to store credentials in Git.
 
 ## 4. Verify deployment and startup controls
+
+After applying the manifest and ensuring the OCI Secret is available, wait for
+both Deployments to complete their rollouts:
+
+```sh
+kubectl --context rancher-desktop -n oci-js-standard-host \
+  rollout status deployment/oci-js-standard-host --timeout=120s
+kubectl --context rancher-desktop -n oci-js-standard-host \
+  rollout status deployment/oci-js-standard-reconciler --timeout=120s
+```
+
+Then inspect the deployment and required controls:
 
 ```sh
 kubectl --context rancher-desktop get namespace \
@@ -123,19 +173,44 @@ kubectl --context rancher-desktop get validatingadmissionpolicy \
   oci-js-standard-execution-pods-v1
 ```
 
-Wait for both the trusted host and reconciler Deployments to be available. A
-successful host startup also performs service-account/RBAC checks and server
+Both rollout commands must succeed before connecting the Inspector. A successful
+host startup also performs service-account/RBAC checks and server
 dry-runs of the approved runner-pod contract before accepting MCP stdio.
 
-For local code and manifest checks, run:
+For local manifest checks, run from the repository root:
 
 ```sh
-npm run check:kubernetes-manifests
-npm run kubectl:dry-run:kubernetes
+moon run oci-javascript-mcp-server:check-kubernetes-manifests
+moon run oci-javascript-mcp-server:kubectl-dry-run-kubernetes
 ```
 
 These are static/client-side checks; they do not prove effective cluster RBAC,
 admission, CNI enforcement, or runtime containment.
+
+### Troubleshoot `ErrImagePull` or `ImagePullBackOff`
+
+Compare the live Deployment image references with the host repository digest
+obtained in step 1:
+
+```sh
+kubectl --context rancher-desktop -n oci-js-standard-host get deployment \
+  oci-js-standard-host oci-js-standard-reconciler \
+  -o 'custom-columns=NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image'
+kubectl --context rancher-desktop -n oci-js-standard-host get events \
+  --field-selector type=Warning --sort-by=.lastTimestamp
+```
+
+Editing the YAML does not update existing Deployments until `kubectl apply`
+succeeds. If the live references still contain an old digest, reapply the updated
+`local-in-cluster.yaml` using step 2, then repeat the rollout checks above. Apply
+the whole manifest so the runner environment and admission policy update together.
+
+If events report a connection refused at `https://localhost/v2/...`, Kubernetes
+has attempted to pull the requested image from a registry on the node's localhost.
+For this local workflow, verify that the exact live digest resolves in the
+Rancher Desktop Docker image store; having only a different digest under `:dev`
+does not satisfy it. If the live digest is correct but unavailable locally, make
+that exact image available using step 1 before retrying the rollout.
 
 ## 5. Connect the Inspector through the trusted host
 

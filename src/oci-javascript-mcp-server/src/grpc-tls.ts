@@ -4,10 +4,7 @@
  * https://oss.oracle.com/licenses/upl.
  */
 
-import type { ChannelCredentials } from "@grpc/grpc-js";
-import { credentials } from "@grpc/grpc-js";
 import type { Readable } from "node:stream";
-import { generate } from "selfsigned";
 
 export const RUNNER_READY_LINE = "READY\n" as const;
 const MAX_TLS_BOOTSTRAP_BYTES = 32 * 1024;
@@ -17,42 +14,6 @@ export type RunnerTlsBootstrap = {
   serverCert: string;
   clientCert: string;
 };
-
-export type GrpcTlsBootstrap = {
-  credentials: ChannelCredentials;
-  runner: RunnerTlsBootstrap;
-};
-
-export function createGrpcTlsBootstrap(): GrpcTlsBootstrap {
-  const certificate = (commonName: string) => generate(
-    [{ name: "commonName", value: commonName }],
-    {
-      algorithm: "sha256",
-      days: 1,
-      keySize: 2048,
-      extensions: [
-        { name: "basicConstraints", cA: true },
-        { name: "keyUsage", keyCertSign: true, digitalSignature: true, keyEncipherment: true },
-        { name: "extKeyUsage", serverAuth: true, clientAuth: true },
-        { name: "subjectAltName", altNames: [{ type: 2, value: commonName }] }
-      ]
-    }
-  );
-  const server = certificate("oci-javascript-runner");
-  const client = certificate("oci-javascript-host");
-  return {
-    credentials: credentials.createSsl(
-      Buffer.from(server.cert),
-      Buffer.from(client.private),
-      Buffer.from(client.cert)
-    ),
-    runner: {
-      serverKey: server.private,
-      serverCert: server.cert,
-      clientCert: client.cert
-    }
-  };
-}
 
 export function readRunnerTlsBootstrap(input: Readable): Promise<RunnerTlsBootstrap> {
   return new Promise((resolve, reject) => {

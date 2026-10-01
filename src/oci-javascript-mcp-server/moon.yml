@@ -100,6 +100,17 @@ tasks:
       cache: false
       runInCI: false
 
+  k8s-build:
+    description: 'Builds the Kubernetes runner and host Docker images'
+    type: 'run'
+    script: |
+      set -e
+      docker build --file Containerfile -t localhost/oci-javascript-mcp-runner:dev .
+      docker build --file Containerfile.host -t localhost/oci-javascript-mcp-host:dev .
+    options:
+      cache: false
+      runInCI: false
+
   publish:
     description: 'Uploads the release-built npm package'
     type: 'run'

@@ -5,6 +5,7 @@
  */
 
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -15,6 +16,7 @@ import { PublicError } from "../src/sandbox-common.ts";
 import type { JsonObject } from "../src/types.ts";
 
 const require = createRequire(import.meta.url);
+const common = require("oci-common") as Record<string, any>;
 
 test("host RPC config returns principal from config-file user", async () => {
   class Provider {
@@ -271,7 +273,7 @@ test("host RPC invokes OCI JavaScript SDK clients", async () => {
   });
   assert.equal(
     (calls[0] as { constructor: { additionalUserAgent?: string } }).constructor.additionalUserAgent,
-    "oci-javascript-mcp/0.1.0"
+    "oci-javascript-mcp/0.1.1"
   );
   assert.deepEqual(calls[1], {
       listInstances: {
@@ -611,6 +613,108 @@ test("host cancellation configuration works with the real OCI HTTP client", asyn
   }, abortController.signal);
 
   assert.deepEqual(result, { status: 200 });
+});
+
+test("host cancellation and retry policy work with real OCI SDK clients", async t => {
+  const { privateKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    publicKeyEncoding: { type: "spki", format: "pem" }
+  });
+  class Provider extends common.SimpleAuthenticationDetailsProvider {
+    constructor() {
+      super("ocid1.tenancy.oc1..example", "ocid1.user.oc1..example", "example",
+        privateKey, null, common.Region.US_ASHBURN_1);
+    }
+  }
+  // Make the tests independent of SDK defaults configured by the environment.
+  const previousGlobalBreaker = common.CircuitBreaker.EnableGlobalCircuitBreaker;
+  const previousDefaultBreaker = common.CircuitBreaker.EnableDefaultCircuitBreaker;
+  common.CircuitBreaker.EnableGlobalCircuitBreaker = true;
+  common.CircuitBreaker.EnableDefaultCircuitBreaker = "true";
+  t.after(() => {
+    common.CircuitBreaker.EnableGlobalCircuitBreaker = previousGlobalBreaker;
+    common.CircuitBreaker.EnableDefaultCircuitBreaker = previousDefaultBreaker;
+  });
+  t.mock.method(common.OciSdkDefaultRetryConfiguration.delayStrategy, "delay", () => {
+    throw new Error("Unexpected SDK retry");
+  });
+  t.mock.method(console, "warn", () => {});
+  const cases = [
+    { service: "identity", client: "IdentityClient", operation: "listCompartments",
+      body: [{ id: "ocid1.compartment.oc1..example", name: "example" }], bodyKey: "items" },
+    { service: "resourceanalytics", client: "ResourceAnalyticsInstanceClient",
+      operation: "listResourceAnalyticsInstances",
+      body: { items: [{ id: "ocid1.resourceanalyticsinstance.oc1..example", displayName: "example" }] },
+      bodyKey: "resourceAnalyticsInstanceCollection" }
+  ];
+  await withTemporaryOciConfig("[DEFAULT]\n", async () => {
+    for (const fixture of cases) {
+      const serviceModule = require(`oci-${fixture.service}`);
+      const hostRpc = createOciSdkHostRpc(() => ({
+        sdk: { ConfigFileAuthenticationDetailsProvider: Provider, [fixture.service]: serviceModule },
+        common
+      }));
+      const request = {
+        binding: "oracle", namespace: "oci", operation: "invoke",
+        payload: {
+          service: fixture.service, client: { name: fixture.client }, operation: fixture.operation,
+          request: { compartmentId: "ocid1.compartment.oc1..example" }
+        }
+      } as const;
+      for (const withSignal of [false, true]) {
+        for (const status of [200, 400, 503]) {
+          await t.test(`${fixture.service}: HTTP ${status}, signal=${withSignal}`, async t => {
+            const signal = withSignal ? new AbortController().signal : undefined;
+            const fetchMock = t.mock.method(globalThis, "fetch", async (_input: unknown, options?: RequestInit) => {
+              assert.equal(options?.signal, signal);
+              return new Response(JSON.stringify(status === 200 ? fixture.body : {
+                code: status === 400 ? "InvalidParameter" : "ServiceUnavailable",
+                message: "Example service failure"
+              }), { status, headers: {
+                "content-type": "application/json", "opc-request-id": "example-request",
+                "opc-next-page": "example-next-page"
+              } });
+            });
+            const close = t.mock.method(serviceModule[fixture.client].prototype, "close");
+            if (status === 200) {
+              assert.deepEqual(await hostRpc(request, signal), {
+                [fixture.bodyKey]: fixture.body, opcRequestId: "example-request",
+                opcNextPage: "example-next-page"
+              });
+            } else {
+              await assert.rejects(hostRpc(request, signal), {
+                statusCode: status,
+                serviceCode: status === 400 ? "InvalidParameter" : "ServiceUnavailable",
+                opcRequestId: "example-request"
+              });
+            }
+            assert.equal(fetchMock.mock.callCount(), 1);
+            assert.equal(close.mock.callCount(), 1);
+          });
+        }
+      }
+      await t.test(`${fixture.service}: abort settles the SDK call without retrying`, async t => {
+        const controller = new AbortController();
+        const started = Promise.withResolvers<void>();
+        const fetchMock = t.mock.method(globalThis, "fetch", async (_input: unknown, options?: RequestInit) => {
+          assert.equal(options?.signal, controller.signal);
+          return new Promise<Response>((_resolve, reject) => {
+            controller.signal.addEventListener("abort", () => reject(controller.signal.reason), { once: true });
+            started.resolve();
+          });
+        });
+        const close = t.mock.method(serviceModule[fixture.client].prototype, "close");
+        const pending = hostRpc(request, controller.signal);
+        const rejected = assert.rejects(pending, { message: "Execution cancelled" });
+        await started.promise;
+        controller.abort(new Error("Execution cancelled"));
+        await rejected;
+        assert.equal(fetchMock.mock.callCount(), 1);
+        assert.equal(close.mock.callCount(), 1);
+      });
+    }
+  });
 });
 
 test("host RPC rejects unsupported client options", async () => {

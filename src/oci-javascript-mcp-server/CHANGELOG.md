@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- Preserve OCI status codes, service codes, operation details, and request IDs in
+  uncaught `run_javascript` errors so callers can assess failures and retry decisions.
+
+## 0.1.1 - 2026-09-30
+
 ### Breaking Changes
 
 - Replace the internal raw-JSON gRPC v1 session with the protobuf-defined v4
@@ -61,6 +68,9 @@
   stop runner and tunnel handles delivered after cancellation.
 - Keep host-only certificate generation out of the runner image so Podman and Kubernetes executions can start.
 - Generate protobuf bindings when building the host image so fresh checkouts do not need a prior compile.
+- Disable SDK circuit breakers and retries on per-call OCI clients while retaining
+  cancellation, so successful responses and service errors are returned promptly
+  instead of failing with an OCI cleanup timeout.
 - Truncate oversized stdout/stderr at UTF-8 character boundaries so output-limit
   errors remain structured results rather than gRPC protocol failures.
 - Preserve the remaining gRPC deadline inside the isolate, including subsecond

@@ -7,12 +7,30 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { generateKeyPairSync } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-test("stdio server advertises and executes its MCP tools", async () => {
+test("stdio server advertises and executes its MCP tools", async t => {
+  const directory = mkdtempSync(join(tmpdir(), "oci-javascript-server-test-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const { privateKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048, privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    publicKeyEncoding: { type: "spki", format: "pem" }
+  });
+  writeFileSync(join(directory, "key.pem"), privateKey);
+  writeFileSync(join(directory, "config"), `[DEFAULT]
+user=ocid1.user.oc1..example
+tenancy=ocid1.tenancy.oc1..example
+fingerprint=example
+region=us-ashburn-1
+key_file=${join(directory, "key.pem")}
+`);
   const environment = Object.fromEntries(
     Object.entries(process.env).filter((entry): entry is [string, string] => (
       entry[1] !== undefined
@@ -24,11 +42,20 @@ test("stdio server advertises and executes its MCP tools", async () => {
   environment.OCI_JAVASCRIPT_PODMAN_IMAGE = "test-runner:dev";
   environment.OCI_JAVASCRIPT_MAX_RESULT_BYTES = "1500000";
   environment.OCI_JAVASCRIPT_MAX_CONCURRENT_TOOL_CALLS = "1";
+  environment.OCI_CONFIG_FILE = join(directory, "config");
+  environment.OCI_CONFIG_PROFILE = "DEFAULT";
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [
       "--no-node-snapshot",
       "--experimental-strip-types",
+      "--import", "data:text/javascript," + encodeURIComponent(`
+        globalThis.fetch = async () => new Response(JSON.stringify({
+          code: "ServiceUnavailable", message: "private service details"
+        }), { status: 503, headers: {
+          "content-type": "application/json", "opc-request-id": "example-request"
+        } });
+      `),
       "src/server.ts"
     ],
     env: environment
@@ -64,6 +91,26 @@ test("stdio server advertises and executes its MCP tools", async () => {
       timed_out: false
     });
     assert.equal(JSON.stringify(runResult).includes("runner-internal-secret"), false);
+
+    const failedOciCall = await client.callTool({
+      name: "run_javascript",
+      arguments: {
+        code: 'await oci.identity.IdentityClient.listCompartments({ compartmentId: "ocid1.compartment.oc1..example" })',
+        timeout: 10
+      }
+    });
+    assert.deepEqual(failedOciCall.structuredContent, {
+      result: null,
+      error: {
+        message: "OCI call failed", name: "Error", statusCode: 503,
+        serviceCode: "ServiceUnavailable", opcRequestId: "example-request",
+        targetService: "Identity", operationName: "listCompartments"
+      },
+      stdout: "", stderr: "", exit_code: 1, timed_out: false
+    });
+    const errorContent = failedOciCall.content as Array<{ text: string }>;
+    assert.deepEqual(JSON.parse(errorContent[0].text), failedOciCall.structuredContent);
+    assert.equal(JSON.stringify(failedOciCall).includes("private service details"), false);
 
     const discoveryResult = await client.callTool({
       name: "discover_oci",

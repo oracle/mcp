@@ -932,6 +932,38 @@ test("sandbox exposes only allowlisted host RPC error details", async () => {
   });
 });
 
+test("sandbox preserves uncaught OCI error metadata", async t => {
+  for (const [statusCode, serviceCode] of [[400, "InvalidParameter"], [429, "TooManyRequests"], [503, "ServiceUnavailable"]] as const) {
+    await t.test(String(statusCode), async () => {
+      const details = { statusCode, serviceCode, opcRequestId: "example-request",
+        targetService: "Identity", operationName: "listCompartments" };
+      const result = await runJavaScript("await oci.identity.IdentityClient.listCompartments({})", {
+        timeoutSeconds: 10,
+        hostRpc: async () => {
+          throw Object.assign(new Error("private SDK message"), details, {
+            response: { body: "private response" }, cause: new Error("private cause")
+          });
+        }
+      });
+      assert.deepEqual(result, {
+        result: null, error: { message: "OCI call failed", name: "Error", ...details },
+        stdout: "", stderr: "", exitCode: 1, timedOut: false
+      });
+    });
+  }
+});
+
+test("sandbox does not attach a caught OCI failure to a later JavaScript error", async () => {
+  const result = await runJavaScript(`
+    try { await oci.config(); } catch (_) {}
+    throw new Error("later failure");
+  `, {
+    timeoutSeconds: 10,
+    hostRpc: async () => { throw Object.assign(new Error("service failure"), { statusCode: 503 }); }
+  });
+  assert.deepEqual(result.error, { message: "later failure", name: "Error" });
+});
+
 test("sandbox returns multiline explicit results", async () => {
   const result = await runJavaScript(
     `

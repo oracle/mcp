@@ -44,7 +44,7 @@ let activeToolCalls = 0;
 
 const server = new McpServer({
   name: "oci-javascript-mcp-server",
-  version: "0.1.0"
+  version: "0.1.1"
 }, {
   instructions: (
     "Run one complete JavaScript script against the injected OCI binding. "

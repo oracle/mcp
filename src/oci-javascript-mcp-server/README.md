@@ -115,6 +115,9 @@ but does not enforce their uniqueness against a compromised runner. Message
 size, source/log/result size, request size, OCI call count and concurrency, and
 the absolute deadline are bounded; a stalled reply writer fails on backpressure.
 Cumulative traffic accounting and semantic output policy remain review gaps.
+Per-call OCI clients retain the execution's abort signal and disable SDK retries
+and circuit breakers. Each operation makes one attempt so SDK retry delays cannot
+outlive the execution budget and service errors return promptly.
 
 Use the injected binding like the OCI JavaScript SDK:
 

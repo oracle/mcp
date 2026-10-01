@@ -206,11 +206,10 @@ async function invoke(
 
   const provider = authenticationProvider(loadSdk);
   applyClientOptions(provider, payload.client.options);
-  const clientConfiguration = createClientConfiguration(signal);
   const client = new ClientClass({
     authenticationDetailsProvider: provider,
     additionalUserAgent: ADDITIONAL_USER_AGENT
-  }, clientConfiguration);
+  }, createClientConfiguration(signal));
   try {
     const operation = client[payload.operation];
     if (typeof operation !== "function") {
@@ -701,6 +700,8 @@ function applyClientOptions(provider: any, options: OciInvokePayload["client"]["
   provider.setRegion(options.region);
 }
 
+// OCI's circuit breaker mishandles responses when httpOptions is present.
+// SDK retry sleeps ignore cancellation and can outlive the execution budget.
 function createClientConfiguration(signal?: AbortSignal): OciClientConfiguration {
   return {
     retryConfiguration: sdkCommon.NoRetryConfigurationDetails,

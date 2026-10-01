@@ -7,6 +7,7 @@ https://oss.oracle.com/licenses/upl.
 import sys
 from types import SimpleNamespace
 
+import oci as real_oci
 from oci import util as real_oci_util
 from oci.ai_document import models as real_ai_document_models
 import pytest
@@ -227,6 +228,45 @@ def test_sdk_provider_serializes_real_oci_sdk_result_model(monkeypatch: pytest.M
     )
 
     assert result.payload["pages"][0]["lines"][0]["text"] == "hello"
+
+
+def test_sdk_provider_builds_requests_with_real_oci_models() -> None:
+    provider = object.__new__(OciSdkDocumentUnderstandingProvider)
+    provider.config = _config()
+    provider.oci = real_oci
+
+    extraction = provider._build_analyze_document_details(
+        ExtractionRequest(
+            document_source=DocumentSource(source_type="INLINE_BASE64", document="SGVsbG8=", mime_type="application/pdf", page_range=["1"]),
+            features=["TEXT", "KEY_VALUE", "TABLE", "ELEMENT"],
+            options=ExtractionOptions(language="en", include_confidence=True),
+        ),
+        "extract",
+        ["TEXT", "KEY_VALUE", "TABLE", "ELEMENT"],
+    )
+    classification = provider._build_analyze_document_details(
+        ClassificationRequest(
+            document_source=DocumentSource(source_type="OBJECT_STORAGE", namespace_name="ns", bucket_name="bucket", object_name="doc.pdf"),
+            options=ClassificationOptions(language="en", confidence_threshold=0.2),
+            document_type_hint="INVOICE",
+        ),
+        "classify",
+        ["DOCUMENT_CLASSIFICATION"],
+    )
+
+    assert isinstance(extraction, real_ai_document_models.AnalyzeDocumentDetails)
+    assert isinstance(extraction.document, real_ai_document_models.InlineDocumentDetails)
+    assert [type(feature) for feature in extraction.features] == [
+        real_ai_document_models.DocumentTextExtractionFeature,
+        real_ai_document_models.DocumentKeyValueExtractionFeature,
+        real_ai_document_models.DocumentTableExtractionFeature,
+        real_ai_document_models.DocumentElementsExtractionFeature,
+    ]
+    assert extraction.document.page_range == ["1"]
+    assert extraction.language == "en"
+    assert isinstance(classification.document, real_ai_document_models.ObjectStorageDocumentDetails)
+    assert isinstance(classification.features[0], real_ai_document_models.DocumentClassificationFeature)
+    assert classification.document_type == "INVOICE"
 
 
 def test_sdk_provider_requires_compartment_before_building_request(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:

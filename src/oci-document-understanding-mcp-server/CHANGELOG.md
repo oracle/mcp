@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- The locked cryptography security update removes upstream support for Intel macOS and 32-bit Windows.
+
+### Changed
+
+- Require FastMCP 3.4.5 or later and OCI Python SDK 2.185.0 so the server resolves alongside `oracle-mcp-common`.
+
+### Security
+
+- Update locked PyJWT to 2.15.1, urllib3 to 2.8.0, cryptography to 50.0.2, and PyOpenSSL to 26.4.0 to address dependency security advisories.
+
 ## 0.1.0
 
 ### Added

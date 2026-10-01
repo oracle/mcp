@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Updated locked AnyIO to 4.14.2 and SoupSieve to 2.9.
+
 ### Security
 
 - Updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).

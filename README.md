@@ -505,12 +505,16 @@ tool for debugging and development.
 ### Running tests
 
 ```bash
-moon run root:lint :lock-check :install-check \
-  oci-javascript-mcp-server:test \
-  oci-javascript-mcp-server:check \
-  oci-javascript-mcp-server:build
+moon run :lint :lock-check :install-check :test :check :build
 moon run root:combine-coverage
 ```
+
+CI uses `moon ci` with the same validation targets to run only tasks affected
+by the changed files and their dependencies. Pull requests compare the checked-out
+merge commit with the base commit; pushes compare with the previous commit.
+Python coverage is combined and uploaded only when Python tests produce coverage
+files.
+Changes to `.moon/toolchains.yml` or `.prototools` select all validation tasks.
 
 ### Running tasks with moon
 

@@ -50,6 +50,9 @@
 
 ### Fixed
 
+- Build container native dependencies with the bundled Node headers offline,
+  avoiding header-download timeouts; cache npm installation separately from native setup.
+- Find the local `ts-proto` plugin when generating bindings in the runner and host image builds.
 - Delete Kubernetes execution pods alongside transport teardown under one
   cleanup deadline, so stalled startup or channel closure cannot skip deletion;
   unconfirmed cleanup still fails the execution.

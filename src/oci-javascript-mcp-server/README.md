@@ -258,8 +258,11 @@ Moon installs and deduplicates dependencies before running package tasks. The
 server-local `.npmrc` disables automatic lifecycle scripts before those actions
 run. Compile depends on `native-setup`, which explicitly activates only the
 reviewed `isolated-vm` 7.0.0 install command and verifies it loads. Image builds
-perform that setup inside their compiler-equipped dependency stages; building
-an image does not require preparing the native addon on the host. For a direct
+perform that setup inside their compiler-equipped dependency stages, using the
+matching headers from the checksum-verified Node archive with networking disabled.
+The runner and host share the same cached dependency installation and native
+compilation steps. Building an image does not require preparing the native addon
+on the host. For a direct
 locked install, use `npm ci --ignore-scripts`, followed by
 `moon run oci-javascript-mcp-server:native-setup` before loading the addon.
 Container installs, pruning, packaging, and publishing also pass

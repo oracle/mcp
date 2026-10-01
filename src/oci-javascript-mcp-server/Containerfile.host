@@ -32,16 +32,18 @@ RUN microdnf install gcc-c++ make python3 \
     && rm -rf /var/cache/dnf/*
 
 COPY package.json package-lock.json .npmrc ./
-COPY scripts/setup-native.mjs ./scripts/setup-native.mjs
-RUN npm ci --ignore-scripts --include=dev \
-    && node --no-node-snapshot scripts/setup-native.mjs
+RUN npm ci --ignore-scripts --include=dev --no-audit --no-fund \
+    && npm cache clean --force
 
+COPY scripts/setup-native.mjs ./scripts/setup-native.mjs
+RUN --network=none npm_package_config_node_gyp_nodedir=/usr/local \
+    node --no-node-snapshot scripts/setup-native.mjs
+    
 COPY buf.gen.yaml ./
 COPY proto/ ./proto/
-RUN ./node_modules/.bin/buf --version \
-    && ./node_modules/.bin/buf generate \
-    && npm prune --ignore-scripts --omit=dev \
-    && npm cache clean --force
+RUN export PATH="/app/node_modules/.bin:$PATH" \
+    && buf --version \
+    && buf generate 
 
 FROM node-base
 

@@ -82,6 +82,19 @@ https://oss.oracle.com/licenses/upl.
 Every server that constructs OCI Python SDK clients must attach a consistent additional user agent to every client configuration path. Derive it from package metadata rather than duplicating a server name or version literal:
 
 ```python
+# oracle/mcp_server_name/__init__.py
+from importlib.metadata import version as distribution_version
+
+__project__ = "oracle.mcp-server-name"
+__version__ = distribution_version(__project__)
+```
+
+Keep the distribution version only in `pyproject.toml`. Do not add a
+`PackageNotFoundError` fallback: importing a package that is not installed in
+the active environment should fail instead of exposing stale metadata.
+
+```python
+# oracle/mcp_server_name/server.py
 from . import __project__, __version__
 
 _user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]

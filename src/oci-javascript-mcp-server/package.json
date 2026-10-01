@@ -1,0 +1,81 @@
+{
+  "name": "oci-javascript-mcp-server",
+  "version": "0.1.1",
+  "description": "Podman-isolated OCI JavaScript code execution MCP server",
+  "type": "module",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "oci",
+    "oracle",
+    "cloud"
+  ],
+  "homepage": "https://github.com/oracle/mcp/tree/main/src/oci-javascript-mcp-server",
+  "bugs": {
+    "url": "https://github.com/oracle/mcp/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oracle/mcp.git",
+    "directory": "src/oci-javascript-mcp-server"
+  },
+  "files": [
+    "dist/**/*.js",
+    "src/",
+    "src/generated/runner.ts",
+    "proto/",
+    "buf.gen.yaml",
+    ".dockerignore",
+    "Containerfile",
+    "CHANGELOG.md",
+    "README.md",
+    "LICENSE.txt"
+  ],
+  "bin": {
+    "oci-javascript-mcp-server": "dist/server.js"
+  },
+  "scripts": {
+    "start": "node --no-node-snapshot --experimental-strip-types src/server.ts"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "2.15.0",
+    "@grpc/grpc-js": "^1.14.4",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "isolated-vm": "^7.0.0",
+    "oci-common": "^2.132.0",
+    "oci-sdk": "^2.132.0",
+    "selfsigned": "^3.0.1",
+    "zod": "^4.4.3"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "1.73.0",
+    "@types/node": "^25.9.1",
+    "c8": "^12.0.0",
+    "ts-proto": "2.12.4",
+    "typescript": "^5.9.3"
+  },
+  "c8": {
+    "all": true,
+    "include": [
+      "src/**/*.ts"
+    ],
+    "exclude": [
+      "src/generated/**",
+      "src/sandbox-prelude.ts",
+      "src/types.ts"
+    ],
+    "check-coverage": true,
+    "lines": 90,
+    "reporter": [
+      "text"
+    ]
+  },
+  "engines": {
+    "node": ">=26"
+  },
+  "packageManager": "npm@11.12.1",
+  "license": "UPL-1.0"
+}

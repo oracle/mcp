@@ -8,7 +8,8 @@ CODEOWNERS @krisrice
 scripts/ @krisrice @AlaaShaker @gebhardtr @dustin-sale
 src/oci-* @krisrice @AlaaShaker @gebhardtr @dustin-sale
 tests/ @krisrice @AlaaShaker @gebhardtr @dustin-sale
-Makefile @krisrice @AlaaShaker @gebhardtr @dustin-sale
+.moon/ @krisrice @AlaaShaker @gebhardtr @dustin-sale
+moon.yml @krisrice @AlaaShaker @gebhardtr @dustin-sale
 *.md @krisrice @AlaaShaker @gebhardtr @dustin-sale
 *.txt @krisrice @AlaaShaker @gebhardtr @dustin-sale
 *.ini @krisrice @AlaaShaker @gebhardtr @dustin-sale

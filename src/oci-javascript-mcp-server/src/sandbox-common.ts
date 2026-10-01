@@ -1,0 +1,195 @@
+/*
+ * Copyright (c) 2026, Oracle and/or its affiliates.
+ * Licensed under the Universal Permissive License v1.0 as shown at
+ * https://oss.oracle.com/licenses/upl.
+ */
+
+import { DEFAULT_MAX_FRAME_BYTES } from "./protocol.ts";
+import type { Json, SandboxError } from "./types.ts";
+
+export const MAX_CODE_BYTES = 1024 * 1024;
+export const DEFAULT_TIMEOUT_SECONDS = 30;
+export const MIN_TIMEOUT_SECONDS = 1;
+export const MAX_TIMEOUT_SECONDS = 120;
+export const MAX_STDOUT_BYTES = 1024 * 1024;
+export const MAX_STDERR_BYTES = 1024 * 1024;
+export const MAX_HOST_RPC_CALLS = positiveIntegerEnv("OCI_JAVASCRIPT_MAX_HOST_RPC_CALLS", 100);
+export const MAX_RESULT_BYTES = Math.min(
+  positiveIntegerEnv("OCI_JAVASCRIPT_MAX_RESULT_BYTES", 1024 * 1024),
+  DEFAULT_MAX_FRAME_BYTES - 64 * 1024
+);
+export const MAX_HOST_RPC_REQUEST_BYTES = positiveIntegerEnv(
+  "OCI_JAVASCRIPT_MAX_HOST_RPC_REQUEST_BYTES",
+  1024 * 1024
+);
+
+export class PublicError extends Error {}
+
+export function withDeadline<T>(promise: Promise<T>, timeoutMs: number, signal?: AbortSignal): Promise<T> {
+  if (timeoutMs <= 0) {
+    return Promise.reject(new Error("sandbox run deadline exceeded"));
+  }
+  let timeout: NodeJS.Timeout;
+  let abort: () => void;
+  return new Promise<T>((resolve, reject) => {
+    abort = () => reject(signal?.reason);
+    timeout = setTimeout(
+      () => reject(new Error("sandbox run deadline exceeded")),
+      timeoutMs
+    );
+    promise.then(resolve, reject);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+  }).finally(() => {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
+  });
+}
+
+export function positiveIntegerEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined) {
+    return fallback;
+  }
+  const value = Number.parseInt(raw, 10);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+export function normalizeTimeoutMs(timeoutSeconds: number | undefined): number {
+  const raw = timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS;
+  if (!Number.isFinite(raw)) {
+    throw new Error("timeout must be a finite number");
+  }
+  const clamped = Math.min(MAX_TIMEOUT_SECONDS, Math.max(MIN_TIMEOUT_SECONDS, raw));
+  return Math.ceil(clamped * 1000);
+}
+
+export function isTimeoutError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /timed out|deadline exceeded|Script execution timed out/i.test(message);
+}
+
+export function formatError(error: unknown): SandboxError {
+  const details: SandboxError = {
+    message: errorMessage(error)
+  };
+  for (const key of [
+    "name",
+    "code",
+    "status",
+    "statusCode",
+    "serviceCode",
+    "opcRequestId",
+    "requestId",
+    "targetService",
+    "operationName"
+  ]) {
+    const value = jsonScalar(readField(error, key));
+    if (value !== undefined) {
+      details[key] = value;
+    }
+  }
+
+  return details;
+}
+
+export function formatPublicOciError(error: unknown): SandboxError {
+  if (error instanceof PublicError) {
+    return { message: error.message };
+  }
+  const details = formatError(error);
+  details.message = "OCI call failed";
+  delete details.name;
+
+  const response = readObjectField(error, "response");
+  const responseStatus = jsonScalar(
+    readField(response, "statusCode") ?? readField(response, "status")
+  );
+  if (details.statusCode === undefined && responseStatus !== undefined) {
+    details.statusCode = responseStatus;
+  }
+  const responseRequestId = headerValue(readField(response, "headers"), "opc-request-id");
+  if (responseRequestId && details.opcRequestId === undefined) {
+    details.opcRequestId = responseRequestId;
+  }
+  return details;
+}
+
+export function appendCapped(current: string, chunk: string, maxBytes: number): {
+  text: string;
+  limitReached: boolean;
+} {
+  const combined = current + chunk;
+  const bytes = Buffer.byteLength(combined, "utf8");
+  if (bytes <= maxBytes) {
+    return { text: combined, limitReached: bytes === maxBytes };
+  }
+  const buffer = Buffer.alloc(maxBytes);
+  // Buffer.write never writes a partial UTF-8 character.
+  const written = buffer.write(combined, "utf8");
+  return { text: buffer.toString("utf8", 0, written), limitReached: true };
+}
+
+function errorMessage(error: unknown): string {
+  const message = readField(error, "message");
+  if (typeof message === "string" && message) {
+    return message;
+  }
+  const name = readField(error, "name");
+  if (typeof name === "string" && name) {
+    return name;
+  }
+  if (!error || typeof error !== "object") {
+    return String(error);
+  }
+  const rendered = String(error);
+  return rendered === "[object Object]" ? "OCI call failed" : rendered;
+}
+
+function readField(value: unknown, key: string): unknown {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  try {
+    return (value as Record<string, unknown>)[key];
+  } catch {
+    return undefined;
+  }
+}
+
+function readObjectField(value: unknown, key: string): Record<string, unknown> | undefined {
+  const field = readField(value, key);
+  return field && typeof field === "object" && !Array.isArray(field)
+    ? field as Record<string, unknown>
+    : undefined;
+}
+
+function jsonScalar(value: unknown): Json | undefined {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : String(value);
+  }
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+  return undefined;
+}
+
+function headerValue(headers: unknown, key: string): string | undefined {
+  if (!headers || typeof headers !== "object") {
+    return undefined;
+  }
+  const getter = readField(headers, "get");
+  if (typeof getter === "function") {
+    try {
+      const value = getter.call(headers, key);
+      return typeof value === "string" && value ? value : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  const value = readField(headers, key) ?? readField(headers, key.toLowerCase());
+  return typeof value === "string" && value ? value : undefined;
+}

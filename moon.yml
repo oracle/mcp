@@ -1,0 +1,65 @@
+id: 'root'
+
+fileGroups:
+  pythonSources:
+    - 'src/**/*.py'
+    - 'scripts/**/*.py'
+    - 'tests/**/*.py'
+    - '!src/*/.venv/**/*'
+    - '!src/*/node_modules/**/*'
+    - '!tests/.venv/**/*'
+
+tasks:
+  lint:
+    description: 'Checks repository Python source with Ruff'
+    command: 'uv tool run ruff check .'
+    toolchains:
+      - 'unstable_python'
+      - 'unstable_uv'
+    inputs:
+      - '@group(pythonSources)'
+      - 'ruff.toml'
+      - 'requirements-dev.txt'
+
+  format:
+    description: 'Formats repository Python source with Ruff'
+    command: 'uv tool run ruff format .'
+    toolchains:
+      - 'unstable_python'
+      - 'unstable_uv'
+    inputs:
+      - '@group(pythonSources)'
+      - 'ruff.toml'
+      - 'requirements-dev.txt'
+    preset: 'utility'
+
+  combine-coverage:
+    description: 'Combines project coverage reports'
+    type: 'run'
+    script: 'uv tool run coverage combine && uv tool run coverage html && uv tool run coverage report --fail-under=90'
+    toolchains:
+      - 'unstable_python'
+      - 'unstable_uv'
+    inputs:
+      - '.coverage.*'
+    outputs:
+      - '.coverage'
+      - 'htmlcov/**/*'
+    options:
+      cache: false
+      runInCI: true
+
+  e2e-tests:
+    description: 'Runs optional end-to-end feature tests'
+    type: 'run'
+    command: 'uv run --project tests --locked --no-dev behave tests/e2e/features'
+    toolchains:
+      - 'unstable_python'
+      - 'unstable_uv'
+    inputs:
+      - 'tests/e2e/**/*'
+      - 'tests/pyproject.toml'
+      - 'tests/uv.lock'
+    options:
+      cache: false
+      runInCI: false

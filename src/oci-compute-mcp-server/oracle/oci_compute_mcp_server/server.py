@@ -221,6 +221,13 @@ def launch_instance(
         "in order to map the image name to image ocid or display a "
         "list of images for the user to choose from.",
     ),
+    boot_volume_id: Optional[str] = Field(
+        None,
+        description=(
+            "The non-empty OCID of an existing boot volume to use as the instance source. "
+            "When provided, this takes precedence over image_id."
+        ),
+    ),
     shape: Optional[str] = Field(
         E5_FLEX,
         description="This is the name of the shape for the instance",
@@ -235,16 +242,22 @@ def launch_instance(
     ),
 ) -> Instance:
     try:
+        if boot_volume_id is not None and not boot_volume_id.strip():
+            raise ValueError("boot_volume_id must not be empty when provided.")
+
         client = get_compute_client()
 
+        source_details = (
+            oci.core.models.InstanceSourceViaBootVolumeDetails(boot_volume_id=boot_volume_id)
+            if boot_volume_id
+            else oci.core.models.InstanceSourceViaImageDetails(image_id=image_id)
+        )
         launch_details = oci.core.models.LaunchInstanceDetails(
             compartment_id=compartment_id,
             display_name=display_name,
             availability_domain=availability_domain,
             shape=shape,
-            source_details=oci.core.models.InstanceSourceViaImageDetails(
-                image_id=image_id,
-            ),
+            source_details=source_details,
             create_vnic_details=oci.core.models.CreateVnicDetails(subnet_id=subnet_id),
             shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(
                 ocpus=ocpus, memory_in_gbs=memory_in_gbs

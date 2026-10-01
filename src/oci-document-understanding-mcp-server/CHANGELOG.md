@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Require FastMCP 3.4.5 or later and OCI Python SDK 2.185.0 so the server resolves alongside `oracle-mcp-common`.
+
 ## 0.1.0
 
 ### Added

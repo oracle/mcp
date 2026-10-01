@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 - 2026-09-30
 
 ### Breaking Changes
 
@@ -26,6 +26,9 @@
 
 ### Fixed
 
+- Disable SDK circuit breakers and retries on per-call OCI clients while retaining
+  cancellation, so successful responses and service errors are returned promptly
+  instead of failing with an OCI cleanup timeout.
 - Truncate oversized stdout/stderr at UTF-8 character boundaries so output-limit
   errors remain structured results rather than gRPC protocol failures.
 - Preserve the remaining gRPC deadline inside the isolate, including subsecond

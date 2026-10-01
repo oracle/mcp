@@ -23,6 +23,7 @@ import { DEFAULT_DECODE_LIMITS, DEFAULT_MAX_FRAME_BYTES } from "./protocol.ts";
 import { positiveIntegerEnv, PublicError } from "./sandbox-common.ts";
 
 const require = createRequire(import.meta.url);
+const { CircuitBreaker, NoRetryConfigurationDetails } = require("oci-common");
 const packageJson = require("../package.json") as { name?: unknown; version?: unknown };
 
 const ADDITIONAL_USER_AGENT = additionalUserAgent(packageJson);
@@ -42,10 +43,6 @@ type SdkBundle = {
 };
 
 export type OciSdkLoader = () => SdkBundle;
-
-type OciClientConfiguration = {
-  httpOptions?: { signal: AbortSignal };
-};
 
 type FieldDiscovery = {
   name: string;
@@ -203,11 +200,16 @@ async function invoke(
 
   const provider = authenticationProvider(loadSdk);
   applyClientOptions(provider, payload.client.options);
-  const clientConfiguration = createClientConfiguration(signal);
   const client = new ClientClass({
     authenticationDetailsProvider: provider,
     additionalUserAgent: ADDITIONAL_USER_AGENT
-  }, clientConfiguration);
+  }, {
+    // OCI's circuit breaker mishandles responses when httpOptions is present.
+    // SDK retry sleeps ignore cancellation and can outlive the execution budget.
+    circuitBreaker: new CircuitBreaker({ disableClientCircuitBreaker: true }),
+    retryConfiguration: NoRetryConfigurationDetails,
+    ...(signal ? { httpOptions: { signal } } : {})
+  });
   try {
     const operation = client[payload.operation];
     if (typeof operation !== "function") {
@@ -220,6 +222,8 @@ async function invoke(
     }
 
     const request = decodeRequest(payload.request ?? {});
+    // Request-level SDK settings must not override the host's retry policy.
+    delete request.retryConfiguration;
     const response = await operation.call(client, request);
     const encoded = encodeOciResponse(
       response,
@@ -693,10 +697,6 @@ function applyClientOptions(provider: any, options: OciInvokePayload["client"]["
     throw new PublicError("OCI authentication provider does not support per-client region selection");
   }
   provider.setRegion(options.region);
-}
-
-function createClientConfiguration(signal?: AbortSignal): OciClientConfiguration | undefined {
-  return signal ? { httpOptions: { signal } } : undefined;
 }
 
 function validateIdentifier(value: unknown, name: string): asserts value is string {

@@ -63,6 +63,10 @@ expression becomes `result`; logs, errors, exit status, and timeout state are
 returned separately. Every OCI call must be awaited; the host aborts outstanding
 calls and rejects a run that finishes while OCI work is still pending.
 
+Per-call OCI clients retain the execution's abort signal and disable SDK retries
+and circuit breakers. Each operation makes one attempt so SDK retry delays cannot
+outlive the execution budget and service errors return promptly.
+
 Use the injected binding like the OCI JavaScript SDK:
 
 ```js

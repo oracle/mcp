@@ -11,6 +11,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { createOciReflectionManifest, createOciSdkHostRpc } from "../src/oci-host.ts";
+import { PublicError } from "../src/sandbox-common.ts";
+import type { JsonObject } from "../src/types.ts";
 
 const require = createRequire(import.meta.url);
 
@@ -257,6 +259,7 @@ test("host RPC invokes OCI JavaScript SDK clients", async () => {
       operation: "listInstances",
       request: {
         compartmentId: "ocid1.compartment.oc1..example",
+        businessData: { retryConfiguration: { label: "ordinary nested data" } },
         when: { __oci_wire_type: "datetime", value: "2026-06-03T00:00:00.000Z" }
       }
     }
@@ -273,6 +276,7 @@ test("host RPC invokes OCI JavaScript SDK clients", async () => {
   assert.deepEqual(calls[1], {
       listInstances: {
         compartmentId: "ocid1.compartment.oc1..example",
+        businessData: { retryConfiguration: { label: "ordinary nested data" } },
         when: new Date("2026-06-03T00:00:00.000Z")
       }
   });
@@ -376,6 +380,123 @@ test("host RPC applies the trusted cancellation signal to OCI clients", async ()
   assert.equal(configuration.circuitBreaker?.circuit, null);
   assert.equal(configuration.circuitBreaker?.noCircuit, true);
   assert.deepEqual(configuration.httpOptions, { signal: abortController.signal });
+});
+
+test("host rejects request retry controls before a generated Secrets operation sends HTTP", async t => {
+  const { SecretsClient } = require("oci-secrets") as Record<string, any>;
+  const common = require("oci-common") as Record<string, any>;
+  const abortController = new AbortController();
+  class SyntheticProvider {
+    getPassphrase() { return null; }
+    getAuthType() { return "synthetic"; }
+    getDelegationToken() { return ""; }
+  }
+
+  await withTemporaryOciConfig("[DEFAULT]\n", async () => {
+    let sends = 0;
+    let failFirstSend = true;
+    // Inject only the transport; reflection and invocation use the installed prototype.
+    function OfflineSecretsClient(options: any, configuration: any) {
+      assert.equal(configuration.retryConfiguration, common.NoRetryConfigurationDetails);
+      assert.equal(configuration.circuitBreaker.noCircuit, true);
+      assert.equal(configuration.circuitBreaker.circuit, null);
+      assert.equal(configuration.httpOptions.signal, abortController.signal);
+      const client = new SecretsClient({
+        ...options,
+        httpClient: {
+          async send(request: { uri: string; method: string; headers: Headers }) {
+            sends += 1;
+            const url = new URL(request.uri);
+            assert.equal(url.origin, "https://secrets.example.invalid");
+            assert.equal(url.pathname, "/20190301/secretbundles/ocid1.vaultsecret.oc1..synthetic");
+            assert.equal(url.searchParams.get("versionNumber"), "7");
+            assert.equal(url.searchParams.get("stage"), "CURRENT");
+            assert.equal(request.method, "GET");
+            assert.equal(request.headers.get("opc-request-id"), "synthetic-request");
+            if (failFirstSend && sends === 1) {
+              return new Response(JSON.stringify({ code: "ServiceUnavailable", message: "synthetic failure" }), {
+                status: 503,
+                headers: { "content-type": "application/json" }
+              });
+            }
+            return new Response(JSON.stringify({ secretId: "ocid1.vaultsecret.oc1..synthetic", versionNumber: 7 }), {
+              status: 200,
+              headers: { "content-type": "application/json" }
+            });
+          }
+        }
+      }, configuration);
+      client.endpoint = "https://secrets.example.invalid";
+      return client;
+    }
+    OfflineSecretsClient.prototype = SecretsClient.prototype;
+    const hostRpc = createOciSdkHostRpc(() => ({
+      sdk: {
+        ConfigFileAuthenticationDetailsProvider: SyntheticProvider,
+        secrets: { SecretsClient: OfflineSecretsClient }
+      },
+      common: {}
+    }));
+    const request: JsonObject = {
+      secretId: "ocid1.vaultsecret.oc1..synthetic",
+      versionNumber: 7,
+      stage: "CURRENT",
+      opcRequestId: "synthetic-request"
+    };
+    const invoke = (decodedRequest: JsonObject) => hostRpc({
+      binding: "oracle",
+      namespace: "oci",
+      operation: "invoke",
+      payload: {
+        service: "secrets",
+        client: { name: "SecretsClient" },
+        operation: "getSecretBundle",
+        request: decodedRequest
+      }
+    }, abortController.signal);
+
+    await t.test("absent retry control permits one attempt despite a retryable failure", async () => {
+      sends = 0;
+      await assert.rejects(invoke(request), error => (
+        (error as { statusCode?: number }).statusCode === 503
+      ));
+      assert.equal(sends, 1);
+    });
+    for (const [label, retryConfiguration] of [
+      ["empty object", {}],
+      ["partial configuration", { backupBinaryBody: true }],
+      ["null", null],
+      ["scalar", "guest-control"]
+    ] as const) {
+      await t.test(`rejects root retryConfiguration with ${label}`, async () => {
+        sends = 0;
+        await assert.rejects(invoke({ ...request, retryConfiguration }), error => (
+          error instanceof PublicError
+          && error.message === "OCI request retryConfiguration is not supported"
+        ));
+        assert.equal(sends, 0);
+      });
+    }
+    await t.test("rejects a retry control materialized by request decoding", async () => {
+      sends = 0;
+      await assert.rejects(invoke({ __oci_wire_type: "repr", value: { ...request, retryConfiguration: {} } }), error => (
+        error instanceof PublicError
+        && error.message === "OCI request retryConfiguration is not supported"
+      ));
+      assert.equal(sends, 0);
+    });
+    await t.test("ordinary request fields reach the generated operation", async () => {
+      sends = 0;
+      failFirstSend = false;
+      const result = await invoke(request) as JsonObject;
+      assert.deepEqual(result.secretBundle, {
+        secretId: "ocid1.vaultsecret.oc1..synthetic",
+        versionNumber: 7,
+        secretBundleContent: null
+      });
+      assert.equal(sends, 1);
+    });
+  });
 });
 
 test("host cancellation uses one SDK attempt, no default breaker, and closes the client", async () => {

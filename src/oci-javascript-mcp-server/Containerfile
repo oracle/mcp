@@ -31,13 +31,16 @@ WORKDIR /app
 RUN microdnf install gcc-c++ make python3 \
     && rm -rf /var/cache/dnf/*
 
-COPY package.json package-lock.json ./
-RUN npm ci --include=dev \
+COPY package.json package-lock.json .npmrc ./
+COPY scripts/setup-native.mjs ./scripts/setup-native.mjs
+RUN npm ci --ignore-scripts --include=dev \
+    && node --no-node-snapshot scripts/setup-native.mjs \
     && npm cache clean --force
 
 COPY buf.gen.yaml ./
 COPY proto/ ./proto/
-RUN npx --no-install buf generate
+RUN ./node_modules/.bin/buf --version \
+    && ./node_modules/.bin/buf generate
 
 FROM node-base
 

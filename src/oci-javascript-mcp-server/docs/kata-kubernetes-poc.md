@@ -118,9 +118,11 @@ deletion/NotFound confirmation against one absolute deadline. Kubernetes cleanup
 and the snapshot drain of pending OCI calls share that deadline. Provider termination and RPC draining run concurrently
 against one bounded cleanup tail (30 seconds by default, 60 maximum), not
 serial tails. Unconfirmed transport closure or deletion replaces any otherwise
-valid or timeout result with `isolation provider cleanup failed`. A successful script that left
-OCI calls unawaited returns `JavaScript completed with unawaited OCI calls`
-within the same bound.
+valid or timeout result with `isolation provider cleanup failed`. If provider cleanup succeeds but pending OCI work does not settle before that
+deadline, the earlier outcome becomes `OCI cleanup did not complete`. Only an
+otherwise successful run whose drain completes returns
+`JavaScript completed with unawaited OCI calls` when work was pending at
+finalization. Late promises retain rejection observers.
 
 Each trusted OCI client uses the SDK no-retry policy, a disabled client circuit
 breaker, and the run abort signal. These controls are host-owned and cannot be
@@ -152,10 +154,13 @@ capacity, or high-concurrency readiness.
 
 ## Build and immutable image configuration
 
-Build the runner reproducibly from the pinned Node base in `Containerfile`:
+Build the runner from the pinned Node base in `Containerfile`. Automatic npm
+lifecycle scripts remain disabled; each Containerfile explicitly prepares the
+reviewed native addon inside its dependency stage. Host native preparation is
+not required for an image-only build:
 
 ```bash
-npm ci
+npm ci --ignore-scripts
 podman build --pull --file Containerfile --tag registry.example/oci-javascript-runner:poc .
 podman push registry.example/oci-javascript-runner:poc
 podman inspect --format '{{index .RepoDigests 0}}' registry.example/oci-javascript-runner:poc
@@ -192,7 +197,7 @@ Use the existing helper to create or refresh that Secret without writing
 credential material into these versioned assets:
 
 ```bash
-npm run oci:sync-kubernetes-secret -- --profile DEFAULT \
+python3 scripts/sync-oci-session-secret.py --profile DEFAULT \
   --namespace oci-js-host \
   --secret-name oci-js-kata-oci-config \
   --host-deployment oci-js-kata-host \
@@ -212,8 +217,8 @@ npx --yes @modelcontextprotocol/inspector \
 Validate offline and perform a client-side dry run:
 
 ```bash
-npm run check:kata-manifests
-npm run kubectl:dry-run:kubernetes
+moon run oci-javascript-mcp-server:check-kubernetes-manifests
+moon run oci-javascript-mcp-server:kubectl-dry-run-kubernetes
 ```
 
 The kubectl command uses a temporary loopback discovery fixture so the client

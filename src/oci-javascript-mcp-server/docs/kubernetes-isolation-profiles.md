@@ -88,7 +88,7 @@ on the workstation and is never mounted or copied into an execution pod.
 The real-cluster lifecycle harness is opt-in. Set
 `OCI_JAVASCRIPT_RUN_LOCAL_KUBERNETES_TESTS=true` plus
 `OCI_JAVASCRIPT_TEST_KUBERNETES_KUBECONFIG`, `_CONTEXT`, `_NAMESPACE`, and
-`_IMAGE`; optionally set `_RUNNER_SERVICE_ACCOUNT`. `npm test` otherwise reports
+`_IMAGE`; optionally set `_RUNNER_SERVICE_ACCOUNT`. `moon run oci-javascript-mcp-server:test` otherwise reports
 a clear skip. This harness exercises namespace access, create, watch, exec
 bootstrap, port-forwarded gRPC execution, cancellation, deletion confirmation,
 and reconciliation. It
@@ -120,7 +120,7 @@ pod-compatible OCI config, its private key, and, for session authentication, its
 current security token. Run the helper after the host namespace exists:
 
 ```bash
-npm run oci:sync-kubernetes-secret -- --profile DEFAULT --restart-host
+python3 scripts/sync-oci-session-secret.py --profile DEFAULT --restart-host
 ```
 
 The helper reads `OCI_CONFIG_FILE` or `~/.oci/config`, selects
@@ -131,7 +131,7 @@ when applicable `token` in `oci-js-host-oci-config` under
 `oci-js-standard-host`. For an expired OCI session, use:
 
 ```bash
-npm run oci:sync-kubernetes-secret -- --profile DEFAULT --refresh-session --restart-host
+python3 scripts/sync-oci-session-secret.py --profile DEFAULT --refresh-session --restart-host
 ```
 
 `--dry-run` validates the selected local profile and source files without
@@ -152,7 +152,7 @@ boundary described in the [Kata POC guide](kata-kubernetes-poc.md).
 ## Startup, execution, and cleanup
 
 All profiles read the execution namespace, verify exact pod lifecycle and exec
-authority, and dry-run the conforming pod. The Namespace `get` access review
+and `pods/portforward` authority, and dry-run the conforming pod. The Namespace `get` access review
 names exactly the configured execution Namespace, and Kata similarly names the
 configured RuntimeClass; example ClusterRoles use matching `resourceNames`.
 Generated pod lifecycle and exec permissions remain scoped to the execution
@@ -182,11 +182,16 @@ OCI calls concurrently. Both consume one configured cleanup tail, capped by the
 trusted host at 60 seconds; the drain does not receive a second tail after exec
 close and zero-grace pod deletion. Kubernetes channel stop and pod
 delete/NotFound confirmation start concurrently against that same cleanup
-deadline after pod creation settles, even when transport establishment is pending.
+deadline. Pending runner/tunnel acquisition is independently bounded and cannot
+prevent pod deletion from being attempted. Late transport handles receive the
+original cleanup deadline; late pod creation triggers compensating deletion.
 Failure to confirm the gRPC session, tunnel, runner closure, or NotFound
 returns `isolation provider cleanup failed` even after a valid or timed-out
-worker result. An otherwise successful script with pending OCI work instead returns
-`JavaScript completed with unawaited OCI calls` within the same bound.
+worker result. If provider cleanup succeeds but pending OCI work does not settle
+before that deadline, `OCI cleanup did not complete` overrides the earlier outcome. Only an
+otherwise successful run whose drain completes returns
+`JavaScript completed with unawaited OCI calls` when OCI work was pending at
+finalization. Late promises retain rejection observers.
 
 Trusted-host OCI clients use the SDK no-retry policy, an explicitly disabled
 client circuit breaker, and the run abort signal in HTTP options. Guest code
@@ -223,17 +228,21 @@ tested POC until the real-node and security-review evidence is complete.
 
 ## Validation and operations
 
-Run:
+Run from the server directory or repository root:
 
 ```bash
-npm test
-npm run coverage
-npm run check
-npm run packcheck
-npm run check:kubernetes-manifests
-npm run kubectl:dry-run:kubernetes
-npm run ci
+moon run oci-javascript-mcp-server:compile
+moon run oci-javascript-mcp-server:test
+moon run oci-javascript-mcp-server:check
+moon run oci-javascript-mcp-server:build
+moon run oci-javascript-mcp-server:check-kubernetes-manifests
+moon run oci-javascript-mcp-server:kubectl-dry-run-kubernetes
 ```
+
+The test task enforces at least 90% statements, branches, functions, and lines
+and checks the packed MCP entry point. The build task creates the tarball.
+Compile runs the reviewed native setup; see [repository and consumer installation
+guidance](../README.md#development) for the lifecycle policy.
 
 Offline fixtures cover default, non-default, minimum, maximum, missing,
 malformed, unequal, and out-of-range resource settings. Client-side dry-run and
@@ -244,8 +253,8 @@ real-cluster evidence.
 After applying both versioned example ValidatingAdmissionPolicies to a test
 cluster, set `OCI_JAVASCRIPT_RUN_REAL_KUBERNETES_ADMISSION_TESTS=true` together
 with `OCI_JAVASCRIPT_TEST_KUBERNETES_KUBECONFIG` and
-`OCI_JAVASCRIPT_TEST_KUBERNETES_CONTEXT`. `npm test` then reads both applied
-policies and requires the current observed generation to contain no
+`OCI_JAVASCRIPT_TEST_KUBERNETES_CONTEXT`. The Moon test task then reads both
+applied policies and requires the current observed generation to contain no
 `status.typeChecking.expressionWarnings`. Without that explicit opt-in, the
 test reports a deliberate skip and no server-side CEL evidence is claimed.
 

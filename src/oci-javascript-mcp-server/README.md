@@ -14,7 +14,8 @@ access, environment variables, or a network API.
 ## Quick start
 
 Requires Node.js 26 or newer, rootless Podman, and an OCI SDK configuration. A
-native build toolchain is also needed when installing `isolated-vm` on the host.
+native build toolchain is also needed if `isolated-vm` cannot use its packaged
+prebuilt binary. The repository pins Node 26.8.1, npm 11.12.1, and Moon 2.5.2.
 
 From this directory:
 
@@ -67,8 +68,23 @@ For the verified Rancher Desktop `in-cluster` workflow, including image pinning,
 host-only OCI Secret synchronization, and Inspector connection, see the
 [local Kubernetes in-cluster setup guide](docs/kubernetes-local-in-cluster-setup.md).
 
-After publication, install and configure the `oci-javascript-mcp-server`
-command instead of invoking `node` directly.
+After publication, install into a project with automatic lifecycle scripts
+disabled, then explicitly prepare the reviewed native addon:
+
+```bash
+npm install --ignore-scripts oci-javascript-mcp-server
+node --no-node-snapshot node_modules/oci-javascript-mcp-server/scripts/setup-native.mjs
+```
+
+Configure the installed `oci-javascript-mcp-server` command for your MCP client.
+The setup script checks the installed addon's identity, exact 7.0.0 version, and
+reviewed install command before running only that command with pre/post hooks
+disabled, then verifies that the addon loads. This package pins `isolated-vm`
+to 7.0.0 so consumers receive the reviewed version. Dependency overrides or
+changes to its install script require another review. A published package's
+metadata and repository `.npmrc` do not control arbitrary consumer installs;
+consumers must supply `--ignore-scripts` themselves. Native setup uses npm from
+the caller's PATH and requires Node 26 or newer.
 
 ## Tools
 
@@ -85,14 +101,20 @@ then terminates the provider and drains a snapshot of pending OCI RPC promises
 concurrently. Both use one provider-specific, host-clamped cleanup tail; their
 allowances never accumulate serially. A never-settling OCI request therefore
 cannot delay the MCP result beyond the execution deadline plus that one tail.
-Provider cleanup failure remains authoritative, while a late OCI completion is
+Provider cleanup failure returns `isolation provider cleanup failed` and takes
+precedence over every earlier outcome. If provider cleanup succeeds but pending
+OCI work does not settle within the tail, the result is `OCI cleanup did not
+complete`. Only an otherwise successful run whose pending work settles reports
+`JavaScript completed with unawaited OCI calls`. Late OCI completion remains
 observed internally and cannot change or republish the finalized result.
 
-The worker accepts exactly one protobuf gRPC session and enters an irreversible
-terminal phase as soon as it accepts a result. RPC IDs must be positive, safe,
-and unique for the execution; terminal acceptance revokes queued RPC replies
-synchronously. Per-execution message, log, request, call, concurrency, and
-result budgets remain host-owned and the absolute deadline stays authoritative.
+The runner accepts one protobuf gRPC session and one execution. The host stops
+accepting runner messages after a valid result and waits for final gRPC `OK`
+status before accepting success. It requires nonzero protobuf `uint32` RPC IDs,
+but does not enforce their uniqueness against a compromised runner. Message
+size, source/log/result size, request size, OCI call count and concurrency, and
+the absolute deadline are bounded; a stalled reply writer fails on backpressure.
+Cumulative traffic accounting and semantic output policy remain review gaps.
 
 Use the injected binding like the OCI JavaScript SDK:
 
@@ -115,7 +137,7 @@ execution when appropriate.
 
 Structured results are limited to 1 MiB by default. Set
 `OCI_JAVASCRIPT_MAX_RESULT_BYTES` to a positive byte count to change the limit;
-the bounded bridge clamps it below the 2 MiB frame ceiling.
+the bounded bridge clamps it below the 2 MiB JSON payload ceiling.
 
 ### `discover_oci`
 
@@ -223,15 +245,35 @@ counts so later intervals continue without exposing pod names.
 
 ```bash
 moon run oci-javascript-mcp-server:compile # generate bindings and compile the npm entry point
-moon run oci-javascript-mcp-server:test   # unit and MCP stdio integration tests; 90% line minimum
+moon run oci-javascript-mcp-server:test   # unit and MCP stdio integration tests; all four coverage metrics >=90%
 moon run oci-javascript-mcp-server:check  # TypeScript validation
 moon run oci-javascript-mcp-server:build  # create the npm package tarball
 moon run oci-javascript-mcp-server:k8s-build # build the Kubernetes runner and host Docker images
+moon run oci-javascript-mcp-server:container-smoke # opt-in builder context and offline image startup checks
 moon run oci-javascript-mcp-server:check-kubernetes-manifests # RBAC/admission manifests
 moon run oci-javascript-mcp-server:kubectl-dry-run-kubernetes # optional local kubectl check
 ```
 
-Moon installs the locked npm dependencies before running package tasks.
+Moon installs and deduplicates dependencies before running package tasks. The
+server-local `.npmrc` disables automatic lifecycle scripts before those actions
+run. Compile depends on `native-setup`, which explicitly activates only the
+reviewed `isolated-vm` 7.0.0 install command and verifies it loads. Image builds
+perform that setup inside their compiler-equipped dependency stages; building
+an image does not require preparing the native addon on the host. For a direct
+locked install, use `npm ci --ignore-scripts`, followed by
+`moon run oci-javascript-mcp-server:native-setup` before loading the addon.
+Container installs, pruning, packaging, and publishing also pass
+`--ignore-scripts` explicitly. Buf's postinstall and protobufjs's version-warning
+postinstall stay disabled: code generation uses Buf 1.73.0's installed optional
+platform binary. Keep optional dependencies enabled; a missing binary makes
+the CLI fail instead of running Buf's secondary npm-install fallback.
+Run `k8s-build` before `container-smoke`, which requires Docker and the built
+images. Set `OCI_JAVASCRIPT_CONTAINER_BUILDER=podman` to check images built with
+Podman; `OCI_JAVASCRIPT_TEST_HOST_IMAGE` and `OCI_JAVASCRIPT_TEST_RUNNER_IMAGE`
+override the default `:dev` tags. The smoke checks start the host's default CMD
+and reconciler and bootstrap the runner with networking disabled, synthetic TLS,
+and no mounted credentials or cluster access. They are skipped by the normal
+test task.
 Publish through the manually dispatched `Publish package` GitHub Actions
 workflow, selecting the `npm` registry and `oci-javascript-mcp-server` project.
 It builds and tests before running Moon's publish task with npm credentials.

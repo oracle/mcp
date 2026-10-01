@@ -26,6 +26,11 @@
 
 ### Changed
 
+- Update architecture and operator guides for protobuf gRPC v4, current Moon
+  commands, installation policy, and cleanup outcomes; ship the README-linked
+  architecture document and label historical security-review evidence.
+- Make container source filtering explicit and exclude stale generated/local
+  artifacts; add opt-in builder-context and host/reconciler/runner smoke checks.
 - Harden the in-cluster and Kata profiles with scoped RBAC, fail-closed pod
   admission checks, reviewed resource ranges, and a cleanup-only reconciler.
   Add a helper to sync host OCI credentials into a host-only Kubernetes Secret.
@@ -45,6 +50,12 @@
 
 ### Fixed
 
+- Delete Kubernetes execution pods alongside transport teardown under one
+  cleanup deadline, so stalled startup or channel closure cannot skip deletion;
+  unconfirmed cleanup still fails the execution.
+- Observe Kubernetes runner failures throughout startup so readiness and tunnel
+  faults return sanitized execution failures without terminating the MCP host;
+  stop runner and tunnel handles delivered after cancellation.
 - Keep host-only certificate generation out of the runner image so Podman and Kubernetes executions can start.
 - Generate protobuf bindings when building the host image so fresh checkouts do not need a prior compile.
 - Truncate oversized stdout/stderr at UTF-8 character boundaries so output-limit
@@ -69,5 +80,14 @@
 
 ### Security
 
+- Disable automatic dependency lifecycle scripts in controlled repository and
+  container installs; validate the pinned `isolated-vm` version and install
+  command before explicitly building its native addon. Document manual setup
+  for npm package consumers.
+- Reject guest request-level `retryConfiguration` so OCI SDK calls retain the
+  host-controlled single-attempt policy.
+- Suppress OCI session-refresh and Kubernetes Secret/restart subprocess output
+  so failed credential synchronization cannot expose private keys or tokens;
+  report fixed stage summaries, including restart failures after a Secret update.
 - Bound all runner RPC frames, including rejected requests, and attempt Podman
   resource removal even if its run command does not close.

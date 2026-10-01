@@ -33,7 +33,7 @@ test("npm package runs from node_modules with compiled bindings", { timeout: 30_
     "buf.gen.yaml", "Containerfile", "Containerfile.host", ".dockerignore",
     "examples/kubernetes/v1/standard-in-cluster.yaml",
     "examples/kata-kubernetes/v1/02-rbac.yaml",
-    "scripts/kubectl-dry-run-kubernetes.ts"
+    "scripts/kubectl-dry-run-kubernetes.ts", "scripts/setup-native.mjs"
   ]) {
     assert.ok(files.has(path), `package is missing ${path}`);
   }
@@ -49,6 +49,11 @@ test("npm package runs from node_modules with compiled bindings", { timeout: 30_
   const installed = join(directory, "node_modules", "oci-javascript-mcp-server");
   mkdirSync(installed, { recursive: true });
   execFileSync("tar", ["-xzf", join(directory, pack.filename), "--strip-components=1", "-C", installed]);
+  const readme = readFileSync(join(installed, "README.md"), "utf8");
+  const architectureLink = readme.match(/\[formal architecture and isolation design\]\(([^)]+)\)/)?.[1];
+  assert.equal(architectureLink, "docs/architecture-and-isolation-design.md");
+  assert.ok(files.has(architectureLink!), "package is missing the README architecture link target");
+  assert.match(readFileSync(join(installed, architectureLink!), "utf8"), /^# OCI JavaScript MCP Server Architecture and Isolation Design/);
   // Reuse installed dependencies; server code and metadata come only from the tarball.
   symlinkSync(fileURLToPath(new URL("../node_modules", import.meta.url)), join(installed, "node_modules"), "dir");
   const { bin } = JSON.parse(readFileSync(join(installed, "package.json"), "utf8"));

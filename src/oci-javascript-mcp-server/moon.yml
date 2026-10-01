@@ -4,10 +4,25 @@ workspace:
       - 'containerize'
 
 tasks:
+  native-setup:
+    description: 'Activates and loads only the reviewed isolated-vm native addon'
+    type: 'run'
+    command: 'node --no-node-snapshot scripts/setup-native.mjs'
+    inputs:
+      - 'scripts/setup-native.mjs'
+      - '.npmrc'
+      - 'package.json'
+      - 'package-lock.json'
+    options:
+      cache: false
+      runInCI: true
+
   compile:
     description: 'Generates protobuf bindings and compiles the npm entry point'
     type: 'build'
     script: 'rm -rf dist && buf generate && tsc -p tsconfig.build.json'
+    deps:
+      - 'native-setup'
     inputs:
       - 'src/**/*'
       - '!src/generated/**/*'
@@ -16,6 +31,8 @@ tasks:
       - 'tsconfig*.json'
       - 'package.json'
       - 'package-lock.json'
+      - '.npmrc'
+      - 'scripts/setup-native.mjs'
     outputs:
       - 'src/generated/**/*'
       - 'dist/**/*.js'
@@ -47,7 +64,7 @@ tasks:
   build:
     description: 'Builds the npm package tarball'
     type: 'build'
-    script: 'rm -f dist/*.tgz && npm pack --pack-destination dist'
+    script: 'rm -f dist/*.tgz && npm pack --ignore-scripts --pack-destination dist'
     deps:
       - 'compile'
     inputs:
@@ -63,6 +80,7 @@ tasks:
       - 'docs/**/*'
       - 'scripts/**/*'
       - '.dockerignore'
+      - '.npmrc'
       - 'package.json'
       - 'package-lock.json'
     outputs:
@@ -111,6 +129,19 @@ tasks:
       cache: false
       runInCI: false
 
+  container-smoke:
+    description: 'Checks builder-filtered context and offline host/runner image startup'
+    type: 'run'
+    command: 'node --no-node-snapshot --experimental-strip-types --test test/container-context.test.ts'
+    deps:
+      - 'compile'
+    env:
+      OCI_JAVASCRIPT_TEST_CONTAINER_CONTEXT: 'true'
+      OCI_JAVASCRIPT_TEST_CONTAINER_IMAGES: 'true'
+    options:
+      cache: false
+      runInCI: false
+
   publish:
     description: 'Uploads the release-built npm package'
     type: 'run'
@@ -121,7 +152,7 @@ tasks:
         echo 'Publish requires the release workflow' >&2
         exit 1
       fi
-      npm publish dist/*.tgz --registry=https://registry.npmjs.org/
+      npm publish --ignore-scripts dist/*.tgz --registry=https://registry.npmjs.org/
     options:
       cache: false
       runInCI: false

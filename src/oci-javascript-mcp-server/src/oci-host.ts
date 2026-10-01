@@ -630,6 +630,9 @@ function decodeRequest(request: JsonObject): Record<string, any> {
   if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
     throw new PublicError("OCI request must decode to an object");
   }
+  if (Object.hasOwn(decoded, "retryConfiguration")) {
+    throw new PublicError("OCI request retryConfiguration is not supported");
+  }
   return decoded as Record<string, any>;
 }
 

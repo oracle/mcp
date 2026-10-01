@@ -14,7 +14,10 @@ deployment convention.
 
 ## What the working local setup requires
 
-- Node.js 26 or newer and the package dependencies (`npm ci`) in this directory.
+- Node.js 26 or newer. For local package tasks, use the [repository installation
+  policy](../README.md#development): `npm ci --ignore-scripts` followed by the
+  reviewed native setup. Image builds prepare dependencies inside their own
+  build stages and do not require a host native-addon build.
 - A running Kubernetes cluster and a `kubectl` context that can create
   namespaces, RBAC, quota/limit, NetworkPolicy, Deployment, and
   `ValidatingAdmissionPolicy` resources. The verified local target is the

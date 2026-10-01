@@ -5,12 +5,16 @@
  */
 
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { EventEmitter, once } from "node:events";
 import { connect } from "node:net";
 import type { Duplex, Writable } from "node:stream";
 import test from "node:test";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { RUNNER_READY_LINE, type RunnerTlsBootstrap } from "../src/grpc-tls.ts";
 import { ClientNodeKubernetesGrpcTransport } from "../src/isolation/kubernetes-grpc.ts";
+import { StartupKubernetesApi } from "./kubernetes-startup-fixture.ts";
 
 class FakeWebSocket extends EventEmitter {
   readonly CLOSING = 2;
@@ -27,6 +31,31 @@ const bootstrap: RunnerTlsBootstrap = {
   serverCert: "server",
   clientCert: "client"
 };
+
+for (const fault of ["error", "exit"] as const) {
+  test(`Kubernetes runner rejects ${fault} before readiness promptly`, async () => {
+    const api = new StartupKubernetesApi();
+    api.beforeReady = fault;
+    const starting = api.transport.startRunner(
+      "sandbox", "pod", bootstrap, Date.now() + 1000, new AbortController().signal
+    );
+    const started = Date.now();
+    await assert.rejects(starting, error => String(error) === "Error: Kubernetes runner failed");
+    assert(Date.now() - started < 500, "runner failure waited for readiness deadline");
+    assert.equal(api.websocket.readyState, 3);
+  });
+}
+
+for (const scenario of ["before-ready", "pending-tunnel", "acquisition-cancel"]) {
+  test(`Kubernetes startup ${scenario} survives strict unhandled rejection policy`, async () => {
+    const { stdout, stderr } = await promisify(execFile)(process.execPath, [
+      "--unhandled-rejections=strict", "--no-node-snapshot", "--experimental-strip-types",
+      fileURLToPath(new URL("./kubernetes-startup-child.ts", import.meta.url)), scenario
+    ], { timeout: 5000 });
+    assert.equal(stdout.trim(), "sanitized outcome; finalization complete");
+    assert.equal(stderr, "");
+  });
+}
 
 test("Kubernetes runner receives one bootstrap line without stdin EOF", async () => {
   const websocket = new FakeWebSocket();
@@ -55,6 +84,40 @@ test("Kubernetes runner receives one bootstrap line without stdin EOF", async ()
   ]);
   assert.equal(input.readableEnded, false);
   await handle.stop(Date.now() + 5000);
+});
+
+test("Kubernetes runner cleanup requires close confirmation for a CLOSING websocket", async () => {
+  const websocket = new FakeWebSocket();
+  let output!: Writable;
+  const transport = new ClientNodeKubernetesGrpcTransport(
+    () => ({
+      async exec(_namespace, _pod, _container, _command, stdout, _stderr, stdin) {
+        output = stdout as Writable;
+        (stdin as Duplex).once("data", () => output.write(RUNNER_READY_LINE));
+        return websocket as never;
+      }
+    }),
+    () => ({ portForward: async () => assert.fail("not used") })
+  );
+  const handle = await transport.startRunner(
+    "sandbox", "pod", bootstrap, Date.now() + 5000, new AbortController().signal
+  );
+  websocket.readyState = websocket.CLOSING;
+  const streamsStopped = once(output, "close");
+  const stopping = handle.stop(Date.now() + 1000);
+  assert.equal(handle.stop(Date.now() + 10_000), stopping);
+  let stopped = false;
+  void stopping.then(() => { stopped = true; });
+  try {
+    await streamsStopped;
+    assert.equal(stopped, false);
+    assert.equal(websocket.readyState, websocket.CLOSING);
+  } finally {
+    websocket.readyState = 3;
+    websocket.emit("close");
+    await stopping;
+  }
+  assert.equal(stopped, true);
 });
 
 test("Kubernetes runner fails closed on unexpected readiness output", async () => {

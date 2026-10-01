@@ -68,6 +68,12 @@ export class ClientNodeKubernetesGrpcTransport implements KubernetesGrpcTranspor
       statusResolve = resolve;
       statusReject = reject;
     });
+    // Keep rejection available to consumers even before the handle is returned.
+    void closed.catch(() => undefined);
+    const prematureClose = closed.then(() => {
+      throw new Error("Kubernetes runner failed");
+    });
+    void prematureClose.catch(() => undefined);
     const settleStatus = (status: KubernetesRunnerStatus) => {
       if (!statusSettled) {
         statusSettled = true;
@@ -93,7 +99,8 @@ export class ClientNodeKubernetesGrpcTransport implements KubernetesGrpcTranspor
     ));
     let websocket: WebSocketLike;
     try {
-      websocket = await withDeadline(execPromise, deadlineMs, signal) as WebSocketLike;
+      websocket = await withDeadline(Promise.race([execPromise, prematureClose]),
+        deadlineMs, signal) as WebSocketLike;
     } catch {
       void execPromise.then(value => closeWebSocket(value as WebSocketLike), () => undefined);
       destroyStreams(stdin, stdout, stderr);
@@ -105,7 +112,7 @@ export class ClientNodeKubernetesGrpcTransport implements KubernetesGrpcTranspor
     const ready = waitForReady(stdout, deadlineMs, signal);
     stdin.write(`${JSON.stringify(bootstrap)}\n`);
     try {
-      await ready;
+      await Promise.race([ready, prematureClose]);
     } catch {
       closeWebSocket(websocket);
       destroyStreams(stdin, stdout, stderr);
@@ -144,6 +151,7 @@ export class ClientNodeKubernetesGrpcTransport implements KubernetesGrpcTranspor
       closeResolve = resolve;
       closeReject = reject;
     });
+    void closed.catch(() => undefined);
     const finish = (error?: Error) => {
       if (settled) return;
       settled = true;
@@ -205,6 +213,7 @@ export class ClientNodeKubernetesGrpcTransport implements KubernetesGrpcTranspor
       finish(stageError(deadlineMs, signal, "Kubernetes port-forward failed"));
     };
     signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
 
     let stopping: Promise<void> | undefined;
     return {
@@ -233,6 +242,7 @@ function waitForReady(output: PassThrough, deadlineMs: number, signal: AbortSign
       output.off("data", onData);
       output.off("end", fail);
       output.off("error", fail);
+      output.off("close", fail);
     };
     const fail = () => {
       cleanup();
@@ -250,6 +260,7 @@ function waitForReady(output: PassThrough, deadlineMs: number, signal: AbortSign
     output.on("data", onData);
     output.once("end", fail);
     output.once("error", fail);
+    output.once("close", fail);
   }), deadlineMs, signal);
 }
 
@@ -278,8 +289,8 @@ function withDeadline<T>(promise: Promise<T>, deadlineMs: number, signal: AbortS
     const abort = () => finish(() => reject(new Error("sandbox run deadline exceeded")));
     const timeout = setTimeout(abort, Math.max(1, deadlineMs - Date.now()));
     signal.addEventListener("abort", abort, { once: true });
+    promise.then(value => finish(() => resolve(value)), error => finish(() => reject(error)));
     if (signal.aborted || Date.now() >= deadlineMs) abort();
-    else promise.then(value => finish(() => resolve(value)), error => finish(() => reject(error)));
   });
 }
 

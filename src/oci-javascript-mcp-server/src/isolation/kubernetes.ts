@@ -201,9 +201,38 @@ export class KubernetesIsolationProvider implements IsolationProvider {
     let createSettled: Promise<void> | undefined;
     let terminating = false;
     let cleanup: Promise<void> | undefined;
+    let terminationDeadlineMs: number | undefined;
+    let runnerStopping: Promise<void> | undefined;
+    let tunnelStopping: Promise<void> | undefined;
+    let prematureRunner: Promise<never> | undefined;
+    let prematureTunnel: Promise<never> | undefined;
+    let channelFailed = false;
     let postCleanupDeletionRequired = false;
     let primaryCleanupFinished = false;
     let lateDeletion: Promise<void> | undefined;
+
+    const watchClosure = <T>(closed: Promise<T>, message: string) => {
+      const premature = closed.then(() => {
+        if (!grpcCompleted) {
+          channelFailed = true;
+          throw new Error(message);
+        }
+        return new Promise<never>(() => {});
+      }, error => {
+        if (!grpcCompleted) {
+          channelFailed = true;
+          throw error;
+        }
+        return new Promise<never>(() => {});
+      });
+      // Startup may still be awaiting another resource when this rejects.
+      void premature.catch(() => undefined);
+      return premature;
+    };
+    const stopRunner = (handle: KubernetesRunnerHandle) => runnerStopping ??=
+      Promise.resolve().then(() => handle.stop(terminationDeadlineMs!));
+    const stopTunnel = (handle: KubernetesGrpcTunnel) => tunnelStopping ??=
+      Promise.resolve().then(() => handle.stop(terminationDeadlineMs!));
 
     const phase = (value: KubernetesPhase) => {
       this.#emit(correlationId, value, "started", "none", started);
@@ -271,18 +300,33 @@ export class KubernetesIsolationProvider implements IsolationProvider {
           tls.runner,
           options.deadlineMs,
           localAbort.signal
-        );
-        runner = await runnerPromise;
+        ).then(handle => {
+          runner = handle;
+          prematureRunner = watchClosure(handle.closed,
+            "Kubernetes runner exited before final gRPC status");
+          if (terminating) void stopRunner(handle).catch(() => undefined);
+          return handle;
+        });
+        runner = await raceExecutionStage(runnerPromise, options.deadlineMs, localAbort.signal);
         assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
+        if (channelFailed) throw new Error("Kubernetes runner failed");
         tunnelPromise = this.#api.openTunnel(
           this.#config.namespace,
           name,
           50051,
           options.deadlineMs,
           localAbort.signal
-        );
-        tunnel = await tunnelPromise;
+        ).then(handle => {
+          tunnel = handle;
+          prematureTunnel = watchClosure(handle.closed,
+            "Kubernetes port-forward closed before final gRPC status");
+          if (terminating) void stopTunnel(handle).catch(() => undefined);
+          return handle;
+        });
+        tunnel = await raceExecutionStage(Promise.race([tunnelPromise, prematureRunner!]),
+          options.deadlineMs, localAbort.signal);
         assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
+        if (channelFailed) throw new Error("Kubernetes execution channel failed");
         phase("executing");
         grpcExecution = startGrpcExecution(
           tunnel.address,
@@ -295,19 +339,11 @@ export class KubernetesIsolationProvider implements IsolationProvider {
             maxResultBytes: MAX_RESULT_BYTES
           }
         );
-        const prematureRunner = runner.closed.then(() => {
-          if (!grpcCompleted) throw new Error("Kubernetes runner exited before final gRPC status");
-          return new Promise<SandboxResult>(() => {});
-        });
-        const prematureTunnel = tunnel.closed.then(() => {
-          if (!grpcCompleted) throw new Error("Kubernetes port-forward closed before final gRPC status");
-          return new Promise<SandboxResult>(() => {});
-        });
         const grpcResult = grpcExecution.result.then(value => {
           grpcCompleted = true;
           return value;
         });
-        const workerResult = await Promise.race([grpcResult, prematureRunner, prematureTunnel]);
+        const workerResult = await Promise.race([grpcResult, prematureRunner!, prematureTunnel!]);
         this.#emit(correlationId, "executing", "succeeded", "none", started);
         return workerResult;
       } catch (error) {
@@ -335,25 +371,30 @@ export class KubernetesIsolationProvider implements IsolationProvider {
       terminating = true;
       localAbort.abort();
       phase("closing");
-      const cleanupDeadlineMs = requestedCleanupDeadlineMs
+      const cleanupDeadlineMs = terminationDeadlineMs = requestedCleanupDeadlineMs
         ?? Date.now() + this.#config.cleanupTimeoutMs;
       const resolvePending = async <T>(active: T | undefined, pending: Promise<T> | undefined) => {
         if (active) return active;
         if (!pending) return undefined;
-        return await withCleanupDeadline(pending.then(value => value, () => undefined), cleanupDeadlineMs);
+        return await pending.then(value => value, () => undefined);
       };
-      const errors: unknown[] = [];
       try {
-        await withCleanupDeadline(grpcExecution?.terminate(cleanupDeadlineMs) ?? Promise.resolve(),
-          cleanupDeadlineMs).catch(error => errors.push(error));
-        tunnel = await resolvePending(tunnel, tunnelPromise);
-        await withCleanupDeadline(tunnel?.stop(cleanupDeadlineMs) ?? Promise.resolve(),
-          cleanupDeadlineMs).catch(error => errors.push(error));
-        runner = await resolvePending(runner, runnerPromise);
-        await withCleanupDeadline(runner?.stop(cleanupDeadlineMs) ?? Promise.resolve(),
-          cleanupDeadlineMs).catch(error => errors.push(error));
-        await deleteKnownPod(cleanupDeadlineMs, true).catch(error => errors.push(error));
-        if (errors.length > 0) throw new Error("Kubernetes execution cleanup failed");
+        const outcomes = await Promise.allSettled([
+          withCleanupDeadline(Promise.resolve().then(() => grpcExecution?.terminate(cleanupDeadlineMs)),
+            cleanupDeadlineMs),
+          withCleanupDeadline((async () => {
+            const handle = await resolvePending(tunnel, tunnelPromise);
+            if (handle) await stopTunnel(handle);
+          })(), cleanupDeadlineMs),
+          withCleanupDeadline((async () => {
+            const handle = await resolvePending(runner, runnerPromise);
+            if (handle) await stopRunner(handle);
+          })(), cleanupDeadlineMs),
+          deleteKnownPod(cleanupDeadlineMs, true)
+        ]);
+        if (outcomes.some(outcome => outcome.status === "rejected")) {
+          throw new Error("Kubernetes execution cleanup failed");
+        }
       } finally {
         primaryCleanupFinished = true;
         startLateDeletionIfRequired();
@@ -414,14 +455,11 @@ function raceExecutionStage<T>(
     const aborted = () => finish(() => reject(new ExecutionStageTimeoutError()));
     const timeout = setTimeout(aborted, Math.max(1, deadlineMs - Date.now()));
     signal.addEventListener("abort", aborted, { once: true });
-    if (signal.aborted || Date.now() >= deadlineMs) {
-      aborted();
-      return;
-    }
     promise.then(
       value => finish(() => resolve(value)),
       error => finish(() => reject(error))
     );
+    if (signal.aborted || Date.now() >= deadlineMs) aborted();
   });
 }
 

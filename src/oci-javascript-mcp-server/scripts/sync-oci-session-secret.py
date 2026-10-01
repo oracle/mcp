@@ -123,7 +123,7 @@ def refresh_session(arguments: argparse.Namespace) -> None:
         "refresh",
     ]
     try:
-        subprocess.run(command, check=True)
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except FileNotFoundError as error:
         raise ValueError("OCI CLI is required for --refresh-session") from error
     except subprocess.CalledProcessError as error:
@@ -154,6 +154,9 @@ def synchronize(arguments: argparse.Namespace) -> None:
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as output:
         output.write(rendered_config)
         output_path = Path(output.name)
+    failure_message = (
+        "Kubernetes Secret rendering failed; the Kubernetes Secret was not changed"
+    )
     try:
         os.chmod(output_path, 0o600)
         create = kubectl_command(
@@ -173,7 +176,16 @@ def synchronize(arguments: argparse.Namespace) -> None:
             create.append(f"--from-file=token={token}")
         rendered_secret = subprocess.run(create, check=True, capture_output=True).stdout
         apply = kubectl_command(arguments.context, "apply", "--filename=-")
-        subprocess.run(apply, input=rendered_secret, check=True)
+        failure_message = (
+            "Kubernetes Secret update failed; the trusted host Deployment was not restarted"
+        )
+        subprocess.run(
+            apply,
+            input=rendered_secret,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         if arguments.restart_host:
             restart = kubectl_command(
                 arguments.context,
@@ -183,11 +195,14 @@ def synchronize(arguments: argparse.Namespace) -> None:
                 arguments.namespace,
                 f"deployment/{arguments.host_deployment}",
             )
-            subprocess.run(restart, check=True)
+            failure_message = (
+                "Trusted host Deployment restart failed; the Kubernetes Secret was already updated"
+            )
+            subprocess.run(restart, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except FileNotFoundError as error:
         raise ValueError("kubectl is required to synchronize the Kubernetes Secret") from error
     except subprocess.CalledProcessError as error:
-        raise ValueError("Kubernetes Secret synchronization failed") from error
+        raise ValueError(failure_message) from error
     finally:
         output_path.unlink(missing_ok=True)
 

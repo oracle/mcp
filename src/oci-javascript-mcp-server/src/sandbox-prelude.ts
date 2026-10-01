@@ -43,6 +43,9 @@ const __fromBase64 = Uint8Array.fromBase64;
 const __weakSet = WeakSet;
 const __serviceProxyCache = new __map();
 const __clientProxyCache = new __map();
+const __ociErrors = new WeakMap();
+const __ociGetError = __ociErrors.get.bind(__ociErrors);
+const __ociSetError = __ociErrors.set.bind(__ociErrors);
 const __ociRegionIdPattern = /^[a-z][a-z0-9-]*-[a-z0-9-]+-[0-9]+$/;
 
 function __ociWireValue(typeName, fields) {
@@ -248,6 +251,8 @@ function __ociErrorFromEnvelope(error) {
       }
     }
   }
+  // Keep the sanitized envelope: isolated-vm drops custom properties on thrown Errors.
+  __ociSetError(thrown, __objectAssign({ name: "Error" }, error));
   return thrown;
 }
 
@@ -650,7 +655,14 @@ return __objectFreeze({
     return __ociToWire(globalThis._);
   },
   run: async function __ociRun(code) {
-    await __eval(__ociExecutionScript(code));
+    try {
+      await __eval(__ociExecutionScript(code));
+      return null;
+    } catch (error) {
+      const details = __ociGetError(error);
+      if (details) return details;
+      throw error;
+    }
   }
 });
 `;

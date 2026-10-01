@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Preserve OCI status codes, service codes, operation details, and request IDs in
+  uncaught `run_javascript` errors so callers can assess failures and retry decisions.
+
 ## 0.1.1 - 2026-09-30
 
 ### Breaking Changes

@@ -15,11 +15,11 @@ import {
   withDeadline
 } from "./sandbox-common.ts";
 import { SANDBOX_BOOTSTRAP } from "./sandbox-prelude.ts";
-import type { Json, OciReflectionManifest, SandboxResult } from "./types.ts";
+import type { Json, OciReflectionManifest, SandboxError, SandboxResult } from "./types.ts";
 
 type SandboxApi = {
   encodeLastResult: ivm.Reference<() => Json>;
-  run: ivm.Reference<(code: string) => Promise<void>>;
+  run: ivm.Reference<(code: string) => Promise<SandboxError | null>>;
 };
 
 export async function runJavaScriptInIsolate(
@@ -85,14 +85,14 @@ export async function runJavaScriptInIsolate(
         reference: true
       }) as ivm.Reference<() => Json>,
       run: await bootstrap.get("run", { reference: true }) as ivm.Reference<
-        (code: string) => Promise<void>
+        (code: string) => Promise<SandboxError | null>
       >
     };
     bootstrap.release();
 
     try {
       const evalTimeoutMs = remainingRunMs(options.deadlineMs);
-      await withDeadline(
+      const ociError = await withDeadline(
         api.run.apply(undefined, [code], {
           arguments: { copy: true },
           result: { promise: true, copy: true },
@@ -100,6 +100,12 @@ export async function runJavaScriptInIsolate(
         }),
         evalTimeoutMs
       );
+      if (ociError) {
+        if (Buffer.byteLength(JSON.stringify(ociError), "utf8") > options.maxResultBytes) {
+          throw new Error(`Sandbox error exceeded result limit ${options.maxResultBytes} bytes`);
+        }
+        throw ociError;
+      }
       const resultTimeoutMs = remainingRunMs(options.deadlineMs);
       const result = await withDeadline(
         api.encodeLastResult.apply(undefined, [], {

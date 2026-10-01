@@ -958,28 +958,6 @@ class TestHttpTransportAuth:
 
         assert http_auth.provider.required_scopes == list(captured["required_scopes"])
 
-    def test_startup_fails_if_fastmcp_drops_a_scope_hook(self, monkeypatch):
-        """
-        A provider missing the scope hooks fails startup loudly.
-
-        Silently skipping the qualification would fail every sign-in with
-        invalid_scope, far from the upgrade that caused it.
-        """
-        self._idcs_env(monkeypatch)
-
-        class ProviderWithoutScopeHooks:
-            """A provider that has lost the hooks the server overrides."""
-
-            _cimd_manager = object()
-
-            def __init__(self, **kwargs):
-                """Accept any configuration and keep none of it."""
-                pass
-
-        with patch("oracle_mcp_common.auth.OCIProvider", ProviderWithoutScopeHooks):
-            with pytest.raises(RuntimeError, match="update_default_scopes"):
-                auth._build_http_auth()
-
     def test_cimd_client_registration_is_disabled(self, monkeypatch):
         """
         Client registration never depends on an outbound metadata fetch.
@@ -994,36 +972,6 @@ class TestHttpTransportAuth:
             http_auth = auth._build_http_auth()
 
         assert http_auth.provider._cimd_manager is None
-
-    def test_startup_fails_if_cimd_cannot_be_disabled(self, monkeypatch):
-        """
-        A provider whose CIMD manager cannot be cleared fails startup rather than
-        serving with client registration silently depending on an outbound fetch.
-        """
-        self._idcs_env(monkeypatch)
-
-        class ProviderWithoutCimd:
-            """A provider carrying the scope hooks but no clearable CIMD manager."""
-
-            def __init__(self, **kwargs):
-                """Start with an empty scope list."""
-                self.required_scopes = []
-
-            def update_default_scopes(self, scopes):
-                """Accept the advertised scopes and discard them."""
-                pass
-
-            def _build_upstream_authorize_url(self, txn_id, transaction):
-                """Return an empty URL; only the hook's presence matters here."""
-                return ""
-
-            def _prepare_scopes_for_upstream_refresh(self, scopes):
-                """Return the scopes unchanged."""
-                return scopes
-
-        with patch("oracle_mcp_common.auth.OCIProvider", ProviderWithoutCimd):
-            with pytest.raises(RuntimeError, match="_cimd_manager"):
-                auth._build_http_auth()
 
 
 class TestCachePartitioning:

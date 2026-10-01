@@ -192,10 +192,15 @@ def _expand_compartment_scope(
     *,
     include_child_compartments: bool,
     request_id: Optional[str] = None,
-) -> list[str]:
+) -> tuple[list[str], bool]:
     """
     Expand a root compartment into a list including all descendant compartments (BFS)
     when include_child_compartments=True.
+
+    Returns ``(compartment_ids, complete)``. ``complete`` is False when the list is
+    known to be short of the real subtree -- the cap dropped compartments, or Identity
+    could not be read -- so callers can report their results as partial rather than
+    presenting a subset as the whole.
 
     Robustness:
     - Primary approach: use cached full-subtree identity listing (compartment_id_in_subtree=True)
@@ -208,10 +213,20 @@ def _expand_compartment_scope(
     - Cap max compartments scanned via ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE (default 200).
     """
     if not include_child_compartments:
-        return [root_compartment_id]
+        return [root_compartment_id], True
 
     cap = int(os.getenv("ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE", "200"))
     rid = request_id or telemetry._current_request_id()
+
+    def _log_capped() -> None:
+        logging_setup._log_event(
+            "compartment_scope_capped",
+            request_id=rid,
+            tool=None,
+            phase="warn",
+            payload={"root": root_compartment_id, "cap": cap},
+            level=logging.WARNING,
+        )
 
     # ---------------- Primary: cached full-subtree listing ----------------
     try:
@@ -226,19 +241,13 @@ def _expand_compartment_scope(
             cid = queue.pop(0)
             if cid in seen:
                 continue
+            # Checked before appending, so a subtree of exactly `cap` compartments is
+            # not reported as capped: only a real compartment left out is.
+            if cap and len(scope) >= cap:
+                _log_capped()
+                return scope, False
             seen.add(cid)
             scope.append(cid)
-
-            if cap and len(scope) >= cap:
-                logging_setup._log_event(
-                    "compartment_scope_capped",
-                    request_id=rid,
-                    tool=None,
-                    phase="warn",
-                    payload={"root": root_compartment_id, "cap": cap},
-                    level=logging.WARNING,
-                )
-                return scope
 
             for child in children_index.get(cid, []) or []:
                 if child not in seen:
@@ -246,36 +255,28 @@ def _expand_compartment_scope(
 
         # If we found at least one child, we're done.
         if len(scope) > 1:
-            return scope
+            return scope, True
     except Exception:
         # Fall through to direct-children crawl fallback
         pass
 
     # ---------------- Fallback: direct-children crawl ----------------
+    scope = []
     try:
         identity_client = clients.get_identity_client(request_id=rid)
 
-        scope: list[str] = []
-        seen: set[str] = set()
-        queue: list[str] = [root_compartment_id]
+        seen = set()
+        queue = [root_compartment_id]
 
         while queue:
             pid = queue.pop(0)
             if pid in seen:
                 continue
+            if cap and len(scope) >= cap:
+                _log_capped()
+                return scope, False
             seen.add(pid)
             scope.append(pid)
-
-            if cap and len(scope) >= cap:
-                logging_setup._log_event(
-                    "compartment_scope_capped",
-                    request_id=rid,
-                    tool=None,
-                    phase="warn",
-                    payload={"root": root_compartment_id, "cap": cap},
-                    level=logging.WARNING,
-                )
-                break
 
             next_page = None
             while True:
@@ -296,10 +297,11 @@ def _expand_compartment_scope(
                 if not has_next:
                     break
 
-        return scope
+        return scope, True
     except Exception:
-        # Final fallback: only root
-        return [root_compartment_id]
+        # Identity could not be read, so whether the root has children is unknown.
+        # Keep what was crawled, but do not claim it is the whole subtree.
+        return scope or [root_compartment_id], False
 
 
 def _compartment_ids_for_tool(
@@ -320,33 +322,53 @@ def _compartment_ids_for_tool(
     - Instead, we reuse the underlying internal helper `_expand_compartment_scope(...)`
       which implements robust subtree expansion with caching + fallback.
     """
+    return _compartment_scope_for_tool(
+        root_compartment_id,
+        fetch_for_child_compartment=fetch_for_child_compartment,
+        request_id=request_id,
+    )[0]
+
+
+def _compartment_scope_for_tool(
+    root_compartment_id: str,
+    *,
+    fetch_for_child_compartment: bool,
+    request_id: Optional[str] = None,
+) -> tuple[list[str], bool]:
+    """
+    Like _compartment_ids_for_tool, but also returns whether the scope is the whole
+    subtree. Summary tools use the flag to mark their counts partial.
+    """
     resolved_root = _resolve_compartment_id(root_compartment_id)
 
     if not fetch_for_child_compartment:
-        return [resolved_root]
+        return [resolved_root], True
 
     rid = request_id or telemetry._current_request_id()
 
     try:
-        ids = _expand_compartment_scope(
+        ids, complete = _expand_compartment_scope(
             resolved_root,
             include_child_compartments=True,
             request_id=rid,
         )
         if isinstance(ids, list) and ids:
-            return [str(x) for x in ids if x]
+            return [str(x) for x in ids if x], complete
     except Exception:
         pass
 
-    # Final fallback: only root
-    return [resolved_root]
+    # Final fallback: only root, and say the subtree was not read.
+    return [resolved_root], False
 
 
-def _fetch_db_home_ids_for_compartment(compartment_id: str, region: Optional[str] = None) -> list[str]:
+def _fetch_db_home_ids_for_compartment(
+    compartment_id: str, region: Optional[str] = None, *, raise_errors: bool = False
+) -> list[str]:
     """
     Helper: enumerate DB Home OCIDs in a compartment.
     Used when a tool needs a db_home_id but the caller omitted it.
-    Returns a list of DB Home OCIDs (may be empty).
+    Returns a list of DB Home OCIDs (may be empty). With raise_errors, a failed
+    listing raises instead of returning empty, for callers that must tell the two apart.
     """
     try:
         client = clients.get_database_client(region)
@@ -375,6 +397,8 @@ def _fetch_db_home_ids_for_compartment(compartment_id: str, region: Optional[str
                 ids.append(hid)
         return ids
     except Exception:
+        if raise_errors:
+            raise
         # Conservative: on error, return empty so callers can react (e.g., empty results)
         return []
 

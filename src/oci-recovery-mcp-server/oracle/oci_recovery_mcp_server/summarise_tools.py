@@ -72,7 +72,7 @@ def summarize_protected_database_health(
         deadline = app._Deadline()
         client = clients.get_recovery_client(region, request_id=request_id)
         comp_id = compartment_id or auth.get_tenancy()
-        comp_ids = compartments._compartment_ids_for_tool(
+        comp_ids, scope_complete = compartments._compartment_scope_for_tool(
             comp_id,
             fetch_for_child_compartment=fetch_for_child_compartment,
             request_id=request_id,
@@ -212,7 +212,7 @@ def summarize_protected_database_health(
             alert=alert,
             unknown=unknown,
             total=total,
-            partial=deadline.expired,
+            partial=deadline.expired or not scope_complete,
         )
         if deadline.expired:
             logger.warning(
@@ -227,7 +227,7 @@ def summarize_protected_database_health(
             aggregated=aggregated,
             per_compartment=per_compartment,
             compartmentIdsScanned=scanned_compartments,
-            truncated=deadline.expired,
+            truncated=deadline.expired or not scope_complete,
         )
     except Exception as e:
         logger.error(f"Error in summarize_protected_database_health tool: {str(e)}")
@@ -270,7 +270,7 @@ def summarize_protected_database_redo_status(
         deadline = app._Deadline()
         client = clients.get_recovery_client(region, request_id=request_id)
         comp_id = compartment_id or auth.get_tenancy()
-        comp_ids = compartments._compartment_ids_for_tool(
+        comp_ids, scope_complete = compartments._compartment_scope_for_tool(
             comp_id,
             fetch_for_child_compartment=fetch_for_child_compartment,
             request_id=request_id,
@@ -406,7 +406,7 @@ def summarize_protected_database_redo_status(
             disabled=disabled,
             unknown=unknown,
             total=total,
-            partial=deadline.expired,
+            partial=deadline.expired or not scope_complete,
         )
         if deadline.expired:
             logger.warning(
@@ -421,7 +421,7 @@ def summarize_protected_database_redo_status(
             aggregated=aggregated,
             per_compartment=per_compartment,
             compartmentIdsScanned=scanned_compartments,
-            truncated=deadline.expired,
+            truncated=deadline.expired or not scope_complete,
         )
     except Exception as e:
         logger.error(f"Error in summarize_protected_database_redo_status tool: {e}")
@@ -468,7 +468,7 @@ def summarize_backup_space_used(
         deadline = app._Deadline()
         comp_id = compartments._resolve_compartment_id(compartment_id, default_to_tenancy=True)
         client = clients.get_recovery_client(region, request_id=request_id)
-        comp_ids = compartments._compartment_ids_for_tool(
+        comp_ids, scope_complete = compartments._compartment_scope_for_tool(
             comp_id,
             fetch_for_child_compartment=fetch_for_child_compartment,
             request_id=request_id,
@@ -644,7 +644,7 @@ def summarize_backup_space_used(
             "compartmentIdsScanned": scanned_compartments,
             "compartmentIdsInScope": comp_ids,
             "missingMetricsCount": missing_metrics,
-            "truncated": deadline.expired,
+            "truncated": deadline.expired or not scope_complete,
         }
         # logger.info(f"Returning dict result: {result}")
         # return result
@@ -1059,7 +1059,7 @@ def summarize_protected_database_backup_destination(
         if not compartment_id:
             compartment_id = auth.get_tenancy()
 
-        comp_ids = compartments._compartment_ids_for_tool(
+        comp_ids, scope_complete = compartments._compartment_scope_for_tool(
             compartment_id,
             fetch_for_child_compartment=fetch_for_child_compartment,
             request_id=request_id,
@@ -1068,12 +1068,22 @@ def summarize_protected_database_backup_destination(
         # Discover DB Homes if not specified, then list databases with lifecycle_state=AVAILABLE
         # NOTE: db_home_id is a single home; we do NOT expand it across compartments.
         home_ids_by_comp: dict[str, list[str]] = {}
+        homes_complete = True
         for each_comp in comp_ids:
             if deadline.reached():
                 break
-            home_ids_by_comp[each_comp] = (
-                [db_home_id] if db_home_id else compartments._fetch_db_home_ids_for_compartment(each_comp, region=region)
-            )
+            if db_home_id:
+                home_ids_by_comp[each_comp] = [db_home_id]
+                continue
+            try:
+                home_ids_by_comp[each_comp] = compartments._fetch_db_home_ids_for_compartment(
+                    each_comp, region=region, raise_errors=True
+                )
+            except Exception:
+                # A compartment whose DB Homes cannot be listed is not one with no
+                # databases, so the summary is marked truncated instead of reading as
+                # a complete, smaller count.
+                homes_complete = False
 
         db_summaries = _scan_available_databases(
             db_client,
@@ -1092,86 +1102,98 @@ def summarize_protected_database_backup_destination(
         unconfigured = 0
         unconfigured_names: list[str] = []
         has_backups_names: list[str] = []
+        unreadable_names: list[str] = []
 
         get_db = functools.partial(db_client.get_database, retry_strategy=_PER_DATABASE_RETRY_STRATEGY)
         list_bk = functools.partial(db_client.list_backups, retry_strategy=_PER_DATABASE_RETRY_STRATEGY)
 
-        # Overlapping compartment scopes can return the same database more than once.
-        # De-duplicating here rather than at the end is what keeps the response
-        # self-consistent: the tail de-dupe only rewrote `items`, leaving
-        # total_databases, unconfigured_count and counts_by_destination_type still
-        # counting every occurrence, so the counts did not add up to the list beside
-        # them. Skipping the repeat before any of them is touched fixes all of them at
-        # once.
-        seen_database_ids: set[str] = set()
-
-        # Iterate each DB summary, fetch full DB to inspect backup config and infer destinations
+        # Discovery is counted separately from enrichment. Every database the listing
+        # returned is recorded here, before any per-database read, so a failed read can
+        # only move a database to UNREADABLE: it can never shrink total_databases or
+        # make a scope of unreadable databases look empty. Overlapping compartment
+        # scopes can list a database more than once; its rows are grouped so it is
+        # counted once, and each extra row is another attempt if the first read fails.
+        discovered: dict[str, list[Any]] = {}
+        listed_without_id = 0
         for s in db_summaries:
+            sid = _get(s, "id")
+            if sid:
+                discovered.setdefault(sid, []).append(s)
+            else:
+                # Listed, but with no id to read it by.
+                listed_without_id += 1
+                name = _get(s, "db_name", "dbName")
+                unreadable_names.append(name or "<no id>")
+                items.append(
+                    ProtectedDatabaseBackupDestinationItem(database_id=None, db_name=name, status="UNREADABLE")
+                )
+
+        # Iterate each discovered database, reading its backup config to infer destinations
+        for sid, rows in discovered.items():
             if deadline.reached():
                 break
-            try:
-                sid = _get(s, "id")
-                if not sid:
+            db_name_val = _get(rows[0], "db_name", "dbName")
+            name_for_lists = db_name_val or sid
+            read = None
+            for row in rows:
+                try:
+                    read = _backup_destinations_for(row, get_database=get_db)
+                    break
+                except Exception:
                     continue
-                if sid in seen_database_ids:
-                    continue
-                db_name_val = _get(s, "db_name", "dbName")
-
-                d_dict, dest_types, dest_ids = _backup_destinations_for(s, get_database=get_db)
-                # Marked seen only once its config is read. Marked before, a failed read
-                # still counted toward total_databases while appearing in no other count
-                # or list, and a later duplicate of it was skipped instead of retried.
-                seen_database_ids.add(sid)
-
-                auto_enabled = _is_auto_backup_enabled(d_dict)
-                # Configured strictly when auto-backup is enabled
-                configured = bool(auto_enabled)
-                status = "CONFIGURED" if configured else "UNCONFIGURED"
-                last_backup_time = None
-                # The label this database appears under in every name list below.
-                name_for_lists = db_name_val or sid
-
-                # Costs an extra call per database, so it is opt-in.
-                if include_last_backup_time:
-                    try:
-                        last_backup_time, had_backups = _latest_backup_time(
-                            sid, list_backups=list_bk
-                        )
-                        if had_backups:
-                            has_backups_names.append(name_for_lists)
-                    except Exception:
-                        pass
-
-                # Aggregate summary counters and name lists by status/destination
-                if status == "CONFIGURED":
-                    # Select a single effective destination type: DBRS preferred over OBJECT_STORE
-                    eff_type = (
-                        "DBRS"
-                        if "DBRS" in dest_types
-                        else ("OBJECT_STORE" if "OBJECT_STORE" in dest_types else "UNKNOWN")
-                    )
-                    if eff_type in ("DBRS", "OBJECT_STORE"):
-                        counts_by_type[eff_type] = counts_by_type.get(eff_type, 0) + 1
-                        db_names_by_type.setdefault(eff_type, []).append(name_for_lists)
-                else:
-                    unconfigured += 1
-                    unconfigured_names.append(name_for_lists)
-
-                # Append per-DB detail record
+            if read is None:
+                unreadable_names.append(name_for_lists)
                 items.append(
                     ProtectedDatabaseBackupDestinationItem(
-                        database_id=sid,
-                        db_name=db_name_val,
-                        status=status,
-                        destination_types=dest_types,
-                        destination_ids=dest_ids,
-                        last_backup_time=last_backup_time,
+                        database_id=sid, db_name=db_name_val, status="UNREADABLE"
                     )
                 )
-            except Exception:
-                # Continue on per-DB errors to maximize overall coverage
                 continue
+            d_dict, dest_types, dest_ids = read
 
+            auto_enabled = _is_auto_backup_enabled(d_dict)
+            # Configured strictly when auto-backup is enabled
+            configured = bool(auto_enabled)
+            status = "CONFIGURED" if configured else "UNCONFIGURED"
+            last_backup_time = None
+
+            # Costs an extra call per database, so it is opt-in.
+            if include_last_backup_time:
+                try:
+                    last_backup_time, had_backups = _latest_backup_time(
+                        sid, list_backups=list_bk
+                    )
+                    if had_backups:
+                        has_backups_names.append(name_for_lists)
+                except Exception:
+                    pass
+
+            # Aggregate summary counters and name lists by status/destination
+            if status == "CONFIGURED":
+                # Select a single effective destination type: DBRS preferred over OBJECT_STORE
+                eff_type = (
+                    "DBRS"
+                    if "DBRS" in dest_types
+                    else ("OBJECT_STORE" if "OBJECT_STORE" in dest_types else "UNKNOWN")
+                )
+                if eff_type in ("DBRS", "OBJECT_STORE"):
+                    counts_by_type[eff_type] = counts_by_type.get(eff_type, 0) + 1
+                    db_names_by_type.setdefault(eff_type, []).append(name_for_lists)
+            else:
+                unconfigured += 1
+                unconfigured_names.append(name_for_lists)
+
+            # Append per-DB detail record
+            items.append(
+                ProtectedDatabaseBackupDestinationItem(
+                    database_id=sid,
+                    db_name=db_name_val,
+                    status=status,
+                    destination_types=dest_types,
+                    destination_ids=dest_ids,
+                    last_backup_time=last_backup_time,
+                )
+            )
 
         items = sorted(
             items,
@@ -1188,14 +1210,16 @@ def summarize_protected_database_backup_destination(
         return ProtectedDatabaseBackupDestinationSummary(
             compartment_id=compartment_id,
             region=region,
-            total_databases=len(seen_database_ids),
+            total_databases=len(discovered) + listed_without_id,
             unconfigured_count=unconfigured,
             counts_by_destination_type=counts_by_type,
             db_names_by_destination_type=db_names_by_type,
             unconfigured_db_names=unconfigured_names,
             has_backups_db_names=has_backups_names,
+            unreadable_count=len(unreadable_names),
+            unreadable_db_names=_uniq_sorted(unreadable_names),
             items=items,
-            truncated=deadline.expired,
+            truncated=deadline.expired or not (scope_complete and homes_complete),
         )
     except Exception as e:
         logger.error(f"Error in summarize_protected_database_backup_destination tool: {e}")

@@ -1,2 +1,7 @@
 implicitInputs:
+  - 'moon.{yml,yaml,jsonc,json,pkl,hcl,toml}'
+  - '/moon.yml'
+  - '/.moon/tasks/all.yml'
+  - '/.github/workflows/build.yml'
+  - '/.github/workflows/lint.yml'
   - '/.prototools'

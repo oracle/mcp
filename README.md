@@ -514,7 +514,8 @@ by the changed files and their dependencies. Pull requests compare the checked-o
 merge commit with the base commit; pushes compare with the previous commit.
 Python coverage is combined and uploaded only when Python tests produce coverage
 files.
-Changes to `.moon/toolchains.yml` or `.prototools` select all validation tasks.
+Changes to shared toolchain and CI configuration select all validation tasks.
+Project Moon configuration changes select that project's validation tasks.
 
 ### Running tasks with moon
 

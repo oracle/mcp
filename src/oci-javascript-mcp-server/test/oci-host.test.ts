@@ -15,6 +15,52 @@ import { createOciReflectionManifest, createOciSdkHostRpc } from "../src/oci-hos
 
 const require = createRequire(import.meta.url);
 const common = require("oci-common") as Record<string, any>;
+const { ConfigFileReader } = common;
+
+// Even mocked providers use the real SDK profile reader, never the developer's config.
+const configDirectory = mkdtempSync(join(tmpdir(), "oci-host-config-"));
+const previousConfig = {
+  OCI_CONFIG_FILE: process.env.OCI_CONFIG_FILE,
+  OCI_CONFIG_PROFILE: process.env.OCI_CONFIG_PROFILE
+};
+test.beforeEach(() => {
+  process.env.OCI_CONFIG_FILE = join(configDirectory, "config");
+  process.env.OCI_CONFIG_PROFILE = "DEFAULT";
+  writeFileSync(process.env.OCI_CONFIG_FILE, "[DEFAULT]\n");
+});
+test.after(() => {
+  for (const [key, value] of Object.entries(previousConfig)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  rmSync(configDirectory, { recursive: true, force: true });
+});
+
+for (const fail of [false, true]) {
+  test(`host redirects SDK diagnostics and restores logging after ${fail ? "failure" : "success"}`, async t => {
+    const info = t.mock.method(console, "info", () => {});
+    const stderr = t.mock.method(console, "error", () => {});
+    writeFileSync(process.env.OCI_CONFIG_FILE!, "[WORK]\n");
+    process.env.OCI_CONFIG_PROFILE = "WORK";
+    class Provider {
+      constructor(path: string, profile: string) {
+        // Real providers parse the file again during construction.
+        ConfigFileReader.parseFileFromPath(path, profile);
+        if (fail) throw new Error("authentication failed");
+      }
+    }
+    const hostRpc = createOciSdkHostRpc(() => ({
+      sdk: { ConfigFileAuthenticationDetailsProvider: Provider },
+      common: { ConfigFileReader }
+    }));
+    const result = hostRpc({ binding: "oracle", namespace: "oci", operation: "config", payload: {} });
+    if (fail) await assert.rejects(result, /authentication failed/);
+    else await assert.doesNotReject(result);
+    assert.equal(info.mock.callCount(), 0, "SDK diagnostics must not reach stdout");
+    assert(stderr.mock.callCount() > 0);
+    assert.equal(console.info, info, "logging must be restored after construction");
+  });
+}
 
 test("host RPC config returns principal from config-file user", async () => {
   class Provider {
@@ -42,7 +88,7 @@ test("host RPC config returns principal from config-file user", async () => {
         sdk: {
           ConfigFileAuthenticationDetailsProvider: Provider
         },
-        common: {}
+        common: { ConfigFileReader }
       }));
       return hostRpc({
         binding: "oracle",
@@ -73,7 +119,7 @@ test("host RPC config preserves null and omitted metadata fields", async () => {
     }
     const result = await withTemporaryOciConfig("[DEFAULT]\n", async () => {
       const hostRpc = createOciSdkHostRpc(() => ({
-        sdk: { ConfigFileAuthenticationDetailsProvider: Provider }, common: {}
+        sdk: { ConfigFileAuthenticationDetailsProvider: Provider }, common: { ConfigFileReader }
       }));
       return hostRpc({ binding: "oracle", namespace: "oci", operation: "config", payload: {} });
     });
@@ -84,7 +130,7 @@ test("host RPC config preserves null and omitted metadata fields", async () => {
   }
 });
 
-test("host RPC config derives only principal id from session token", async () => {
+test("host RPC config derives only principal id from an inherited session token", async () => {
   const token = fakeJwt({
     sub: "ocid1.user.oc1..sessionuser",
     email: "user@example.com",
@@ -118,12 +164,15 @@ test("host RPC config derives only principal id from session token", async () =>
       "[DEFAULT]",
       "tenancy=ocid1.tenancy.oc1..example",
       "region=us-ashburn-1",
-      "security_token_file=/not/read/by/mock"
+      "security_token_file=/not/read/by/mock",
+      "[WORK]"
     ].join("\n"),
     async () => {
+      process.env.OCI_CONFIG_PROFILE = "WORK";
       const hostRpc = createOciSdkHostRpc(() => ({
         sdk: {},
         common: {
+          ConfigFileReader,
           SessionAuthDetailProvider: SessionProvider
         }
       }));
@@ -173,7 +222,7 @@ test("host RPC invokes OCI JavaScript SDK clients", async () => {
       ConfigFileAuthenticationDetailsProvider: class Provider {},
       core: { ComputeClient }
     },
-    common: {}
+    common: { ConfigFileReader }
   }));
 
   const result = await hostRpc({
@@ -197,7 +246,7 @@ test("host RPC invokes OCI JavaScript SDK clients", async () => {
   });
   assert.equal(
     (calls[0] as { constructor: { additionalUserAgent?: string } }).constructor.additionalUserAgent,
-    "oci-javascript-mcp/0.1.1"
+    "oci-javascript-mcp/0.2.0"
   );
   assert.deepEqual(calls[1], {
       listInstances: {
@@ -231,7 +280,7 @@ test("host RPC applies per-client region to a fresh provider", async () => {
       ConfigFileAuthenticationDetailsProvider: Provider,
       core: { ComputeClient }
     },
-    common: {}
+    common: { ConfigFileReader }
   }));
 
   await hostRpc({
@@ -275,7 +324,7 @@ test("host RPC applies the trusted cancellation signal to OCI clients", async ()
       ConfigFileAuthenticationDetailsProvider: class Provider {},
       core: { ComputeClient }
     },
-    common: {}
+    common: { ConfigFileReader }
   }));
   const abortController = new AbortController();
   await hostRpc({
@@ -405,7 +454,7 @@ test("host cancellation and retry policy work with real OCI SDK clients", async 
 });
 
 test("host RPC rejects unsupported client options", async () => {
-  const hostRpc = createOciSdkHostRpc(() => ({ sdk: {}, common: {} }));
+  const hostRpc = createOciSdkHostRpc(() => ({ sdk: {}, common: { ConfigFileReader } }));
 
   await assert.rejects(
     hostRpc({
@@ -427,7 +476,7 @@ test("host RPC rejects unsupported client options", async () => {
 });
 
 test("host RPC rejects malformed client regions", async () => {
-  const hostRpc = createOciSdkHostRpc(() => ({ sdk: {}, common: {} }));
+  const hostRpc = createOciSdkHostRpc(() => ({ sdk: {}, common: { ConfigFileReader } }));
 
   await assert.rejects(
     hostRpc({
@@ -468,7 +517,7 @@ test("host RPC preserves fields returned by SDK operations", async () => {
       ConfigFileAuthenticationDetailsProvider: class Provider {},
       core: { ComputeClient }
     },
-    common: {}
+    common: { ConfigFileReader }
   }));
 
   const result = await hostRpc({
@@ -512,7 +561,7 @@ test("host RPC rejects SDK helper methods before invocation", async () => {
       ConfigFileAuthenticationDetailsProvider: class Provider {},
       core: { ComputeClient }
     },
-    common: {}
+    common: { ConfigFileReader }
   }));
 
   await assert.rejects(
@@ -547,7 +596,7 @@ test("host RPC points SDK pagination helpers to direct list page tokens", async 
       ConfigFileAuthenticationDetailsProvider: class Provider {},
       core: { ComputeClient }
     },
-    common: {}
+    common: { ConfigFileReader }
   }));
 
   await assert.rejects(
@@ -612,7 +661,7 @@ function base64UrlJson(value: Record<string, unknown>): string {
 }
 
 test("host RPC rejects invalid identifiers before SDK lookup", async () => {
-  const hostRpc = createOciSdkHostRpc(() => ({ sdk: {}, common: {} }));
+  const hostRpc = createOciSdkHostRpc(() => ({ sdk: {}, common: { ConfigFileReader } }));
 
   await assert.rejects(
     hostRpc({
@@ -642,7 +691,7 @@ test("host RPC discovers services and clients", async () => {
       core: { ComputeClient, VirtualNetworkClient },
       identity: {}
     },
-    common: {}
+    common: { ConfigFileReader }
   }));
 
   assert.deepEqual(
@@ -737,7 +786,7 @@ test("host builds reflection manifest from installed SDK shape", () => {
       core: { ComputeClient, VirtualNetworkClient },
       identity: {}
     },
-    common: {}
+    common: { ConfigFileReader }
   }));
 
   assert.deepEqual(manifest, {
@@ -760,7 +809,7 @@ test("host builds reflection manifest from installed SDK shape", () => {
 });
 
 test("host RPC rejects unsupported envelopes", async () => {
-  const hostRpc = createOciSdkHostRpc(() => ({ sdk: {}, common: {} }));
+  const hostRpc = createOciSdkHostRpc(() => ({ sdk: {}, common: { ConfigFileReader } }));
   await assert.rejects(
     hostRpc({
       binding: "other" as never,
@@ -784,7 +833,7 @@ test("host RPC rejects unsupported envelopes", async () => {
 test("host RPC reports unknown invoke targets", async () => {
   const hostRpc = createOciSdkHostRpc(() => ({
     sdk: { core: {} },
-    common: {}
+    common: { ConfigFileReader }
   }));
   await assert.rejects(
     hostRpc({
@@ -822,7 +871,7 @@ test("host RPC reports unknown discovery targets and client operations", async (
   }
   const hostRpc = createOciSdkHostRpc(() => ({
     sdk: { core: { ComputeClient } },
-    common: {}
+    common: { ConfigFileReader }
   }));
 
   await assert.rejects(
@@ -894,7 +943,7 @@ test("host RPC rejects oversized OCI responses", async () => {
       ConfigFileAuthenticationDetailsProvider: class Provider {},
       core: { ComputeClient }
     },
-    common: {}
+    common: { ConfigFileReader }
   }));
 
   await assert.rejects(
@@ -926,7 +975,7 @@ test("host RPC rejects OCI responses that exceed structural and framing budgets"
       ConfigFileAuthenticationDetailsProvider: class Provider {},
       core: { ComputeClient }
     },
-    common: {}
+    common: { ConfigFileReader }
   });
   const hostRpc = createOciSdkHostRpc(loadSdk);
 
@@ -984,7 +1033,7 @@ test("host RPC handles an SDK operation disappearing from a client instance", as
       ConfigFileAuthenticationDetailsProvider: class Provider {},
       core: { ComputeClient }
     },
-    common: {}
+    common: { ConfigFileReader }
   }));
 
   await assert.rejects(

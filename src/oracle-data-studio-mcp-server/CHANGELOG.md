@@ -5,6 +5,7 @@
 ### Changed
 
 - Updated locked AnyIO to 4.14.2.
+- Raised the server's unit-test coverage gate to 90%, including branch coverage, with focused offline tests for connection and SDK failures, partial responses, mutation confirmation, and Data Transforms builders.
 
 ### Security
 

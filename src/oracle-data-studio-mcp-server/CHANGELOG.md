@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Raised the server's unit-test coverage gate to 90%, including branch coverage, with focused offline tests for connection and SDK failures, partial responses, mutation confirmation, and Data Transforms builders.
+
 ### Security
 
 - Updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).

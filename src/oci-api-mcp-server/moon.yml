@@ -1,2 +1,7 @@
 dependsOn:
   - 'common'
+
+tasks:
+  test:
+    inputs:
+      - '/scripts/oci-api-denylist-generator.py'

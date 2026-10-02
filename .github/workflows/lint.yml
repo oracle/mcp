@@ -11,6 +11,9 @@ permissions:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    env:
+      MOON_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      MOON_HEAD: ${{ github.sha }}
     steps:
     - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       with:
@@ -27,4 +30,4 @@ jobs:
     - name: Install Moon toolchains
       run: moon setup
     - name: Lint and check uv locks with Moon
-      run: moon run root:lint :lock-check
+      run: moon ci --include-relations :lint :lock-check

@@ -6,6 +6,7 @@
 
 import assert from "node:assert/strict";
 import { createServer } from "node:net";
+import { PassThrough } from "node:stream";
 import test from "node:test";
 import { Client, Server, ServerCredentials, credentials, status } from "@grpc/grpc-js";
 import {
@@ -17,12 +18,72 @@ import {
   type HostMessage,
   type RunnerMessage
 } from "../src/grpc.ts";
+import { createGrpcTlsBootstrap } from "../src/grpc-tls-host.ts";
+import { readRunnerTlsBootstrap, RUNNER_READY_LINE } from "../src/grpc-tls.ts";
 import { DEFAULT_DECODE_LIMITS, decodeJson, encodePayload } from "../src/protocol.ts";
 import type { RunnerServer } from "../src/generated/runner.ts";
 import { startGrpcExecution } from "../src/isolation/grpc-execution.ts";
 import { runJavaScript } from "../src/sandbox.ts";
 
 const method = RUNNER_SERVICE.session;
+
+test("TLS bootstrap creates client credentials and exact runner fields", () => {
+  const tls = createGrpcTlsBootstrap();
+  assert(tls.credentials);
+  assert.deepEqual(Object.keys(tls.runner).sort(), ["clientCert", "serverCert", "serverKey"]);
+  for (const value of Object.values(tls.runner)) assert.match(value, /-----BEGIN/);
+  assert.equal(RUNNER_READY_LINE, "READY\n");
+});
+
+test("TLS bootstrap parses one line without closing its input", async () => {
+  const input = new PassThrough();
+  const expected = { serverKey: "key", serverCert: "server", clientCert: "client" };
+  const parsed = readRunnerTlsBootstrap(input);
+  input.write(`${JSON.stringify(expected)}\n`);
+  assert.deepEqual(await parsed, expected);
+  assert.equal(input.writableEnded, false);
+  input.end();
+});
+
+test("TLS bootstrap accepts split string input and rejects non-object shapes and stream errors", async () => {
+  const input = new PassThrough();
+  input.setEncoding("utf8");
+  const expected = { serverKey: "key", serverCert: "server", clientCert: "client" };
+  const parsed = readRunnerTlsBootstrap(input);
+  const line = JSON.stringify(expected);
+  input.write(line.slice(0, 8));
+  input.write(`${line.slice(8)}\n`);
+  assert.deepEqual(await parsed, expected);
+
+  for (const value of [null, [], "not-an-object"]) {
+    const invalid = new PassThrough();
+    const result = readRunnerTlsBootstrap(invalid);
+    invalid.end(`${JSON.stringify(value)}\n`);
+    await assert.rejects(result, /invalid sandbox TLS bootstrap/);
+  }
+
+  const failed = new PassThrough();
+  const result = readRunnerTlsBootstrap(failed);
+  failed.destroy(new Error("private input failure"));
+  await assert.rejects(result, /invalid sandbox TLS bootstrap/);
+});
+
+test("TLS bootstrap rejects malformed, incomplete, oversized, and extra input", async () => {
+  const cases: Array<(input: PassThrough) => void> = [
+    input => input.end(),
+    input => input.end("{\n"),
+    input => input.end('{"serverKey":"k","serverCert":"s"}\n'),
+    input => input.end('{"serverKey":"k","serverCert":"s","clientCert":"c","extra":true}\n'),
+    input => input.end("x".repeat(32 * 1024 + 1)),
+    input => input.end('{"serverKey":"k","serverCert":"s","clientCert":"c"}\nextra')
+  ];
+  for (const write of cases) {
+    const input = new PassThrough();
+    const parsed = readRunnerTlsBootstrap(input);
+    write(input);
+    await assert.rejects(parsed, /invalid sandbox TLS bootstrap/);
+  }
+});
 
 test("v4 service is bidirectional and distinct from earlier endpoints", () => {
   assert.equal(method.path, "/oracle.oci.mcp.runner.v4.Runner/Session");

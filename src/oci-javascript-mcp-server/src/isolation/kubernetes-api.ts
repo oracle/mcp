@@ -198,7 +198,21 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
     deadlineMs: number,
     signal: AbortSignal
   ): Promise<void> {
-    const current = await this.#core.readNamespacedPod({ name, namespace });
+    if (signal.aborted || Date.now() >= deadlineMs) {
+      throw new Error("sandbox run deadline exceeded");
+    }
+    const read = deadlineRequestSignal(deadlineMs, signal);
+    let current: KubernetesPod;
+    try {
+      current = await this.#core.readNamespacedPod(
+        { name, namespace }, requestSignalOptions(read.signal)
+      );
+      if (read.signal.aborted || signal.aborted || Date.now() >= deadlineMs) {
+        throw new Error("sandbox run deadline exceeded");
+      }
+    } finally {
+      read.dispose();
+    }
     if (current.status?.phase === "Running") {
       return;
     }
@@ -231,6 +245,10 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
         `/api/v1/namespaces/${encodeURIComponent(namespace)}/pods`,
         { fieldSelector: `metadata.name=${name}` },
         (_event, pod: KubernetesPod) => {
+          if (signal.aborted || Date.now() >= deadlineMs) {
+            aborted();
+            return;
+          }
           if (pod.status?.phase === "Running") {
             finish();
             return;
@@ -239,7 +257,7 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
             finish(new Error("Kubernetes execution pod failed before running"));
           }
         },
-        error => finish(error ? new Error("Kubernetes pod watch failed") : undefined)
+        () => finish(new Error("Kubernetes pod watch failed"))
       ).then(value => {
         request = value;
         if (settled) {

@@ -5,6 +5,7 @@
  */
 
 import assert from "node:assert/strict";
+import { getEventListeners } from "node:events";
 import test from "node:test";
 import {
   HttpMethod,
@@ -203,6 +204,92 @@ test("client-node pod readiness handles current state, watch state, failure, abo
   await assert.rejects(errorPromise, /pod watch failed/);
 });
 
+test("client-node readiness rejects normal watch EOF before Running", async () => {
+  const harness = apiHarness();
+  const ready = harness.api.waitForPodRunning(
+    "execution", "pod", Date.now() + 1000, new AbortController().signal
+  );
+  const rejected = assert.rejects(ready, /Kubernetes pod watch failed/);
+  await new Promise(resolve => setImmediate(resolve));
+  harness.watch.finish(undefined);
+  await rejected;
+  assert.equal(harness.watch.abortController.signal.aborted, true);
+});
+
+test("client-node readiness does not read after cancellation or expiry", async () => {
+  for (const cancelled of [false, true]) {
+    const harness = apiHarness();
+    harness.core.readPod = { status: { phase: "Running" } };
+    const controller = new AbortController();
+    if (cancelled) controller.abort();
+    await assert.rejects(harness.api.waitForPodRunning(
+      "execution", "pod", Date.now() + (cancelled ? 1000 : -1), controller.signal
+    ), /deadline exceeded/);
+    assert.equal(harness.core.readOptions.length, 0);
+    assert.equal(harness.watch.calls.length, 0);
+  }
+});
+
+for (const cause of ["cancellation", "deadline"] as const) {
+  test(`client-node readiness bounds its initial GET on ${cause}`, async t => {
+    const harness = apiHarness();
+    const controller = new AbortController();
+    let release!: () => void;
+    harness.core.readBarrier = new Promise(resolve => { release = resolve; });
+    harness.core.readPod = { status: { phase: "Running" } };
+    t.after(release);
+    if (cause === "deadline") t.mock.timers.enable({ apis: ["Date", "setTimeout"] });
+    const ready = harness.api.waitForPodRunning(
+      "execution", "pod", Date.now() + 1000, controller.signal
+    );
+    const rejected = assert.rejects(ready, /deadline exceeded/);
+    await new Promise(resolve => setImmediate(resolve));
+    const requestSignal = await configuredSignal(harness.core.readOptions[0]);
+    assert.equal(requestSignal?.aborted, false);
+    if (cause === "deadline") t.mock.timers.tick(1001);
+    else controller.abort();
+    assert.equal(requestSignal?.aborted, true);
+    release();
+    await rejected;
+    assert.equal(harness.watch.calls.length, 0);
+    assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+  });
+}
+
+test("client-node readiness aborts a watch handle delivered after cancellation", async () => {
+  const harness = apiHarness();
+  let deliver!: (value: AbortController) => void;
+  harness.watch.result = new Promise(resolve => { deliver = resolve; });
+  const controller = new AbortController();
+  const ready = harness.api.waitForPodRunning(
+    "execution", "pod", Date.now() + 1000, controller.signal
+  );
+  const rejected = assert.rejects(ready, /deadline exceeded/);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(harness.watch.calls.length, 1);
+  controller.abort();
+  await rejected;
+  deliver(harness.watch.abortController);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(harness.watch.abortController.signal.aborted, true);
+  assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+});
+
+test("client-node readiness rejects Running observed after the deadline", async t => {
+  t.mock.timers.enable({ apis: ["Date"] });
+  const harness = apiHarness();
+  const deadlineMs = Date.now() + 1000;
+  const controller = new AbortController();
+  const ready = harness.api.waitForPodRunning("execution", "pod", deadlineMs, controller.signal);
+  const rejected = assert.rejects(ready, /deadline exceeded/);
+  await new Promise(resolve => setImmediate(resolve));
+  t.mock.timers.setTime(deadlineMs + 1);
+  harness.watch.emitPod({ status: { phase: "Running" } });
+  await rejected;
+  assert.equal(harness.watch.abortController.signal.aborted, true);
+  assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+});
+
 test("client-node deletion and NotFound confirmation fail closed", async () => {
   const harness = apiHarness();
   await harness.api.deletePod("execution", "pod");
@@ -372,6 +459,7 @@ class FakeCore {
   createBarrier: Promise<void> | undefined;
   deleteError: unknown;
   readError: unknown;
+  readBarrier: Promise<void> | undefined;
   readPod: V1Pod = { status: { phase: "Pending" } };
 
   async readNamespace(request: { name: string }) {
@@ -406,6 +494,7 @@ class FakeCore {
 
   async readNamespacedPod(_request?: unknown, options?: ConfigurationOptions) {
     this.readOptions.push(options);
+    await this.readBarrier;
     if (this.readError) {
       throw this.readError;
     }

@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- Require an observed Running Kubernetes pod before runner startup; respect
+  cancellation and execution deadlines during the initial readiness request.
+- Select OCI session authentication for named profiles that inherit token
+  configuration from DEFAULT, while respecting explicit profile overrides.
+- Preserve the final JavaScript expression result when trailing comments are
+  present, including expressions containing strings or regular expressions.
+- Generate arrays for required array fields in `discover_oci` request examples,
+  including arrays of models, while retaining bounded model expansion.
 - Preserve OCI status codes, service codes, operation details, and request IDs in
   uncaught `run_javascript` errors so callers can assess failures and retry decisions.
 

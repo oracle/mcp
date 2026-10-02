@@ -20,7 +20,7 @@ import {
   PROFILE_LABEL,
   PROVIDER_LABEL
 } from "../src/isolation/kubernetes-pod.ts";
-import { reconcileExpiredPods } from "../src/isolation/kubernetes-reconciler.ts";
+import { reconcileExpiredPods, startExpiryReconciliation, type ReconciliationSummary } from "../src/isolation/kubernetes-reconciler.ts";
 import {
   conformingPodAdmission,
   validInClusterEnvironment,
@@ -163,6 +163,93 @@ test("startup preflight fails after attempting every reconciliation candidate", 
   );
   await assert.rejects(provider.preflight({ startReconciliation: false }), /cleanup/);
   assert.deepEqual(api.deleted, ["second-deletes"]);
+});
+
+for (const stage of ["list", "delete"] as const) {
+  test(`background reconciliation does not overlap a pending ${stage} and stops idempotently`, async t => {
+    t.mock.timers.enable({ apis: ["setInterval"] });
+    const gate = Promise.withResolvers<void>();
+    const api = new ProfileApi(() => true);
+    api.pods = stage === "delete"
+      ? [managedPod("expired", "in-cluster", "execution", Date.now() - 1)] : [];
+    const list = api.listManagedPods.bind(api);
+    api.listManagedPods = async (...args) => {
+      const pods = await list(...args);
+      if (stage === "list" && api.listRequests.length === 1) await gate.promise;
+      return pods;
+    };
+    const remove = api.deletePod.bind(api);
+    api.deletePod = async (...args) => {
+      if (stage === "delete" && api.deleted.length === 0) await gate.promise;
+      await remove(...args);
+    };
+    const results: Array<ReconciliationSummary | undefined> = [];
+    const stop = startExpiryReconciliation(api, "execution", "in-cluster", 10, result => results.push(result));
+    t.after(() => { stop(); gate.resolve(); });
+    assert.equal(api.listRequests.length, 1, "first cycle must start immediately");
+    await new Promise(resolve => setImmediate(resolve));
+    t.mock.timers.tick(100);
+    assert.equal(api.listRequests.length, 1);
+    assert.equal(results.length, 0);
+    gate.resolve();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(results, [{ deletedNames: stage === "delete" ? ["expired"] : [], failureCount: 0 }]);
+    t.mock.timers.tick(10);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(api.listRequests.length, 2);
+    assert.equal(results.length, 2);
+    stop();
+    stop();
+    t.mock.timers.tick(100);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(api.listRequests, [
+      { namespace: "execution", profile: "in-cluster" },
+      { namespace: "execution", profile: "in-cluster" }
+    ]);
+  });
+}
+
+test("background reconciliation recovers from a failed list on the next interval", async t => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const api = new ProfileApi(() => true);
+  const list = api.listManagedPods.bind(api);
+  api.listManagedPods = async (...args) => {
+    const pods = await list(...args);
+    if (api.listRequests.length === 1) throw new Error("private-list-secret");
+    return pods;
+  };
+  const results: Array<ReconciliationSummary | undefined> = [];
+  const stop = startExpiryReconciliation(api, "execution", "in-cluster", 10, result => results.push(result));
+  t.after(stop);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(results, [undefined]);
+  t.mock.timers.tick(10);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(results, [undefined, { deletedNames: [], failureCount: 0 }]);
+  assert.deepEqual(api.listRequests, [
+    { namespace: "execution", profile: "in-cluster" },
+    { namespace: "execution", profile: "in-cluster" }
+  ]);
+});
+
+test("background reconciliation stop permits the active cycle to finish without scheduling another", async t => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const gate = Promise.withResolvers<void>();
+  const api = new ProfileApi(() => true);
+  const list = api.listManagedPods.bind(api);
+  api.listManagedPods = async (...args) => { await gate.promise; return list(...args); };
+  const results: Array<ReconciliationSummary | undefined> = [];
+  const stop = startExpiryReconciliation(api, "execution", "in-cluster", 10, result => results.push(result));
+  t.after(() => { stop(); gate.resolve(); });
+  stop();
+  stop();
+  t.mock.timers.tick(100);
+  gate.resolve();
+  await new Promise(resolve => setImmediate(resolve));
+  t.mock.timers.tick(100);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(api.listRequests.length, 1);
+  assert.deepEqual(results, [{ deletedNames: [], failureCount: 0 }]);
 });
 
 class ProfileApi implements KubernetesApi {

@@ -726,6 +726,72 @@ test("sandbox returns a trailing expression as structured result", async () => {
   assert.equal(result.result, 42);
 });
 
+test("sandbox preserves trailing expression results around comments", async t => {
+  const fixtures: Array<[string, unknown]> = [
+    ["const n = 41; n + 1; // answer", 42],
+    ["const n = 41; n + 1 // answer", 42],
+    ["const n = 41; n + 1;\n// answer", 42],
+    ["const n = 41; n + 1; /* answer */", 42],
+    ["const n = 41; n + 1; /* first */\n// second", 42],
+    ['"https://example.invalid/"; // answer', "https://example.invalid/"],
+    ['`/* text */`; // answer', "/* text */"],
+    ['/[/\\*]/.test("/"); // answer', true],
+    ["const n = 41; (\n n + 1\n); // answer", 42],
+    ["const n = 41; // declaration only", null],
+    ["return 42; // explicit return", 42],
+    ["const n = 41; n /* inner */ + 1; // answer", 42]
+  ];
+  for (const [code, expected] of fixtures) {
+    await t.test(code, async () => {
+      const result = await runJavaScript(code, { timeoutSeconds: 10, hostRpc: async () => null });
+      assert.deepEqual(result, {
+        result: expected, error: null, stdout: "", stderr: "", exitCode: 0, timedOut: false
+      });
+    });
+  }
+});
+
+test("sandbox retains syntax errors in unterminated trailing comments", async () => {
+  const result = await runJavaScript("42; /* unfinished", {
+    timeoutSeconds: 10, hostRpc: async () => null
+  });
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.error?.name, "SyntaxError");
+  assert.equal(result.result, null);
+});
+
+test("isolate preserves source after every JavaScript line-comment terminator", async t => {
+  for (const separator of ["\n", "\r", "\u2028", "\u2029"]) {
+    for (const [code, value, stdout] of [
+      [`(41 // inner${separator}+ 1); // answer`, 42, ""],
+      [`41 + 1; // first${separator}console.log("last");`, null, "last\n"]
+    ] as const) {
+      await t.test(JSON.stringify(code), async () => {
+        const result = await runJavaScriptInIsolate(code, {
+          deadlineMs: Date.now() + 1000, memoryLimitMb: 16,
+          maxResultBytes: 1024, hostRpc: async () => null
+        });
+        assert.deepEqual(result, {
+          result: value, stdout, stderr: "", error: null, exitCode: 0, timedOut: false
+        });
+      });
+    }
+  }
+});
+
+test("isolate distinguishes postfix division from regular expressions", async t => {
+  for (const code of ["let n = 84; n++ / 2;", "let n = 84; n-- / 2; // answer"]) {
+    await t.test(code, async () => {
+      const result = await runJavaScriptInIsolate(code, {
+        deadlineMs: Date.now() + 1000, memoryLimitMb: 16,
+        maxResultBytes: 1024, hostRpc: async () => null
+      });
+      assert.equal(result.result, 42);
+      assert.equal(result.exitCode, 0);
+    });
+  }
+});
+
 test("sandbox rejects oversized structured results before host RPC", async () => {
   const result = await runJavaScript(
     `"x".repeat(1024 * 1024);`,
@@ -1349,6 +1415,72 @@ test("sandbox supports explicitly awaited host RPC chains", async () => {
   assert.equal(result.stdout.trim(), "user code returned");
   assert.equal(hostCalls, 2);
 });
+
+for (const mixed of [false, true]) {
+  test(`sandbox preserves concurrent RPC correlation (${mixed ? "mixed outcomes" : "successes"})`, {
+    timeout: 15_000
+  }, async () => {
+    const gates = Array.from({ length: 3 }, () => Promise.withResolvers<void>());
+    const accepted = Promise.withResolvers<void>();
+    let count = 0;
+    const completionOrder: number[] = [];
+    const running = runJavaScript(`
+      const calls = [0, 1, 2].map(index =>
+        oci.core.ComputeClient.listInstances({ compartmentId: String(index) })
+      );
+      const settled = await Promise.${mixed ? "allSettled" : "all"}(calls);
+      ${mixed ? `settled.map(entry => entry.status === "fulfilled"
+        ? { status: entry.status, value: entry.value }
+        : { status: entry.status, message: entry.reason.message,
+            statusCode: entry.reason.statusCode, opcRequestId: entry.reason.opcRequestId });`
+        : 'settled.map(value => ({ status: "fulfilled", value }));'}
+    `, {
+      timeoutSeconds: 10,
+      hostRpc: async request => {
+        const index = Number((request.payload.request as { compartmentId: string }).compartmentId);
+        assert(index >= 0 && index < gates.length);
+        if (++count === 3) accepted.resolve();
+        await gates[index].promise;
+        completionOrder.push(index);
+        if (mixed && index === 1) {
+          throw Object.assign(new Error("private-correlation-secret"), {
+            statusCode: 503, opcRequestId: "request-1"
+          });
+        }
+        return { items: [{ id: `instance-${index}` }] };
+      }
+    });
+    try {
+      await Promise.race([accepted.promise, running.then(() => {
+        throw new Error("execution completed before accepting all calls");
+      })]);
+      for (const index of [2, 1, 0]) {
+        gates[index].resolve();
+        await new Promise(resolve => setImmediate(resolve));
+      }
+      const result = await running;
+      assert.equal(result.exitCode, 0);
+      assert.equal(result.error, null);
+      assert.deepEqual(completionOrder, [2, 1, 0]);
+      assert.deepEqual(result.result, [
+        { status: "fulfilled", value: { items: [{ id: "instance-0" }] } },
+        mixed
+          ? { status: "rejected", message: "OCI call failed", statusCode: 503, opcRequestId: "request-1" }
+          : { status: "fulfilled", value: { items: [{ id: "instance-1" }] } },
+        { status: "fulfilled", value: { items: [{ id: "instance-2" }] } }
+      ]);
+      assert.equal(JSON.stringify(result).includes("private-correlation-secret"), false);
+    } finally {
+      for (const gate of gates) gate.resolve();
+      await running;
+    }
+    if (mixed) {
+      const next = await runJavaScript("42", { timeoutSeconds: 10, hostRpc: async () => null });
+      assert.equal(next.result, 42);
+      assert.equal(next.exitCode, 0);
+    }
+  });
+}
 
 test("sandbox caps concurrent host OCI RPC calls", async () => {
   let hostCalls = 0;

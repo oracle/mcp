@@ -198,7 +198,7 @@ spec:
       message: token mounting, service links, and restart behavior must remain disabled
     - expression: (!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) && (!has(object.spec.hostPID) || object.spec.hostPID == false) && (!has(object.spec.hostIPC) || object.spec.hostIPC == false)
       message: host namespaces are forbidden
-    - expression: size(object.spec.containers) == 1 && !has(object.spec.initContainers) && !has(object.spec.ephemeralContainers) && object.spec.containers[0].name == 'runner' && object.spec.containers[0].image == 'localhost/oci-javascript-mcp-runner@sha256:0fb842c53db758a8f59589c9c637165e139ae94e1f56448f0266f56cbd5f5283' && object.spec.containers[0].imagePullPolicy == 'IfNotPresent'
+    - expression: size(object.spec.containers) == 1 && !has(object.spec.initContainers) && !has(object.spec.ephemeralContainers) && object.spec.containers[0].name == 'runner' && object.spec.containers[0].image == 'localhost/oci-javascript-mcp-runner@sha256:00a0c1d646e41977ebd7b97f064b252dbb6ca20f3ed91329dfd7f8b3b4c69f3e' && object.spec.containers[0].imagePullPolicy == 'IfNotPresent'
       message: exactly one digest-pinned runner container is required
     - expression: object.spec.containers[0].command == ['node', '--no-node-snapshot', '--experimental-strip-types', '-e', 'setInterval(() => {}, 2147483647)'] && !has(object.spec.containers[0].env)
       message: the fixed silent wait command and empty environment are required
@@ -246,7 +246,7 @@ spec:
       automountServiceAccountToken: true
       containers:
         - name: host
-          image: localhost/oci-javascript-mcp-host@sha256:93f88323d05dee10195eb907c23a0ddd76f5abbc472db8505fd435dc4bf27903
+          image: localhost/oci-javascript-mcp-host@sha256:22870f45389030f8c63caa554c00614fae314c4b7beb19bfa5bfe8d7a3d41be9
           imagePullPolicy: IfNotPresent
           stdin: true
           env:
@@ -259,7 +259,7 @@ spec:
             - name: OCI_JAVASCRIPT_KUBERNETES_RUNNER_SERVICE_ACCOUNT
               value: oci-js-runner
             - name: OCI_JAVASCRIPT_KUBERNETES_IMAGE
-              value: localhost/oci-javascript-mcp-runner@sha256:0fb842c53db758a8f59589c9c637165e139ae94e1f56448f0266f56cbd5f5283
+              value: localhost/oci-javascript-mcp-runner@sha256:00a0c1d646e41977ebd7b97f064b252dbb6ca20f3ed91329dfd7f8b3b4c69f3e
             - name: OCI_JAVASCRIPT_KUBERNETES_TRUSTED_HOST_NAMESPACE
               valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
             - name: OCI_JAVASCRIPT_KUBERNETES_TRUSTED_HOST_POD_NAME
@@ -313,7 +313,7 @@ spec:
       automountServiceAccountToken: true
       containers:
         - name: reconciler
-          image: localhost/oci-javascript-mcp-host@sha256:93f88323d05dee10195eb907c23a0ddd76f5abbc472db8505fd435dc4bf27903
+          image: localhost/oci-javascript-mcp-host@sha256:22870f45389030f8c63caa554c00614fae314c4b7beb19bfa5bfe8d7a3d41be9
           imagePullPolicy: IfNotPresent
           command:
             - node

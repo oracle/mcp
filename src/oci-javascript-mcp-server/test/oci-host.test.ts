@@ -226,6 +226,89 @@ test("host RPC config tolerates unavailable provider fields and malformed sessio
   });
 });
 
+test("host authentication follows named profile inheritance and overrides", async t => {
+  const fixtures = [
+    { name: "default API key", contents: "[DEFAULT]\n", profile: "DEFAULT", token: undefined },
+    { name: "default session", contents: "[DEFAULT]\nsecurity_token_file=/synthetic/default\n", profile: "DEFAULT", token: "/synthetic/default" },
+    { name: "padded default section", contents: "[ DEFAULT ]\nsecurity_token_file=/synthetic/default\n", profile: "DEFAULT", token: "/synthetic/default" },
+    { name: "named API key", contents: "[DEFAULT]\n[WORK]\nregion=us-phoenix-1\n", profile: "WORK", token: undefined },
+    { name: "named session", contents: "[DEFAULT]\n[WORK]\nsecurity_token_file=/synthetic/work\n", profile: "WORK", token: "/synthetic/work" },
+    { name: "inherited session", contents: "[DEFAULT]\nsecurity_token_file=/synthetic/default\n[WORK]\nregion=us-phoenix-1\n", profile: "WORK", token: "/synthetic/default" },
+    { name: "overridden session", contents: "[DEFAULT]\nsecurity_token_file=/synthetic/default\n[WORK]\nsecurity_token_file=/synthetic/work\n", profile: "WORK", token: "/synthetic/work" },
+    { name: "empty override", contents: "[DEFAULT]\nsecurity_token_file=/synthetic/default\n[WORK]\nsecurity_token_file=\n", profile: "WORK", token: "" }
+  ];
+  for (const fixture of fixtures) {
+    await t.test(fixture.name, async () => {
+      assert.equal(common.ConfigFileReader.parse(fixture.contents, fixture.profile)
+        .get("security_token_file"), fixture.token);
+      await withTemporaryOciConfig(fixture.contents, async () => {
+        const constructors: unknown[] = [];
+        class ApiKeyProvider {
+          constructor(file: string, profile: string) {
+            constructors.push({ kind: "api-key", file, profile });
+          }
+        }
+        class SessionProvider {
+          constructor(file: string, profile: string) {
+            constructors.push({ kind: "session", file, profile });
+          }
+        }
+        class ComputeClient {
+          constructor(options: { authenticationDetailsProvider: unknown; additionalUserAgent: string }, configuration: any) {
+            assert(options.authenticationDetailsProvider instanceof (fixture.token ? SessionProvider : ApiKeyProvider));
+            const metadata = require("../package.json") as { version: string };
+            assert.equal(options.additionalUserAgent, `oci-javascript-mcp/${metadata.version}`);
+            assert.equal(configuration.retryConfiguration, common.NoRetryConfigurationDetails);
+            assert.equal(configuration.circuitBreaker.circuit, null);
+            assert.equal(configuration.circuitBreaker.noCircuit, true);
+          }
+          async listInstances() { return { items: [] }; }
+        }
+        const hostRpc = createOciSdkHostRpc(() => ({
+          sdk: { ConfigFileAuthenticationDetailsProvider: ApiKeyProvider, core: { ComputeClient } },
+          common: { SessionAuthDetailProvider: SessionProvider }
+        }));
+        await hostRpc({ binding: "oracle", namespace: "oci", operation: "config", payload: {} });
+        assert.deepEqual(await hostRpc({
+          binding: "oracle", namespace: "oci", operation: "invoke",
+          payload: { service: "core", client: { name: "ComputeClient" }, operation: "listInstances", request: {} }
+        }), { items: [] });
+        assert.deepEqual(constructors, Array.from({ length: 2 }, () => ({
+          kind: fixture.token ? "session" : "api-key",
+          file: process.env.OCI_CONFIG_FILE,
+          profile: fixture.profile
+        })));
+      }, fixture.profile);
+    });
+  }
+});
+
+test("host authentication rejects a missing named profile without selecting a provider", async () => {
+  await withTemporaryOciConfig("[DEFAULT]\n", async () => {
+    let constructed = false;
+    const hostRpc = createOciSdkHostRpc(() => ({
+      sdk: { ConfigFileAuthenticationDetailsProvider: class {
+        constructor() { constructed = true; }
+      } }, common: {}
+    }));
+    await assert.rejects(hostRpc({
+      binding: "oracle", namespace: "oci", operation: "config", payload: {}
+    }), /profile/i);
+    assert.equal(constructed, false);
+  }, "MISSING");
+});
+
+test("host authentication selection does not add SDK diagnostics for named-only config", async t => {
+  const info = t.mock.method(console, "info", () => {});
+  await withTemporaryOciConfig("[WORK]\nsecurity_token_file=/synthetic/token\n", async () => {
+    const hostRpc = createOciSdkHostRpc(() => ({
+      sdk: {}, common: { SessionAuthDetailProvider: class {} }
+    }));
+    await hostRpc({ binding: "oracle", namespace: "oci", operation: "config", payload: {} });
+    assert.equal(info.mock.callCount(), 0);
+  }, "WORK");
+});
+
 test("host RPC invokes OCI JavaScript SDK clients", async () => {
   const calls: unknown[] = [];
   class ComputeClient {
@@ -928,7 +1011,8 @@ test("host RPC points SDK pagination helpers to direct list page tokens", async 
 
 async function withTemporaryOciConfig<T>(
   contents: string,
-  callback: () => Promise<T>
+  callback: () => Promise<T>,
+  profile = "DEFAULT"
 ): Promise<T> {
   const directory = mkdtempSync(join(tmpdir(), "oci-javascript-mcp-server-"));
   const configPath = join(directory, "config");
@@ -937,7 +1021,7 @@ async function withTemporaryOciConfig<T>(
   try {
     writeFileSync(configPath, contents, "utf8");
     process.env.OCI_CONFIG_FILE = configPath;
-    process.env.OCI_CONFIG_PROFILE = "DEFAULT";
+    process.env.OCI_CONFIG_PROFILE = profile;
     return await callback();
   } finally {
     if (previousConfigFile === undefined) {
@@ -1078,6 +1162,28 @@ test("host RPC discovers JavaScript SDK request and response shapes", async () =
       compartmentId: "<compartmentId>"
     }
   });
+});
+
+test("host discovery examples preserve required model and primitive arrays", async t => {
+  const hostRpc = createOciSdkHostRpc();
+  const fixtures = [
+    { service: "core", client: "VirtualNetworkClient", operation: "createServiceGateway", body: "createServiceGatewayDetails", field: "services", expected: [{ serviceId: "<serviceId>" }] },
+    { service: "core", client: "VirtualNetworkClient", operation: "createDhcpOptions", body: "createDhcpDetails", field: "options", expected: [{ type: "<type>" }] },
+    { service: "core", client: "ComputeClient", operation: "createComputeCapacityReport", body: "createComputeCapacityReportDetails", field: "shapeAvailabilities", expected: [{ instanceShape: "<instanceShape>" }] },
+    { service: "identity", client: "IdentityClient", operation: "createPolicy", body: "createPolicyDetails", field: "statements", expected: [] },
+    { service: "core", client: "VirtualNetworkClient", operation: "addDrgRouteDistributionStatements", body: "addDrgRouteDistributionStatementsDetails", field: "statements", expected: [{ matchCriteria: [], action: "<action>", priority: 0 }] }
+  ];
+  for (const { service, client, operation, body, field, expected } of fixtures) {
+    await t.test(operation, async () => {
+      const result = await hostRpc({
+        binding: "oracle", namespace: "oci", operation: "discover",
+        payload: { service, client, operation }
+      }) as Record<string, any>;
+      assert(Array.isArray(result.exampleRequest[body][field]));
+      assert.deepEqual(result.exampleRequest[body][field], expected);
+      assert.deepEqual(result, JSON.parse(JSON.stringify(result)));
+    });
+  }
 });
 
 test("host builds reflection manifest from installed SDK shape", () => {

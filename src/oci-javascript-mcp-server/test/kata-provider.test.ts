@@ -15,6 +15,7 @@ import type {
   KubernetesPod,
   ResourceAttributes
 } from "../src/isolation/kubernetes-api.ts";
+import { ClientNodeKubernetesApi } from "../src/isolation/kubernetes-api.ts";
 import type {
   KubernetesGrpcTunnel,
   KubernetesRunnerHandle
@@ -42,6 +43,49 @@ test("Kata preflight requires exec and port-forward only on the trusted host", a
     }
   }
   assert.equal(api.createdPods.length, 0);
+});
+
+test("Kubernetes never starts a runner after readiness watch EOF", async () => {
+  const api = new FakeKubernetesApi();
+  const adapter = new ClientNodeKubernetesApi(
+    { readNamespacedPod: async () => ({ status: { phase: "Pending" } }) } as unknown as
+      ConstructorParameters<typeof ClientNodeKubernetesApi>[0],
+    {} as ConstructorParameters<typeof ClientNodeKubernetesApi>[1],
+    {} as ConstructorParameters<typeof ClientNodeKubernetesApi>[2],
+    { watch: async (_path: string, _query: unknown, _event: unknown, done: () => void) => {
+      done();
+      return new AbortController();
+    } } as unknown as ConstructorParameters<typeof ClientNodeKubernetesApi>[3],
+    {} as ConstructorParameters<typeof ClientNodeKubernetesApi>[4]
+  );
+  api.waitForPodRunning = (...args: Parameters<KubernetesApi["waitForPodRunning"]>) =>
+    adapter.waitForPodRunning(...args);
+  const provider = createProvider(api);
+  await provider.preflight({ startReconciliation: false });
+  const execution = provider.run("42", runOptions());
+  assert.equal((await execution.result).error?.message, "isolation provider failed");
+  assert.deepEqual(api.lifecycle, ["create"]);
+  await execution.terminate();
+  assert.equal(api.pods.size, 0);
+});
+
+test("Kubernetes preflight starts reconciliation and stop prevents later cycles", async t => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const api = new FakeKubernetesApi();
+  const list = t.mock.method(api, "listManagedPods");
+  const provider = createProvider(api);
+  t.after(() => provider.stopReconciliation());
+  await provider.preflight();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(list.mock.callCount(), 2, "preflight sweep and immediate background cycle");
+  t.mock.timers.tick(60_000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(list.mock.callCount(), 3);
+  provider.stopReconciliation();
+  provider.stopReconciliation();
+  t.mock.timers.tick(120_000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(list.mock.callCount(), 3);
 });
 
 test("Kubernetes cleanup starts every resource concurrently with one deadline and is idempotent", async () => {
@@ -487,7 +531,9 @@ class FakeKubernetesApi implements KubernetesApi {
     this.createdPods.push(copy);
     this.pods.set(copy.metadata!.name!, copy);
   }
-  async waitForPodRunning(): Promise<void> {
+  async waitForPodRunning(
+    _namespace: string, _name: string, _deadlineMs: number, _signal: AbortSignal
+  ): Promise<void> {
     this.lifecycle.push("running");
     if (this.failure === "running") throw new Error("private image failure");
   }

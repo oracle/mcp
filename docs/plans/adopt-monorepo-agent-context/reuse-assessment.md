@@ -1,87 +1,72 @@
-# Guide reuse assessment against main
+# Guide reuse assessment against updated main
 
-Status: **Reassessed on October 5, 2026 for a fresh main-based monorepo-agent branch.** This replaces the pagination-based assessment for this branch. At that assessment stage no guides had been adapted. Subsequent approved guide implementation is recorded in the adoption summary; server code/tooling remain unchanged and no server tests or agent trial have run.
+Status: **Reassessed on October 5, 2026 after the user pulled main and requested a rebase plus guidance corrections.** This is the current source assessment. The earlier main baseline and its review are retained as historical evidence in the adoption summary. Only documentation changes belong to this branch; no server tests or agent trial have run.
 
 ## Source identities and method
 
 | Source | Identity | Use |
 | --- | --- | --- |
-| Fork local main | `d0e442b3ddcffe05c6f366c14dac42548641b60f` | Clean application, instruction and command baseline |
-| Earlier broad-guide work | `enhanced-agent-harness`, `03faa20e23753a4a148839243382c7d3b11dac5e` | Individual guide/source leads to recheck |
-| Framework reviewed draft | AI Pit Crew `codex/agent-guide-contract`, `c9b1724` | Nine-area informational guide profile |
-| Previous planning bundle | `c4a36c7d025758cc9969428e649337a1066c5b2c` | Four documents copied and revised; no commit or application history imported |
+| Updated fork main | `52ea0163591d4c8bf3adc8e7cf74e7532ecd1df4` | Current application, instruction and task baseline; equals local `origin/main` at reassessment |
+| Initial fork main | `d0e442b3ddcffe05c6f366c14dac42548641b60f` | Historical pre-rebase baseline, superseded for current guidance |
+| Pre-rebase delivery | `c06877005d595367b01e24b71591da6d48302836` | Preserved in local `codex/monorepo-agent-context-before-rebase`; prior review does not validate newer sources |
+| Earlier broad-guide work | `03faa20e23753a4a148839243382c7d3b11dac5e` | Individual source/guide leads, rechecked rather than merged |
+| Framework reviewed draft | AI Pit Crew `c9b1724` | Nine-area informational guide profile |
 
-Inspected tracked trees, pinned older guides, scoped diffs and main's native docs, manifests, Makefile, Moon definitions, entry points and test definitions. `main` denotes the fork's existing local branch; no remote fetch or latest-remote claim is made. Its snapshot is materially different from the previous pagination-based plan.
-
-Common and Cloud implementation/tests/manifests are unchanged relative to the inspected broad-guide source. JavaScript source/tests are unchanged, but package scripts and task configuration differ. Compute source/model/tests and Java implementation/tests/POM differ. No unchanged-source assumption can be transferred across all five packages. Reuse each verified fact, not the old branch as a unit.
+Rebased the six context commits onto the user's updated main without conflicts, then inspected the upstream diff, current native docs, task definitions, manifests, selected implementation and test definitions. This task did not fetch again. Source identities changed materially: no unchanged-source or prior-review assumption is transferred to this revision.
 
 ## Core-area dispositions
 
-R = source-backed content can be reused; V = adapt/recheck against main. Explicit gaps below remain even in otherwise reusable areas. The same nine questions apply at root and local scopes; inherited answers do not need repeated bodies.
-
-| Core area | Root | Common | Compute | Cloud | JavaScript | Java toolkit |
-| --- | --- | --- | --- | --- | --- | --- |
-| Scope/ownership | V: selected guide map | R: auth library | R: compute operations | R: dynamic SDK | V: root exception claim | R: configurable toolkit |
-| Entry points | V: native/shared routes | R: auth/exports/tests | V: main tools/models/tests | R: discovery/invocation/tests | R: host/runner/protocol | V: main config/tools/OAuth/tests |
-| Setup/build/run | V: Makefile and Moon | R: manifest/lock/tasks | V: current native procedures | R: workspace/tasks | V: main npm scripts | R: README Maven/JDK |
-| Tests/validation | V: actual command scopes | V: shared map | V: no focused Moon task | V: shared map | V: npm ci is valid here | V: two tests; discovery/coverage gap |
-| Architecture/dependencies | V: shared/runtime boundaries | R: auth ownership | V: main behavior; legacy auth | R: Common/dynamic calls | R: host/runner split | V: exclude newer implementation claims |
-| Security/secrets | R: native policy routes | R: auth boundaries | R: legacy credential gap | R: caller-specific clients | V: policy conflict explicit | V: main OAuth/auth sources |
-| Change impact | V: selected scope/consumers | V: three declared consumers | V: current tools/models | R: dynamic operation surface | V: npm validation | V: current handlers/config |
-| Known gaps | V: scoped source limits | V: doc/manifest mismatch | V: no new test-result claim | R: unrun validation | V: isolation/policy limits | V: discovery/90% limits |
-| Workflow/routing | V: existing sources/intents | V: new shared links | V: current local topics | V: shared/local composition | V: native runtime routes | V: native runtime routes |
+All nine areas remain required for the selected guides, with concise local answers, specific shared/native references or explicit gaps. This pass rechecks scope/ownership, entry points, setup/build/run, tests/validation, architecture/dependencies, security/secrets, change impact, known gaps and workflow/routing. Exact heading representation remains flexible. Shared answers remain centralized.
 
 ## Root and shared guidance
 
-Main has a [root guide](../../../AGENTS.md), [README](../../../README.md), [BEST_PRACTICES](../../../BEST_PRACTICES.md), [CONTRIBUTING](../../../CONTRIBUTING.md) and [SECURITY](../../../SECURITY.md). It has no selected nested guides or `docs/agent-development.md`. Create those as the scoped monorepo-agent deliverable. CONTRIBUTING governs contribution/signoff; SECURITY is vulnerability-reporting guidance, not a complete runtime security contract.
+Preserve updated [root instructions](../../../AGENTS.md), including Moon validation and exclusions. [README](../../../README.md), [BEST_PRACTICES](../../../BEST_PRACTICES.md), [CONTRIBUTING](../../../CONTRIBUTING.md) and [SECURITY](../../../SECURITY.md) retain their native responsibilities. The selected nested guides and [shared engineering map](../../agent-development.md) are this branch's additions.
 
-The older shared engineering document supplies orientation, validation mapping and evidence distinctions. Adapt those responsibilities, excluding skill routing/catalog/provenance, fixed development workflows, environment/approval mechanics and missing evaluation-document dependencies. Keep native sources authoritative and show Do/Know/Now/Proof routes; no archive or placeholder intent folders are required.
-
-Unlike the pagination baseline, main retains the [Makefile](../../../Makefile) and root Makefile validation instructions alongside [Moon Python tasks](../../../.moon/tasks/python.yml) and [root tasks](../../../moon.yml). Document both sources and their scope. Do not copy newer Moon-only root instructions or replace command definitions. Compute remains a structure/model/test reference; its legacy auth is not the Common contract to copy.
+Main removed the Makefile. [Inherited Python tasks](../../../.moon/tasks/python.yml), [root tasks](../../../moon.yml), [workspace discovery](../../../.moon/workspace.yml), [toolchains](../../../.moon/toolchains.yml) and [JavaScript tasks](../../../src/oci-javascript-mcp-server/moon.yml) now own validation definitions. Remove obsolete Make commands and links. Root aggregate Python coverage is a direct coverage-tool task, separate from package tests. No `test-focused` task exists. Compute remains a structure/model/test reference with legacy auth, not the shared credential contract to copy.
 
 ## Common and Cloud
 
-Common's [README](../../../src/common/README.md), [auth implementation](../../../src/common/oracle_mcp_common/auth.py), [exports](../../../src/common/oracle_mcp_common/__init__.py), [tests](../../../src/common/oracle_mcp_common/tests/test_auth.py) and [manifest](../../../src/common/pyproject.toml) support the old library orientation and credential/per-caller HTTP boundaries. The library owns auth ingredients, not server listeners or service clients.
+[Common README](../../../src/common/README.md), [auth](../../../src/common/oracle_mcp_common/auth.py), [exports](../../../src/common/oracle_mcp_common/__init__.py), [tests](../../../src/common/oracle_mcp_common/tests/test_auth.py) and [manifest](../../../src/common/pyproject.toml) remain the owning auth sources. Common owns credential ingredients; servers own listeners, request retrieval and service clients.
 
-Main declares `oracle-mcp-common` consumers in API, Cloud and Database manifests; all three also declare Moon `common` dependency edges. The DB Observability consumer from the previous assessment is not present here. Compute has no Common dependency. Recheck actual consumers for later shared changes.
+Five manifests declare Common: API, Cloud, Database, DB Observability and Document Understanding. API, Cloud and Database explicitly declare Common Moon dependency edges; the two newer consumers have no package Moon file. Dependency declarations, build graph edges and actual call sites are separate facts; no whole-repository migration is inferred. Compute declares no Common dependency.
 
-The Common README lists OCI SDK 2.179.0+ and optional FastMCP 3.4.2; the manifest declares OCI 2.185.0+ and FastMCP `>=3.2.4,<4.0.0`. Link the manifest for install requirements and record the mismatch; do not reconcile version policy in this pass.
+Common's README still lists OCI SDK 2.179.0+ and optional FastMCP 3.4.2, while the manifest declares OCI 2.185.0+ and FastMCP `>=3.2.4,<4.0.0`. Preserve the mismatch as a gap and use the manifest for installation requirements; no version-policy change is authorized.
 
-Cloud's [server](../../../src/oci-cloud-mcp-server/oracle/oci_cloud_mcp_server/server.py), [test directory](../../../src/oci-cloud-mcp-server/oracle/oci_cloud_mcp_server/tests), [manifest](../../../src/oci-cloud-mcp-server/pyproject.toml) and [Moon dependency](../../../src/oci-cloud-mcp-server/moon.yml) support reuse of dynamic discovery/coercion/invocation/serialization, Common auth and caller-specific client descriptions. Add native source/test routes without importing a shared pagination policy.
+Cloud's [server](../../../src/oci-cloud-mcp-server/oracle/oci_cloud_mcp_server/server.py), [tests](../../../src/oci-cloud-mcp-server/oracle/oci_cloud_mcp_server/tests), [manifest](../../../src/oci-cloud-mcp-server/pyproject.toml) and [Moon dependency](../../../src/oci-cloud-mcp-server/moon.yml) still support dynamic discovery/coercion/invocation/serialization and Common auth with caller-specific clients. Update setup and validation routes; retain the transport-selection distinction and no imported pagination policy.
 
 ## Compute
 
-Recheck the older guide against main's [server](../../../src/oci-compute-mcp-server/oracle/oci_compute_mcp_server/server.py), [models](../../../src/oci-compute-mcp-server/oracle/oci_compute_mcp_server/models.py), [tool tests](../../../src/oci-compute-mcp-server/oracle/oci_compute_mcp_server/tests/test_compute_tools.py), [model tests](../../../src/oci-compute-mcp-server/oracle/oci_compute_mcp_server/tests/test_compute_models.py) and [manifest](../../../src/oci-compute-mcp-server/pyproject.toml). Main lacks the subsequent response/model/limit fixes and associated tests; those changes must not enter this branch through guide reuse.
+Current [server](../../../src/oci-compute-mcp-server/oracle/oci_compute_mcp_server/server.py), [models](../../../src/oci-compute-mcp-server/oracle/oci_compute_mcp_server/models.py), [tool tests](../../../src/oci-compute-mcp-server/oracle/oci_compute_mcp_server/tests/test_compute_tools.py) and [model tests](../../../src/oci-compute-mcp-server/oracle/oci_compute_mcp_server/tests/test_compute_models.py) now include boot-volume instance sources with precedence over image sources. Replace stale blanket claims that newer source/test additions are absent. Use current definitions for response work without changing application behavior.
 
-Scope, major entry points and the legacy local security-token/HTTP exchange gap remain useful. Describe only main's behavior and available evidence. The inherited Moon file has no `test-focused`; use existing Makefile/Moon commands with their actual scope. A pagination question can point to current source/tests as an optional example, without new pagination documentation or policy.
+Legacy local config/security-token resolution and HTTP exchange remain outside Common; preserve that gap. Replace setup/test/lint commands with current Moon/native environment routes. Existing test definitions and configured 90% coverage are not executed results.
 
 ## JavaScript
 
-The [README](../../../src/oci-javascript-mcp-server/README.md), [host](../../../src/oci-javascript-mcp-server/src/oci-host.ts), [protocol](../../../src/oci-javascript-mcp-server/src/protocol.ts), [Podman provider](../../../src/oci-javascript-mcp-server/src/isolation/podman.ts) and [tests](../../../src/oci-javascript-mcp-server/test) support host-owned credentials, bounded runner communication and fake-control-plane evidence limits.
+The [README](../../../src/oci-javascript-mcp-server/README.md), [host](../../../src/oci-javascript-mcp-server/src/oci-host.ts), [protocol](../../../src/oci-javascript-mcp-server/src/protocol.ts), [schema](../../../src/oci-javascript-mcp-server/proto/runner.proto), [gRPC lifecycle](../../../src/oci-javascript-mcp-server/src/isolation/grpc-execution.ts), [provider](../../../src/oci-javascript-mcp-server/src/isolation/podman.ts) and [tests](../../../src/oci-javascript-mcp-server/test) describe a bounded mTLS gRPC bridge. The old pipe lifecycle is removed. The provider creates an internal no-egress network and publishes the gRPC port to host loopback; it does not disable networking entirely. Host OCI credentials remain outside the runner. Matching v4 host/runner versions and image rebuilds matter for compatibility.
 
-Here [package.json](../../../src/oci-javascript-mcp-server/package.json) defines `test`, `coverage`, `check`, `packcheck` and `ci`: the older `npm run ci` route is valid on main. It runs coverage, type checking and package verification. c8 enforces 90% line coverage with exclusions; `npm test` alone does not enforce that threshold. Main has no explicit package `moon.yml`; [toolchains](../../../.moon/toolchains.yml) enable task inference from npm scripts. Prefer native README/npm commands, not the later explicit Moon configuration.
+Explicit [Moon tasks](../../../src/oci-javascript-mcp-server/moon.yml) own compile, test, check, build and runner-build. Test/check/build depend on generated compile output. [package.json](../../../src/oci-javascript-mcp-server/package.json) exposes only `start`; former npm validation and Podman-build scripts are unavailable. Node 26+ and npm 11.12.1 remain declared; c8 enforces 90% line coverage with exclusions. A package changelog now exists.
 
-Root's subprocess rule names API alone as an exception, while JavaScript already invokes Podman. Record that instruction/implementation conflict; do not import the old guide's authorization claim or add an exception. Fake tests do not establish real Podman isolation, and shared-kernel containers are not VM boundaries. Python Common auth does not define this Node SDK implementation.
+Preserve root's existing subprocess-policy conflict: it names only API as an exception while JavaScript invokes Podman. This guide grants no new exception. Fake-control-plane tests exercise hardened command construction and mTLS gRPC behavior, not Podman deployment isolation. Shared-kernel containers are not VM boundaries.
 
 ## Java toolkit
 
-Main's [README](../../../src/oracle-db-mcp-java-toolkit/README.md) documents JDK 17+, Maven 3.9+, `mvn clean package`, tool/configuration and transport/OAuth procedures. The [POM](../../../src/oracle-db-mcp-java-toolkit/pom.xml) declares Java 17/JUnit with no explicit Surefire pin or JaCoCo enforcement. Actual discovery and the root 90% requirement remain unverified/gapped.
+[README](../../../src/oracle-db-mcp-java-toolkit/README.md) still defines JDK 17+, Maven 3.9+ and package-directory `mvn clean package`. [POM](../../../src/oracle-db-mcp-java-toolkit/pom.xml) has Java 17/JUnit with no explicit Surefire pin or JaCoCo enforcement. Actual discovery/results and the root 90% requirement remain unverified/gapped. Java has no discovered Moon project.
 
-Main's [test tree](../../../src/oracle-db-mcp-java-toolkit/src/test/java/com/oracle/database/mcptoolkit) contains `OracleJDBCLogAnalyzerTest` and `oauth/OAuth2TokenValidatorTest`. Newer request-target, authenticated-principal, owned-transaction and DeepSec test/source additions from the previous plan are absent. Route current [config](../../../src/oracle-db-mcp-java-toolkit/src/main/java/com/oracle/database/mcptoolkit/config), [tools](../../../src/oracle-db-mcp-java-toolkit/src/main/java/com/oracle/database/mcptoolkit/tools), [OAuth](../../../src/oracle-db-mcp-java-toolkit/src/main/java/com/oracle/database/mcptoolkit/oauth) and [web](../../../src/oracle-db-mcp-java-toolkit/src/main/java/com/oracle/database/mcptoolkit/web) sources; no live database or browser login is a default check. Java is outside current Makefile Python targets and has no discovered Moon project.
+The [test tree](../../../src/oracle-db-mcp-java-toolkit/src/test/java/com/oracle/database/mcptoolkit) now has five unit-test classes (scope extraction, authenticated principal, origin validator, transaction registry, JDBC log analyzer), one gated database-backed DeepSec integration test and two support classes. Update source/test routes for principal/context, request-target validation, owned transactions and DeepSec; remove claims that those additions are absent. The integration test requires `DEEPSEC_IT_ENABLED=true`, browser OAuth and a database and remains outside this documentation pass. No coverage or security certification follows from source definitions.
 
 ## Source-verified command map
 
-These are existing command definitions, **not executed results**. Read [Makefile](../../../Makefile), [Moon workspace](../../../.moon/workspace.yml), inherited/root task definitions and runtime manifests before choosing a later check.
+These are current definitions, **not executed results**. The [shared validation map](../../agent-development.md#validation-map) gives task scope, prerequisites and evidence limits.
 
 | Scope | Working directory | Current route and limits |
 | --- | --- | --- |
-| Python setup | Repository root | `make sync project=<package>` or `uv sync --directory src/<package> --locked --all-extras --dev`; manifests/locks/toolchain configuration |
-| Python package validation | Repository root | Root policy: `make test project=<package>`. Makefile runs package tests then aggregate coverage; compare run provenance. Moon alternative: `moon run <package>:test` checks package scope without that aggregate step. |
-| Python build/source/shared | Repository root | `make build project=<package>`, `make lint`, shared `make test`; Moon `:build`, `root:lint`, `:test` and `root:combine-coverage` are defined alternatives with their own scope. Root combine task delegates to Makefile. |
-| JavaScript setup/validation | Package directory | `npm ci`, `npm run ci`; README/package scripts. Root `make javascript-ci` also exists. No runtime Podman build/start is needed for documentation validation. |
-| Java build | Java toolkit directory | `mvn clean package`; README/POM. Check actual test reports when executed; no implied 90% enforcement. |
-| Documentation | Repository root | Local links/anchors/paths, command definitions, scope/instruction consistency and `git diff --check`; no server-test claim. |
+| Tool/environment setup | Repository root | `proto install`; Moon installs locked package dependencies. Direct Python `uv sync --directory src/<package> --locked --all-extras --dev` remains defined by native environment configuration. |
+| Python package | Repository root | `moon run <package>:test`; `moon run <package>:build` checks packaging. No aggregate coverage step is included in package tests. |
+| Python source/shared | Repository root | `moon run root:lint`; shared `moon run :test`, then `moon run root:combine-coverage`. The test selector includes JavaScript; the combine task aggregates Python reports only. Inspect current report provenance. |
+| JavaScript | Repository root | `moon run oci-javascript-mcp-server:compile`, `:test`, `:check`, `:build` using the full project-qualified target for each command. Runtime runner-build/start remain separate. |
+| Java | Java toolkit directory | `mvn clean package`; verify actual test discovery/reports when executed. No implied 90% enforcement. |
+| Documentation | Repository root | Local links/anchors/paths, command/source facts, scope/instruction consistency and `git diff --check`; no server-test claim. |
 
 ## Exclusions and next action
 
-Only monorepo-agent planning and later root/shared/local guide changes belong in this branch. No pagination adoption history, policy/docs/inventory, application fixes, task changes, dependencies, lockfiles, thresholds, skills, agent harness or live trial. Baseline source and substantive policies remain project-owned. The subsequently approved [implementation plan](implementation-plan.md) has been executed; the [adoption summary](adoption-summary.md) records its actual context coverage and review.
+Only monorepo-agent bundle/root/shared/local guide changes belong in the diff against updated main. Upstream application, tests and tooling arrive through main, not this branch's scope. No pagination adoption history, policy/docs/inventory, application fixes, task changes, dependencies, lockfiles, thresholds, skills, harness or live trial is added. Review the corrected six-guide baseline with the [adoption summary](adoption-summary.md); any broader adoption or policy/code remediation remains separate.

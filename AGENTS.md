@@ -19,12 +19,12 @@ This is a polyglot reference-implementation monorepo. Packages under `src/` own 
 
 - Follow the [repository scope and setup](README.md) and each package's native README/manifest. Python, TypeScript and Java packages have different runtime and validation interfaces.
 - Use Compute as a structure/model/tool-test reference. Its current credential handling is legacy; use [Common's authentication contracts](src/common/README.md#authentication-module) and the quality requirements below for new authentication work.
-- Before changing Common, inspect declared `oracle-mcp-common` consumers and their manifests. API, Cloud and Database declare the dependency at this baseline; this is not evidence every Python server has migrated.
+- Before changing Common, inspect declared `oracle-mcp-common` consumers and their manifests. API, Cloud, Database, DB Observability and Document Understanding declare the dependency at this baseline; dependency declarations alone do not establish complete migration or runtime use.
 - Preserve package-owned client type, lifecycle, transport and compatibility decisions. See [shared and local gaps](docs/agent-development.md#known-gaps) when implementation and policy differ.
 
 ## Setup, Build and Change Impact
 
-Use the [validation map](docs/agent-development.md#validation-map) for working directories, setup/build definitions and check scope. [Makefile](Makefile), [Moon tasks](.moon/tasks/python.yml), [root tasks](moon.yml) and native manifests define commands; setup/build instructions are not proof checks have run.
+Use the [validation map](docs/agent-development.md#validation-map) for working directories, setup/build definitions and check scope. [Moon Python tasks](.moon/tasks/python.yml), [root tasks](moon.yml), [JavaScript tasks](src/oci-javascript-mcp-server/moon.yml) and native manifests define commands; setup/build instructions are not proof checks have run.
 
 Changes to tools, models, authentication, configuration or shared exports can affect clients and consumers. Inspect local interfaces/tests, the [contribution process](CONTRIBUTING.md) and changelog rules below. Security reports follow [SECURITY.md](SECURITY.md); credential and runtime boundaries also require the relevant native package guidance.
 

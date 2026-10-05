@@ -13,17 +13,17 @@ Common owns reusable Python OCI authentication ingredients. It does not own MCP 
 
 ## Setup / build / run
 
-From the repository root, use `make sync project=common` and `make build project=common`. Direct locked `uv sync --directory src/common --locked --all-extras --dev` and `moon run common:build` are existing alternatives. Read the [validation map](../../docs/agent-development.md#validation-map) for source definitions and scope. Running a server listener is not applicable to this library.
+From the repository root, install the pinned tools with `proto install`, then use `moon run common:build` when checking packaging. Moon manages the locked project environment; direct `uv sync --directory src/common --locked --all-extras --dev` is also defined by the native environment configuration. Read the [validation map](../../docs/agent-development.md#validation-map) for source definitions and scope. Running a server listener is not applicable to this library.
 
 ## Tests and validation
 
-Root policy uses `make test project=common` and `make lint` after Python changes; `moon run common:test` provides package-scoped feedback with different aggregate behavior. Shared auth changes require the broader root checks and affected consumer review; Common-only tests do not validate every caller. The manifest configures 90% coverage; no tests/coverage have been executed by this guide adoption.
+Use `moon run common:test` for package tests and `moon run root:lint` after Python changes. Shared auth changes require the broader root checks and affected consumer review, including `moon run :test` and `moon run root:combine-coverage`; Common-only tests do not validate every caller. The manifest configures 90% coverage; no tests/coverage have been executed by this guide adoption.
 
 ## Architecture and dependencies
 
 `build_auth_context()` returns config/signer ingredients; servers retain client type, lifecycle, user-agent derivation and retry/circuit-breaker choices. `build_idcs_http_auth()` creates provider policy and `context_for()` derives explicit caller-token auth; listener startup, request-context retrieval and OCI client construction stay with the server. The README defines input precedence, explicit principal modes and profile-backed `auto`; do not infer automatic principal probing.
 
-Declared consumers at this baseline are [API](../oci-api-mcp-server/pyproject.toml), [Cloud](../oci-cloud-mcp-server/pyproject.toml) and [Database](../oci-database-mcp-server/pyproject.toml). Their package Moon files also declare Common edges. Manifests and graph edges are different sources to recheck; other servers, including Compute, are not assumed migrated.
+Declared consumers at this baseline are [API](../oci-api-mcp-server/pyproject.toml), [Cloud](../oci-cloud-mcp-server/pyproject.toml), [Database](../oci-database-mcp-server/pyproject.toml), [DB Observability](../oci-db-observability-mcp-server/pyproject.toml) and [Document Understanding](../oci-document-understanding-mcp-server/pyproject.toml). API, Cloud and Database also declare Common edges in their package Moon files; the two newer consumers have no explicit package Moon file. Manifests and graph edges are different sources to recheck, and declarations alone do not establish runtime use; other servers, including Compute, are not assumed migrated.
 
 ## Security and secrets handling
 

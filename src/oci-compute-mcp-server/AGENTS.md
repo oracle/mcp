@@ -13,15 +13,15 @@ This Python package owns Compute instance, image and attachment tools and their 
 
 ## Setup / build / run
 
-From the repository root, use `make sync project=oci-compute-mcp-server` and `make build project=oci-compute-mcp-server`. Locked `uv sync --directory src/oci-compute-mcp-server --locked --all-extras --dev` and `moon run oci-compute-mcp-server:build` are defined alternatives. [README](README.md) owns runtime transport/configuration; startup is separate from documentation validation. See the [shared validation map](../../docs/agent-development.md#validation-map).
+From the repository root, install pinned tools with `proto install`, then use `moon run oci-compute-mcp-server:build` when checking packaging. Moon manages the locked project environment; direct `uv sync --directory src/oci-compute-mcp-server --locked --all-extras --dev` is also a native setup route. [README](README.md) owns runtime transport/configuration; startup is separate from documentation validation. See the [shared validation map](../../docs/agent-development.md#validation-map).
 
 ## Tests and validation
 
-Root policy uses `make test project=oci-compute-mcp-server` and `make lint` after Python source changes. `moon run oci-compute-mcp-server:test` is a package-scoped alternative; the shared map explains its difference from Makefile's aggregate coverage step. No `test-focused` task exists here. Tool changes start with tool tests; response conversions also need model-test review. The manifest configures 90% coverage; this adoption ran no server checks.
+Use `moon run oci-compute-mcp-server:test` for package tests and `moon run root:lint` after Python source changes. Aggregate coverage is a separate root task; see the shared validation map for scope. No `test-focused` task exists here. Tool changes start with tool tests; response conversions also need model-test review. The manifest configures 90% coverage; this adoption ran no server checks.
 
 ## Architecture and dependencies
 
-Keep tool parameters, Pydantic descriptions/constraints and typed mappings consistent with [quality guidance](../../BEST_PRACTICES.md). Trace the actual source/test path for the operation being changed; main's source is not the later implementation from experimental branches. Derive OCI user agents from package metadata under root requirements.
+Keep tool parameters, Pydantic descriptions/constraints and typed mappings consistent with [quality guidance](../../BEST_PRACTICES.md). Trace the actual source/test path for the operation being changed. Current launch handling supports boot-volume sources with precedence over image sources, with corresponding tool/model tests. Derive OCI user agents from package metadata under root requirements.
 
 `get_compute_client()` reads local config/security-token credentials, and `_get_http_config_and_signer()` constructs token exchange locally. The manifest has no Common dependency. New auth work follows [Common's contract](../common/README.md) and [guide](../common/AGENTS.md); this existing gap does not authorize extending duplicated credential resolution or transport-based selection.
 
@@ -36,7 +36,7 @@ Tool parameter/default/error/response changes affect MCP callers and correspondi
 ## Known gaps
 
 - Local and HTTP auth are legacy paths outside Common; this pass documents them without migration.
-- Current source/tests differ from the older experimental branch. Guide reuse must not import later response/limit fixes or claim their tests exist here.
+- Source and test identities can change independently of these guides; inspect current definitions before applying an older branch's behavior or validation claims.
 - Configured 90% coverage and available test definitions are not executed evidence; shared [gap/evidence limits](../../docs/agent-development.md#known-gaps) apply.
 
 ## Workflow and context routing

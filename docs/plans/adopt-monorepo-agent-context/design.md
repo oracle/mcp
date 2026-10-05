@@ -22,7 +22,7 @@ Map tasks using **Read when**, **Context**, **Depends on** and **Evidence**, or 
 
 ## Boundaries
 
-- Work in the `dustin-sale/mcp` fork, starting at the fork's local `main`, `d0e442b3ddcffe05c6f366c14dac42548641b60f`. This is a local branch identity, not a claim of a fresh remote fetch.
+- Work in the `dustin-sale/mcp` fork, rebased onto the user-updated local `main`, `52ea0163591d4c8bf3adc8e7cf74e7532ecd1df4`. The original `d0e442b` baseline is historical; this task did not fetch again.
 - Adapt selected older guidance individually. Do not merge `enhanced-agent-harness`, vendor its skills or change application code, dependencies, lockfiles, task definitions, test thresholds or runtime configuration.
 - Preserve shared requirements and document observed implementation/policy conflicts. Do not create an exception simply because old guidance calls an implementation allowed.
 - Carry no pagination adoption commits, standalone pagination policy/docs, server inventory or application/tooling changes from the earlier branches. Existing native pagination behavior may be an optional source example; broad context does not depend on adopting a pagination policy.

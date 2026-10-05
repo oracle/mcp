@@ -1,12 +1,12 @@
 # Selected monorepo engineering-context adoption
 
-Status: **Approved sequential guide implementation, structural coverage review and fresh whole-branch documentation review completed.** This is a documentation baseline for six selected scopes, not a server-quality or agent-effectiveness result.
+Status: **Approved sequential guide implementation completed; subsequently rebased onto user-updated main with source-guidance corrections.** This is a documentation baseline for six selected scopes, not a server-quality or agent-effectiveness result.
 
 ## Scope and identities
 
 - Branch: `codex/monorepo-agent-context-clean` in `dustin-sale/mcp`.
-- Application/instruction baseline: local main `d0e442b3ddcffe05c6f366c14dac42548641b60f`; no application, dependency, tooling or test-definition changes.
-- Planning commit: `98d8da92652c65c5b9f7d1e28f64e5426630e2fe`; implementation commits: `f84bc95` (shared/root), `7d4596b` (Common/Python), `0858500` (JavaScript/Java). Final review-record identity is available in Git history and the delivery message.
+- Current application/instruction baseline: user-updated main `52ea0163591d4c8bf3adc8e7cf74e7532ecd1df4`; this branch adds no application, dependency, tooling or test-definition changes relative to that main.
+- Historical pre-rebase identities (superseded by the rebase): planning commit: `98d8da92652c65c5b9f7d1e28f64e5426630e2fe`; implementation commits: `f84bc95` (shared/root), `7d4596b` (Common/Python), `0858500` (JavaScript/Java). Final review-record identity is available in Git history and the delivery message.
 - Broader-guide source reviewed for reuse: `03faa20e23753a4a148839243382c7d3b11dac5e`; framework working profile: AI Pit Crew `c9b1724`.
 - Selected scopes: root, Common, Compute, Cloud, JavaScript and Java toolkit. Other packages inherit existing root/native guidance and have not received this broad-guide pass.
 
@@ -14,11 +14,11 @@ Status: **Approved sequential guide implementation, structural coverage review a
 
 Expanded [root guidance](../../../AGENTS.md) and created [shared engineering context](../../agent-development.md) plus five local guides. Native READMEs, commands, manifests, source/tests and project policies remain authoritative. Shared/local task maps answer relevance, context, prerequisites and evidence without copying native bodies. Now/Proof routes use this scoped root bundle; no optional-role placeholder or archive store was created.
 
-Existing root validation/auth/subprocess/changelog requirements were preserved. No standalone pagination policy, inventory or local paging documents, skills or runtime harness were added, and no prior branch commits were merged. Broad guides use current main sources, not later experimental fixes/tests.
+Existing root validation/auth/subprocess/changelog requirements were preserved. No standalone pagination policy, inventory or local paging documents, skills or runtime harness were added, and no prior branch commits were merged. Broad guides use the rebased main sources; upstream application/test/tooling changes are part of main, not this documentation diff.
 
 ## Nine-area coverage review
 
-Executed author review on October 5, 2026. Each local guide contains all nine areas; the root uses existing sections and specific shared routes. The table identifies the source of each answer; explicit gaps are coverage disclosures, not proof of compliance.
+Executed author review on October 5, 2026, repeated against updated main after rebase. Each local guide contains all nine areas; the root uses existing sections and specific shared routes. The table identifies the source of each answer; explicit gaps are coverage disclosures, not proof of compliance.
 
 | Area | Root answer/reference | Local answer/reference |
 | --- | --- | --- |
@@ -40,13 +40,15 @@ These are author-operated document/source walks from root and relevant local gui
 
 | Case | Starts and sources reached | Result and limits |
 | --- | --- | --- |
-| Compute response change | Root -> shared selected map -> Compute guide -> server/models/tool/model tests; Compute start -> root quality and shared validation/changelog sources | Entry points, compatibility/change impact and legacy auth distinction discoverable; no later response fix/test was imported |
-| Runtime setup/validation | Root and all five local starts -> shared validation map plus Makefile/Moon/native manifests, JavaScript scripts and Java README/POM | Working directory, setup/build/check scope and evidence limits exposed; no undefined focused task; commands source-verified only |
-| Authentication ownership/impact | Root/Common/Cloud/Compute -> Common contracts/exports/tests, three consumer manifests/edges and local client helpers | Shared credential ownership and caller-owned client lifecycle visible; Compute legacy/non-consumer gap preserved |
-| Isolation/auth evidence | Root/JavaScript/Java -> provider/protocol/host tests, README security model, Java OAuth/filter/scope tests and POM | Podman policy conflict, fake-runtime/VM-boundary limits and Java discovery/coverage gap explicit; no security/compliance certification |
+| Compute response change | Root -> shared selected map -> Compute guide -> server/models/tool/model tests; Compute start -> root quality and shared validation/changelog sources | Entry points, compatibility/change impact and legacy auth distinction discoverable; current boot-volume source and precedence handling/tests acknowledged; no application fix added |
+| Runtime setup/validation | Root and all five local starts -> shared validation map plus inherited/root/JavaScript Moon tasks, native manifests and Java README/POM | Working directory, setup/build/check scope and evidence limits exposed; no undefined focused task; commands source-verified only |
+| Authentication ownership/impact | Root/Common/Cloud/Compute -> Common contracts/exports/tests, five consumer manifests, three explicit package Moon edges and local client helpers | Shared credential ownership and caller-owned client lifecycle visible; Compute legacy/non-consumer gap preserved |
+| Isolation/auth evidence | Root/JavaScript/Java -> provider/protocol/host tests, README security model, Java OAuth/principal/origin/transaction sources and tests, gated DeepSec definition and POM | Podman policy conflict, fake-runtime/VM-boundary limits and Java discovery/coverage gap explicit; no security/compliance certification |
 | Shared/local composition | Root and all selected local starts -> parent/shared guides and runtime-specific native topic/action/evidence sources | Broad orientation works across auth, architecture, setup, validation, impact and gaps without a pagination-policy dependency; unselected packages not counted as covered |
 
-## Executed checks and unexecuted work
+## Historical pre-rebase checks and unexecuted work
+
+These checks apply only to the initial `d0e442b` baseline. Current validation is recorded below; these totals and source facts do not validate the rebased guidance.
 
 - Local-link/anchor and source-path review across the branch's changed Markdown. Task 1: 6 files, 121 links/16 fragments; Task 2: 9 files, 219/38; Task 3: 11 files, 290/51. Task 4/final author pass: 11 files, 311 links/67 fragments; later review corrections are checked again.
 - Checked displayed commands against Makefile, inherited/root Moon definitions, npm scripts, manifests/locks/toolchains and Java README/POM. Checked three Common dependency declarations/edges and two current Java test definitions.
@@ -59,10 +61,28 @@ Common README/manifest requirement differences, Compute legacy auth, JavaScript'
 
 Review this concrete six-guide baseline. Broader adoption, policy/code remediation and agent explanation trials are subsequent choices. Preserve existing sources and recorded limits when expanding.
 
-## Fresh whole-branch review
+## Historical pre-rebase independent review
+
+This review applies to the initial baseline, not the rebased sources or guidance.
 
 A fresh-context reviewer inspected main `d0e442b3ddcffe05c6f366c14dac42548641b60f` through `a11565b15ea4204f2a9381e4be3dfff666d99431` on October 5, 2026. Verdict: no substantive guide/routing defects; ready after correcting the review-record status. The reviewer found the plan prematurely said the review was recorded while this summary still said pending. This final record/status update resolves that inconsistency.
 
 The reviewer independently confirmed all 311 local link targets, the planned 11-file documentation scope, ordered preservation of existing root instructions, clean whitespace/tree, command/dependency/source facts and selected nine-area coverage. The author's 67-anchor result was not independently reproduced; the final author check repeats those anchor checks after this record update.
 
 Runtime correctness, test pass status, actual coverage, deployment isolation and agent effectiveness were explicitly outside the review. They remain unverified; this adoption neither certifies them nor resolves application/policy gaps. No deferred guide findings remain.
+
+## Rebase and current source reassessment
+
+The user pulled main and requested rebasing plus correction of guidance on October 5, 2026. The six documentation commits rebased without conflicts onto `52ea0163591d4c8bf3adc8e7cf74e7532ecd1df4`, matching local `origin/main`. The pre-rebase delivery `c06877005d595367b01e24b71591da6d48302836` is preserved in local `codex/monorepo-agent-context-before-rebase`. No additional fetch, push or merge was performed.
+
+Current corrections:
+
+- Removed Make commands and broken Makefile links. Preserved updated main's root Moon policy, documented package versus aggregate coverage and cross-runtime scope, and retained native Maven validation.
+- Replaced JavaScript's removed npm validation/Podman-build scripts and pipe lifecycle with explicit Moon tasks, generated compile prerequisites, bounded mTLS gRPC sources and the internal no-egress network. Recorded matching v4 host/runner requirements and the existing changelog.
+- Updated Common to five declared consumers, separating them from three explicit package Moon edges; declarations alone do not prove complete runtime migration.
+- Updated Compute's source-version guidance for boot-volume launch sources and corresponding model/tool tests; retained legacy auth as a gap.
+- Added Java principal/context, origin-validation, transaction-ownership and current unit-test routes. The gated browser/database DeepSec test remains separate from normal documentation/unit checks; Surefire discovery and 90% enforcement remain unverified/gapped.
+
+Repeated the five manual document/source walks above against the updated baseline. Results remain document navigation/source review evidence, not executed agent behavior. Current author checks resolved 334 local links and 71 fragments across eleven Markdown files, preserved updated-main root instruction lines in order, checked native Moon task definitions, five Common declarations, five Java unit-test classes plus the gated integration source, and confirmed no active Make/npm-validation/pipe routes remain. `git diff --check` passed. Command/source and scoped-diff checks are recorded with the corrective commit in Git history and the delivery message. Only the planned eleven Markdown files differ from updated main; original updated-main root policy remains intact. No server suite, build, dependency installation, runtime or live trial ran.
+
+The earlier independent review is historical. Current source reassessment and author checks apply to the rebased correction; a separate review record identifies any fresh review of this revision.

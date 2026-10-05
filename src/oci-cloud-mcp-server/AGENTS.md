@@ -13,11 +13,11 @@ This Python server discovers and invokes OCI SDK operations dynamically; it owns
 
 ## Setup / build / run
 
-From the repository root, use `make sync project=oci-cloud-mcp-server` and `make build project=oci-cloud-mcp-server`. Locked `uv sync --directory src/oci-cloud-mcp-server --locked --all-extras --dev` and `moon run oci-cloud-mcp-server:build` are defined alternatives. Preserve the Common workspace relationship. Use README for transport/auth setup; no live SDK invocation is needed for documentation validation. See the [validation map](../../docs/agent-development.md#validation-map).
+From the repository root, install pinned tools with `proto install`, then use `moon run oci-cloud-mcp-server:build` when checking packaging. Moon manages the locked environment; direct `uv sync --directory src/oci-cloud-mcp-server --locked --all-extras --dev` is also a native setup route. Preserve the Common workspace relationship. Use README for transport/auth setup; no live SDK invocation is needed for documentation validation. See the [validation map](../../docs/agent-development.md#validation-map).
 
 ## Tests and validation
 
-Root policy uses `make test project=oci-cloud-mcp-server` and `make lint` after Python changes; `moon run oci-cloud-mcp-server:test` provides package-scoped feedback with different aggregate behavior. The manifest configures 90% coverage; no checks have run by virtue of this guide.
+Use `moon run oci-cloud-mcp-server:test` for package tests and `moon run root:lint` after Python changes. Shared behavior changes require root's broader test and aggregate-coverage checks; the package task alone does not establish consumer coverage. The manifest configures 90% coverage; no checks have run by virtue of this guide.
 
 Start with [model coercion](oracle/oci_cloud_mcp_server/tests/test_model_coercion.py), [helper branches](oracle/oci_cloud_mcp_server/tests/test_helper_branches.py), [discovery/shaping](oracle/oci_cloud_mcp_server/tests/test_discovery_and_shaping.py), [models/serialization](oracle/oci_cloud_mcp_server/tests/test_models_and_serialization.py), [bootstrap/introspection](oracle/oci_cloud_mcp_server/tests/test_bootstrap_and_introspection.py) or [invocation/traversal](oracle/oci_cloud_mcp_server/tests/test_pagination_and_invocation.py) for the affected concern. Tests use SDK/token mocks; real OCI execution is a separate runtime action.
 

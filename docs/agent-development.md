@@ -28,32 +28,31 @@ These commands are **source-verified**, not executed results. Choose the setup/c
 
 | Scope | Working directory | Existing setup/build/check routes |
 | --- | --- | --- |
-| Common | Repository root | `make sync project=common`; `make build project=common`; `make test project=common` under root policy; Moon `common:build` and `common:test` are defined alternatives with different test scope |
-| Compute | Repository root | `make sync project=oci-compute-mcp-server`; `make build project=oci-compute-mcp-server`; `make test project=oci-compute-mcp-server`; Moon `oci-compute-mcp-server:build` and `oci-compute-mcp-server:test` |
-| Cloud | Repository root | `make sync project=oci-cloud-mcp-server`; `make build project=oci-cloud-mcp-server`; `make test project=oci-cloud-mcp-server`; Moon `oci-cloud-mcp-server:build` and `oci-cloud-mcp-server:test` |
-| Python source/shared behavior | Repository root | Root requires `make lint` after Python source changes, and `make test` for shared changes across non-excluded packages. `moon run root:lint`, `moon run :test`, `moon run root:combine-coverage` exist; package-only checks do not establish shared coverage. |
-| JavaScript | `src/oci-javascript-mcp-server` | `npm ci` for locked setup; `npm run ci` runs coverage, type checking and package verification. `npm test`, `npm run coverage`, `npm run check` are focused steps, not equivalent evidence. Root `make javascript-ci` performs setup and CI. |
+| Common | Repository root | `proto install` for pinned tools; `moon run common:build` for packaging; `moon run common:test` for package tests |
+| Compute | Repository root | `proto install`; `moon run oci-compute-mcp-server:build`; `moon run oci-compute-mcp-server:test` |
+| Cloud | Repository root | `proto install`; `moon run oci-cloud-mcp-server:build`; `moon run oci-cloud-mcp-server:test` |
+| Python source/shared behavior | Repository root | `moon run root:lint` after Python source changes; shared changes require `moon run :test` then `moon run root:combine-coverage`. Package-only checks do not establish shared coverage. Root README gives broader lock/install/type/build gates. |
+| JavaScript | Repository root | `proto install`; `moon run oci-javascript-mcp-server:compile`, `moon run oci-javascript-mcp-server:test`, `moon run oci-javascript-mcp-server:check`, `moon run oci-javascript-mcp-server:build`. Moon installs locked npm dependencies; test/check/build depend on compile. Native npm scripts expose startup only. |
 | Java toolkit | `src/oracle-db-mcp-java-toolkit` | JDK 17+, Maven 3.9+ per README; `mvn clean package`. Check actual test discovery/reports when executed; no configured 90% enforcement is established. |
 | Documentation only | Repository root | Resolve changed links/anchors and source paths, compare command definitions, review scope/instructions and run `git diff --check`. Report these separately from server quality. |
 
-Command sources: [Makefile](../Makefile), [Moon Python tasks](../.moon/tasks/python.yml), [root tasks](../moon.yml), [workspace discovery](../.moon/workspace.yml), [toolchains](../.moon/toolchains.yml), [tool pins](../.prototools), native manifests and [JavaScript scripts](../src/oci-javascript-mcp-server/package.json). Python locks/manifests define each environment; direct `uv sync --directory src/<package> --locked --all-extras --dev` is also a source-backed setup route. Do not silently upgrade dependencies while synchronizing an existing environment.
+Command sources: [Moon Python tasks](../.moon/tasks/python.yml), [root tasks](../moon.yml), [JavaScript tasks](../src/oci-javascript-mcp-server/moon.yml), [workspace discovery](../.moon/workspace.yml), [toolchains](../.moon/toolchains.yml), [tool pins](../.prototools) and native manifests. Python locks/manifests define each environment; direct `uv sync --directory src/<package> --locked --all-extras --dev` is also a source-backed setup route. Do not silently upgrade dependencies while synchronizing an existing environment.
 
 ### Check scope and coverage
 
-- `make test project=<package>` runs the selected Python package tests, writes/appends its workspace coverage file, then invokes aggregate `combine-coverage`. Inspect which reports came from the current run; a focused invocation or existing report does not establish all consumers were tested.
-- `moon run <package>:test` runs the package's inherited test task and writes `.coverage.<package>` plus its HTML report. It does not invoke Makefile's aggregate step. No `test-focused` task exists at this baseline.
-- `make test` covers non-excluded Python packages. Makefile excludes dbtools, MySQL, JavaScript, Pricing, DB Doc and the Java toolkit. Follow each excluded package's native validation route; exclusion does not waive quality requirements.
-- Moon discovery includes Python manifests and JavaScript's package manifest, with its own exclusions. JavaScript tasks are inferred from npm scripts; there is no explicit JavaScript `moon.yml` here. Java has no discovered Moon project. Do not infer coverage from another runtime's successful task.
+- `moon run <package>:test` runs the inherited Python package test task and writes `.coverage.<package>` plus its HTML report. It does not run aggregate coverage. No `test-focused` task exists at this baseline.
+- `moon run :test` selects test tasks across discovered projects, including JavaScript. `moon run root:combine-coverage` separately combines Python workspace reports and enforces a 90% aggregate threshold; it does not combine JavaScript or Java coverage. Check which reports belong to the current run rather than inferring consumer coverage from stale files or one package's success.
+- [Workspace discovery](../.moon/workspace.yml) excludes dbtools, MySQL, Pricing, DB Doc and the Java toolkit. Follow each excluded package's native validation route; exclusion does not waive quality requirements. Java has no discovered Moon project. JavaScript owns explicit package tasks, with generated protobuf bindings compiled before tests, type checks or packaging.
 - Python package manifests configure their own thresholds; root requires at least 90% for server quality checks. JavaScript c8 enforces 90% **line** coverage with explicit exclusions. Java's POM provides no JaCoCo enforcement; build success or zero discovered tests is insufficient evidence.
 - Server startup, OCI operations, database access and real Podman deployment are distinct from mocked unit checks. Use each native README for runtime setup; this adoption performs none of those operations.
 
 ## Known gaps
 
-These observations describe the pinned adoption source at `d0e442b`; recheck implementation and instruction identities for a later engineering task. They do not approve exceptions or prove compliance.
+These observations describe the rebased adoption source at `52ea016`; recheck implementation and instruction identities for a later engineering task. They do not approve exceptions or prove compliance.
 
 | Area | Observed source difference or evidence limit | Relevant sources |
 | --- | --- | --- |
-| Common consumers | API, Cloud and Database declare Common and Moon edges; other servers must not be assumed migrated | [API manifest](../src/oci-api-mcp-server/pyproject.toml), [Cloud manifest](../src/oci-cloud-mcp-server/pyproject.toml), [Database manifest](../src/oci-database-mcp-server/pyproject.toml) |
+| Common consumers | API, Cloud, Database, DB Observability and Document Understanding declare Common; only the first three have explicit package Moon dependency edges | [Common guide](../src/common/AGENTS.md#architecture-and-dependencies), consumer manifests/Moon files; inspect declarations, graph edges and call sites separately |
 | Common package requirements | README lists OCI SDK 2.179.0+ and optional FastMCP 3.4.2; manifest declares OCI 2.185.0+ and FastMCP `>=3.2.4,<4.0.0` | [README](../src/common/README.md#package-requirements), [manifest](../src/common/pyproject.toml); use manifest for install definitions and flag the discrepancy |
 | Compute auth | Client/HTTP helpers resolve credentials locally; manifest has no Common dependency | [server](../src/oci-compute-mcp-server/oracle/oci_compute_mcp_server/server.py), [manifest](../src/oci-compute-mcp-server/pyproject.toml); root Common requirement remains applicable |
 | JavaScript subprocess policy | Existing Podman provider invokes a process, while root names API alone as a subprocess exception | [provider](../src/oci-javascript-mcp-server/src/isolation/podman.ts), [root quality rules](../AGENTS.md#mcp-server-quality-validation); record conflict without authorizing another backend/exception |

@@ -1,6 +1,8 @@
 # Guide reuse assessment against updated main
 
-Status: **Reassessed on October 5, 2026 after the user pulled main and requested a rebase plus guidance corrections.** This is the current source assessment. The earlier main baseline and its review are retained as historical evidence in the adoption summary. Only documentation changes belong to this branch; no server tests or agent trial have run.
+Status: **Reassessed on October 5, 2026 after the user pulled main and requested a rebase plus guidance corrections.** This records the original increment’s source assessment at rebase. The earlier main baseline and its review are retained as historical evidence in the adoption summary. Only documentation changes belong to this branch. At this rebase reassessment, no server tests or agent trial had run; the subsequent original-guide evaluation is recorded in the adoption summary.
+
+This assessment records the original six-scope increment and its rebase. The subsequent user-approved all-server expansion is recorded in the [design](design.md#approved-all-server-expansion--october-5-2026) and [adoption summary](adoption-summary.md#approved-all-server-extension); its current source review supersedes the original selection boundary.
 
 ## Source identities and method
 

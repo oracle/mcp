@@ -12,6 +12,10 @@
 
 **Spec:** [Adoption design](design.md). Read the [reuse assessment](reuse-assessment.md) before execution.
 
+## Subsequent approved expansion
+
+The user approved a bounded all-server extension after the original implementation and its ten-case read-only evaluation. The four tasks below are the original increment’s historical plan/checks. The extension adds 30 guides for the remaining servers, updates root/shared routing and records current coverage in the [adoption summary](adoption-summary.md), following the [approved expansion](design.md#approved-all-server-expansion--october-5-2026). Its validation is documentation/source review; a proposed additional explanation exercise is recorded separately from executed evidence.
+
 ## Global constraints
 
 - Fork: `dustin-sale/mcp`; updated local main baseline `52ea0163591d4c8bf3adc8e7cf74e7532ecd1df4` (original `d0e442b` baseline superseded); older guide source `03faa20e23753a4a148839243382c7d3b11dac5e`. Recheck source identities and diffs before edits if the baseline changes.

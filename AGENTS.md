@@ -33,17 +33,17 @@ Changes to tools, models, authentication, configuration or shared exports can af
 | Read when | Context | Depends on | Evidence |
 | --- | --- | --- | --- |
 | **Know:** Investigating shared architecture/authentication or a package boundary | [README](README.md), [quality standards](BEST_PRACTICES.md), [Common contract](src/common/README.md) | Applicable package README, manifest and guide | Relevant implementation/tests; [consumer and gap notes](docs/agent-development.md#known-gaps) |
-| **Know:** Starting a selected component/library change | [Selected guide map](docs/agent-development.md#selected-component-context) | This root guide and the applicable local guide; native README/manifest | Local source/test entry points and [actual adoption coverage](docs/plans/adopt-monorepo-agent-context/adoption-summary.md) |
+| **Know:** Starting a server/library change | [Server and library guide map](docs/agent-development.md#selected-component-context) | This root guide and the applicable local guide; native README/manifest | Local source/test entry points and [actual adoption coverage](docs/plans/adopt-monorepo-agent-context/adoption-summary.md) |
 | **Do:** Preparing, building or validating an engineering change | [Shared validation map](docs/agent-development.md#validation-map) | Native command definitions and target runtime prerequisites | Actual command/run reports; [evidence distinctions](docs/agent-development.md#evidence-and-context-routes) |
 | **Know:** Assessing credentials, isolation or disclosure handling | [Shared security sources and gaps](docs/agent-development.md#known-gaps), [security reporting](SECURITY.md) | Editing/quality rules here and local runtime constraints | Relevant auth/isolation tests; unrun definitions remain source leads |
-| **Now:** Reviewing this selected context adoption | [Design and scope](docs/plans/adopt-monorepo-agent-context/design.md), [plan](docs/plans/adopt-monorepo-agent-context/implementation-plan.md) | [Main-based reuse assessment](docs/plans/adopt-monorepo-agent-context/reuse-assessment.md) | [Adoption summary](docs/plans/adopt-monorepo-agent-context/adoption-summary.md) |
+| **Now:** Reviewing this context adoption | [Design and scope](docs/plans/adopt-monorepo-agent-context/design.md), [plan](docs/plans/adopt-monorepo-agent-context/implementation-plan.md) | [Main-based reuse assessment](docs/plans/adopt-monorepo-agent-context/reuse-assessment.md) | [Adoption summary](docs/plans/adopt-monorepo-agent-context/adoption-summary.md) |
 | **Proof:** Checking coverage or a completion claim | [Evidence routes](docs/agent-development.md#evidence-and-context-routes) | Source/guidance identity and actual check scope | [Recorded adoption checks and limits](docs/plans/adopt-monorepo-agent-context/adoption-summary.md) or the owning change's native reports |
 
-Selected broad-guide scopes are root, Common, Compute, Cloud, JavaScript and Java toolkit. Local guide coverage is recorded in the [shared context map](docs/agent-development.md#selected-component-context); other packages still inherit root guidance and have not received this pass.
+Broad engineering guides now cover all 34 MCP server components under `src/`, including the Java toolkit, plus Common. Find each local guide and native entry point in the [shared context map](docs/agent-development.md#selected-component-context). Documentation coverage and recorded behavior-evaluation coverage are separate; see the [adoption summary](docs/plans/adopt-monorepo-agent-context/adoption-summary.md).
 
 ## Known Gaps
 
-The [gap register](docs/agent-development.md#known-gaps) records Common README/manifest differences, Compute's legacy authentication, JavaScript's existing subprocess-policy conflict and isolation limits, and Java's test/coverage limitations. These are observations to recheck, not policy exceptions or executed validation results.
+The [gap register](docs/agent-development.md#known-gaps) and local guides record Common adoption/source differences, stale native procedures, excluded-package validation limits, Data Studio's coverage threshold, JavaScript's existing subprocess-policy conflict/isolation limits and Java's test/coverage limitations. These are observations to recheck, not policy exceptions or executed validation results.
 
 ## Validation
 

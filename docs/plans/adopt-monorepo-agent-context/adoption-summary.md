@@ -1,6 +1,6 @@
-# Selected monorepo engineering-context adoption
+# Monorepo engineering-context adoption
 
-Status: **Approved sequential guide implementation completed; subsequently rebased onto user-updated main with source-guidance corrections.** This is a documentation baseline for six selected scopes, not a server-quality or agent-effectiveness result.
+Status: **The original six-scope increment is implemented and reviewed, with ten supported read-only evaluation cases. The user subsequently approved expanding the same profile to all MCP servers.** Current documentation coverage is root, Common and all 34 server components. Original evaluation evidence remains tied to its original guide revision; current expansion review is recorded below.
 
 ## Scope and identities
 
@@ -8,15 +8,16 @@ Status: **Approved sequential guide implementation completed; subsequently rebas
 - Current application/instruction baseline: user-updated main `52ea0163591d4c8bf3adc8e7cf74e7532ecd1df4`; this branch adds no application, dependency, tooling or test-definition changes relative to that main.
 - Historical pre-rebase identities (superseded by the rebase): planning commit: `98d8da92652c65c5b9f7d1e28f64e5426630e2fe`; implementation commits: `f84bc95` (shared/root), `7d4596b` (Common/Python), `0858500` (JavaScript/Java). Final review-record identity is available in Git history and the delivery message.
 - Broader-guide source reviewed for reuse: `03faa20e23753a4a148839243382c7d3b11dac5e`; framework working profile: AI Pit Crew `c9b1724`.
-- Selected scopes: root, Common, Compute, Cloud, JavaScript and Java toolkit. Other packages inherit existing root/native guidance and have not received this broad-guide pass.
+- Original scopes at `838d82b`: root, Common, Compute, Cloud, JavaScript and Java toolkit.
+- Expanded scopes: root, Common and all 34 MCP server components under `src/`; 30 new guides extend the original four server guides. See the [complete map](../../agent-development.md#selected-component-context).
 
 ## Delivered context
 
-Expanded [root guidance](../../../AGENTS.md) and created [shared engineering context](../../agent-development.md) plus five local guides. Native READMEs, commands, manifests, source/tests and project policies remain authoritative. Shared/local task maps answer relevance, context, prerequisites and evidence without copying native bodies. Now/Proof routes use this scoped root bundle; no optional-role placeholder or archive store was created.
+Expanded [root guidance](../../../AGENTS.md) and [shared engineering context](../../agent-development.md) route all 34 server guides plus Common. The original increment created five local guides; the approved expansion adds 30 server guides. Native READMEs, commands, manifests, source/tests and project policies remain authoritative. Shared/local task maps answer relevance, context, prerequisites and evidence without copying native bodies. Now/Proof routes use this scoped root bundle; no optional-role placeholder or archive store was created.
 
 Existing root validation/auth/subprocess/changelog requirements were preserved. No standalone pagination policy, inventory or local paging documents, skills or runtime harness were added, and no prior branch commits were merged. Broad guides use the rebased main sources; upstream application/test/tooling changes are part of main, not this documentation diff.
 
-## Nine-area coverage review
+## Original increment: nine-area coverage review
 
 Executed author review on October 5, 2026, repeated against updated main after rebase. Each local guide contains all nine areas; the root uses existing sections and specific shared routes. The table identifies the source of each answer; explicit gaps are coverage disclosures, not proof of compliance.
 
@@ -34,7 +35,7 @@ Executed author review on October 5, 2026, repeated against updated main after r
 
 Selected guide targets: [Common](../../../src/common/AGENTS.md), [Compute](../../../src/oci-compute-mcp-server/AGENTS.md), [Cloud](../../../src/oci-cloud-mcp-server/AGENTS.md), [JavaScript](../../../src/oci-javascript-mcp-server/AGENTS.md) and [Java toolkit](../../../src/oracle-db-mcp-java-toolkit/AGENTS.md).
 
-## Executed manual route cases
+## Original increment: executed manual route cases
 
 These are author-operated document/source walks from root and relevant local guides, not agent behavior trials or server execution. The [plan](implementation-plan.md#manual-review-cases-and-expected-sources) supplies the questions. Shared targets and prerequisites were followed and checked against current definitions.
 
@@ -57,9 +58,9 @@ These checks apply only to the initial `d0e442b` baseline. Current validation is
 
 ## Remaining gaps and next review
 
-Common README/manifest requirement differences, Compute legacy auth, JavaScript's root subprocess-policy conflict/isolation limits and Java discovery/coverage enforcement remain unresolved by design. Named maintainer ownership is not verified, and other packages have not received this pass. These observations are not exemptions or new policy.
+Common README/manifest requirement differences, Compute legacy auth, JavaScript's root subprocess-policy conflict/isolation limits and Java discovery/coverage enforcement remain unresolved by design. Named maintainer ownership is not verified. The original review covered six guide scopes; the subsequent approved extension is recorded below. These observations are not exemptions or new policy.
 
-Review this concrete six-guide baseline. Broader adoption, policy/code remediation and agent explanation trials are subsequent choices. Preserve existing sources and recorded limits when expanding.
+The user reviewed the original baseline and approved its explanation evaluation, then the all-server extension. Policy/code remediation remains separate. Preserve source identities and recorded limits when interpreting either increment.
 
 ## Historical pre-rebase independent review
 
@@ -94,3 +95,42 @@ A fresh-context reviewer inspected the full eleven-file diff from updated main `
 The reviewer confirmed ordered preservation of updated-main root instructions, selected nine-area coverage and shared/local routing, current Moon command scopes, JavaScript compile/gRPC/mTLS/network boundaries, five Common declarations versus three explicit package graph edges, Compute boot-volume guidance, and Java's current source/test routes and gated integration distinction. It reran the documentation/source checker successfully: eleven Markdown files, 334 local links and 71 fragments. The exact branch diff passed `git diff --check` and the reviewed worktree was clean.
 
 This review did not evaluate builds, server suites, dependency installation, live services, runtime coverage, deployment isolation or agent effectiveness. Those outcomes remain unverified; recording this verdict does not expand the adoption scope.
+
+
+## Completed original read-only evaluation
+
+On October 5, 2026, five read-only questions were run from both root and a relevant component directory: ten fresh consumer sessions against MCP commit `838d82b1f6c879b306368960a79b9bb71335c4b5`. All ten were supported under the selected pilot’s retrieval/interpretation rubric and passed the access-boundary gate. The cases covered Compute change impact, Common ownership/consumers, runtime validation differences, JavaScript communication/isolation and Java HTTP auth/transactions.
+
+The authoritative report is AI Pit Crew commit `910ba97501f22e2970ba615ae7a8d6ddd41374e5`, `evaluations/reviews/2026-10-05-oracle-mcp-agent-context.md`; sanitized evidence is in `evaluations/evidence/2026-10-05-oracle-mcp-context-03/` at that revision. The source/runtime/access manifest, separately not-assessable setup attempts, rubric scores and final review are recorded there. The consumer used codex-cli 0.157.0, gpt-6-sol and medium reasoning. No application builds/tests, dependency installation or live OCI/database/Podman checks ran. The result supports those questions at the pinned original revision; it does not establish repeatability, causal improvement or behavior coverage for the 30 new guides.
+
+## Approved all-server extension
+
+The user approved the [expansion design](design.md#approved-all-server-expansion--october-5-2026) after the original evaluation. Sequential source inspection at `838d82b` found 34 server components, four with existing guides, and added the 30 missing guides. Common remains a covered library; no placeholder group guide is needed. The complete [server/library map](../../agent-development.md#selected-component-context) reaches each native README, implementation entry and guide.
+
+Every new guide covers the nine informational areas using local source-backed orientation, inherited requirements and explicit gaps. The extension preserves existing root instructions and documents actual differences: CLI versus SDK execution; stdio versus caller-specific HTTP auth; database and document data boundaries; IoT control/data planes; credential-free public pricing; local index lifecycle; profile-filtered Data Studio; GoldenGate REST integration; and Moon-excluded native validation.
+
+Newly visible source gaps include removed Make procedures in DB Observability, its OCI/Common dependency conflict, Data Studio’s 75% threshold, local credential-resolution departures, IoT/OpenSearch token-failure fallback, mismatched native tool tables, Pricing’s absent console package, DB Doc’s absent requirements.txt/tests and DBTools’ live test prerequisites. These are documentation disclosures. Source behavior, dependencies, tasks and coverage settings are unchanged.
+
+### Expansion checks and fresh review
+
+Executed documentation/source checks on October 5, 2026 across the full 41-file Markdown diff from application baseline `52ea016`, explicitly including all 30 new guides. All 34 server directories and Common have local guides, all local guides expose the nine informational areas and parent/shared routes, and the shared map reaches every guide. Author checks resolved 1,292 local links and 330 fragments, checked 78 displayed Moon commands and 48 named function leads against native definitions, preserved main’s root instructions in order and confirmed a documentation-only diff. `git diff --check` passed; new files were also checked for trailing whitespace and final newlines.
+
+A fresh-context read-only reviewer inspected the six changed root/shared/adoption documents and all 30 new guides against `838d82b`, plus the retained guides within the full branch diff. Verdict: ready for user review, with no Critical or Important findings. Two Minor findings were corrected and verified during the same review: DB Doc processes HTML/HTM into Markdown chunks; the reuse assessment’s unexecuted-trial statement is dated to its original rebase assessment. No findings were deferred. The reviewer independently resolved the same 1,292 links/330 fragments, checked ordered root-policy preservation and confirmed no application/configuration changes. Its reviewed 41-file content fingerprint was `e6b36a2a7cb32ae321d314842016d9d44a0240f260e71d27de9bff3e28d46cb1`; the review’s HEAD was `838d82b` with the expansion uncommitted.
+
+After that review, the author added a source-checked DB Doc stdio/HTTP listener disclosure, a Data Studio case to the proposed evaluation and this review record. Final author verification repeated the path/anchor, scope, command-source and whitespace checks. The extension’s final guidance identity is the commit containing this record, available in Git history; it is separate from the original evaluation’s pinned identity.
+
+The reviewer set aside application correctness/remediation, dependency/build success, test discovery/results/achieved coverage, live OCI/database/public API/Podman behavior, deployed security assurance, expanded-guide agent effectiveness/repeatability and named-maintainer ownership. Those remain outside this documentation task. No server imports, builds/tests, dependency installation, live operations or additional consumer runs were performed by the author or reviewer.
+
+### Proposed follow-up evaluation
+
+Prepare a separately identified read-only batch after guide review, with each question asked from root and the owning component directory:
+
+| Case | Investigation | New patterns exercised |
+| --- | --- | --- |
+| API command change | Explain command parsing/filtering, managed OCI CLI auth/options, subprocess boundaries and appropriate test evidence | CLI-backed execution, Common helpers and explicit root exception |
+| Database credential/PDB change | Trace shared versus caller-specific auth, client lifecycle, PDB inputs/response impact and relevant checks | Common SDK consumer, HTTP boundary and database mutations |
+| Data Studio access change | Trace default/opt-in capability profiles, config/keyring credential precedence, HTTP bind/bearer controls, query policy and relevant checks | Service SDK integration, profile-filtered tools, non-IDCS HTTP auth and coverage discrepancy |
+| IoT twin data access | Trace friendly selectors/domain endpoints, OCI control-plane auth versus ORDS data tokens, caching and relevant tests | Multi-module resolution, independent credential planes and local/Common differences |
+| Moon-excluded validation | Explain how to prepare/check DBTools, MySQL, Pricing and DB Doc, distinguishing documented commands, live tests, coverage and packaging gaps | Native script/package routes, network prerequisites and missing evidence |
+
+This is a proposal with no executed expansion trial or prefilled pass result. Freeze a new guide/source identity and approve the concrete prompts/runtime/access plan before executing consumer runs. The original ten-case batch does not need to be rerun solely because this documentation scope grew.

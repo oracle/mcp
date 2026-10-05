@@ -537,6 +537,85 @@ def test_backup_destination_scan_stops_at_max_total_databases(monkeypatch):
     assert summary.total_databases == 2
 
 
+def test_backup_destination_marks_a_database_capped_scan_truncated(monkeypatch):
+    """
+    A scan cut short by max_total_databases is reported as truncated.
+
+    total_databases counts only what was scanned, so without the flag a capped fleet
+    reads as a complete, smaller one. A cap the scope never reaches is not truncation.
+    """
+    monkeypatch.setattr(compartments, "_compartment_scope_for_tool", lambda cid, **_kwargs: ([cid], True))
+    monkeypatch.setattr(compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["home1"])
+    db_client = MagicMock()
+    db_client.list_databases.return_value = _response([_backup_destination_db(1), _backup_destination_db(2)])
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+
+    def summarize(cap):
+        return summarise_tools.summarize_protected_database_backup_destination(
+            compartment_id="compartment",
+            region="us-ashburn-1",
+            include_last_backup_time=False,
+            max_total_databases=cap,
+        )
+
+    capped = summarize(1)
+    assert capped.total_databases == 1
+    assert capped.truncated is True
+
+    complete = summarize(2)
+    assert complete.total_databases == 2
+    assert complete.truncated is False
+
+
+def test_backup_destination_enforces_limit_per_home_across_pages(monkeypatch):
+    """
+    limit_per_home caps each DB Home's databases, not the size of each page.
+
+    It was passed only as the OCI page limit, so paging went on and a home returned
+    every database it had.
+    """
+    monkeypatch.setattr(compartments, "_compartment_scope_for_tool", lambda cid, **_kwargs: ([cid], True))
+    monkeypatch.setattr(
+        compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["home1", "home2"]
+    )
+    db_client = MagicMock()
+    # Each home pages: one database on the first page, another on the next.
+    db_client.list_databases.side_effect = lambda **kwargs: _response(
+        [_backup_destination_db(2 if kwargs.get("page") else 1)],
+        has_next_page=not kwargs.get("page"),
+        next_page="next",
+    )
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+
+    summary = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="compartment",
+        region="us-ashburn-1",
+        include_last_backup_time=False,
+        limit_per_home=1,
+    )
+    # One read per home, never the second page.
+    assert db_client.list_databases.call_count == 2
+    assert all("page" not in c.kwargs for c in db_client.list_databases.call_args_list)
+    assert summary.truncated is True
+
+
+def test_scan_trims_a_page_larger_than_limit_per_home():
+    """A page with more rows than limit_per_home is cut to the limit and flagged."""
+    db_client = MagicMock()
+    db_client.list_databases.return_value = _response([{"id": "a"}, {"id": "b"}, {"id": "c"}])
+    found, capped = summarise_tools._scan_available_databases(
+        db_client, {"comp1": ["home1"]}, limit_per_home=2
+    )
+    assert [row["id"] for row in found] == ["a", "b"]
+    assert capped
+
+    found, capped = summarise_tools._scan_available_databases(
+        db_client, {"comp1": ["home1"]}, limit_per_home=3
+    )
+    assert len(found) == 3
+    assert not capped
+
+
 def test_backup_destination_reports_which_databases_have_backups(monkeypatch):
     """
     has_backups_db_names names the databases a backup was actually returned for.
@@ -788,12 +867,13 @@ def test_scan_stops_at_the_cap_across_compartments_homes_and_pages():
     db_client.list_databases.side_effect = lambda **_kwargs: _response(
         [{"id": "a"}, {"id": "b"}], has_next_page=True, next_page="next"
     )
-    found = summarise_tools._scan_available_databases(
+    found, capped = summarise_tools._scan_available_databases(
         db_client,
         {"comp1": ["home1", "home2"], "comp2": ["home3", "home4"]},
         max_total_databases=3,
     )
     assert len(found) == 3
+    assert capped
     # Two rows per page, so the cap is reached on the second call and nothing follows.
     assert db_client.list_databases.call_count == 2
 
@@ -976,7 +1056,7 @@ def test_the_scanner_stops_between_requests_not_after_all_of_them():
     """
     db_client = MagicMock()
     db_client.list_databases.return_value = _response([{"id": "a"}])
-    found = summarise_tools._scan_available_databases(
+    found, _capped = summarise_tools._scan_available_databases(
         db_client,
         {"c1": ["h1", "h2"], "c2": ["h3", "h4"]},
         deadline=_ExpiresAfter(2),

@@ -948,9 +948,10 @@ def _scan_available_databases(
     max_db_homes: Optional[int] = None,
     max_total_databases: Optional[int] = None,
     deadline=None,
-) -> list[Any]:
+) -> tuple[list[Any], bool]:
     """
-    Every AVAILABLE database across the given compartments and DB Homes.
+    Every AVAILABLE database across the given compartments and DB Homes, and whether
+    limit_per_home or max_total_databases left any of them unread.
 
     Three loops deep -- compartment, DB Home, result page -- because that is the shape
     of the API: databases are reached only through a home, and homes only through a
@@ -961,10 +962,18 @@ def _scan_available_databases(
     """
     list_databases = getattr(db_client, "list_databases")
     found: list[Any] = []
+    capped = False
 
     def _stop() -> bool:
-        """True once the global cap or the time budget is spent, at any depth."""
+        """
+        True once the global cap or the time budget is spent, at any depth.
+
+        Only called where something is still left to scan, so stopping at the cap
+        there means the result is partial.
+        """
+        nonlocal capped
         if max_total_databases is not None and len(found) >= max_total_databases:
+            capped = True
             return True
         return bool(deadline is not None and deadline.reached())
 
@@ -984,6 +993,8 @@ def _scan_available_databases(
             if limit_per_home is not None:
                 call_kwargs["limit"] = limit_per_home
 
+            # The OCI limit is only a page size, so the per-home cap is counted here.
+            home_count = 0
             next_page = None
             while True:
                 page_kwargs = dict(call_kwargs)
@@ -991,17 +1002,21 @@ def _scan_available_databases(
                     page_kwargs["page"] = next_page
                 response = list_databases(**page_kwargs)
                 data = getattr(response.data, "items", response.data)
-                if isinstance(data, list):
-                    found.extend(data)
-                elif data is not None:
-                    found.append(data)
-                if _stop():
-                    return found[:max_total_databases] if max_total_databases else found
-                if not getattr(response, "has_next_page", False):
+                rows = data if isinstance(data, list) else ([] if data is None else [data])
+                more = bool(getattr(response, "has_next_page", False))
+                if limit_per_home is not None and home_count + len(rows) >= limit_per_home:
+                    capped = capped or more or home_count + len(rows) > limit_per_home
+                    rows = rows[: limit_per_home - home_count]
+                    more = False
+                home_count += len(rows)
+                found.extend(rows)
+                if not more or _stop():
                     break
                 next_page = getattr(response, "next_page", None)
 
-    return found
+    if max_total_databases is not None and len(found) > max_total_databases:
+        return found[:max_total_databases], True
+    return found, capped
 
 
 @mcp.tool(
@@ -1085,7 +1100,7 @@ def summarize_protected_database_backup_destination(
                 # a complete, smaller count.
                 homes_complete = False
 
-        db_summaries = _scan_available_databases(
+        db_summaries, scan_capped = _scan_available_databases(
             db_client,
             home_ids_by_comp,
             db_name=db_name,
@@ -1219,7 +1234,7 @@ def summarize_protected_database_backup_destination(
             unreadable_count=len(unreadable_names),
             unreadable_db_names=_uniq_sorted(unreadable_names),
             items=items,
-            truncated=deadline.expired or not (scope_complete and homes_complete),
+            truncated=deadline.expired or scan_capped or not (scope_complete and homes_complete),
         )
     except Exception as e:
         logger.error(f"Error in summarize_protected_database_backup_destination tool: {e}")

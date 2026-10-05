@@ -264,6 +264,12 @@ the server gains two new guidance tools.
   `~/.oci/config` is absent, and this server resolved `ORACLE_MCP_AUTH_PROFILE` before
   `OCI_CONFIG_PROFILE` while the shared library resolves them in the opposite order, so
   these lookups could resolve a different profile than the request signer.
+- `summarize_protected_database_backup_destination` now sets `truncated: true` when
+  `max_total_databases` or `limit_per_home` leaves databases unscanned, so a capped
+  count no longer reads as the whole fleet.
+- `summarize_protected_database_backup_destination` now enforces `limit_per_home`
+  across result pages. It was sent only as the OCI page size, so a DB Home that paged
+  returned more databases than the limit allowed.
 
 ### Security
 

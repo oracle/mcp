@@ -2250,7 +2250,8 @@ class ProtectedDatabaseBackupDestinationSummary(OCIBaseModel):
         description=(
             "True when counts are partial: the scan stopped early at its deadline, or "
             "the compartment subtree was capped by ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE "
-            "or could not be fully read, or a compartment's DB Homes could not be listed."
+            "or could not be fully read, or a compartment's DB Homes could not be listed, "
+            "or limit_per_home or max_total_databases left databases unscanned."
         ),
     )
 

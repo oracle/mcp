@@ -1,0 +1,36 @@
+# Selected monorepo engineering-context adoption
+
+Status: **The user requested a fresh branch from main containing only monorepo-agent work on October 5, 2026. This revised assessment and plan use that clean baseline; guide implementation remains the next increment.** This change bundle applies the framework; it does not define a second portable specification.
+
+## Goal and scope
+
+Establish useful engineering context at the fork root and in Common, Compute, Cloud, JavaScript and the Java toolkit. Guides should make scope/ownership, entry points, setup/build/run, tests/validation, architecture/dependencies, security/secrets, change impact, known gaps and workflow/context routing discoverable. Answers may be concise local statements, specific shared references or links to authoritative native sources. Headings and body formats remain flexible.
+
+The framework source is AI Pit Crew's `docs/context-contract/agent-guides.md` and October 5 scope-correction design, reviewed from `codex/agent-guide-contract` at `c9b1724`. These repository/revision identities are evidence pointers, not portable filesystem links. The [reuse assessment](reuse-assessment.md) records the adopting repository's actual sources and limitations.
+
+Root guidance owns shared orientation and routes. Component/library guides describe local responsibilities and differences. A new shared `docs/agent-development.md` makes existing setup/validation/contribution sources and their limits reachable. No `src/AGENTS.md` is needed: the selected scopes do not reveal another useful group-level contract.
+
+## Composition
+
+- **Know:** Existing root README, BEST_PRACTICES, Common README, package READMEs, implementation and interface sources.
+- **Do:** Existing Moon task definitions and toolchain configuration, package manifests and documented build/validation procedures. A mapping does not authorize running a service or publishing.
+- **Now:** This root change bundle records selected scope, intended edits and review status.
+- **Proof:** This bundle's adoption summary records actual checks and source identities; test definitions are evidence leads, not executed results.
+- **Done:** No archive directory is required for this pass; no placeholder stores are created.
+
+Map tasks using **Read when**, **Context**, **Depends on** and **Evidence**, or an equivalent clear representation. Root and component starts must both reach applicable shared guidance. Direct links do not bypass local instructions. Optional Now/Proof/Done remain optional conventions, not a required directory tree.
+
+## Boundaries
+
+- Work in the `dustin-sale/mcp` fork, starting at the fork's local `main`, `d0e442b3ddcffe05c6f366c14dac42548641b60f`. This is a local branch identity, not a claim of a fresh remote fetch.
+- Adapt selected older guidance individually. Do not merge `enhanced-agent-harness`, vendor its skills or change application code, dependencies, lockfiles, task definitions, test thresholds or runtime configuration.
+- Preserve shared requirements and document observed implementation/policy conflicts. Do not create an exception simply because old guidance calls an implementation allowed.
+- Carry no pagination adoption commits, standalone pagination policy/docs, server inventory or application/tooling changes from the earlier branches. Existing native pagination behavior may be an optional source example; broad context does not depend on adopting a pagination policy.
+- Other packages retain their existing main-branch guidance. The six selected guide scopes do not establish whole-repository coverage.
+- Commands and tests are source-verified until actually executed. No dependency installation, server test suite, live OCI/database call, Podman deployment, paid evaluation, publishing or agent harness integration is needed for this documentation pass.
+
+## Acceptance and next increment
+
+Each selected guide addresses all nine areas with source-backed answers, specific shared references, meaningful non-applicability or explicit gaps. Review entry-point, authentication, validation, security, impact and shared/local composition questions from root and component starts. Check local links, command definitions, scope and instruction consistency. Record unresolved gaps without fixing them outside scope.
+
+The [implementation plan](implementation-plan.md) gives the sequential file changes and review cases. User review of that concrete plan precedes guide implementation and later expansion. A behavior trial can be selected after structural review; no effectiveness claim follows from document completion.

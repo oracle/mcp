@@ -98,12 +98,7 @@ the server gains two new guidance tools.
   lot of volume and a lot of customer data at rest. Log files are also created `0600` now,
   on each rotation, so they are not readable by other users of the host.
 - Updated dependency locks for FastMCP 3.4.5, OCI SDK 2.185.1,
-  Cryptography 
-  
-  
-  
-  
-  , and Pydantic 2.13.4.
+  Cryptography 50.0.1, and Pydantic 2.13.4.
 - README now documents all supported environment variables and the hosted OAuth setup
   inline.
 
@@ -269,7 +264,12 @@ the server gains two new guidance tools.
   `~/.oci/config` is absent, and this server resolved `ORACLE_MCP_AUTH_PROFILE` before
   `OCI_CONFIG_PROFILE` while the shared library resolves them in the opposite order, so
   these lookups could resolve a different profile than the request signer.
-## Unreleased
+- `summarize_protected_database_backup_destination` now sets `truncated: true` when
+  `max_total_databases` or `limit_per_home` leaves databases unscanned, so a capped
+  count no longer reads as the whole fleet.
+- `summarize_protected_database_backup_destination` now enforces `limit_per_home`
+  across result pages. It was sent only as the OCI page size, so a DB Home that paged
+  returned more databases than the limit allowed.
 
 ### Security
 

@@ -309,15 +309,16 @@ Use the MCP tool descriptions as the authoritative parameter reference. Some lis
 
 ## Development and validation
 
-Install the development dependencies before running tests:
+From the repository root, test this server, check the package, and lint:
 
 ```sh
-uv sync --group dev
-uv run pytest --cov=. --cov-branch --cov-report=term-missing
+moon run oci-recovery-mcp-server:test
+moon run oci-recovery-mcp-server:build
+moon run root:lint
 ```
 
-The test suite is offline: OCI clients are mocked, so no credentials or live resources
-are required.
+`moon run root:format` formats Python source. The test suite is offline: OCI clients are
+mocked, so no credentials or live resources are required.
 
 ## License
 

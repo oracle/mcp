@@ -1,7 +1,11 @@
 *
 !package.json
 !package-lock.json
+!buf.gen.yaml
+!proto/
+!proto/runner.proto
 !src/
+!src/grpc.ts
 !src/protocol.ts
 !src/sandbox-common.ts
 !src/sandbox-isolate.ts

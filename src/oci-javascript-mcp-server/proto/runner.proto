@@ -1,0 +1,66 @@
+// Copyright (c) 2026, Oracle and/or its affiliates.
+// Licensed under the Universal Permissive License v1.0 as shown at
+// https://oss.oracle.com/licenses/upl.
+
+syntax = "proto3";
+
+// v4 returns logs with the result and uses native gRPC lifecycle signals.
+package oracle.oci.mcp.runner.v4;
+
+service Runner {
+  // Exactly one execution per authenticated session. No replay or resumption.
+  rpc Session(stream HostMessage) returns (stream RunnerMessage);
+}
+
+message HostMessage {
+  reserved 3;
+  reserved "cancel";
+  oneof body {
+    Execute execute = 1;
+    RpcResponse rpc_result = 2;
+  }
+}
+
+message RunnerMessage {
+  reserved 1, 3, 5;
+  reserved "ready", "log", "protocol_error";
+  oneof body {
+    RpcRequest rpc = 2;
+    ExecutionResult result = 4;
+  }
+}
+
+message Execute {
+  reserved 1, 2;
+  reserved "code", "timeout_ms";
+  // The session's gRPC deadline supplies the execution time budget.
+  // Presence is validated separately from protobuf decoding, even for zero/false.
+  bytes reflection_manifest_json = 3;
+  optional uint32 memory_limit_mb = 4;
+  optional uint32 max_result_bytes = 5;
+  // Bounded UTF-16LE preserves every JavaScript code unit.
+  bytes code_utf16le = 6;
+}
+
+message RpcRequest {
+  optional uint32 id = 1;
+  // Bounded UTF-8 JSON, validated by the host before calling the OCI bridge.
+  bytes request_json = 2;
+}
+
+message RpcResponse {
+  optional uint32 id = 1;
+  bytes result_json = 2;
+}
+
+message ExecutionResult {
+  // JSON null is encoded explicitly; an absent payload is invalid.
+  bytes result_json = 1;
+  // Preserve the public script/OCI error's bounded JSON metadata, or JSON null.
+  bytes error_json = 2;
+  optional sint32 exit_code = 3;
+  optional bool timed_out = 4;
+  // Same bounded, lossless encoding as Execute.code_utf16le.
+  bytes stdout_utf16le = 5;
+  bytes stderr_utf16le = 6;
+}

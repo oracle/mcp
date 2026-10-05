@@ -39,7 +39,7 @@ Native READMEs, BEST_PRACTICES, CONTRIBUTING, SECURITY, manifests and task files
 ## Review focus
 
 1. Component-start navigation reaches root/shared prerequisites as well as local topic material.
-2. Main defines inherited/root Python Moon tasks and explicit JavaScript Moon tasks; npm scripts expose startup only. Retain actual command scope, prerequisites and working directory. Do not import undefined `test-focused`; source verification is not execution.
+2. Main defines inherited/root Python Moon tasks and explicit JavaScript Moon tasks; npm scripts expose startup only. Retain actual command scope, prerequisites and working directory. Source verification is not execution.
 3. Shared-library consumers and Compute's legacy auth stay distinct from full Common adoption or compliance.
 4. JavaScript's existing Podman implementation/root-policy conflict and Java test/coverage gaps remain explicit.
 5. Shared authentication, validation and architecture context compose with local differences; no inherited pagination-policy dependency or whole-repository coverage claim.
@@ -69,7 +69,7 @@ Native READMEs, BEST_PRACTICES, CONTRIBUTING, SECURITY, manifests and task files
 
 - [x] Verify old entry points and architectural statements against current Common/Compute/Cloud source. Check all five declared Common consumers and the three explicit package Moon edges; record Compute's absent dependency.
 - [x] Adapt Common's nine-area guide. Link native auth contracts and tests, state library non-applicability for a listener, route shared-change validation, and record the README/manifest requirements mismatch.
-- [x] Adapt Compute's broad guide. Preserve tools/models/tests, client/user-agent boundaries and legacy auth gap. Remove undefined `test-focused` references; preserve updated main root Moon policy and separate package tests from aggregate coverage.
+- [x] Adapt Compute's broad guide. Preserve tools/models/tests, client/user-agent boundaries and legacy auth gap. Preserve updated main root Moon policy and separate package tests from aggregate coverage.
 - [x] Adapt Cloud's broad guide. Route discovery/coercion/invocation/serialization tests, Common dependency/auth and caller-specific client boundaries, plus operation-specific implementation/test evidence from main.
 - [x] Complete root links to these guides. Review cases 1–3 and 5 below from both root and package starts; check all changed links/anchors and `git diff --check`.
 - [x] Record coverage/gaps in the summary and commit the explicit files with signoff: `docs: add broad Common and Python server context`.

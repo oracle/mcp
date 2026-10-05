@@ -17,7 +17,7 @@ From the repository root, install pinned tools with `proto install`, then use `m
 
 ## Tests and validation
 
-Use `moon run oci-compute-mcp-server:test` for package tests and `moon run root:lint` after Python source changes. Aggregate coverage is a separate root task; see the shared validation map for scope. No `test-focused` task exists here. Tool changes start with tool tests; response conversions also need model-test review. The manifest configures 90% coverage; this adoption ran no server checks.
+Use `moon run oci-compute-mcp-server:test` for package tests and `moon run root:lint` after Python source changes. Aggregate coverage is a separate root task; see the shared validation map for scope. Tool changes start with tool tests; response conversions also need model-test review. The manifest configures 90% coverage; this adoption ran no server checks.
 
 ## Architecture and dependencies
 

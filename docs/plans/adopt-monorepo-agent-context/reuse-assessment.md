@@ -22,7 +22,7 @@ All nine areas remain required for the selected guides, with concise local answe
 
 Preserve updated [root instructions](../../../AGENTS.md), including Moon validation and exclusions. [README](../../../README.md), [BEST_PRACTICES](../../../BEST_PRACTICES.md), [CONTRIBUTING](../../../CONTRIBUTING.md) and [SECURITY](../../../SECURITY.md) retain their native responsibilities. The selected nested guides and [shared engineering map](../../agent-development.md) are this branch's additions.
 
-Main removed the Makefile. [Inherited Python tasks](../../../.moon/tasks/python.yml), [root tasks](../../../moon.yml), [workspace discovery](../../../.moon/workspace.yml), [toolchains](../../../.moon/toolchains.yml) and [JavaScript tasks](../../../src/oci-javascript-mcp-server/moon.yml) now own validation definitions. Remove obsolete Make commands and links. Root aggregate Python coverage is a direct coverage-tool task, separate from package tests. No `test-focused` task exists. Compute remains a structure/model/test reference with legacy auth, not the shared credential contract to copy.
+Main removed the Makefile. [Inherited Python tasks](../../../.moon/tasks/python.yml), [root tasks](../../../moon.yml), [workspace discovery](../../../.moon/workspace.yml), [toolchains](../../../.moon/toolchains.yml) and [JavaScript tasks](../../../src/oci-javascript-mcp-server/moon.yml) now own validation definitions. Remove obsolete Make commands and links. Root aggregate Python coverage is a direct coverage-tool task, separate from package tests. Compute remains a structure/model/test reference with legacy auth, not the shared credential contract to copy.
 
 ## Common and Cloud
 

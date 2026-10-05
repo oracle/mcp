@@ -40,7 +40,7 @@ Command sources: [Moon Python tasks](../.moon/tasks/python.yml), [root tasks](..
 
 ### Check scope and coverage
 
-- `moon run <package>:test` runs the inherited Python package test task and writes `.coverage.<package>` plus its HTML report. It does not run aggregate coverage. No `test-focused` task exists at this baseline.
+- `moon run <package>:test` runs the inherited Python package test task and writes `.coverage.<package>` plus its HTML report. It does not run aggregate coverage.
 - `moon run :test` selects test tasks across discovered projects, including JavaScript. `moon run root:combine-coverage` separately combines Python workspace reports and enforces a 90% aggregate threshold; it does not combine JavaScript or Java coverage. Check which reports belong to the current run rather than inferring consumer coverage from stale files or one package's success.
 - [Workspace discovery](../.moon/workspace.yml) excludes dbtools, MySQL, Pricing, DB Doc and the Java toolkit. Follow each excluded package's native validation route; exclusion does not waive quality requirements. Java has no discovered Moon project. JavaScript owns explicit package tasks, with generated protobuf bindings compiled before tests, type checks or packaging.
 - Python package manifests configure their own thresholds; root requires at least 90% for server quality checks. JavaScript c8 enforces 90% **line** coverage with explicit exclusions. Java's POM provides no JaCoCo enforcement; build success or zero discovered tests is insufficient evidence.

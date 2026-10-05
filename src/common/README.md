@@ -192,6 +192,18 @@ FastMCP's `OCIProvider`. It does not inspect `ORACLE_MCP_HOST` or
 context, create a service client, or set `additional_user_agent`; the adopting
 server owns each of those steps.
 
+Pass resource scopes bare, such as `oci_mcp.example.invoke`. IDCS `/authorize`
+accepts only scopes qualified with the resource application's primary audience, so
+the provider sends them to IDCS as `IDCS_AUDIENCE` + scope: in the advertised
+defaults, the authorize request, and refresh requests. `required_scopes` stays bare,
+because it is checked against the issued token's bare `scope` claim. A scope that
+already starts with the audience, or contains `://`, is not qualified again.
+
+FastMCP enables CIMD client registration by default, which makes the server fetch a
+client's metadata URL. On hosts without direct internet egress, pass
+`IDCSHttpAuthOptions(enable_cimd=False)` so clients register with DCR against
+`/register` instead.
+
 | Setting | Purpose |
 | --- | --- |
 | `IDCS_DOMAIN` | Identity Domains host, such as `example.identity.oraclecloud.com`, or an absolute `https://` origin. |

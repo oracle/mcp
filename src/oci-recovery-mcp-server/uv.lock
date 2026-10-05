@@ -8,6 +8,12 @@ resolution-markers = [
     "python_full_version < '3.14' and sys_platform != 'win32'",
 ]
 
+[manifest]
+members = [
+    "oracle-mcp-common",
+    "oracle-oci-recovery-mcp-server",
+]
+
 [[package]]
 name = "aiofile"
 version = "3.11.1"
@@ -203,11 +209,11 @@ wheels = [
 
 [[package]]
 name = "cachetools"
-version = "7.1.6"
+version = "7.1.8"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/55/af/861ebc2e318a5c3300e3eb63bc4d30f3d70a46d13b360093728ac0705eed/cachetools-7.1.6.tar.gz", hash = "sha256:c7a79e7f30ba9943c1cefd08cc36f006aaae086e017af9166f1d59d6170c47e1", size = 40572, upload-time = "2026-07-23T22:47:53.737Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4b/39/9a4689914dd907915cee74733b95888fc1d8a21aad47a24a0a2deec73ac4/cachetools-7.1.8.tar.gz", hash = "sha256:1221d547a0b24b7f26fa891d40d488b5258beab9aebd8ed68c729be3af849c43", size = 40909, upload-time = "2026-08-31T19:02:53.985Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9f/f2/2086ba18a925a73586c4d4e61d25f4a6058e56fd00d77ce8f1d361ab4c9b/cachetools-7.1.6-py3-none-any.whl", hash = "sha256:2c12e255780330af28b91bb7fb96cce4c766f04e38396b9a24510190a5827096", size = 16954, upload-time = "2026-07-23T22:47:52.397Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/3d/9487690d0e937854db587205c66bab3c3cf88d9f00ed380b74cb88cc94ee/cachetools-7.1.8-py3-none-any.whl", hash = "sha256:a81e3844acaa7355b6567f97bd67a94a14ec3a9bc2cbbdae45b9592cc036775b", size = 16842, upload-time = "2026-08-31T19:02:52.554Z" },
 ]
 
 [[package]]
@@ -1064,15 +1070,43 @@ wheels = [
 ]
 
 [[package]]
-name = "oracle-oci-recovery-mcp-server"
-version = "2.1.2"
-source = { editable = "." }
+name = "oracle-mcp-common"
+version = "0.1.4"
+source = { editable = "../common" }
 dependencies = [
     { name = "fastmcp" },
-    { name = "mcp" },
     { name = "oci" },
-    { name = "pydantic" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
     { name = "pytest-cov" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastmcp", specifier = ">=3.2.4,<4.0.0" },
+    { name = "oci", specifier = ">=2.185.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.0.3" },
+    { name = "pytest-cov", specifier = ">=7.0.0" },
+]
+
+[[package]]
+name = "oracle-oci-recovery-mcp-server"
+version = "3.0.0"
+source = { editable = "." }
+dependencies = [
+    { name = "cachetools" },
+    { name = "cryptography" },
+    { name = "fastmcp" },
+    { name = "oci" },
+    { name = "oracle-mcp-common" },
+    { name = "pydantic" },
 ]
 
 [package.dev-dependencies]
@@ -1080,15 +1114,17 @@ dev = [
     { name = "black" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "cachetools", specifier = "==7.1.8" },
+    { name = "cryptography", specifier = "==50.0.1" },
     { name = "fastmcp", specifier = "==3.4.5" },
-    { name = "mcp", specifier = ">=1.27.0" },
     { name = "oci", specifier = "==2.185.1" },
+    { name = "oracle-mcp-common", editable = "../common" },
     { name = "pydantic", specifier = "==2.13.4" },
-    { name = "pytest-cov", specifier = ">=7.0.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1096,6 +1132,7 @@ dev = [
     { name = "black", specifier = ">=26.3.1" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-asyncio", specifier = ">=1.2.0" },
+    { name = "pytest-cov", specifier = ">=7.0.0" },
 ]
 
 [[package]]
@@ -1679,8 +1716,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography" },
-    { name = "jeepney" },
+    { name = "cryptography", marker = "sys_platform != 'win32'" },
+    { name = "jeepney", marker = "sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [

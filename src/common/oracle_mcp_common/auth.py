@@ -84,6 +84,10 @@ class IDCSHttpAuthOptions:
     audience: str | None = None
     base_url: str | None = None
     region: str | None = None
+    # CIMD lets a client use an HTTPS URL as its client_id, which the server must then
+    # fetch. Disable it on hosts without direct internet egress; clients fall back to
+    # DCR against /register, which never leaves the host.
+    enable_cimd: bool = True
 
 
 @dataclass(frozen=True)
@@ -196,6 +200,9 @@ def build_idcs_http_auth(
         )
     except Exception as error:
         raise ValueError("Unable to construct the HTTP IDCS authentication provider") from error
+    _qualify_upstream_scopes(provider, audience=inputs.audience, scopes=scopes)
+    if not (options or IDCSHttpAuthOptions()).enable_cimd:
+        _disable_cimd(provider)
     return IDCSHttpAuth(
         provider=provider,
         _identity_domain_url=inputs.domain_url,
@@ -203,6 +210,91 @@ def build_idcs_http_auth(
         _client_secret=inputs.client_secret,
         _configured_region=inputs.region,
     )
+
+
+# Scopes IDCS defines itself, which are never namespaced by a resource application.
+# Everything else belongs to the server's resource application and must be qualified
+# with that application's primary audience.
+_IDCS_RESERVED_SCOPES = frozenset({"openid", "profile", "email", "address", "phone", "groups", "offline_access"})
+
+
+def _qualify(audience: str, scopes: list[str]) -> list[str]:
+    """Name each resource scope the way IDCS does: audience + scope, no separator.
+
+    A scope that already starts with the audience is left alone. Primary audiences
+    need not be URLs, so "://" alone cannot tell a qualified scope from a bare one,
+    and scopes come back qualified from clients that read the advertised defaults.
+    """
+    return [
+        s if (s in _IDCS_RESERVED_SCOPES or "://" in s or s.startswith(audience)) else f"{audience}{s}"
+        for s in scopes
+    ]
+
+
+def _qualify_upstream_scopes(provider: Any, *, audience: str, scopes: list[str]) -> None:
+    """Request resource scopes from IDCS in the fully-qualified form it requires.
+
+    IDCS's `/authorize` only recognizes audience-qualified resource scopes, so a bare
+    `oci_mcp.example.invoke` is rejected with `invalid_scope`. The access token it
+    issues, however, carries the scope bare in its `scope` claim. So every surface
+    that reaches IDCS is qualified, and every surface compared against an issued
+    token stays bare:
+
+    * Qualified: `update_default_scopes` (DCR defaults and advertised metadata),
+      `_build_upstream_authorize_url` (the `/authorize` request, including the
+      fallback to `required_scopes` when a client sends no scope), and
+      `_prepare_scopes_for_upstream_refresh` (refresh requests, built from the bare
+      scopes stored on the refresh token -- left alone, the session dies at the
+      first refresh).
+    * Bare: `required_scopes` and the token verifier's scopes, which FastMCP matches
+      against the token's claim.
+
+    FastMCP's AzureProvider solves the same problem with the same hooks. They are
+    checked rather than assumed, so an upstream rename fails at startup.
+    """
+    for attr in (
+        "update_default_scopes",
+        "required_scopes",
+        "_build_upstream_authorize_url",
+        "_prepare_scopes_for_upstream_refresh",
+    ):
+        if not hasattr(provider, attr):
+            raise RuntimeError(
+                f"This FastMCP release does not expose '{attr}', so resource scopes cannot "
+                "be qualified with the IAM resource application's audience and IDCS would "
+                "reject sign-in with 'invalid_scope'."
+            )
+
+    qualified = _qualify(audience, scopes)
+    provider.update_default_scopes(qualified)
+
+    build_authorize_url = provider._build_upstream_authorize_url
+    fallback = list(provider.required_scopes) or list(scopes)
+
+    def _qualified_authorize_url(txn_id, transaction):
+        requested = list(transaction.get("scopes") or []) or fallback
+        return build_authorize_url(txn_id, {**transaction, "scopes": _qualify(audience, requested)})
+
+    provider._build_upstream_authorize_url = _qualified_authorize_url
+    provider._prepare_scopes_for_upstream_refresh = lambda stored: _qualify(audience, list(stored) or qualified)
+
+
+def _disable_cimd(provider: Any) -> None:
+    """Turn off CIMD client registration on the OAuth provider.
+
+    OCIProvider does not forward `enable_cimd` to the underlying OAuthProxy, so the
+    private `_cimd_manager` is cleared instead. That both stops the outbound metadata
+    fetch and stops advertising `client_id_metadata_document_supported`. The
+    attribute is checked, so an upstream rename fails at startup instead of silently
+    restoring the fetch.
+    """
+    if not hasattr(provider, "_cimd_manager"):
+        raise RuntimeError(
+            "This FastMCP release does not expose '_cimd_manager', so CIMD client "
+            "registration cannot be disabled. Check whether OCIProvider now accepts "
+            "enable_cimd=False and use that instead."
+        )
+    provider._cimd_manager = None
 
 
 def resolve_auth_type(options: AuthOptions | None = None) -> AuthType:

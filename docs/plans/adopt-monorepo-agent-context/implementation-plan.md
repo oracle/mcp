@@ -67,12 +67,12 @@ Native READMEs, BEST_PRACTICES, CONTRIBUTING, SECURITY, manifests and task files
 
 **Produces:** Three broad guides covering nine areas, with local source/action/evidence routes and explicit shared prerequisites. Common lists declared consumers and distinguishes Moon edges; Compute and Cloud provide several native task/topic routes.
 
-- [ ] Verify old entry points and architectural statements against current Common/Compute/Cloud source. Check manifests for API, Cloud and Database consumers; record Compute's absent dependency.
-- [ ] Adapt Common's nine-area guide. Link native auth contracts and tests, state library non-applicability for a listener, route shared-change validation, and record the README/manifest requirements mismatch.
-- [ ] Adapt Compute's broad guide. Preserve tools/models/tests, client/user-agent boundaries and legacy auth gap. Remove undefined `test-focused` references; preserve main root Makefile policy and map existing Moon alternatives with their actual scope.
-- [ ] Adapt Cloud's broad guide. Route discovery/coercion/invocation/serialization tests, Common dependency/auth and caller-specific client boundaries, plus operation-specific implementation/test evidence from main.
-- [ ] Complete root links to these guides. Review cases 1–3 and 5 below from both root and package starts; check all changed links/anchors and `git diff --check`.
-- [ ] Record coverage/gaps in the summary and commit the explicit files with signoff: `docs: add broad Common and Python server context`.
+- [x] Verify old entry points and architectural statements against current Common/Compute/Cloud source. Check manifests for API, Cloud and Database consumers; record Compute's absent dependency.
+- [x] Adapt Common's nine-area guide. Link native auth contracts and tests, state library non-applicability for a listener, route shared-change validation, and record the README/manifest requirements mismatch.
+- [x] Adapt Compute's broad guide. Preserve tools/models/tests, client/user-agent boundaries and legacy auth gap. Remove undefined `test-focused` references; preserve main root Makefile policy and map existing Moon alternatives with their actual scope.
+- [x] Adapt Cloud's broad guide. Route discovery/coercion/invocation/serialization tests, Common dependency/auth and caller-specific client boundaries, plus operation-specific implementation/test evidence from main.
+- [x] Complete root links to these guides. Review cases 1–3 and 5 below from both root and package starts; check all changed links/anchors and `git diff --check`.
+- [x] Record coverage/gaps in the summary and commit the explicit files with signoff: `docs: add broad Common and Python server context`.
 
 ## Task 3: JavaScript and Java native context
 

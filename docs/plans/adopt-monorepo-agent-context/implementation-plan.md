@@ -2,7 +2,7 @@
 
 > **For execution:** Use `superpowers:executing-plans` task by task, preserving the user's sequential execution preference. This development workflow is not an adopter requirement or guide content.
 
-**Status:** Plan prepared for review; guide implementation has not started.
+**Status:** Approved for sequential implementation on October 5, 2026; progress recorded in the adoption summary.
 
 **Goal:** Establish broad, source-backed engineering context in six selected guide scopes on a clean main branch.
 
@@ -52,12 +52,12 @@ Native READMEs, BEST_PRACTICES, CONTRIBUTING, SECURITY, manifests and task files
 
 **Produces:** Stable `docs/agent-development.md#start-here`, `#validation-map`, `#known-gaps` and `#evidence-and-context-routes` anchors for local guides. Root discovery lists the selected scopes and clearly labels current/uncompleted coverage.
 
-- [ ] Read current root policy and source definitions. Confirm no new applicable guide or source drift; record baseline.
-- [ ] Write the shared document with the four stable anchors, the assessment's current command map, native-source references, actual evidence labels and selected gaps. Exclude old skill and harness/approval mechanics.
-- [ ] Expand root orientation across the nine areas using shared references. Preserve existing validation/auth/subprocess/changelog requirements. Qualify Compute's reference role and expose existing conflicts without authorizing exceptions.
-- [ ] Add Know/Do/Now/Proof routes or their clear equivalents for shared auth, architecture, engineering actions, selected local context and this bundle. Label pending guide coverage; add each local guide link only once the target exists.
-- [ ] Review cases 1–5 below for root/shared sources and run link/path checks plus `git diff --check`. Report source-verified commands and unresolved conflicts.
-- [ ] Update the adoption summary and commit the explicit files with signoff under CONTRIBUTING: `docs: establish shared engineering context routes`.
+- [x] Read current root policy and source definitions. Confirm no new applicable guide or source drift; record baseline.
+- [x] Write the shared document with the four stable anchors, the assessment's current command map, native-source references, actual evidence labels and selected gaps. Exclude old skill and harness/approval mechanics.
+- [x] Expand root orientation across the nine areas using shared references. Preserve existing validation/auth/subprocess/changelog requirements. Qualify Compute's reference role and expose existing conflicts without authorizing exceptions.
+- [x] Add Know/Do/Now/Proof routes or their clear equivalents for shared auth, architecture, engineering actions, selected local context and this bundle. Label pending guide coverage; add each local guide link only once the target exists.
+- [x] Review cases 1–5 below for root/shared sources and run link/path checks plus `git diff --check`. Report source-verified commands and unresolved conflicts.
+- [x] Update the adoption summary and commit the explicit files with signoff under CONTRIBUTING: `docs: establish shared engineering context routes`.
 
 ## Task 2: Common and Python component guides
 

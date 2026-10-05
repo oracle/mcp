@@ -1,6 +1,6 @@
 # Clean monorepo-agent planning summary
 
-Status: **Fresh main-based planning branch prepared at the user's request. Broad guide implementation has not started.**
+Status: **Approved sequential implementation in progress. Shared/root guidance is drafted; local guides and final review are pending.**
 
 ## Scope and identities
 
@@ -23,3 +23,9 @@ Guidance adaptation will preserve shared/native source ownership, nine-area info
 Before delivery, check the planning documents' local links/anchors/source paths, command definitions, diff scope and branch ancestry against main. Record exact results and commit identity in the delivery message. No server suites, builds, dependency installation, live service or behavior evaluation ran.
 
 Review the revised implementation plan, then create the selected root/shared/component engineering guides sequentially. Broader adoption, policy/code remediation and agent trials remain separately selected work.
+
+## Implementation progress
+
+Task 1 adds root orientation/context routes and `docs/agent-development.md` with stable shared anchors, native validation sources and scoped gaps. Existing validation, auth, subprocess and changelog policy is preserved. Local guide targets are labeled pending until created. Documentation-only checks are recorded per task; no server test result is claimed.
+
+Task 1 review walked shared orientation, native entry points, auth/dependency sources, runtime-specific validation definitions and gap/evidence routes. The scoped checker resolved 121 local links and 16 fragments across the first six documents; exact totals are confirmed by its executed output. No policy exception or runtime validation is claimed.

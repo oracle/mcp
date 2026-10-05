@@ -4,12 +4,45 @@
 
 These instructions apply to the entire repository. More specific instructions in a nested `AGENTS.md` file override this file for that subtree.
 
+Before editing, read this file and applicable nested guides for the target paths. Start with [shared engineering context](docs/agent-development.md#start-here) for repository procedures and validation sources. Package guides add local orientation and constraints; a documented implementation gap does not waive a shared requirement.
+
+This is a polyglot reference-implementation monorepo. Packages under `src/` own their tools, service clients and runtime behavior; [Common](src/common/README.md) owns reusable Python authentication. Named maintainer ownership is not established by these guides; consult the project's contribution process when ownership is unclear.
+
 ## Repository Layout
 
 - `src/<server-name>/` contains individual MCP server implementations.
 - `tests/` contains repository-level tests and end-to-end test assets.
 - `BEST_PRACTICES.md` defines expected quality standards for MCP servers in this repository.
 - `README.md` contains repository setup, authentication, and client configuration guidance.
+
+## Architecture and Dependencies
+
+- Follow the [repository scope and setup](README.md) and each package's native README/manifest. Python, TypeScript and Java packages have different runtime and validation interfaces.
+- Use Compute as a structure/model/tool-test reference. Its current credential handling is legacy; use [Common's authentication contracts](src/common/README.md#authentication-module) and the quality requirements below for new authentication work.
+- Before changing Common, inspect declared `oracle-mcp-common` consumers and their manifests. API, Cloud and Database declare the dependency at this baseline; this is not evidence every Python server has migrated.
+- Preserve package-owned client type, lifecycle, transport and compatibility decisions. See [shared and local gaps](docs/agent-development.md#known-gaps) when implementation and policy differ.
+
+## Setup, Build and Change Impact
+
+Use the [validation map](docs/agent-development.md#validation-map) for working directories, setup/build definitions and check scope. [Makefile](Makefile), [Moon tasks](.moon/tasks/python.yml), [root tasks](moon.yml) and native manifests define commands; setup/build instructions are not proof checks have run.
+
+Changes to tools, models, authentication, configuration or shared exports can affect clients and consumers. Inspect local interfaces/tests, the [contribution process](CONTRIBUTING.md) and changelog rules below. Security reports follow [SECURITY.md](SECURITY.md); credential and runtime boundaries also require the relevant native package guidance.
+
+## Context Routes
+
+| Read when | Context | Depends on | Evidence |
+| --- | --- | --- | --- |
+| **Know:** Investigating shared architecture/authentication or a package boundary | [README](README.md), [quality standards](BEST_PRACTICES.md), [Common contract](src/common/README.md) | Applicable package README, manifest and guide | Relevant implementation/tests; [consumer and gap notes](docs/agent-development.md#known-gaps) |
+| **Do:** Preparing, building or validating an engineering change | [Shared validation map](docs/agent-development.md#validation-map) | Native command definitions and target runtime prerequisites | Actual command/run reports; [evidence distinctions](docs/agent-development.md#evidence-and-context-routes) |
+| **Know:** Assessing credentials, isolation or disclosure handling | [Shared security sources and gaps](docs/agent-development.md#known-gaps), [security reporting](SECURITY.md) | Editing/quality rules here and local runtime constraints | Relevant auth/isolation tests; unrun definitions remain source leads |
+| **Now:** Reviewing this selected context adoption | [Design and scope](docs/plans/adopt-monorepo-agent-context/design.md), [plan](docs/plans/adopt-monorepo-agent-context/implementation-plan.md) | [Main-based reuse assessment](docs/plans/adopt-monorepo-agent-context/reuse-assessment.md) | [Adoption summary](docs/plans/adopt-monorepo-agent-context/adoption-summary.md) |
+| **Proof:** Checking coverage or a completion claim | [Evidence routes](docs/agent-development.md#evidence-and-context-routes) | Source/guidance identity and actual check scope | [Recorded adoption checks and limits](docs/plans/adopt-monorepo-agent-context/adoption-summary.md) or the owning change's native reports |
+
+Selected broad-guide scopes are root, Common, Compute, Cloud, JavaScript and Java toolkit. Local guide coverage is recorded in the [shared context map](docs/agent-development.md#selected-component-context); other packages still inherit root guidance and have not received this pass.
+
+## Known Gaps
+
+The [gap register](docs/agent-development.md#known-gaps) records Common README/manifest differences, Compute's legacy authentication, JavaScript's existing subprocess-policy conflict and isolation limits, and Java's test/coverage limitations. These are observations to recheck, not policy exceptions or executed validation results.
 
 ## Validation
 

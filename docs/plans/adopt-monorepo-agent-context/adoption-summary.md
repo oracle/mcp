@@ -85,4 +85,12 @@ Current corrections:
 
 Repeated the five manual document/source walks above against the updated baseline. Results remain document navigation/source review evidence, not executed agent behavior. Current author checks resolved 334 local links and 71 fragments across eleven Markdown files, preserved updated-main root instruction lines in order, checked native Moon task definitions, five Common declarations, five Java unit-test classes plus the gated integration source, and confirmed no active Make/npm-validation/pipe routes remain. `git diff --check` passed. Command/source and scoped-diff checks are recorded with the corrective commit in Git history and the delivery message. Only the planned eleven Markdown files differ from updated main; original updated-main root policy remains intact. No server suite, build, dependency installation, runtime or live trial ran.
 
-The earlier independent review is historical. Current source reassessment and author checks apply to the rebased correction; a separate review record identifies any fresh review of this revision.
+The earlier independent review is historical. Current source reassessment and author checks apply to the rebased correction; the following record identifies its fresh review.
+
+## Fresh review of the rebased guidance
+
+A fresh-context reviewer inspected the full eleven-file diff from updated main `52ea0163591d4c8bf3adc8e7cf74e7532ecd1df4` through corrective commit `77d463b537721a4afc3b8242e3d1173fc2c4fd37` on October 5, 2026. Verdict: no substantive or minor documentation findings; ready for user review. No findings were deferred.
+
+The reviewer confirmed ordered preservation of updated-main root instructions, selected nine-area coverage and shared/local routing, current Moon command scopes, JavaScript compile/gRPC/mTLS/network boundaries, five Common declarations versus three explicit package graph edges, Compute boot-volume guidance, and Java's current source/test routes and gated integration distinction. It reran the documentation/source checker successfully: eleven Markdown files, 334 local links and 71 fragments. The exact branch diff passed `git diff --check` and the reviewed worktree was clean.
+
+This review did not evaluate builds, server suites, dependency installation, live services, runtime coverage, deployment isolation or agent effectiveness. Those outcomes remain unverified; recording this verdict does not expand the adoption scope.

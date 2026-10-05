@@ -1,6 +1,6 @@
 # Selected monorepo engineering-context adoption
 
-Status: **Approved sequential guide implementation and structural coverage review completed; fresh whole-branch review pending.** This is a documentation baseline for six selected scopes, not a server-quality or agent-effectiveness result.
+Status: **Approved sequential guide implementation, structural coverage review and fresh whole-branch documentation review completed.** This is a documentation baseline for six selected scopes, not a server-quality or agent-effectiveness result.
 
 ## Scope and identities
 
@@ -58,3 +58,11 @@ These are author-operated document/source walks from root and relevant local gui
 Common README/manifest requirement differences, Compute legacy auth, JavaScript's root subprocess-policy conflict/isolation limits and Java discovery/coverage enforcement remain unresolved by design. Named maintainer ownership is not verified, and other packages have not received this pass. These observations are not exemptions or new policy.
 
 Review this concrete six-guide baseline. Broader adoption, policy/code remediation and agent explanation trials are subsequent choices. Preserve existing sources and recorded limits when expanding.
+
+## Fresh whole-branch review
+
+A fresh-context reviewer inspected main `d0e442b3ddcffe05c6f366c14dac42548641b60f` through `a11565b15ea4204f2a9381e4be3dfff666d99431` on October 5, 2026. Verdict: no substantive guide/routing defects; ready after correcting the review-record status. The reviewer found the plan prematurely said the review was recorded while this summary still said pending. This final record/status update resolves that inconsistency.
+
+The reviewer independently confirmed all 311 local link targets, the planned 11-file documentation scope, ordered preservation of existing root instructions, clean whitespace/tree, command/dependency/source facts and selected nine-area coverage. The author's 67-anchor result was not independently reproduced; the final author check repeats those anchor checks after this record update.
+
+Runtime correctness, test pass status, actual coverage, deployment isolation and agent effectiveness were explicitly outside the review. They remain unverified; this adoption neither certifies them nor resolves application/policy gaps. No deferred guide findings remain.

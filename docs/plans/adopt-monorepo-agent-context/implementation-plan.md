@@ -2,7 +2,7 @@
 
 > **For execution:** Use `superpowers:executing-plans` task by task, preserving the user's sequential execution preference. This development workflow is not an adopter requirement or guide content.
 
-**Status:** Approved for sequential implementation on October 5, 2026; all four tasks implemented and structurally reviewed; fresh whole-branch review recorded in the adoption summary.
+**Status:** Approved for sequential implementation on October 5, 2026; all four tasks implemented and structurally reviewed; the fresh whole-branch documentation verdict and reviewed commit are now recorded in the adoption summary.
 
 **Goal:** Establish broad, source-backed engineering context in six selected guide scopes on a clean main branch.
 

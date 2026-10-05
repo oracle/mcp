@@ -1,6 +1,6 @@
 # Clean monorepo-agent planning summary
 
-Status: **Approved sequential implementation in progress. Shared/root guidance and Common/Compute/Cloud guides are implemented; JavaScript/Java and final review are pending.**
+Status: **Approved sequential implementation in progress. All six selected guide scopes and shared engineering context are implemented; final coverage/review is pending.**
 
 ## Scope and identities
 
@@ -31,3 +31,5 @@ Task 1 adds root orientation/context routes and `docs/agent-development.md` with
 Task 1 review walked shared orientation, native entry points, auth/dependency sources, runtime-specific validation definitions and gap/evidence routes. The scoped checker resolved 121 local links and 16 fragments across the first six documents; exact totals are confirmed by its executed output. No policy exception or runtime validation is claimed.
 
 Task 2 adds nine-area Common, Compute and Cloud guides, shared/local task maps and current consumer/source/test leads. Root/shared routes now discover those guides. Main-specific legacy auth and absent focused-task facts remain explicit; no newer experimental code, fixes or tests were imported.
+
+Task 3 adds nine-area JavaScript and Java guides, native runtime-specific procedure/test routes, current isolation/auth boundaries and explicit policy/evidence gaps. All selected local guides are now discoverable through the root/shared map. No later task configuration, Java source/tests or standalone pagination material was imported.

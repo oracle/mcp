@@ -82,12 +82,12 @@ Native READMEs, BEST_PRACTICES, CONTRIBUTING, SECURITY, manifests and task files
 
 **Produces:** Two broad runtime-specific guides with native procedures, architecture/security boundaries, change impact, gaps and task-relevant native context.
 
-- [ ] Adapt JavaScript's nine areas from current host/runner/protocol/provider and test sources. Use the main-defined npm scripts, particularly `npm run ci`, from the package directory, with the Node manifest/toolchain requirements. JavaScript has no explicit package Moon file at this baseline; do not copy the newer task configuration.
-- [ ] Record JavaScript's existing root subprocess-policy conflict, credential-free runner boundary, shared-kernel limitation and fake-control-plane evidence limits. A documented gap grants no exception.
-- [ ] Adapt Java's nine areas from current config/registration/OAuth sources. Link native Maven/JDK guidance and current tests; use the two existing test definitions; do not link newer request-target, owned-transaction or DeepSec tests absent from main.
-- [ ] Retain Java's native configuration/tool routes, no-discovered-Moon-project fact, and unverified test discovery/90% enforcement gap. Do not add Maven plugins or a new changelog.
-- [ ] Complete root links. Review cases 1, 2, 4 and 5 below from root and local starts; check changed links/anchors and `git diff --check`.
-- [ ] Update summary and commit the explicit files with signoff: `docs: add broad JavaScript and Java context`.
+- [x] Adapt JavaScript's nine areas from current host/runner/protocol/provider and test sources. Use the main-defined npm scripts, particularly `npm run ci`, from the package directory, with the Node manifest/toolchain requirements. JavaScript has no explicit package Moon file at this baseline; do not copy the newer task configuration.
+- [x] Record JavaScript's existing root subprocess-policy conflict, credential-free runner boundary, shared-kernel limitation and fake-control-plane evidence limits. A documented gap grants no exception.
+- [x] Adapt Java's nine areas from current config/registration/OAuth sources. Link native Maven/JDK guidance and current tests; use the two existing test definitions; do not link newer request-target, owned-transaction or DeepSec tests absent from main.
+- [x] Retain Java's native configuration/tool routes, no-discovered-Moon-project fact, and unverified test discovery/90% enforcement gap. Do not add Maven plugins or a new changelog.
+- [x] Complete root links. Review cases 1, 2, 4 and 5 below from root and local starts; check changed links/anchors and `git diff --check`.
+- [x] Update summary and commit the explicit files with signoff: `docs: add broad JavaScript and Java context`.
 
 ## Task 4: Complete selected coverage review and handoff
 

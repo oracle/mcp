@@ -12,15 +12,15 @@ This document routes existing monorepo engineering sources. It introduces no req
 
 ## Selected component context
 
-This adoption selects root plus five local scopes. Common, Compute and Cloud now have broad guides; JavaScript and Java remain pending at this increment. Use native README/source/manifest/test paths alongside each guide. Other packages retain their existing root/native guidance and are not claimed as covered by this pass.
+This adoption selects root plus five local scopes. All five selected local scopes now have broad guides. Use native README/source/manifest/test paths alongside each guide. Other packages retain their existing root/native guidance and are not claimed as covered by this pass.
 
 | Scope | Native entry | Local guide status |
 | --- | --- | --- |
 | Common shared library | [README](../src/common/README.md), [exports](../src/common/oracle_mcp_common/__init__.py) | [Common guide](../src/common/AGENTS.md) |
 | Compute | [README](../src/oci-compute-mcp-server/README.md), [server](../src/oci-compute-mcp-server/oracle/oci_compute_mcp_server/server.py) | [Compute guide](../src/oci-compute-mcp-server/AGENTS.md) |
 | Cloud | [README](../src/oci-cloud-mcp-server/README.md), [server](../src/oci-cloud-mcp-server/oracle/oci_cloud_mcp_server/server.py) | [Cloud guide](../src/oci-cloud-mcp-server/AGENTS.md) |
-| JavaScript | [README](../src/oci-javascript-mcp-server/README.md), [server](../src/oci-javascript-mcp-server/src/server.ts) | Pending |
-| Java toolkit | [README](../src/oracle-db-mcp-java-toolkit/README.md), [entry point](../src/oracle-db-mcp-java-toolkit/src/main/java/com/oracle/database/mcptoolkit/OracleDatabaseMCPToolkit.java) | Pending |
+| JavaScript | [README](../src/oci-javascript-mcp-server/README.md), [server](../src/oci-javascript-mcp-server/src/server.ts) | [JavaScript guide](../src/oci-javascript-mcp-server/AGENTS.md) |
+| Java toolkit | [README](../src/oracle-db-mcp-java-toolkit/README.md), [entry point](../src/oracle-db-mcp-java-toolkit/src/main/java/com/oracle/database/mcptoolkit/OracleDatabaseMCPToolkit.java) | [Java toolkit guide](../src/oracle-db-mcp-java-toolkit/AGENTS.md) |
 
 ## Validation map
 

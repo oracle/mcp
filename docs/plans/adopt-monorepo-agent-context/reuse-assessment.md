@@ -1,6 +1,6 @@
 # Guide reuse assessment against main
 
-Status: **Reassessed on October 5, 2026 for a fresh main-based monorepo-agent branch.** This replaces the pagination-based assessment for this branch. No guides, server code or tooling have been adapted; no server tests or agent trial have run.
+Status: **Reassessed on October 5, 2026 for a fresh main-based monorepo-agent branch.** This replaces the pagination-based assessment for this branch. At that assessment stage no guides had been adapted. Subsequent approved guide implementation is recorded in the adoption summary; server code/tooling remain unchanged and no server tests or agent trial have run.
 
 ## Source identities and method
 
@@ -84,4 +84,4 @@ These are existing command definitions, **not executed results**. Read [Makefile
 
 ## Exclusions and next action
 
-Only monorepo-agent planning and later root/shared/local guide changes belong in this branch. No pagination adoption history, policy/docs/inventory, application fixes, task changes, dependencies, lockfiles, thresholds, skills, agent harness or live trial. Baseline source and substantive policies remain project-owned. Review the [implementation plan](implementation-plan.md) before adapting the six guides sequentially.
+Only monorepo-agent planning and later root/shared/local guide changes belong in this branch. No pagination adoption history, policy/docs/inventory, application fixes, task changes, dependencies, lockfiles, thresholds, skills, agent harness or live trial. Baseline source and substantive policies remain project-owned. The subsequently approved [implementation plan](implementation-plan.md) has been executed; the [adoption summary](adoption-summary.md) records its actual context coverage and review.

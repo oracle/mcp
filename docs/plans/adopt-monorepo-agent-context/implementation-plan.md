@@ -2,7 +2,7 @@
 
 > **For execution:** Use `superpowers:executing-plans` task by task, preserving the user's sequential execution preference. This development workflow is not an adopter requirement or guide content.
 
-**Status:** Approved for sequential implementation on October 5, 2026; progress recorded in the adoption summary.
+**Status:** Approved for sequential implementation on October 5, 2026; all four tasks implemented and structurally reviewed; fresh whole-branch review recorded in the adoption summary.
 
 **Goal:** Establish broad, source-backed engineering context in six selected guide scopes on a clean main branch.
 
@@ -95,11 +95,11 @@ Native READMEs, BEST_PRACTICES, CONTRIBUTING, SECURITY, manifests and task files
 
 **Consumes:** Six implemented guides, shared document and authoritative main-branch sources. **Produces:** Concrete review record for the selected engineering baseline, with unresolved gaps and source/check identities.
 
-- [ ] Review all six guides against the nine-area profile. For each area identify the answer/reference/gap; reject vague repo-wide references and unsupported completion claims.
-- [ ] Walk all five cases below from root and relevant local starts. Record expected sources reached, actual defects and unresolved conflicts; these manual checks are not agent trials.
-- [ ] Validate changed Markdown targets/anchors and referenced paths, compare every displayed command with its current definition, and run `git diff --check`. Inspect `git diff --name-only d0e442b` to confirm only planned documentation files changed.
-- [ ] Record final guidance/source revision, actual checks, unexecuted suites and limitations. State that unselected packages have not received this broader guide pass. Confirm no pagination-adoption files or source/tooling changes entered the diff.
-- [ ] Commit the review summary with signoff and present the concrete selected baseline for user review. Stop before expansion, policy remediation or a separately selected behavior trial.
+- [x] Review all six guides against the nine-area profile. For each area identify the answer/reference/gap; reject vague repo-wide references and unsupported completion claims.
+- [x] Walk all five cases below from root and relevant local starts. Record expected sources reached, actual defects and unresolved conflicts; these manual checks are not agent trials.
+- [x] Validate changed Markdown targets/anchors and referenced paths, compare every displayed command with its current definition, and run `git diff --check`. Inspect `git diff --name-only d0e442b` to confirm only planned documentation files changed.
+- [x] Record final guidance/source revision, actual checks, unexecuted suites and limitations. State that unselected packages have not received this broader guide pass. Confirm no pagination-adoption files or source/tooling changes entered the diff.
+- [x] Commit the review summary with signoff and present the concrete selected baseline for user review. Stop before expansion, policy remediation or a separately selected behavior trial.
 
 ## Manual review cases and expected sources
 

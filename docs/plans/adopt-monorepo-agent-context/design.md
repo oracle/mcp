@@ -1,6 +1,6 @@
 # Selected monorepo engineering-context adoption
 
-Status: **The user requested a fresh branch from main containing only monorepo-agent work on October 5, 2026. This revised assessment and plan use that clean baseline; guide implementation remains the next increment.** This change bundle applies the framework; it does not define a second portable specification.
+Status: **The user requested a fresh branch from main containing only monorepo-agent work on October 5, 2026. This revised assessment and plan use that clean baseline. The user approved sequential implementation, now delivered in the selected root/shared/local guides; the adoption summary records review evidence and limits.** This change bundle applies the framework; it does not define a second portable specification.
 
 ## Goal and scope
 
@@ -33,4 +33,4 @@ Map tasks using **Read when**, **Context**, **Depends on** and **Evidence**, or 
 
 Each selected guide addresses all nine areas with source-backed answers, specific shared references, meaningful non-applicability or explicit gaps. Review entry-point, authentication, validation, security, impact and shared/local composition questions from root and component starts. Check local links, command definitions, scope and instruction consistency. Record unresolved gaps without fixing them outside scope.
 
-The [implementation plan](implementation-plan.md) gives the sequential file changes and review cases. User review of that concrete plan precedes guide implementation and later expansion. A behavior trial can be selected after structural review; no effectiveness claim follows from document completion.
+The [implementation plan](implementation-plan.md) gives the sequential file changes and review cases. The user approved the concrete plan for this selected implementation; review of the delivered baseline precedes later expansion. A behavior trial can be selected after structural review; no effectiveness claim follows from document completion.

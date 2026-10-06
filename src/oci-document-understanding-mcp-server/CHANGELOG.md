@@ -10,6 +10,10 @@
 
 - Require FastMCP 3.4.5 or later and OCI Python SDK 2.185.0 so the server resolves alongside `oracle-mcp-common`.
 
+### Fixed
+
+- Declare the Common dependency in Moon so Common changes select Document Understanding's lock check, tests and install check in CI.
+
 ### Security
 
 - Update locked PyJWT to 2.15.1, urllib3 to 2.8.0, cryptography to 50.0.2, and PyOpenSSL to 26.4.0 to address dependency security advisories.

@@ -4,12 +4,55 @@
 
 These instructions apply to the entire repository. More specific instructions in a nested `AGENTS.md` file override this file for that subtree.
 
+Before editing, read this file and applicable nested guides for the target paths. Start with [shared engineering context](docs/agent-development.md#start-here) for repository procedures and validation sources. Package guides add local orientation and constraints; a documented implementation gap does not waive a shared requirement.
+
+This is a polyglot reference-implementation monorepo. Packages under `src/` own their tools, service clients and runtime behavior; [Common](src/common/README.md) owns reusable Python authentication. Named maintainer ownership is not established by these guides; consult the project's contribution process when ownership is unclear.
+
 ## Repository Layout
 
 - `src/<server-name>/` contains individual MCP server implementations.
 - `tests/` contains repository-level tests and end-to-end test assets.
 - `BEST_PRACTICES.md` defines expected quality standards for MCP servers in this repository.
 - `README.md` contains repository setup, authentication, and client configuration guidance.
+
+## Architecture and Dependencies
+
+- Follow the [repository scope and setup](README.md) and each package's native README/manifest. Python, TypeScript and Java packages have different runtime and validation interfaces.
+- Use Compute as a structure/model/tool-test reference. Its current credential handling is legacy; use [Common's authentication contracts](src/common/README.md#authentication-module) and the quality requirements below for new authentication work.
+- Before changing Common, inspect declared `oracle-mcp-common` consumers and their manifests. API, Cloud, Database, DB Observability and Document Understanding declare the dependency at this baseline; dependency declarations alone do not establish complete migration or runtime use.
+- Preserve package-owned client type, lifecycle, transport and compatibility decisions. See [shared and local gaps](docs/agent-development.md#known-gaps) when implementation and policy differ.
+
+## Setup, Build and Change Impact
+
+Use the [validation map](docs/agent-development.md#validation-map) for working directories, setup/build definitions and check scope. [Moon Python tasks](.moon/tasks/python.yml), [root tasks](moon.yml), [JavaScript tasks](src/oci-javascript-mcp-server/moon.yml) and native manifests define commands; setup/build instructions are not proof checks have run.
+
+Changes to tools, models, authentication, configuration or shared exports can affect clients and consumers. Inspect local interfaces/tests, the [contribution process](CONTRIBUTING.md) and changelog rules below. Security reports follow [SECURITY.md](SECURITY.md); credential and runtime boundaries also require the relevant native package guidance.
+
+## Context Authoring and Maintenance
+
+When creating or maintaining repository context, follow [local context conventions](docs/agent-context.md#authoring-procedure). These conventions cover context authoring only; existing repository policies, native contracts and runtime instruction rules govern engineering behavior. Preserve broad guides, assess reuse before creating topic documents, and report inaccessible sources. See the separate [application bundle](docs/plans/apply-agent-context-guide/scope-and-reuse.md) for this increment's scope and evidence.
+
+## Context Routes
+
+The Know / Do / Now / Proof / Done labels describe a source's purpose; see the [context-intent definitions](docs/agent-context.md#context-intents-know-do-now-proof-and-done) for their meaning and evidence limits.
+
+| Read when | Context | Depends on | Evidence |
+| --- | --- | --- | --- |
+| **Know:** Investigating shared architecture/authentication or a package boundary | [README](README.md), [quality standards](BEST_PRACTICES.md), [shared authentication guide and ledger](docs/authentication.md), [Common contract](src/common/README.md) | Applicable package README, manifest and guide | Relevant implementation/tests; [consumer and gap notes](docs/agent-development.md#known-gaps) |
+| **Know:** Starting a server/library change | [Server and library guide map](docs/agent-development.md#selected-component-context) | This root guide and the applicable local guide; native README/manifest | Local source/test entry points and [actual adoption coverage](docs/plans/adopt-monorepo-agent-context/adoption-summary.md) |
+| **Do:** Preparing, building or validating an engineering change | [Shared validation map](docs/agent-development.md#validation-map) | Native command definitions and target runtime prerequisites | Actual command/run reports; [evidence distinctions](docs/agent-development.md#evidence-and-context-routes) |
+| **Know:** Assessing credentials, isolation or disclosure handling | [Shared security sources and gaps](docs/agent-development.md#known-gaps), [security reporting](SECURITY.md) | Editing/quality rules here and local runtime constraints | Relevant auth/isolation tests; unrun definitions remain source leads |
+| **Do:** Adding, updating or reviewing context and mappings | [Authoring and maintenance conventions](docs/agent-context.md) | Applicable root/component instructions and the topic's owning native sources | [Reuse assessment](docs/plans/apply-agent-context-guide/scope-and-reuse.md#source-assessment), [application outcome](docs/plans/apply-agent-context-guide/outcome.md); source review and structural checks have distinct roles |
+| **Know:** Integrating shared auth, assessing adoption or a missing shared capability | [Shared authentication requirements and integration](docs/authentication.md), [server ledger](docs/authentication.md#adoption-ledger) | Root quality rules and applicable server/library guides; Common public API contracts | Linked manifests and implementation paths; [documentation outcome](docs/plans/shared-authentication-context/outcome.md); source use is not runtime validation |
+| **Know:** Comparing Compute authentication with the shared contract | [Compute authentication](src/oci-compute-mcp-server/docs/authentication.md), [Compute guide](src/oci-compute-mcp-server/AGENTS.md), [Common guide](src/common/AGENTS.md) | Root quality rules, [shared authentication guide](docs/authentication.md), [Common contract](src/common/README.md#authentication-module) and [HTTP contract](src/common/README.md#http-idcs-authentication) | [Source/check definitions and limits](src/oci-compute-mcp-server/docs/authentication.md#supporting-definitions-and-evidence-limits); current behavior does not waive shared requirements |
+| **Now:** Reviewing this context adoption | [Design and scope](docs/plans/adopt-monorepo-agent-context/design.md), [plan](docs/plans/adopt-monorepo-agent-context/implementation-plan.md) | [Main-based reuse assessment](docs/plans/adopt-monorepo-agent-context/reuse-assessment.md) | [Adoption summary](docs/plans/adopt-monorepo-agent-context/adoption-summary.md) |
+| **Proof:** Checking coverage or a completion claim | [Evidence routes](docs/agent-development.md#evidence-and-context-routes) | Source/guidance identity and actual check scope | [Recorded adoption checks and limits](docs/plans/adopt-monorepo-agent-context/adoption-summary.md) or the owning change's native reports |
+
+Broad engineering guides now cover all 34 MCP server components under `src/`, including the Java toolkit, plus Common. Find each local guide and native entry point in the [shared context map](docs/agent-development.md#selected-component-context). Documentation coverage and recorded behavior-evaluation coverage are separate; see the [adoption summary](docs/plans/adopt-monorepo-agent-context/adoption-summary.md).
+
+## Known Gaps
+
+The [gap register](docs/agent-development.md#known-gaps) and local guides record Common adoption/source differences, stale native procedures, excluded-package validation limits, Data Studio's coverage threshold, JavaScript's existing subprocess-policy conflict/isolation limits and Java's test/coverage limitations. These are observations to recheck, not policy exceptions or executed validation results.
 
 ## Validation
 

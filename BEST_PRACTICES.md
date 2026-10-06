@@ -120,6 +120,8 @@ Note: always remove `-server` from the end of the `__project__` name; ex `oci-cl
 
 ## OCI SDK authentication
 
+See the [shared authentication integration guide](docs/authentication.md) for server responsibilities, missing-capability handling and the source-based [adoption ledger](docs/authentication.md#adoption-ledger). Common's README remains the detailed public API contract.
+
 Python MCP servers that construct OCI SDK clients should use the shared
 `oracle-mcp-common` package instead of duplicating credential resolution,
 profile parsing, environment-variable precedence, or signer construction.

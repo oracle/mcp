@@ -13,3 +13,7 @@ moon.yml @krisrice @AlaaShaker @gebhardtr @dustin-sale
 *.md @krisrice @AlaaShaker @gebhardtr @dustin-sale
 *.txt @krisrice @AlaaShaker @gebhardtr @dustin-sale
 *.ini @krisrice @AlaaShaker @gebhardtr @dustin-sale
+
+# agent harness files
+docs/ @krisrice @AlaaShaker @gebhardtr @dustin-sale
+AGENTS.md @krisrice @AlaaShaker @gebhardtr @dustin-sale

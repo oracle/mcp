@@ -50,6 +50,17 @@ def test_model_conversion_helpers_handle_fallback_paths(monkeypatch):
     assert models._oci_to_dict(MinimalObject()) == {"id": "obj1"}
     assert models._oci_to_dict(object()) is None
 
+    attempts = 0
+
+    def once_failing_mapper(value):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("transient mapper error")
+        return value
+
+    assert models._map_list(["value"], once_failing_mapper) == ["value"]
+
 
 def test_generated_model_mappers_handle_none_and_sdk_conversion_fallback(monkeypatch):
     """
@@ -73,7 +84,7 @@ def test_generated_model_mappers_handle_none_and_sdk_conversion_fallback(monkeyp
         assert mapped is None or isinstance(mapped, models.OCIBaseModel), mapper_name
 
 
-def test_model_mappers_capture_nested_and_variant_fields():
+def test_model_mappers_capture_nested_and_variant_fields(monkeypatch):
     """
     Mappers read camelCase input, flatten subnet objects to OCIDs, keep
     unmodeled destination fields in ``extras``, and populate nested metrics,
@@ -133,6 +144,12 @@ def test_model_mappers_capture_nested_and_variant_fields():
     assert work_request.percent_complete == 75.5
     assert work_request.resource_id == "db1"
 
+    class SlottedWorkRequest:
+        __slots__ = ()
+
+    monkeypatch.setattr(models, "_oci_to_dict", lambda _obj: [])
+    assert models.map_work_request(SlottedWorkRequest()).id is None
+
 
 def test_model_mappers_handle_unusual_iterables_and_attribute_sources(monkeypatch):
     """
@@ -174,6 +191,17 @@ def test_model_mappers_handle_unusual_iterables_and_attribute_sources(monkeypatc
         ).nsg_ids
         is None
     )
+    rss_with_mixed_subnets = models.map_recovery_service_subnet(
+        {
+            "subnets": [
+                "subnet-raw",
+                {"unknown": "no-ocid"},
+                SimpleNamespace(id="ignored-object"),
+                {"subnet_id": "subnet-from-dict"},
+            ]
+        }
+    )
+    assert rss_with_mixed_subnets.subnets == ["subnet-raw", "subnet-from-dict"]
 
     class GetWithoutItems:
         """A dict-like that answers every lookup with the default and exposes no items."""

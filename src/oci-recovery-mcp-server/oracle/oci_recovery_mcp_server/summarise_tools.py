@@ -912,8 +912,7 @@ def _backup_destinations_for(summary_row: Any, *, get_database) -> tuple[dict, l
         identifier = (
             entry.get("id") or entry.get("backupDestinationId") or entry.get("destinationId")
         )
-        if kind:
-            types.append(kind)
+        types.append(kind)
         if identifier:
             ids.append(identifier)
 

@@ -567,6 +567,31 @@ def test_backup_destination_marks_a_database_capped_scan_truncated(monkeypatch):
     assert complete.truncated is False
 
 
+def test_backup_destination_marks_unscanned_db_homes_truncated(monkeypatch):
+    """Homes omitted by max_db_homes make the inventory partial."""
+    monkeypatch.setattr(compartments, "_compartment_scope_for_tool", lambda cid, **_kwargs: ([cid], True))
+    monkeypatch.setattr(
+        compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["home1", "home2"]
+    )
+    db_client = MagicMock()
+    db_client.list_databases.side_effect = lambda **kwargs: _response(
+        [_backup_destination_db(1 if kwargs["db_home_id"] == "home1" else 2)]
+    )
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+
+    summary = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="compartment",
+        region="us-ashburn-1",
+        include_last_backup_time=False,
+        max_db_homes=1,
+    )
+
+    assert db_client.list_databases.call_count == 1
+    assert db_client.list_databases.call_args.kwargs["db_home_id"] == "home1"
+    assert summary.total_databases == 1
+    assert summary.truncated is True
+
+
 def test_backup_destination_enforces_limit_per_home_across_pages(monkeypatch):
     """
     limit_per_home caps each DB Home's databases, not the size of each page.

@@ -477,3 +477,224 @@ def test_list_protection_policies_sends_the_id_filter_under_its_sdk_name(monkeyp
     assert [p.id for p in policies] == ["policy1"]
     assert call.seen["protection_policy_id"] == "ocid1.protectionpolicy.oc1..p"
     assert "id" not in call.seen
+
+
+def test_recovery_tools_cover_empty_mappers_and_optional_fallbacks(monkeypatch):
+    """Optional resource fields and mapper fallbacks stay safe across SDK shapes."""
+    client = MagicMock()
+    monkeypatch.setattr(clients, "get_recovery_client", lambda *_a, **_k: client)
+    monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda value, **_k: value)
+
+    class DictFallbackSummary:
+        def model_dump(self, **_kwargs):
+            raise RuntimeError("model dump unsupported")
+
+        def dict(self, **_kwargs):
+            return {"id": "pd-dict", "policy_locked_date_time": None}
+
+    summary = DictFallbackSummary()
+    summary.recovery_service_subnets = [
+        None,
+        {"id": "rss-dict", "freeform_tags": {"drop": "me"}},
+        SimpleNamespace(
+            id="rss-complete", vcn_id="vcn", subnet_id="subnet",
+            display_name="name", compartment_id="compartment",
+        ),
+        SimpleNamespace(id="rss-partial"),
+    ]
+    monkeypatch.setattr(
+        recovery_tools, "map_protected_database_summary", lambda _item: summary
+    )
+    monkeypatch.setattr(recovery_tools, "map_recovery_service_subnet_details", lambda _item: None)
+    monkeypatch.setattr(
+        recovery_tools,
+        "map_protected_database",
+        lambda _item: SimpleNamespace(metrics=SimpleNamespace(
+            model_dump=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("no dump")),
+            dict=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("no dict")),
+        )),
+    )
+    client.list_protected_databases.return_value = SimpleNamespace(data=[object()], has_next_page=False)
+    client.get_recovery_service_subnet.side_effect = RuntimeError("subnet GET failed")
+    client.get_protected_database.return_value = _response(object())
+    listed = recovery_tools.list_protected_databases("compartment")
+    assert listed[0]["id"] == "pd-dict"
+    assert listed[0]["recovery_service_subnets"][0]["id"] == "rss-dict"
+    assert "freeform_tags" not in listed[0]["recovery_service_subnets"][0]
+    assert listed[0]["metrics"]["backup-space-used-in-gbs"] is None
+
+    pd = SimpleNamespace(
+        id="pd-get",
+        recovery_service_subnets=[
+            None,
+            SimpleNamespace(
+                id="rss-complete", vcn_id="vcn", subnet_id="subnet",
+                display_name="name", compartment_id="compartment",
+            ),
+            SimpleNamespace(id="rss-partial"),
+        ],
+        metrics=SimpleNamespace(
+            model_dump=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("no dump")),
+            dict=lambda **_kwargs: {"backup_space_used_in_gbs": 11},
+        ),
+    )
+    monkeypatch.setattr(recovery_tools, "map_protected_database", lambda _item: pd)
+    client.get_protected_database.return_value = _response(object())
+    direct = recovery_tools.get_protected_database("pd-get")
+    assert direct["metrics"]["backup-space-used-in-gbs"] == 11
+    assert len(direct["recovery_service_subnets"]) == 2
+
+    monkeypatch.setattr(recovery_tools, "map_protection_policy", lambda _item: None)
+    client.list_protection_policies.return_value = SimpleNamespace(
+        data=[object()], has_next_page=False
+    )
+    assert recovery_tools.list_protection_policies("compartment") == []
+
+    monkeypatch.setattr(recovery_tools, "map_recovery_service_subnet", lambda item: item)
+    client.list_recovery_service_subnets.return_value = SimpleNamespace(
+        data=[
+            None,
+            SimpleNamespace(id=None, subnets=None, subnet_id="fallback-without-get"),
+            SimpleNamespace(id="rss-full-missing", subnets=None, subnet_id="fallback-after-get"),
+        ],
+        has_next_page=False,
+    )
+    client.get_recovery_service_subnet.side_effect = None
+    client.get_recovery_service_subnet.return_value = _response(
+        SimpleNamespace(id="rss-full", subnets=None)
+    )
+    listed_subnets = recovery_tools.list_recovery_service_subnets("compartment")
+    assert [rss.subnets for rss in listed_subnets] == [
+        ["fallback-without-get"],
+        ["fallback-after-get"],
+    ]
+
+    client.get_recovery_service_subnet.return_value = _response(
+        SimpleNamespace(id="rss", subnets=None, subnet_id="subnet")
+    )
+    client.get_recovery_service_subnet.side_effect = None
+    assert recovery_tools.get_recovery_service_subnet(
+        "rss", opc_request_id="request"
+    ).subnets == ["subnet"]
+    assert client.get_recovery_service_subnet.call_args.kwargs["opc_request_id"] == "request"
+
+    class BadSubnetDetails:
+        @property
+        def subnets(self):
+            raise RuntimeError("subnet details unavailable")
+
+    bad_rss = BadSubnetDetails()
+    monkeypatch.setattr(recovery_tools, "map_recovery_service_subnet", lambda _item: bad_rss)
+    client.list_recovery_service_subnets.return_value = SimpleNamespace(
+        data=[bad_rss], has_next_page=False
+    )
+    assert recovery_tools.list_recovery_service_subnets("compartment") == [bad_rss]
+    client.get_recovery_service_subnet.return_value = _response(object())
+    assert recovery_tools.get_recovery_service_subnet("rss") is bad_rss
+
+    class OuterErrorProtectedDatabase:
+        def __init__(self):
+            self.id = "pd-outer-error"
+            self.metrics = None
+
+        @property
+        def recovery_service_subnets(self):
+            raise RuntimeError("subnet list unavailable")
+
+    monkeypatch.setattr(
+        recovery_tools, "map_protected_database", lambda _item: OuterErrorProtectedDatabase()
+    )
+    client.get_protected_database.side_effect = None
+    client.get_protected_database.return_value = _response(object())
+    assert recovery_tools.get_protected_database("pd-outer-error")["id"] == "pd-outer-error"
+    client.get_protected_database.side_effect = RuntimeError("database GET failed")
+    with pytest.raises(RuntimeError, match="database GET failed"):
+        recovery_tools.get_protected_database("pd-failure")
+
+
+def test_restore_handles_unmapped_and_missing_operation_types(monkeypatch):
+    """Restore listing ignores unmapped entries and missing operation types."""
+    work_client = MagicMock()
+    monkeypatch.setattr(clients, "get_work_request_client", lambda *_a, **_k: work_client)
+    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_k: [cid])
+    monkeypatch.setattr(
+        recovery_tools,
+        "map_work_request",
+        MagicMock(side_effect=[None, SimpleNamespace(id="no-operation"), SimpleNamespace(
+            id="restore", operation_type=" restore_database ", status="SUCCEEDED"
+        )]),
+    )
+    work_client.list_work_requests.return_value = _response([object(), object(), object()])
+    assert [r.id for r in recovery_tools.list_restore("compartment")] == ["restore"]
+    work_client.list_work_requests.return_value = _response([])
+    assert recovery_tools.list_restore(
+        "compartment", aggregate_pages=False, page="caller-page"
+    ) == []
+
+
+def test_protected_database_list_propagates_client_errors_and_get_skips_empty_subnets(monkeypatch):
+    """List failures propagate; a GET with only null subnet details still returns."""
+    client = MagicMock()
+    monkeypatch.setattr(clients, "get_recovery_client", lambda *_a, **_k: client)
+    monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda cid, **_k: cid)
+    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_k: [cid])
+    client.list_protected_databases.side_effect = RuntimeError("list failed")
+    with pytest.raises(RuntimeError, match="list failed"):
+        recovery_tools.list_protected_databases("compartment")
+
+    client.get_protected_database.return_value = _response(object())
+
+    class EmptyEnrichedProtectedDatabase:
+        def __init__(self):
+            self.id = "pd-empty-subnets"
+            self.metrics = None
+
+        @property
+        def recovery_service_subnets(self):
+            return [None]
+
+        def model_dump(self, **_kwargs):
+            return {"id": self.id, "recovery_service_subnets": []}
+
+    monkeypatch.setattr(
+        recovery_tools,
+        "map_protected_database",
+        lambda _item: EmptyEnrichedProtectedDatabase(),
+    )
+    result = recovery_tools.get_protected_database("pd-empty-subnets")
+    assert result["recovery_service_subnets"] == []
+
+
+def test_protected_database_list_swallows_malformed_optional_shapes(monkeypatch):
+    """Malformed summary dicts and subnet properties do not abort a subtree scan."""
+    client = MagicMock()
+    monkeypatch.setattr(clients, "get_recovery_client", lambda *_a, **_k: client)
+    monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda cid, **_k: cid)
+    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_k: [cid])
+
+    class MissingIdSummary:
+        recovery_service_subnets = []
+
+        def model_dump(self, **_kwargs):
+            return {"display_name": "missing id"}
+
+    class BrokenDict(dict):
+        def get(self, *_args, **_kwargs):
+            raise RuntimeError("dict conversion is malformed")
+
+    class BrokenSummary:
+        @property
+        def recovery_service_subnets(self):
+            raise RuntimeError("subnet list malformed")
+
+        def model_dump(self, **_kwargs):
+            return BrokenDict(id="pd-broken")
+
+    mapped = iter([MissingIdSummary(), BrokenSummary()])
+    monkeypatch.setattr(recovery_tools, "map_protected_database_summary", lambda _item: next(mapped))
+    client.list_protected_databases.return_value = SimpleNamespace(
+        data=[object(), object()], has_next_page=False
+    )
+    assert recovery_tools.list_protected_databases(
+        "compartment", fetch_for_child_compartment=True
+    ) == []

@@ -152,6 +152,89 @@ class TestGetClientFactories:
         assert id_file.exists()
         assert installation_id == telemetry._mcp_installation_id()
 
+    def test_mcp_installation_id_handles_file_creation_races_and_unwritable_state(
+        self, monkeypatch, tmp_path
+    ):
+        """A competing writer is read back; a write failure uses the process id."""
+        monkeypatch.delenv("ORACLE_MCP_INSTALLATION_ID", raising=False)
+        id_file = tmp_path / "race" / "installation-id"
+        monkeypatch.setenv("ORACLE_MCP_INSTALLATION_ID_FILE", str(id_file))
+
+        def race_create(path, *_args, **_kwargs):
+            from pathlib import Path
+
+            Path(path).write_text("created-by-another-worker", encoding="utf-8")
+            raise FileExistsError(path)
+
+        monkeypatch.setattr(telemetry.os, "open", race_create)
+        assert telemetry._mcp_installation_id() == telemetry._marker_fragment(
+            "created-by-another-worker", 8
+        )
+
+        monkeypatch.setenv("ORACLE_MCP_INSTALLATION_ID_FILE", str(tmp_path / "unreadable-race" / "id"))
+        monkeypatch.setattr(
+            telemetry.Path,
+            "read_text",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("race file unreadable")),
+        )
+        monkeypatch.setattr(
+            telemetry.os,
+            "open",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(FileExistsError("racing writer")),
+        )
+        assert len(telemetry._mcp_installation_id()) == 8
+
+        monkeypatch.setenv("ORACLE_MCP_INSTALLATION_ID_FILE", str(tmp_path / "denied" / "id"))
+        monkeypatch.setattr(
+            telemetry.os,
+            "open",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(PermissionError("read-only")),
+        )
+        monkeypatch.setattr(telemetry, "_MCP_SERVER_INSTANCE_ID", "process-only-id")
+        assert telemetry._mcp_installation_id() == telemetry._marker_fragment("process-only-id", 8)
+
+    def test_oci_client_wrapper_handles_unreadable_metadata_and_logs_debug_data(self, monkeypatch):
+        """Response metadata failures do not hide the response or its DEBUG payload."""
+        events = []
+        monkeypatch.setattr(
+            telemetry.logging_setup,
+            "_log_event",
+            lambda event, **kwargs: events.append((event, kwargs)),
+        )
+        monkeypatch.setattr(telemetry.logging_setup, "_log_full_payloads", lambda: True)
+
+        class ResponseWithBadMetadata:
+            @property
+            def status(self):
+                raise RuntimeError("no metadata")
+
+            data = {"answer": 42}
+
+        class ResponseWithBadData:
+            status = 200
+
+            @property
+            def data(self):
+                raise RuntimeError("no response body")
+
+        class FakeClient:
+            def __init__(self, responses):
+                self.responses = iter(responses)
+
+            def get_resource(self, **_kwargs):
+                return next(self.responses)
+
+        client = telemetry._wrap_oci_client(
+            FakeClient([ResponseWithBadMetadata(), ResponseWithBadData()]),
+            request_id="rid",
+            client_name="test",
+        )
+        client.get_resource()
+        client.get_resource()
+        ended = [kwargs["payload"] for _event, kwargs in events if kwargs.get("phase") == "end"]
+        assert ended[0]["data"] == {"answer": 42}
+        assert ended[1]["data_summary"] == {"type": "unavailable"}
+
     def test_mcp_installation_id_uses_server_configuration(self, monkeypatch):
         """
         A configured installation id is used as given, pseudonymized to eight

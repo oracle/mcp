@@ -130,7 +130,7 @@ def setup_logging():
             fh.setFormatter(formatter)
             root_logger.addHandler(fh)
             _LOG_DESTINATION = abs_log_file
-    elif not file_error:
+    else:
         _LOG_DESTINATION = abs_log_file
 
     # Console handler. Off by default so it can never interleave with the MCP

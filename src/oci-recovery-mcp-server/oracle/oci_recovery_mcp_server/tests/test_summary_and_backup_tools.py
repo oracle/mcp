@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from _helpers import _response
+from _helpers import _raise, _response
 import oracle.oci_recovery_mcp_server.models as models
 from oracle.oci_recovery_mcp_server import app
 from oracle.oci_recovery_mcp_server import auth
@@ -118,6 +118,7 @@ def test_summary_tools_fall_back_on_counts_and_metrics(monkeypatch):
     assert redo.per_compartment[0].total == 4
     assert redo.per_compartment[0].unknown == 1
 
+
     recovery_client.list_protected_databases.return_value = _response(
         [
             SimpleNamespace(
@@ -144,6 +145,152 @@ def test_summary_tools_fall_back_on_counts_and_metrics(monkeypatch):
     assert backup_space["aggregated"]["totalDatabasesScanned"] == 3
     assert backup_space["aggregated"]["sumBackupSpaceUsedInGBs"] == 6.0
     assert backup_space["missingMetricsCount"] == 1
+
+
+def test_health_summary_handles_broken_shape_fallbacks(monkeypatch):
+    """A malformed summary or full GET is counted as unknown, never dropped."""
+
+    class BrokenSummary:
+        def __init__(self, database_id):
+            self.id = database_id
+            self._dict_reads = 0
+
+        @property
+        def health(self):
+            return None
+
+        @property
+        def __dict__(self):
+            self._dict_reads += 1
+            if self._dict_reads == 1:
+                return {}
+            raise RuntimeError("unreadable summary fields")
+
+    class NoIdSummary:
+        health = "WARNING"
+
+        @property
+        def id(self):
+            return None
+
+        @property
+        def data(self):
+            return None
+
+        @property
+        def __dict__(self):
+            raise RuntimeError("unreadable id fields")
+
+    class HealthInDict:
+        @property
+        def health(self):
+            return None
+
+    pd_with_health = HealthInDict()
+    pd_with_health.__dict__["health"] = "ALERT"
+
+    recovery_client = MagicMock()
+    monkeypatch.setattr(
+        compartments,
+        "_compartment_scope_for_tool",
+        lambda cid, **_kwargs: ([cid], True),
+    )
+    monkeypatch.setattr(
+        clients, "get_recovery_client", lambda *_a, **_k: recovery_client
+    )
+    recovery_client.list_protected_databases.return_value = _response(
+        [BrokenSummary("pd1"), NoIdSummary(), SimpleNamespace(id="pd2", health=None)]
+    )
+    recovery_client.get_protected_database.side_effect = [
+        _response(pd_with_health),
+        RuntimeError("GET denied"),
+    ]
+
+    summary = summarise_tools.summarize_protected_database_health(compartment_id="compartment")
+
+    assert summary.aggregated.alert == 1
+    assert summary.aggregated.unknown == 1
+    assert summary.aggregated.total == 2
+
+
+def test_backup_space_summary_reads_all_supported_metric_shapes(monkeypatch):
+    """Metric variants and malformed data take the documented fallback paths."""
+
+    class BadLifecycle:
+        @property
+        def lifecycle_state(self):
+            raise RuntimeError("lifecycle unavailable")
+
+    class MissingId:
+        lifecycle_state = "ACTIVE"
+
+        @property
+        def id(self):
+            return None
+
+        @property
+        def data(self):
+            return None
+
+        @property
+        def __dict__(self):
+            raise RuntimeError("id unavailable")
+
+    class BadMetrics(dict):
+        def get(self, *_args, **_kwargs):
+            raise RuntimeError("metrics unavailable")
+
+    class MetricsInDict:
+        @property
+        def metrics(self):
+            return None
+
+    pd_with_metrics = MetricsInDict()
+    pd_with_metrics.__dict__["metrics"] = SimpleNamespace(backup_space_used_in_gbs=6.0)
+
+    compartment = "ocid1.compartment.oc1..test"
+    recovery_client = MagicMock()
+    monkeypatch.setattr(
+        compartments, "_resolve_compartment_id", lambda value, **_kwargs: value
+    )
+    monkeypatch.setattr(
+        compartments,
+        "_compartment_scope_for_tool",
+        lambda cid, **_kwargs: ([cid], True),
+    )
+    monkeypatch.setattr(
+        clients, "get_recovery_client", lambda *_a, **_k: recovery_client
+    )
+    recovery_client.list_protected_databases.return_value = _response(
+        [
+            BadLifecycle(),
+            MissingId(),
+            SimpleNamespace(
+                id="pd1", lifecycle_state="ACTIVE", metrics=SimpleNamespace(backupSpaceUsedInGbs=2.5)
+            ),
+            SimpleNamespace(id="pd2", lifecycle_state="ACTIVE", metrics={"backupSpaceUsedInGbs": 3.5}),
+            SimpleNamespace(id="pd3", lifecycle_state="ACTIVE", metrics=BadMetrics()),
+            SimpleNamespace(id="pd4", lifecycle_state="ACTIVE"),
+            SimpleNamespace(id="pd5", lifecycle_state="ACTIVE"),
+            SimpleNamespace(id="pd6", lifecycle_state="ACTIVE"),
+            SimpleNamespace(id="pd7", lifecycle_state="ACTIVE"),
+        ]
+    )
+    recovery_client.get_protected_database.side_effect = [
+        RuntimeError("summary fallback"),
+        RuntimeError("summary fallback"),
+        RuntimeError("summary fallback"),
+        _response(SimpleNamespace(metrics={"backupSpaceUsedInGbs": 4.5})),
+        _response(SimpleNamespace(metrics=SimpleNamespace(backup_space_used_in_gbs="invalid"))),
+        _response(pd_with_metrics),
+        _response(SimpleNamespace(metrics=None)),
+    ]
+
+    result = summarise_tools.summarize_backup_space_used(compartment_id=compartment)
+
+    assert result["aggregated"]["totalDatabasesScanned"] == 7
+    assert result["aggregated"]["sumBackupSpaceUsedInGBs"] == 16.5
+    assert result["missingMetricsCount"] == 2
 
 
 def test_summary_serialization_fallbacks_and_error_paths(monkeypatch):
@@ -188,6 +335,27 @@ def test_summary_serialization_fallbacks_and_error_paths(monkeypatch):
         "unknown": 0,
         "total": 0,
         "partial": False,
+    }
+
+    class UnserializableAggregate:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def model_dump(self, **_kwargs):
+            raise RuntimeError("model dump unavailable")
+
+        def dict(self, **_kwargs):
+            raise RuntimeError("dict conversion unavailable")
+
+    monkeypatch.setattr(
+        summarise_tools, "ProtectedDatabaseBackupSpaceSum", UnserializableAggregate
+    )
+    backup_space = summarise_tools.summarize_backup_space_used("compartment")
+    assert backup_space["aggregated"] == {
+        "compartmentId": "compartment",
+        "region": None,
+        "totalDatabasesScanned": 0,
+        "sumBackupSpaceUsedInGBs": 0.0,
     }
 
     recovery_client.list_protected_databases.side_effect = RuntimeError("service down")
@@ -504,6 +672,91 @@ def _backup_destination_db(index: int) -> dict:
     }
 
 
+def test_backup_summary_shape_helpers_cover_sdk_and_mapping_variants(monkeypatch):
+    """Backup summary readers accept SDK objects, dictionaries, and odd values."""
+    monkeypatch.setattr(
+        summarise_tools.oci.util,
+        "to_dict",
+        lambda value: value if isinstance(value, dict) else _raise(RuntimeError("cannot convert")),
+    )
+    assert summarise_tools._to_dict(SimpleNamespace(value=1)) == {"value": 1}
+    assert summarise_tools._to_dict(object()) == {}
+    assert summarise_tools._get(SimpleNamespace(id=None, db_name="DB1"), "id", "db_name") == "DB1"
+    monkeypatch.setattr(summarise_tools.oci.util, "to_dict", lambda _value: ["not-a-dict"])
+    assert summarise_tools._to_dict(SimpleNamespace(value=2)) == {"value": 2}
+    monkeypatch.setattr(
+        summarise_tools.oci.util,
+        "to_dict",
+        lambda value: value if isinstance(value, dict) else _raise(RuntimeError("cannot convert")),
+    )
+    assert summarise_tools._get(SimpleNamespace(), "mapped") is None
+    monkeypatch.setattr(summarise_tools.oci.util, "to_dict", lambda _value: {"mapped": "dict-value"})
+    assert summarise_tools._get(SimpleNamespace(), "mapped") == "dict-value"
+    assert summarise_tools._extract_backup_destination_details(
+        {"backup_config": {"backup_destination_details": {"type": "NFS"}}}
+    ) == [{"type": "NFS"}]
+    assert summarise_tools._normalize_dest_type(None) == "UNKNOWN"
+    assert summarise_tools._normalize_dest_type("NFS") == "NFS"
+    assert summarise_tools._normalize_dest_type("vendor-new") == "VENDOR-NEW"
+    assert summarise_tools._is_auto_backup_enabled({"auto_backup_enabled": False}) is False
+    assert summarise_tools._is_auto_backup_enabled({"backup_config": {"auto_backup_enabled": True}})
+    assert summarise_tools._is_auto_backup_enabled(
+        {"backup_config": {}, "auto_backup_enabled": True}
+    )
+    assert summarise_tools._read_backup_times_from_obj(
+        SimpleNamespace(timeEnded="2025-01-01T00:00:00Z")
+    ) == ["2025-01-01T00:00:00Z"]
+    empty_backup = object()
+    ordinary_to_dict = summarise_tools._to_dict
+    monkeypatch.setattr(
+        summarise_tools,
+        "_to_dict",
+        lambda value: {"timeCreated": "2025-01-01T00:00:00Z"}
+        if value is empty_backup
+        else ordinary_to_dict(value),
+    )
+    assert summarise_tools._read_backup_times_from_obj(empty_backup) == ["2025-01-01T00:00:00Z"]
+    monkeypatch.setattr(
+        summarise_tools.oci.util,
+        "to_dict",
+        lambda value: value if isinstance(value, dict) else _raise(RuntimeError("cannot convert")),
+    )
+    assert summarise_tools._as_instant("not-a-date") is None
+    assert summarise_tools._as_instant("2025-01-01T00:00:00").tzinfo == timezone.utc
+    assert summarise_tools._dest_rank([]) == 99
+    assert summarise_tools._uniq_sorted(["b", "", "a", "b"]) == ["a", "b"]
+    assert summarise_tools._sorted_keep(["b", "", "a", "b"]) == ["a", "b", "b"]
+
+    newest, has_backups = summarise_tools._latest_backup_time(
+        "db1",
+        list_backups=lambda **_kwargs: _response(
+            [SimpleNamespace(time_ended="2025-01-01T00:00:00Z")]
+        ),
+    )
+    assert newest == "2025-01-01T00:00:00Z"
+    assert has_backups is True
+
+    class InvalidRecord(dict):
+        def get(self, *_args, **_kwargs):
+            raise RuntimeError("invalid mapping")
+
+    row = SimpleNamespace(id="db1")
+    monkeypatch.setattr(
+        summarise_tools,
+        "_to_dict",
+        lambda value: InvalidRecord() if value is row else ordinary_to_dict(value),
+    )
+    record, types, ids = summarise_tools._backup_destinations_for(
+        row,
+        get_database=lambda database_id: _response(
+            {"db_backup_config": {"backup_destination_details": {"type": "NFS", "id": "dest1"}}}
+        ),
+    )
+    assert record["db_backup_config"]["backup_destination_details"]["id"] == "dest1"
+    assert types == []
+    assert ids == ["dest1"]
+
+
 def test_backup_destination_scan_stops_at_max_total_databases(monkeypatch):
     """
     max_total_databases bounds the whole scan, not one DB Home's share of it.
@@ -565,6 +818,31 @@ def test_backup_destination_marks_a_database_capped_scan_truncated(monkeypatch):
     complete = summarize(2)
     assert complete.total_databases == 2
     assert complete.truncated is False
+
+
+def test_backup_destination_marks_unscanned_db_homes_truncated(monkeypatch):
+    """Homes omitted by max_db_homes make the inventory partial."""
+    monkeypatch.setattr(compartments, "_compartment_scope_for_tool", lambda cid, **_kwargs: ([cid], True))
+    monkeypatch.setattr(
+        compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["home1", "home2"]
+    )
+    db_client = MagicMock()
+    db_client.list_databases.side_effect = lambda **kwargs: _response(
+        [_backup_destination_db(1 if kwargs["db_home_id"] == "home1" else 2)]
+    )
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+
+    summary = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="compartment",
+        region="us-ashburn-1",
+        include_last_backup_time=False,
+        max_db_homes=1,
+    )
+
+    assert db_client.list_databases.call_count == 1
+    assert db_client.list_databases.call_args.kwargs["db_home_id"] == "home1"
+    assert summary.total_databases == 1
+    assert summary.truncated is True
 
 
 def test_backup_destination_enforces_limit_per_home_across_pages(monkeypatch):
@@ -788,7 +1066,11 @@ def test_last_backup_time_compares_instants_not_their_text(monkeypatch):
     db_client.list_databases.return_value = _response([_backup_destination_db(1)])
     db_client.get_database.return_value = _response(_backup_destination_db(1))
     db_client.list_backups.return_value = _response(
-        [SimpleNamespace(time_ended=older), SimpleNamespace(time_ended=newer)]
+        [
+            SimpleNamespace(time_ended=older),
+            SimpleNamespace(time_ended=newer),
+            SimpleNamespace(time_ended="2026-09-07T00:00:00Z"),
+        ]
     )
     monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
 
@@ -1044,6 +1326,195 @@ def test_backup_destination_retries_its_per_database_reads_within_a_bound(monkey
     }
     assert limits["LimitBasedRetryChecker"].max_attempts == 3
     assert limits["TotalTimeExceededRetryChecker"].time_limit_seconds == 10
+
+
+def test_redo_summary_handles_unreadable_ids_and_metrics_aliases(monkeypatch):
+    """Missing IDs and alternate metric names remain visible as unknown/disabled."""
+    recovery_client = MagicMock()
+    monkeypatch.setattr(clients, "get_recovery_client", lambda *_a, **_k: recovery_client)
+    monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda cid, **_k: cid)
+    monkeypatch.setattr(compartments, "_compartment_scope_for_tool", lambda *_a, **_k: (["c1"], True))
+
+    class BrokenId:
+        @property
+        def id(self):
+            return None
+
+        @property
+        def data(self):
+            return None
+
+        @property
+        def __dict__(self):
+            raise RuntimeError("id shape unavailable")
+
+    recovery_client.list_protected_databases.return_value = _response(
+        [
+            BrokenId(),
+            SimpleNamespace(id="pd-alias"),
+            SimpleNamespace(id="pd-metrics-broken"),
+            SimpleNamespace(id="pd-failed"),
+        ]
+    )
+    metrics = SimpleNamespace(is_redo_logs_enabled=None)
+    metrics.__dict__["isRedoLogsEnabled"] = False
+
+    class BrokenMetrics:
+        @property
+        def is_redo_logs_enabled(self):
+            raise RuntimeError("bad metrics")
+
+    recovery_client.get_protected_database.side_effect = [
+        _response(SimpleNamespace(metrics=metrics)),
+        _response(SimpleNamespace(metrics=BrokenMetrics())),
+        RuntimeError("GET failed"),
+    ]
+    summary = summarise_tools.summarize_protected_database_redo_status("c1")
+    assert summary.aggregated.unknown == 3
+    assert summary.aggregated.disabled == 1
+
+
+def test_summary_setup_errors_are_propagated(monkeypatch):
+    """The two protected database summaries preserve client setup failures."""
+    monkeypatch.setattr(
+        clients,
+        "get_recovery_client",
+        lambda *_a, **_k: _raise(RuntimeError("client unavailable")),
+    )
+    with pytest.raises(RuntimeError, match="client unavailable"):
+        summarise_tools.summarize_protected_database_health("c1")
+    with pytest.raises(RuntimeError, match="client unavailable"):
+        summarise_tools.summarize_protected_database_redo_status("c1")
+
+
+def test_backup_destination_defaults_scope_and_handles_unknown_configured_type(monkeypatch):
+    """Omitted compartment uses tenancy, and configured unsupported types stay unclassified."""
+    monkeypatch.setattr(auth, "get_tenancy", lambda: "tenant")
+    monkeypatch.setattr(compartments, "_compartment_scope_for_tool", lambda cid, **_k: ([cid], True))
+    monkeypatch.setattr(compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["home"])
+    database_client = MagicMock()
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: database_client)
+    database_client.list_databases.return_value = _response([
+        {"id": "db-nfs", "dbName": "NFS", "dbBackupConfig": {
+            "isAutoBackupEnabled": True,
+            "backupDestinationDetails": [{"type": "NFS"}],
+        }}
+    ])
+    database_client.list_backups.side_effect = RuntimeError("backup listing failed")
+    summary = summarise_tools.summarize_protected_database_backup_destination(
+        include_last_backup_time=True
+    )
+    assert summary.compartment_id == "tenant"
+    assert summary.total_databases == 1
+    assert summary.items[0].status == "CONFIGURED"
+    assert summary.counts_by_destination_type == {}
+    assert summary.items[0].destination_types == []
+    assert summary.has_backups_db_names == []
+
+
+def test_backup_space_stops_before_reading_the_next_database(monkeypatch):
+    """The per-item deadline check stops a page before issuing extra GETs."""
+    monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda cid, **_k: cid)
+    monkeypatch.setattr(compartments, "_compartment_scope_for_tool", lambda cid, **_k: ([cid], True))
+
+    class ExpiresOnThirdCheck:
+        def __init__(self, *_a, **_k):
+            self.checks = 0
+            self.expired = False
+
+        def reached(self):
+            self.checks += 1
+            self.expired = self.checks >= 3
+            return self.expired
+
+    monkeypatch.setattr(app, "_Deadline", ExpiresOnThirdCheck)
+    client = MagicMock()
+    client.list_protected_databases.return_value = _response([
+        SimpleNamespace(id="pd1", lifecycle_state="ACTIVE"),
+        SimpleNamespace(id="pd2", lifecycle_state="ACTIVE"),
+    ])
+    monkeypatch.setattr(clients, "get_recovery_client", lambda *_a, **_k: client)
+
+    result = summarise_tools.summarize_backup_space_used("compartment")
+    assert result["truncated"] is True
+    client.get_protected_database.assert_not_called()
+
+
+def test_backup_space_metrics_fallback_reads_camel_case_and_missing_shapes(monkeypatch):
+    """Summary metrics can use camelCase, or be absent when GET fails."""
+    monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda cid, **_k: cid)
+    monkeypatch.setattr(compartments, "_compartment_scope_for_tool", lambda cid, **_k: ([cid], True))
+    client = MagicMock()
+    alias_metrics = SimpleNamespace(backup_space_used_in_gbs=None)
+    alias_metrics.__dict__["backupSpaceUsedInGbs"] = 3
+    get_metrics = SimpleNamespace(backup_space_used_in_gbs=None)
+    get_metrics.__dict__["backupSpaceUsedInGbs"] = 2
+    client.list_protected_databases.return_value = _response([
+        SimpleNamespace(id="pd-camel", lifecycle_state="ACTIVE", metrics={"backupSpaceUsedInGbs": 5}),
+        SimpleNamespace(id="pd-attribute", lifecycle_state="ACTIVE", metrics=alias_metrics),
+        SimpleNamespace(id="pd-get-alias", lifecycle_state="ACTIVE", metrics=None),
+        SimpleNamespace(id="pd-no-metrics", lifecycle_state="ACTIVE", metrics=None),
+    ])
+    client.get_protected_database.side_effect = [
+        RuntimeError("GET unavailable"),
+        RuntimeError("GET unavailable"),
+        _response(SimpleNamespace(metrics=get_metrics)),
+        RuntimeError("GET unavailable"),
+    ]
+    monkeypatch.setattr(clients, "get_recovery_client", lambda *_a, **_k: client)
+    result = summarise_tools.summarize_backup_space_used("compartment")
+    assert result["aggregated"]["sumBackupSpaceUsedInGBs"] == 10
+    assert result["missingMetricsCount"] == 1
+
+
+def test_destination_deadline_can_expire_during_database_enrichment(monkeypatch):
+    """The enrichment loop stops and marks the already discovered rows partial."""
+    monkeypatch.setattr(compartments, "_compartment_scope_for_tool", lambda cid, **_k: ([cid], True))
+    monkeypatch.setattr(compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["home"])
+    database_client = MagicMock()
+    database_client.list_databases.return_value = _response([_backup_destination_db(1)])
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: database_client)
+
+    class ExpiresOnEnrichment:
+        def __init__(self, *_a, **_k):
+            self.checks = 0
+            self.expired = False
+
+        def reached(self):
+            self.checks += 1
+            self.expired = self.checks >= 2
+            return self.expired
+
+    monkeypatch.setattr(app, "_Deadline", ExpiresOnEnrichment)
+    monkeypatch.setattr(
+        summarise_tools,
+        "_scan_available_databases",
+        lambda *_a, **_k: ([_backup_destination_db(1)], False),
+    )
+    result = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="compartment", include_last_backup_time=False
+    )
+    assert result.truncated is True
+    assert result.total_databases == 1
+    assert result.items == []
+
+
+def test_backup_shape_conversion_returns_empty_for_slots_when_sdk_conversion_is_not_a_dict(monkeypatch):
+    """A non-dictionary SDK conversion falls back safely for objects without __dict__."""
+    monkeypatch.setattr(
+        summarise_tools.oci.util,
+        "to_dict",
+        lambda obj: obj if isinstance(obj, dict) else [],
+    )
+    assert summarise_tools._to_dict(object()) == {}
+    _, types, identifiers = summarise_tools._backup_destinations_for(
+        {"dbBackupConfig": {"backupDestinationDetails": [{"type": "unsupported"}]}},
+        get_database=MagicMock(),
+    )
+    assert types == [] and identifiers == []
+
+    monkeypatch.setattr(summarise_tools.oci, "util", SimpleNamespace())
+    assert summarise_tools._to_dict(object()) == {}
 
 
 def test_the_scanner_stops_between_requests_not_after_all_of_them():

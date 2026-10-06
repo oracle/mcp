@@ -660,3 +660,545 @@ def test_policy_correlation_survives_an_unreadable_compartment(monkeypatch):
     assert policies.get("db-in-readable") == "pol-readable"
     # And the unreadable one is simply unlinked, not fabricated.
     assert policies.get("db-in-denied") is None
+
+
+def test_database_mapping_uses_every_backup_and_policy_fallback(monkeypatch):
+    """Broken conversions do not prevent database summaries or policy links."""
+    compartment = "ocid1.compartment.oc1..test"
+    database_client = MagicMock()
+    recovery_client = MagicMock()
+    monkeypatch.setattr(
+        clients, "get_database_client", lambda *_a, **_k: database_client
+    )
+    monkeypatch.setattr(
+        clients, "get_recovery_client", lambda *_a, **_k: recovery_client
+    )
+    monkeypatch.setattr(
+        compartments, "_resolve_compartment_id", lambda value, **_kwargs: value
+    )
+    monkeypatch.setattr(
+        database_tools.oci.util,
+        "to_dict",
+        lambda _value: (_ for _ in ()).throw(RuntimeError("SDK conversion unavailable")),
+    )
+    recovery_client.list_protected_databases.return_value = _response(
+        [
+            SimpleNamespace(databaseId="db-fallback", protectionPolicyId="policy1"),
+            SimpleNamespace(database_id="db-fallback", protection_policy_id="duplicate"),
+            SimpleNamespace(display_name="no correlation"),
+        ]
+    )
+
+    class HiddenId:
+        @property
+        def id(self):
+            return None
+
+    hidden = HiddenId()
+    hidden.__dict__["id"] = "db-fallback"
+
+    class BadMapped:
+        db_backup_config = object()
+
+        @property
+        def id(self):
+            raise RuntimeError("id unavailable")
+
+    def map_summary(row):
+        row_id = getattr(row, "id", None)
+        if row_id is None and isinstance(row, dict):
+            row_id = row.get("id")
+        if row_id == "skip":
+            return None
+        if row is hidden:
+            return SimpleNamespace(
+                id="db-fallback", db_backup_config=None, protection_policy_id=None
+            )
+        if row_id == "bad-policy":
+            return BadMapped()
+        if row_id == "db-no-policy":
+            return SimpleNamespace(
+                id="db-no-policy",
+                db_backup_config=object(),
+                protection_policy_id=None,
+            )
+        return None
+
+    monkeypatch.setattr(database_tools, "map_database_summary", map_summary)
+
+    class BackupConfigInDict:
+        def __init__(self):
+            self.dbBackupConfig = {"isAutoBackupEnabled": True}
+
+        @property
+        def db_backup_config(self):
+            return None
+
+        @property
+        def database_backup_config(self):
+            return None
+
+    database_client.list_databases.return_value = _response(
+        [SimpleNamespace(id="skip"), hidden, SimpleNamespace(id="bad-policy")]
+    )
+    database_client.get_database.return_value = _response(BackupConfigInDict())
+
+    result = database_tools.list_databases(
+        compartment_id=compartment, db_home_id="home1"
+    )
+
+    assert len(result) == 2
+    assert result[0].db_backup_config.is_auto_backup_enabled is True
+    assert result[0].protection_policy_id == "policy1"
+    assert result[1].db_backup_config is not None
+
+    monkeypatch.setattr(
+        clients,
+        "get_recovery_client",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("Recovery unavailable")),
+    )
+    database_client.list_databases.return_value = _response(
+        [
+            {
+                "id": "db-no-policy",
+                "dbBackupConfig": {"isAutoBackupEnabled": False},
+            }
+        ]
+    )
+    degraded = database_tools.list_databases(
+        compartment_id=compartment, db_home_id="home1"
+    )
+    assert degraded[0].protection_policy_id is None
+
+
+def test_get_database_policy_enrichment_handles_malformed_shapes(monkeypatch):
+    """GET enrichment tolerates missing compartments and paging fallbacks."""
+    database_client = MagicMock()
+    recovery_client = MagicMock()
+    monkeypatch.setattr(
+        clients, "get_database_client", lambda *_a, **_k: database_client
+    )
+    monkeypatch.setattr(
+        clients, "get_recovery_client", lambda *_a, **_k: recovery_client
+    )
+    monkeypatch.setattr(
+        database_tools.oci.util,
+        "to_dict",
+        lambda _value: (_ for _ in ()).throw(RuntimeError("SDK conversion unavailable")),
+    )
+
+    db_with_compartment_in_dict = SimpleNamespace(id="db1", compartment_id=None)
+    db_with_compartment_in_dict.__dict__["compartmentId"] = "compartment"
+    database_client.get_database.side_effect = [
+        _response(db_with_compartment_in_dict),
+        _response(SimpleNamespace(id="db2")),
+        _response(SimpleNamespace(id="db3", compartment_id="compartment")),
+        _response(SimpleNamespace(id="db4", compartment_id="compartment")),
+    ]
+    recovery_client.list_protected_databases.side_effect = [
+        _response(
+            [SimpleNamespace(databaseId="other", protectionPolicyId="ignored")],
+            has_next_page=True,
+            next_page="next",
+        ),
+        _response([SimpleNamespace(databaseId="db1", protectionPolicyId="policy1")]),
+        _response([]),
+        RuntimeError("Recovery unavailable"),
+    ]
+
+    first = database_tools.get_database("db1")
+    assert first.protection_policy_id == "policy1"
+    second = database_tools.get_database("db2")
+    assert second.id == "db2"
+    assert recovery_client.list_protected_databases.call_count == 2
+    third = database_tools.get_database("db3")
+    assert third.id == "db3"
+    assert database_tools.get_database("db4").id == "db4"
+
+    monkeypatch.setattr(database_tools, "map_database", lambda _data: None)
+    database_client.get_database.side_effect = None
+    database_client.get_database.return_value = _response(
+        SimpleNamespace(id="db5", compartment_id="compartment")
+    )
+    recovery_client.list_protected_databases.side_effect = None
+    recovery_client.list_protected_databases.return_value = _response([])
+    assert database_tools.get_database("db5") is None
+
+
+def test_database_home_and_system_lists_cover_optional_filters_and_empty_mappers(monkeypatch):
+    """List tools omit absent scope fields and honor the DB system filter."""
+    database_client = MagicMock()
+    monkeypatch.setattr(
+        clients, "get_database_client", lambda *_a, **_k: database_client
+    )
+    monkeypatch.setattr(
+        compartments, "_compartment_ids_for_tool", lambda *_a, **_k: [None]
+    )
+    monkeypatch.setattr(database_tools, "map_database_home_summary", lambda _item: None)
+    monkeypatch.setattr(database_tools, "map_db_system_summary", lambda _item: None)
+    database_client.list_db_homes.return_value = _response([{"id": "home1"}])
+    database_client.list_db_systems.return_value = _response([{"id": "system1"}])
+
+    assert database_tools.list_db_homes(
+        compartment_id="compartment",
+        fetch_for_child_compartment=True,
+        db_system_id="system1",
+    ) == []
+    assert database_client.list_db_homes.call_args.kwargs == {
+        "page": None,
+        "db_system_id": "system1",
+    }
+
+    monkeypatch.setattr(auth, "get_tenancy", lambda: "tenancy")
+    assert database_tools.list_db_systems() == []
+    assert database_client.list_db_systems.call_args.kwargs == {"page": None}
+
+
+def test_database_policy_correlation_uses_object_dict_fallbacks(monkeypatch):
+    """Database and protected-database objects still correlate without oci.util."""
+    db_client = MagicMock()
+    recovery_client = MagicMock()
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+    monkeypatch.setattr(clients, "get_recovery_client", lambda *_a, **_k: recovery_client)
+    monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda value, **_k: value)
+    monkeypatch.setattr(
+        compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["home"]
+    )
+    monkeypatch.setattr(database_tools.oci, "util", None)
+
+    recovery_client.list_protected_databases.return_value = _response(
+        [SimpleNamespace(database_id="db1", protection_policy_id="policy1")]
+    )
+    db_client.list_databases.return_value = _response([SimpleNamespace(id="db1")])
+    monkeypatch.setattr(
+        database_tools,
+        "map_database_summary",
+        lambda _item: SimpleNamespace(id="db1", db_backup_config=object()),
+    )
+    listed = database_tools.list_databases(compartment_id="compartment")
+    assert listed[0].protection_policy_id == "policy1"
+
+    db_client.get_database.return_value = _response(
+        SimpleNamespace(id="db2", compartment_id="compartment")
+    )
+    recovery_client.list_protected_databases.return_value = _response(
+        [SimpleNamespace(database_id="another-db", protection_policy_id="unused")]
+    )
+    monkeypatch.setattr(
+        database_tools, "map_database", lambda _item: SimpleNamespace(id="db2")
+    )
+    assert database_tools.get_database("db2").protection_policy_id is None
+
+
+def test_list_backups_exercises_legacy_mappers_and_compartment_paging(monkeypatch):
+    """Backup lists retain raw fields across legacy mappers and DB discovery pages."""
+    db_client = MagicMock()
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_k: [cid])
+    monkeypatch.setattr(compartments, "_fetch_db_home_ids_for_compartment", lambda *_a, **_k: ["home"])
+    monkeypatch.setattr(
+        recovery_tools.oci.util,
+        "to_dict",
+        lambda obj: obj if isinstance(obj, dict) else _raise(RuntimeError("use __dict__ fallback")),
+    )
+
+    class LegacyMapped:
+        def model_dump(self, **_kwargs):
+            raise RuntimeError("model_dump unavailable")
+
+        def dict(self, **_kwargs):
+            return {"id": "backup-legacy", "db_unique_name": None}
+
+    class AttributeMapped:
+        def __init__(self):
+            self.id = "backup-attributes"
+            self.db_unique_name = "already-known"
+            self.__dict__["database-size-in-gbs"] = 20
+            self.__dict__["backup-destination-type"] = "DBRS"
+            self.__dict__["retention-period-in-days"] = 7
+            self.__dict__["retention-period-in-years"] = 4
+
+        def model_dump(self, **_kwargs):
+            raise RuntimeError("model_dump unavailable")
+
+        def dict(self, **_kwargs):
+            raise RuntimeError("dict unavailable")
+
+    db_client.list_backups.return_value = _response([
+        SimpleNamespace(id="ignored"),
+        SimpleNamespace(
+            id="backup-legacy", database_size_in_gbs=None,
+            backup_destination_type=None, retention_period_in_days=30,
+            retention_period_in_years=None,
+        ),
+        SimpleNamespace(id="backup-attributes"),
+    ])
+    monkeypatch.setattr(
+        recovery_tools,
+        "map_backup_summary",
+        MagicMock(side_effect=[None, LegacyMapped(), AttributeMapped()]),
+    )
+    db_client.get_database.return_value = _response(SimpleNamespace(db_unique_name="DB_UNIQUE"))
+    direct = recovery_tools.list_backups(
+        database_id="db-direct",
+        aggregate_pages=False,
+        limit=7,
+        page="caller-page",
+        lifecycle_state="AVAILABLE",
+        type="FULL",
+    )
+    assert len(direct) == 2
+    assert direct[0]["database-size-in-gbs"] is None
+    assert direct[0]["db_unique_name"] == "DB_UNIQUE"
+    assert direct[1]["retention-period-in-years"] == 4
+    assert db_client.list_backups.call_args.kwargs == {
+        "database_id": "db-direct",
+        "lifecycle_state": "AVAILABLE",
+        "type": "FULL",
+        "limit": 7,
+        "page": "caller-page",
+    }
+
+    # Database discovery follows its page token, resolves disabled/missing config
+    # with GET only when a database OCID is present, and de-duplicates backup IDs.
+    db_client.list_databases.side_effect = [
+        _response(
+            [
+                {"id": "db-get-enabled"},
+                {"id": "db-get-fails", "dbBackupConfig": {"isAutoBackupEnabled": False}},
+                {"dbBackupConfig": {"isAutoBackupEnabled": True}},
+            ],
+            has_next_page=True,
+            next_page="db-page-2",
+        ),
+        _response(
+            [
+                {"id": "db-without-unique", "dbBackupConfig": {"isAutoBackupEnabled": True}},
+                {"id": "db-with-unique", "dbUniqueName": "DB_UNIQUE", "backupConfig": {"autoBackupEnabled": True}},
+            ]
+        ),
+    ]
+    db_client.get_database.side_effect = [
+        _response({"dbBackupConfig": {"isAutoBackupEnabled": True}, "dbUniqueName": "FROM_GET"}),
+        RuntimeError("database lookup unavailable"),
+    ]
+    db_client.list_backups.side_effect = [
+        _response([{"databaseId": "db-get-enabled"}]),
+        _response([{"id": "shared-backup", "databaseId": "db-without-unique"}]),
+        _response([{"id": "shared-backup", "databaseId": "db-with-unique", "db_unique_name": "KNOWN"}]),
+    ]
+
+    class CompartmentMappedBackup:
+        def __init__(self, item):
+            self.item = item
+
+        def model_dump(self, **_kwargs):
+            return {
+                "id": self.item.get("id"),
+                "db_unique_name": self.item.get("db_unique_name"),
+            }
+
+    monkeypatch.setattr(
+        recovery_tools,
+        "map_backup_summary",
+        lambda item: CompartmentMappedBackup(item),
+    )
+    listed = recovery_tools.list_backups(
+        compartment_id="compartment", fetch_for_child_compartment=True
+    )
+    assert len(listed) == 2
+    assert db_client.list_databases.call_args_list[1].kwargs["page"] == "db-page-2"
+
+
+def test_get_backup_covers_raw_enrichment_and_legacy_model_fallbacks(monkeypatch):
+    """Backup GET keeps raw fields, infers each destination, and tolerates failures."""
+    db_client = MagicMock()
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+
+    class RawBackup:
+        def __init__(self, **fields):
+            self.__dict__.update(fields)
+
+    class LegacyBackup:
+        def __init__(self, **fields):
+            self.__dict__.update(fields)
+            self.db_unique_name = fields.get("db_unique_name")
+
+        def model_dump(self, **_kwargs):
+            raise RuntimeError("model_dump unavailable")
+
+        def dict(self, **_kwargs):
+            raise RuntimeError("dict unavailable")
+
+    raw_backups = [
+        RawBackup(
+            id="bk-nfs", databaseId="db-nfs", database_size_in_gbs=10,
+            retention_period_in_days=30, retention_period_in_years=2,
+        ),
+        RawBackup(id="bk-object", databaseId="db-object", database_size_in_gbs=20),
+        RawBackup(id="bk-mapped", database_size_in_gbs=5),
+        RawBackup(id="bk-raw-type", backup_destination_type="OBJECT_STORE"),
+        RawBackup(id="bk-get-error", databaseId="db-error"),
+        RawBackup(id="bk-unknown", databaseId="db-unknown"),
+    ]
+    db_client.get_backup.side_effect = [_response(raw) for raw in raw_backups]
+    mapped = [
+        LegacyBackup(database_id="db-nfs", **{"database-size-in-gbs": None}),
+        LegacyBackup(
+            database_id="db-object",
+            **{
+                "database-size-in-gbs": 20,
+                "retention-period-in-days": 7,
+                "retention-period-in-years": 4,
+            },
+            db_unique_name="known",
+        ),
+        LegacyBackup(database_id=None, **{"backup-destination-type": "DBRS"}),
+        LegacyBackup(database_id=None, **{"backup-destination-type": None}),
+        LegacyBackup(database_id="db-error", **{"backup-destination-type": None}),
+        LegacyBackup(database_id="db-unknown", **{"backup-destination-type": None}),
+    ]
+    monkeypatch.setattr(recovery_tools, "map_backup", MagicMock(side_effect=mapped))
+
+    def to_dict(value):
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, RawBackup):
+            raise RuntimeError("raw backup converter unavailable")
+        return getattr(value, "__dict__", {})
+
+    monkeypatch.setattr(recovery_tools.oci.util, "to_dict", to_dict)
+    db_client.get_database.side_effect = [
+        _response(SimpleNamespace(db_backup_config={
+            "backupDestinationDetails": [{"type": "UNKNOWN"}, {"type": "NFS"}]
+        }, db_unique_name="DB_NFS")),
+        _response(SimpleNamespace(db_backup_config={
+            "backupDestinationDetails": [{"type": "NFS"}]
+        }, db_unique_name="DB_NFS")),
+        _response(SimpleNamespace(db_backup_config={
+            "backupDestinationDetails": [{"type": "OBJECT_STORE"}]
+        }, db_unique_name=None)),
+        _response(SimpleNamespace(db_backup_config={
+            "backupDestinationDetails": [{"type": "OBJECT_STORE"}]
+        }, db_unique_name=None)),
+        RuntimeError("database lookup failed"),
+        RuntimeError("database lookup failed"),
+        _response(SimpleNamespace(db_backup_config={
+            "backupDestinationDetails": [{"type": "UNKNOWN"}]
+        }, db_unique_name=None)),
+        _response(SimpleNamespace(db_unique_name=None)),
+    ]
+
+    nfs = recovery_tools.get_backup("bk-nfs")
+    object_store = recovery_tools.get_backup("bk-object")
+    mapped_type = recovery_tools.get_backup("bk-mapped")
+    raw_type = recovery_tools.get_backup("bk-raw-type")
+    failed_enrichment = recovery_tools.get_backup("bk-get-error")
+    unknown_type = recovery_tools.get_backup("bk-unknown")
+
+    assert nfs["backup-destination-type"] == "NFS"
+    assert nfs["database-size-in-gbs"] == 10
+    assert nfs["retention-period-in-years"] == 2
+    assert nfs["db_unique_name"] == "DB_NFS"
+    assert object_store["backup-destination-type"] == "OBJECT_STORE"
+    assert object_store["db_unique_name"] == "known"
+    assert mapped_type["backup-destination-type"] == "DBRS"
+    assert raw_type["backup-destination-type"] == "OBJECT_STORE"
+    assert failed_enrichment["backup-destination-type"] is None
+    assert "retention-period-in-years" in failed_enrichment
+    assert unknown_type["backup-destination-type"] is None
+
+
+def test_list_backups_handles_missing_oci_util_and_raw_conversion_races(monkeypatch):
+    """Backup listing falls back when the SDK utility is absent or unstable."""
+    db_client = MagicMock()
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+    db_client.list_backups.return_value = _response([])
+    db_client.get_database.return_value = _response(SimpleNamespace(db_unique_name="UNIQUE"))
+
+    monkeypatch.delattr(recovery_tools.oci, "util")
+    assert recovery_tools.list_backups(
+        database_id="db1", aggregate_pages=False
+    ) == []
+
+    monkeypatch.setattr(recovery_tools.oci, "util", SimpleNamespace(), raising=False)
+    assert recovery_tools.list_backups(
+        database_id="db1", aggregate_pages=False
+    ) == []
+
+    monkeypatch.setattr(
+        recovery_tools.oci,
+        "util",
+        SimpleNamespace(to_dict=lambda _obj: []),
+        raising=False,
+    )
+    assert recovery_tools.list_backups(
+        database_id="db1", aggregate_pages=False
+    ) == []
+
+    class FlakyRaw:
+        def __init__(self):
+            object.__setattr__(self, "reads", 0)
+            object.__setattr__(self, "id", "backup-flaky")
+            object.__setattr__(self, "database_id", "db-flaky")
+
+        def __getattribute__(self, name):
+            if name == "__dict__":
+                reads = object.__getattribute__(self, "reads")
+                object.__setattr__(self, "reads", reads + 1)
+                if reads == 1:
+                    raise RuntimeError("SDK object changed during conversion")
+            return object.__getattribute__(self, name)
+
+    class Mapped:
+        def model_dump(self, **_kwargs):
+            return {"id": "backup-flaky", "database_id": "db-flaky"}
+
+    raw = FlakyRaw()
+    db_client.list_backups.return_value = _response([raw])
+    db_client.get_database.return_value = _response({"dbUniqueName": "DB_FLAKY"})
+    monkeypatch.setattr(
+        recovery_tools.oci,
+        "util",
+        SimpleNamespace(
+            to_dict=lambda obj: _raise(RuntimeError("conversion failed"))
+            if isinstance(obj, FlakyRaw)
+            else obj
+        ),
+    )
+    monkeypatch.setattr(recovery_tools, "map_backup_summary", lambda _item: Mapped())
+
+    backups = recovery_tools.list_backups(database_id="db-flaky")
+    assert backups[0]["db_unique_name"] == "DB_FLAKY"
+
+
+def test_get_backup_ignores_malformed_unique_name_mapping(monkeypatch):
+    """A malformed mapped database id does not abort backup serialization."""
+    db_client = MagicMock()
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+
+    class BreakOnSecondDatabaseId(dict):
+        def __init__(self):
+            super().__init__(database_id="db1", **{"backup-destination-type": "DBRS"})
+            self.database_id_reads = 0
+
+        def get(self, key, default=None):
+            if key == "database_id":
+                self.database_id_reads += 1
+                if self.database_id_reads == 2:
+                    raise RuntimeError("mapped id became unreadable")
+            return super().get(key, default)
+
+    class Mapped:
+        db_unique_name = None
+
+        def model_dump(self, **_kwargs):
+            return BreakOnSecondDatabaseId()
+
+    monkeypatch.setattr(recovery_tools, "map_backup", lambda _item: Mapped())
+    monkeypatch.setattr(
+        recovery_tools.oci.util, "to_dict", lambda item: getattr(item, "__dict__", {})
+    )
+    db_client.get_backup.return_value = _response(SimpleNamespace(id="bk1"))
+    result = recovery_tools.get_backup("bk1")
+    assert result["backup-destination-type"] == "DBRS"

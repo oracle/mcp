@@ -262,6 +262,64 @@ def test_subtree_expansion_is_incomplete_when_identity_cannot_be_read(monkeypatc
     ) == (["root"], True)
 
 
+def test_compartment_helpers_handle_malformed_items_and_empty_fallbacks(monkeypatch):
+    """Malformed SDK shapes and empty expansion results keep safe scope behavior."""
+
+    class BrokenCompartment:
+        @property
+        def id(self):
+            raise RuntimeError("bad identity model")
+
+    monkeypatch.setattr(compartments, "list_all_compartments_internal", lambda *_a: [BrokenCompartment()])
+    monkeypatch.setattr(auth, "get_tenancy", lambda: "tenancy")
+    identity_client = MagicMock()
+    identity_client.get_compartment.side_effect = RuntimeError("tenancy not readable")
+    monkeypatch.setattr(clients, "get_identity_client", lambda **_kwargs: identity_client)
+
+    assert compartments._fetch_all_compartments.__wrapped__(request_id="rid") == []
+    assert compartments._build_children_index([BrokenCompartment()]) == {}
+    assert compartments._resolve_compartment_id(" ", default_to_tenancy=True) == "tenancy"
+
+    monkeypatch.setattr(compartments, "_list_all_compartments_cached", lambda **_kwargs: [
+        SimpleNamespace(id="root", compartment_id="root"),
+        SimpleNamespace(id="child", compartment_id="root"),
+        SimpleNamespace(id="child", compartment_id="root"),
+    ])
+    assert compartments._expand_compartment_scope(
+        "root", include_child_compartments=True
+    ) == (["root", "child"], True)
+
+    monkeypatch.setattr(compartments, "_list_all_compartments_cached", lambda **_kwargs: [])
+    identity_client.list_compartments.side_effect = [
+        _response(
+            [
+                SimpleNamespace(id="root"),
+                SimpleNamespace(id="child"),
+                SimpleNamespace(id="child"),
+            ]
+        ),
+        _response([SimpleNamespace(id="root")]),
+    ]
+    assert compartments._expand_compartment_scope(
+        "root", include_child_compartments=True
+    ) == (["root", "child"], True)
+
+    monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda value: value)
+    monkeypatch.setattr(compartments, "_expand_compartment_scope", lambda *_a, **_k: ([], True))
+    assert compartments._compartment_scope_for_tool(
+        "root", fetch_for_child_compartment=True
+    ) == (["root"], False)
+
+    db_client = MagicMock()
+    db_client.list_db_homes.return_value = _response([SimpleNamespace(display_name="no id")])
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+    monkeypatch.setattr(compartments.oci.util, "to_dict", lambda _obj: _raise(RuntimeError("no mapping")))
+    assert compartments._fetch_db_home_ids_for_compartment("root") == []
+    with pytest.raises(RuntimeError, match="listing failed"):
+        db_client.list_db_homes.side_effect = RuntimeError("listing failed")
+        compartments._fetch_db_home_ids_for_compartment("root", raise_errors=True)
+
+
 def test_child_scope_tools_deduplicate_and_forward_filter_kwargs(monkeypatch):
     """
     Every subtree-scoped tool de-duplicates resources seen in more than one

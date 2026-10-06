@@ -5,10 +5,12 @@ This document routes existing monorepo engineering sources. It introduces no req
 ## Start here
 
 1. Identify the requested change and owning package/shared library. Read [root instructions](../AGENTS.md) and any applicable nested guide before editing, including when following a direct source link.
-2. Find the package README, implementation/interfaces, manifest and tests. Use [BEST_PRACTICES](../BEST_PRACTICES.md) for shared server requirements and [Common's README](../src/common/README.md) for Python authentication contracts. Compute is a structure/model/test reference, with a legacy-auth gap.
+2. Find the package README, implementation/interfaces, manifest and tests. Use [BEST_PRACTICES](../BEST_PRACTICES.md) for shared server requirements, the [authentication guide and ledger](authentication.md) for server integration/adoption, and [Common's README](../src/common/README.md) for detailed Python authentication contracts. Compute is a structure/model/test reference, with a legacy-auth gap.
 3. Read the relevant command sources in the validation map. Separate setup, build, package tests, aggregate coverage and runtime checks; they provide different evidence.
 4. Assess interfaces/consumers, contribution requirements and local gaps before expanding a change. [CONTRIBUTING](../CONTRIBUTING.md) owns issue, signoff and PR guidance; root owns changelog rules. [SECURITY](../SECURITY.md) owns vulnerability reporting, not every runtime security constraint.
 5. Report source inference and actual checks separately using the evidence routes below. A local gap does not authorize removing shared requirements or performing an unrelated migration.
+
+For creating or maintaining context itself, use the [repository authoring conventions](agent-context.md). The [Common/Compute authentication application](../src/oci-compute-mcp-server/docs/authentication.md) is a focused topic route; the component guide map below remains the broad engineering entry.
 
 ## Selected component context
 

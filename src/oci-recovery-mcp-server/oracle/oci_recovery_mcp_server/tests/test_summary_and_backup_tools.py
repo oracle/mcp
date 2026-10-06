@@ -845,6 +845,40 @@ def test_backup_destination_marks_unscanned_db_homes_truncated(monkeypatch):
     assert summary.truncated is True
 
 
+def test_backup_destination_applies_db_home_cap_across_compartments(monkeypatch):
+    """The DB Home cap is global, and omitted homes make the summary partial."""
+    monkeypatch.setattr(
+        compartments,
+        "_compartment_scope_for_tool",
+        lambda *_a, **_k: (["comp1", "comp2"], True),
+    )
+    homes_by_compartment = {"comp1": ["home1"], "comp2": ["home2"]}
+    monkeypatch.setattr(
+        compartments,
+        "_fetch_db_home_ids_for_compartment",
+        lambda compartment_id, **_kwargs: homes_by_compartment[compartment_id],
+    )
+    db_client = MagicMock()
+    db_client.list_databases.side_effect = lambda **kwargs: _response(
+        [_backup_destination_db(1 if kwargs["db_home_id"] == "home1" else 2)]
+    )
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+
+    summary = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="root",
+        fetch_for_child_compartment=True,
+        region="us-ashburn-1",
+        include_last_backup_time=False,
+        max_db_homes=1,
+    )
+
+    assert db_client.list_databases.call_count == 1
+    assert db_client.list_databases.call_args.kwargs["compartment_id"] == "comp1"
+    assert db_client.list_databases.call_args.kwargs["db_home_id"] == "home1"
+    assert summary.total_databases == 1
+    assert summary.truncated is True
+
+
 def test_backup_destination_enforces_limit_per_home_across_pages(monkeypatch):
     """
     limit_per_home caps each DB Home's databases, not the size of each page.

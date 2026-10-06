@@ -443,6 +443,51 @@ class TestGetClientFactories:
         assert kwargs["signer"] is signer
         assert result is mock_client.return_value
 
+    @pytest.mark.parametrize(
+        "auth_type",
+        [
+            "api_key",
+            "security_token",
+            "identity_domain_upst",
+            "instance_principal",
+            "resource_principal",
+            "instance_principal_delegation",
+            "resource_principal_delegation",
+            "oke_workload_identity",
+        ],
+    )
+    def test_profile_client_passes_derived_user_agent_for_each_auth_type(
+        self, auth_type, monkeypatch
+    ):
+        """Every supported shared profile-auth mode gets the derived SDK user agent."""
+        from oracle_mcp_common import resolve_auth_type
+
+        monkeypatch.setattr(auth, "_serving_http", lambda: False)
+        monkeypatch.setattr(auth, "_http_auth", None)
+        for name in auth._CANONICAL_AUTH_TYPE_ENV:
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("OCI_MCP_AUTH_TYPE", auth_type)
+        monkeypatch.delenv("ORACLE_MCP_AUTH_METHOD", raising=False)
+
+        signer = object()
+        mock_build_auth_context = MagicMock(
+            side_effect=lambda: SimpleNamespace(
+                config={"selected_auth_type": resolve_auth_type().value}, signer=signer
+            )
+        )
+        monkeypatch.setattr(auth, "build_auth_context", mock_build_auth_context)
+        monkeypatch.setattr(telemetry, "_wrap_oci_client", lambda client, **_: client)
+        mock_client = MagicMock()
+        monkeypatch.setattr(recovery_tools.oci.recovery, "DatabaseRecoveryClient", mock_client)
+
+        clients.get_recovery_client(region="us-phoenix-1")
+
+        mock_build_auth_context.assert_called_once_with()
+        args, kwargs = mock_client.call_args
+        assert args[0]["selected_auth_type"] == auth_type
+        assert args[0]["additional_user_agent"] == f"oci-recovery-mcp/{server.__version__}"
+        assert kwargs["signer"] is signer
+
     @patch("oracle.oci_recovery_mcp_server.recovery_tools.oci.config.from_file")
     def test_legacy_auth_method_spellings_all_keep_working(
         self, mock_from_file, monkeypatch

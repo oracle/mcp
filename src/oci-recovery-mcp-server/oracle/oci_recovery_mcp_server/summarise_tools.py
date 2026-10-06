@@ -961,12 +961,11 @@ def _scan_available_databases(
     """
     list_databases = getattr(db_client, "list_databases")
     found: list[Any] = []
-    # A DB Home cap can omit homes even when every scanned home was read to the end.
-    # Report that partial scope just like the database caps below.
-    capped = max_db_homes is not None and any(
-        len(home_ids[:max_db_homes]) < len(home_ids)
-        for home_ids in home_ids_by_compartment.values()
-    )
+    # The DB Home cap applies to the complete compartment scope, and can omit
+    # homes even when every scanned home was read to the end.
+    discovered_home_count = sum(len(home_ids) for home_ids in home_ids_by_compartment.values())
+    capped = max_db_homes is not None and discovered_home_count > max_db_homes
+    homes_scanned = 0
 
     def _stop() -> bool:
         """
@@ -984,9 +983,12 @@ def _scan_available_databases(
     for compartment, home_ids in home_ids_by_compartment.items():
         if _stop():
             break
-        for home_id in (home_ids[:max_db_homes] if max_db_homes is not None else home_ids):
+        for home_id in home_ids:
+            if max_db_homes is not None and homes_scanned >= max_db_homes:
+                break
             if _stop():
                 break
+            homes_scanned += 1
             call_kwargs: dict[str, Any] = {
                 "compartment_id": compartment,
                 "db_home_id": home_id,
@@ -1017,6 +1019,8 @@ def _scan_available_databases(
                 if not more or _stop():
                     break
                 next_page = getattr(response, "next_page", None)
+        if max_db_homes is not None and homes_scanned >= max_db_homes:
+            break
 
     if max_total_databases is not None and len(found) > max_total_databases:
         return found[:max_total_databases], True

@@ -12,7 +12,7 @@ server-agnostic approach and expose a focused, documented public API.
 
 - Python 3.13 or later
 - OCI Python SDK 2.179.0 or later
-- FastMCP 3.4.2 for the optional HTTP IDCS authentication API
+- FastMCP 3.4.5 or later in the 3.x series for the optional HTTP IDCS authentication API
 
 An adopting server normally declares a bounded dependency on this package:
 

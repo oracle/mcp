@@ -9,7 +9,9 @@ wrapper, and the tool logging decorator.
 
 import logging
 import logging.handlers
+import runpy
 import stat
+import warnings
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -387,3 +389,140 @@ def test_http_deployments_refuse_to_fall_back_to_profile_credentials(monkeypatch
     config, signer = auth._config_and_signer()
     assert config["region"] == "us-ashburn-1"
     assert signer is not None
+
+
+def test_logging_conversion_and_state_fall_back_when_platform_helpers_fail(monkeypatch, tmp_path):
+    """Best-effort logging keeps working when home lookup and serializers fail."""
+    monkeypatch.delenv(logging_setup._STATE_DIR_ENV, raising=False)
+    monkeypatch.setattr(
+        logging_setup.Path,
+        "home",
+        classmethod(lambda _cls: _raise(RuntimeError("no home"))),
+    )
+    assert logging_setup._state_dir() == (
+        logging_setup.Path(logging_setup.tempfile.gettempdir()) / logging_setup._STATE_DIR_NAME
+    )
+
+    monkeypatch.setattr(
+        logging_setup.oci.util,
+        "to_dict",
+        lambda obj: {"converted": True} if isinstance(obj, SimpleNamespace) else _raise(TypeError()),
+    )
+    assert logging_setup._safe_jsonable(SimpleNamespace(value=1)) == {"converted": True}
+    assert logging_setup._safe_jsonable(None) is None
+    assert logging_setup._payload_summary(None) == {"type": "none"}
+
+    class BrokenModel:
+        """Pydantic-like value whose conversion fallbacks all fail."""
+
+        __slots__ = ()
+
+        def model_dump(self, **_kwargs):
+            raise RuntimeError("model_dump failed")
+
+        def dict(self, **_kwargs):
+            raise RuntimeError("dict failed")
+
+        @property
+        def __dict__(self):
+            return object()
+
+    assert isinstance(logging_setup._safe_jsonable(BrokenModel()), str)
+
+    class SlottedObject:
+        __slots__ = ()
+
+    monkeypatch.setattr(logging_setup.oci, "util", SimpleNamespace())
+    assert isinstance(logging_setup._safe_jsonable(SlottedObject()), str)
+    monkeypatch.setattr(logging_setup.oci, "util", SimpleNamespace(to_dict=lambda _obj: []))
+    assert isinstance(logging_setup._safe_jsonable(SlottedObject()), str)
+
+    log_file = tmp_path / "server.log"
+    handler = logging_setup._PrivateRotatingFileHandler(str(log_file), encoding="utf-8")
+    try:
+        monkeypatch.setattr(
+            logging_setup.os, "chmod", lambda *_args, **_kwargs: _raise(OSError("read-only"))
+        )
+        stream = handler._open()
+        assert stream is not None
+        stream.close()
+    finally:
+        handler.close()
+
+
+def test_cache_partition_falls_back_when_auth_context_fails(monkeypatch):
+    """Failed tenancy or caller lookups never create a shared cache key."""
+    monkeypatch.setattr(auth, "get_tenancy", lambda: _raise(RuntimeError("no tenancy")))
+    assert cache._tenant_cache_key() == "_default"
+
+    monkeypatch.setattr(auth, "_serving_http", lambda: True)
+    monkeypatch.setattr(auth, "_current_access_token", lambda: _raise(RuntimeError("no context")))
+    first = cache._caller_cache_key()
+    second = cache._caller_cache_key()
+    assert first.startswith("anon:")
+    assert first != second
+
+
+def test_server_module_entrypoint_runs_stdio_main(monkeypatch):
+    """Executing the module as a script reaches its stdio entrypoint."""
+    monkeypatch.delenv("ORACLE_MCP_HOST", raising=False)
+    monkeypatch.delenv("ORACLE_MCP_PORT", raising=False)
+    calls = []
+    monkeypatch.setattr(app.mcp, "run", lambda **kwargs: calls.append(kwargs))
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", message=".*found in sys.modules.*", category=RuntimeWarning
+        )
+        runpy.run_module("oracle.oci_recovery_mcp_server.server", run_name="__main__")
+    assert calls == [{}]
+
+
+def test_auth_context_helpers_use_their_safe_fallbacks(monkeypatch):
+    """Context detection, auth labels, and region discovery degrade safely."""
+    monkeypatch.setattr(auth, "_deprecated_auth_method_override", lambda: None)
+    monkeypatch.setattr(auth, "resolve_auth_type", lambda: _raise(RuntimeError("bad profile")))
+    assert auth._resolved_auth_type_label() == "unresolved"
+
+    monkeypatch.setattr(auth, "get_access_token", lambda: _raise(RuntimeError("no token context")))
+    monkeypatch.setattr(auth, "get_http_request", lambda: object())
+    assert auth._current_access_token() is None
+    assert auth._serving_http() is True
+
+    monkeypatch.setattr(auth, "_serving_http", lambda: True)
+    monkeypatch.delenv("OCI_REGION", raising=False)
+    monkeypatch.setenv("ORACLE_MCP_REGION", "eu-frankfurt-1")
+    assert auth._effective_region(default="us-ashburn-1") == "eu-frankfurt-1"
+
+    monkeypatch.setattr(auth, "_serving_http", lambda: False)
+    monkeypatch.setattr(
+        auth,
+        "_load_oci_config_for_server",
+        lambda: _raise(OSError("profile unavailable")),
+    )
+    monkeypatch.delenv("ORACLE_MCP_REGION", raising=False)
+    monkeypatch.setenv("OCI_REGION", "ap-mumbai-1")
+    assert auth._effective_region(default="us-ashburn-1") == "ap-mumbai-1"
+
+
+def test_auth_http_failure_without_readable_iam_details_is_still_safe(monkeypatch):
+    """A malformed IAM response cannot replace the useful token-exchange error."""
+
+    class UnreadableResponse:
+        @property
+        def status_code(self):
+            raise RuntimeError("response unavailable")
+
+    cause = RuntimeError("wrapped sdk error")
+    cause.response = UnreadableResponse()
+    wrapped = ValueError("wrapped IAM error")
+    wrapped.__cause__ = cause
+
+    class FailingPolicy:
+        def context_for(self, _token, *, region=None):
+            raise wrapped
+
+    monkeypatch.setattr(auth, "_http_auth", FailingPolicy())
+    monkeypatch.setattr(auth, "get_access_token", lambda: None)
+    with pytest.raises(RuntimeError, match="OCI UPST token exchange failed") as excinfo:
+        auth._http_config_and_signer()
+    assert "response unavailable" not in str(excinfo.value)

@@ -216,3 +216,53 @@ def test_limit_lookups_honor_the_requested_region_and_refuse_to_guess_one(monkey
         recovery_tools.check_recovery_service_limits()
     with pytest.raises(ValueError, match="No OCI region could be determined"):
         recovery_tools.check_recovery_service_limits(region="   ")
+
+
+def test_limits_ignore_missing_and_malformed_availability_shapes(monkeypatch):
+    """Empty and unconvertible SDK data return explicit null limit values."""
+    monkeypatch.setattr(auth, "get_tenancy", lambda: "tenant")
+    monkeypatch.setattr(auth, "_effective_region", lambda: "us-phoenix-1")
+    monkeypatch.setattr(
+        recovery_tools.oci.util,
+        "to_dict",
+        lambda _obj: _raise(RuntimeError("conversion unavailable")),
+    )
+    limits_client = MagicMock()
+
+    class BrokenMapping:
+        @property
+        def __dict__(self):
+            return object()
+
+    limits_client.get_resource_availability.side_effect = [
+        _response(None),
+        _response(BrokenMapping()),
+    ]
+    monkeypatch.setattr(clients, "get_limits_client", lambda *_a, **_k: limits_client)
+
+    output = recovery_tools.check_recovery_service_limits()
+    assert output["limits"]["protectedDatabaseBackupStorageGb"]["available"] is None
+    assert output["limits"]["protectedDatabaseCount"]["scopeType"] is None
+
+    limits_client.get_resource_availability.side_effect = [
+        _response(None),
+        _response(object()),
+    ]
+    output = recovery_tools.check_recovery_service_limits()
+    assert output["limits"]["protectedDatabaseCount"]["available"] is None
+
+
+def test_region_subscription_can_be_labeled_with_an_explicit_tenancy(monkeypatch):
+    """An explicit label avoids resolving the server's default tenancy."""
+    monkeypatch.setattr(
+        regions,
+        "_iam_subscribed_regions_with_status",
+        lambda **_kwargs: [{"region": "us-phoenix-1", "status": "READY"}],
+    )
+    monkeypatch.setattr(
+        auth,
+        "get_tenancy",
+        lambda: (_ for _ in ()).throw(AssertionError("explicit tenancy should be used")),
+    )
+    result = recovery_tools.fetch_regions_subscribed(tenancy_id="tenant-explicit")
+    assert result["tenancyId"] == "tenant-explicit"

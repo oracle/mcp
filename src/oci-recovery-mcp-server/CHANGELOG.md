@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- `summarize_protected_database_backup_destination` now sets `truncated` when
+  `max_db_homes` leaves discovered DB Homes unscanned.
+
 ## 3.0.0
 
 Credential handling moves onto the shared `oracle-mcp-common` library end to end, and

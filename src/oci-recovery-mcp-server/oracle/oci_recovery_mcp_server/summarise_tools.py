@@ -912,8 +912,7 @@ def _backup_destinations_for(summary_row: Any, *, get_database) -> tuple[dict, l
         identifier = (
             entry.get("id") or entry.get("backupDestinationId") or entry.get("destinationId")
         )
-        if kind:
-            types.append(kind)
+        types.append(kind)
         if identifier:
             ids.append(identifier)
 
@@ -951,7 +950,7 @@ def _scan_available_databases(
 ) -> tuple[list[Any], bool]:
     """
     Every AVAILABLE database across the given compartments and DB Homes, and whether
-    limit_per_home or max_total_databases left any of them unread.
+    max_db_homes, limit_per_home or max_total_databases left any of them unread.
 
     Three loops deep -- compartment, DB Home, result page -- because that is the shape
     of the API: databases are reached only through a home, and homes only through a
@@ -962,7 +961,12 @@ def _scan_available_databases(
     """
     list_databases = getattr(db_client, "list_databases")
     found: list[Any] = []
-    capped = False
+    # A DB Home cap can omit homes even when every scanned home was read to the end.
+    # Report that partial scope just like the database caps below.
+    capped = max_db_homes is not None and any(
+        len(home_ids[:max_db_homes]) < len(home_ids)
+        for home_ids in home_ids_by_compartment.values()
+    )
 
     def _stop() -> bool:
         """

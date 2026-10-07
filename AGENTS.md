@@ -19,7 +19,7 @@ This is a polyglot reference-implementation monorepo. Packages under `src/` own 
 
 - Follow the [repository scope and setup](README.md) and each package's native README/manifest. Python, TypeScript and Java packages have different runtime and validation interfaces.
 - Use Compute as a structure/model/tool-test reference. Its current credential handling is legacy; use [Common's authentication contracts](src/common/README.md#authentication-module) and the quality requirements below for new authentication work.
-- Before changing Common, inspect declared `oracle-mcp-common` consumers and their manifests. API, Cloud, Database, DB Observability and Document Understanding declare the dependency at this baseline; dependency declarations alone do not establish complete migration or runtime use.
+- Before changing Common, inspect declared `oracle-mcp-common` consumers and their manifests. API, Cloud, Database, DB Observability, Document Understanding and Recovery declare the dependency at this baseline; dependency declarations alone do not establish complete migration or runtime use. Use the [authentication ledger](docs/authentication.md#adoption-ledger) for source paths and the [Common guide](src/common/AGENTS.md#architecture-and-dependencies) for package dependency edges.
 - Preserve package-owned client type, lifecycle, transport and compatibility decisions. See [shared and local gaps](docs/agent-development.md#known-gaps) when implementation and policy differ.
 
 ## Setup, Build and Change Impact
@@ -52,7 +52,7 @@ Broad engineering guides now cover all 34 MCP server components under `src/`, in
 
 ## Known Gaps
 
-The [gap register](docs/agent-development.md#known-gaps) and local guides record Common adoption/source differences, stale native procedures, excluded-package validation limits, Data Studio's coverage threshold, JavaScript's existing subprocess-policy conflict/isolation limits and Java's test/coverage limitations. These are observations to recheck, not policy exceptions or executed validation results.
+The [gap register](docs/agent-development.md#known-gaps) and local guides record Common adoption/source differences, stale native procedures, excluded-package validation limits, JavaScript's existing subprocess-policy conflict/isolation limits and Java's test/coverage limitations. These are observations to recheck, not policy exceptions or executed validation results.
 
 ## Validation
 

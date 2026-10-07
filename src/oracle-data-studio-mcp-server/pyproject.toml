@@ -88,8 +88,4 @@ omit = [
     "**/tests/*",
 ]
 precision = 2
-# Regression gate just below current line coverage (70.52%).
-# Raise this in follow-up PRs as more error-path branches and
-# rarely-used SDK passthroughs get coverage. Keeping a real gate
-# here (not 0) means a future PR cannot silently lower coverage.
-fail_under = 75
+fail_under = 90

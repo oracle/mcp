@@ -41,7 +41,6 @@ Source validation, features, confidence options and parsers affect both tools an
 
 ## Known gaps
 
-- The manifest declares Common and a uv workspace source; no package Moon file supplies an explicit Common task-graph edge.
 - Source definitions and available tests do not establish passing validation or live security/transport behavior. Record actual checks separately through the [shared evidence routes](../../docs/agent-development.md#evidence-and-context-routes).
 
 ## Workflow and context routing

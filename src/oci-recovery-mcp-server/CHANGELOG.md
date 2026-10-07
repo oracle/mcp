@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Summary deadlines now stop compartment discovery between Identity requests.
+- Stdio limits lookups honor `OCI_REGION` before the profile region, matching shared auth.
 - `summarize_protected_database_backup_destination` now sets `truncated` when
   `max_db_homes` leaves discovered DB Homes unscanned, and applies that cap across
   the full compartment scope.

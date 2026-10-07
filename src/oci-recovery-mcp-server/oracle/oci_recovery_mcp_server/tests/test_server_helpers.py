@@ -494,13 +494,21 @@ def test_auth_context_helpers_use_their_safe_fallbacks(monkeypatch):
     assert auth._effective_region(default="us-ashburn-1") == "eu-frankfurt-1"
 
     monkeypatch.setattr(auth, "_serving_http", lambda: False)
+    monkeypatch.setenv("OCI_REGION", "ap-mumbai-1")
+    monkeypatch.setattr(
+        auth,
+        "_load_oci_config_for_server",
+        lambda: {"region": "eu-frankfurt-1"},
+    )
+    assert auth._effective_region() == "ap-mumbai-1"
+
     monkeypatch.setattr(
         auth,
         "_load_oci_config_for_server",
         lambda: _raise(OSError("profile unavailable")),
     )
-    monkeypatch.delenv("ORACLE_MCP_REGION", raising=False)
-    monkeypatch.setenv("OCI_REGION", "ap-mumbai-1")
+    monkeypatch.delenv("OCI_REGION", raising=False)
+    monkeypatch.setenv("ORACLE_MCP_REGION", "ap-mumbai-1")
     assert auth._effective_region(default="us-ashburn-1") == "ap-mumbai-1"
 
 

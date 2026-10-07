@@ -254,11 +254,15 @@ def _effective_region(default: Optional[str] = None) -> Optional[str]:
     """
     Resolve the OCI region without requiring a local config file.
 
-    Over HTTP there is no OCI config file to read, so OCI_REGION supplies the
-    default region; over stdio it is the configured profile's region.
+    OCI_REGION overrides the local profile in the shared auth resolver too, so
+    honor it before reading the profile. ORACLE_MCP_REGION remains a compatibility
+    fallback when OCI_REGION is unset and the profile cannot be read.
     """
     if _serving_http():
         return _first_env("OCI_REGION", "ORACLE_MCP_REGION", default=default)
+    region_override = _first_env("OCI_REGION")
+    if region_override:
+        return region_override
     try:
         return _load_oci_config_for_server().get("region") or default
     except Exception:

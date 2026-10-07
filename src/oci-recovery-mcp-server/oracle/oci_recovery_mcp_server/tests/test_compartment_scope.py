@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from _helpers import _response
+from _helpers import _raise, _response
 import oracle.oci_recovery_mcp_server.models as models
 from oracle.oci_recovery_mcp_server import auth
 from oracle.oci_recovery_mcp_server import recovery_tools
@@ -260,6 +260,159 @@ def test_subtree_expansion_is_incomplete_when_identity_cannot_be_read(monkeypatc
     assert compartments._expand_compartment_scope(
         "root", include_child_compartments=True
     ) == (["root"], True)
+
+
+def test_deadline_stops_full_subtree_pagination_without_caching_partial_results(monkeypatch):
+    """An Identity page that spends the budget stops discovery and is not cached."""
+
+    class Deadline:
+        expired = False
+
+        def reached(self):
+            return self.expired
+
+    deadline = Deadline()
+    identity_client = MagicMock()
+
+    def list_compartments(**_kwargs):
+        deadline.expired = True
+        return _response([SimpleNamespace(id="child", compartment_id="root")], has_next_page=True)
+
+    identity_client.list_compartments.side_effect = list_compartments
+    compartments._STORE.clear()
+    monkeypatch.setattr(clients, "get_identity_client", lambda **_kwargs: identity_client)
+    monkeypatch.setattr(auth, "get_tenancy", lambda: "tenancy")
+
+    assert compartments._expand_compartment_scope(
+        "root", include_child_compartments=True, deadline=deadline
+    ) == (["root"], False)
+    identity_client.list_compartments.assert_called_once()
+    identity_client.get_compartment.assert_not_called()
+    assert len(compartments._STORE) == 0
+
+
+def test_deadline_stops_direct_child_crawl(monkeypatch):
+    """The restricted-IAM fallback stops after an in-flight Identity request."""
+
+    class Deadline:
+        expired = False
+
+        def reached(self):
+            return self.expired
+
+    deadline = Deadline()
+    identity_client = MagicMock()
+
+    def list_compartments(**_kwargs):
+        deadline.expired = True
+        return _response([SimpleNamespace(id="child")], has_next_page=True)
+
+    identity_client.list_compartments.side_effect = list_compartments
+    monkeypatch.setattr(
+        compartments,
+        "_list_all_compartments_until_deadline",
+        lambda *_args, **_kwargs: ([], True),
+    )
+    monkeypatch.setattr(clients, "get_identity_client", lambda **_kwargs: identity_client)
+
+    assert compartments._expand_compartment_scope(
+        "root", include_child_compartments=True, deadline=deadline
+    ) == (["root"], False)
+    identity_client.list_compartments.assert_called_once()
+
+
+def test_name_resolution_timeout_returns_incomplete_scope(monkeypatch):
+    """A display name not found before timeout is partial scope, not a false 404."""
+
+    class Deadline:
+        def reached(self):
+            return True
+
+    assert compartments._compartment_scope_for_tool(
+        "Dev", fetch_for_child_compartment=False, deadline=Deadline()
+    ) == ([], False)
+
+    assert compartments._expand_compartment_scope(
+        "root", include_child_compartments=True, deadline=Deadline()
+    ) == (["root"], False)
+    assert compartments._compartment_scope_for_tool(
+        "ocid1.compartment.oc1..root",
+        fetch_for_child_compartment=False,
+        deadline=Deadline(),
+    ) == (["ocid1.compartment.oc1..root"], False)
+
+
+def test_deadline_scope_stops_before_fallback_requests(monkeypatch):
+    """Expiry during local expansion or before a fallback request returns a partial scope."""
+
+    class ExpiresOnCheck:
+        def __init__(self, expiry_check):
+            self.checks = 0
+            self.expiry_check = expiry_check
+
+        def reached(self):
+            self.checks += 1
+            return self.checks >= self.expiry_check
+
+    monkeypatch.setattr(
+        compartments,
+        "_list_all_compartments_until_deadline",
+        lambda *_a, **_k: (
+            [SimpleNamespace(id="child", compartment_id="root")], True
+        ),
+    )
+    deadline = ExpiresOnCheck(3)
+    assert compartments._expand_compartment_scope(
+        "root", include_child_compartments=True, deadline=deadline
+    ) == (["root"], False)
+
+    monkeypatch.setattr(
+        compartments,
+        "_list_all_compartments_until_deadline",
+        lambda *_a, **_k: ([], True),
+    )
+    identity_client = MagicMock()
+    monkeypatch.setattr(clients, "get_identity_client", lambda **_kwargs: identity_client)
+    for expiry_check in (4, 5, 6):
+        deadline = ExpiresOnCheck(expiry_check)
+        assert compartments._expand_compartment_scope(
+            "root", include_child_compartments=True, deadline=deadline
+        ) == (["root"], False)
+        identity_client.list_compartments.assert_not_called()
+        identity_client.reset_mock()
+
+
+def test_deadline_listing_reports_complete_and_failed_scans(monkeypatch):
+    """Only a complete Identity listing is returned as complete."""
+
+    class Deadline:
+        def reached(self):
+            return False
+
+    tree = [SimpleNamespace(id="root")]
+    monkeypatch.setattr(compartments, "_fetch_all_compartments", lambda **_kwargs: tree)
+    assert compartments._list_all_compartments_until_deadline(Deadline()) == (tree, True)
+
+    monkeypatch.setattr(
+        compartments,
+        "_fetch_all_compartments",
+        lambda **_kwargs: _raise(RuntimeError("identity unavailable")),
+    )
+    assert compartments._list_all_compartments_until_deadline(Deadline()) == ([], False)
+
+
+def test_name_resolution_still_errors_when_scope_is_not_found_before_deadline(monkeypatch):
+    """A live deadline does not hide an actual missing-compartment error."""
+
+    class Deadline:
+        def reached(self):
+            return False
+
+    monkeypatch.setattr(compartments, "get_compartment_by_name", lambda *_a, **_k: None)
+    with pytest.raises(ValueError, match="not found"):
+        compartments._compartment_scope_for_tool(
+            "Missing", fetch_for_child_compartment=False, deadline=Deadline()
+        )
 
 
 def test_compartment_helpers_handle_malformed_items_and_empty_fallbacks(monkeypatch):

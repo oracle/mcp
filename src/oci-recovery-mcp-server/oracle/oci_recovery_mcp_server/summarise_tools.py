@@ -76,6 +76,7 @@ def summarize_protected_database_health(
             comp_id,
             fetch_for_child_compartment=fetch_for_child_compartment,
             request_id=request_id,
+            deadline=deadline,
         )
 
         protected = 0
@@ -274,6 +275,7 @@ def summarize_protected_database_redo_status(
             comp_id,
             fetch_for_child_compartment=fetch_for_child_compartment,
             request_id=request_id,
+            deadline=deadline,
         )
 
         enabled = 0
@@ -466,13 +468,15 @@ def summarize_backup_space_used(
         # discovery is itself a long run of sequential calls, and a budget that starts
         # once it is done does not bound the call the client is waiting on.
         deadline = app._Deadline()
-        comp_id = compartments._resolve_compartment_id(compartment_id, default_to_tenancy=True)
-        client = clients.get_recovery_client(region, request_id=request_id)
         comp_ids, scope_complete = compartments._compartment_scope_for_tool(
-            comp_id,
+            compartment_id,
             fetch_for_child_compartment=fetch_for_child_compartment,
             request_id=request_id,
+            deadline=deadline,
+            default_to_tenancy=True,
         )
+        comp_id = comp_ids[0] if comp_ids else (compartment_id or auth.get_tenancy())
+        client = clients.get_recovery_client(region, request_id=request_id)
 
         sum_gb = 0.0
         scanned = 0
@@ -1086,6 +1090,7 @@ def summarize_protected_database_backup_destination(
             compartment_id,
             fetch_for_child_compartment=fetch_for_child_compartment,
             request_id=request_id,
+            deadline=deadline,
         )
 
         # Discover DB Homes if not specified, then list databases with lifecycle_state=AVAILABLE

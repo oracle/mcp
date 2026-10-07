@@ -240,7 +240,7 @@ def test_database_child_scope_tools_deduplicate_results(monkeypatch):
     monkeypatch.setattr(
         compartments,
         "_compartment_scope_for_tool",
-        lambda compartment_id, fetch_for_child_compartment, request_id=None: (
+        lambda compartment_id, fetch_for_child_compartment, request_id=None, **_kwargs: (
             ["compartment-a", "compartment-b"],
             True,
         ),

@@ -22,8 +22,19 @@ import oci
 from . import auth, cache, clients, logging_setup, telemetry
 
 
-def list_all_compartments_internal(only_one_page: bool, limit=100):
+class _CompartmentDiscoveryDeadline(Exception):
+    """Stop an Identity scan before issuing another request after its budget."""
+
+
+def _check_discovery_deadline(deadline) -> None:
+    if deadline is not None and deadline.reached():
+        raise _CompartmentDiscoveryDeadline
+
+
+def list_all_compartments_internal(only_one_page: bool, limit=100, *, deadline=None):
     """Internal function to get List all compartments in a tenancy"""
+    compartments: list[Any] = []
+    _check_discovery_deadline(deadline)
     # Use IdentityClient to list all accessible ACTIVE compartments and include the root tenancy
     identity_client = clients.get_identity_client()
     response = identity_client.list_compartments(
@@ -33,13 +44,15 @@ def list_all_compartments_internal(only_one_page: bool, limit=100):
         lifecycle_state="ACTIVE",
         limit=limit,
     )
-    compartments = response.data
+    compartments = list(response.data or [])
+    _check_discovery_deadline(deadline)
     # Also include the tenancy itself
     compartments.append(identity_client.get_compartment(compartment_id=auth.get_tenancy()).data)
     if only_one_page:  # limiting the number of items returned
         return compartments
     # Manual pagination loop
     while response.has_next_page:
+        _check_discovery_deadline(deadline)
         response = identity_client.list_compartments(
             compartment_id=auth.get_tenancy(),
             compartment_id_in_subtree=True,
@@ -48,7 +61,8 @@ def list_all_compartments_internal(only_one_page: bool, limit=100):
             page=response.next_page,
             limit=limit,
         )
-        compartments.extend(response.data)
+        compartments.extend(response.data or [])
+        _check_discovery_deadline(deadline)
     return compartments
 
 
@@ -84,7 +98,7 @@ def _cache_partition(**_kwargs) -> str:
 
 
 @cachetools.cached(cache=_STORE, key=_cache_partition, lock=_STORE_LOCK)
-def _fetch_all_compartments(*, request_id: Optional[str] = None) -> list[Any]:
+def _fetch_all_compartments(*, request_id: Optional[str] = None, deadline=None) -> list[Any]:
     """
     Return all accessible ACTIVE compartments in the tenancy (plus root tenancy),
     cached in-process so repeated Identity scans in one session cost one call.
@@ -103,7 +117,10 @@ def _fetch_all_compartments(*, request_id: Optional[str] = None) -> list[Any]:
     rid = request_id or telemetry._current_request_id()
 
     try:
-        comps = list_all_compartments_internal(False)
+        if deadline is None:
+            comps = list_all_compartments_internal(False)
+        else:
+            comps = list_all_compartments_internal(False, deadline=deadline)
 
         # Normalize shape and ensure we always have the root tenancy in the list.
         # list_all_compartments_internal already tries to append tenancy, but we make it robust.
@@ -122,6 +139,7 @@ def _fetch_all_compartments(*, request_id: Optional[str] = None) -> list[Any]:
             normalized.append(c)
 
         if tenancy_id and tenancy_id not in seen_ids:
+            _check_discovery_deadline(deadline)
             try:
                 identity_client = clients.get_identity_client(request_id=rid)
                 t = identity_client.get_compartment(compartment_id=tenancy_id).data
@@ -130,6 +148,9 @@ def _fetch_all_compartments(*, request_id: Optional[str] = None) -> list[Any]:
                 pass
 
         comps = normalized
+        _check_discovery_deadline(deadline)
+    except _CompartmentDiscoveryDeadline:
+        raise
     except Exception as e:
         # Raise rather than return []: cachetools stores whatever comes back, and an
         # empty listing cached for the full TTL would answer "you have no
@@ -159,6 +180,19 @@ def _list_all_compartments_cached(*, request_id: Optional[str] = None) -> list[A
         return _fetch_all_compartments(request_id=request_id)
     except Exception:
         return []
+
+
+def _list_all_compartments_until_deadline(deadline, *, request_id: Optional[str] = None):
+    """Return a complete cached listing, or an incomplete result if discovery stops."""
+    if deadline.reached():
+        return [], False
+    try:
+        compartments = _fetch_all_compartments(request_id=request_id, deadline=deadline)
+    except _CompartmentDiscoveryDeadline:
+        return [], False
+    except Exception:
+        return [], False
+    return compartments, True
 
 
 def _build_children_index(compartments: list[Any]) -> dict[str, list[str]]:
@@ -192,6 +226,7 @@ def _expand_compartment_scope(
     *,
     include_child_compartments: bool,
     request_id: Optional[str] = None,
+    deadline=None,
 ) -> tuple[list[str], bool]:
     """
     Expand a root compartment into a list including all descendant compartments (BFS)
@@ -214,6 +249,8 @@ def _expand_compartment_scope(
     """
     if not include_child_compartments:
         return [root_compartment_id], True
+    if deadline is not None and deadline.reached():
+        return [root_compartment_id], False
 
     cap = int(os.getenv("ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE", "200"))
     rid = request_id or telemetry._current_request_id()
@@ -230,7 +267,13 @@ def _expand_compartment_scope(
 
     # ---------------- Primary: cached full-subtree listing ----------------
     try:
-        comps = _list_all_compartments_cached(request_id=rid)
+        if deadline is None:
+            comps = _list_all_compartments_cached(request_id=rid)
+            listing_complete = True
+        else:
+            comps, listing_complete = _list_all_compartments_until_deadline(deadline, request_id=rid)
+            if deadline.reached():
+                return [root_compartment_id], False
         children_index = _build_children_index(comps)
 
         scope: list[str] = []
@@ -238,6 +281,8 @@ def _expand_compartment_scope(
         queue: list[str] = [root_compartment_id]
 
         while queue:
+            if deadline is not None and deadline.reached():
+                return scope or [root_compartment_id], False
             cid = queue.pop(0)
             if cid in seen:
                 continue
@@ -255,10 +300,13 @@ def _expand_compartment_scope(
 
         # If we found at least one child, we're done.
         if len(scope) > 1:
-            return scope, True
+            return scope, listing_complete
     except Exception:
         # Fall through to direct-children crawl fallback
         pass
+
+    if deadline is not None and deadline.reached():
+        return [root_compartment_id], False
 
     # ---------------- Fallback: direct-children crawl ----------------
     scope = []
@@ -269,6 +317,8 @@ def _expand_compartment_scope(
         queue = [root_compartment_id]
 
         while queue:
+            if deadline is not None and deadline.reached():
+                return scope or [root_compartment_id], False
             pid = queue.pop(0)
             if pid in seen:
                 continue
@@ -280,6 +330,8 @@ def _expand_compartment_scope(
 
             next_page = None
             while True:
+                if deadline is not None and deadline.reached():
+                    return scope, False
                 resp = identity_client.list_compartments(
                     compartment_id=pid,
                     access_level="ACCESSIBLE",
@@ -291,6 +343,8 @@ def _expand_compartment_scope(
                     cid = getattr(c, "id", None) or getattr(c, "ocid", None)
                     if cid and cid not in seen:
                         queue.append(cid)
+                if deadline is not None and deadline.reached():
+                    return scope, False
 
                 has_next = bool(getattr(resp, "has_next_page", False))
                 next_page = getattr(resp, "next_page", None) if has_next else None
@@ -330,16 +384,33 @@ def _compartment_ids_for_tool(
 
 
 def _compartment_scope_for_tool(
-    root_compartment_id: str,
+    root_compartment_id: Optional[str],
     *,
     fetch_for_child_compartment: bool,
     request_id: Optional[str] = None,
+    deadline=None,
+    default_to_tenancy: bool = False,
 ) -> tuple[list[str], bool]:
     """
     Like _compartment_ids_for_tool, but also returns whether the scope is the whole
     subtree. Summary tools use the flag to mark their counts partial.
     """
-    resolved_root = _resolve_compartment_id(root_compartment_id)
+    try:
+        if deadline is None and not default_to_tenancy:
+            resolved_root = _resolve_compartment_id(root_compartment_id)
+        else:
+            resolved_root = _resolve_compartment_id(
+                root_compartment_id,
+                default_to_tenancy=default_to_tenancy,
+                deadline=deadline,
+            )
+    except ValueError:
+        if deadline is not None and deadline.reached():
+            return [], False
+        raise
+
+    if deadline is not None and deadline.reached():
+        return [resolved_root], False
 
     if not fetch_for_child_compartment:
         return [resolved_root], True
@@ -347,11 +418,19 @@ def _compartment_scope_for_tool(
     rid = request_id or telemetry._current_request_id()
 
     try:
-        ids, complete = _expand_compartment_scope(
-            resolved_root,
-            include_child_compartments=True,
-            request_id=rid,
-        )
+        if deadline is None:
+            ids, complete = _expand_compartment_scope(
+                resolved_root,
+                include_child_compartments=True,
+                request_id=rid,
+            )
+        else:
+            ids, complete = _expand_compartment_scope(
+                resolved_root,
+                include_child_compartments=True,
+                request_id=rid,
+                deadline=deadline,
+            )
         if isinstance(ids, list) and ids:
             return [str(x) for x in ids if x], complete
     except Exception:
@@ -403,7 +482,7 @@ def _fetch_db_home_ids_for_compartment(
         return []
 
 
-def get_compartment_by_name(compartment_name: str):
+def get_compartment_by_name(compartment_name: str, *, deadline=None):
     """
     Resolve a compartment display name to its compartment, case-insensitively.
 
@@ -414,7 +493,10 @@ def get_compartment_by_name(compartment_name: str):
     cache is partitioned per caller, so a name still resolves only against the
     compartments that caller may see.
     """
-    compartments = _list_all_compartments_cached()
+    if deadline is None:
+        compartments = _list_all_compartments_cached()
+    else:
+        compartments, _ = _list_all_compartments_until_deadline(deadline)
     # Search for the compartment by name
     for compartment in compartments:
         if compartment.name.lower() == compartment_name.lower():
@@ -432,6 +514,7 @@ def _resolve_compartment_id(
     compartment_input: Optional[str],
     *,
     default_to_tenancy: bool = False,
+    deadline=None,
 ) -> str:
     """
     Accept either a compartment OCID or a compartment display name and return an OCID.
@@ -454,7 +537,10 @@ def _resolve_compartment_id(
     if _looks_like_ocid(candidate):
         return candidate
 
-    compartment = get_compartment_by_name(candidate)
+    if deadline is None:
+        compartment = get_compartment_by_name(candidate)
+    else:
+        compartment = get_compartment_by_name(candidate, deadline=deadline)
     if compartment is None:
         raise ValueError(f"Compartment '{candidate}' not found.")
 

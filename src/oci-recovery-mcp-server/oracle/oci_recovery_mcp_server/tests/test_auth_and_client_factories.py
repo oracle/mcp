@@ -142,6 +142,7 @@ def test_informational_config_reads_same_file_as_the_credentials(monkeypatch, tm
     monkeypatch.setenv("ORACLE_MCP_AUTH_METHOD", "apikey")
     monkeypatch.delenv("TENANCY_ID_OVERRIDE", raising=False)
     monkeypatch.delenv("ORACLE_MCP_TENANCY_ID", raising=False)
+    monkeypatch.delenv("OCI_REGION", raising=False)
 
     config = auth._load_oci_config_for_server()
 

@@ -628,7 +628,11 @@ def test_summary_scans_are_truncated_when_the_compartment_cap_drops_some(monkeyp
     """
     monkeypatch.setenv("ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE", "3")
     tree = [SimpleNamespace(id=f"c{i}", compartment_id="root") for i in range(4)]
-    monkeypatch.setattr(compartments, "_list_all_compartments_cached", lambda **_: tree)
+    monkeypatch.setattr(
+        compartments,
+        "_list_all_compartments_until_deadline",
+        lambda *_a, **_k: (tree, True),
+    )
     monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda cid, **_k: cid)
     recovery_client = MagicMock()
     monkeypatch.setattr(clients, "get_recovery_client", lambda *_a, **_k: recovery_client)

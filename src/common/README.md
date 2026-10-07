@@ -12,7 +12,7 @@ server-agnostic approach and expose a focused, documented public API.
 
 - Python 3.13 or later
 - OCI Python SDK 2.179.0 or later
-- FastMCP 3.4.2 for the optional HTTP IDCS authentication API
+- FastMCP 3.4.5 or later in the 3.x series for the optional HTTP IDCS authentication API
 
 An adopting server normally declares a bounded dependency on this package:
 
@@ -191,6 +191,18 @@ FastMCP's `OCIProvider`. It does not inspect `ORACLE_MCP_HOST` or
 `ORACLE_MCP_PORT`, start the listener, assign `mcp.auth`, read FastMCP request
 context, create a service client, or set `additional_user_agent`; the adopting
 server owns each of those steps.
+
+Pass resource scopes bare, such as `oci_mcp.example.invoke`. IDCS `/authorize`
+accepts only scopes qualified with the resource application's primary audience, so
+the provider sends them to IDCS as `IDCS_AUDIENCE` + scope: in the advertised
+defaults, the authorize request, and refresh requests. `required_scopes` stays bare,
+because it is checked against the issued token's bare `scope` claim. A scope that
+already starts with the audience, or contains `://`, is not qualified again.
+
+FastMCP enables CIMD client registration by default, which makes the server fetch a
+client's metadata URL. On hosts without direct internet egress, pass
+`IDCSHttpAuthOptions(enable_cimd=False)` so clients register with DCR against
+`/register` instead.
 
 | Setting | Purpose |
 | --- | --- |

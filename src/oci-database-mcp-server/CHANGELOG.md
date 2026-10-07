@@ -4,6 +4,10 @@ All notable changes to OCI Database MCP Server are documented in this file.
 
 ## Unreleased
 
+### Fixed
+
+- Allow explicit null for optional region arguments so calls use the configured default region, matching omission.
+
 ### Security
 
 - Updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).

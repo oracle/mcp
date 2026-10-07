@@ -805,7 +805,7 @@ def bootstrap_reports(dbtools_connection_display_name: str) -> str:
         })
 
 @mcp.tool()
-def create_report(dbtools_connection_display_name: str, name: str, sql_query: str, description: str = None, bind_parameters: list = None) -> str:
+def create_report(dbtools_connection_display_name: str, name: str, sql_query: str, description: str | None = None, bind_parameters: list | None = None) -> str:
     """
     Create a new report definition in the report_definitions table.
     
@@ -914,7 +914,7 @@ def create_report(dbtools_connection_display_name: str, name: str, sql_query: st
     })
 
 @mcp.tool()
-def execute_report(dbtools_connection_display_name: str, report_name: str, bind_values: dict = None) -> str:
+def execute_report(dbtools_connection_display_name: str, report_name: str, bind_values: dict | None = None) -> str:
     """
     Execute a report by its name with optional bind parameter values.
     

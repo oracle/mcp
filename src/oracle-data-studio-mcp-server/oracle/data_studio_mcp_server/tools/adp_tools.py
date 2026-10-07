@@ -30,7 +30,7 @@ def register_tools(mcp: FastMCP):
     # ── adp_build_analytic_view ─────────────────────────────────────
     @mcp.tool()
     def adp_build_analytic_view(fact_table: str,
-                                 av_name: str = None,
+                                 av_name: str | None = None,
                                  ctx: Context = None) -> str:
         """Create an Analytic View from a fact table, compile it, and return metadata with a data preview.
 
@@ -107,7 +107,7 @@ def register_tools(mcp: FastMCP):
     @mcp.tool()
     def adp_query_analytic_view(av_name: str,
                                  show_sql: bool = False,
-                                 owner: str = None,
+                                 owner: str | None = None,
                                  max_rows: int = 1000,
                                  ctx: Context = None) -> str:
         """Query data from an Analytic View with auto-discovered dimensions and measures.
@@ -157,7 +157,7 @@ def register_tools(mcp: FastMCP):
 
     # ── 19. adp_analyze_analytic_view ─────────────────────────────────
     @mcp.tool()
-    def adp_analyze_analytic_view(av_name: str, owner: str = None,
+    def adp_analyze_analytic_view(av_name: str, owner: str | None = None,
                                    ctx: Context = None) -> str:
         """Get a full health report for an Analytic View: metadata, measures, dimensions, quality issues, errors.
 
@@ -299,11 +299,11 @@ def register_tools(mcp: FastMCP):
 
     # ── 23. adp_load_from_cloud ───────────────────────────────────────
     @mcp.tool()
-    def adp_load_from_cloud(storage_link: str = None,
-                             object_name: str = None,
-                             target_table: str = None,
+    def adp_load_from_cloud(storage_link: str | None = None,
+                             object_name: str | None = None,
+                             target_table: str | None = None,
                              consumer_group: str = 'LOW',
-                             request_id: str = None,
+                             request_id: str | None = None,
                              ctx: Context = None) -> str:
         """Load a cloud storage object into the database as a table.
 
@@ -385,7 +385,7 @@ def register_tools(mcp: FastMCP):
 
     # ── 24. adp_browse_catalog ──────────────────────────────────────────
     @mcp.tool()
-    def adp_browse_catalog(action: str, catalog_name: str = None,
+    def adp_browse_catalog(action: str, catalog_name: str | None = None,
                             ctx: Context = None) -> str:
         """Browse data catalogs (read-only): list catalogs, get entities, preview data, list database links, list databases, or check a database link.
 
@@ -439,8 +439,8 @@ def register_tools(mcp: FastMCP):
 
     # ── 24b. adp_manage_catalog ──────────────────────────────────────
     @mcp.tool()
-    def adp_manage_catalog(action: str, catalog_name: str = None,
-                            confirm: str = None,
+    def adp_manage_catalog(action: str, catalog_name: str | None = None,
+                            confirm: str | None = None,
                             ctx: Context = None) -> str:
         """Manage data catalogs (admin-only): enable, disable, or unmount catalogs.
 
@@ -479,12 +479,12 @@ def register_tools(mcp: FastMCP):
 
     # ── 25. adp_manage_sharing ────────────────────────────────────────
     @mcp.tool()
-    def adp_manage_sharing(action: str, share_name: str = None,
-                            tables: str = None,
-                            recipient_name: str = None,
-                            email: str = None,
-                            new_name: str = None,
-                            confirm: str = None,
+    def adp_manage_sharing(action: str, share_name: str | None = None,
+                            tables: str | None = None,
+                            recipient_name: str | None = None,
+                            email: str | None = None,
+                            new_name: str | None = None,
+                            confirm: str | None = None,
                             ctx: Context = None) -> str:
         """Manage data sharing: list shares, create share, publish, delete, manage recipients, providers, and more.
 
@@ -640,9 +640,9 @@ def register_tools(mcp: FastMCP):
     # ── 26. adp_manage_analytic_views ────────────────────────────────
     @mcp.tool()
     def adp_manage_analytic_views(action: str,
-                                    av_name: str = None,
-                                    owner: str = None,
-                                    confirm: str = None,
+                                    av_name: str | None = None,
+                                    owner: str | None = None,
+                                    confirm: str | None = None,
                                     ctx: Context = None) -> str:
         """Manage Analytic Views: list all AVs or drop one.
 
@@ -683,17 +683,17 @@ def register_tools(mcp: FastMCP):
     # ── 27. adp_manage_credentials ───────────────────────────────────
     @mcp.tool()
     def adp_manage_credentials(action: str,
-                                 credential_name: str = None,
-                                 username: str = None,
-                                 password: str = None,
-                                 user_ocid: str = None,
-                                 tenancy_ocid: str = None,
-                                 private_key: str = None,
-                                 fingerprint: str = None,
-                                 storage_link_name: str = None,
-                                 uri: str = None,
-                                 description: str = None,
-                                 confirm: str = None,
+                                 credential_name: str | None = None,
+                                 username: str | None = None,
+                                 password: str | None = None,
+                                 user_ocid: str | None = None,
+                                 tenancy_ocid: str | None = None,
+                                 private_key: str | None = None,
+                                 fingerprint: str | None = None,
+                                 storage_link_name: str | None = None,
+                                 uri: str | None = None,
+                                 description: str | None = None,
+                                 confirm: str | None = None,
                                  ctx: Context = None) -> str:
         """Manage cloud credentials and storage links for data loading.
 
@@ -793,8 +793,8 @@ def register_tools(mcp: FastMCP):
     @mcp.tool()
     def adp_ai_chat(question: str,
                       mode: str = 'chat',
-                      tables: str = None,
-                      profile_name: str = None,
+                      tables: str | None = None,
+                      profile_name: str | None = None,
                       max_rows: int = 1000,
                       ctx: Context = None) -> str:
         """Chat with the database using Oracle Select AI in different modes.
@@ -872,10 +872,10 @@ def register_tools(mcp: FastMCP):
     # ── 29. adp_manage_insights ──────────────────────────────────────
     @mcp.tool()
     def adp_manage_insights(action: str,
-                              request_name: str = None,
-                              insight_name: str = None,
-                              viz_id: int = None,
-                              confirm: str = None,
+                              request_name: str | None = None,
+                              insight_name: str | None = None,
+                              viz_id: int | None = None,
+                              confirm: str | None = None,
                               ctx: Context = None) -> str:
         """Manage AI-generated insights: list requests, view results, check status.
 
@@ -934,10 +934,10 @@ def register_tools(mcp: FastMCP):
     # ── 30. adp_manage_db_links ────────────────────────────────────────
     @mcp.tool()
     def adp_manage_db_links(action: str,
-                              db_link_name: str = None,
-                              tables: str = None,
+                              db_link_name: str | None = None,
+                              tables: str | None = None,
                               consumer_group: str = 'LOW',
-                              confirm: str = None,
+                              confirm: str | None = None,
                               ctx: Context = None) -> str:
         """Manage database links and copy/link tables from remote databases.
 
@@ -1014,8 +1014,8 @@ def register_tools(mcp: FastMCP):
     @mcp.tool()
     def adp_get_annotations(object_name: str,
                               object_type: str = 'TABLE',
-                              annotation_owner: str = None,
-                              column_name: str = None,
+                              annotation_owner: str | None = None,
+                              column_name: str | None = None,
                               ctx: Context = None) -> str:
         """Fetch Oracle 23ai annotations on a table/view and its columns — useful for NL→SQL.
 

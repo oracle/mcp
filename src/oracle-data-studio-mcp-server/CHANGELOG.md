@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Allow explicit null for optional tool inputs across Essbase, ADP, and Data Transforms, matching omission.
+
 ### Changed
 
 - Updated locked AnyIO to 4.14.2.

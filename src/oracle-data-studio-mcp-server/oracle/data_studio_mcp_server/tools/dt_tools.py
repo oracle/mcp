@@ -134,7 +134,7 @@ def register_tools(mcp: FastMCP):
     # ── 28b. dt_manage_project ────────────────────────────────────────
     @mcp.tool()
     def dt_manage_project(action: str, project_name: str,
-                           confirm: str = None,
+                           confirm: str | None = None,
                            ctx: Context = None) -> str:
         """Manage Data Transforms projects (admin-only).
 
@@ -230,7 +230,7 @@ def register_tools(mcp: FastMCP):
                             target_connection: str,
                             target_schema: str,
                             target_table: str,
-                            dataflow_name: str = None,
+                            dataflow_name: str | None = None,
                             integration_type: str = 'CONTROL_APPEND',
                             ctx: Context = None) -> str:
         """Create a simple source-to-target dataflow in a Data Transforms project.
@@ -371,7 +371,7 @@ def register_tools(mcp: FastMCP):
 
     # ── 32. dt_browse_data ────────────────────────────────────────────
     @mcp.tool()
-    def dt_browse_data(connection_name: str, schema: str = None,
+    def dt_browse_data(connection_name: str, schema: str | None = None,
                         ctx: Context = None) -> str:
         """Browse schemas and tables available through a Data Transforms connection.
 
@@ -452,15 +452,15 @@ def register_tools(mcp: FastMCP):
     # ── 34. dt_manage_schedule ────────────────────────────────────────
     @mcp.tool()
     def dt_manage_schedule(action: str,
-                            schedule_name: str = None,
-                            project_name: str = None,
-                            resource_name: str = None,
+                            schedule_name: str | None = None,
+                            project_name: str | None = None,
+                            resource_name: str | None = None,
                             resource_type: str = 'dataflow',
-                            frequency: str = None,
-                            time: str = None,
-                            days: str = None,
+                            frequency: str | None = None,
+                            time: str | None = None,
+                            days: str | None = None,
                             status: str = 'INACTIVE',
-                            confirm: str = None,
+                            confirm: str | None = None,
                             ctx: Context = None) -> str:
         """Manage Data Transforms schedules: list, create, or delete.
 
@@ -576,8 +576,8 @@ def register_tools(mcp: FastMCP):
 
     # ── 35. dt_manage_variables ───────────────────────────────────────
     @mcp.tool()
-    def dt_manage_variables(action: str, variable_name: str = None,
-                             value: str = None,
+    def dt_manage_variables(action: str, variable_name: str | None = None,
+                             value: str | None = None,
                              ctx: Context = None) -> str:
         """Manage Data Transforms variables: list, create, or update.
 
@@ -653,16 +653,16 @@ def register_tools(mcp: FastMCP):
     # ── 37. dt_manage_connection ─────────────────────────────────────
     @mcp.tool()
     def dt_manage_connection(action: str,
-                               connection_name: str = None,
-                               connection_type: str = None,
-                               host: str = None,
-                               port: int = None,
-                               service_name: str = None,
-                               user: str = None,
-                               password: str = None,
-                               wallet_path: str = None,
-                               jdbc_url: str = None,
-                               confirm: str = None,
+                               connection_name: str | None = None,
+                               connection_type: str | None = None,
+                               host: str | None = None,
+                               port: int | None = None,
+                               service_name: str | None = None,
+                               user: str | None = None,
+                               password: str | None = None,
+                               wallet_path: str | None = None,
+                               jdbc_url: str | None = None,
+                               confirm: str | None = None,
                                ctx: Context = None) -> str:
         """Manage Data Transforms connections: list, create, delete, or test.
 
@@ -746,12 +746,12 @@ def register_tools(mcp: FastMCP):
     @mcp.tool()
     def dt_manage_dataload(action: str,
                             project_name: str,
-                            dataload_name: str = None,
-                            source_connection: str = None,
-                            source_schema: str = None,
-                            target_connection: str = None,
-                            target_schema: str = None,
-                            tables: str = None,
+                            dataload_name: str | None = None,
+                            source_connection: str | None = None,
+                            source_schema: str | None = None,
+                            target_connection: str | None = None,
+                            target_schema: str | None = None,
+                            tables: str | None = None,
                             load_type: str = 'TRUNCATE',
                             ctx: Context = None) -> str:
         """Manage dataloads in a Data Transforms project.
@@ -838,10 +838,10 @@ def register_tools(mcp: FastMCP):
     # ── 39. dt_manage_data_entities ──────────────────────────────────
     @mcp.tool()
     def dt_manage_data_entities(action: str,
-                                  connection_name: str = None,
-                                  schema_name: str = None,
-                                  entity_name: str = None,
-                                  entity_id: str = None,
+                                  connection_name: str | None = None,
+                                  schema_name: str | None = None,
+                                  entity_name: str | None = None,
+                                  entity_id: str | None = None,
                                   ctx: Context = None) -> str:
         """Manage data entities in Data Transforms: list, get details, or import from a connection.
 
@@ -899,7 +899,7 @@ def register_tools(mcp: FastMCP):
     @mcp.tool()
     def dt_manage_workflow(action: str,
                             project_name: str,
-                            workflow_name: str = None,
+                            workflow_name: str | None = None,
                             ctx: Context = None) -> str:
         """Manage workflows in a Data Transforms project: list, get details, or check existence.
 

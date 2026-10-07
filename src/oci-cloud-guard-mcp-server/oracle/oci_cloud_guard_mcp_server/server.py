@@ -156,7 +156,7 @@ def update_problem_status(
         "OPEN",
         description="Action taken by user. Allowed values are: OPEN, RESOLVED, DISMISSED, CLOSED",
     ),
-    comment: str = Field(None, description="A comment from the user"),
+    comment: Optional[str] = Field(None, description="A comment from the user"),
 ) -> Problem:
     updated_problem_status = oci.cloud_guard.models.UpdateProblemStatusDetails(status=status, comment=comment)
     response = get_cloud_guard_client().update_problem_status(

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Allow explicit null for the optional comment in update_problem_status, matching omission.
+
 ### Security
 
 - Updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).

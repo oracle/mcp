@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Allow explicit null for optional VCN and VLAN filters in list_subnets, list_security_lists, and list_network_security_groups.
+
 ### Security
 
 - Updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).

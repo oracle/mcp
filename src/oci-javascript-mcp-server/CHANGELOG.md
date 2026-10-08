@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- Bound Kubernetes reconciliation listing and propagate standalone reconciler
+  shutdown cancellation into list and deletion requests.
+- Resume Kubernetes deletion watches from the observed resource version and
+  recover expired versions within the original confirmation deadline.
+- Require port-forward WebSocket closure before tunnel cleanup succeeds,
+  including forwarding handles acquired after shutdown begins.
+
 - Require an observed Running Kubernetes pod before runner startup; respect
   cancellation and execution deadlines during the initial readiness request.
 - Select OCI session authentication for named profiles that inherit token

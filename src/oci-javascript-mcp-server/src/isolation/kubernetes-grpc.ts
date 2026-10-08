@@ -144,6 +144,8 @@ export class ClientNodeKubernetesGrpcTransport implements KubernetesGrpcTranspor
     assertActive(deadlineMs, signal);
     let accepted: Socket | undefined;
     let websocket: WebSocketLike | undefined;
+    let forwarding: Promise<void> | undefined;
+    let shuttingDown = false;
     let settled = false;
     let closeResolve!: () => void;
     let closeReject!: (error: Error) => void;
@@ -159,32 +161,32 @@ export class ClientNodeKubernetesGrpcTransport implements KubernetesGrpcTranspor
     };
     const errors = new BoundedSink(64 * 1024);
     const server = createServer(socket => {
-      if (accepted) {
+      if (accepted || shuttingDown) {
         socket.destroy();
         return;
       }
       accepted = socket;
       socket.once("close", () => {
         closeWebSocket(websocket);
-        finish();
       });
       socket.once("error", () => finish(new Error("Kubernetes port-forward failed")));
-      void Promise.resolve().then(() => this.#portForwardFactory(deadlineMs, signal).portForward(
+      forwarding = Promise.resolve().then(() => this.#portForwardFactory(deadlineMs, signal).portForward(
         namespace, podName, [targetPort], socket, errors, socket, 0
       )).then(value => {
         websocket = (typeof value === "function" ? value() : value) as WebSocketLike | undefined;
-        if (settled) {
-          closeWebSocket(websocket);
-          return;
-        }
         if (!websocket) {
           socket.destroy();
           finish(new Error("Kubernetes port-forward failed"));
           return;
         }
-        websocket.once("close", () => finish());
-        websocket.once("error", () => finish(new Error("Kubernetes port-forward failed")));
-      }, () => {
+        const transportClosed = new Promise<void>(resolve => {
+          websocket!.once("close", () => { resolve(); finish(); });
+          websocket!.once("error", () => finish(new Error("Kubernetes port-forward failed")));
+          if (websocket!.readyState > websocket!.CLOSING) { resolve(); finish(); }
+        });
+        if (shuttingDown || settled || socket.destroyed) closeWebSocket(websocket);
+        return transportClosed;
+      }).catch(() => {
         socket.destroy();
         finish(new Error("Kubernetes port-forward failed"));
       });
@@ -207,6 +209,7 @@ export class ClientNodeKubernetesGrpcTransport implements KubernetesGrpcTranspor
       throw new Error("Kubernetes port-forward failed");
     }
     const abort = () => {
+      shuttingDown = true;
       accepted?.destroy();
       closeWebSocket(websocket);
       server.close();
@@ -221,13 +224,15 @@ export class ClientNodeKubernetesGrpcTransport implements KubernetesGrpcTranspor
       closed,
       stop(cleanupDeadlineMs) {
         return stopping ??= (async () => {
+          shuttingDown = true;
           signal.removeEventListener("abort", abort);
           accepted?.destroy();
           closeWebSocket(websocket);
-          await closeServer(server);
+          errors.destroy();
+          await cleanupDeadline(Promise.all([
+            closeServer(server), forwarding
+          ]).then(() => undefined), cleanupDeadlineMs, "Kubernetes port-forward cleanup failed");
           finish();
-          await cleanupDeadline(closed.then(() => undefined, () => undefined), cleanupDeadlineMs,
-            "Kubernetes port-forward cleanup failed");
         })();
       }
     };

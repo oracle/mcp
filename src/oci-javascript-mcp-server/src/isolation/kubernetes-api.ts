@@ -79,7 +79,7 @@ export interface KubernetesApi {
     deadlineMs: number,
     signal?: AbortSignal
   ): Promise<boolean>;
-  listManagedPods(namespace: string, profile: KubernetesProfile): Promise<KubernetesPod[]>;
+  listManagedPods(namespace: string, profile: KubernetesProfile, signal?: AbortSignal): Promise<KubernetesPod[]>;
 }
 
 export function createInClusterKubernetesApi(): KubernetesApi {
@@ -321,65 +321,96 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
     if (signal?.aborted) {
       throw new Error("Kubernetes deletion confirmation cancelled");
     }
-    if (!await this.podExists(namespace, name, signal)) {
-      return true;
-    }
+    if (Date.now() >= deadlineMs) return false;
     return await new Promise((resolve, reject) => {
       let settled = false;
-      let request: AbortController | undefined;
-      let timeout: NodeJS.Timeout | undefined;
+      const controller = new AbortController();
       const finish = (deleted: boolean, error?: Error) => {
-        if (settled) {
-          return;
-        }
+        if (settled) return;
         settled = true;
         clearTimeout(timeout);
         signal?.removeEventListener("abort", cancelled);
-        request?.abort();
+        controller.abort();
         error ? reject(error) : resolve(deleted);
       };
-      const cancelled = () => finish(
-        false,
-        new Error("Kubernetes deletion confirmation cancelled")
-      );
-      signal?.addEventListener("abort", cancelled, { once: true });
-      if (signal?.aborted) {
-        cancelled();
-        return;
-      }
-      timeout = setTimeout(() => finish(false), Math.max(1, deadlineMs - Date.now()));
+      const cancelled = () => finish(false, new Error("Kubernetes deletion confirmation cancelled"));
+      const timeout = setTimeout(() => finish(false), Math.max(1, deadlineMs - Date.now()));
       timeout.unref();
-      void this.#watch.watch(
-        `/api/v1/namespaces/${encodeURIComponent(namespace)}/pods`,
-        { fieldSelector: `metadata.name=${name}` },
-        (event, pod: KubernetesPod) => {
-          if (event === "DELETED" && pod.metadata?.name === name) {
-            finish(true);
-          }
-        },
-        error => {
-          if (isNotFound(error)) {
-            finish(true);
-          } else if (error) {
-            finish(false, new Error("Kubernetes deletion watch failed"));
-          } else {
-            void this.podExists(namespace, name, signal).then(exists => finish(!exists)).catch(
-              () => finish(false, new Error("Kubernetes deletion confirmation failed"))
+      signal?.addEventListener("abort", cancelled, { once: true });
+      if (signal?.aborted) cancelled();
+
+      const observe = async () => {
+        let expiredVersion = false;
+        while (!settled) {
+          if (Date.now() >= deadlineMs) { finish(false); return; }
+          let resourceVersion: string | undefined;
+          try {
+            const current = await this.#core.readNamespacedPod(
+              { name, namespace }, requestSignalOptions(controller.signal)
             );
+            resourceVersion = current.metadata?.resourceVersion;
+            if (expiredVersion && !settled) {
+              // A GET can retain a compacted object version; LIST supplies the current snapshot version.
+              const snapshot = await this.#core.listNamespacedPod(
+                { namespace, fieldSelector: `metadata.name=${name}` }, requestSignalOptions(controller.signal)
+              );
+              if (snapshot.items.length === 0) { finish(true); return; }
+              resourceVersion = snapshot.metadata?.resourceVersion;
+            }
+          } catch (error) {
+            finish(isNotFound(error), isNotFound(error)
+              ? undefined : new Error("Kubernetes deletion confirmation failed"));
+            return;
           }
+          if (settled) return;
+          if (Date.now() >= deadlineMs) { finish(false); return; }
+          if (!resourceVersion) {
+            finish(false, new Error("Kubernetes deletion confirmation failed"));
+            return;
+          }
+          const deleted = await new Promise<boolean>((resolveAttempt, rejectAttempt) => {
+            let request: AbortController | undefined;
+            let attemptSettled = false;
+            const complete = (deleted: boolean, error?: Error) => {
+              if (attemptSettled) return;
+              attemptSettled = true;
+              controller.signal.removeEventListener("abort", aborted);
+              request?.abort();
+              error ? rejectAttempt(error) : resolveAttempt(deleted);
+            };
+            const aborted = () => complete(false);
+            const done = (error: unknown) => {
+              if (isNotFound(error)) complete(true);
+              else if (errorStatus(error) === 410) { expiredVersion = true; complete(false); }
+              else if (!error) complete(false);
+              else complete(false, new Error("Kubernetes deletion watch failed"));
+            };
+            controller.signal.addEventListener("abort", aborted, { once: true });
+            void this.#watch.watch(
+              `/api/v1/namespaces/${encodeURIComponent(namespace)}/pods`,
+              { fieldSelector: `metadata.name=${name}`, resourceVersion },
+              (event, pod: KubernetesPod) => {
+                if (Date.now() >= deadlineMs) finish(false);
+                else if (event === "ERROR") done(pod);
+                else if (event === "DELETED" && pod.metadata?.name === name) complete(true);
+              },
+              done
+            ).then(value => {
+              request = value;
+              if (attemptSettled) request.abort();
+            }).catch(done);
+          });
+          if (deleted) finish(true);
         }
-      ).then(value => {
-        request = value;
-        if (settled) {
-          request.abort();
-        }
-      }).catch(() => finish(false, new Error("Kubernetes deletion watch failed")));
+      };
+      void observe().catch(() => finish(false, new Error("Kubernetes deletion watch failed")));
     });
   }
 
   async listManagedPods(
     namespace: string,
-    profile: KubernetesProfile
+    profile: KubernetesProfile,
+    signal?: AbortSignal
   ): Promise<KubernetesPod[]> {
     const response = await this.#core.listNamespacedPod({
       namespace,
@@ -388,7 +419,7 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
         + "oci.oracle.com/isolation-provider=kubernetes,"
         + `oci.oracle.com/kubernetes-profile=${profile}`
       )
-    });
+    }, requestSignalOptions(signal));
     return response.items;
   }
 }

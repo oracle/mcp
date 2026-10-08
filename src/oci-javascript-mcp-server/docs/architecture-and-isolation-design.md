@@ -468,6 +468,15 @@ the original cleanup deadline; late pod creation triggers compensating deletion.
 Startup observes runner/tunnel failure immediately and fails if either closes
 before final gRPC status; completed gRPC status remains authoritative.
 
+For Kubernetes, confirmed deletion means the pod object is absent from the API.
+It does not establish that the process has stopped on its node: zero-grace
+deletion does not wait for kubelet termination confirmation. The pod active
+deadline and expiry reconciler provide additional cleanup safeguards, subject to
+kubelet and control-plane availability. An unreachable node can continue running
+a process after API-object removal; these profiles do not prove node-level
+termination during an outage. See Kubernetes' [forced pod termination](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#forced-pod-termination)
+semantics.
+
 ### 10.5 Reconciliation
 
 Each host reconciles at startup and periodically. It adopts only pods in the
@@ -475,7 +484,11 @@ configured namespace with the exact manager, provider, and profile labels and a
 well-formed expired timestamp. It preserves unrelated, malformed, other-profile,
 and non-expired pods.
 
-Each candidate receives a five-second delete-and-confirmation bound. A failure
+Listing receives a five-second bound that aborts its API request on timeout.
+The standalone reconciler also propagates shutdown cancellation into listing and
+candidate requests. A stalled listing fails that cycle and permits later
+periodic cycles to run.
+Each candidate receives a separate five-second delete-and-confirmation bound. A failure
 increments the aggregate failure count and processing continues with later
 candidates. Startup consumes the complete summary before failing; periodic host
 and cleanup-only reconciliation emit one sanitized aggregate success/failure

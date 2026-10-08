@@ -6,6 +6,7 @@
 
 import assert from "node:assert/strict";
 import { EventEmitter, getEventListeners, once } from "node:events";
+import { connect } from "node:net";
 import test from "node:test";
 import { Server, ServerCredentials } from "@grpc/grpc-js";
 import { RUNNER_SERVICE } from "../src/grpc.ts";
@@ -20,13 +21,14 @@ import type {
   KubernetesGrpcTunnel,
   KubernetesRunnerHandle
 } from "../src/isolation/kubernetes-grpc.ts";
+import { ClientNodeKubernetesGrpcTransport } from "../src/isolation/kubernetes-grpc.ts";
 import { parseKubernetesConfig } from "../src/isolation/kubernetes-config.ts";
 import { KubernetesIsolationProvider } from "../src/isolation/kubernetes.ts";
 import type { RunnerServer } from "../src/generated/runner.ts";
 import type { SandboxResult } from "../src/types.ts";
 import { runJavaScript } from "../src/sandbox.ts";
 import { conformingPodAdmission, validKataEnvironment } from "./kata-fixtures.ts";
-import { StartupKubernetesApi } from "./kubernetes-startup-fixture.ts";
+import { StartupKubernetesApi, StartupWebSocket } from "./kubernetes-startup-fixture.ts";
 
 test("Kata preflight requires exec and port-forward only on the trusted host", async () => {
   const api = new FakeKubernetesApi();
@@ -171,6 +173,46 @@ test("Kubernetes confirms pod deletion while a real runner websocket is stuck CL
     api.websocket.readyState = 3;
     api.websocket.emit("close");
   }
+});
+
+test("Kubernetes confirms pod deletion while a real tunnel websocket is stuck CLOSING", async t => {
+  const api = new StartupKubernetesApi();
+  const websocket = new StartupWebSocket();
+  websocket.close = () => { websocket.readyState = websocket.CLOSING; };
+  const acquired = Promise.withResolvers<void>();
+  const transport = new ClientNodeKubernetesGrpcTransport(
+    () => ({ exec: async () => assert.fail("unused exec") }),
+    () => ({ portForward: async () => { acquired.resolve(); return websocket as never; } })
+  );
+  let client: ReturnType<typeof connect> | undefined;
+  api.openTunnel = async () => {
+    const tunnel = await transport.openTunnel("execution", "pod", 50051, Date.now() + 5000, new AbortController().signal);
+    const [host, port] = tunnel.address.split(":");
+    client = connect(Number(port), host);
+    client.on("error", () => {});
+    await once(client, "connect");
+    await acquired.promise;
+    await new Promise(resolve => setImmediate(resolve));
+    api.failRunner("error");
+    return tunnel;
+  };
+  const provider = new KubernetesIsolationProvider(parseKubernetesConfig(validKataEnvironment()), api, () => undefined);
+  await provider.preflight({ startReconciliation: false });
+  const execution = provider.run("42", runOptions());
+  assert.equal((await execution.result).error?.message, "isolation provider failed");
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"] });
+  const cleanup = execution.terminate(Date.now() + 1000);
+  const rejected = assert.rejects(cleanup, /Kubernetes execution cleanup failed/);
+  let finished = false;
+  void cleanup.then(() => { finished = true; }, () => { finished = true; });
+  t.after(() => { client?.destroy(); websocket.readyState = 3; websocket.emit("close"); });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(api.deleted, true);
+  assert.equal(await api.waitForPodDeleted(), true);
+  assert.equal(websocket.readyState, websocket.CLOSING);
+  assert.equal(finished, false);
+  t.mock.timers.tick(1000);
+  await rejected;
 });
 
 for (const resource of ["runner", "tunnel"] as const) {

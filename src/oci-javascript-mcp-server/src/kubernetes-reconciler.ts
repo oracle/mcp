@@ -32,7 +32,7 @@ export async function runCleanupReconciler(
     const started = Date.now();
     const correlationId = randomUUID();
     try {
-      const summary = await reconcileExpiredPods(api, config.namespace, config.profile);
+      const summary = await reconcileExpiredPods(api, config.namespace, config.profile, Date.now(), 5_000, signal);
       const failed = summary.failureCount > 0;
       diagnostics(diagnosticEvent(
         config.profile,

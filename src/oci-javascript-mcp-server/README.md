@@ -240,7 +240,13 @@ Admission evidence is reported only as `reviewed-variants-rejected` or
 unverified. During cleanup, the gRPC session, loopback tunnel, exec runner, and
 zero-grace pod deletion plus NotFound confirmation share one absolute cleanup
 deadline; an unconfirmed transport close or deletion returns `isolation provider cleanup
-failed`. Reconciliation bounds each expired candidate to five seconds,
+failed`. Pod deletion confirmation establishes API-object removal, not that
+the process has stopped on its node. Zero-grace deletion can remove the object
+before the kubelet confirms termination. Pod active deadlines and expiry
+reconciliation provide additional cleanup safeguards, but depend on a functioning
+kubelet and control plane; they do not prove termination during a node outage.
+Reconciliation bounds listing to five seconds and each expired candidate to a
+separate five seconds,
 continues after candidate failures, and emits only aggregate success/failure
 counts so later intervals continue without exposing pod names.
 

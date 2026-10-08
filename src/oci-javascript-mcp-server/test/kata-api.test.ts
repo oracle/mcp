@@ -104,6 +104,16 @@ test("client-node admission probes distinguish rejection from API failure", asyn
   await assert.rejects(unavailable.api.dryRunCreatePod("execution", {}), /connection refused/);
 });
 
+test("client-node managed pod listing attaches request cancellation", async () => {
+  const harness = apiHarness();
+  const controller = new AbortController();
+  await harness.api.listManagedPods("execution", "in-cluster", controller.signal);
+  const signal = await configuredSignal(harness.core.listOptions[0]);
+  assert.equal(signal, controller.signal);
+  controller.abort();
+  assert.equal(signal?.aborted, true);
+});
+
 test("client-node pod creation propagates cancellation and deadline to the HTTP request", async () => {
   const alreadyAborted = apiHarness();
   const aborted = new AbortController();
@@ -333,7 +343,7 @@ test("client-node deletion propagates cancellation to HTTP requests and watches"
   controller.abort();
   await assert.rejects(deletion, /confirmation cancelled/);
   assert.equal(harness.watch.abortController.signal.aborted, true);
-  assert.equal(await configuredSignal(harness.core.readOptions[1]), controller.signal);
+  assert.equal((await configuredSignal(harness.core.readOptions[1]))?.aborted, true);
 });
 
 test("client-node deletion confirmation handles every watch completion path", async () => {
@@ -424,6 +434,139 @@ test("client-node request middleware preserves responses after attaching cancell
   assert.equal(await middleware.post(response).toPromise(), response);
 });
 
+test("client-node deletion replays a delete between GET and watch establishment", async () => {
+  const harness = apiHarness();
+  harness.core.readPod = { metadata: { name: "pod", resourceVersion: "123" } };
+  const watch = harness.watch.watch.bind(harness.watch);
+  harness.watch.watch = async (path, query, callback, done) => {
+    const handle = await watch(path, query, callback, done);
+    // Kubernetes only replays this already-completed deletion from the observed version.
+    if (query.resourceVersion === "123") {
+      callback("DELETED", { metadata: { name: "pod", resourceVersion: "124" } });
+    } else {
+      done(new Error("deletion event missed"));
+    }
+    return handle;
+  };
+  assert.equal(await harness.api.waitForPodDeleted("execution", "pod", Date.now() + 1000), true);
+});
+
+for (const delivery of ["completion", "event"] as const) {
+  test(`client-node deletion re-reads after an expired watch version via ${delivery}`, async () => {
+    const harness = apiHarness();
+    const controller = new AbortController();
+    const deletion = harness.api.waitForPodDeleted("execution", "pod", Date.now() + 1000, controller.signal);
+    await new Promise(resolve => setImmediate(resolve));
+    harness.core.readError = { code: 404 };
+    if (delivery === "completion") harness.watch.finish({ statusCode: 410 });
+    else harness.watch.emitPod({ code: 410 } as V1Pod, "ERROR");
+    assert.equal(await deletion, true);
+    assert.equal(harness.watch.abortController.signal.aborted, true);
+    assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+  });
+}
+
+test("client-node deletion recovery retains its deadline and bounds a stalled GET", async t => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout"] });
+  const harness = apiHarness();
+  const controller = new AbortController();
+  const deletion = harness.api.waitForPodDeleted("execution", "pod", Date.now() + 1000, controller.signal);
+  await new Promise(resolve => setImmediate(resolve));
+  t.mock.timers.tick(900);
+  const gate = Promise.withResolvers<void>();
+  harness.core.readBarrier = gate.promise;
+  t.after(() => gate.resolve());
+  harness.watch.finish({ statusCode: 410 });
+  await new Promise(resolve => setImmediate(resolve));
+  t.mock.timers.tick(100);
+  assert.equal(await deletion, false);
+  assert.equal((await configuredSignal(harness.core.readOptions[1]))?.aborted, true);
+  assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+});
+
+test("client-node deletion restarts from the fresh resource version after compaction", async () => {
+  const harness = apiHarness();
+  const deletion = harness.api.waitForPodDeleted("execution", "pod", Date.now() + 1000);
+  await new Promise(resolve => setImmediate(resolve));
+  const first = harness.watch.abortController;
+  harness.watch.abortController = new AbortController();
+  harness.core.readPod = { metadata: { name: "pod", resourceVersion: "200" } };
+  harness.watch.finish({ code: 410 });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(first.signal.aborted, true);
+  assert.deepEqual(harness.watch.calls[1], {
+    path: "/api/v1/namespaces/execution/pods",
+    query: { fieldSelector: "metadata.name=pod", resourceVersion: "200" }
+  });
+  harness.watch.emitPod({ metadata: { name: "pod" } }, "DELETED");
+  assert.equal(await deletion, true);
+});
+
+test("client-node deletion recovers compaction when the pod's version has not changed", async () => {
+  const harness = apiHarness();
+  const deletion = harness.api.waitForPodDeleted("execution", "pod", Date.now() + 1000);
+  await new Promise(resolve => setImmediate(resolve));
+  harness.watch.finish({ code: 410 });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(harness.watch.calls[1], {
+    path: "/api/v1/namespaces/execution/pods",
+    query: { fieldSelector: "metadata.name=pod", resourceVersion: "200" }
+  });
+  harness.watch.emitPod({ metadata: { name: "pod" } }, "DELETED");
+  assert.equal(await deletion, true);
+});
+
+test("client-node compaction recovery confirms absence from the filtered list", async () => {
+  const harness = apiHarness();
+  const deletion = harness.api.waitForPodDeleted("execution", "pod", Date.now() + 1000);
+  await new Promise(resolve => setImmediate(resolve));
+  harness.core.filteredPods = [];
+  harness.watch.finish({ code: 410 });
+  assert.equal(await deletion, true);
+});
+
+test("client-node compaction recovery sanitizes filtered list failures", async () => {
+  const harness = apiHarness();
+  const deletion = harness.api.waitForPodDeleted("execution", "pod", Date.now() + 1000);
+  const rejected = assert.rejects(deletion, error => String(error) === "Error: Kubernetes deletion confirmation failed");
+  await new Promise(resolve => setImmediate(resolve));
+  harness.core.listNamespacedPod = async () => { throw new Error("private endpoint"); };
+  harness.watch.finish({ code: 410 });
+  await rejected;
+});
+
+test("client-node deletion cancels a stalled recovery GET", async () => {
+  const harness = apiHarness();
+  const controller = new AbortController();
+  const deletion = harness.api.waitForPodDeleted("execution", "pod", Date.now() + 1000, controller.signal);
+  const rejected = assert.rejects(deletion, /confirmation cancelled/);
+  await new Promise(resolve => setImmediate(resolve));
+  const gate = Promise.withResolvers<void>();
+  harness.core.readBarrier = gate.promise;
+  harness.watch.finish({ code: 410 });
+  await new Promise(resolve => setImmediate(resolve));
+  controller.abort();
+  await rejected;
+  assert.equal((await configuredSignal(harness.core.readOptions[1]))?.aborted, true);
+  assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+  gate.resolve();
+});
+
+test("client-node repeated expired deletion watches cannot extend the deadline", async t => {
+  t.mock.timers.enable({ apis: ["Date"] });
+  const harness = apiHarness();
+  const deadlineMs = Date.now() + 1000;
+  const watch = harness.watch.watch.bind(harness.watch);
+  harness.watch.watch = async (path, query, callback, done) => {
+    const handle = await watch(path, query, callback, done);
+    t.mock.timers.setTime(Date.now() + 500);
+    done({ code: 410 });
+    return handle;
+  };
+  assert.equal(await harness.api.waitForPodDeleted("execution", "pod", deadlineMs), false);
+  assert.equal(harness.watch.calls.length, 2);
+});
+
 function apiHarness() {
   const core = new FakeCore();
   const node = new FakeNode();
@@ -454,13 +597,15 @@ class FakeCore {
   deleteCalls: Array<{ name: string; namespace: string; gracePeriodSeconds?: number }> = [];
   deleteOptions: Array<ConfigurationOptions | undefined> = [];
   readOptions: Array<ConfigurationOptions | undefined> = [];
-  listCalls: Array<{ namespace: string; labelSelector?: string }> = [];
+  listCalls: Array<{ namespace: string; labelSelector?: string; fieldSelector?: string }> = [];
+  listOptions: Array<ConfigurationOptions | undefined> = [];
+  filteredPods: V1Pod[] | undefined;
   createError: unknown;
   createBarrier: Promise<void> | undefined;
   deleteError: unknown;
   readError: unknown;
   readBarrier: Promise<void> | undefined;
-  readPod: V1Pod = { status: { phase: "Pending" } };
+  readPod: V1Pod = { metadata: { resourceVersion: "1" }, status: { phase: "Pending" } };
 
   async readNamespace(request: { name: string }) {
     this.readNamespaceCalls.push(request);
@@ -501,8 +646,12 @@ class FakeCore {
     return this.readPod;
   }
 
-  async listNamespacedPod(request: { namespace: string; labelSelector?: string }) {
+  async listNamespacedPod(request: { namespace: string; labelSelector?: string; fieldSelector?: string }, options?: ConfigurationOptions) {
     this.listCalls.push(request);
+    this.listOptions.push(options);
+    if (request.fieldSelector) {
+      return { metadata: { resourceVersion: "200" }, items: this.filteredPods ?? [this.readPod] };
+    }
     return { items: [{ metadata: { name: "listed" } }] };
   }
 }

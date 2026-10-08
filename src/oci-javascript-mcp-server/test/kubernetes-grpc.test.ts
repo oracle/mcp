@@ -328,8 +328,89 @@ test("Kubernetes tunnel closes a forwarding websocket that arrives after cleanup
   socket.on("error", () => {});
   await once(socket, "connect");
   while (!resolveForward) await new Promise(resolve => setImmediate(resolve));
-  await tunnel.stop(Date.now() + 5000);
+  const stopping = tunnel.stop(Date.now() + 5000);
+  let stopped = false;
+  void stopping.then(() => { stopped = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(stopped, false);
   resolveForward(websocket);
   await once(websocket, "close");
+  await stopping;
   assert.equal(websocket.readyState, 3);
+});
+
+for (const outcome of ["close", "timeout", "error"] as const) {
+  test(`Kubernetes tunnel cleanup waits for actual websocket closure: ${outcome}`, async t => {
+    const websocket = new FakeWebSocket();
+    websocket.close = () => { websocket.readyState = websocket.CLOSING; };
+    const acquired = Promise.withResolvers<void>();
+    const transport = new ClientNodeKubernetesGrpcTransport(
+      () => ({ exec: async () => assert.fail("not used") }),
+      () => ({ portForward: async () => { acquired.resolve(); return websocket as never; } })
+    );
+    const tunnel = await transport.openTunnel(
+      "sandbox", "pod", 50051, Date.now() + 5000, new AbortController().signal
+    );
+    const [host, portText] = tunnel.address.split(":");
+    const socket = connect(Number(portText), host);
+    socket.on("error", () => {});
+    await once(socket, "connect");
+    await acquired.promise;
+    await new Promise(resolve => setImmediate(resolve));
+    if (outcome === "timeout") t.mock.timers.enable({ apis: ["Date", "setTimeout"] });
+    const stopping = tunnel.stop(Date.now() + 1000);
+    assert.equal(tunnel.stop(Date.now() + 2000), stopping);
+    let stopped = false;
+    void stopping.then(() => { stopped = true; }, () => { stopped = true; });
+    t.after(() => { socket.destroy(); websocket.readyState = 3; websocket.emit("close"); });
+    await new Promise(resolve => setImmediate(resolve));
+    if (outcome === "error") {
+      websocket.emit("error", new Error("private endpoint"));
+      await assert.rejects(tunnel.closed, /Kubernetes port-forward failed/);
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.equal(stopped, false);
+    assert.equal(websocket.readyState, websocket.CLOSING);
+    if (outcome === "timeout") {
+      const rejected = assert.rejects(stopping, /Kubernetes port-forward cleanup failed/);
+      t.mock.timers.tick(1000);
+      await rejected;
+    } else {
+      websocket.readyState = 3;
+      websocket.emit("close");
+      await stopping;
+    }
+  });
+}
+
+test("Kubernetes tunnel stops before any client connects", async () => {
+  const transport = new ClientNodeKubernetesGrpcTransport(
+    () => ({ exec: async () => assert.fail("not used") }),
+    () => ({ portForward: async () => assert.fail("must not forward") })
+  );
+  const tunnel = await transport.openTunnel("sandbox", "pod", 50051, Date.now() + 5000, new AbortController().signal);
+  await tunnel.stop(Date.now() + 1000);
+  await tunnel.closed;
+});
+
+test("Kubernetes tunnel observes a websocket already closed during acquisition", async t => {
+  const websocket = new FakeWebSocket();
+  websocket.readyState = 3;
+  const acquired = Promise.withResolvers<void>();
+  const transport = new ClientNodeKubernetesGrpcTransport(
+    () => ({ exec: async () => assert.fail("not used") }),
+    () => ({ portForward: async () => { acquired.resolve(); return websocket as never; } })
+  );
+  const tunnel = await transport.openTunnel("sandbox", "pod", 50051, Date.now() + 5000, new AbortController().signal);
+  t.after(() => tunnel.stop(Date.now() + 1000));
+  let closed = false;
+  void tunnel.closed.then(() => { closed = true; });
+  const [host, portText] = tunnel.address.split(":");
+  const socket = connect(Number(portText), host);
+  socket.on("error", () => {});
+  t.after(() => socket.destroy());
+  await once(socket, "connect");
+  await acquired.promise;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(closed, true);
 });

@@ -232,6 +232,34 @@ test("background reconciliation recovers from a failed list on the next interval
   ]);
 });
 
+test("background reconciliation aborts a stalled list and recovers on the next interval", async t => {
+  t.mock.timers.enable({ apis: ["Date", "setTimeout", "setInterval"] });
+  const api = new ProfileApi(() => true);
+  let calls = 0;
+  let listSignal: AbortSignal | undefined;
+  api.listManagedPods = async (_namespace, _profile, signal?: AbortSignal) => {
+    calls += 1;
+    if (calls === 1) {
+      listSignal = signal;
+      return await new Promise<KubernetesPod[]>(() => {});
+    }
+    return [];
+  };
+  const results: Array<ReconciliationSummary | undefined> = [];
+  const stop = startExpiryReconciliation(api, "execution", "in-cluster", 100, result => results.push(result));
+  t.after(stop);
+  await new Promise(resolve => setImmediate(resolve));
+  t.mock.timers.tick(5000);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(results, [undefined]);
+  assert.equal(listSignal?.aborted, true);
+  assert.equal(calls, 1);
+  t.mock.timers.tick(100);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(results, [undefined, { deletedNames: [], failureCount: 0 }]);
+  assert.equal(calls, 2);
+});
+
 test("background reconciliation stop permits the active cycle to finish without scheduling another", async t => {
   t.mock.timers.enable({ apis: ["setInterval"] });
   const gate = Promise.withResolvers<void>();

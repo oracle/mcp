@@ -5,6 +5,7 @@
  */
 
 import assert from "node:assert/strict";
+import { getEventListeners } from "node:events";
 import test from "node:test";
 import type { KubernetesApi } from "../src/isolation/kubernetes-api.ts";
 import type { KubernetesDiagnosticEvent } from "../src/isolation/kubernetes-diagnostics.ts";
@@ -137,3 +138,40 @@ test("cleanup-only main accepts injected in-cluster seams for deterministic oper
     diagnostics: () => assert.fail("must not emit")
   });
 });
+
+for (const stage of ["list", "delete"] as const) {
+  test(`cleanup-only reconciler aborts a stalled ${stage} on shutdown`, async t => {
+    const controller = new AbortController();
+    let requestSignal: AbortSignal | undefined;
+    const gate = Promise.withResolvers<never>();
+    const api = {
+      async listManagedPods(_namespace: string, _profile: string, signal?: AbortSignal) {
+        if (stage === "list") {
+          requestSignal = signal;
+          return await gate.promise;
+        }
+        return [{ metadata: {
+          name: "expired", namespace: "execution",
+          labels: { [MANAGED_BY_LABEL]: "oci-javascript-mcp", [PROVIDER_LABEL]: "kubernetes", [PROFILE_LABEL]: "in-cluster" },
+          annotations: { [EXPIRY_ANNOTATION]: new Date(Date.now() - 1000).toISOString() }
+        } }];
+      },
+      async deletePod(_namespace: string, _name: string, signal?: AbortSignal) {
+        requestSignal = signal;
+        return await gate.promise;
+      }
+    } as unknown as KubernetesApi;
+    let finished = false;
+    const running = runCleanupReconciler(api, {
+      profile: "in-cluster", namespace: "execution", reconcileIntervalMs: 100
+    }, controller.signal, () => {}).then(() => { finished = true; });
+    t.after(() => { gate.reject(new Error("test finished")); });
+    await new Promise(resolve => setImmediate(resolve));
+    controller.abort();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(finished, true);
+    assert.equal(requestSignal?.aborted, true);
+    assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+    await running;
+  });
+}

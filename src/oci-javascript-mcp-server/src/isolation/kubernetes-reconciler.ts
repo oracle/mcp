@@ -23,11 +23,20 @@ export async function reconcileExpiredPods(
   namespace: string,
   profile: KubernetesProfile,
   nowMs = Date.now(),
-  candidateTimeoutMs = 5_000
+  candidateTimeoutMs = 5_000,
+  signal?: AbortSignal
 ): Promise<ReconciliationSummary> {
+  if (signal?.aborted) throw new Error("Kubernetes reconciliation cancelled");
   const summary: ReconciliationSummary = { deletedNames: [], failureCount: 0 };
-  const pods = await api.listManagedPods(namespace, profile);
+  const listing = new AbortController();
+  const pods = await withReconciliationDeadline(
+    api.listManagedPods(namespace, profile, listing.signal),
+    Date.now() + 5_000,
+    listing,
+    signal
+  );
   for (const pod of pods) {
+    if (signal?.aborted) throw new Error("Kubernetes reconciliation cancelled");
     const name = expiredManagedPodName(pod, namespace, profile, nowMs);
     if (!name) {
       continue;
@@ -35,14 +44,15 @@ export async function reconcileExpiredPods(
     const deadlineMs = Date.now() + candidateTimeoutMs;
     const controller = new AbortController();
     try {
-      await withCandidateDeadline((async () => {
+      await withReconciliationDeadline((async () => {
         await api.deletePod(namespace, name, controller.signal);
         if (!await api.waitForPodDeleted(namespace, name, deadlineMs, controller.signal)) {
           throw new Error("Kubernetes reconciliation could not confirm pod deletion");
         }
-      })(), deadlineMs, controller);
+      })(), deadlineMs, controller, signal);
       summary.deletedNames.push(name);
     } catch {
+      if (signal?.aborted) throw new Error("Kubernetes reconciliation cancelled");
       summary.failureCount += 1;
     }
   }
@@ -80,20 +90,32 @@ export function startExpiryReconciliation(
   };
 }
 
-function withCandidateDeadline<T>(
+function withReconciliationDeadline<T>(
   promise: Promise<T>,
   deadlineMs: number,
-  controller: AbortController
+  controller: AbortController,
+  signal?: AbortSignal
 ): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(
-      () => {
-        controller.abort();
-        reject(new Error("Kubernetes reconciliation candidate timed out"));
-      },
-      Math.max(1, deadlineMs - Date.now())
-    );
-    promise.then(resolve, reject).finally(() => clearTimeout(timeout));
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", cancelled);
+      callback();
+    };
+    const cancelled = () => finish(() => {
+      controller.abort();
+      reject(new Error("Kubernetes reconciliation cancelled"));
+    });
+    const timeout = setTimeout(() => finish(() => {
+      controller.abort();
+      reject(new Error("Kubernetes reconciliation timed out"));
+    }), Math.max(1, deadlineMs - Date.now()));
+    signal?.addEventListener("abort", cancelled, { once: true });
+    promise.then(value => finish(() => resolve(value)), error => finish(() => reject(error)));
+    if (signal?.aborted) cancelled();
   });
 }
 

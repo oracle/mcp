@@ -552,7 +552,9 @@ def _resource_principal_v212_signer(inputs: _ResolvedInputs) -> Any:
         inputs.resource_principal_rpst_endpoint,
         oci.regions.endpoint_for("auth", region=inputs.region),
     )
-    private_key_path = str(Path(inputs.resource_principal_private_key_path).expanduser())
+    private_key_path = str(
+        Path(inputs.resource_principal_private_key_path).expanduser().absolute()
+    )
     signer_type = _resource_principal_v212_signer_type(
         inputs.resource_principal_rci, inputs.resource_principal_t0
     )
@@ -637,7 +639,7 @@ def _resource_principal_security_context(rci: str, t0: str) -> str:
         if t0_value.tzinfo is None:
             raise ValueError
         now = datetime.datetime.now(datetime.timezone.utc)
-        elapsed_milliseconds = int((now - t0_value).total_seconds() * 1000)
+        elapsed_milliseconds = (now - t0_value) // datetime.timedelta(milliseconds=1)
         if not rci_key or elapsed_milliseconds < 0:
             raise ValueError
         digest = hmac.new(

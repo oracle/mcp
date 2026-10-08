@@ -7,7 +7,7 @@ https://oss.oracle.com/licenses/upl.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -510,6 +510,7 @@ def test_resource_principal_v212_preserves_private_key_symlink(
     target.write_text("private-key", encoding="utf-8")
     key_link = tmp_path / "resource-principal.pem"
     key_link.symlink_to(target)
+    monkeypatch.chdir(tmp_path)
 
     auth.build_auth_context(
         auth.AuthOptions(
@@ -517,13 +518,16 @@ def test_resource_principal_v212_preserves_private_key_symlink(
             region="us-phoenix-1",
             resource_principal_tenancy_id="tenant",
             resource_principal_resource_id="resource",
-            resource_principal_private_key_path=str(key_link),
+            resource_principal_private_key_path="resource-principal.pem",
             resource_principal_rci="c2VjcmV0LXJjaQ==",
             resource_principal_t0="2020-01-01T00:00:00Z",
         )
     )
 
-    assert constructor.call_args.kwargs["private_key"] == str(key_link)
+    private_key = Path(constructor.call_args.kwargs["private_key"])
+    assert private_key == key_link.absolute()
+    assert private_key.is_absolute()
+    assert private_key.is_symlink()
 
 
 def test_resource_principal_tenancy_input_is_ignored_for_other_auth_types(monkeypatch):
@@ -606,6 +610,28 @@ def test_resource_principal_security_context_has_known_signature(monkeypatch):
         "currentUTCTime": "2020-01-01T00:00:01.000000Z",
         "Signature": "65269319",
     }
+
+
+def test_resource_principal_security_context_uses_exact_millisecond_delta(monkeypatch):
+    frozen = datetime(5000, 1, 1, 0, 0, 0, 999999, tzinfo=timezone.utc)
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen if tz else frozen.replace(tzinfo=None)
+
+    monkeypatch.setattr(auth.datetime, "datetime", FrozenDatetime)
+    security_context = json.loads(
+        auth._resource_principal_security_context(
+            "c2VjcmV0LXJjaQ==", "1970-01-01T00:00:00Z"
+        )
+    )
+
+    security_signature = security_context["RPTSecurityContext"]["securitySignature"]
+    assert (frozen - datetime(1970, 1, 1, tzinfo=timezone.utc)) // timedelta(
+        milliseconds=1
+    ) == 95617584000999
+    assert security_signature["Signature"] == "97742332"
 
 
 def test_resource_principal_v212_regenerates_security_context_on_refresh(

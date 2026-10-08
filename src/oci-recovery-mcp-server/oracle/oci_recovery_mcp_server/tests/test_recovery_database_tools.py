@@ -230,6 +230,11 @@ class TestRecoveryDatabaseTools:
         list_db_resp.has_next_page = False
         list_db_resp.next_page = None
         mock_client.list_databases.return_value = list_db_resp
+        list_bk_resp = create_autospec(oci.response.Response)
+        list_bk_resp.data = []
+        list_bk_resp.has_next_page = False
+        list_bk_resp.next_page = None
+        mock_client.list_backups.return_value = list_bk_resp
 
         async with Client(mcp) as client:
             call_tool_result = await client.call_tool(
@@ -382,7 +387,9 @@ class TestRecoveryDatabaseTools:
         assert isinstance(result, list)
         assert len(result) == 1
         assert result[0]["id"] == "db1"
-        mock_fetch_homes.assert_called_once_with("ocid1.compartment.oc1..test", region=None)
+        mock_fetch_homes.assert_called_once_with(
+            "ocid1.compartment.oc1..test", region=None, raise_errors=True
+        )
         # list_databases must be called with the discovered home id
         call_kwargs = db_client.list_databases.call_args.kwargs
         assert call_kwargs.get("db_home_id") == "home1"

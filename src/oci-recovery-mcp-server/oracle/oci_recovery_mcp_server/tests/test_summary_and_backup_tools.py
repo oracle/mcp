@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from _helpers import _raise, _response
+from _helpers import _paged, _raise, _response
 import oracle.oci_recovery_mcp_server.models as models
 from oracle.oci_recovery_mcp_server import app
 from oracle.oci_recovery_mcp_server import auth
@@ -1296,7 +1296,7 @@ def test_summary_deadlines_start_before_discovery(monkeypatch):
     The budget starts when the tool does, so discovery is charged against it.
 
     It used to start only after compartment expansion and, for the destination
-    summary, after one list_db_homes call per compartment in scope -- up to 200 calls
+    summary, after one list_db_homes call per compartment in scope -- one call per compartment
     in a row the deadline never saw. Here the budget is spent before discovery, so
     no DB Home lookup may be made and the result must say it is truncated.
     """
@@ -1572,3 +1572,63 @@ def test_the_scanner_stops_between_requests_not_after_all_of_them():
     )
     assert db_client.list_databases.call_count <= 2
     assert len(found) <= 2
+
+
+def test_latest_backup_time_reads_every_page_and_respects_the_deadline():
+    """
+    The newest backup can be on any page because the listing has no ordering
+    guarantee, so every page is read, and a deadline that cuts paging short raises
+    instead of reporting an older backup as the latest.
+    """
+    pages = _paged(
+        [
+            [],
+            [SimpleNamespace(time_ended="2026-10-01T00:00:00Z")],
+            [SimpleNamespace(time_ended="not-a-date"), SimpleNamespace(time_ended="2026-10-07T00:00:00Z")],
+        ]
+    )
+    assert summarise_tools._latest_backup_time("db1", list_backups=pages) == ("2026-10-07T00:00:00Z", True)
+    with pytest.raises(TimeoutError):
+        summarise_tools._latest_backup_time(
+            "db1", list_backups=pages, deadline=SimpleNamespace(reached=lambda: True)
+        )
+
+
+def test_backup_destination_reads_later_home_and_backup_pages(monkeypatch):
+    """
+    With home discovery left real, the backup-destination summary counts a database
+    whose DB Home is only on a later page, and reports the newest backup when it is
+    on a later backup page.
+    """
+    monkeypatch.setattr(compartments, "_compartment_scope_for_tool", lambda cid, **_kwargs: ([cid], True))
+    db_client = MagicMock()
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+    db_client.list_db_homes.side_effect = _paged([[], [SimpleNamespace(id="home-second")]])
+    db_client.list_databases.return_value = _response([_backup_destination_db(1)])
+    db_client.list_backups.side_effect = _paged(
+        [[{"timeEnded": "2026-10-01T00:00:00Z"}], [{"timeEnded": "2026-10-07T00:00:00Z"}]]
+    )
+
+    summary = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="compartment", region="us-ashburn-1"
+    )
+    assert summary.total_databases == 1
+    assert summary.truncated is False
+    assert db_client.list_databases.call_args.kwargs["db_home_id"] == "home-second"
+    assert "2026-10-07" in str(summary.items[0].last_backup_time)
+
+
+def test_list_backups_compartment_path_discovers_later_db_home_pages(monkeypatch):
+    """Compartment-scoped list_backups reaches databases under a DB Home on a later page."""
+    db_client = MagicMock()
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+    monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_k: [cid])
+    db_client.list_db_homes.side_effect = _paged([[], [SimpleNamespace(id="home-second")]])
+    db_client.list_databases.return_value = _response(
+        [{"id": "db1", "dbUniqueName": "DB1_UNQ", "dbBackupConfig": {"isAutoBackupEnabled": True}}]
+    )
+    db_client.list_backups.return_value = _response([{"id": "b1", "databaseId": "db1"}])
+
+    backups = recovery_tools.list_backups(compartment_id="compartment")
+    assert [b["id"] for b in backups] == ["b1"]
+    assert db_client.list_databases.call_args.kwargs["db_home_id"] == "home-second"

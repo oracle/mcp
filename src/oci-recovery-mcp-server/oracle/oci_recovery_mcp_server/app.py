@@ -41,7 +41,7 @@ _LOCAL_GUIDANCE_TOOL = {**_READ_ONLY_TOOL, "openWorldHint": False}
 mcp = FastMCP(name=__project__)
 
 
-_TOOL_DEADLINE_SECONDS = float(os.getenv("ORACLE_MCP_TOOL_DEADLINE_SECONDS", "120"))
+_TOOL_DEADLINE_SECONDS = float(os.getenv("ORACLE_MCP_TOOL_DEADLINE_SECONDS", "0"))
 
 
 class _Deadline:
@@ -50,10 +50,11 @@ class _Deadline:
     The summary tools issue one request per protected database across every
     compartment in scope, so a large tenancy turns a single tool call into
     hundreds of sequential round trips -- long past the point where an MCP client
-    has given up waiting. Stopping at a deadline and saying so is more useful
-    than a request that never returns. Set ORACLE_MCP_TOOL_DEADLINE_SECONDS to 0
-    to scan without a limit. An OCI request already in flight is allowed to
-    finish; callers check the budget between requests.
+    has given up waiting. By default there is no budget, so a summary always covers
+    every resource in scope; an operator whose clients time out can set
+    ORACLE_MCP_TOOL_DEADLINE_SECONDS to stop at that many seconds and return the
+    partial counts marked truncated. An OCI request already in flight is allowed
+    to finish; callers check the budget between requests.
     """
 
     def __init__(self, seconds: Optional[float] = None):

@@ -12,13 +12,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from _helpers import _raise, _response
+from _helpers import _paged, _raise, _response
 import oracle.oci_recovery_mcp_server.models as models
 from oracle.oci_recovery_mcp_server import auth
 from oracle.oci_recovery_mcp_server import recovery_tools
 from oracle.oci_recovery_mcp_server import app
 from oracle.oci_recovery_mcp_server import clients
 from oracle.oci_recovery_mcp_server import compartments
+from oracle.oci_recovery_mcp_server import telemetry
 
 
 def test_compartment_and_database_home_helpers_resolve_ids(monkeypatch):
@@ -112,7 +113,8 @@ def test_child_compartment_helpers_use_cache_fast_path_and_fallback(monkeypatch)
     with no parent, subtree expansion returns the root alone when children are not
     requested, and falls back to crawling Identity page by page when the cache is
     empty. If expansion fails outright, the tool still scopes to the one resolved
-    compartment rather than failing the call.
+    compartment rather than failing the call, but records the result as partial so
+    the root alone is not presented as the whole subtree.
     """
     monkeypatch.setattr(app.time, "time", lambda: 100.0)
     monkeypatch.setattr(auth, "get_tenancy", lambda: "tenancy")
@@ -183,9 +185,14 @@ def test_child_compartment_helpers_use_cache_fast_path_and_fallback(monkeypatch)
         "_expand_compartment_scope",
         MagicMock(side_effect=RuntimeError("identity unavailable")),
     )
-    assert compartments._compartment_ids_for_tool(
-        "Dev", fetch_for_child_compartment=True
-    ) == ["resolved-Dev"]
+    reasons_token = telemetry._MCP_PARTIAL_RESULT_CONTEXT.set([])
+    try:
+        assert compartments._compartment_ids_for_tool("Dev", fetch_for_child_compartment=True) == [
+            "resolved-Dev"
+        ]
+        assert "Identity could not list it" in telemetry._MCP_PARTIAL_RESULT_CONTEXT.get()[0]
+    finally:
+        telemetry._MCP_PARTIAL_RESULT_CONTEXT.reset(reasons_token)
     # The root alone stands in for a subtree that was never read, so it is not
     # reported as complete.
     assert compartments._compartment_scope_for_tool(
@@ -691,3 +698,67 @@ def test_a_failed_compartment_scan_is_not_served_from_the_cache(monkeypatch):
     # And the good listing *is* cached -- a third call does not scan again.
     assert compartments._list_all_compartments_cached(request_id="rid") == recovered
     assert calls == ["scan", "scan"]
+
+
+def test_db_home_discovery_reads_every_page(monkeypatch):
+    """
+    DB Home discovery follows the paging token under the same compartment scope, so
+    homes that appear only on later pages -- including after an empty first page --
+    are part of the set callers treat as complete. A later page that fails raises
+    when the caller asked for errors, and a reached deadline stops paging.
+    """
+    db_client = MagicMock()
+    db_client.list_db_homes.side_effect = _paged(
+        [[], [SimpleNamespace(id="home-first")], [SimpleNamespace(id="home-second")]]
+    )
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+
+    assert compartments._fetch_db_home_ids_for_compartment("compartment-a") == ["home-first", "home-second"]
+    assert db_client.list_db_homes.call_count == 3
+    assert all(c.kwargs["compartment_id"] == "compartment-a" for c in db_client.list_db_homes.call_args_list)
+
+    deadline = SimpleNamespace(reached=lambda: True)
+    db_client.list_db_homes.reset_mock()
+    assert compartments._fetch_db_home_ids_for_compartment("compartment-a", deadline=deadline) == []
+    assert db_client.list_db_homes.call_count == 1
+
+    first = _paged([[SimpleNamespace(id="home-first")], []])
+    db_client.list_db_homes.side_effect = lambda **kw: (
+        _raise(RuntimeError("page two failed")) if kw.get("page") else first(**kw)
+    )
+    with pytest.raises(RuntimeError, match="page two failed"):
+        compartments._fetch_db_home_ids_for_compartment("compartment-a", raise_errors=True)
+
+
+def test_list_tool_scope_reports_a_capped_subtree_as_partial(monkeypatch):
+    """
+    There is no cap by default. A list tool keeps returning what it scanned when the cap
+    drops compartments, but the call is recorded as partial so the client is told;
+    a subtree that fits records nothing.
+    """
+    monkeypatch.delenv("ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE", raising=False)
+    assert compartments._max_compartments_in_scope() == 0
+
+    tree = [SimpleNamespace(id=f"c{i}", compartment_id="root") for i in range(3)]
+    monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda value, **_kwargs: value)
+    monkeypatch.setattr(compartments, "_list_all_compartments_cached", lambda **_kwargs: tree)
+    reasons_token = telemetry._MCP_PARTIAL_RESULT_CONTEXT.set([])
+    try:
+        assert compartments._compartment_ids_for_tool("root", fetch_for_child_compartment=True) == [
+            "root",
+            "c0",
+            "c1",
+            "c2",
+        ]
+        assert telemetry._MCP_PARTIAL_RESULT_CONTEXT.get() == []
+
+        monkeypatch.setenv("ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE", "2")
+        assert compartments._compartment_ids_for_tool("root", fetch_for_child_compartment=True) == [
+            "root",
+            "c0",
+        ]
+        assert "(2)" in telemetry._MCP_PARTIAL_RESULT_CONTEXT.get()[0]
+    finally:
+        telemetry._MCP_PARTIAL_RESULT_CONTEXT.reset(reasons_token)
+    # Outside a tool call there is nowhere to report to, so noting is a no-op.
+    telemetry._note_partial_result("ignored")

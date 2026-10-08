@@ -854,7 +854,7 @@ def _sorted_keep(xs: list[str]) -> list[str]:
     return sorted([x for x in xs if x])
 
 
-def _latest_backup_time(database_id: str, *, list_backups) -> tuple[Any, bool]:
+def _latest_backup_time(database_id: str, *, list_backups, deadline=None) -> tuple[Any, bool]:
     """
     The most recent backup timestamp for one database, and whether it has any at all.
 
@@ -862,10 +862,25 @@ def _latest_backup_time(database_id: str, *, list_backups) -> tuple[Any, bool]:
     service's own rendering; the parsed instant is used only to decide which is newest.
     A database can have backups whose timestamps are all unreadable, which is why
     "has backups" is reported separately rather than inferred from the timestamp.
+
+    Every page is read: the listing has no ordering guarantee, so the newest backup
+    may be on any of them. A deadline reached before the last page raises rather than
+    reporting an older backup as the latest.
     """
-    resp = list_backups(database_id=database_id)
-    data = getattr(resp.data, "items", resp.data)
-    backups = data if isinstance(data, list) else [data] if data is not None else []
+    backups: list = []
+    next_page = None
+    while True:
+        if next_page is None:
+            resp = list_backups(database_id=database_id)
+        else:
+            resp = list_backups(database_id=database_id, page=next_page)
+        data = getattr(resp.data, "items", resp.data)
+        backups.extend(data if isinstance(data, list) else [data] if data is not None else [])
+        next_page = getattr(resp, "next_page", None) if getattr(resp, "has_next_page", False) else None
+        if not next_page:
+            break
+        if deadline is not None and deadline.reached():
+            raise TimeoutError(f"deadline reached before every backup page of {database_id} was read")
 
     newest = None
     newest_instant = None
@@ -1105,7 +1120,7 @@ def summarize_protected_database_backup_destination(
                 continue
             try:
                 home_ids_by_comp[each_comp] = compartments._fetch_db_home_ids_for_compartment(
-                    each_comp, region=region, raise_errors=True
+                    each_comp, region=region, raise_errors=True, deadline=deadline
                 )
             except Exception:
                 # A compartment whose DB Homes cannot be listed is not one with no
@@ -1189,7 +1204,7 @@ def summarize_protected_database_backup_destination(
             if include_last_backup_time:
                 try:
                     last_backup_time, had_backups = _latest_backup_time(
-                        sid, list_backups=list_bk
+                        sid, list_backups=list_bk, deadline=deadline
                     )
                     if had_backups:
                         has_backups_names.append(name_for_lists)

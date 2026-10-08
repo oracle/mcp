@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+
+- Tools now scan every resource in scope by default, however many there are.
+  `ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE` (was 200) and `ORACLE_MCP_TOOL_DEADLINE_SECONDS`
+  (was 120) now default to `0`, meaning no limit. Set either to restore a bound; a
+  scan that hits it is still reported as `truncated` or with a partial-result warning.
+  Large scans can take minutes, so raise your MCP client's tool timeout if it gives up
+  first.
+- List tools now say when their result is incomplete. With `fetch_for_child_compartment=true`,
+  `list_databases`, `list_backups`, `list_protected_databases`, `list_protection_policies`,
+  `list_recovery_service_subnets`, `list_restore`, `list_db_homes`, `list_db_systems` and
+  `get_recovery_service_metrics` still return what they scanned when the subtree exceeds
+  `ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE` or Identity cannot list it, but the result now
+  carries a warning text block and `_meta.partial_result`. `structuredContent` is
+  unchanged. Before, the partial result looked complete.
+
 ### Fixed
 
 - Summary deadlines now stop compartment discovery between Identity requests.
@@ -14,6 +30,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `summarize_protected_database_backup_destination` now sets `truncated` when
   `max_db_homes` leaves discovered DB Homes unscanned, and applies that cap across
   the full compartment scope.
+- DB Home discovery now reads every result page, so `list_databases`, compartment-scoped
+  `list_backups` and `summarize_protected_database_backup_destination` no longer omit
+  databases under DB Homes past the first page.
+- `list_databases` now reads every database page in each DB Home, starting from `page`
+  when one is given, instead of returning only the first page.
+- `summarize_protected_database_backup_destination` computes `last_backup_time` across
+  every backup page instead of only the first. When the summary deadline cuts paging
+  short, it leaves the value unset and marks the summary `truncated` rather than
+  reporting an older backup as the latest.
+- `list_databases` and compartment-scoped `list_backups` no longer silently return an
+  empty or smaller result when DB Home discovery fails. The unreadable compartment is
+  still skipped, but the result now carries the same partial-result warning, and a
+  `db_home_discovery_skipped_compartment` event is logged.
 
 ## 3.0.0
 

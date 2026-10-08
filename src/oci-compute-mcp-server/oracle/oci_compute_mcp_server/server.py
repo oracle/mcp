@@ -149,8 +149,10 @@ def list_instances(
             data: list[oci.core.models.Instance] = response.data
             for d in data:
                 instance = map_instance(d)
-                instances.append(instance)
-
+                if limit is None or len(instances) < limit:
+                    instances.append(instance)
+                else:
+                    break
         logger.info(f"Found {len(instances)} Instances")
         return instances
 

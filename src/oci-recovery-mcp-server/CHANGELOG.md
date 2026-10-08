@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `max_db_homes` leaves discovered DB Homes unscanned, and applies that cap across
   the full compartment scope.
 
+### Security
+
+- Updated locked AnyIO to 4.15.1; updated locked multidict to 6.9.1; updated locked PyJWT to 2.15.1.
+
 ## 3.0.0
 
 Credential handling moves onto the shared `oracle-mcp-common` library end to end, and

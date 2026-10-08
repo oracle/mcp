@@ -12,6 +12,21 @@ This document routes existing monorepo engineering sources. It introduces no req
 
 For creating or maintaining context itself, use the [repository authoring conventions](agent-context.md). The [Common/Compute authentication application](../src/oci-compute-mcp-server/docs/authentication.md) is a focused topic route; the component guide map below remains the broad engineering entry.
 
+## Engineering topics and workflows
+
+Use these focused routes with root instructions and the applicable component guide. They explain shared criteria and procedures without replacing package contracts or native command definitions.
+
+| Read when | Context | Depends on | Evidence |
+| --- | --- | --- | --- |
+| **Know:** Implementing/reviewing code or tests | [Code quality](code-quality.md#review-criteria), [test quality](test-quality.md#review-criteria) | Root editing/quality rules and [BEST_PRACTICES](../BEST_PRACTICES.md) | Changed source/assertions, native coverage enforcement and recorded runs |
+| **Know:** Changing registration, schemas, lifecycle or transport | [FastMCP](fastmcp.md) | Actual library/import/lock, component runtime constraints and [shared auth](authentication.md) | [Version/source comparison](fastmcp.md#library-and-version), relevant protocol tests and scoped runs |
+| **Know:** Handling limits, aggregation or continuation | [Pagination](pagination.md) | Owning tool's request/result contract and component guide | [Current source patterns](pagination.md#current-patterns), boundary tests and recorded checks |
+| **Know:** Implementing/invoking operations with external effects | [Tool safety](tool-safety.md) | Actual caller permissions, user authorization, root credential/security policy | [Current examples/checks](tool-safety.md#current-examples-and-checks), actual refusals/outcomes when tested |
+| **Do:** Reviewing a local change | [Local-review skill](../.agents/skills/local-review/SKILL.md) | Selected scope, applicable guides and [native validation](#validation-map) | [Review report contract](../.agents/skills/local-review/references/report-template.md), exact snapshot and actual checks |
+| **Do:** Drafting a description or creating a requested draft PR | [PR-authoring skill](../.agents/skills/pr-authoring/SKILL.md) | [CONTRIBUTING](../CONTRIBUTING.md), selected-base [template](../.github/pull_request_template.md), matching review evidence when supplied | Complete branch/local-state comparison, actual validation and publication response |
+
+The [workflow/context plan](plans/agent-workflows-and-engineering-context/implementation-plan.md), [design](plans/agent-workflows-and-engineering-context/proposal.md) and [outcome](plans/agent-workflows-and-engineering-context/outcome.md) record this increment's scope and actual checks. Issue authoring is deferred. A skill route does not itself authorize an external write.
+
 ## Selected component context
 
 The user-approved expansion covers every MCP server component under `src/`: 34 server guides, including the Java toolkit, plus the existing Common library guide and root guidance. Each guide supplies the nine-area engineering profile through local answers, specific shared/native references or explicit gaps. A guide’s existence does not establish server quality or passing behavior evaluation. The [adoption summary](plans/adopt-monorepo-agent-context/adoption-summary.md) separates the original ten-case evaluation from the expanded documentation review.

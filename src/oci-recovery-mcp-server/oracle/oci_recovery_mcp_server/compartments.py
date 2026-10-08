@@ -245,7 +245,7 @@ def _expand_compartment_scope(
       recursively.
 
     Safety:
-    - Cap max compartments scanned via ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE (default 0: no cap).
+    - Cap max compartments scanned via ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE (default 200).
     """
     if not include_child_compartments:
         return [root_compartment_id], True
@@ -359,8 +359,8 @@ def _expand_compartment_scope(
 
 
 def _max_compartments_in_scope() -> int:
-    """The compartment cap for a subtree scan; 0 means no cap."""
-    return int(os.getenv("ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE", "0"))
+    """The compartment cap for a subtree scan (default 200); 0 means no cap."""
+    return int(os.getenv("ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE", "200"))
 
 
 def _compartment_ids_for_tool(

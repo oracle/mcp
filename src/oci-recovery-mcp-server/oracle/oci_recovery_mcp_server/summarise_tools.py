@@ -1146,6 +1146,10 @@ def summarize_protected_database_backup_destination(
         unconfigured_names: list[str] = []
         has_backups_names: list[str] = []
         unreadable_names: list[str] = []
+        # Databases whose backup listing failed or was cut short on some page: their
+        # latest backup is unknown, so the summary is partial even if every database
+        # was discovered.
+        backup_scans_incomplete = 0
 
         get_db = functools.partial(db_client.get_database, retry_strategy=_PER_DATABASE_RETRY_STRATEGY)
         list_bk = functools.partial(db_client.list_backups, retry_strategy=_PER_DATABASE_RETRY_STRATEGY)
@@ -1208,8 +1212,9 @@ def summarize_protected_database_backup_destination(
                     )
                     if had_backups:
                         has_backups_names.append(name_for_lists)
-                except Exception:
-                    pass
+                except Exception as e:
+                    backup_scans_incomplete += 1
+                    logger.warning("Backups of %s could not all be listed; last_backup_time unknown: %s", sid, e)
 
             # Aggregate summary counters and name lists by status/destination
             if status == "CONFIGURED":
@@ -1262,7 +1267,10 @@ def summarize_protected_database_backup_destination(
             unreadable_count=len(unreadable_names),
             unreadable_db_names=_uniq_sorted(unreadable_names),
             items=items,
-            truncated=deadline.expired or scan_capped or not (scope_complete and homes_complete),
+            truncated=deadline.expired
+            or scan_capped
+            or bool(backup_scans_incomplete)
+            or not (scope_complete and homes_complete),
         )
     except Exception as e:
         logger.error(f"Error in summarize_protected_database_backup_destination tool: {e}")

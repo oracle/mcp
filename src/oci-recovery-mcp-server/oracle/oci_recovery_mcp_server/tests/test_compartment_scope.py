@@ -732,12 +732,12 @@ def test_db_home_discovery_reads_every_page(monkeypatch):
 
 def test_list_tool_scope_reports_a_capped_subtree_as_partial(monkeypatch):
     """
-    There is no cap by default. A list tool keeps returning what it scanned when the cap
+    The cap defaults to 200. A list tool keeps returning what it scanned when the cap
     drops compartments, but the call is recorded as partial so the client is told;
     a subtree that fits records nothing.
     """
     monkeypatch.delenv("ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE", raising=False)
-    assert compartments._max_compartments_in_scope() == 0
+    assert compartments._max_compartments_in_scope() == 200
 
     tree = [SimpleNamespace(id=f"c{i}", compartment_id="root") for i in range(3)]
     monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda value, **_kwargs: value)

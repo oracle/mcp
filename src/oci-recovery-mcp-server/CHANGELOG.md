@@ -9,12 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Tools now scan every resource in scope by default, however many there are.
-  `ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE` (was 200) and `ORACLE_MCP_TOOL_DEADLINE_SECONDS`
-  (was 120) now default to `0`, meaning no limit. Set either to restore a bound; a
-  scan that hits it is still reported as `truncated` or with a partial-result warning.
-  Large scans can take minutes, so raise your MCP client's tool timeout if it gives up
-  first.
 - List tools now say when their result is incomplete. With `fetch_for_child_compartment=true`,
   `list_databases`, `list_backups`, `list_protected_databases`, `list_protection_policies`,
   `list_recovery_service_subnets`, `list_restore`, `list_db_homes`, `list_db_systems` and
@@ -36,9 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `list_databases` now reads every database page in each DB Home, starting from `page`
   when one is given, instead of returning only the first page.
 - `summarize_protected_database_backup_destination` computes `last_backup_time` across
-  every backup page instead of only the first. When the summary deadline cuts paging
-  short, it leaves the value unset and marks the summary `truncated` rather than
-  reporting an older backup as the latest.
+  every backup page instead of only the first. When a later page fails or the summary
+  deadline cuts paging short, it leaves the value unset and marks the summary
+  `truncated` rather than reporting an older backup as the latest or a complete scan.
 - `list_databases` and compartment-scoped `list_backups` no longer silently return an
   empty or smaller result when DB Home discovery fails. The unreadable compartment is
   still skipped, but the result now carries the same partial-result warning, and a

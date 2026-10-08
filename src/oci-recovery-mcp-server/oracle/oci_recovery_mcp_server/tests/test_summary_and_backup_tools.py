@@ -1296,7 +1296,7 @@ def test_summary_deadlines_start_before_discovery(monkeypatch):
     The budget starts when the tool does, so discovery is charged against it.
 
     It used to start only after compartment expansion and, for the destination
-    summary, after one list_db_homes call per compartment in scope -- one call per compartment
+    summary, after one list_db_homes call per compartment in scope -- up to 200 calls
     in a row the deadline never saw. Here the budget is spent before discovery, so
     no DB Home lookup may be made and the result must say it is truncated.
     """
@@ -1632,3 +1632,36 @@ def test_list_backups_compartment_path_discovers_later_db_home_pages(monkeypatch
     backups = recovery_tools.list_backups(compartment_id="compartment")
     assert [b["id"] for b in backups] == ["b1"]
     assert db_client.list_databases.call_args.kwargs["db_home_id"] == "home-second"
+
+
+def test_backup_destination_marks_a_failed_later_backup_page_truncated(monkeypatch):
+    """
+    A backup listing that fails after its first page leaves the latest backup unknown,
+    so the full tool leaves last_backup_time unset and reports the summary truncated --
+    it must not read as a complete scan of a database with no backups.
+    """
+    monkeypatch.setattr(compartments, "_compartment_scope_for_tool", lambda cid, **_kwargs: ([cid], True))
+    db_client = MagicMock()
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+    db_client.list_db_homes.return_value = _response([SimpleNamespace(id="home1")])
+    db_client.list_databases.return_value = _response([_backup_destination_db(1)])
+    first_page = _paged([[{"timeEnded": "2026-10-01T00:00:00Z"}], []])
+    db_client.list_backups.side_effect = lambda **kw: (
+        _raise(RuntimeError("page two failed")) if kw.get("page") else first_page(**kw)
+    )
+
+    summary = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="compartment", region="us-ashburn-1"
+    )
+    assert db_client.list_backups.call_count == 2
+    assert summary.items[0].last_backup_time is None
+    assert summary.total_databases == 1
+    assert summary.truncated is True
+
+    # The same database with every page readable is a complete scan.
+    db_client.list_backups.side_effect = _paged([[{"timeEnded": "2026-10-01T00:00:00Z"}]])
+    complete = summarise_tools.summarize_protected_database_backup_destination(
+        compartment_id="compartment", region="us-ashburn-1"
+    )
+    assert complete.items[0].last_backup_time is not None
+    assert complete.truncated is False

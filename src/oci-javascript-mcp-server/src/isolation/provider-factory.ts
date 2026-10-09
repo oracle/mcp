@@ -5,19 +5,13 @@
  */
 
 import type { IsolationProvider } from "../types.ts";
-import {
-  createInClusterKubernetesApi,
-  createKubeconfigKubernetesApi,
-  type KubernetesApi
-} from "./kubernetes-api.ts";
+import type { KubernetesApi } from "./kubernetes-api.ts";
 import {
   parseIsolationProviderName,
   parseKubernetesConfig,
   type LocalDevelopmentConfig
 } from "./kubernetes-config.ts";
 import type { KubernetesDiagnosticSink } from "./kubernetes-diagnostics.ts";
-import { KubernetesIsolationProvider } from "./kubernetes.ts";
-import { PodmanIsolationProvider } from "./podman.ts";
 
 export type ProviderFactoryDependencies = {
   kubernetesApi?: KubernetesApi;
@@ -34,6 +28,7 @@ export async function createIsolationProvider(
 ): Promise<IsolationProvider> {
   const selected = parseIsolationProviderName(environment);
   if (selected === "podman") {
+    const { PodmanIsolationProvider } = await import("./podman.ts");
     const createPodman = dependencies.createPodman
       ?? (options => new PodmanIsolationProvider(options));
     return createPodman({
@@ -43,6 +38,10 @@ export async function createIsolationProvider(
   }
 
   const config = parseKubernetesConfig(environment);
+  const { createInClusterKubernetesApi, createKubeconfigKubernetesApi } = await import(
+    "./kubernetes-api.ts"
+  );
+  const { KubernetesIsolationProvider } = await import("./kubernetes.ts");
   const api = dependencies.kubernetesApi ?? (config.credentialMode === "explicit-kubeconfig"
     ? (dependencies.createKubeconfigApi ?? (value => createKubeconfigKubernetesApi(
       value.kubeconfigPath,

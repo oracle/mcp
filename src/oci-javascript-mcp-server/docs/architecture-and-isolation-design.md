@@ -421,6 +421,15 @@ Omission selects Podman for compatibility. Selecting Kubernetes requires one
 exact `OCI_JAVASCRIPT_KUBERNETES_PROFILE`. Profile-specific variables are
 rejected when they do not belong to the selected profile.
 
+The [provider factory](../src/isolation/provider-factory.ts) loads only the
+selected provider's adapter through dynamic imports. Podman selection loads
+`podman.ts`; Kubernetes selection validates its profile before loading
+`kubernetes-api.ts`, including `@kubernetes/client-node`, and `kubernetes.ts`.
+Importing the factory itself loads neither adapter. The
+[provider-loading test](../test/provider-factory.test.ts) covers factory loading,
+default and explicit Podman selection, and Kubernetes selection with imports
+for the unselected provider blocked.
+
 Selection is trusted startup configuration, never MCP input. Construction and
 preflight are authoritative: the server does not discover an available backend,
 retry guest code elsewhere, or silently weaken isolation.

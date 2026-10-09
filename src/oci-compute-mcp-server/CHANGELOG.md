@@ -9,6 +9,7 @@
 ### Fixed
 
 - `launch_instance` rejects empty `boot_volume_id` values instead of launching from the default image.
+- Enforce the total result limit across paginated Compute MCP tool responses.
 
 ### Security
 

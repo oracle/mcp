@@ -138,12 +138,16 @@ def list_compartments(
     try:
         client = get_identity_client()
 
+        page_limit = limit 
+        if limit is not None and include_root:
+            page_limit = limit - 1
+
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None
 
-        while has_next_page and (limit is None or len(compartments) < limit):
-            remaining = None if limit is None else limit - len(compartments)
+        while has_next_page and (page_limit is None or len(compartments) < page_limit):
+            remaining = (None if limit is None else page_limit - len(compartments))
             kwargs = {
                 "compartment_id": compartment_id,
                 "page": next_page,
@@ -158,7 +162,7 @@ def list_compartments(
 
             data: list[oci.identity.models.Compartment] = response.data
             for d in data:
-                if limit is None or len(compartments) < limit:
+                if page_limit is None or len(compartments) < page_limit:
                     compartments.append(map_compartment(d))
                 else:
                     break

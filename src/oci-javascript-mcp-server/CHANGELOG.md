@@ -7,6 +7,10 @@
 - Preserve OCI status codes, service codes, operation details, and request IDs in
   uncaught `run_javascript` errors so callers can assess failures and retry decisions.
 
+### Security
+
+- Updated @grpc/grpc-js to 1.14.6, proxy-addr to 2.0.8, brace-expansion to 5.0.12, and fast-uri to 3.1.8.
+
 ## 0.1.1 - 2026-09-30
 
 ### Breaking Changes

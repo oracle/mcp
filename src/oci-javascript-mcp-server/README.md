@@ -79,9 +79,12 @@ node --no-node-snapshot node_modules/oci-javascript-mcp-server/scripts/setup-nat
 Configure the installed `oci-javascript-mcp-server` command for your MCP client.
 The setup script checks the installed addon's identity, exact 7.0.0 version, and
 reviewed install command before running only that command with pre/post hooks
-disabled, then verifies that the addon loads. This package pins `isolated-vm`
-to 7.0.0 so consumers receive the reviewed version. Dependency overrides or
-changes to its install script require another review. A published package's
+disabled, then verifies that the addon loads. The repository lockfile resolves
+`isolated-vm` to 7.0.0, but the manifest currently permits `^7.0.0`. Consumer
+resolution can therefore select another 7.x release, which the reviewed setup
+script rejects. The range and exact setup gate need a maintainer decision; do
+not bypass the gate. Dependency overrides or changes to its install script
+require another review. A published package's
 metadata and repository `.npmrc` do not control arbitrary consumer installs;
 consumers must supply `--ignore-scripts` themselves. Native setup uses npm from
 the caller's PATH and requires Node 26 or newer.
@@ -151,8 +154,11 @@ not as the default way to call OCI.
 ## Architecture
 
 The [formal architecture and isolation design](docs/architecture-and-isolation-design.md)
-consolidates the MCP server, OCI broker, provider contract, Kubernetes engine,
-Kata profile layer, trust model, evidence gates, and open design decisions.
+provides the source-reviewed branch baseline for the MCP server, OCI broker,
+provider contract, Kubernetes engine, Kata profile layer, trust model, evidence
+gates, and open design decisions. It separates implemented controls from design
+requirements and unverified deployment claims; its source review did not run
+the listed runtime checks.
 
 ```text
 MCP client

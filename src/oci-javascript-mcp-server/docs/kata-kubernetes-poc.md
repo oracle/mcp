@@ -1,8 +1,15 @@
 # Kata Kubernetes Isolation Provider POC
 
-This guide describes the code-complete `kubernetes` / `kata-in-cluster` proof of concept. It
-is functionally tested with deterministic fake Kubernetes APIs, fake exec
-streams, static manifests, and the normal CI suite. It is not production-ready
+Source-reviewed with branch `b0ad446` on 2026-10-09. Commands and deployment
+controls below were inspected, not executed in this documentation pass. Earlier
+POC evidence claims retain their original scope; this review does not establish
+current cluster enforcement or production admission.
+
+This guide describes the implemented `kubernetes` / `kata-in-cluster` proof of
+concept. Earlier documentation reports functional testing with deterministic
+fake Kubernetes APIs, fake exec streams, static manifests, and the normal CI
+suite. The baseline review inspected these check definitions but did not rerun
+them. It is not production-ready
 or production-admitted. A current security review and the real-cluster evidence
 listed below remain mandatory.
 
@@ -147,10 +154,10 @@ explicitly marks CRI mapping, node runtime, CNI isolation, PID limits,
 RuntimeClass overhead, and image provenance as unverified external evidence.
 The exact deployed admission-policy revision is also explicitly unverified.
 
-Existing host concurrency defaults remain conservative: four active and 64
-queued tool calls unless separately configured. The POC establishes correctness
-for a small fixed number of concurrent executions, not load, throughput,
-capacity, or high-concurrency readiness.
+The server defaults to four active tool calls across both tools and rejects
+overload without an application queue. Fake-provider test definitions cover
+a small fixed number of concurrent executions; they do not establish measured
+load, throughput, capacity, or high-concurrency readiness.
 
 ## Build and immutable image configuration
 

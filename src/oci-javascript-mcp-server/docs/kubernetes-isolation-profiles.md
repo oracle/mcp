@@ -1,5 +1,10 @@
 # Kubernetes Isolation Profiles
 
+Source-reviewed with branch `b0ad446` on 2026-10-09. Commands and deployment
+controls below were inspected, not executed in this documentation pass. Earlier
+POC evidence claims retain their original scope; this review does not establish
+current cluster enforcement or production admission.
+
 The `kubernetes` isolation provider runs each `run_javascript` call in one fresh,
 credential-free pod while using the shared execution-scoped protobuf gRPC transport,
 host-owned OCI broker, nested `isolated-vm`, deadlines, call budgets, result
@@ -51,9 +56,10 @@ corresponding limits and stay within 100–4000 millicores, 128–2048 MiB, and
 16–1024 MiB respectively; the memory-backed `/tmp` size must stay within
 1–64 MiB. Missing, malformed, unequal, or out-of-range values fail closed.
 
-The provider uses conservative host concurrency defaults: four active tool calls
-and 64 queued calls unless the trusted operator sets the existing bounded host
-settings. This POC establishes correctness, not a load or throughput target.
+The server defaults to four active tool calls across both tools, controlled by
+`OCI_JAVASCRIPT_MAX_CONCURRENT_TOOL_CALLS`. Excess calls are rejected; no
+application-level queue or 64-call queue setting is implemented. Test definitions
+cover fixed-concurrency behavior, not a measured load or throughput target.
 
 ## Local development
 

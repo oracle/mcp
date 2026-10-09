@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Draft for technical and security review |
-| Last updated | 2026-10-01 |
+| Status | Source-reviewed branch baseline; design/release criteria remain subject to review |
+| Last updated | 2026-10-09 |
 | Scope | MCP server, OCI broker, isolation-provider contract, Kubernetes execution engine, and Kata profile layer |
 | Intended audience | MCP maintainers, OCI security reviewers, Kubernetes platform operators, and Kata runtime owners |
 | Decision owner | TBD |
@@ -43,31 +43,36 @@ security review are complete.
 
 ## 2. Document authority and current status
 
-This document consolidates the current worktree into one formal system design.
-When sources disagree, authority is applied in this order:
+This document describes the implementation at branch commit `b0ad446` and
+records design/release criteria separately. The baseline was reviewed against
+local source, interfaces, manifests and test definitions on 2026-10-09; no
+runtime or deployment checks were executed in this pass. Source review does not
+establish production approval or that the listed tests currently pass.
 
-1. Current implementation and tests under `src/` and `test/`.
-2. Current OpenSpec capability specifications; archived proposals and designs
-   supply historical context and may describe an earlier transport.
-3. The deployment guides and versioned example manifests.
-4. The earlier internal Confluence design, which remains historical context.
+Repository policy remains owned by root/component instructions and native
+contracts. Implementation and test definitions support descriptive claims;
+requirements and release gates below retain their design-review standing and
+are not asserted to be fully implemented. Where they differ, the gap is explicit.
+Deployment guides describe supported configuration and procedures, not proof
+of effective isolation in a particular cluster. Earlier specification-framework
+material is not the source of the current behavioral baseline.
 
-The internal design describes an earlier `process` provider and future gVisor
-or Firecracker options. Those descriptions are not the current provider model.
-This draft retains the earlier trust-boundary intent but reflects the implemented
-Podman and Kubernetes architecture.
+The earlier internal Confluence design is external historical context and was
+not retrieved for this baseline. Its `process`, gVisor and Firecracker options
+are not the implemented provider model. Current providers are Podman and
+Kubernetes; this document does not choose new application policy.
 
 ### 2.1 Maturity statement
 
 | Area | Worktree status | Production posture |
 | --- | --- | --- |
-| MCP stdio tools and result contract | Implemented and tested | Local/trusted-caller use only |
-| Host OCI broker and SDK-shaped facade | Implemented and tested | Uses the configured host principal; independent per-caller OCI authorization is unresolved |
-| Hostile protobuf gRPC v4 session | Implemented and tested | Requires review with the selected runtime and deployment topology |
+| MCP stdio tools and result contract | Implemented; test definitions present | Local/trusted-caller use only |
+| Host OCI broker and SDK-shaped facade | Implemented; test definitions present | Uses the configured host principal; independent per-caller OCI authorization is unresolved |
+| Hostile protobuf gRPC v4 session | Implemented; test definitions present | Requires review with the selected runtime and deployment topology |
 | Podman provider | Implemented; unset default | Shared-kernel compatibility boundary, not VM-grade isolation |
 | Kubernetes `local-development` | Implemented; opt-in | Development-only container isolation |
 | Kubernetes `in-cluster` | Implemented; opt-in | Standard shared-kernel container isolation |
-| Kubernetes `kata-in-cluster` | Code-complete POC with fake/static evidence | Not production-admitted; real Kata evidence and security review are pending |
+| Kubernetes `kata-in-cluster` | POC implementation with fake/static check definitions | Not production-admitted; real Kata evidence and security review are pending |
 | HTTP or multi-user transport | Not implemented | Out of scope until caller authentication and authorization are designed |
 
 ## 3. Problem statement
@@ -134,6 +139,10 @@ evidence.
 - Supporting OKE virtual nodes for the Kata profile.
 
 ## 5. Requirements
+
+This section preserves design-review intent, not a new policy approved by this
+baseline. In particular, confirmed pod deletion does not establish node-process
+termination, and external runtime/admission guarantees need real evidence.
 
 Normative terms such as **MUST**, **MUST NOT**, and **SHOULD** describe the
 intended design. A requirement is not evidence that a deployment satisfies it.
@@ -202,7 +211,7 @@ provider-neutral gRPC session. The runner cannot connect directly to OCI.
 | Component | Trust | Responsibility |
 | --- | --- | --- |
 | MCP client | Trusted only according to deployment mode | Supplies tool arguments; must not be assumed authenticated in a future shared transport |
-| MCP server | Trusted | Registers tools, validates input, selects the provider at startup, and limits active/queued calls |
+| MCP server | Trusted | Registers tools, validates input, selects the provider at startup, and limits active calls; rejects overload |
 | OCI broker | Trusted | Owns SDK/authentication, validates OCI RPC, enforces budgets, sanitizes responses and errors |
 | Provider factory/configuration | Trusted | Parses closed provider/profile bundles and creates exactly one provider |
 | Kubernetes API adapter | Trusted | Loads one explicit credential source and translates typed lifecycle operations |
@@ -241,12 +250,13 @@ the provider and OCI host before connecting transport, so invalid Kubernetes
 configuration or preflight failure prevents request acceptance.
 
 `run_javascript` validates the code-size and 1–120 second timeout contract,
-applies bounded active and queued call limits, lazily builds OCI reflection
-metadata, and delegates one execution to the selected provider. The host then:
+bounds active tool calls and rejects overload without an application queue,
+lazily builds OCI reflection metadata, and delegates one execution to the
+selected provider. The host then:
 
 1. establishes an absolute deadline and abort signal;
 2. bounds host RPC request size, call count, and concurrent calls;
-3. validates the provider execution handle and result schema;
+3. receives a typed execution handle; the gRPC boundary validates runner result data;
 4. disables new bridge calls and aborts the run before finalization;
 5. starts provider termination and a rejection-observing snapshot drain of
    pending OCI calls concurrently against one host-clamped cleanup deadline; and
@@ -283,6 +293,83 @@ Consequently:
 - HTTP work must define caller authentication, delegated identity or explicit
   host-principal use, authorization, approval, rate-limit, and audit semantics
   before implementation.
+
+### 7.2 Public MCP behavior
+
+[server.ts](../src/server.ts) registers two stdio tools. `run_javascript` accepts
+`code` and a numeric `timeout` of 1–120 seconds, default 30; fractional values
+are accepted and converted to milliseconds. It returns the same object in MCP
+`structuredContent` and JSON text content: `result`, `error`, `stdout`, `stderr`,
+`exit_code`, and `timed_out`. Script/OCI/provider failures are represented in
+those fields. Schema errors, oversize source and overload can reject the tool
+call instead of producing that execution object.
+
+The isolate evaluates a complete script, awaits OCI calls and returns its final
+expression. This uses a source scanner rather than a complete JavaScript parser;
+[sandbox tests](../test/sandbox.test.ts) contain source-preservation and trailing
+comment cases. A successful script with pending OCI work is rejected as described
+in section 13; a caller should await every OCI call.
+
+`discover_oci` accepts optional `service`, `client`, and `operation`. The broker
+returns the corresponding service list, client list, operation list, or bounded
+request/model details derived from installed SDK declarations. It does not run
+guest code or create an isolation execution. Both tools share the active-call
+limit. [Server tests](../test/server.test.ts) define stdio and provider-compatible
+result checks; [OCI host tests](../test/oci-host.test.ts) cover discovery and calls.
+
+### 7.3 Host identity and SDK exposure
+
+[oci-host.ts](../src/oci-host.ts) reads `OCI_CONFIG_FILE` (default the user's
+`.oci/config`) and `OCI_CONFIG_PROFILE` (default `DEFAULT`). It uses SDK profile
+inheritance to select `SessionAuthDetailProvider` when `security_token_file` is
+configured and that constructor exists; otherwise it uses the SDK configuration
+file authentication provider. This path does not implement instance-principal,
+resource-principal, HTTP token exchange, or the Python Common authentication API.
+SDK constructors can emit their own named-profile diagnostics; lookup tests do
+not establish silence across every constructor path.
+
+`oci.config()` exposes identity/region metadata, not keys or tokens. The broker
+exposes API operations backed by SDK request declarations. Guest client options
+allow only a valid `region`; endpoint, signer, credentials, retries and circuit
+breakers remain host-owned. Request decoding lives in [json.ts](../src/json.ts); known tags use coercion
+and defaults rather than exact schemas, and a reserved-key escaped-object
+representation is not implemented. The broker rejects top-level request
+`retryConfiguration`, not all recursive SDK transport-control fields.
+Request-schema discovery is guidance, not complete service-specific input
+validation or per-caller authorization. Each operation
+creates a host SDK client, sets the derived package user agent, disables retries
+and the client circuit breaker, carries the abort signal, and closes the client.
+Pagination uses SDK request `page` and response `opcNextPage`; helper iterators
+and automatic page collection are not exposed.
+
+### 7.4 Defaults and limits
+
+These are source-observed defaults, not deployment capacity guarantees. Shared
+limits are defined in [sandbox-common.ts](../src/sandbox-common.ts), the coordinator
+in [sandbox.ts](../src/sandbox.ts), and transport checks in
+[grpc-execution.ts](../src/isolation/grpc-execution.ts).
+
+| Boundary | Default / behavior | Configuration or owner |
+| --- | --- | --- |
+| Active tool calls | 4; overload rejected, no application queue | `OCI_JAVASCRIPT_MAX_CONCURRENT_TOOL_CALLS` |
+| Source / stdout / stderr | 1 MiB each | Shared constants; source/log UTF-16LE transport preserves code units |
+| Accepted OCI calls / in-flight calls | 100 / 4 per execution | `OCI_JAVASCRIPT_MAX_HOST_RPC_CALLS` / `OCI_JAVASCRIPT_MAX_HOST_RPC_IN_FLIGHT` |
+| OCI request payload | 1 MiB before JSON decoding | `OCI_JAVASCRIPT_MAX_HOST_RPC_REQUEST_BYTES` |
+| OCI response payload | 1 MiB; capped at 2 MiB minus 64 KiB with byte/node traversal limits | `OCI_JAVASCRIPT_MAX_HOST_RPC_RESPONSE_BYTES`; SDK materializes its response before encoding |
+| Isolate memory | 128 MiB default | `OCI_JAVASCRIPT_ISOLATE_MEMORY_MB`; strict 16–1024 MiB under Kubernetes profiles |
+| Result JSON | 1 MiB; maximum 2 MiB minus 64 KiB | `OCI_JAVASCRIPT_MAX_RESULT_BYTES`; separate error validation, no combined result/error budget |
+| JSON payload / structure | 2 MiB; depth 32, string 1 MiB, array 10,000, aggregate keys 10,000, nodes 50,000 | [protocol.ts](../src/protocol.ts); result string limit follows configured result size |
+| Combined protobuf message | 8 MiB plus 64 KiB | Derived `MAX_GRPC_MESSAGE_BYTES` in [grpc.ts](../src/grpc.ts), not the JSON ceiling |
+| Cleanup allowance | Podman uses coordinator default 6 seconds; Kubernetes defaults to 30; coordinator clamps at 60 | Shared concurrent provider termination and pending-OCI drain |
+
+Generic host settings use a positive-integer parser with fallback; it accepts
+numeric prefixes rather than strict whole-string integer grammar. Kubernetes
+profile settings use strict bounded integers instead, including the isolate
+memory and result limits in the [profile guide](kubernetes-isolation-profiles.md).
+The gRPC host limits RPC frames to the configured call budget plus one error
+allowance and requires nonzero IDs, but does not enforce ID uniqueness. Source,
+per-message and recursive JSON limits do not establish a general cumulative
+traffic budget or semantic output policy.
 
 ## 8. Provider-neutral worker protocol
 
@@ -611,13 +698,14 @@ with MCP and OCI audit records without exposing sensitive guest data.
 
 ## 15. Capacity and availability
 
-The server defaults to four active tool calls and 64 queued calls. A Kubernetes
+The server defaults to four active tool calls shared by both tools. It rejects
+excess calls; there is no application-level queue or queue-size setting. A Kubernetes
 invocation creates one pod and exec stream, so cluster API rate limits, image
 availability, scheduling latency, Kata VM startup, resource quota, and cleanup
 latency bound effective capacity.
 
-The current POC demonstrates correctness for a small fixed concurrency set. It
-does not establish throughput, latency, saturation, autoscaling, noisy-neighbor,
+The fake-provider tests define checks for a small fixed concurrency set. They
+do not establish throughput, latency, saturation, autoscaling, noisy-neighbor,
 or cost targets. Production sizing requires measured provider-specific startup
 and teardown distributions plus failure and API-outage behavior.
 
@@ -634,13 +722,13 @@ and teardown distributions plus failure and API-outage behavior.
 - Fake Kubernetes API and exec tests for success, scheduling/image/API/channel
   failure, timeout, cancellation races, permanently pending OCI work, deletion
   confirmation, reconciliation, and multiple isolated executions.
-- MCP stdio integration tests proving identical result fields and sanitization
+- MCP stdio integration test definitions checking identical result fields and sanitization
   across Podman and Kubernetes profiles, including deadline plus one-tail timing.
 - Static manifest tests for service-account separation, RBAC, admission, pod
   shape, NetworkPolicy, RuntimeClass, and reconciler authority.
 - Type checking, at least 90% coverage for statements, branches, functions, and
-  lines, and package-content verification. Strict OpenSpec validation applies
-  to the source-checkout specifications when that tooling is available.
+  lines, and package-content verification. Commands are defined by Moon; no
+  specification-framework validation is part of the current documentation baseline.
 
 ### 16.2 Real-environment validation
 
@@ -655,7 +743,7 @@ and teardown distributions plus failure and API-outage behavior.
 ### 16.3 Release gates
 
 The implementation may be described as a functionally tested POC when normal CI,
-manifest checks, package checks, and applicable OpenSpec validation pass. This
+manifest checks and package checks pass. This
 requires actual clean-install and final-image evidence for the installation
 policy; existing-workspace or synthetic-fixture checks alone do not establish
 those results. It must not
@@ -757,10 +845,6 @@ quota, resource limits, reconciler identity/deployment, or caller/OCI policy.
 
 ### 20.1 Repository sources
 
-- Kubernetes/profile OpenSpec design (source checkout only): `../openspec/changes/archive/2026-08-26-add-kata-kubernetes-isolation-provider/design.md`
-- Kubernetes/profile OpenSpec proposal (source checkout only): `../openspec/changes/archive/2026-08-26-add-kata-kubernetes-isolation-provider/proposal.md`
-- Bounded lifecycle OpenSpec design (source checkout only): `../openspec/changes/archive/2026-08-26-bound-sandbox-deadline-lifecycle/design.md`
-- Bounded lifecycle capability (source checkout only): `../openspec/changes/archive/2026-08-26-bound-sandbox-deadline-lifecycle/specs/bounded-execution-lifecycle/spec.md`
 - [Kubernetes profile guide](kubernetes-isolation-profiles.md)
 - [Kata POC guide](kata-kubernetes-poc.md)
 - Security review rubric (source checkout only): `../SECURITY_REVIEW_RUBRIC.md`

@@ -1,5 +1,10 @@
 # Local Kubernetes in-cluster setup
 
+Procedure reviewed against branch `b0ad446` on 2026-10-09. The local runtime
+and cluster/version observations below are historical setup context; this pass
+did not rerun the workflow or verify that environment. Inspect the actual target
+cluster and immutable images before following deployment steps.
+
 This guide records the local Rancher Desktop workflow for running the OCI
 JavaScript MCP server with the `kubernetes` / `in-cluster` profile. It uses
 [`examples/kubernetes/v1/local-in-cluster.yaml`](../examples/kubernetes/v1/local-in-cluster.yaml),

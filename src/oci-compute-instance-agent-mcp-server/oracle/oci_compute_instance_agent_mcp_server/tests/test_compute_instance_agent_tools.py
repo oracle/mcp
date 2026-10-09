@@ -243,7 +243,7 @@ class TestComputeInstanceAgent:
             ).structured_content["result"]
 
         # Verify pagination and mapping of content subtypes
-        assert len(result) == 3
+        assert len(result) == 2
         # First is TEXT
         assert result[0]["instance_agent_command_id"] == "cmd-text-1"
         assert result[0]["content"]["output_type"] == "TEXT"
@@ -259,7 +259,13 @@ class TestComputeInstanceAgent:
         assert first_kwargs["page"] is None
         assert first_kwargs["limit"] == limit
         assert second_kwargs["page"] == "token-1"
-        assert second_kwargs["limit"] == limit
+        assert second_kwargs["limit"] == 1
+
+        # Verify the requested limit decreases with each page
+        assert [
+            call.kwargs["limit"]
+            for call in mock_client.list_instance_agent_command_executions.call_args_list
+        ] == [2, 1]
 
     @pytest.mark.asyncio
     @patch("oracle.oci_compute_instance_agent_mcp_server.server.get_compute_instance_agent_client")

@@ -870,3 +870,75 @@ class TestGetClient:
         assert isinstance(config["additional_user_agent"], str) and "/" in config["additional_user_agent"]
         # Returned object is client instance
         assert srv_client is mock_client.return_value
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_list_images_filtered_pagination_respects_limit(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        # First page contains no matching images but has another page.
+        resp_page_1 = create_autospec(oci.response.Response)
+        resp_page_1.data = [
+            oci.core.models.Image(
+                id="ubuntu-image",
+                display_name="Ubuntu Image",
+                operating_system="Ubuntu",
+                operating_system_version="22.04",
+            )
+        ]
+        resp_page_1.has_next_page = True
+        resp_page_1.next_page = "token-1"
+
+        # The second page deliberately returns more matching images than
+        # the remaining allowance to verify local limit enforcement.
+        resp_page_2 = create_autospec(oci.response.Response)
+        resp_page_2.data = [
+            oci.core.models.Image(
+                id="oracle-image-1",
+                display_name="Oracle Linux 1",
+                operating_system="Oracle Linux",
+                operating_system_version="8",
+            ),
+            oci.core.models.Image(
+                id="oracle-image-2",
+                display_name="Oracle Linux 2",
+                operating_system="Oracle Linux",
+                operating_system_version="8",
+            ),
+            oci.core.models.Image(
+                id="oracle-image-3",
+                display_name="Oracle Linux 3",
+                operating_system="Oracle Linux",
+                operating_system_version="8",
+            ),
+        ]
+        resp_page_2.has_next_page = False
+        resp_page_2.next_page = None
+
+        mock_client.list_images.side_effect = [resp_page_1, resp_page_2]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_images",
+                    {
+                        "compartment_id": "test_compartment",
+                        "operating_system": "Oracle Linux",
+                        "limit": 2,
+                    },
+                )
+            ).structured_content["result"]
+
+        # Only matching images count toward the emitted result limit.
+        assert len(result) == 2
+        assert [image["id"] for image in result] == [
+            "oracle-image-1",
+            "oracle-image-2",
+        ]
+
+        # Continue after the filtered-out page and pass the remaining allowance.
+        calls = mock_client.list_images.call_args_list
+        assert [call.kwargs["limit"] for call in calls] == [2, 2]
+        assert calls[0].kwargs["page"] is None
+        assert calls[1].kwargs["page"] == "token-1"

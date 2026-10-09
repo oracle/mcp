@@ -33,6 +33,15 @@ mcp-server-name/
 
 3. **Use clear and consistent naming conventions**
 
+### Code quality
+
+- Add abstractions and helpers for demonstrated behavior, meaningful boundaries or reuse; avoid speculative frameworks and pass-through wrappers that add no responsibility.
+- Reuse owning common packages instead of duplicating their logic. Preserve package-owned client and lifecycle decisions.
+- Handle expected errors explicitly; do not turn an unexpected failure into a successful empty/default result.
+- Keep type/lint suppressions narrow and justified, comments explanatory, and changes focused on the requested behavior.
+
+Use [code-quality criteria and examples](docs/code-quality.md#review-criteria) when implementing or reviewing these requirements.
+
 ### Entry Points
 
 MCP servers should follow these guidelines for application entry points:
@@ -119,6 +128,8 @@ env_copy["OCI_SDK_APPEND_USER_AGENT"] = _ADDITIONAL_UA
 Note: always remove `-server` from the end of the `__project__` name; ex `oci-cloud-mcp`.
 
 ## OCI SDK authentication
+
+See the [shared authentication integration guide](docs/authentication.md) for server responsibilities, missing-capability handling and the source-based [adoption ledger](docs/authentication.md#adoption-ledger). Common's README remains the detailed public API contract.
 
 Python MCP servers that construct OCI SDK clients should use the shared
 `oracle-mcp-common` package instead of duplicating credential resolution,
@@ -259,7 +270,7 @@ Use file oracle/oci_compute_mcp_server/models.py as an example of how to do this
 
 MCP tool functions should use spread parameters with Pydantic's `Field` for detailed descriptions:
 
-Here is an example for [list_instances](src/oci-compute-mcp-server/oracle/oci_compute_mcp_server/server.py)
+This signature-only illustration uses the parameters of [list_instances](src/oci-compute-mcp-server/oracle/oci_compute_mcp_server/server.py). Its body is deliberately omitted; Compute's current whole-page loop is not a safe hard-total-cap implementation template.
 
 ```python
 @mcp.tool(description="List Instances in a given compartment")
@@ -284,41 +295,10 @@ def list_instances(
         ]
     ] = Field(None, description="The lifecycle state of the instance to filter on"),
 ) -> list[Instance]:
-    instances: list[Instance] = []
-
-    try:
-        client = get_compute_client()
-
-        response: oci.response.Response = None
-        has_next_page = True
-        next_page: str = None
-
-        while has_next_page and (limit is None or len(instances) < limit):
-            kwargs = {
-                "compartment_id": compartment_id,
-                "page": next_page,
-                "limit": limit,
-            }
-
-            if lifecycle_state is not None:
-                kwargs["lifecycle_state"] = lifecycle_state
-
-            response = client.list_instances(**kwargs)
-            has_next_page = response.has_next_page
-            next_page = response.next_page if hasattr(response, "next_page") else None
-
-            data: list[oci.core.models.Instance] = response.data
-            for d in data:
-                instance = map_instance(d)
-                instances.append(instance)
-
-        logger.info(f"Found {len(instances)} Instances")
-        return instances
-
-    except Exception as e:
-        logger.error(f"Error in list_instances tool: {str(e)}")
-        raise e
+    ...
 ```
+
+For a hard total cap, apply both safeguards: request only the remaining allowance when the backend supports a page-size argument, and append no more than the remaining allowance even if the backend over-returns. Stop requesting when the cap is met. Trimming a page also needs truthful truncation and continuation handling; see the [partial-page example](docs/pagination.md#limits-and-continuation) and [regression matrix](docs/pagination.md#review-checklist). Whole-page overshoot does not satisfy a promised hard cap.
 
 ### Field Guidelines
 
@@ -330,6 +310,22 @@ def list_instances(
 
 ## Test cases
 
-Target 90% coverage for unit tests on the MCP server itself.
+Enforce at least 90% unit-test coverage for Python MCP servers through the native package configuration; preserve stricter gates. Follow [root quality requirements](AGENTS.md#mcp-server-quality-validation) for other runtimes and documented enforcement gaps.
+
+Tests must assert meaningful behavior and relevant failure paths. Mock external boundaries while exercising the changed validation, conversion and result handling; preserve deterministic fixtures and caller/state isolation. Coverage alone does not establish test quality. See [test design and evidence](docs/test-quality.md).
 
 End-to-end tests under `e2e/` are not required, but good to add if they can be created without impacting other tests.
+
+## FastMCP
+
+Match tool registration, schema/result handling, lifecycle, concurrency and error APIs to the package's actual import and resolved version. Verify protocol-facing changes with suitable contract tests. Keep authentication and caller isolation under their existing owning requirements. See [FastMCP guidance](docs/fastmcp.md).
+
+## Pagination
+
+For new or changed collection contracts, document page size versus total limits, aggregation defaults, completeness and supported continuation. Prefer bounded defaults for new tools; review compatibility before changing existing defaults. Report truncation and partial failure truthfully, and do not advertise continuation that skips unreturned items. See [pagination contracts and examples](docs/pagination.md).
+
+## Tool safety
+
+Apply server safeguards proportional to an operation's effects, reversibility, sensitivity, cost, blast radius and authority changes. Validate caller authorization and targets before service calls. Higher-impact operations require stronger scope/precondition/confirmation safeguards as appropriate; annotations and caller-supplied confirmation strings do not replace authorization.
+
+Report partial and uncertain mutation outcomes distinctly; use backend-supported reconciliation/idempotency rather than blind retry. Preserve credential isolation and sanitize client errors and audit logs. See [server safeguards and agent authorization](docs/tool-safety.md).

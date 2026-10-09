@@ -9,6 +9,11 @@
 ### Changed
 
 - Require FastMCP 3.4.5 or later and OCI Python SDK 2.185.0 so the server resolves alongside `oracle-mcp-common`.
+- Updated locked AnyIO to 4.15.1.
+
+### Fixed
+
+- Declare the Common dependency in Moon so Common changes select Document Understanding's lock check, tests and install check in CI.
 
 ### Security
 

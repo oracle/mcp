@@ -6,12 +6,34 @@ All notable changes to `oracle-mcp-common` are documented in this file.
 
 ### Security
 
-- Updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).
+- Updated locked AnyIO to 4.15.1, multidict to 6.9.1, PyJWT to 2.15.1, and urllib3 to 2.8.0.
+
+## 0.1.4
+
+### Added
+
+- `IDCSHttpAuthOptions.enable_cimd` (default `True`). Set it to `False` to turn off
+  CIMD client registration on hosts without direct internet egress; clients then
+  register with DCR against `/register`, which never leaves the host.
 
 ### Changed
 
 - Runtime package metadata now reads the installed distribution version, with
   `pyproject.toml` as the single source of truth.
+
+### Fixed
+
+- `build_idcs_http_auth()` now sends resource scopes to IDCS qualified with
+  `IDCS_AUDIENCE`, as `/authorize` requires, on the advertised defaults, the
+  authorize request, and the refresh request. Before, bare scopes such as
+  `oci_mcp.<server>.invoke` were rejected with `invalid_scope` and sign-in could not
+  complete. `required_scopes` stays bare, because it is checked against the issued
+  token's bare `scope` claim. A scope that already starts with the audience is not
+  qualified again, so non-URL primary audiences work too.
+
+### Security
+
+- Updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).
 
 ## 0.1.3
 

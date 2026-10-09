@@ -29,6 +29,8 @@ uvx oracle.oci-compute-mcp-server
 
 Register `${ORACLE_MCP_BASE_URL}/auth/callback` in the OCI IAM confidential application. If `IDCS_REQUIRED_SCOPES` is unset, the default is `openid profile email oci_mcp.compute.invoke`.
 
+For current credential paths, their relationship to Common's shared requirements, and source/test evidence limits, see [Compute authentication](docs/authentication.md). This explains the existing implementation without changing the startup procedure above.
+
 ## Tools
 
 | Tool Name | Description |

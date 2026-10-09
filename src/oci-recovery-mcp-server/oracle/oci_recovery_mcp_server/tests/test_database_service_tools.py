@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from _helpers import _response
+from _helpers import _paged, _raise, _response
 import oracle.oci_recovery_mcp_server.models as models
 from oracle.oci_recovery_mcp_server import auth
 from oracle.oci_recovery_mcp_server import summarise_tools
@@ -515,7 +515,7 @@ def test_database_list_branches_and_tool_error_paths(monkeypatch):
     monkeypatch.setattr(
         compartments,
         "_fetch_db_home_ids_for_compartment",
-        lambda compartment_id, region=None: [],
+        lambda compartment_id, region=None, **_k: [],
     )
     assert database_tools.list_databases(compartment_id="compartment") == []
 
@@ -1202,3 +1202,97 @@ def test_get_backup_ignores_malformed_unique_name_mapping(monkeypatch):
     db_client.get_backup.return_value = _response(SimpleNamespace(id="bk1"))
     result = recovery_tools.get_backup("bk1")
     assert result["backup-destination-type"] == "DBRS"
+
+
+def test_list_databases_reads_later_home_and_database_pages(monkeypatch):
+    """
+    With home discovery left real, list_databases returns homes and databases that
+    appear only on later pages, including after empty first pages, both when it
+    discovers homes and when the caller names one DB Home.
+    """
+    db_client = MagicMock()
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+    monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda cid, **_k: cid)
+    db_client.list_db_homes.side_effect = _paged([[], [SimpleNamespace(id="home-second")]])
+    db_pages = _paged([[], [SimpleNamespace(id="db-second", db_name="DB2")]])
+    db_client.list_databases.side_effect = lambda **kw: (
+        db_pages(**kw) if kw["db_home_id"] == "home-second" else _response([])
+    )
+    db_client.get_database.return_value = _response({"id": "db-second"})
+
+    discovered = database_tools.list_databases(compartment_id="compartment")
+    assert [d.id for d in discovered] == ["db-second"]
+    assert db_client.list_db_homes.call_count == 2
+
+    explicit = database_tools.list_databases(db_home_id="home-second")
+    assert [d.id for d in explicit] == ["db-second"]
+    assert db_client.list_databases.call_args.kwargs["page"] == "1"
+
+
+def test_db_home_discovery_failures_are_reported_as_partial_results(monkeypatch):
+    """
+    A compartment whose DB Homes cannot be listed is skipped without failing the call,
+    as before, but the tool result now says it is partial: the list keeps its shape and
+    carries a warning naming the compartment, in single-compartment and subtree scans.
+    """
+    db_client = MagicMock()
+    recovery_client = MagicMock()
+    recovery_client.list_protected_databases.return_value = _response([])
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+    monkeypatch.setattr(clients, "get_recovery_client", lambda *_a, **_k: recovery_client)
+    monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda cid, **_k: cid)
+    monkeypatch.setattr(
+        compartments,
+        "_compartment_ids_for_tool",
+        lambda cid, fetch_for_child_compartment, **_k: ["denied", "readable"] if fetch_for_child_compartment else [cid],
+    )
+    homes = _paged([[SimpleNamespace(id="home-readable")]])
+    db_client.list_db_homes.side_effect = lambda **kw: (
+        _raise(RuntimeError("not authorized")) if kw["compartment_id"] == "denied" else homes(**kw)
+    )
+    db_client.list_databases.return_value = _response(
+        [{"id": "db1", "dbName": "DB1", "dbUniqueName": "DB1_UNQ", "dbBackupConfig": {"isAutoBackupEnabled": True}}]
+    )
+    db_client.list_backups.return_value = _response([{"id": "b1", "databaseId": "db1"}])
+
+    for result in (
+        database_tools.list_databases(compartment_id="denied"),
+        recovery_tools.list_backups(compartment_id="denied"),
+    ):
+        assert result.structured_content == {"result": []}
+        assert result.meta["partial_result"] is True
+        assert "denied" in result.content[-1].text
+
+    databases = database_tools.list_databases(compartment_id="root", fetch_for_child_compartment=True)
+    assert [d["id"] for d in databases.structured_content["result"]] == ["db1"]
+    backups = recovery_tools.list_backups(compartment_id="root", fetch_for_child_compartment=True)
+    assert [b["id"] for b in backups.structured_content["result"]] == ["b1"]
+    assert "not authorized" in backups.meta["partial_result_reasons"][0]
+
+    # A complete scan is returned as the plain list, exactly as before.
+    assert [d.id for d in database_tools.list_databases(compartment_id="readable")] == ["db1"]
+
+
+@pytest.mark.asyncio
+async def test_partial_result_keeps_the_structured_shape_over_mcp(monkeypatch):
+    """
+    Over the MCP protocol a partial list result has the same structuredContent as a
+    complete one, so existing clients parse it unchanged; the warning arrives as an
+    extra text block and in _meta.
+    """
+    from fastmcp import Client
+    from oracle.oci_recovery_mcp_server.app import mcp
+
+    db_client = MagicMock()
+    db_client.list_db_systems.return_value = _response([])
+    monkeypatch.setattr(clients, "get_database_client", lambda *_a, **_k: db_client)
+    monkeypatch.setattr(compartments, "_resolve_compartment_id", lambda cid, **_k: cid)
+    monkeypatch.setattr(compartments, "_expand_compartment_scope", lambda *_a, **_k: _raise(RuntimeError("down")))
+
+    async with Client(mcp) as client:
+        result = await client.call_tool(
+            "list_db_systems", {"compartment_id": "ocid1.compartment.oc1..root", "fetch_for_child_compartment": True}
+        )
+    assert result.structured_content == {"result": []}
+    assert result.meta["partial_result"] is True
+    assert result.content[-1].text.startswith("Warning: this result is incomplete.")

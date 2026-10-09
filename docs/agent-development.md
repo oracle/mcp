@@ -12,6 +12,21 @@ This document routes existing monorepo engineering sources. It introduces no req
 
 For creating or maintaining context itself, use the [repository authoring conventions](agent-context.md). The [Common/Compute authentication application](../src/oci-compute-mcp-server/docs/authentication.md) is a focused topic route; the component guide map below remains the broad engineering entry.
 
+## Engineering topics and workflows
+
+Use these focused routes with root instructions and the applicable component guide. They explain shared criteria and procedures without replacing package contracts or native command definitions.
+
+| Read when | Context | Depends on | Evidence |
+| --- | --- | --- | --- |
+| **Know:** Implementing/reviewing code or tests | [Code quality](code-quality.md#review-criteria), [test quality](test-quality.md#review-criteria) | Root editing/quality rules and [BEST_PRACTICES](../BEST_PRACTICES.md) | Changed source/assertions, native coverage enforcement and recorded runs |
+| **Know:** Changing registration, schemas, lifecycle or transport | [FastMCP](fastmcp.md) | Actual library/import/lock, component runtime constraints and [shared auth](authentication.md) | [Version/source comparison](fastmcp.md#library-and-version), relevant protocol tests and scoped runs |
+| **Know:** Handling limits, aggregation or continuation | [Pagination](pagination.md) | Owning tool's request/result contract and component guide | [Current source patterns](pagination.md#current-patterns), boundary tests and recorded checks |
+| **Know:** Implementing/invoking operations with external effects | [Tool safety](tool-safety.md) | Actual caller permissions, user authorization, root credential/security policy | [Current examples/checks](tool-safety.md#current-examples-and-checks), actual refusals/outcomes when tested |
+| **Do:** Reviewing a local change | [Local-review skill](../.agents/skills/local-review/SKILL.md) | Selected scope, applicable guides and [native validation](#validation-map) | [Review report contract](../.agents/skills/local-review/references/report-template.md), exact snapshot and actual checks |
+| **Do:** Drafting a description or creating a requested draft PR | [PR-authoring skill](../.agents/skills/pr-authoring/SKILL.md) | [CONTRIBUTING](../CONTRIBUTING.md), selected-base [template](../.github/pull_request_template.md), matching review evidence when supplied | Complete branch/local-state comparison, actual validation and publication response |
+
+The [workflow/context plan](plans/agent-workflows-and-engineering-context/implementation-plan.md), [design](plans/agent-workflows-and-engineering-context/proposal.md) and [outcome](plans/agent-workflows-and-engineering-context/outcome.md) record this increment's scope and actual checks. Issue authoring is deferred. A skill route does not itself authorize an external write.
+
 ## Selected component context
 
 The user-approved expansion covers every MCP server component under `src/`: 34 server guides, including the Java toolkit, plus the existing Common library guide and root guidance. Each guide supplies the nine-area engineering profile through local answers, specific shared/native references or explicit gaps. A guide’s existence does not establish server quality or passing behavior evaluation. The [adoption summary](plans/adopt-monorepo-agent-context/adoption-summary.md) separates the original ten-case evaluation from the expanded documentation review.
@@ -82,12 +97,12 @@ Command sources: [Moon Python tasks](../.moon/tasks/python.yml), [root tasks](..
 
 ## Known gaps
 
-These observations describe application sources at `52ea016` and the approved documentation expansion from `838d82b`; recheck implementation and instruction identities for a later engineering task. Local guides record additional package-specific differences. They do not approve exceptions or prove compliance.
+The Common consumer/requirements entries and current coverage descriptions were rechecked at `3a7cfd9623ec97ad7c365b9b77f28e459aefca8c` during the [context follow-up](plans/assess-agent-context-2026-10-07/implementation-outcome.md). Other observations retain the application baseline `52ea016` and approved documentation expansion from `838d82b`; recheck implementation and instruction identities for a later engineering task. Local guides record additional package-specific differences. They do not approve exceptions or prove compliance.
 
 | Area | Observed source difference or evidence limit | Relevant sources |
 | --- | --- | --- |
-| Common consumers | API, Cloud, Database, DB Observability and Document Understanding declare Common; only the first three have explicit package Moon dependency edges | [Common guide](../src/common/AGENTS.md#architecture-and-dependencies), consumer manifests/Moon files; inspect declarations, graph edges and call sites separately |
-| Common package requirements | README lists OCI SDK 2.179.0+ and optional FastMCP 3.4.2; manifest declares OCI 2.185.0+ and FastMCP `>=3.2.4,<4.0.0` | [README](../src/common/README.md#package-requirements), [manifest](../src/common/pyproject.toml); use manifest for install definitions and flag the discrepancy |
+| Common consumers | API, Cloud, Database, DB Observability, Document Understanding and Recovery declare Common; all except DB Observability have explicit package Moon dependency edges | [Common guide](../src/common/AGENTS.md#architecture-and-dependencies), [ledger call sites](authentication.md#adoption-ledger); inspect declarations, graph edges and source use separately |
+| Common package requirements | README lists OCI SDK 2.179.0+ while manifest requires 2.185.0+; FastMCP requirements agree on 3.4.5+ in 3.x | [README](../src/common/README.md#package-requirements), [manifest](../src/common/pyproject.toml); use manifest for install definitions and flag the remaining OCI discrepancy |
 | Compute auth | Client/HTTP helpers resolve credentials locally; manifest has no Common dependency | [server](../src/oci-compute-mcp-server/oracle/oci_compute_mcp_server/server.py), [manifest](../src/oci-compute-mcp-server/pyproject.toml); root Common requirement remains applicable |
 | JavaScript subprocess policy | Existing Podman provider invokes a process, while root names API alone as a subprocess exception | [provider](../src/oci-javascript-mcp-server/src/isolation/podman.ts), [root quality rules](../AGENTS.md#mcp-server-quality-validation); record conflict without authorizing another backend/exception |
 | JavaScript isolation evidence | Fake-control-plane tests cover protocol and command construction; shared-kernel containers are not VM boundaries | [README security/development](../src/oci-javascript-mcp-server/README.md), [tests](../src/oci-javascript-mcp-server/test); real deployment isolation not established |
@@ -95,9 +110,8 @@ These observations describe application sources at `52ea016` and the approved do
 | Ownership and coverage | Guides describe technical scope, not a verified named-maintainer roster; all current server components and Common have guides, while other repository directories are outside this component pass | [contribution process](../CONTRIBUTING.md), [adoption summary](plans/adopt-monorepo-agent-context/adoption-summary.md) |
 | Wider OCI auth adoption | Many SDK-backed servers still construct credentials locally. IoT/OpenSearch also have token-failure fallback behavior that differs from Common; a local implementation is not a shared-policy exception | [All server guides](#selected-component-context), especially [IoT](../src/oci-iot-mcp-server/AGENTS.md) and [OpenSearch](../src/oci-opensearch-mcp-server/AGENTS.md); root/Common requirements remain authoritative |
 | DB Observability setup | README development instructions use removed Make tooling; manifest OCI 2.182.1 conflicts with Common OCI >=2.185.0 | [DB Observability guide](../src/oci-db-observability-mcp-server/AGENTS.md), native manifests and inherited Moon tasks; dependency remediation is separate work |
-| Data Studio coverage | Native manifest sets 75%, below the root 90% server-quality requirement | [Data Studio guide](../src/oracle-data-studio-mcp-server/AGENTS.md), manifest and unit definitions; no threshold changed or coverage executed |
 | Excluded Python validation | DBTools has live OCI tests; MySQL lacks a native test/coverage procedure; Pricing mixes mocks/network and has a console-package layout gap; DB Doc lacks tests and references absent requirements.txt | [DBTools](../src/dbtools-mcp-server/AGENTS.md), [MySQL](../src/mysql-mcp-server/AGENTS.md), [Pricing](../src/oci-pricing-mcp-server/AGENTS.md), [DB Doc](../src/oracle-db-doc-mcp-server/AGENTS.md); each guide records prerequisites and limits |
-| Native/source mismatches | Instance Agent and Usage README tool tables differ from registration; Recovery README claims Common use while implementation resolves credentials locally | [Instance Agent](../src/oci-compute-instance-agent-mcp-server/AGENTS.md), [Usage](../src/oci-usage-mcp-server/AGENTS.md), [Recovery](../src/oci-recovery-mcp-server/AGENTS.md); inspect current native sources before edits |
+| Native/source mismatches | Instance Agent and Usage README tool tables differ from registration | [Instance Agent](../src/oci-compute-instance-agent-mcp-server/AGENTS.md), [Usage](../src/oci-usage-mcp-server/AGENTS.md); inspect current native sources before edits |
 
 ## Evidence and context routes
 

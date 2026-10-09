@@ -21,7 +21,7 @@ From the repository root, use `proto install` for pinned tools and `moon run ora
 
 ## Tests and validation
 
-Use `moon run oracle-data-studio-mcp-server:test` from the repository root for the inherited Python test task, and `moon run root:lint` after Python source changes. The manifest configures `75%` coverage. Inspect the relevant tool/model or helper tests for the requested change; shared changes also require [shared validation](../../docs/agent-development.md#validation-map). These definitions are source evidence; this documentation expansion ran no server tests or coverage.
+Use `moon run oracle-data-studio-mcp-server:test` from the repository root for the inherited Python test task, and `moon run root:lint` after Python source changes. The [manifest](pyproject.toml) configures `90%` coverage; the [native development route](README.md#local-development) and inherited task collect branch coverage with the offline unit suite. Inspect the relevant tool/model or helper tests for the requested change; shared changes also require [shared validation](../../docs/agent-development.md#validation-map). These definitions are source evidence; this context maintenance ran no server tests or coverage.
 
 ## Architecture and dependencies
 
@@ -37,7 +37,6 @@ Tool/profile registration, credential precedence, annotation-guided queries and 
 
 ## Known gaps
 
-- The manifest configures 75% coverage, below the root server-quality requirement of 90%. This expansion does not change the threshold.
 - The README emphasizes stdio; the source also implements streamable HTTP. Use config.py, server.py and http_runtime.py for the actual transport/bind behavior.
 - Source definitions and available tests do not establish passing validation or live security/transport behavior. Record actual checks separately through the [shared evidence routes](../../docs/agent-development.md#evidence-and-context-routes).
 

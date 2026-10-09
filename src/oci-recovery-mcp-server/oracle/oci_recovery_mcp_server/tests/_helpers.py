@@ -27,3 +27,17 @@ def _response(data, *, has_next_page=False, next_page=None):
 def _raise(error):
     """Raise from inside a lambda or a mock side effect."""
     raise error
+
+
+def _paged(pages):
+    """
+    A list-call side effect serving ``pages`` in order by paging token: the first
+    call (no ``page``) gets pages[0], and each response carries the token of the next.
+    """
+
+    def call(**kwargs):
+        index = int(kwargs.get("page") or 0)
+        more = index + 1 < len(pages)
+        return _response(pages[index], has_next_page=more, next_page=str(index + 1) if more else None)
+
+    return call

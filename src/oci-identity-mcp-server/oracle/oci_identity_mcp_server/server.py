@@ -166,11 +166,13 @@ def list_compartments(
             tenancy_id = os.getenv("TENANCY_ID_OVERRIDE") or _get_profile_value("tenancy")
             if not tenancy_id:
                 raise RuntimeError("Root compartment lookup requires TENANCY_ID_OVERRIDE or an OCI config file.")
-            tenancy_response: oci.response.Response = client.get_compartment(
-                compartment_id=tenancy_id,
-            )
-            root_compartment: Compartment = tenancy_response.data
-            compartments.append(map_compartment(root_compartment))
+
+            if limit is None or len(compartments) < limit:
+                tenancy_response: oci.response.Response = client.get_compartment(
+                    compartment_id=tenancy_id,
+                )
+                root_compartment: Compartment = tenancy_response.data
+                compartments.append(map_compartment(root_compartment))
         logger.info(f"Found {len(compartments)} Compartments")
         return compartments
 

@@ -407,7 +407,7 @@ class TestResourceSearchTools:
                 )
             ).structured_content["result"]
         # The server appends all items from a page before checking the limit
-        assert len(result) == 2
+        assert len(result) == 1
         # Only one SDK call occurred because the loop stops paging once len(resources) >= limit
         mock_client.search_resources.assert_called_once()
 

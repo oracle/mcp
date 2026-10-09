@@ -64,6 +64,49 @@ class TestIdentityTools:
             assert len(result) == 2
             assert result[0]["id"] == "compartment1"
             assert result[1]["id"] == "tenancy1"
+    
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
+    @patch(
+        "oracle.oci_identity_mcp_server.server._get_profile_value",
+        return_value="test_tenancy",
+    )
+    async def test_list_compartments_limit_one_includes_only_root(
+        self, _mock_get_profile_value, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_get_response = create_autospec(oci.response.Response)
+        mock_get_response.data = oci.identity.models.Compartment(
+            id="tenancy1",
+            compartment_id=None,
+            name="Root Compartment",
+            description="Test root compartment",
+            lifecycle_state="ACTIVE",
+            time_created="1970-01-01T00:00:00",
+        )
+        mock_client.get_compartment.return_value = mock_get_response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_compartments",
+                    {
+                        "compartment_id": "test_tenancy",
+                        "include_root": True,
+                        "limit": 1,
+                    },
+                )
+            ).structured_content["result"]
+
+        assert len(result) == 1
+        assert result[0]["id"] == "tenancy1"
+        mock_client.list_compartments.assert_not_called()
+        mock_client.get_compartment.assert_called_once_with(
+            compartment_id="test_tenancy"
+        )
 
     @pytest.mark.asyncio
     @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
@@ -244,12 +287,12 @@ class TestIdentityTools:
                 )
             ).structured_content["result"]
 
-        assert len(result) == 3
-        assert [r["id"] for r in result] == ["c1", "c2", "tenancy1"]
+        assert len(result) == 2
+        assert [r["id"] for r in result] == ["c1", "tenancy1"]
         # With limit, only first page should be fetched
         assert mock_client.list_compartments.call_count == 1
         first_kwargs = mock_client.list_compartments.call_args_list[0].kwargs
-        assert first_kwargs["limit"] == limit
+        assert first_kwargs["limit"] == 1
         assert first_kwargs["page"] is None
 
     @pytest.mark.asyncio

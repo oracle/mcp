@@ -31,10 +31,23 @@ Add a stanza like this to your MCP client config (often called `mcp.json`; examp
 
 | Tool Name | Description | Parameters |
 | --- | --- | --- |
-| list_services | Returns supported services | compartment_id, sort_by='name', sort_order='ASC', limit=100, page=None, subscription_id=None |
-| list_limit_definitions | Returns limit definitions | compartment_id, service_name=None, name=None, sort_by='name', sort_order='ASC', limit=100, page=None, subscription_id=None |
-| list_limit_values | Returns limit values | compartment_id, service_name, scope_type=None, availability_domain=None, name=None, sort_by='name', sort_order='ASC', limit=100, page=None, subscription_id=None, external_location=None |
+| list_services | Returns supported services and a resume token | compartment_id, sort_by='name', sort_order='ASC', limit=None, page=None, subscription_id=None |
+| list_limit_definitions | Returns limit definitions and a resume token | compartment_id, service_name=None, name=None, sort_by='name', sort_order='ASC', limit=None, page=None, subscription_id=None |
+| list_limit_value | Returns limit values and a resume token | compartment_id, service_name, name, scope_type, availability_domain=None, sort_by='name', sort_order='ASC', limit=None, page=None, subscription_id=None |
 | get_resource_availability | Returns usage/availability for a specific limit | service_name, limit_name, compartment_id, availability_domain=None, subscription_id=None, external_location=None |
+
+## Pagination
+
+`list_services`, `list_limit_definitions`, and `list_limit_value` return an object
+with `items` (the mapped summaries) and `next_page` (an OCI continuation token,
+or `null` when there are no more results). This replaces the previous bare list
+response.
+
+With no `page`, a numeric `limit` bounds the total items returned across OCI
+pages. With `limit=null` (the tool default), all pages are collected. To resume,
+pass the returned `next_page` as `page`, keeping the same filters and sort order;
+this fetches only one OCI page, with `limit` controlling its requested size.
+Continue until `next_page` is `null`.
 
 ## Authentication
 

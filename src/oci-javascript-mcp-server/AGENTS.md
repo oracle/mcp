@@ -8,7 +8,8 @@ This TypeScript server runs JavaScript in an isolated runner and mediates OCI ca
 
 - [server.ts](src/server.ts): MCP tool handling and entry point; [oci-host.ts](src/oci-host.ts): host-side OCI calls, credentials and exposed SDK behavior.
 - [Protocol](src/protocol.ts), [gRPC boundary](src/grpc.ts) and [protobuf contract](proto/runner.proto): typed host/runner messages, bounded encoding and session contract; [sandbox.ts](src/sandbox.ts), [worker](src/sandbox-worker.ts) and [isolate](src/sandbox-isolate.ts): execution orchestration.
-- [Podman provider](src/isolation/podman.ts) and [gRPC lifecycle](src/isolation/grpc-execution.ts): process/network arguments, fresh mTLS identities, execution limits and cleanup.
+- [Provider factory](src/isolation/provider-factory.ts), [Podman](src/isolation/podman.ts), [Kubernetes](src/isolation/kubernetes.ts) and [gRPC lifecycle](src/isolation/grpc-execution.ts): explicit provider/profile selection, startup preflight, fresh execution boundaries and cleanup.
+- [Documentation baseline](docs/README.md): current public behavior, architecture, provider/deployment procedures, implementation evidence and known differences.
 - [Test directory](test), [Moon tasks](moon.yml), [package.json](package.json) and [README](README.md): behavior definitions, native commands and runtime setup.
 
 ## Setup / build / run
@@ -19,7 +20,7 @@ From the repository root, run `proto install`, then `moon run oci-javascript-mcp
 
 From the repository root, use `moon run oci-javascript-mcp-server:test` for tests with coverage, `moon run oci-javascript-mcp-server:check` for TypeScript checks and `moon run oci-javascript-mcp-server:build` for the npm tarball. All three depend on compile. The package exposes only the `start` npm script; former npm test/coverage/check/CI scripts are unavailable. Use the [shared validation map](../../docs/agent-development.md#validation-map) for sources and cross-runtime limits.
 
-Protocol work starts with [protocol tests](test/protocol.test.ts), [gRPC tests](test/grpc.test.ts) and [sandbox tests](test/sandbox.test.ts); host changes with [OCI host tests](test/oci-host.test.ts); MCP changes with [server tests](test/server.test.ts); packaging changes with [packaging tests](test/packaging.test.ts). Tests use [fake Podman](test/fake-podman.ts) for command construction and the mTLS gRPC session. c8 config enforces 90% **line** coverage with explicit exclusions; neither those definitions nor this unexecuted check list prove deployment isolation.
+Protocol work starts with [protocol tests](test/protocol.test.ts), [gRPC tests](test/grpc.test.ts) and [sandbox tests](test/sandbox.test.ts); host changes with [OCI host tests](test/oci-host.test.ts); MCP changes with [server tests](test/server.test.ts); packaging changes with [packaging tests](test/packaging.test.ts). Tests use [fake Podman](test/fake-podman.ts) for command construction and the mTLS gRPC session. c8 config enforces 90% **statements, branches, functions and lines** coverage with explicit exclusions; neither those definitions nor this unexecuted check list prove deployment isolation.
 
 ## Architecture and dependencies
 
@@ -27,7 +28,7 @@ Preserve the host/runner split described in [README architecture](README.md#arch
 
 ## Security and secrets handling
 
-The [provider](src/isolation/podman.ts) defines a fresh internal network with no external route, a gRPC port published to host loopback, a read-only root, dropped capabilities, non-root execution and bounded resources. Each execution receives fresh mTLS identities; the runner receives its server key and the host's public certificate, never the host's private key. Preserve those constraints and cleanup; keep OCI credentials and raw SDK/process errors out of runner-visible responses. The [README security model](README.md#security-model) distinguishes nested isolate/container controls from a VM security boundary. Mocked command/protocol checks do not certify real Podman isolation.
+The [provider](src/isolation/podman.ts) defines a fresh internal network with no external route, a gRPC port published to host loopback, a read-only root, dropped capabilities, non-root execution and bounded resources. Each execution receives fresh mTLS identities; the runner receives its server key and the host's public certificate, never the host's private key. Preserve those constraints and cleanup; keep OCI credentials and raw SDK/process errors out of runner-visible responses. The [README security model](README.md#security-model) distinguishes nested isolate/container controls from a VM security boundary. Kubernetes uses a host-constructed credential-free pod under exactly one local, in-cluster or Kata profile; credentials stay on the trusted host. Use the [profile guide](docs/kubernetes-isolation-profiles.md) for strict settings, preflight, namespace/image policy and reconciliation, and the [Kata guide](docs/kata-kubernetes-poc.md) for unverified external controls. Mocked command/protocol checks do not certify effective Podman, CNI or Kata isolation.
 
 ## Change impact
 
@@ -36,8 +37,9 @@ Protocol, host OCI, sandbox, provider or task/schema changes affect runtime exec
 ## Known gaps
 
 - Root's subprocess rule names API alone as the exception, while this package already launches Podman. Record the conflict and resolve policy through the owning project; this guide grants no exception or new backend authority.
-- Native dependency/toolchain setup can block checks. A setup failure is separate from a test result; c8 coverage is line coverage with exclusions.
-- Fake-control-plane test definitions cover command construction and gRPC behavior, not Podman itself. No real runtime, OCI service or isolation checks ran in this adoption.
+- Native dependency/toolchain setup can block checks. A setup failure is separate from a test result; c8 enforces all four metrics at 90%, with explicit exclusions.
+- Fake-control-plane tests cover host command/protocol and provider lifecycle behavior, not effective runtime isolation. No runtime, OCI, container or cluster checks ran in this baseline pass.
+- [Baseline differences](docs/README.md#known-differences-and-evidence-limits) include RPC ID uniqueness, cumulative traffic/combined-result budgets, permissive wire tags, request-control filtering, caller authorization and the dependency-range/native-setup mismatch.
 - Explicit [Moon tasks](moon.yml) own compilation, tests, type checking and packaging; inspecting those definitions is not evidence that they passed.
 
 ## Workflow and context routing
@@ -46,6 +48,14 @@ Protocol, host OCI, sandbox, provider or task/schema changes affect runtime exec
 | --- | --- | --- | --- |
 | **Know:** Changing exposed OCI calls or credentials | [Host implementation](src/oci-host.ts), [README](README.md) | Root quality/security guidance and host/runner boundary | [Host tests](test/oci-host.test.ts); no Python/Common-auth assumption |
 | **Know:** Changing execution/protocol/isolation | [Protocol](src/protocol.ts), [schema](proto/runner.proto), [provider](src/isolation/podman.ts), [gRPC lifecycle](src/isolation/grpc-execution.ts) | [Security model](README.md#security-model), matching host/runner contract, recorded root-policy conflict | [Protocol](test/protocol.test.ts), [gRPC](test/grpc.test.ts), [sandbox](test/sandbox.test.ts) and [server tests](test/server.test.ts); fake provider limits explicit |
+| **Know:** Understanding public behavior, auth or execution limits | [Architecture baseline](docs/architecture-and-isolation-design.md#72-public-mcp-behavior), [source/evidence index](docs/README.md) | Root requirements, this guide and native interfaces | [Server](test/server.test.ts), [host](test/oci-host.test.ts), [sandbox](test/sandbox.test.ts) tests; baseline review did not execute them |
+| **Know / Do:** Selecting a Kubernetes profile or assessing Kata deployment | [Profile guide](docs/kubernetes-isolation-profiles.md), [Kata POC](docs/kata-kubernetes-poc.md), [local setup](docs/kubernetes-local-in-cluster-setup.md) | Host/runner boundary, strict [config](src/isolation/kubernetes-config.ts), target cluster/image prerequisites | [Profile](test/kubernetes-profiles.test.ts), [provider](test/kata-provider.test.ts), [transport](test/kubernetes-grpc.test.ts), [manifest](test/kata-manifests.test.ts) checks; real-environment limits explicit |
 | **Do:** Preparing or validating this runtime | [Moon tasks](moon.yml), [manifest](package.json), [validation map](../../docs/agent-development.md#validation-map) | Node/native dependencies, repository task directory, generated compile prerequisites | Actual test/coverage/type/package reports; [evidence routes](../../docs/agent-development.md#evidence-and-context-routes) |
 
 Use native sources for local details and inherited shared guidance for repository requirements. This adoption's Now/Proof record is the [summary](../../docs/plans/adopt-monorepo-agent-context/adoption-summary.md); startup/deployment checks remain separate from documentation review.
+
+## Documentation maintenance
+
+This component keeps maintained explanations in README and the architecture/provider guides. Preserve this broad guide and update its relevant routes when sources move.
+
+When tool schemas/results, OCI identity or exposure, protocol fields/limits, cleanup precedence, provider/profile configuration, installation policy or Moon tasks change, review the corresponding baseline route and owning docs against the changed source/tests. Record source identity and actual check scope; source review does not establish current runtime validation or production admission.

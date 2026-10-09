@@ -20,6 +20,7 @@ import {
   type HostMessage,
   type RunnerMessage
 } from "./grpc.ts";
+import { readRunnerTlsBootstrap, RUNNER_READY_LINE } from "./grpc-tls.ts";
 import {
   DEFAULT_DECODE_LIMITS,
   ProtocolError,
@@ -82,7 +83,7 @@ function openSession(call: ServerDuplexStream<HostMessage, RunnerMessage>): void
 }
 
 async function startServer(): Promise<void> {
-  const tls = await loadTls();
+  const tls = await readRunnerTlsBootstrap(process.stdin);
   const credentials = ServerCredentials.createSsl(
     Buffer.from(tls.clientCert),
     [{
@@ -104,25 +105,7 @@ async function startServer(): Promise<void> {
       }
     });
   });
-}
-
-async function loadTls(): Promise<{
-  serverKey: string;
-  serverCert: string;
-  clientCert: string;
-}> {
-  let input = "";
-  for await (const chunk of process.stdin) {
-    input += String(chunk);
-    if (Buffer.byteLength(input, "utf8") > 32 * 1024) {
-      throw new Error("sandbox TLS bootstrap is too large");
-    }
-  }
-  const value = JSON.parse(input) as unknown;
-  if (!isTlsBootstrap(value)) {
-    throw new Error("invalid sandbox TLS bootstrap");
-  }
-  return value;
+  process.stdout.write(RUNNER_READY_LINE);
 }
 
 async function handleMessage(message: HostMessage): Promise<void> {
@@ -248,16 +231,4 @@ function isPositiveInteger(value: unknown): value is number {
 
 function isObject(value: unknown): value is JsonObject {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function isTlsBootstrap(value: unknown): value is {
-  serverKey: string;
-  serverCert: string;
-  clientCert: string;
-} {
-  return isObject(value)
-    && Object.keys(value).length === 3
-    && typeof value.serverKey === "string"
-    && typeof value.serverCert === "string"
-    && typeof value.clientCert === "string";
 }

@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: oci-js-execution
+  namespace: oci-js-execution
+spec:
+  hard:
+    pods: "16"
+    requests.cpu: "16"
+    limits.cpu: "16"
+    requests.memory: 8Gi
+    limits.memory: 8Gi
+    requests.ephemeral-storage: 16Gi
+    limits.ephemeral-storage: 16Gi
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: oci-js-execution
+  namespace: oci-js-execution
+spec:
+  limits:
+    - type: Container
+      max:
+        cpu: "4"
+        memory: 2Gi
+        ephemeral-storage: 1Gi
+      min:
+        cpu: 100m
+        memory: 128Mi
+        ephemeral-storage: 16Mi

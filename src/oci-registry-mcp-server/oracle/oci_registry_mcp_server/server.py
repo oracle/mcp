@@ -110,10 +110,11 @@ def list_container_repositories(
         next_page: str = None
 
         while has_next_page and (limit is None or len(container_repositories) < limit):
+            remaining = None if limit is None else limit - len(container_repositories)
             kwargs = {
                 "compartment_id": compartment_id,
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             response = client.list_container_repositories(**kwargs)
@@ -122,8 +123,10 @@ def list_container_repositories(
 
             data: list[oci.artifacts.models.ContainerRepository] = response.data.items
             for d in data:
-                container_repositories.append(map_container_repository(d))
-
+                if limit is None or len(container_repositories) < limit:
+                    container_repositories.append(map_container_repository(d))
+                else:
+                    break
         logger.info(f"Found {len(container_repositories)} Container Repositories")
         return container_repositories
 

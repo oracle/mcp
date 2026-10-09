@@ -143,10 +143,11 @@ def list_compartments(
         next_page: str = None
 
         while has_next_page and (limit is None or len(compartments) < limit):
+            remaining = None if limit is None else limit - len(compartments)
             kwargs = {
                 "compartment_id": compartment_id,
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
                 "compartment_id_in_subtree": compartment_id_in_subtree,
                 "access_level": access_level,
             }
@@ -157,8 +158,10 @@ def list_compartments(
 
             data: list[oci.identity.models.Compartment] = response.data
             for d in data:
-                compartments.append(map_compartment(d))
-
+                if limit is None or len(compartments) < limit:
+                    compartments.append(map_compartment(d))
+                else:
+                    break
         if include_root:
             tenancy_id = os.getenv("TENANCY_ID_OVERRIDE") or _get_profile_value("tenancy")
             if not tenancy_id:

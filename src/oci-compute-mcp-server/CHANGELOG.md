@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Fixed pagination limits in list tools to ensure results respect the requested maximum across API pages.
+
 ### Added
 
 - `launch_instance` can now use an existing boot volume as its source by accepting `boot_volume_id`.

@@ -56,6 +56,48 @@ class TestResourceSearchTools:
 
             assert len(result) == 1
             assert result[0]["identifier"] == "resource1"
+    
+    @pytest.mark.asyncio
+    @patch("oracle.oci_resource_search_mcp_server.server.get_search_client")
+    async def test_list_all_resources_continues_after_empty_page(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        resp1 = create_autospec(oci.response.Response)
+        resp1.data = oci.resource_search.models.ResourceSummaryCollection(items=[])
+        resp1.has_next_page = True
+        resp1.next_page = "token-2"
+
+        resp2 = create_autospec(oci.response.Response)
+        resp2.data = oci.resource_search.models.ResourceSummaryCollection(
+            items=[
+                oci.resource_search.models.ResourceSummary(identifier="resource1"),
+            ]
+        )
+        resp2.has_next_page = False
+        resp2.next_page = None
+
+        mock_client.search_resources.side_effect = [resp1, resp2]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_all_resources",
+                    {
+                        "tenant_id": TENANT_ID,
+                        "compartment_id": COMPARTMENT_ID,
+                    },
+                )
+            ).structured_content["result"]
+
+        assert [item["identifier"] for item in result] == ["resource1"]
+        assert mock_client.search_resources.call_count == 2
+
+        calls = mock_client.search_resources.call_args_list
+        assert calls[0].kwargs["page"] is None
+        assert calls[1].kwargs["page"] == "token-2"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_resource_search_mcp_server.server.get_search_client")
@@ -388,28 +430,51 @@ class TestResourceSearchTools:
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
-        resp = create_autospec(oci.response.Response)
-        resp.data = oci.resource_search.models.ResourceSummaryCollection(
+        resp1 = create_autospec(oci.response.Response)
+        resp1.data = oci.resource_search.models.ResourceSummaryCollection(
             items=[
                 oci.resource_search.models.ResourceSummary(identifier="a"),
                 oci.resource_search.models.ResourceSummary(identifier="b"),
             ]
         )
-        resp.has_next_page = True
-        resp.next_page = "tok"
-        mock_client.search_resources.return_value = resp
+        resp1.has_next_page = True
+        resp1.next_page = "tok2"
+
+        resp2 = create_autospec(oci.response.Response)
+        resp2.data = oci.resource_search.models.ResourceSummaryCollection(
+            items=[
+                oci.resource_search.models.ResourceSummary(identifier="c"),
+            ]
+        )
+        # A continuation token remains even though the limit will be reached.
+        resp2.has_next_page = True
+        resp2.next_page = "tok3"
+
+        mock_client.search_resources.side_effect = [resp1, resp2]
 
         async with Client(mcp) as client:
             result = (
                 await client.call_tool(
                     "list_all_resources",
-                    {"tenant_id": TENANT_ID, "compartment_id": COMPARTMENT_ID, "limit": 1},
+                    {
+                        "tenant_id": TENANT_ID,
+                        "compartment_id": COMPARTMENT_ID,
+                        "limit": 3,
+                    },
                 )
             ).structured_content["result"]
-        # The server appends all items from a page before checking the limit
-        assert len(result) == 1
-        # Only one SDK call occurred because the loop stops paging once len(resources) >= limit
-        mock_client.search_resources.assert_called_once()
+
+        assert len(result) == 3
+        assert [item["identifier"] for item in result] == ["a", "b", "c"]
+
+        # The first request asks for 3; the second asks only for the 1 remaining.
+        assert mock_client.search_resources.call_count == 2
+        calls = mock_client.search_resources.call_args_list
+        assert calls[0].kwargs["limit"] == 3
+        assert calls[1].kwargs["limit"] == 1
+
+        # The second page has a continuation token, but the cap prevents a third call.
+        assert calls[1].kwargs["page"] == "tok2"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_resource_search_mcp_server.server.get_search_client")

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Fixed pagination limits in list tools to ensure results respect the requested maximum across API pages.
+
 ### Security
 
 - Updated locked multidict to 6.9.1; updated locked AnyIO to 4.15.1; updated locked PyJWT to 2.15.1 and urllib3 to 2.8.0; updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).

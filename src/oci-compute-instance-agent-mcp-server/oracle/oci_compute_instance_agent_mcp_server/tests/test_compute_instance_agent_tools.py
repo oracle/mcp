@@ -142,20 +142,28 @@ class TestComputeInstanceAgent:
             assert result[0]["instance_agent_command_id"] == mock_command_1.instance_agent_command_id
 
     @pytest.mark.asyncio
-    @patch("oracle.oci_compute_instance_agent_mcp_server.server.get_compute_instance_agent_client")
-    async def test_list_instance_agent_commands_pagination_and_limit_and_output_types(self, mock_get_client):
-        # This test exercises:
-        # - pagination (has_next_page + next_page)
-        # - limit enforcement
-        # - mapping of different output content types (TEXT, OBJECT_STORAGE_URI, OBJECT_STORAGE_TUPLE)
+    @patch(
+        "oracle.oci_compute_instance_agent_mcp_server.server."
+        "get_compute_instance_agent_client"
+    )
+    async def test_list_instance_agent_commands_pagination_and_limit_and_output_types(
+        self, mock_get_client
+    ):
+        # Exercises:
+        # - Pagination using has_next_page and next_page
+        # - Decreasing the requested limit across pages
+        # - Stopping when the overall result limit is reached,
+        #   even when the last response advertises another page
+        # - Mapping TEXT, OBJECT_STORAGE_URI, and OBJECT_STORAGE_TUPLE output types
         compartment_id = "ocid1.compartment"
         instance_id = "ocid1.instance"
 
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
-        # First page with TEXT output content summary
+        # First page: TEXT output content
         resp_page_1 = create_autospec(oci.response.Response)
+
         summary_text = MagicMock()
         setattr(summary_text, "instance_agent_command_id", "cmd-text-1")
         setattr(summary_text, "instance_id", instance_id)
@@ -173,7 +181,7 @@ class TestComputeInstanceAgent:
         setattr(summary_text, "time_updated", "2024-01-01T00:00:05Z")
         setattr(summary_text, "sequence_number", 10)
         setattr(summary_text, "display_name", "text-name")
-        # Attach TEXT content
+
         content_text = MagicMock()
         content_text.output_type = "TEXT"
         content_text.exit_code = 0
@@ -181,12 +189,14 @@ class TestComputeInstanceAgent:
         content_text.text = "hello"
         content_text.text_sha256 = "abc"
         setattr(summary_text, "content", content_text)
+
         resp_page_1.data = [summary_text]
         resp_page_1.has_next_page = True
         resp_page_1.next_page = "token-1"
 
-        # Second page with OBJECT_STORAGE_URI and OBJECT_STORAGE_TUPLE
+        # Second page: OBJECT_STORAGE_URI and OBJECT_STORAGE_TUPLE output
         resp_page_2 = create_autospec(oci.response.Response)
+
         summary_uri = MagicMock()
         setattr(summary_uri, "instance_agent_command_id", "cmd-uri-2")
         setattr(summary_uri, "instance_id", instance_id)
@@ -196,6 +206,7 @@ class TestComputeInstanceAgent:
         setattr(summary_uri, "time_updated", "2024-01-01T00:00:20Z")
         setattr(summary_uri, "sequence_number", 11)
         setattr(summary_uri, "display_name", "uri-name")
+
         content_uri = MagicMock()
         content_uri.output_type = "OBJECT_STORAGE_URI"
         content_uri.exit_code = 1
@@ -222,15 +233,19 @@ class TestComputeInstanceAgent:
         setattr(summary_tuple, "content", content_tuple)
 
         resp_page_2.data = [summary_uri, summary_tuple]
-        resp_page_2.has_next_page = False
-        resp_page_2.next_page = None
+
+        # Deliberately advertise another page. The overall limit should
+        # prevent a third SDK request after enough results have been collected.
+        resp_page_2.has_next_page = True
+        resp_page_2.next_page = "token-3"
 
         mock_client.list_instance_agent_command_executions.side_effect = [
             resp_page_1,
             resp_page_2,
         ]
 
-        # Set limit=2 to stop after two items though there are three across pages
+        # There are three available items across the two mocked pages,
+        # but the caller requests only two.
         limit = 2
         async with Client(mcp) as client:
             payload = {
@@ -239,27 +254,102 @@ class TestComputeInstanceAgent:
                 "limit": limit,
             }
             result = (
-                await client.call_tool("list_instance_agent_command_executions", payload)
+                await client.call_tool(
+                    "list_instance_agent_command_executions",
+                    payload,
+                )
             ).structured_content["result"]
 
-        # Verify pagination and mapping of content subtypes
-        assert len(result) == 3
-        # First is TEXT
+        # The overall result limit is respected.
+        assert len(result) == 2
+
+        # First result: TEXT
         assert result[0]["instance_agent_command_id"] == "cmd-text-1"
         assert result[0]["content"]["output_type"] == "TEXT"
         assert result[0]["content"]["text"] == "hello"
-        # Second is OBJECT_STORAGE_URI
+
+        # Second result: OBJECT_STORAGE_URI
         assert result[1]["instance_agent_command_id"] == "cmd-uri-2"
         assert result[1]["content"]["output_type"] == "OBJECT_STORAGE_URI"
-        assert result[1]["content"]["output_uri"] == "https://objectstorage.example.com/n/bkt/o/out"
+        assert (
+            result[1]["content"]["output_uri"]
+            == "https://objectstorage.example.com/n/bkt/o/out"
+        )
 
-        # Ensure pagination called with correct page tokens
-        first_kwargs = mock_client.list_instance_agent_command_executions.call_args_list[0].kwargs
-        second_kwargs = mock_client.list_instance_agent_command_executions.call_args_list[1].kwargs
-        assert first_kwargs["page"] is None
-        assert first_kwargs["limit"] == limit
-        assert second_kwargs["page"] == "token-1"
-        assert second_kwargs["limit"] == limit
+        # Verify the page tokens and requested limits.
+        calls = mock_client.list_instance_agent_command_executions.call_args_list
+
+        assert len(calls) == 2
+        assert calls[0].kwargs["page"] is None
+        assert calls[0].kwargs["limit"] == limit
+
+        assert calls[1].kwargs["page"] == "token-1"
+        assert calls[1].kwargs["limit"] == 1
+
+        # The requested limit decreases as results accumulate.
+        assert [call.kwargs["limit"] for call in calls] == [2, 1]
+
+        # No third request is made, despite the second response having
+        # has_next_page=True and next_page="token-3".
+        assert mock_client.list_instance_agent_command_executions.call_count == 2
+
+    @pytest.mark.asyncio
+    @patch(
+        "oracle.oci_compute_instance_agent_mcp_server.server."
+        "get_compute_instance_agent_client"
+    )
+    async def test_list_instance_agent_commands_continues_after_empty_page(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        empty_page = create_autospec(oci.response.Response)
+        empty_page.data = []
+        empty_page.has_next_page = True
+        empty_page.next_page = "token-2"
+
+        next_page = create_autospec(oci.response.Response)
+        next_page.data = [
+            InstanceAgentCommandExecutionSummary(
+                instance_agent_command_id="cmd-1",
+                instance_id="instance-1",
+                delivery_state="VISIBLE",
+                lifecycle_state="SUCCEEDED",
+                time_created="2024-01-01T00:00:00Z",
+                time_updated="2024-01-01T00:00:05Z",
+                sequence_number=1,
+            )
+        ]
+        next_page.has_next_page = False
+        next_page.next_page = None
+
+        mock_client.list_instance_agent_command_executions.side_effect = [
+            empty_page,
+            next_page,
+        ]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_instance_agent_command_executions",
+                    {
+                        "compartment_id": "compartment-1",
+                        "instance_id": "instance-1",
+                    },
+                )
+            ).structured_content["result"]
+
+        assert [item["instance_agent_command_id"] for item in result] == [
+            "cmd-1"
+        ]
+
+        calls = mock_client.list_instance_agent_command_executions.call_args_list
+        assert len(calls) == 2
+        assert calls[0].kwargs["page"] is None
+        assert calls[1].kwargs["page"] == "token-2"
+        assert calls[0].kwargs["limit"] is None
+        assert calls[1].kwargs["limit"] is None
 
     @pytest.mark.asyncio
     @patch("oracle.oci_compute_instance_agent_mcp_server.server.get_compute_instance_agent_client")

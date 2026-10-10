@@ -138,15 +138,20 @@ def list_compartments(
     try:
         client = get_identity_client()
 
+        page_limit = limit 
+        if limit is not None and include_root:
+            page_limit = limit - 1
+
         response: oci.response.Response = None
         has_next_page = True
         next_page: str = None
 
-        while has_next_page and (limit is None or len(compartments) < limit):
+        while has_next_page and (page_limit is None or len(compartments) < page_limit):
+            remaining = (None if limit is None else page_limit - len(compartments))
             kwargs = {
                 "compartment_id": compartment_id,
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
                 "compartment_id_in_subtree": compartment_id_in_subtree,
                 "access_level": access_level,
             }
@@ -157,17 +162,21 @@ def list_compartments(
 
             data: list[oci.identity.models.Compartment] = response.data
             for d in data:
-                compartments.append(map_compartment(d))
-
+                if page_limit is None or len(compartments) < page_limit:
+                    compartments.append(map_compartment(d))
+                else:
+                    break
         if include_root:
             tenancy_id = os.getenv("TENANCY_ID_OVERRIDE") or _get_profile_value("tenancy")
             if not tenancy_id:
                 raise RuntimeError("Root compartment lookup requires TENANCY_ID_OVERRIDE or an OCI config file.")
-            tenancy_response: oci.response.Response = client.get_compartment(
-                compartment_id=tenancy_id,
-            )
-            root_compartment: Compartment = tenancy_response.data
-            compartments.append(map_compartment(root_compartment))
+
+            if limit is None or len(compartments) < limit:
+                tenancy_response: oci.response.Response = client.get_compartment(
+                    compartment_id=tenancy_id,
+                )
+                root_compartment: Compartment = tenancy_response.data
+                compartments.append(map_compartment(root_compartment))
         logger.info(f"Found {len(compartments)} Compartments")
         return compartments
 

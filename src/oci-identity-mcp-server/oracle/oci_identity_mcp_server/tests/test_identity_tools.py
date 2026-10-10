@@ -64,6 +64,49 @@ class TestIdentityTools:
             assert len(result) == 2
             assert result[0]["id"] == "compartment1"
             assert result[1]["id"] == "tenancy1"
+    
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
+    @patch(
+        "oracle.oci_identity_mcp_server.server._get_profile_value",
+        return_value="test_tenancy",
+    )
+    async def test_list_compartments_limit_one_includes_only_root(
+        self, _mock_get_profile_value, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        mock_get_response = create_autospec(oci.response.Response)
+        mock_get_response.data = oci.identity.models.Compartment(
+            id="tenancy1",
+            compartment_id=None,
+            name="Root Compartment",
+            description="Test root compartment",
+            lifecycle_state="ACTIVE",
+            time_created="1970-01-01T00:00:00",
+        )
+        mock_client.get_compartment.return_value = mock_get_response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_compartments",
+                    {
+                        "compartment_id": "test_tenancy",
+                        "include_root": True,
+                        "limit": 1,
+                    },
+                )
+            ).structured_content["result"]
+
+        assert len(result) == 1
+        assert result[0]["id"] == "tenancy1"
+        mock_client.list_compartments.assert_not_called()
+        mock_client.get_compartment.assert_called_once_with(
+            compartment_id="test_tenancy"
+        )
 
     @pytest.mark.asyncio
     @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
@@ -179,8 +222,13 @@ class TestIdentityTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
-    @patch("oracle.oci_identity_mcp_server.server._get_profile_value", return_value="test_tenancy")
-    async def test_list_compartments_limit_stops_pagination(self, _mock_get_profile_value, mock_get_client):
+    @patch(
+        "oracle.oci_identity_mcp_server.server._get_profile_value",
+        return_value="test_tenancy",
+    )
+    async def test_list_compartments_limit_stops_pagination(
+        self, _mock_get_profile_value, mock_get_client
+    ):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -189,7 +237,7 @@ class TestIdentityTools:
             id="tenancy1",
             compartment_id=None,
             name="Root Compartment",
-            description="Test compartment (root)",
+            description="Test root compartment",
             lifecycle_state="ACTIVE",
             time_created="1970-01-01T00:00:00",
         )
@@ -226,8 +274,8 @@ class TestIdentityTools:
                 time_created="1970-01-01T00:00:00",
             ),
         ]
-        resp2.has_next_page = False
-        resp2.next_page = None
+        resp2.has_next_page = True
+        resp2.next_page = "p3"
 
         mock_client.list_compartments.side_effect = [resp1, resp2]
         mock_client.get_compartment.return_value = mock_get_response
@@ -244,13 +292,87 @@ class TestIdentityTools:
                 )
             ).structured_content["result"]
 
-        assert len(result) == 3
-        assert [r["id"] for r in result] == ["c1", "c2", "tenancy1"]
-        # With limit, only first page should be fetched
-        assert mock_client.list_compartments.call_count == 1
-        first_kwargs = mock_client.list_compartments.call_args_list[0].kwargs
-        assert first_kwargs["limit"] == limit
-        assert first_kwargs["page"] is None
+        assert len(result) == limit
+        assert [item["id"] for item in result] == ["c1", "tenancy1"]
+
+        calls = mock_client.list_compartments.call_args_list
+        assert len(calls) == 1
+        assert calls[0].kwargs["limit"] == 1
+        assert calls[0].kwargs["page"] is None
+
+        mock_client.get_compartment.assert_called_once_with(compartment_id="test_tenancy")
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_identity_mcp_server.server.get_identity_client")
+    @patch(
+        "oracle.oci_identity_mcp_server.server._get_profile_value",
+        return_value="test_tenancy",
+    )
+    async def test_list_compartments_reduces_request_limit(
+        self, _mock_get_profile_value, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        root_response = create_autospec(oci.response.Response)
+        root_response.data = oci.identity.models.Compartment(
+            id="tenancy1",
+            compartment_id=None,
+            name="Root Compartment",
+            description="Test root compartment",
+            lifecycle_state="ACTIVE",
+            time_created="1970-01-01T00:00:00",
+        )
+        mock_client.get_compartment.return_value = root_response
+
+        resp1 = create_autospec(oci.response.Response)
+        resp1.data = [
+            oci.identity.models.Compartment(
+                id="c1",
+                name="C1",
+                description="Test compartment",
+                lifecycle_state="ACTIVE",
+                time_created="1970-01-01T00:00:00",
+            )
+        ]
+        resp1.has_next_page = True
+        resp1.next_page = "p2"
+
+        resp2 = create_autospec(oci.response.Response)
+        resp2.data = [
+            oci.identity.models.Compartment(
+                id="c2",
+                name="C2",
+                description="Test compartment",
+                lifecycle_state="ACTIVE",
+                time_created="1970-01-01T00:00:00",
+            )
+        ]
+        resp2.has_next_page = True
+        resp2.next_page = "p3"
+
+        mock_client.list_compartments.side_effect = [resp1, resp2]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_compartments",
+                    {
+                        "compartment_id": "test_tenancy",
+                        "include_root": True,
+                        "limit": 3,
+                    },
+                )
+            ).structured_content["result"]
+
+        assert [item["id"] for item in result] == ["c1", "c2", "tenancy1"]
+
+        calls = mock_client.list_compartments.call_args_list
+        assert len(calls) == 2
+        assert calls[0].kwargs["limit"] == 2
+        assert calls[0].kwargs["page"] is None
+        assert calls[1].kwargs["limit"] == 1
+        assert calls[1].kwargs["page"] == "p2"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_identity_mcp_server.server.get_identity_client")

@@ -133,10 +133,11 @@ def list_network_load_balancers(
         next_page: str = None
 
         while has_next_page and (limit is None or len(nlbs) < limit):
+            remaining = None if limit is None else limit - len(nlbs)
             kwargs = {
                 "compartment_id": compartment_id,
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             if lifecycle_state is not None:
@@ -148,8 +149,10 @@ def list_network_load_balancers(
 
             data: list[oci.network_load_balancer.models.NetworkLoadBalancer] = response.data.items
             for d in data:
-                nlbs.append(map_network_load_balancer(d))
-
+                if limit is None or len(nlbs) < limit:
+                    nlbs.append(map_network_load_balancer(d))
+                else:
+                    break
         logger.info(f"Found {len(nlbs)} Network Load Balancers")
         return nlbs
 
@@ -199,10 +202,11 @@ def list_listeners(
         next_page: str = None
 
         while has_next_page and (limit is None or len(listeners) < limit):
+            remaining = None if limit is None else limit - len(listeners)
             kwargs = {
                 "network_load_balancer_id": network_load_balancer_id,
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             response = client.list_listeners(**kwargs)
@@ -211,8 +215,10 @@ def list_listeners(
 
             data: list[oci.network_load_balancer.models.Listener] = response.data.items
             for d in data:
-                listeners.append(map_listener(d))
-
+                if limit is None or len(listeners) < limit:
+                    listeners.append(map_listener(d))
+                else:
+                    break
         logger.info(f"Found {len(listeners)} Listeners")
         return listeners
 
@@ -270,10 +276,11 @@ def list_backend_sets(
         next_page: str = None
 
         while has_next_page and (limit is None or len(backend_sets) < limit):
+            remaining = None if limit is None else limit - len(backend_sets)
             kwargs = {
                 "network_load_balancer_id": network_load_balancer_id,
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             response = client.list_backend_sets(**kwargs)
@@ -282,8 +289,10 @@ def list_backend_sets(
 
             data: list[oci.network_load_balancer.models.BackendSet] = response.data.items
             for d in data:
-                backend_sets.append(map_backend_set(d))
-
+                if limit is None or len(backend_sets) < limit:
+                    backend_sets.append(map_backend_set(d))
+                else:
+                    break
         logger.info(f"Found {len(backend_sets)} Backend Sets")
         return backend_sets
 
@@ -342,11 +351,12 @@ def list_backends(
         next_page: str = None
 
         while has_next_page and (limit is None or len(backends) < limit):
+            remaining = None if limit is None else limit - len(backends)
             kwargs = {
                 "network_load_balancer_id": network_load_balancer_id,
                 "backend_set_name": backend_set_name,
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             response = client.list_backends(**kwargs)
@@ -355,8 +365,10 @@ def list_backends(
 
             data: list[oci.network_load_balancer.models.Backend] = response.data.items
             for d in data:
-                backends.append(map_backend(d))
-
+                if limit is None or len(backends) < limit:
+                    backends.append(map_backend(d))
+                else:
+                    break
         logger.info(f"Found {len(backends)} Backends")
         return backends
 

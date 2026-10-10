@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Fixed pagination limits in list tools to ensure results respect the requested maximum across API pages.
+
 ### Added
 
 - `launch_instance` can now use an existing boot volume as its source by accepting `boot_volume_id`.
@@ -9,6 +13,7 @@
 ### Fixed
 
 - `launch_instance` rejects empty `boot_volume_id` values instead of launching from the default image.
+- Enforce the total result limit across paginated Compute MCP tool responses.
 
 ### Security
 

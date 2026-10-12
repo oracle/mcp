@@ -27,6 +27,7 @@ test("npm package runs from node_modules with compiled bindings", { timeout: 30_
   assert.ok(![...files].some(path => path.endsWith(".tgz")), "package includes a prior tarball");
   for (const path of [
     "dist/server.js", "dist/generated/runner.js", "dist/isolation/grpc-execution.js",
+    "src/kubernetes-deployment-validation.ts", "dist/kubernetes-deployment-validation.js",
     "dist/isolation/kubernetes.js", "dist/isolation/kubernetes-grpc.js",
     "src/generated/runner.ts", "src/grpc.ts", "src/grpc-tls.ts", "src/grpc-tls-host.ts",
     "proto/runner.proto",
@@ -56,6 +57,18 @@ test("npm package runs from node_modules with compiled bindings", { timeout: 30_
   assert.match(readFileSync(join(installed, architectureLink!), "utf8"), /^# OCI JavaScript MCP Server Architecture and Isolation Design/);
   // Reuse installed dependencies; server code and metadata come only from the tarball.
   symlinkSync(fileURLToPath(new URL("../node_modules", import.meta.url)), join(installed, "node_modules"), "dir");
+  const validator = join(installed, "dist/kubernetes-deployment-validation.js");
+  assert.match(execFileSync(process.execPath, [validator, "--help"], {
+    cwd: directory, env: {}, encoding: "utf8", timeout: 10_000
+  }), /--host-service-account/);
+  assert.throws(() => execFileSync(process.execPath, [validator, "--json"], {
+    cwd: directory, env: {}, encoding: "utf8", timeout: 10_000
+  }), (error: unknown) => {
+    const result = error as { status: number; stdout: string };
+    assert.equal(result.status, 1);
+    assert.equal(JSON.parse(String(result.stdout)).passed, false);
+    return true;
+  });
   const { bin } = JSON.parse(readFileSync(join(installed, "package.json"), "utf8"));
   const transport = new StdioClientTransport({
     command: process.execPath,

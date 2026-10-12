@@ -215,6 +215,122 @@ not block later candidates. Startup consumes the full pass before failing,
 periodic host and cleanup-only passes emit one sanitized aggregate count, and a
 failed pass does not stop future intervals.
 
+## Deployment validation
+
+Run the standalone validator after applying the target deployment's namespace,
+RBAC, admission and runtime assets. It checks API identity, execution
+permissions, the Kata RuntimeClass/handler when selected, and acceptance or
+rejection of server-side pod dry-runs. It reuses the same pod builder and reviewed
+negative variants as the provider, without starting MCP or loading OCI
+credentials or the native isolate.
+
+The command can run on a workstation, in a pipeline, or in another environment
+with Node 26+, the package dependencies, cluster access and an explicit kubeconfig
+using supported credentials. Automatic in-cluster service-account authentication
+is deferred; a Kubernetes Job would currently need an explicit kubeconfig too.
+
+Set the existing environment variables for the **target** profile, runner image,
+runner service account and resource settings. The explicit
+`--kubeconfig` and `--context` arguments select the **connection**, even when
+validating an in-cluster target. This does not change the server's credential
+selection rules. No default kubeconfig or in-cluster credential discovery occurs.
+
+For the standard example, set `RUNNER_IMAGE_DIGEST` to the reviewed runner image
+reference, including its 64-character SHA-256 digest, then run from the package
+directory:
+
+```bash
+export OCI_JAVASCRIPT_ISOLATION_PROVIDER=kubernetes
+export OCI_JAVASCRIPT_KUBERNETES_PROFILE=in-cluster
+export OCI_JAVASCRIPT_KUBERNETES_NAMESPACE=oci-js-standard-execution
+export OCI_JAVASCRIPT_KUBERNETES_TRUSTED_HOST_NAMESPACE=oci-js-standard-host
+export OCI_JAVASCRIPT_KUBERNETES_RUNNER_SERVICE_ACCOUNT=oci-js-runner
+export OCI_JAVASCRIPT_KUBERNETES_IMAGE="$RUNNER_IMAGE_DIGEST"
+
+node --no-node-snapshot --experimental-strip-types \
+  src/kubernetes-deployment-validation.ts \
+  --kubeconfig "$HOME/.kube/config" --context your-context \
+  --host-service-account oci-js-standard-host --impersonate
+```
+
+For the Kata example, use `kata-in-cluster`, execution namespace
+`oci-js-execution`, trusted-host namespace `oci-js-host` and host service account
+`oci-js-host`. Additionally set `OCI_JAVASCRIPT_KUBERNETES_KATA_RUNTIME_CLASS`
+and `OCI_JAVASCRIPT_KUBERNETES_KATA_RUNTIME_HANDLER` to the deployed values;
+the versioned example uses `kata-qemu-runtime-rs` for both. Supply the reviewed
+Kata runner image digest.
+
+For `local-development`, use its existing local configuration and omit
+`--host-service-account` and `--impersonate`:
+
+```bash
+node --no-node-snapshot --experimental-strip-types \
+  src/kubernetes-deployment-validation.ts \
+  --kubeconfig "$HOME/.kube/config" --context your-local-context
+```
+
+All in-cluster targets require `--host-service-account`. The validator derives
+its expected username from that name and the trusted-host namespace, then checks
+the effective username and normal service-account groups through
+`authentication.k8s.io/v1` SelfSubjectReview. A kubeconfig authenticated directly
+as that account needs no `--impersonate` flag. For an operator kubeconfig,
+`--impersonate` requires existing permission to impersonate that specific
+service account; the command does not grant permissions or retry as the operator.
+See [Kubernetes impersonation](https://kubernetes.io/docs/reference/access-authn-authz/user-impersonation/).
+The identity must also be allowed to create self-access reviews, read the
+execution namespace, perform the required pod lifecycle/exec/port-forward
+operations and, for Kata, read the configured RuntimeClass. Missing review
+support or permission fails validation rather than assuming the workload identity.
+
+If downward-API host pod name or UID variables are absent, dry-run probes use
+synthetic host metadata and the report says `synthetic-host-identity`. These
+values describe probe metadata; they do not verify an existing host pod or its
+ownership. Supplied values retain the existing configuration validation.
+The kubeconfig file is never modified.
+
+Use a kubeconfig with valid token or client-certificate credentials. This first
+version rejects `exec` and legacy `auth-provider` credential helpers before
+running them: the SDK performs that authentication before request cancellation
+is attached, so a stalled helper could outlive the validation deadline. Prepare
+credentials through your approved authentication procedure before invoking the
+validator; the command neither launches helpers nor falls back to other
+credentials.
+
+From the repository root, the opt-in Moon task invokes the same source command:
+
+```bash
+moon run oci-javascript-mcp-server:validate-deployment -- \
+  --kubeconfig "$HOME/.kube/config" --context your-context \
+  --host-service-account oci-js-standard-host --impersonate --json
+```
+
+The task is uncached and does not run in ordinary CI. After compilation, the
+packed command is also available as `node dist/kubernetes-deployment-validation.js`
+from the installed package directory. `--help` requires no deployment configuration
+or cluster access. `--json` emits the same check outcomes as human output.
+`--timeout-seconds` sets the whole API-validation deadline from 1 to 300 seconds
+(default 60); SIGINT/SIGTERM cancel validation.
+
+Exit code **0** means every required check passed. Exit code **1** means a check
+failed or was inconclusive, including configuration, identity, authentication,
+transport, malformed-response, timeout or cancellation failures. Every pod
+submission has `dryRun=All`; the validator does not persist or execute runner
+pods, establish channels, reconcile resources or delete pods. The conforming pod
+must be accepted before negative probes run. An accepted negative variant fails
+validation even for local development, whose server startup currently tolerates
+admission gaps.
+
+A rejected probe records a matching Kubernetes Status response and HTTP status
+and reason. It does not identify which admission policy, RBAC rule, schema
+validation or other API control rejected the request, or certify the deployed
+policy revision. A passing report does not establish CNI/CRI enforcement, a Kata
+guest kernel, image provenance, effective resource limits or production
+readiness. Real execution and external isolation evidence remain separate checks.
+
+This standalone command is the first step toward moving deployment validation
+out of the server. Existing server startup probes and assurance descriptors
+remain in place during this increment.
+
 ## Diagnostics and assurance
 
 Diagnostics are JSON lines on trusted stderr. Events contain only provider,

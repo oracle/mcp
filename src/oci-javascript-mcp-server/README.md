@@ -68,6 +68,11 @@ For the verified Rancher Desktop `in-cluster` workflow, including image pinning,
 host-only OCI Secret synchronization, and Inspector connection, see the
 [local Kubernetes in-cluster setup guide](docs/kubernetes-local-in-cluster-setup.md).
 
+The [deployment validator](docs/kubernetes-isolation-profiles.md#deployment-validation)
+checks the intended Kubernetes identity, permissions, RuntimeClass and observed
+admission dry-run outcomes using an explicit kubeconfig and context. It is a
+separate command; current server startup probes remain in place.
+
 After publication, install into a project with automatic lifecycle scripts
 disabled, then explicitly prepare the reviewed native addon:
 

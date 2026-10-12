@@ -110,6 +110,19 @@ tasks:
       cache: false
       runInCI: false
 
+  validate-deployment:
+    description: 'Validates deployment identity, permissions, RuntimeClass and admission using an explicit kubeconfig'
+    type: 'run'
+    command: 'node --no-node-snapshot --experimental-strip-types src/kubernetes-deployment-validation.ts'
+    inputs:
+      - 'src/kubernetes-deployment-validation.ts'
+      - 'src/isolation/kubernetes-config.ts'
+      - 'src/isolation/kubernetes-pod.ts'
+      - 'src/isolation/kubernetes-runtime-policy.ts'
+    options:
+      cache: false
+      runInCI: false
+
   runner-build:
     description: 'Builds the Podman runner image'
     type: 'run'

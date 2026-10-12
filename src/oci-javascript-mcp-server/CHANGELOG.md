@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- Add a standalone Kubernetes deployment validator with explicit
+  kubeconfig/context and verified host identity, optional service-account
+  impersonation, bounded permission/RuntimeClass/admission checks, JSON reporting
+  and an opt-in `validate-deployment` Moon task. Server startup probes remain.
+
 ### Fixed
 
 - Bound Kubernetes reconciliation listing and propagate standalone reconciler

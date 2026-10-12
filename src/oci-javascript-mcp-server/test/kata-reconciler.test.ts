@@ -16,6 +16,28 @@ import {
   PROVIDER_LABEL
 } from "../src/isolation/kubernetes-pod.ts";
 import { main, runCleanupReconciler } from "../src/kubernetes-reconciler.ts";
+import { reconcileExpiredExecutions } from "../src/isolation/kubernetes-reconciler.ts";
+
+test("orphan Secrets are reconciled independently of failed pod listing", async () => {
+  const now = Date.now();
+  const deleted: string[] = [];
+  const resource = (name: string, expiry: number, profile = "in-cluster") => ({ metadata: {
+    name, namespace: "execution", labels: { [MANAGED_BY_LABEL]: "oci-javascript-mcp",
+      [PROVIDER_LABEL]: "kubernetes", [PROFILE_LABEL]: profile },
+    annotations: { [EXPIRY_ANNOTATION]: new Date(expiry).toISOString() }
+  } });
+  const api = {
+    async listManagedPods() { throw new Error("private pod list failure"); },
+    async listManagedSecrets() { return [resource("orphan", now - 1), resource("fresh", now + 1000),
+      resource("other-profile", now - 1, "kata-in-cluster")]; },
+    async deleteSecret(_namespace: string, name: string) { deleted.push(name); },
+    async waitForSecretDeleted() { return true; }
+  } as unknown as KubernetesApi;
+  assert.deepEqual(await reconcileExpiredExecutions(api, "execution", "in-cluster", now), {
+    deletedPodNames: [], deletedSecretNames: ["orphan"], failureCount: 1
+  });
+  assert.deepEqual(deleted, ["orphan"]);
+});
 
 test("cleanup-only reconciler recovers, uses only list/get/delete, and stops without leaks", async () => {
   const calls: string[] = [];
@@ -34,6 +56,7 @@ test("cleanup-only reconciler recovers, uses only list/get/delete, and stops wit
     }
   });
   const api = new Proxy({
+    async listManagedSecrets() { return []; },
     async listManagedPods() {
       calls.push("list");
       listAttempts += 1;
@@ -94,6 +117,7 @@ test("cleanup-only reconciler exits immediately when already aborted", async () 
 test("cleanup-only reconciler sanitizes list failures and resumes on the next interval", async () => {
   let listAttempts = 0;
   const api = {
+    async listManagedSecrets() { return []; },
     async listManagedPods() {
       listAttempts += 1;
       if (listAttempts === 1) {

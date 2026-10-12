@@ -20,7 +20,7 @@ import {
   PROFILE_LABEL,
   PROVIDER_LABEL
 } from "../src/isolation/kubernetes-pod.ts";
-import { reconcileExpiredPods, startExpiryReconciliation, type ReconciliationSummary } from "../src/isolation/kubernetes-reconciler.ts";
+import { reconcileExpiredExecutions, startExpiryReconciliation, type ReconciliationSummary } from "../src/isolation/kubernetes-reconciler.ts";
 import {
   validInClusterEnvironment,
   validKataEnvironment,
@@ -40,6 +40,9 @@ for (const environment of [validLocalEnvironment(), validInClusterEnvironment(),
     const provider = new KubernetesIsolationProvider(config, api, event => events.push(event));
     await provider.preflight({ startReconciliation: false });
     assert.equal(api.permissions.length, 10);
+    assert.deepEqual(api.permissions.filter(value => value.resource === "secrets").map(value => value.verb),
+      config.profile === "local-development" ? [] : ["create", "get", "list", "delete"]);
+    assert.equal(api.permissions.some(value => value.subresource === "exec"), config.profile === "local-development");
     assert.deepEqual(api.permissions.filter(permission => permission.resource === "namespaces"), [{
       group: undefined, name: config.namespace, namespace: undefined,
       resource: "namespaces", subresource: undefined, verb: "get"
@@ -86,8 +89,8 @@ test("reconciliation adopts only the exact Kubernetes profile and namespace", as
     managedPod("standard-fresh", "in-cluster", "execution", now + 60_000)
   ];
   assert.deepEqual(
-    await reconcileExpiredPods(api, "execution", "in-cluster", now),
-    { deletedNames: ["standard-expired"], failureCount: 0 }
+    await reconcileExpiredExecutions(api, "execution", "in-cluster", now),
+    { deletedPodNames: ["standard-expired"], deletedSecretNames: [], failureCount: 0 }
   );
   assert.deepEqual(api.listRequests, [{ namespace: "execution", profile: "in-cluster" }]);
   assert.deepEqual(api.deleted, ["standard-expired"]);
@@ -105,8 +108,8 @@ test("reconciliation bounds each failure and continues through the full candidat
   api.deleteFailures.add("delete-fails");
   api.confirmationFailures.add("confirmation-fails");
   assert.deepEqual(
-    await reconcileExpiredPods(api, "execution", "in-cluster", now),
-    { deletedNames: ["later-succeeds"], failureCount: 2 }
+    await reconcileExpiredExecutions(api, "execution", "in-cluster", now),
+    { deletedPodNames: ["later-succeeds"], deletedSecretNames: [], failureCount: 2 }
   );
   assert.deepEqual(api.deleted, ["confirmation-fails", "later-succeeds"]);
 
@@ -117,15 +120,15 @@ test("reconciliation bounds each failure and continues through the full candidat
   ];
   stalled.neverDeletes.add("never-settles");
   assert.deepEqual(
-    await reconcileExpiredPods(stalled, "execution", "in-cluster", now, 20),
-    { deletedNames: ["bounded-later"], failureCount: 1 }
+    await reconcileExpiredExecutions(stalled, "execution", "in-cluster", now, 20),
+    { deletedPodNames: ["bounded-later"], deletedSecretNames: [], failureCount: 1 }
   );
   assert.equal(stalled.activeDeleteRequests, 0);
   assert.equal(stalled.deleteSignals[0]?.aborted, true);
   assert.notEqual(stalled.deleteSignals[0], stalled.deleteSignals[1]);
   assert.deepEqual(
-    await reconcileExpiredPods(stalled, "execution", "in-cluster", now, 20),
-    { deletedNames: ["bounded-later"], failureCount: 1 }
+    await reconcileExpiredExecutions(stalled, "execution", "in-cluster", now, 20),
+    { deletedPodNames: ["bounded-later"], deletedSecretNames: [], failureCount: 1 }
   );
   assert.equal(stalled.activeDeleteRequests, 0);
   assert.equal(stalled.deleteSignals[2]?.aborted, true);
@@ -176,7 +179,7 @@ for (const stage of ["list", "delete"] as const) {
     assert.equal(results.length, 0);
     gate.resolve();
     await new Promise(resolve => setImmediate(resolve));
-    assert.deepEqual(results, [{ deletedNames: stage === "delete" ? ["expired"] : [], failureCount: 0 }]);
+    assert.deepEqual(results, [{ deletedPodNames: stage === "delete" ? ["expired"] : [], deletedSecretNames: [], failureCount: 0 }]);
     t.mock.timers.tick(10);
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(api.listRequests.length, 2);
@@ -205,10 +208,10 @@ test("background reconciliation recovers from a failed list on the next interval
   const stop = startExpiryReconciliation(api, "execution", "in-cluster", 10, result => results.push(result));
   t.after(stop);
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(results, [undefined]);
+  assert.deepEqual(results, [{ deletedPodNames: [], deletedSecretNames: [], failureCount: 1 }]);
   t.mock.timers.tick(10);
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(results, [undefined, { deletedNames: [], failureCount: 0 }]);
+  assert.deepEqual(results, [{ deletedPodNames: [], deletedSecretNames: [], failureCount: 1 }, { deletedPodNames: [], deletedSecretNames: [], failureCount: 0 }]);
   assert.deepEqual(api.listRequests, [
     { namespace: "execution", profile: "in-cluster" },
     { namespace: "execution", profile: "in-cluster" }
@@ -234,12 +237,12 @@ test("background reconciliation aborts a stalled list and recovers on the next i
   await new Promise(resolve => setImmediate(resolve));
   t.mock.timers.tick(5000);
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(results, [undefined]);
+  assert.deepEqual(results, [{ deletedPodNames: [], deletedSecretNames: [], failureCount: 1 }]);
   assert.equal(listSignal?.aborted, true);
   assert.equal(calls, 1);
   t.mock.timers.tick(100);
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(results, [undefined, { deletedNames: [], failureCount: 0 }]);
+  assert.deepEqual(results, [{ deletedPodNames: [], deletedSecretNames: [], failureCount: 1 }, { deletedPodNames: [], deletedSecretNames: [], failureCount: 0 }]);
   assert.equal(calls, 2);
 });
 
@@ -260,7 +263,7 @@ test("background reconciliation stop permits the active cycle to finish without 
   t.mock.timers.tick(100);
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(api.listRequests.length, 1);
-  assert.deepEqual(results, [{ deletedNames: [], failureCount: 0 }]);
+  assert.deepEqual(results, [{ deletedPodNames: [], deletedSecretNames: [], failureCount: 0 }]);
 });
 
 class ProfileApi implements KubernetesApi {

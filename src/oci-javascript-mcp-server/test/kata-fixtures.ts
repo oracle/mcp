@@ -5,6 +5,7 @@
  */
 
 import type { KubernetesPod } from "../src/isolation/kubernetes-api.ts";
+import { isDeepStrictEqual } from "node:util";
 import type { KubernetesProfile } from "../src/isolation/kubernetes-config.ts";
 import {
   MANAGED_BY_LABEL,
@@ -75,13 +76,13 @@ export function conformingPodAdmission(pod: KubernetesPod, profile: KubernetesPr
     && container?.name === "runner"
     && container.image === expectedImage
     && container.imagePullPolicy === expectedPullPolicy
-    && same(container.command, [
+    && same(container.command, profile === "local-development" ? [
       "node",
       "--no-node-snapshot",
       "--experimental-strip-types",
       "-e",
       "setInterval(() => {}, 2147483647)"
-    ])
+    ] : ["node", "--no-node-snapshot", "--experimental-strip-types", "/app/src/sandbox-worker.ts", "--tls-files"])
     && container.env === undefined
     && spec.securityContext?.runAsNonRoot === true
     && spec.securityContext.runAsUser === 65532
@@ -127,11 +128,16 @@ export function conformingPodAdmission(pod: KubernetesPod, profile: KubernetesPr
     && Number.isInteger(spec.activeDeadlineSeconds)
     && spec.activeDeadlineSeconds! >= 1
     && spec.activeDeadlineSeconds! <= 120
-    && spec.volumes?.length === 1
+    && spec.volumes?.length === (profile === "local-development" ? 1 : 2)
     && spec.volumes[0]?.name === "tmp"
     && spec.volumes[0].emptyDir?.medium === "Memory"
     && boundedQuantity(spec.volumes[0].emptyDir.sizeLimit, "Mi", 1, 64)
-    && same(container.volumeMounts, [{ name: "tmp", mountPath: "/tmp", readOnly: false }]);
+    && (profile === "local-development" || same(spec.volumes[1], { name: "runner-tls", secret: {
+      secretName: `${pod.metadata?.name}-tls`, defaultMode: 0o440,
+      items: ["serverKey", "serverCert", "clientCert"].map(key => ({ key, path: key }))
+    } }))
+    && same(container.volumeMounts, [{ name: "tmp", mountPath: "/tmp", readOnly: false },
+      ...(profile === "local-development" ? [] : [{ name: "runner-tls", mountPath: "/run/oci-javascript/tls", readOnly: true }])]);
 }
 
 export const reviewedResourceSettings: ReadonlyArray<Readonly<Record<string, string>>> = [
@@ -181,5 +187,5 @@ function boundedQuantity(
 }
 
 function same(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return isDeepStrictEqual(left, right);
 }

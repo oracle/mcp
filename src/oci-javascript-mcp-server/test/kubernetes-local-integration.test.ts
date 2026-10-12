@@ -10,7 +10,7 @@ import { AdmissionregistrationV1Api, KubeConfig } from "@kubernetes/client-node"
 import { createKubeconfigKubernetesApi } from "../src/isolation/kubernetes-api.ts";
 import { parseKubernetesConfig } from "../src/isolation/kubernetes-config.ts";
 import { KubernetesIsolationProvider } from "../src/isolation/kubernetes.ts";
-import { reconcileExpiredPods } from "../src/isolation/kubernetes-reconciler.ts";
+import { reconcileExpiredExecutions } from "../src/isolation/kubernetes-reconciler.ts";
 import { runJavaScript } from "../src/sandbox.ts";
 
 const enabled = process.env.OCI_JAVASCRIPT_RUN_LOCAL_KUBERNETES_TESTS === "true";
@@ -71,8 +71,8 @@ test("opt-in local cluster exercises create/watch/exec/port-forward/gRPC/cancel/
     await cancelled.terminate();
 
     assert.deepEqual(
-      await reconcileExpiredPods(api, config.namespace, config.profile),
-      { deletedNames: [], failureCount: 0 }
+      await reconcileExpiredExecutions(api, config.namespace, config.profile),
+      { deletedPodNames: [], deletedSecretNames: [], failureCount: 0 }
     );
   } finally {
     provider.stopReconciliation();

@@ -41,6 +41,16 @@ export type ResourceAttributes = {
   verb: string;
 };
 
+export function requiredExecutionPermissions(profile: KubernetesProfile): ReadonlyArray<Omit<ResourceAttributes, "namespace"> & { namespaced: boolean }> {
+  return [
+    { resource: "namespaces", verb: "get", namespaced: false },
+    ...["create", "get", "list", "watch", "delete"].map(verb => ({ resource: "pods", verb, namespaced: true })),
+    ...(profile === "local-development"
+      ? ["exec", "portforward"].flatMap(subresource => ["create", "get"].map(verb => ({ resource: "pods", subresource, verb, namespaced: true })))
+      : ["create", "get", "list", "delete"].map(verb => ({ resource: "secrets", verb, namespaced: true })))
+  ];
+}
+
 export interface KubernetesApi {
   readNamespace(name: string): Promise<void>;
   selfCan(attributes: ResourceAttributes): Promise<boolean>;

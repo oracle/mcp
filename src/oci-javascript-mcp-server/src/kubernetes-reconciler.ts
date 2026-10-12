@@ -20,7 +20,7 @@ import {
   stderrKubernetesDiagnosticSink,
   type KubernetesDiagnosticSink
 } from "./isolation/kubernetes-diagnostics.ts";
-import { reconcileExpiredPods } from "./isolation/kubernetes-reconciler.ts";
+import { reconcileExpiredExecutions } from "./isolation/kubernetes-reconciler.ts";
 
 export async function runCleanupReconciler(
   api: KubernetesApi,
@@ -32,7 +32,7 @@ export async function runCleanupReconciler(
     const started = Date.now();
     const correlationId = randomUUID();
     try {
-      const summary = await reconcileExpiredPods(api, config.namespace, config.profile, Date.now(), 5_000, signal);
+      const summary = await reconcileExpiredExecutions(api, config.namespace, config.profile, Date.now(), 5_000, signal);
       const failed = summary.failureCount > 0;
       diagnostics(diagnosticEvent(
         config.profile,
@@ -43,7 +43,7 @@ export async function runCleanupReconciler(
         started,
         Date.now(),
         {
-          successCount: summary.deletedNames.length,
+          successCount: summary.deletedPodNames.length + summary.deletedSecretNames.length,
           failureCount: summary.failureCount
         }
       ));

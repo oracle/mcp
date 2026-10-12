@@ -9,7 +9,7 @@ import { isIP } from "node:net";
 import { createGrpcTlsBootstrap } from "../grpc-tls-host.ts";
 import { MAX_RESULT_BYTES } from "../sandbox-common.ts";
 import type { IsolationExecution, IsolationProvider, SandboxResult } from "../types.ts";
-import type { KubernetesApi, ResourceAttributes } from "./kubernetes-api.ts";
+import { requiredExecutionPermissions, type KubernetesApi } from "./kubernetes-api.ts";
 import type { KubernetesConfig } from "./kubernetes-config.ts";
 import {
   diagnosticEvent,
@@ -25,27 +25,13 @@ import {
   type KubernetesRuntimePolicy
 } from "./kubernetes-runtime-policy.ts";
 import { startGrpcExecution } from "./grpc-execution.ts";
-import { reconcileExpiredPods, startExpiryReconciliation } from "./kubernetes-reconciler.ts";
+import { reconcileExpiredExecutions, startExpiryReconciliation } from "./kubernetes-reconciler.ts";
 import type {
   KubernetesGrpcTunnel,
   KubernetesRunnerHandle
 } from "./kubernetes-grpc.ts";
 
 const POD_NAME_PREFIX = "oci-javascript-k8s-";
-const SHARED_ACCESS: ReadonlyArray<Omit<ResourceAttributes, "namespace"> & {
-  namespaced: boolean;
-}> = [
-  { resource: "namespaces", verb: "get", namespaced: false },
-  { resource: "pods", verb: "create", namespaced: true },
-  { resource: "pods", verb: "get", namespaced: true },
-  { resource: "pods", verb: "list", namespaced: true },
-  { resource: "pods", verb: "watch", namespaced: true },
-  { resource: "pods", verb: "delete", namespaced: true },
-  { resource: "pods", subresource: "exec", verb: "create", namespaced: true },
-  { resource: "pods", subresource: "exec", verb: "get", namespaced: true },
-  { resource: "pods", subresource: "portforward", verb: "create", namespaced: true },
-  { resource: "pods", subresource: "portforward", verb: "get", namespaced: true }
-];
 export class KubernetesIsolationProvider implements IsolationProvider {
   readonly #config: KubernetesConfig;
   readonly #policy: KubernetesRuntimePolicy;
@@ -72,7 +58,7 @@ export class KubernetesIsolationProvider implements IsolationProvider {
     this.#emit(correlationId, "preflight", "started", "none", started);
     try {
       await this.#api.readNamespace(this.#config.namespace);
-      for (const permission of SHARED_ACCESS) {
+      for (const permission of requiredExecutionPermissions(this.#config.profile)) {
         const name = permission.resource === "namespaces" ? this.#config.namespace : undefined;
         const allowed = await this.#api.selfCan({
           group: permission.group,
@@ -86,7 +72,7 @@ export class KubernetesIsolationProvider implements IsolationProvider {
           throw new PreflightError("authorization");
         }
       }
-      const reconciliation = await reconcileExpiredPods(
+      const reconciliation = await reconcileExpiredExecutions(
         this.#api,
         this.#config.namespace,
         this.#config.profile
@@ -110,7 +96,7 @@ export class KubernetesIsolationProvider implements IsolationProvider {
               Date.now(),
               summary
                 ? {
-                    successCount: summary.deletedNames.length,
+                    successCount: summary.deletedPodNames.length + summary.deletedSecretNames.length,
                     failureCount: summary.failureCount
                   }
                 : { successCount: 0, failureCount: 1 }
@@ -271,49 +257,49 @@ export class KubernetesIsolationProvider implements IsolationProvider {
           phase("running");
           phase("connecting");
         } else {
-        await this.#api.waitForPodRunning(
-          this.#config.namespace,
-          name,
-          options.deadlineMs,
-          localAbort.signal
-        );
-        assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
-        phase("running");
-        phase("connecting");
-        runnerPromise = this.#api.startRunner(
-          this.#config.namespace,
-          name,
-          tls.runner,
-          options.deadlineMs,
-          localAbort.signal
-        ).then(handle => {
-          runner = handle;
-          prematureRunner = watchClosure(handle.closed,
-            "Kubernetes runner exited before final gRPC status");
-          if (terminating) void stopRunner(handle).catch(() => undefined);
-          return handle;
-        });
-        runner = await raceExecutionStage(runnerPromise, options.deadlineMs, localAbort.signal);
-        assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
-        if (channelFailed) throw new Error("Kubernetes runner failed");
-        tunnelPromise = this.#api.openTunnel(
-          this.#config.namespace,
-          name,
-          50051,
-          options.deadlineMs,
-          localAbort.signal
-        ).then(handle => {
-          tunnel = handle;
-          prematureTunnel = watchClosure(handle.closed,
-            "Kubernetes port-forward closed before final gRPC status");
-          if (terminating) void stopTunnel(handle).catch(() => undefined);
-          return handle;
-        });
-        tunnel = await raceExecutionStage(Promise.race([tunnelPromise, prematureRunner!]),
-          options.deadlineMs, localAbort.signal);
-        assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
-        if (channelFailed) throw new Error("Kubernetes execution channel failed");
-        address = tunnel.address;
+          await this.#api.waitForPodRunning(
+            this.#config.namespace,
+            name,
+            options.deadlineMs,
+            localAbort.signal
+          );
+          assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
+          phase("running");
+          phase("connecting");
+          runnerPromise = this.#api.startRunner(
+            this.#config.namespace,
+            name,
+            tls.runner,
+            options.deadlineMs,
+            localAbort.signal
+          ).then(handle => {
+            runner = handle;
+            prematureRunner = watchClosure(handle.closed,
+              "Kubernetes runner exited before final gRPC status");
+            if (terminating) void stopRunner(handle).catch(() => undefined);
+            return handle;
+          });
+          runner = await raceExecutionStage(runnerPromise, options.deadlineMs, localAbort.signal);
+          assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
+          if (channelFailed) throw new Error("Kubernetes runner failed");
+          tunnelPromise = this.#api.openTunnel(
+            this.#config.namespace,
+            name,
+            50051,
+            options.deadlineMs,
+            localAbort.signal
+          ).then(handle => {
+            tunnel = handle;
+            prematureTunnel = watchClosure(handle.closed,
+              "Kubernetes port-forward closed before final gRPC status");
+            if (terminating) void stopTunnel(handle).catch(() => undefined);
+            return handle;
+          });
+          tunnel = await raceExecutionStage(Promise.race([tunnelPromise, prematureRunner!]),
+            options.deadlineMs, localAbort.signal);
+          assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
+          if (channelFailed) throw new Error("Kubernetes execution channel failed");
+          address = tunnel.address;
         }
         phase("executing");
         grpcExecution = startGrpcExecution(

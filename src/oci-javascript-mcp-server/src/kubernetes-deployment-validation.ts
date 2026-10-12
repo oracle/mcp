@@ -18,7 +18,7 @@ import {
   type RequestContext,
   type ResponseContext
 } from "@kubernetes/client-node";
-import type { KubernetesPod, ResourceAttributes } from "./isolation/kubernetes-api.ts";
+import { requiredExecutionPermissions, type KubernetesPod, type ResourceAttributes } from "./isolation/kubernetes-api.ts";
 import { parseKubernetesConfig, type KubernetesConfig } from "./isolation/kubernetes-config.ts";
 import { buildExecutionPod, runtimeAdmissionVariants, unsafeAdmissionVariants } from "./isolation/kubernetes-pod.ts";
 import { runtimePolicyFor } from "./isolation/kubernetes-runtime-policy.ts";
@@ -258,16 +258,11 @@ export async function validateDeployment(
     })) return report;
     if (!await check("namespace", () => api.readNamespace(options.config.namespace, signal),
       () => ({ passed: true, detail: "Execution namespace is readable" }))) return report;
-    for (const [resource, subresource, verbs] of [
-      ["pods", undefined, ["create", "get", "list", "watch", "delete"]],
-      ["pods", "exec", ["create", "get"]],
-      ["pods", "portforward", ["create", "get"]]
-    ] as const) {
-      for (const verb of verbs) {
-        if (!await check(`permission:${resource}${subresource ? `/${subresource}` : ""}:${verb}`,
-          () => api.selfCan({ resource, subresource, verb, namespace: options.config.namespace }, signal),
-          passed => ({ passed, detail: "Required execution permission must be allowed" }))) return report;
-      }
+    for (const permission of requiredExecutionPermissions(options.config.profile).filter(value => value.namespaced)) {
+      const { resource, subresource, verb } = permission;
+      if (!await check(`permission:${resource}${subresource ? `/${subresource}` : ""}:${verb}`,
+        () => api.selfCan({ resource, subresource, verb, namespace: options.config.namespace }, signal),
+        passed => ({ passed, detail: "Required execution permission must be allowed" }))) return report;
     }
     const policy = runtimePolicyFor(options.config);
     if (policy.kind === "kata" && !await check("runtime-class",

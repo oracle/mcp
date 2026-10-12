@@ -14,11 +14,12 @@ import {
 } from "./kubernetes-pod.ts";
 
 export type ReconciliationSummary = {
-  deletedNames: string[];
+  deletedPodNames: string[];
+  deletedSecretNames: string[];
   failureCount: number;
 };
 
-export async function reconcileExpiredPods(
+export async function reconcileExpiredExecutions(
   api: KubernetesApi,
   namespace: string,
   profile: KubernetesProfile,
@@ -27,33 +28,44 @@ export async function reconcileExpiredPods(
   signal?: AbortSignal
 ): Promise<ReconciliationSummary> {
   if (signal?.aborted) throw new Error("Kubernetes reconciliation cancelled");
-  const summary: ReconciliationSummary = { deletedNames: [], failureCount: 0 };
-  const listing = new AbortController();
-  const pods = await withReconciliationDeadline(
-    api.listManagedPods(namespace, profile, listing.signal),
-    Date.now() + 5_000,
-    listing,
-    signal
-  );
-  for (const pod of pods) {
-    if (signal?.aborted) throw new Error("Kubernetes reconciliation cancelled");
-    const name = expiredManagedPodName(pod, namespace, profile, nowMs);
-    if (!name) {
-      continue;
-    }
-    const deadlineMs = Date.now() + candidateTimeoutMs;
-    const controller = new AbortController();
+  const summary: ReconciliationSummary = { deletedPodNames: [], deletedSecretNames: [], failureCount: 0 };
+  const kinds: Array<"pod" | "secret"> = profile === "local-development" ? ["pod"] : ["pod", "secret"];
+  const listings = await Promise.allSettled(kinds.map(async kind => {
+    const listing = new AbortController();
     try {
-      await withReconciliationDeadline((async () => {
-        await api.deletePod(namespace, name, controller.signal);
-        if (!await api.waitForPodDeleted(namespace, name, deadlineMs, controller.signal)) {
-          throw new Error("Kubernetes reconciliation could not confirm pod deletion");
-        }
-      })(), deadlineMs, controller, signal);
-      summary.deletedNames.push(name);
-    } catch {
+      return await withReconciliationDeadline(kind === "pod"
+        ? api.listManagedPods(namespace, profile, listing.signal)
+        : api.listManagedSecrets(namespace, profile, listing.signal), Date.now() + 5_000, listing, signal);
+    } finally { listing.abort(); }
+  }));
+  for (const [index, listing] of listings.entries()) {
+    if (signal?.aborted) throw new Error("Kubernetes reconciliation cancelled");
+    if (listing.status === "rejected") { summary.failureCount += 1; continue; }
+    const kind = kinds[index]!;
+    for (const pod of listing.value) {
       if (signal?.aborted) throw new Error("Kubernetes reconciliation cancelled");
-      summary.failureCount += 1;
+      const name = expiredManagedPodName(pod, namespace, profile, nowMs);
+      if (!name) {
+        continue;
+      }
+      const deadlineMs = Date.now() + candidateTimeoutMs;
+      const controller = new AbortController();
+      try {
+        await withReconciliationDeadline((async () => {
+          if (kind === "pod") await api.deletePod(namespace, name, controller.signal);
+          else await api.deleteSecret(namespace, name, controller.signal);
+          const deleted = kind === "pod"
+            ? await api.waitForPodDeleted(namespace, name, deadlineMs, controller.signal)
+            : await api.waitForSecretDeleted(namespace, name, deadlineMs, controller.signal);
+          if (!deleted) {
+            throw new Error("Kubernetes reconciliation could not confirm pod deletion");
+          }
+        })(), deadlineMs, controller, signal);
+        (kind === "pod" ? summary.deletedPodNames : summary.deletedSecretNames).push(name);
+      } catch {
+        if (signal?.aborted) throw new Error("Kubernetes reconciliation cancelled");
+        summary.failureCount += 1;
+      } finally { controller.abort(); }
     }
   }
   return summary;
@@ -74,7 +86,7 @@ export function startExpiryReconciliation(
     }
     running = true;
     try {
-      onResult(await reconcileExpiredPods(api, namespace, profile));
+      onResult(await reconcileExpiredExecutions(api, namespace, profile));
     } catch {
       onResult(undefined);
     } finally {
@@ -120,7 +132,7 @@ function withReconciliationDeadline<T>(
 }
 
 function expiredManagedPodName(
-  pod: KubernetesPod,
+  pod: Pick<KubernetesPod, "metadata">,
   namespace: string,
   profile: KubernetesProfile,
   nowMs: number

@@ -87,8 +87,9 @@ test("standard RBAC and admission omit RuntimeClass while Kata remains additive"
     value.kind === "Role" && value.metadata.name === "oci-js-standard-executor"
   ))!;
   assert.equal(executor.rules?.every(rule => rule.resourceNames === undefined), true);
-  assert.equal(executor.rules?.some(rule => rule.resources.includes("pods/exec")), true);
-  assert.equal(executor.rules?.some(rule => rule.resources.includes("pods/portforward")), true);
+  assert.equal(executor.rules?.some(rule => rule.resources.includes("pods/exec")), false);
+  assert.equal(executor.rules?.some(rule => rule.resources.includes("pods/portforward")), false);
+  assert.deepEqual(plain(executor.rules?.find(rule => rule.resources.includes("secrets"))?.verbs), ["create", "get", "list", "delete"]);
   const standardPolicy = standard.find(value => value.kind === "ValidatingAdmissionPolicy")!;
   const standardExpressions = JSON.stringify(standardPolicy.spec?.validations);
   assert.equal(standardExpressions.includes("!has(object.spec.runtimeClassName)"), true);
@@ -158,7 +159,7 @@ test("standard cleanup reconciler has no create or exec authority", () => {
     apiGroups: [""],
     resources: ["pods"],
     verbs: ["get", "list", "watch", "delete"]
-  }]);
+  }, { apiGroups: [""], resources: ["secrets"], verbs: ["get", "list", "delete"] }]);
   assert.equal(JSON.stringify(cleanup).includes("pods/exec"), false);
   assert.equal(JSON.stringify(cleanup).includes("pods/portforward"), false);
   assert.equal(cleanup.rules?.some(rule => rule.verbs.includes("create")), false);
@@ -229,4 +230,20 @@ test("standard manifests include bounded resource and default-deny network contr
   assert.equal(standardSource.includes("egress: []"), true);
   assert.equal(standardSource.includes("/Users/"), false);
   assert.equal(/password|private[_-]?key|bearer[_-]?token/i.test(standardSource), false);
+});
+
+test("direct execution admits only its TLS mount and trusted host ingress", () => {
+  const execution = standard.find(value => value.kind === "Namespace" && value.metadata.name === "oci-js-standard-execution")!;
+  assert.equal(execution.metadata.labels?.["istio-injection"], "disabled");
+  assert.equal(execution.metadata.labels?.["istio.io/dataplane-mode"], "none");
+  const ingress = standard.find(value => value.kind === "NetworkPolicy" && value.metadata.name === "allow-trusted-host-grpc")!;
+  assert.deepEqual(plain(ingress.spec?.ingress), [{ _from: [{
+    namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": "oci-js-standard-host" } },
+    podSelector: { matchLabels: { "app.kubernetes.io/name": "oci-js-standard-host" } }
+  }], ports: [{ protocol: "TCP", port: 50051 }] }]);
+  const expression = JSON.stringify(standard.find(value => value.kind === "ValidatingAdmissionPolicy")!.spec?.validations);
+  assert(expression.includes("object.metadata.name + '-tls'"));
+  assert(expression.includes("secret.defaultMode == 288"));
+  assert(expression.includes("volumeMounts[1].readOnly == true"));
+  assert(expression.includes("--tls-files"));
 });

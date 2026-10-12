@@ -84,8 +84,9 @@ test("execution grants name only the cross-namespace host and cleanup identity s
   const hostRole = manifests.find(
     item => item.kind === "Role" && item.metadata.name === "oci-js-kata-executor"
   )!;
-  assert.equal(hostRole.rules?.some(rule => rule.resources.includes("pods/exec")), true);
-  assert.equal(hostRole.rules?.some(rule => rule.resources.includes("pods/portforward")), true);
+  assert.equal(hostRole.rules?.some(rule => rule.resources.includes("pods/exec")), false);
+  assert.equal(hostRole.rules?.some(rule => rule.resources.includes("pods/portforward")), false);
+  assert.deepEqual(plain(hostRole.rules?.find(rule => rule.resources.includes("secrets"))?.verbs), ["create", "get", "list", "delete"]);
   assert.equal(hostRole.rules?.some(rule => rule.verbs.includes("create")), true);
 
   const cleanupRole = manifests.find(
@@ -95,7 +96,7 @@ test("execution grants name only the cross-namespace host and cleanup identity s
     apiGroups: [""],
     resources: ["pods"],
     verbs: ["get", "list", "watch", "delete"]
-  }]);
+  }, { apiGroups: [""], resources: ["secrets"], verbs: ["get", "list", "delete"] }]);
   assert.equal(JSON.stringify(cleanupRole).includes("pods/exec"), false);
   assert.equal(JSON.stringify(cleanupRole).includes("pods/portforward"), false);
   assert.equal(cleanupRole.rules?.some(rule => rule.verbs.includes("create")), false);
@@ -129,7 +130,7 @@ test("resource and default-deny network controls apply only to execution pods", 
   }
   const policies = manifests.filter(item => item.kind === "NetworkPolicy");
   assert.deepEqual(policies.map(item => item.metadata.name).sort(), [
-    "default-deny-egress", "default-deny-ingress"
+    "allow-trusted-host-grpc", "default-deny-egress", "default-deny-ingress"
   ]);
   assert.equal(source.includes("ingress: []"), true);
   assert.equal(source.includes("egress: []"), true);

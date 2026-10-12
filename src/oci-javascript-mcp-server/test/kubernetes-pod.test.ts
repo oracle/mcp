@@ -190,7 +190,10 @@ test("shared and Kata-only admission variants exactly cover the reviewed immutab
     "extra-volume-mount",
     "tmp-mount-name",
     "tmp-mount-path",
-    "tmp-mount-read-only"
+    "tmp-mount-read-only",
+    "tls-secret-name", "tls-secret-optional", "tls-secret-key", "tls-secret-item-path",
+    "tls-secret-mode", "tls-volume-name", "tls-volume-source", "tls-mount-name",
+    "tls-mount-path", "tls-mount-read-only", "tls-secret-extra-item"
   ];
   assert.deepEqual(shared.map(variant => variant.id), expectedSharedIds);
   assert.equal(new Set(shared.map(variant => variant.id)).size, expectedSharedIds.length);

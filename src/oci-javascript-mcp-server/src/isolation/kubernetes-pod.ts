@@ -366,7 +366,20 @@ export function unsafeAdmissionVariants(pod: V1Pod): AdmissionVariant[] {
     }),
     variant("tmp-mount-read-only", pod, value => {
       value.spec!.containers[0]!.volumeMounts![0]!.readOnly = true;
-    })
+    }),
+    ...(pod.spec!.volumes!.some(volume => volume.name === "runner-tls") ? [
+      variant("tls-secret-name", pod, value => { value.spec!.volumes![1]!.secret!.secretName = "unrelated"; }),
+      variant("tls-secret-optional", pod, value => { value.spec!.volumes![1]!.secret!.optional = true; }),
+      variant("tls-secret-key", pod, value => { value.spec!.volumes![1]!.secret!.items![0]!.key = "hostKey"; }),
+      variant("tls-secret-item-path", pod, value => { value.spec!.volumes![1]!.secret!.items![0]!.path = "other"; }),
+      variant("tls-secret-mode", pod, value => { value.spec!.volumes![1]!.secret!.defaultMode = 0o444; }),
+      variant("tls-volume-name", pod, value => { value.spec!.volumes![1]!.name = "other"; }),
+      variant("tls-volume-source", pod, value => { delete value.spec!.volumes![1]!.secret; value.spec!.volumes![1]!.emptyDir = {}; }),
+      variant("tls-mount-name", pod, value => { value.spec!.containers[0]!.volumeMounts![1]!.name = "tmp"; }),
+      variant("tls-mount-path", pod, value => { value.spec!.containers[0]!.volumeMounts![1]!.mountPath = "/other"; }),
+      variant("tls-mount-read-only", pod, value => { value.spec!.containers[0]!.volumeMounts![1]!.readOnly = false; }),
+      variant("tls-secret-extra-item", pod, value => { value.spec!.volumes![1]!.secret!.items!.push({ key: "hostKey", path: "hostKey" }); })
+    ] : [])
   ];
 }
 

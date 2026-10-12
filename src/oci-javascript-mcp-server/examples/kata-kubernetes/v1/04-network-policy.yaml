@@ -17,3 +17,26 @@ spec:
   podSelector: {}
   policyTypes: ["Egress"]
   egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-trusted-host-grpc
+  namespace: oci-js-execution
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/managed-by: oci-javascript-mcp
+      oci.oracle.com/isolation-provider: kubernetes
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: oci-js-host
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: oci-js-kata-host
+      ports:
+        - protocol: TCP
+          port: 50051

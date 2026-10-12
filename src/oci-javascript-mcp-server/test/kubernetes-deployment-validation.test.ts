@@ -89,7 +89,7 @@ test("standard and Kata validation dry-run every reviewed variant without execut
     const report = await validateDeployment(options, api);
     assert.equal(report.passed, true);
     assert.equal(report.identity?.username, options.expectedIdentity);
-    assert.equal(api.pods.length, options.config.profile === "kata-in-cluster" ? 62 : 61);
+    assert.equal(api.pods.length, options.config.profile === "kata-in-cluster" ? 73 : 72);
     assert.equal(api.runtimeReads, options.config.profile === "kata-in-cluster" ? 1 : 0);
     assert.equal(api.permissions.length, 9);
     assert.equal(api.pods[0]?.spec?.runtimeClassName, options.config.profile === "kata-in-cluster" ? "kata-qemu-runtime-rs" : undefined);
@@ -194,7 +194,7 @@ test("real SDK uses the explicit context and host impersonation for every dry-ru
     const reviews = fixture.requests.filter(request => request.url.pathname.endsWith("selfsubjectaccessreviews"));
     assert.equal(reviews.length, 9);
     const pods = fixture.requests.filter(request => request.url.pathname.endsWith("/pods"));
-    assert.equal(pods.length, profile === "kata-in-cluster" ? 62 : 61);
+    assert.equal(pods.length, profile === "kata-in-cluster" ? 73 : 72);
     assert.equal(pods[0].body.spec.runtimeClassName, profile === "kata-in-cluster" ? "kata-qemu-runtime-rs" : undefined);
     assert.equal(report.checks.find(check => check.id === "admission:image")?.statusCode, 422);
     assert.equal(report.checks.find(check => check.id === "admission:image")?.reason, "Invalid");

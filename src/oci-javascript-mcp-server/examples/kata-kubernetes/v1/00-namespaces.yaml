@@ -13,6 +13,8 @@ kind: Namespace
 metadata:
   name: oci-js-execution
   labels:
+    istio-injection: disabled
+    istio.io/dataplane-mode: none
     oci.oracle.com/kubernetes-profile: kata-in-cluster
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: latest

@@ -193,7 +193,10 @@ function preflightApi(): KubernetesApi {
   return {
     async readNamespace() {},
     async selfCan() { return true; },
-    async createPod() {},
+    async createPod() { return "created-uid"; },
+    async createSecret() {}, async deleteSecret() {}, async waitForSecretDeleted() { return true; },
+    async listManagedSecrets() { return []; },
+    async waitForPodEndpoint() { return { uid: "created-uid", ip: "127.0.0.1" }; },
     async waitForPodRunning() {},
     async startRunner() { throw new Error("unused"); },
     async openTunnel() { throw new Error("unused"); },

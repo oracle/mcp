@@ -47,10 +47,16 @@ class FakeKubernetesApi implements KubernetesApi {
   constructor(profile: KubernetesProfile) {
     this.profile = profile;
   }
+  async createSecret() {}
+  async deleteSecret() {}
+  async waitForSecretDeleted() { return true; }
+  async listManagedSecrets() { return []; }
+  async waitForPodEndpoint() { return { uid: "created-uid", ip: "127.0.0.1" }; }
   async readNamespace() {}
   async selfCan(_attributes: ResourceAttributes) { return true; }
   async createPod(_namespace: string, pod: KubernetesPod) {
     this.pods.set(pod.metadata!.name!, structuredClone(pod));
+    return "created-uid";
   }
   async waitForPodRunning() {}
   async startRunner(

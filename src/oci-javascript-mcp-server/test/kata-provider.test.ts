@@ -363,8 +363,9 @@ for (const timing of ["during", "after"] as const) {
     api.createPod = async (...args) => {
       requested.resolve();
       await creation.promise;
-      await original(...args);
+      const uid = await original(...args);
       created.resolve();
+      return uid;
     };
     const provider = createProvider(api);
     await provider.preflight({ startReconciliation: false });
@@ -614,17 +615,23 @@ class FakeKubernetesApi implements KubernetesApi {
   #bootstraps = new Map<string, RunnerTlsBootstrap>();
   #servers = new Map<string, Server>();
 
+  async createSecret() {}
+  async deleteSecret() {}
+  async waitForSecretDeleted() { return true; }
+  async listManagedSecrets() { return []; }
+  async waitForPodEndpoint() { return { uid: "created-uid", ip: "127.0.0.1" }; }
   async readNamespace(): Promise<void> {}
   async selfCan(attributes: ResourceAttributes): Promise<boolean> {
     this.permissions.push(attributes);
     return true;
   }
-  async createPod(_namespace: string, pod: KubernetesPod): Promise<void> {
+  async createPod(_namespace: string, pod: KubernetesPod): Promise<string> {
     this.lifecycle.push("create");
     if (this.failure === "create") throw new Error("private create failure");
     const copy = structuredClone(pod);
     this.createdPods.push(copy);
     this.pods.set(copy.metadata!.name!, copy);
+    return "created-uid";
   }
   async waitForPodRunning(
     _namespace: string, _name: string, _deadlineMs: number, _signal: AbortSignal

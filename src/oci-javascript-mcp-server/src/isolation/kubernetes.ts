@@ -221,7 +221,7 @@ export class KubernetesIsolationProvider implements IsolationProvider {
           pod,
           options.deadlineMs,
           localAbort.signal
-        );
+        ).then(() => undefined);
         const creationSettled = () => {
           if (terminating) {
             postCleanupDeletionRequired = true;

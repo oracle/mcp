@@ -51,7 +51,12 @@ export class StartupKubernetesApi implements KubernetesApi {
 
   async readNamespace(): Promise<void> {}
   async selfCan(): Promise<boolean> { return true; }
-  async createPod(): Promise<void> {}
+  async createSecret() {}
+  async deleteSecret() {}
+  async waitForSecretDeleted() { return true; }
+  async listManagedSecrets() { return []; }
+  async waitForPodEndpoint() { return { uid: "created-uid", ip: "127.0.0.1" }; }
+  async createPod(): Promise<string> { return "created-uid"; }
   async waitForPodRunning(): Promise<void> {}
   async startRunner(namespace: string, name: string, bootstrap: RunnerTlsBootstrap,
     deadlineMs: number, signal: AbortSignal): Promise<KubernetesRunnerHandle> {

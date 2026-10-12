@@ -15,6 +15,7 @@ import {
   type CoreV1Api,
   type ResponseContext,
   type V1Pod,
+  type V1Secret,
   type Watch
 } from "@kubernetes/client-node";
 import { ClientNodeKubernetesApi, isNotFound } from "../src/isolation/kubernetes-api.ts";
@@ -79,6 +80,70 @@ test("client-node managed pod listing attaches request cancellation", async () =
   assert.equal(signal, controller.signal);
   controller.abort();
   assert.equal(signal?.aborted, true);
+});
+
+test("direct endpoint waits for the original UID and pod IP using the read version", async () => {
+  const harness = apiHarness();
+  harness.core.readPod = { metadata: { uid: "original", resourceVersion: "42" }, status: { phase: "Running" } };
+  const endpoint = harness.api.waitForPodEndpoint("execution", "pod", "original", Date.now() + 1000, new AbortController().signal);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(harness.watch.calls[0], {
+    path: "/api/v1/namespaces/execution/pods", query: { fieldSelector: "metadata.name=pod", resourceVersion: "42" }
+  });
+  harness.watch.emitPod({ metadata: { uid: "original" }, status: { phase: "Running", podIP: "::1" } });
+  assert.deepEqual(await endpoint, { uid: "original", ip: "::1" });
+  assert.equal(harness.watch.abortController.signal.aborted, true);
+});
+
+test("direct endpoint rejects replacement terminal and malformed pod identities", async () => {
+  for (const pod of [
+    { metadata: { uid: "replacement" }, status: { phase: "Running", podIP: "127.0.0.1" } },
+    { metadata: { uid: "original" }, status: { phase: "Failed" } },
+    { metadata: { uid: "original" }, status: { phase: "Succeeded" } },
+    { metadata: { uid: "original" }, status: { phase: "Running", podIP: "bad:address" } }
+  ]) {
+    const harness = apiHarness();
+    harness.core.readPod = pod;
+    await assert.rejects(harness.api.waitForPodEndpoint("execution", "pod", "original", Date.now() + 1000, new AbortController().signal));
+  }
+});
+
+test("direct endpoint bounds a stalled GET and aborts its request", async () => {
+  const harness = apiHarness();
+  harness.core.readBarrier = new Promise(() => undefined);
+  await assert.rejects(harness.api.waitForPodEndpoint("execution", "pod", "uid", Date.now() + 20, new AbortController().signal), /deadline exceeded/);
+  assert.equal((await configuredSignal(harness.core.readOptions[0]))?.aborted, true);
+});
+
+test("Secret lifecycle propagates authority and strips TLS data from managed listings", async () => {
+  const harness = apiHarness();
+  const secret: V1Secret = { metadata: { name: "tls" }, data: { serverKey: "private" } };
+  const controller = new AbortController();
+  await harness.api.createSecret("execution", secret, Date.now() + 1000, controller.signal);
+  assert.deepEqual(harness.core.secretCreate, { namespace: "execution", body: secret });
+  assert.equal((await configuredSignal(harness.core.secretOptions))?.aborted, false);
+  assert.deepEqual(await harness.api.listManagedSecrets("execution", "in-cluster", controller.signal), [{ metadata: secret.metadata }]);
+  assert.match(harness.core.secretSelector, /kubernetes-profile=in-cluster/);
+  await harness.api.deleteSecret("execution", "tls");
+  assert.equal(await harness.api.waitForSecretDeleted("execution", "tls", Date.now() + 1000), true);
+  harness.core.secretError = { code: 403 };
+  await assert.rejects(harness.api.deleteSecret("execution", "tls"));
+  await assert.rejects(harness.api.waitForSecretDeleted("execution", "tls", Date.now() + 1000), /confirmation failed/);
+  await assert.rejects(harness.api.listManagedSecrets("execution", "in-cluster"));
+  harness.core.secretError = { code: 404 };
+  await harness.api.deleteSecret("execution", "tls");
+});
+
+test("Secret creation and confirmation reject cancellation and bound lingering resources", async () => {
+  const harness = apiHarness();
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(harness.api.createSecret("execution", {}, Date.now() + 1000, controller.signal));
+  await assert.rejects(harness.api.createSecret("execution", {}, Date.now() - 1, new AbortController().signal));
+  await assert.rejects(harness.api.waitForSecretDeleted("execution", "tls", Date.now() + 1000, controller.signal));
+  await harness.api.createSecret("execution", { metadata: { name: "tls" } }, Date.now() + 1000, new AbortController().signal);
+  assert.equal(await harness.api.waitForSecretDeleted("execution", "tls", Date.now() + 60), false);
+  assert.equal(await harness.api.waitForSecretDeleted("execution", "tls", Date.now() - 1), false);
 });
 
 test("client-node pod creation propagates cancellation and deadline to the HTTP request", async () => {
@@ -555,6 +620,30 @@ function apiHarness() {
 }
 
 class FakeCore {
+  secretCreate: { namespace: string; body: V1Secret } | undefined;
+  secretOptions: ConfigurationOptions | undefined;
+  secretSelector = "";
+  secretError: unknown;
+  secret: V1Secret | undefined;
+  async createNamespacedSecret(request: { namespace: string; body: V1Secret }, options?: ConfigurationOptions) {
+    this.secretCreate = request; this.secretOptions = options;
+    if (this.secretError) throw this.secretError;
+    this.secret = request.body;
+  }
+  async readNamespacedSecret() {
+    if (this.secretError) throw this.secretError;
+    if (!this.secret) throw { code: 404 };
+    return this.secret;
+  }
+  async deleteNamespacedSecret() {
+    if (this.secretError) throw this.secretError;
+    this.secret = undefined;
+  }
+  async listNamespacedSecret(request: { labelSelector: string }) {
+    this.secretSelector = request.labelSelector;
+    if (this.secretError) throw this.secretError;
+    return { items: this.secret ? [this.secret] : [] };
+  }
   readNamespaceCalls: Array<{ name: string }> = [];
   createCalls: Array<{ namespace: string; body: V1Pod; dryRun?: string }> = [];
   createOptions: Array<ConfigurationOptions | undefined> = [];
@@ -586,7 +675,7 @@ class FakeCore {
       throw this.createError;
     }
     await this.createBarrier;
-    return request.body;
+    return { ...request.body, metadata: { ...request.body.metadata, uid: "created-uid" } };
   }
 
   async deleteNamespacedPod(

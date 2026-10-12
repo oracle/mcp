@@ -69,11 +69,16 @@ test("all Kubernetes profiles share the exact hardened credential-free base pod"
       runner?.resources?.requests?.["ephemeral-storage"],
       runner?.resources?.limits?.["ephemeral-storage"]
     );
-    assert.deepEqual(runner?.volumeMounts, [{ name: "tmp", mountPath: "/tmp", readOnly: false }]);
+    const local = pod.metadata?.labels?.[PROFILE_LABEL] === "local-development";
+    assert.deepEqual(runner?.volumeMounts, [{ name: "tmp", mountPath: "/tmp", readOnly: false },
+      ...(local ? [] : [{ name: "runner-tls", mountPath: "/run/oci-javascript/tls", readOnly: true }])]);
     assert.deepEqual(pod.spec?.volumes, [{
       name: "tmp",
       emptyDir: { medium: "Memory", sizeLimit: "16Mi" }
-    }]);
+    }, ...(local ? [] : [{ name: "runner-tls", secret: {
+      secretName: `${pod.metadata?.name}-tls`, defaultMode: 0o440,
+      items: ["serverKey", "serverCert", "clientCert"].map(key => ({ key, path: key }))
+    } }])]);
   }
 
   assert.equal(pods[0]?.metadata?.labels?.[PROFILE_LABEL], "local-development");

@@ -5,6 +5,8 @@
  */
 
 import type { V1Pod } from "@kubernetes/client-node";
+import { RUNNER_TLS_DIRECTORY } from "../grpc-tls.ts";
+import { executionSecretName } from "./kubernetes-secret.ts";
 import type { KubernetesConfig } from "./kubernetes-config.ts";
 import {
   runtimeClassName,
@@ -114,7 +116,10 @@ export function buildExecutionPod(
         name: RUNNER_CONTAINER_NAME,
         image: config.image,
         imagePullPolicy: config.imagePullPolicy,
-        command: WAIT_COMMAND,
+        command: config.profile === "local-development" ? WAIT_COMMAND : [
+          "node", "--no-node-snapshot", "--experimental-strip-types",
+          "/app/src/sandbox-worker.ts", "--tls-files"
+        ],
         securityContext: {
           runAsNonRoot: true,
           runAsUser: 65532,
@@ -137,12 +142,23 @@ export function buildExecutionPod(
             "ephemeral-storage": `${config.ephemeralStorageMb}Mi`
           }
         },
-        volumeMounts: [{ name: "tmp", mountPath: "/tmp", readOnly: false }]
+        volumeMounts: [
+          { name: "tmp", mountPath: "/tmp", readOnly: false },
+          ...(config.profile === "local-development" ? [] : [
+            { name: "runner-tls", mountPath: RUNNER_TLS_DIRECTORY, readOnly: true }
+          ])
+        ]
       }],
       volumes: [{
         name: "tmp",
         emptyDir: { medium: "Memory", sizeLimit: `${config.tmpMb}Mi` }
-      }]
+      }, ...(config.profile === "local-development" ? [] : [{
+        name: "runner-tls",
+        secret: {
+          secretName: executionSecretName(name), defaultMode: 0o440,
+          items: ["serverKey", "serverCert", "clientCert"].map(key => ({ key, path: key }))
+        }
+      }])]
     }
   };
 }

@@ -280,7 +280,12 @@ class ProfileApi implements KubernetesApi {
     this.permissions.push(attributes);
     return this.permission(attributes);
   }
-  async createPod() {}
+  async createSecret() {}
+  async deleteSecret() {}
+  async waitForSecretDeleted() { return true; }
+  async listManagedSecrets() { return []; }
+  async waitForPodEndpoint() { return { uid: "created-uid", ip: "127.0.0.1" }; }
+  async createPod() { return "created-uid"; }
   async waitForPodRunning() {}
   async startRunner(): Promise<never> { throw new Error("unused"); }
   async openTunnel(): Promise<never> { throw new Error("unused"); }

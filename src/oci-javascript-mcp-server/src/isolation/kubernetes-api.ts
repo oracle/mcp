@@ -16,9 +16,11 @@ import {
   type RequestContext,
   type ResponseContext,
   type V1Pod,
+  type V1Secret,
   type V1SelfSubjectAccessReview,
   type V1Status
 } from "@kubernetes/client-node";
+import { isIP } from "node:net";
 import type { RunnerTlsBootstrap } from "../grpc-tls.ts";
 import {
   ClientNodeKubernetesGrpcTransport,
@@ -47,7 +49,12 @@ export interface KubernetesApi {
     pod: KubernetesPod,
     deadlineMs: number,
     signal: AbortSignal
-  ): Promise<void>;
+  ): Promise<string>;
+  createSecret(namespace: string, secret: V1Secret, deadlineMs: number, signal: AbortSignal): Promise<void>;
+  deleteSecret(namespace: string, name: string, signal?: AbortSignal): Promise<void>;
+  waitForSecretDeleted(namespace: string, name: string, deadlineMs: number, signal?: AbortSignal): Promise<boolean>;
+  listManagedSecrets(namespace: string, profile: KubernetesProfile, signal?: AbortSignal): Promise<Array<Pick<V1Secret, "metadata">>>;
+  waitForPodEndpoint(namespace: string, name: string, expectedUid: string, deadlineMs: number, signal: AbortSignal): Promise<{ uid: string; ip: string }>;
   waitForPodRunning(
     namespace: string,
     name: string,
@@ -153,19 +160,118 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
     pod: KubernetesPod,
     deadlineMs: number,
     signal: AbortSignal
-  ): Promise<void> {
+  ): Promise<string> {
     if (signal.aborted || Date.now() >= deadlineMs) {
       throw new Error("sandbox run deadline exceeded");
     }
     const request = deadlineRequestSignal(deadlineMs, signal);
     try {
-      await this.#core.createNamespacedPod(
+      const created = await this.#core.createNamespacedPod(
         { namespace, body: pod },
         requestSignalOptions(request.signal)
       );
+      if (!created.metadata?.uid) throw new Error("Kubernetes pod identity is missing");
+      return created.metadata.uid;
     } finally {
       request.dispose();
     }
+  }
+
+  async createSecret(namespace: string, secret: V1Secret, deadlineMs: number, signal: AbortSignal): Promise<void> {
+    if (signal.aborted || Date.now() >= deadlineMs) throw new Error("sandbox run deadline exceeded");
+    const request = deadlineRequestSignal(deadlineMs, signal);
+    try {
+      await this.#core.createNamespacedSecret({ namespace, body: secret }, requestSignalOptions(request.signal));
+    } finally { request.dispose(); }
+  }
+
+  async deleteSecret(namespace: string, name: string, signal?: AbortSignal): Promise<void> {
+    try {
+      await this.#core.deleteNamespacedSecret({ namespace, name }, requestSignalOptions(signal));
+    } catch (error) { if (!isNotFound(error)) throw error; }
+  }
+
+  async listManagedSecrets(namespace: string, profile: KubernetesProfile, signal?: AbortSignal): Promise<Array<Pick<V1Secret, "metadata">>> {
+    const response = await this.#core.listNamespacedSecret({ namespace,
+      labelSelector: "app.kubernetes.io/managed-by=oci-javascript-mcp,oci.oracle.com/isolation-provider=kubernetes,"
+        + `oci.oracle.com/kubernetes-profile=${profile}`
+    }, requestSignalOptions(signal));
+    return response.items.map(secret => ({ metadata: secret.metadata }));
+  }
+
+  waitForSecretDeleted(namespace: string, name: string, deadlineMs: number, signal?: AbortSignal): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      const controller = new AbortController();
+      let settled = false;
+      let poll: NodeJS.Timeout | undefined;
+      const finish = (value: boolean, error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        clearTimeout(poll);
+        signal?.removeEventListener("abort", aborted);
+        controller.abort();
+        error ? reject(error) : resolve(value);
+      };
+      const aborted = () => finish(false, new Error("Kubernetes deletion confirmation cancelled"));
+      const timer = setTimeout(() => finish(false), Math.max(0, deadlineMs - Date.now()));
+      signal?.addEventListener("abort", aborted, { once: true });
+      if (signal?.aborted) { aborted(); return; }
+      if (Date.now() >= deadlineMs) { finish(false); return; }
+      const observe = async () => {
+        try {
+          await this.#core.readNamespacedSecret({ namespace, name }, requestSignalOptions(controller.signal));
+          if (!settled) poll = setTimeout(() => void observe(), Math.min(50, Math.max(0, deadlineMs - Date.now())));
+        } catch (error) {
+          finish(isNotFound(error), isNotFound(error) ? undefined : new Error("Kubernetes deletion confirmation failed"));
+        }
+      };
+      void observe();
+    });
+  }
+
+  waitForPodEndpoint(namespace: string, name: string, expectedUid: string, deadlineMs: number, signal: AbortSignal): Promise<{ uid: string; ip: string }> {
+    return new Promise((resolve, reject) => {
+      const controller = new AbortController();
+      let settled = false;
+      let watch: AbortController | undefined;
+      const finish = (error?: Error, ip?: string) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        signal.removeEventListener("abort", aborted);
+        controller.abort();
+        watch?.abort();
+        error ? reject(error) : resolve({ uid: expectedUid, ip: ip! });
+      };
+      const aborted = () => finish(new Error("sandbox run deadline exceeded"));
+      const timer = setTimeout(aborted, Math.max(0, deadlineMs - Date.now()));
+      signal.addEventListener("abort", aborted, { once: true });
+      if (signal.aborted || Date.now() >= deadlineMs) { aborted(); return; }
+      const observe = (pod: KubernetesPod, event?: string) => {
+        if (settled) return;
+        if (signal.aborted || Date.now() >= deadlineMs) { aborted(); return; }
+        if (event === "ERROR" || event === "DELETED" || pod.metadata?.uid !== expectedUid
+          || !expectedUid || pod.status?.phase === "Failed" || pod.status?.phase === "Succeeded") {
+          finish(new Error("Kubernetes execution pod endpoint failed"));
+        } else if (pod.status?.phase === "Running" && pod.status.podIP) {
+          if (!isIP(pod.status.podIP)) finish(new Error("Kubernetes execution pod endpoint failed"));
+          else finish(undefined, pod.status.podIP);
+        }
+      };
+      void (async () => {
+        const pod = await this.#core.readNamespacedPod({ namespace, name }, requestSignalOptions(controller.signal));
+        observe(pod);
+        if (settled) return;
+        if (!pod.metadata?.resourceVersion) throw new Error("missing resource version");
+        const handle = await this.#watch.watch(`/api/v1/namespaces/${encodeURIComponent(namespace)}/pods`,
+          { fieldSelector: `metadata.name=${name}`, resourceVersion: pod.metadata.resourceVersion },
+          (event, value: KubernetesPod) => observe(value, event),
+          () => finish(new Error("Kubernetes pod watch failed")));
+        watch = handle;
+        if (settled) handle.abort();
+      })().catch(() => finish(new Error("Kubernetes execution pod endpoint failed")));
+    });
   }
 
   async waitForPodRunning(

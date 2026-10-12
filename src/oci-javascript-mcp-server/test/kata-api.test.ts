@@ -13,27 +13,21 @@ import {
   type ConfigurationOptions,
   type AuthorizationV1Api,
   type CoreV1Api,
-  type NodeV1Api,
   type ResponseContext,
   type V1Pod,
   type Watch
 } from "@kubernetes/client-node";
 import { ClientNodeKubernetesApi, isNotFound } from "../src/isolation/kubernetes-api.ts";
 
-test("client-node adapter maps namespace, RuntimeClass, authorization, create, and list APIs", async () => {
+test("client-node adapter maps operational APIs without deployment policy capabilities", async () => {
   const harness = apiHarness();
   await harness.api.readNamespace("execution");
   assert.deepEqual(harness.core.readNamespaceCalls, [{ name: "execution" }]);
-  assert.deepEqual(await harness.api.readRuntimeClass("kata"), { handler: "kata-handler" });
+  assert.equal("readRuntimeClass" in harness.api, false);
+  assert.equal("dryRunCreatePod" in harness.api, false);
   assert.equal(await harness.api.selfCan({
     name: "execution",
     resource: "namespaces",
-    verb: "get"
-  }), true);
-  assert.equal(await harness.api.selfCan({
-    group: "node.k8s.io",
-    name: "kata-runtime",
-    resource: "runtimeclasses",
     verb: "get"
   }), true);
   assert.equal(await harness.api.selfCan({
@@ -51,13 +45,6 @@ test("client-node adapter maps namespace, RuntimeClass, authorization, create, a
     subresource: undefined,
     verb: "get"
   }, {
-    group: "node.k8s.io",
-    name: "kata-runtime",
-    namespace: undefined,
-    resource: "runtimeclasses",
-    subresource: undefined,
-    verb: "get"
-  }, {
     group: "",
     name: undefined,
     namespace: "execution",
@@ -67,12 +54,6 @@ test("client-node adapter maps namespace, RuntimeClass, authorization, create, a
   }]);
 
   const pod: V1Pod = { metadata: { name: "pod" } };
-  assert.equal(await harness.api.dryRunCreatePod("execution", pod), true);
-  assert.deepEqual(harness.core.createCalls[0], {
-    namespace: "execution",
-    body: pod,
-    dryRun: "All"
-  });
   const createController = new AbortController();
   await harness.api.createPod(
     "execution",
@@ -80,28 +61,14 @@ test("client-node adapter maps namespace, RuntimeClass, authorization, create, a
     Date.now() + 1000,
     createController.signal
   );
-  assert.equal(harness.core.createCalls[1]?.dryRun, undefined);
-  assert(harness.core.createOptions[1]);
+  assert.equal(harness.core.createCalls[0]?.dryRun, undefined);
+  assert(harness.core.createOptions[0]);
   assert.deepEqual(
     await harness.api.listManagedPods("execution", "kata-in-cluster"),
     [{ metadata: { name: "listed" } }]
   );
   assert.match(harness.core.listCalls[0]?.labelSelector ?? "", /isolation-provider=kubernetes/);
   assert.match(harness.core.listCalls[0]?.labelSelector ?? "", /kubernetes-profile=kata-in-cluster/);
-});
-
-test("client-node admission probes distinguish rejection from API failure", async () => {
-  const rejected = apiHarness();
-  rejected.core.createError = { statusCode: 422 };
-  assert.equal(await rejected.api.dryRunCreatePod("execution", {}), false);
-
-  const forbidden = apiHarness();
-  forbidden.core.createError = { response: { statusCode: 403 } };
-  assert.equal(await forbidden.api.dryRunCreatePod("execution", {}), false);
-
-  const unavailable = apiHarness();
-  unavailable.core.createError = new Error("connection refused");
-  await assert.rejects(unavailable.api.dryRunCreatePod("execution", {}), /connection refused/);
 });
 
 test("client-node managed pod listing attaches request cancellation", async () => {
@@ -569,17 +536,14 @@ test("client-node repeated expired deletion watches cannot extend the deadline",
 
 function apiHarness() {
   const core = new FakeCore();
-  const node = new FakeNode();
   const authorization = new FakeAuthorization();
   const watch = new FakeWatch();
   return {
     core,
-    node,
     authorization,
     watch,
     api: new ClientNodeKubernetesApi(
       core as unknown as CoreV1Api,
-      node as unknown as NodeV1Api,
       authorization as unknown as AuthorizationV1Api,
       watch as unknown as Watch,
       {
@@ -661,12 +625,6 @@ async function configuredSignal(options: ConfigurationOptions | undefined): Prom
   assert(middleware);
   const context = new RequestContext("https://cluster.invalid/pod", HttpMethod.GET);
   return (await middleware.pre(context).toPromise()).getSignal();
-}
-
-class FakeNode {
-  async readRuntimeClass() {
-    return { handler: "kata-handler" };
-  }
 }
 
 class FakeAuthorization {

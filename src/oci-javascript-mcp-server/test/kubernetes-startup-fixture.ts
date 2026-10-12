@@ -13,7 +13,6 @@ import {
   type KubernetesGrpcTunnel,
   type KubernetesRunnerHandle
 } from "../src/isolation/kubernetes-grpc.ts";
-import { conformingPodAdmission } from "./kata-fixtures.ts";
 
 export class StartupWebSocket extends EventEmitter {
   readonly CLOSING = 2;
@@ -51,13 +50,7 @@ export class StartupKubernetesApi implements KubernetesApi {
   );
 
   async readNamespace(): Promise<void> {}
-  async readRuntimeClass(): Promise<{ handler: string }> {
-    return { handler: "kata-qemu-runtime-rs" };
-  }
   async selfCan(): Promise<boolean> { return true; }
-  async dryRunCreatePod(_namespace: string, pod: KubernetesPod): Promise<boolean> {
-    return conformingPodAdmission(pod, "kata-in-cluster");
-  }
   async createPod(): Promise<void> {}
   async waitForPodRunning(): Promise<void> {}
   async startRunner(namespace: string, name: string, bootstrap: RunnerTlsBootstrap,

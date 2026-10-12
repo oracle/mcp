@@ -27,14 +27,14 @@ import { KubernetesIsolationProvider } from "../src/isolation/kubernetes.ts";
 import type { RunnerServer } from "../src/generated/runner.ts";
 import type { SandboxResult } from "../src/types.ts";
 import { runJavaScript } from "../src/sandbox.ts";
-import { conformingPodAdmission, validKataEnvironment } from "./kata-fixtures.ts";
+import { validKataEnvironment } from "./kata-fixtures.ts";
 import { StartupKubernetesApi, StartupWebSocket } from "./kubernetes-startup-fixture.ts";
 
 test("Kata preflight requires exec and port-forward only on the trusted host", async () => {
   const api = new FakeKubernetesApi();
   const provider = createProvider(api);
   await provider.preflight({ startReconciliation: false });
-  assert.equal(provider.descriptor?.profile, "kata-in-cluster");
+  assert.equal(api.permissions.length, 10);
   for (const subresource of ["exec", "portforward"]) {
     for (const verb of ["create", "get"]) {
       assert(api.permissions.some(permission =>
@@ -47,18 +47,77 @@ test("Kata preflight requires exec and port-forward only on the trusted host", a
   assert.equal(api.createdPods.length, 0);
 });
 
+test("run rejects before and during preflight", async () => {
+  const api = new FakeKubernetesApi();
+  const provider = createProvider(api);
+  const options = { ...runOptions(), signal: AbortSignal.abort() };
+  assert.throws(() => provider.run("42", options), /was not preflighted/);
+  const gate = deferred<void>();
+  api.readNamespace = () => gate.promise;
+  const pending = provider.preflight({ startReconciliation: false });
+  assert.throws(() => provider.run("42", options), /was not preflighted/);
+  assert.equal(api.createdPods.length, 0);
+  gate.resolve();
+  await pending;
+});
+
+test("failed preflight revokes readiness after prior success and successful retry restores it", async () => {
+  const api = new FakeKubernetesApi();
+  const provider = createProvider(api);
+  await provider.preflight({ startReconciliation: false });
+  api.readNamespace = async () => { throw new Error("private namespace failure"); };
+  await assert.rejects(provider.preflight({ startReconciliation: false }), /preflight failed \(api\)/);
+  let unexpected: ReturnType<KubernetesIsolationProvider["run"]> | undefined;
+  try {
+    assert.throws(() => { unexpected = provider.run("42", { ...runOptions(), signal: AbortSignal.abort() }); }, /was not preflighted/);
+  } finally {
+    await unexpected?.terminate();
+  }
+  assert.equal(api.createdPods.length, 0);
+  api.readNamespace = async () => undefined;
+  await provider.preflight({ startReconciliation: false });
+  provider.stopReconciliation();
+  const execution = provider.run("42", runOptions());
+  try {
+    assert.deepEqual(await execution.result, successResult(42));
+    assert.equal(api.createdPods[0]?.spec?.runtimeClassName, "kata-qemu-runtime-rs");
+  } finally {
+    await execution.terminate();
+  }
+  assert.equal(api.pods.size, 0);
+});
+
+test("failed preflight diagnostics do not leave execution ready", async () => {
+  const api = new FakeKubernetesApi();
+  const provider = new KubernetesIsolationProvider(
+    parseKubernetesConfig(validKataEnvironment()), api,
+    event => {
+      if (event.phase === "preflight" && event.outcome === "succeeded") {
+        throw new Error("diagnostic sink unavailable");
+      }
+    }
+  );
+  await assert.rejects(provider.preflight({ startReconciliation: false }), /preflight failed \(api\)/);
+  let unexpected: ReturnType<KubernetesIsolationProvider["run"]> | undefined;
+  try {
+    assert.throws(() => { unexpected = provider.run("42", { ...runOptions(), signal: AbortSignal.abort() }); }, /was not preflighted/);
+  } finally {
+    await unexpected?.terminate();
+  }
+  assert.equal(api.createdPods.length, 0);
+});
+
 test("Kubernetes never starts a runner after readiness watch EOF", async () => {
   const api = new FakeKubernetesApi();
   const adapter = new ClientNodeKubernetesApi(
     { readNamespacedPod: async () => ({ status: { phase: "Pending" } }) } as unknown as
       ConstructorParameters<typeof ClientNodeKubernetesApi>[0],
     {} as ConstructorParameters<typeof ClientNodeKubernetesApi>[1],
-    {} as ConstructorParameters<typeof ClientNodeKubernetesApi>[2],
     { watch: async (_path: string, _query: unknown, _event: unknown, done: () => void) => {
       done();
       return new AbortController();
-    } } as unknown as ConstructorParameters<typeof ClientNodeKubernetesApi>[3],
-    {} as ConstructorParameters<typeof ClientNodeKubernetesApi>[4]
+    } } as unknown as ConstructorParameters<typeof ClientNodeKubernetesApi>[2],
+    {} as ConstructorParameters<typeof ClientNodeKubernetesApi>[3]
   );
   api.waitForPodRunning = (...args: Parameters<KubernetesApi["waitForPodRunning"]>) =>
     adapter.waitForPodRunning(...args);
@@ -556,15 +615,9 @@ class FakeKubernetesApi implements KubernetesApi {
   #servers = new Map<string, Server>();
 
   async readNamespace(): Promise<void> {}
-  async readRuntimeClass(): Promise<{ handler: string }> {
-    return { handler: "kata-qemu-runtime-rs" };
-  }
   async selfCan(attributes: ResourceAttributes): Promise<boolean> {
     this.permissions.push(attributes);
     return true;
-  }
-  async dryRunCreatePod(_namespace: string, pod: KubernetesPod): Promise<boolean> {
-    return conformingPodAdmission(pod, "kata-in-cluster");
   }
   async createPod(_namespace: string, pod: KubernetesPod): Promise<void> {
     this.lifecycle.push("create");

@@ -22,59 +22,42 @@ import {
 } from "../src/isolation/kubernetes-pod.ts";
 import { reconcileExpiredPods, startExpiryReconciliation, type ReconciliationSummary } from "../src/isolation/kubernetes-reconciler.ts";
 import {
-  conformingPodAdmission,
   validInClusterEnvironment,
+  validKataEnvironment,
   validLocalEnvironment
 } from "./kata-fixtures.ts";
 
-test("local development reports optional admission gaps without claiming Kata evidence", async () => {
-  const api = new ProfileApi(() => true);
-  const events: KubernetesDiagnosticEvent[] = [];
-  const provider = new KubernetesIsolationProvider(
-    parseKubernetesConfig(validLocalEnvironment()),
-    api,
-    event => events.push(event)
-  );
-  await provider.preflight({ startReconciliation: false });
-  assert.equal(provider.descriptor?.profile, "local-development");
-  assert.equal(provider.descriptor?.credentialMode, "explicit-kubeconfig");
-  assert.equal(provider.descriptor?.assurance, "development-only-container");
-  assert.equal(provider.descriptor?.admissionPreflight, "unverified");
-  assert.equal(provider.descriptor?.runtimePolicy, "standard");
-  assert.equal(provider.descriptor?.externalEvidence.kataGuestKernelRequested, false);
-  assert.equal(provider.descriptor?.externalEvidence.kataGuestKernelVerified, false);
-  assert.equal(api.runtimeClassReads, 0);
-  assert.equal(api.permissions.length, 10);
-  assert.equal(JSON.stringify(events).includes("kubeconfig"), false);
-});
-
-test("standard in-cluster requires base admission and omits RuntimeClass", async () => {
-  const api = new ProfileApi(pod => conformingPodAdmission(pod, "in-cluster"));
-  const provider = new KubernetesIsolationProvider(
-    parseKubernetesConfig(validInClusterEnvironment()),
-    api,
-    () => undefined
-  );
-  await provider.preflight({ startReconciliation: false });
-  assert.equal(provider.descriptor?.profile, "in-cluster");
-  assert.equal(provider.descriptor?.credentialMode, "in-cluster");
-  assert.equal(provider.descriptor?.assurance, "in-cluster-container");
-  assert.equal(provider.descriptor?.admissionPreflight, "reviewed-variants-rejected");
-  assert.equal(provider.descriptor?.externalEvidence.admissionPolicyRevisionVerified, false);
-  assert.equal(provider.descriptor?.runtimeClass, undefined);
-  assert.equal(api.runtimeClassReads, 0);
-  assert.equal(api.dryRunPods.every(pod => pod.spec?.runtimeClassName === undefined), true);
-
-  const unsafeAccepted = new ProfileApi(() => true);
-  await assert.rejects(new KubernetesIsolationProvider(
-    parseKubernetesConfig(validInClusterEnvironment()),
-    unsafeAccepted,
-    () => undefined
-  ).preflight({ startReconciliation: false }), /admission/);
-});
+for (const environment of [validLocalEnvironment(), validInClusterEnvironment(), validKataEnvironment()]) {
+  test(`startup uses only operational checks for ${environment.OCI_JAVASCRIPT_KUBERNETES_PROFILE}`, async () => {
+    const config = parseKubernetesConfig(environment);
+    const api = new ProfileApi();
+    // Tripwires remain outside the narrowed execution API to catch accidental policy calls.
+    Object.assign(api, {
+      readRuntimeClass: async () => { throw new Error("startup must not read RuntimeClass"); },
+      dryRunCreatePod: async () => { throw new Error("startup must not probe admission"); }
+    });
+    const events: KubernetesDiagnosticEvent[] = [];
+    const provider = new KubernetesIsolationProvider(config, api, event => events.push(event));
+    await provider.preflight({ startReconciliation: false });
+    assert.equal(api.permissions.length, 10);
+    assert.deepEqual(api.permissions.filter(permission => permission.resource === "namespaces"), [{
+      group: undefined, name: config.namespace, namespace: undefined,
+      resource: "namespaces", subresource: undefined, verb: "get"
+    }]);
+    assert(api.permissions.filter(permission => permission.resource === "pods").every(permission =>
+      permission.namespace === config.namespace && permission.name === undefined
+    ));
+    assert.deepEqual(api.listRequests, [{ namespace: config.namespace, profile: config.profile }]);
+    assert.equal("descriptor" in provider, false);
+    assert.deepEqual(events.map(event => [event.phase, event.outcome]), [
+      ["preflight", "started"], ["preflight", "succeeded"]
+    ]);
+    assert.equal(/assurance|admissionPreflight|externalEvidence|kubeconfig/.test(JSON.stringify(events)), false);
+  });
+}
 
 test("every shared lifecycle permission is fail-closed for in-cluster profiles", async () => {
-  const probe = new ProfileApi(pod => conformingPodAdmission(pod, "in-cluster"));
+  const probe = new ProfileApi();
   const successful = new KubernetesIsolationProvider(
     parseKubernetesConfig(validInClusterEnvironment()),
     probe,
@@ -82,7 +65,7 @@ test("every shared lifecycle permission is fail-closed for in-cluster profiles",
   );
   await successful.preflight({ startReconciliation: false });
   for (const missing of probe.permissions) {
-    const api = new ProfileApi(pod => conformingPodAdmission(pod, "in-cluster"));
+    const api = new ProfileApi();
     api.permission = value => !samePermission(value, missing);
     await assert.rejects(new KubernetesIsolationProvider(
       parseKubernetesConfig(validInClusterEnvironment()),
@@ -94,7 +77,7 @@ test("every shared lifecycle permission is fail-closed for in-cluster profiles",
 
 test("reconciliation adopts only the exact Kubernetes profile and namespace", async () => {
   const now = Date.now();
-  const api = new ProfileApi(pod => conformingPodAdmission(pod, "in-cluster"));
+  const api = new ProfileApi();
   api.pods = [
     managedPod("local-expired", "local-development", "execution", now - 1),
     managedPod("standard-expired", "in-cluster", "execution", now - 1),
@@ -112,7 +95,7 @@ test("reconciliation adopts only the exact Kubernetes profile and namespace", as
 
 test("reconciliation bounds each failure and continues through the full candidate set", async () => {
   const now = Date.now();
-  const api = new ProfileApi(pod => conformingPodAdmission(pod, "in-cluster"));
+  const api = new ProfileApi();
   api.pods = [
     managedPod("delete-fails", "in-cluster", "execution", now - 1),
     managedPod("confirmation-fails", "in-cluster", "execution", now - 1),
@@ -127,7 +110,7 @@ test("reconciliation bounds each failure and continues through the full candidat
   );
   assert.deepEqual(api.deleted, ["confirmation-fails", "later-succeeds"]);
 
-  const stalled = new ProfileApi(pod => conformingPodAdmission(pod, "in-cluster"));
+  const stalled = new ProfileApi();
   stalled.pods = [
     managedPod("never-settles", "in-cluster", "execution", now - 1),
     managedPod("bounded-later", "in-cluster", "execution", now - 1)
@@ -150,7 +133,7 @@ test("reconciliation bounds each failure and continues through the full candidat
 
 test("startup preflight fails after attempting every reconciliation candidate", async () => {
   const now = Date.now();
-  const api = new ProfileApi(pod => conformingPodAdmission(pod, "in-cluster"));
+  const api = new ProfileApi();
   api.pods = [
     managedPod("first-fails", "in-cluster", "oci-js-execution", now - 1),
     managedPod("second-deletes", "in-cluster", "oci-js-execution", now - 1)
@@ -169,7 +152,7 @@ for (const stage of ["list", "delete"] as const) {
   test(`background reconciliation does not overlap a pending ${stage} and stops idempotently`, async t => {
     t.mock.timers.enable({ apis: ["setInterval"] });
     const gate = Promise.withResolvers<void>();
-    const api = new ProfileApi(() => true);
+    const api = new ProfileApi();
     api.pods = stage === "delete"
       ? [managedPod("expired", "in-cluster", "execution", Date.now() - 1)] : [];
     const list = api.listManagedPods.bind(api);
@@ -211,7 +194,7 @@ for (const stage of ["list", "delete"] as const) {
 
 test("background reconciliation recovers from a failed list on the next interval", async t => {
   t.mock.timers.enable({ apis: ["setInterval"] });
-  const api = new ProfileApi(() => true);
+  const api = new ProfileApi();
   const list = api.listManagedPods.bind(api);
   api.listManagedPods = async (...args) => {
     const pods = await list(...args);
@@ -234,7 +217,7 @@ test("background reconciliation recovers from a failed list on the next interval
 
 test("background reconciliation aborts a stalled list and recovers on the next interval", async t => {
   t.mock.timers.enable({ apis: ["Date", "setTimeout", "setInterval"] });
-  const api = new ProfileApi(() => true);
+  const api = new ProfileApi();
   let calls = 0;
   let listSignal: AbortSignal | undefined;
   api.listManagedPods = async (_namespace, _profile, signal?: AbortSignal) => {
@@ -263,7 +246,7 @@ test("background reconciliation aborts a stalled list and recovers on the next i
 test("background reconciliation stop permits the active cycle to finish without scheduling another", async t => {
   t.mock.timers.enable({ apis: ["setInterval"] });
   const gate = Promise.withResolvers<void>();
-  const api = new ProfileApi(() => true);
+  const api = new ProfileApi();
   const list = api.listManagedPods.bind(api);
   api.listManagedPods = async (...args) => { await gate.promise; return list(...args); };
   const results: Array<ReconciliationSummary | undefined> = [];
@@ -281,11 +264,8 @@ test("background reconciliation stop permits the active cycle to finish without 
 });
 
 class ProfileApi implements KubernetesApi {
-  readonly admission: (pod: KubernetesPod) => boolean;
-  runtimeClassReads = 0;
   permissions: ResourceAttributes[] = [];
   permission: (attributes: ResourceAttributes) => boolean = () => true;
-  dryRunPods: KubernetesPod[] = [];
   pods: KubernetesPod[] = [];
   deleted: string[] = [];
   deleteFailures = new Set<string>();
@@ -295,22 +275,10 @@ class ProfileApi implements KubernetesApi {
   deleteSignals: AbortSignal[] = [];
   listRequests: Array<{ namespace: string; profile: KubernetesProfile }> = [];
 
-  constructor(admission: (pod: KubernetesPod) => boolean) {
-    this.admission = admission;
-  }
-
   async readNamespace() {}
-  async readRuntimeClass() {
-    this.runtimeClassReads += 1;
-    return { handler: "kata-qemu-runtime-rs" };
-  }
   async selfCan(attributes: ResourceAttributes) {
     this.permissions.push(attributes);
     return this.permission(attributes);
-  }
-  async dryRunCreatePod(_namespace: string, pod: KubernetesPod) {
-    this.dryRunPods.push(structuredClone(pod));
-    return this.admission(pod);
   }
   async createPod() {}
   async waitForPodRunning() {}

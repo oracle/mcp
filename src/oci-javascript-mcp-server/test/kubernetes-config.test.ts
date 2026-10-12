@@ -14,7 +14,6 @@ import {
 } from "../src/isolation/kubernetes-config.ts";
 import { createIsolationProvider } from "../src/isolation/provider-factory.ts";
 import {
-  conformingPodAdmission,
   validInClusterEnvironment,
   validKataEnvironment,
   validLocalEnvironment
@@ -151,7 +150,7 @@ test("provider factory binds explicit kubeconfig or in-cluster credentials with 
   }), podman);
   assert.deepEqual(podmanOptions, { cliPath: "podman-test", image: "runner:test" });
 
-  const localApi = preflightApi("local");
+  const localApi = preflightApi();
   let localConnection: unknown;
   await createIsolationProvider(validLocalEnvironment(), {
     createKubeconfigApi(config) {
@@ -168,7 +167,7 @@ test("provider factory binds explicit kubeconfig or in-cluster credentials with 
   ]);
 
   let inClusterLoads = 0;
-  const standardApi = preflightApi("standard");
+  const standardApi = preflightApi();
   await createIsolationProvider(validInClusterEnvironment(), {
     createInClusterApi() {
       inClusterLoads += 1;
@@ -180,7 +179,7 @@ test("provider factory binds explicit kubeconfig or in-cluster credentials with 
   });
   assert.equal(inClusterLoads, 1);
 
-  const failing = preflightApi("kata");
+  const failing = preflightApi();
   failing.readNamespace = async () => { throw new Error("raw cluster endpoint"); };
   await assert.rejects(createIsolationProvider(validKataEnvironment(), {
     kubernetesApi: failing,
@@ -190,17 +189,10 @@ test("provider factory binds explicit kubeconfig or in-cluster credentials with 
   }), /preflight failed/);
 });
 
-function preflightApi(runtime: "local" | "standard" | "kata"): KubernetesApi {
+function preflightApi(): KubernetesApi {
   return {
     async readNamespace() {},
-    async readRuntimeClass() { return { handler: "kata-qemu-runtime-rs" }; },
     async selfCan() { return true; },
-    async dryRunCreatePod(_namespace, pod) {
-      const profile = runtime === "local"
-        ? "local-development"
-        : runtime === "kata" ? "kata-in-cluster" : "in-cluster";
-      return conformingPodAdmission(pod, profile);
-    },
     async createPod() {},
     async waitForPodRunning() {},
     async startRunner() { throw new Error("unused"); },

@@ -26,8 +26,8 @@ requires an exact profile:
   standard runtime;
 - `in-cluster` for service-account credentials and the cluster's standard
   runtime; or
-- `kata-in-cluster` for the in-cluster topology plus an exact, preflighted Kata
-  `RuntimeClass` and handler.
+- `kata-in-cluster` for the in-cluster topology plus a configured Kata
+  `RuntimeClass`, with live handler checks owned by deployment validation.
 
 The Kubernetes engine owns connection, pod lifecycle, protocol transport,
 cleanup, and reconciliation. Runtime profiles may add reviewed constraints but
@@ -112,11 +112,11 @@ evidence.
 - Enforce one absolute execution deadline across provider startup, runner work,
   OCI RPC, and result delivery, followed by one separately bounded cleanup tail
   shared concurrently by provider termination and pending-RPC draining.
-- Make provider, credential source, runtime policy, image policy, and assurance
+- Make provider, credential source, runtime policy, image policy, and isolation
   posture explicit and fail closed.
 - Share one hardened Kubernetes pod shape and lifecycle implementation.
-- Allow Kata to add only an exact `RuntimeClass`, handler preflight, admission
-  checks, and assurance evidence fields.
+- Allow Kata to add an exact `RuntimeClass` and reviewed scheduling constraints;
+  keep live handler/admission validation and isolation evidence in deployment procedures.
 - Confirm cleanup before reporting a successful or timed-out execution.
 - Retain enough bounded diagnostics and labels to investigate failures and
   reconcile expired pods without exposing guest or provider-sensitive data.
@@ -180,7 +180,7 @@ intended design. A requirement is not evidence that a deployment satisfies it.
 
 | ID | Requirement |
 | --- | --- |
-| O-1 | Startup MUST preflight the selected profile before connecting MCP stdio. |
+| O-1 | Startup MUST verify operational readiness for the selected profile before connecting MCP stdio. |
 | O-2 | Managed Kubernetes pods MUST carry stable manager, provider, profile, correlation, and expiry metadata. |
 | O-3 | Normal cleanup and reconciliation MUST be idempotent and MUST confirm Kubernetes `NotFound`. |
 | O-4 | In-cluster deployments MUST include an independent cleanup-only reconciler with no create or `pods/exec` authority. |
@@ -456,18 +456,18 @@ The Kubernetes provider is one execution engine composed from:
 - a typed Kubernetes API adapter;
 - a complete hardened pod builder;
 - a monotonic standard or Kata runtime policy;
-- startup preflight and assurance description;
+- operational startup preflight;
 - a create/watch/exec/port-forward/delete lifecycle;
 - provider-neutral mTLS protobuf gRPC execution; and
 - host and independent expiry reconciliation.
 
 ### 10.1 Closed profile bundles
 
-| Profile | Trusted host | Credentials | Runtime policy | Image policy | Assurance label |
+| Profile | Trusted host | Credentials | Runtime policy | Image policy | Isolation boundary |
 | --- | --- | --- | --- | --- | --- |
-| `local-development` | Workstation | Required absolute kubeconfig path and exact context | Standard; no `runtimeClassName` | Digest, or explicitly allowed safe local tag with `Never` | `development-only-container` |
-| `in-cluster` | Trusted host pod | In-cluster service account only | Standard; no `runtimeClassName` | Lowercase SHA-256 digest required | `in-cluster-container` |
-| `kata-in-cluster` | Trusted host pod | In-cluster service account only | Exact Kata `RuntimeClass` and handler | Lowercase SHA-256 digest required | `kata-poc` |
+| `local-development` | Workstation | Required absolute kubeconfig path and exact context | Standard; no `runtimeClassName` | Digest, or explicitly allowed safe local tag with `Never` | Development-only container plus nested isolate |
+| `in-cluster` | Trusted host pod | In-cluster service account only | Standard; no `runtimeClassName` | Lowercase SHA-256 digest required | Shared-kernel container plus nested isolate |
+| `kata-in-cluster` | Trusted host pod | In-cluster service account only | Exact Kata `RuntimeClass` and handler | Lowercase SHA-256 digest required | Kata POC; real-node evidence required |
 
 The local client loads only the configured file and context. In-cluster clients
 call only `loadFromCluster()`. There is no default-path search or credential
@@ -479,26 +479,24 @@ mounted into the runner.
 Before MCP stdio connects, the selected profile:
 
 1. reads the execution namespace;
-2. verifies required namespace, pod, watch, delete, `pods/exec`, and
-   `pods/portforward` authority
+2. verifies required namespace, pod lifecycle, exec and port-forward authority
    through `SelfSubjectAccessReview`, naming the configured Namespace exactly
-   while leaving dynamic pod operations namespace-scoped;
-3. for Kata, reads the exact `RuntimeClass`, compares its handler, and verifies
-   exact named RuntimeClass read authority;
-4. server-side dry-runs the exact conforming execution pod;
-5. dry-runs one stable identified variant for every reviewed metadata/profile,
-   image/pull-policy, identity/token/service-link, restart/host namespace,
-   command/environment, container cardinality, root/security-context,
-   capability/seccomp/filesystem, resource/deadline, port/device/probe/hook,
-   volume, and `/tmp` invariant;
-6. for Kata, also verifies rejection of a wrong runtime class;
-7. reconciles expired pods for the exact namespace/profile; and
-8. records only `reviewed-variants-rejected` (or local `unverified`), marks the
-   exact deployed policy revision unverified, and starts periodic reconciliation.
+   while keeping dynamic pod operations execution-namespace scoped;
+3. reconciles expired pods for the exact namespace/profile, failing readiness
+   when any candidate cleanup fails; and
+4. starts periodic reconciliation and marks private operational readiness.
 
-Unsafe-variant acceptance fails in-cluster preflight. Local development may
-continue with admission marked unverified because its purpose is lifecycle
-testing, not production assurance.
+Pending or failed preflight blocks new runs, including a failure after prior
+success. Stopping the reconciliation timer alone does not revoke readiness.
+Startup diagnostics describe operational outcomes without assurance descriptors.
+
+The [deployment validator](kubernetes-isolation-profiles.md#deployment-validation)
+separately checks the effective intended identity, permissions, live Kata
+RuntimeClass/handler and server-side acceptance/rejection of the reviewed pod
+variants. Every profile fails validation if a negative variant is accepted.
+Operators or pipelines require its successful exit before rollout. Server startup
+does not invoke or consume validation, so successful startup can precede policy
+rejection or an unavailable RuntimeClass on actual execution.
 
 ### 10.3 Base execution pod
 
@@ -601,12 +599,14 @@ Local development relies on host reconciliation.
 Kata is a typed additive runtime policy over the generic Kubernetes engine. Its
 code-level authority is deliberately limited to:
 
-- requiring `kata-in-cluster` configuration;
-- adding the exact `runtimeClassName` to the otherwise identical base pod;
-- reading the named cluster-scoped `RuntimeClass` and comparing the exact
-  handler;
-- adding RuntimeClass RBAC and a wrong-runtime admission probe; and
-- reporting Kata-specific requested and unverified evidence.
+- requiring `kata-in-cluster` configuration; and
+- adding the exact `runtimeClassName` and reviewed scheduling constraints to
+  the otherwise identical base pod.
+
+Live RuntimeClass/handler checks and the wrong-runtime admission probe belong
+to the standalone deployment validator. Deployment assets retain exact
+RuntimeClass RBAC so validation can use the intended host identity; real-node
+and security-review evidence remains external to the server.
 
 Kubernetes `RuntimeClass` selects a CRI handler, while the node's CRI
 configuration defines what that handler actually runs. The provider therefore
@@ -674,7 +674,7 @@ These resources are necessary but not sufficient evidence:
 | Pending OCI drain expires after successful provider cleanup | `OCI cleanup did not complete`, overriding the prior outcome | Late promises retain rejection observers |
 | Successful script with unawaited OCI work and completed drain | `JavaScript completed with unawaited OCI calls`, non-timeout failure | In-flight work is aborted and drained within the shared cleanup tail |
 | Unconfirmed resource deletion | `isolation provider cleanup failed`, overriding prior outcome | Cleanup phase/reason only |
-| Startup configuration/RBAC/admission/runtime failure | Server does not connect MCP stdio | Sanitized preflight reason; operator investigates trusted control plane |
+| Startup configuration/namespace/RBAC/reconciliation failure | Server does not connect MCP stdio | Sanitized preflight reason; operator investigates trusted control plane |
 
 Timeout and cancellation remain authoritative during provider startup and OCI
 RPC. Finalization disables new calls, aborts in-flight work, and starts provider
@@ -685,25 +685,24 @@ wins with `isolation provider cleanup failed`. Otherwise drain expiry returns
 Only if the drain completes and the earlier result was successful does pending
 work at finalization become the unawaited-call error.
 
-## 14. Observability and assurance reporting
+## 14. Operational diagnostics and deployment evidence
 
 Kubernetes diagnostics are JSON lines on trusted stderr with only provider,
 exact profile, random correlation ID, allowlisted phase/outcome/reason, and a
-bounded duration. They exclude pod name, code, guest output, OCI request or
-response, protocol frames, raw Kubernetes errors, endpoints, and credentials.
+bounded duration. Reconciliation adds bounded aggregate success/failure counts.
+Events exclude pod name, code, guest output, OCI request or response, protocol
+frames, raw Kubernetes errors, endpoints, and credentials.
 
-The provider descriptor records configured posture rather than inferred
-security. It includes credential mode, runtime policy, assurance label, image
-policy, namespace separation, admission outcome, nested `isolated-vm`, and
-external-evidence flags. Current image provenance, CRI mapping, node runtime,
-CNI isolation, PID enforcement, RuntimeClass overhead, and Kata guest kernel
-remain explicitly unverified. Admission is described only as
-`reviewed-variants-rejected` or `unverified`, and the exact deployed admission
-policy revision remains explicitly unverified.
+The server exposes no assurance descriptor. The standalone deployment validator
+reports observed identity, permission, RuntimeClass and admission outcomes;
+these do not certify the deployed policy revision, effective CNI/CRI, node
+runtime, PID enforcement, overhead, image provenance or Kata guest kernel.
+Operators retain the report and separate target-environment evidence bound to
+exact deployment inputs.
 
-Before production use, the platform owner must define where descriptors and
-diagnostics are emitted, retained, access-controlled, alerted, and correlated
-with MCP and OCI audit records without exposing sensitive guest data.
+Before production use, the platform owner must define where operational
+diagnostics and deployment evidence are retained, access-controlled, alerted,
+and correlated with MCP and OCI audit records without exposing sensitive data.
 
 ## 15. Capacity and availability
 
@@ -723,7 +722,8 @@ and teardown distributions plus failure and API-outage behavior.
 ### 16.1 Deterministic validation
 
 - Unit tests for configuration parsing, provider selection, pod construction,
-  runtime-policy monotonicity, descriptor contents, diagnostics, and
+  runtime-policy monotonicity, operational readiness, deployment validation,
+  diagnostics, and
   reconciliation adoption rules.
 - Hostile protocol tests for protobuf envelopes, bounded UTF-16LE text and
   UTF-8 JSON, structural limits, dangerous keys, message sequencing, direct raw
@@ -811,7 +811,7 @@ quota, resource limits, reconciler identity/deployment, or caller/OCI policy.
 | Confirmed deletion before success | Cleanup failure is security-relevant | Best-effort asynchronous deletion |
 | One shared post-execution cleanup tail | Bounds result delivery while preserving synchronous provider teardown | Serial provider cleanup followed by an unbounded RPC drain |
 | No automatic OCI SDK retries or client circuit breaker | Prevents cancelled host work from being retried or re-driven after the execution deadline | Launcher-only environment configuration or the SDK defaults |
-| Report assurance and evidence gaps | Avoids turning configuration into an unearned security claim | Inferring VM isolation from RuntimeClass or successful execution |
+| Keep deployment validation and isolation evidence external | Avoids turning configuration into an unearned security claim | Inferring VM isolation from RuntimeClass or successful execution |
 
 ## 19. Open questions
 

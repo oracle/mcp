@@ -50,8 +50,6 @@ test("opt-in local cluster exercises create/watch/exec/port-forward/gRPC/cancel/
   const provider = new KubernetesIsolationProvider(config, api, () => undefined);
   await provider.preflight();
   try {
-    assert.equal(provider.descriptor?.runtimePolicy, "standard");
-    assert.equal(provider.descriptor?.externalEvidence.kataGuestKernelRequested, false);
     const success = await runJavaScript("40 + 2", {
       isolationProvider: provider,
       async hostRpc() { return null; }

@@ -7,7 +7,14 @@
 - Add a standalone Kubernetes deployment validator with explicit
   kubeconfig/context and verified host identity, optional service-account
   impersonation, bounded permission/RuntimeClass/admission checks, JSON reporting
-  and an opt-in `validate-deployment` Moon task. Server startup probes remain.
+  and an opt-in `validate-deployment` Moon task.
+
+### Changed
+
+- Restrict Kubernetes startup preflight to namespace access, execution permissions
+  and expiry reconciliation. Admission probes and live RuntimeClass/handler
+  checks belong to deployment validation; remove server assurance descriptors
+  and gate execution on operational readiness.
 
 ### Fixed
 

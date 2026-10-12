@@ -71,8 +71,8 @@ identity and Kata runtime variables are rejected.
 
 A digest-pinned image is accepted. A locally loaded tag requires
 `OCI_JAVASCRIPT_KUBERNETES_ALLOW_LOCAL_IMAGE=true`; the pod then fixes
-`imagePullPolicy: Never`, and the descriptor records development-only assurance,
-unverified admission/network enforcement, and unverified image provenance.
+`imagePullPolicy: Never`. This is a development-only configuration; image
+provenance and effective admission/network enforcement require external evidence.
 
 Example using a local cluster and a preloaded image:
 
@@ -149,34 +149,34 @@ Secret in the execution namespace.
 | Variable | Meaning |
 | --- | --- |
 | `OCI_JAVASCRIPT_KUBERNETES_KATA_RUNTIME_CLASS` | Exact reviewed RuntimeClass name. |
-| `OCI_JAVASCRIPT_KUBERNETES_KATA_RUNTIME_HANDLER` | Exact expected RuntimeClass handler. |
+| `OCI_JAVASCRIPT_KUBERNETES_KATA_RUNTIME_HANDLER` | Exact expected RuntimeClass handler for deployment validation. |
 
 Its assets remain under `examples/kata-kubernetes/v1/`. They add RuntimeClass
-read authority, exact RuntimeClass admission, and the Kata deployment-evidence
+read authority for validation under the host identity, exact RuntimeClass
+admission, and the Kata deployment-evidence
 boundary described in the [Kata POC guide](kata-kubernetes-poc.md).
 
 ## Startup, execution, and cleanup
 
-All profiles read the execution namespace, verify exact pod lifecycle and exec
-and `pods/portforward` authority, and dry-run the conforming pod. The Namespace `get` access review
-names exactly the configured execution Namespace, and Kata similarly names the
-configured RuntimeClass; example ClusterRoles use matching `resourceNames`.
-Generated pod lifecycle and exec permissions remain scoped to the execution
-namespace because pod names are dynamic. In-cluster profiles fail startup if
-any identified weakening of the reviewed metadata, image, service account,
-token/service-link, command/environment, host namespace, container cardinality,
-security context, capabilities, seccomp, filesystem, resource, deadline,
-probe/hook, volume, or `/tmp` contract is accepted. Kata additionally verifies
-the exact RuntimeClass/handler and rejects a wrong-RuntimeClass variant.
-Successful dry-run evidence is reported as `reviewed-variants-rejected`, not as
-general admission enforcement; the exact deployed policy revision remains
-unverified. Local development may continue when production admission is absent,
-but records that gap and can never acquire in-cluster or Kata assurance.
+All profiles read the execution namespace, verify the ten required namespace,
+pod lifecycle, exec and `pods/portforward` permissions, and reconcile expired
+pods for the exact namespace/profile. The Namespace `get` access review names
+exactly the configured execution Namespace; generated pod operations remain
+execution-namespace scoped because pod names are dynamic. Periodic reconciliation
+starts after the startup sweep succeeds.
 
-The server completes preflight before MCP stdio is connected. Configuration,
-authentication, RBAC, namespace, RuntimeClass, admission, or reconciliation
-failure is authoritative. Guest code is never retried through another provider,
-profile, runtime, or credential source.
+The server completes operational preflight before MCP stdio is connected.
+Configuration, authentication, RBAC, namespace access or startup reconciliation
+failure stops startup. Execution is gated on a private readiness flag: pending
+or failed preflight blocks new runs, including failure after an earlier success.
+Stopping the reconciliation timer alone does not revoke readiness. Guest code is
+never retried through another provider, profile, runtime or credential source.
+
+Server startup performs no admission dry-runs or live RuntimeClass/handler
+checks and emits no assurance descriptor. Run [deployment validation](#deployment-validation)
+before rollout. An operationally ready server can still encounter policy rejection
+or an unavailable RuntimeClass during actual pod creation/scheduling; those
+fail through the normal bounded execution contract.
 
 The absolute 1–120 second execution deadline includes pod creation, scheduling,
 image availability, exec bootstrap, gRPC readiness, port-forward connection,
@@ -221,7 +221,7 @@ Run the standalone validator after applying the target deployment's namespace,
 RBAC, admission and runtime assets. It checks API identity, execution
 permissions, the Kata RuntimeClass/handler when selected, and acceptance or
 rejection of server-side pod dry-runs. It reuses the same pod builder and reviewed
-negative variants as the provider, without starting MCP or loading OCI
+negative variants used to review the execution pod contract, without starting MCP or loading OCI
 credentials or the native isolate.
 
 The command can run on a workstation, in a pipeline, or in another environment
@@ -317,8 +317,8 @@ transport, malformed-response, timeout or cancellation failures. Every pod
 submission has `dryRun=All`; the validator does not persist or execute runner
 pods, establish channels, reconcile resources or delete pods. The conforming pod
 must be accepted before negative probes run. An accepted negative variant fails
-validation even for local development, whose server startup currently tolerates
-admission gaps.
+validation even for local development. Server startup does not test admission
+for any profile.
 
 A rejected probe records a matching Kubernetes Status response and HTTP status
 and reason. It does not identify which admission policy, RBAC rule, schema
@@ -327,26 +327,26 @@ policy revision. A passing report does not establish CNI/CRI enforcement, a Kata
 guest kernel, image provenance, effective resource limits or production
 readiness. Real execution and external isolation evidence remain separate checks.
 
-This standalone command is the first step toward moving deployment validation
-out of the server. Existing server startup probes and assurance descriptors
-remain in place during this increment.
+Deployment validation is an external pre-rollout gate. Operators or pipelines
+run this command with the intended configuration and identity and require exit
+0 before proceeding. The server neither invokes the command nor consumes its
+report or a validation token; startup success is not deployment-policy evidence.
 
-## Diagnostics and assurance
+## Operational diagnostics and deployment evidence
 
 Diagnostics are JSON lines on trusted stderr. Events contain only provider,
 profile, correlation ID, allowlisted phase/outcome/reason, and bounded duration.
-Descriptors identify credential mode, runtime policy, image policy, namespace
-topology, admission outcome, nested `isolated-vm`, and explicit unverified
-external controls, including the exact deployed admission-policy revision.
 Reconciliation events may add only bounded aggregate success and failure
-counts. They exclude kubeconfig paths, endpoints, credentials, raw
-Kubernetes errors, guest code/output, protocol frames, pod names, and resource
-details. Provider-specific data never enters MCP structured results.
+counts. They exclude kubeconfig paths, endpoints, credentials, raw Kubernetes
+errors, guest code/output, protocol frames, pod names, and resource details.
+Provider-specific data never enters MCP structured results. The server exposes
+no assurance descriptor; operators retain validation reports and external
+isolation evidence alongside the exact deployment configuration.
 
-NetworkPolicy objects, RuntimeClass lookup, a successful pod, and provider
-self-description are not effective-boundary proof. The standard profile remains
-shared-kernel container isolation. The Kata profile remains a functionally
-tested POC until the real-node and security-review evidence is complete.
+NetworkPolicy objects, RuntimeClass lookup and a successful pod are not
+effective-boundary proof. The standard profile remains shared-kernel container
+isolation. The Kata profile remains a functionally tested POC until the real-node
+and security-review evidence is complete.
 
 ## Validation and operations
 
@@ -385,7 +385,8 @@ termination and RPC draining sharing one cleanup tail, cleanup-failure
 precedence, unawaited OCI calls, and late completion after finalization.
 
 Before a future canary, bind exact image digests, identities, namespaces,
-admission policy, network controls, node/runtime profile, and descriptor output.
+admission policy, network controls, node/runtime profile, and deployment-validation
+report plus external isolation evidence.
 Inspect managed orphans by the generic provider label plus exact profile. For
 rollback, stop admission of new work, drain calls, confirm every managed pod is
 deleted, verify the reconciler sees an empty namespace, and select only the

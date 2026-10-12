@@ -12,16 +12,16 @@ The server SHALL select exactly one isolation provider at startup from trusted o
 #### Scenario: Local Kubernetes development selection
 - **WHEN** the operator selects `kubernetes` with the `local-development` profile and valid explicit kubeconfig configuration
 - **THEN** every subsequent `run_javascript` execution SHALL use the shared Kubernetes engine with the standard runtime policy
-- **AND** the server SHALL identify the profile as development-only container isolation
+- **AND** maintained deployment guidance SHALL identify this as development-only container isolation
 
 #### Scenario: Standard in-cluster selection
 - **WHEN** the operator selects `kubernetes` with the `in-cluster` profile and valid in-cluster configuration
 - **THEN** every subsequent execution SHALL use the trusted host service account and the cluster's standard runtime
-- **AND** the server SHALL identify the profile as container-grade rather than VM-grade isolation
+- **AND** maintained deployment guidance SHALL describe its shared-kernel container boundary
 
 #### Scenario: Kata in-cluster selection
 - **WHEN** the operator selects `kubernetes` with the `kata-in-cluster` profile and valid Kata configuration
-- **THEN** every subsequent execution SHALL use the configured and preflighted Kata RuntimeClass
+- **THEN** every subsequent execution SHALL use the exact configured Kata RuntimeClass
 - **AND** the server SHALL NOT substitute the standard runtime or Podman
 
 #### Scenario: Compatibility default
@@ -53,27 +53,27 @@ The server SHALL validate the selected provider, profile, credential source, ima
 - **AND** no execution pod SHALL be created
 
 #### Scenario: Invalid Kata configuration
-- **WHEN** `kata-in-cluster` has a missing or mismatched RuntimeClass name or handler
+- **WHEN** `kata-in-cluster` has a missing or unsafe configured RuntimeClass name or expected handler
 - **THEN** startup SHALL fail before any execution pod is created
 - **AND** the standard in-cluster policy SHALL NOT be substituted
 
-### Requirement: Explicit assurance posture
-The trusted provider descriptor and operator diagnostics SHALL identify the active provider and profile, credential mode, runtime policy, image policy, namespace topology, completed preflights, and unverified external controls without disclosing credentials, endpoints, raw Kubernetes errors, guest data, pod names, or resource details. Admission dry-run evidence SHALL be described only as `reviewed-variants-rejected` or `unverified`, not as general admission enforcement. A standard-runtime profile MUST NOT claim a per-execution VM boundary, and a Kata profile MUST NOT claim production approval solely from RuntimeClass lookup, reviewed-variant rejection, or pod creation.
+### Requirement: Operational readiness and external deployment validation
+The server SHALL complete operational readiness before accepting MCP requests and SHALL NOT perform admission dry-runs, read live RuntimeClass handlers, emit assurance descriptors or consume deployment-validation reports/tokens. Trusted operational diagnostics SHALL contain only provider, profile, correlation ID, allowlisted phase/outcome/reason, bounded duration and optional bounded reconciliation counts, without credentials, endpoints, raw Kubernetes errors, guest data, pod names or resource details. A standalone command SHALL own deployment validation under the intended identity, including exact Kata RuntimeClass/handler and reviewed admission probes. Its results SHALL report observed API outcomes without certifying policy revision or effective isolation.
 
-#### Scenario: Standard profile descriptor
-- **WHEN** either standard-runtime profile starts successfully
-- **THEN** its descriptor SHALL report container isolation and the nested `isolated-vm` boundary
-- **AND** it SHALL explicitly report that a Kata guest-kernel boundary was not requested or verified
+#### Scenario: Operational startup succeeds without policy probes
+- **WHEN** static configuration, namespace access, execution permissions and startup reconciliation succeed
+- **THEN** the server SHALL become operationally ready without invoking deployment-policy checks
+- **AND** startup success SHALL NOT certify admission policy, the configured live RuntimeClass or production readiness
 
-#### Scenario: Kata profile descriptor
-- **WHEN** `kata-in-cluster` starts successfully after exact RuntimeClass and admission-variant preflight
-- **THEN** its descriptor SHALL record the selected RuntimeClass and handler and report only that reviewed variants were rejected
-- **AND** it SHALL retain explicit unverified flags for real-node, guest-kernel, CRI, CNI, PID, overhead, provenance, and exact deployed admission-policy evidence
+#### Scenario: Live Kata configuration differs
+- **WHEN** the configured Kata RuntimeClass is missing from the cluster or its handler differs from the expected handler
+- **THEN** deployment validation SHALL fail
+- **AND** server startup SHALL perform only operational checks; actual execution failure SHALL NOT trigger another runtime or provider
 
-#### Scenario: Local admission gap
-- **WHEN** `local-development` accepts a reviewed unsafe variant
-- **THEN** its descriptor SHALL report admission preflight as `unverified`
-- **AND** no operator diagnostic SHALL summarize the cluster admission path as enforced
+#### Scenario: Unsafe admission variant is accepted
+- **WHEN** deployment validation observes an accepted reviewed negative variant for any Kubernetes profile
+- **THEN** the command SHALL fail, including for local development
+- **AND** the server SHALL NOT replace the external validation gate with an assurance descriptor
 
 ### Requirement: Provider choice preserves host controls
 Provider and profile selection SHALL NOT change the `run_javascript` contract, OCI facade, host credential ownership, supported client options, SDK request validation, execution deadline, OCI call and concurrency budgets, frame limits, result limits, or public-error sanitization.

@@ -22,7 +22,6 @@ import type { KubernetesProfile } from "../src/isolation/kubernetes-config.ts";
 import { createIsolationProvider } from "../src/isolation/provider-factory.ts";
 import { startServer } from "../src/server.ts";
 import {
-  conformingPodAdmission,
   validInClusterEnvironment,
   validKataEnvironment,
   validLocalEnvironment
@@ -49,11 +48,7 @@ class FakeKubernetesApi implements KubernetesApi {
     this.profile = profile;
   }
   async readNamespace() {}
-  async readRuntimeClass() { return { handler: "kata-qemu-runtime-rs" }; }
   async selfCan(_attributes: ResourceAttributes) { return true; }
-  async dryRunCreatePod(_namespace: string, pod: KubernetesPod) {
-    return conformingPodAdmission(pod, this.profile);
-  }
   async createPod(_namespace: string, pod: KubernetesPod) {
     this.pods.set(pod.metadata!.name!, structuredClone(pod));
   }

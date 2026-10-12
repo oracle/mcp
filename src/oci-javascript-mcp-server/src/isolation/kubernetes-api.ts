@@ -9,7 +9,6 @@ import {
   CoreV1Api,
   Exec,
   KubeConfig,
-  NodeV1Api,
   Observable,
   PortForward,
   Watch,
@@ -42,9 +41,7 @@ export type ResourceAttributes = {
 
 export interface KubernetesApi {
   readNamespace(name: string): Promise<void>;
-  readRuntimeClass(name: string): Promise<{ handler: string }>;
   selfCan(attributes: ResourceAttributes): Promise<boolean>;
-  dryRunCreatePod(namespace: string, pod: KubernetesPod): Promise<boolean>;
   createPod(
     namespace: string,
     pod: KubernetesPod,
@@ -101,7 +98,6 @@ export function createKubeconfigKubernetesApi(path: string, context: string): Ku
 function createClientNodeKubernetesApi(config: KubeConfig): KubernetesApi {
   return new ClientNodeKubernetesApi(
     config.makeApiClient(CoreV1Api),
-    config.makeApiClient(NodeV1Api),
     config.makeApiClient(AuthorizationV1Api),
     new Watch(config),
     new ClientNodeKubernetesGrpcTransport(
@@ -113,20 +109,17 @@ function createClientNodeKubernetesApi(config: KubeConfig): KubernetesApi {
 
 export class ClientNodeKubernetesApi implements KubernetesApi {
   readonly #core: CoreV1Api;
-  readonly #node: NodeV1Api;
   readonly #authorization: AuthorizationV1Api;
   readonly #watch: Watch;
   readonly #grpcTransport: KubernetesGrpcTransport;
 
   constructor(
     core: CoreV1Api,
-    node: NodeV1Api,
     authorization: AuthorizationV1Api,
     watch: Watch,
     grpcTransport: KubernetesGrpcTransport
   ) {
     this.#core = core;
-    this.#node = node;
     this.#authorization = authorization;
     this.#watch = watch;
     this.#grpcTransport = grpcTransport;
@@ -134,11 +127,6 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
 
   async readNamespace(name: string): Promise<void> {
     await this.#core.readNamespace({ name });
-  }
-
-  async readRuntimeClass(name: string): Promise<{ handler: string }> {
-    const value = await this.#node.readRuntimeClass({ name });
-    return { handler: value.handler };
   }
 
   async selfCan(attributes: ResourceAttributes): Promise<boolean> {
@@ -158,18 +146,6 @@ export class ClientNodeKubernetesApi implements KubernetesApi {
     };
     const response = await this.#authorization.createSelfSubjectAccessReview({ body: review });
     return response.status?.allowed === true;
-  }
-
-  async dryRunCreatePod(namespace: string, pod: KubernetesPod): Promise<boolean> {
-    try {
-      await this.#core.createNamespacedPod({ namespace, body: pod, dryRun: "All" });
-      return true;
-    } catch (error) {
-      if (isAdmissionRejection(error)) {
-        return false;
-      }
-      throw error;
-    }
   }
 
   async createPod(
@@ -489,11 +465,6 @@ export function isNotFound(error: unknown): boolean {
   return record.statusCode === 404
     || record.code === 404
     || (record.response as { statusCode?: unknown } | undefined)?.statusCode === 404;
-}
-
-function isAdmissionRejection(error: unknown): boolean {
-  const status = errorStatus(error);
-  return status === 400 || status === 403 || status === 422;
 }
 
 function errorStatus(error: unknown): unknown {

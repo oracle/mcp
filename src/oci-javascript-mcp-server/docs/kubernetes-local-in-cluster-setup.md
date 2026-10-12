@@ -182,8 +182,12 @@ kubectl --context rancher-desktop get validatingadmissionpolicy \
 ```
 
 Both rollout commands must succeed before connecting the Inspector. A successful
-host startup also performs service-account/RBAC checks and server
-dry-runs of the approved runner-pod contract before accepting MCP stdio.
+host startup checks namespace access, execution permissions and expiry
+reconciliation before accepting MCP stdio. It does not probe admission policy.
+Before connecting the Inspector, run the [deployment validator](kubernetes-isolation-profiles.md#deployment-validation)
+with this deployment's image, namespace and service-account settings, explicit
+kubeconfig/context, and intended host identity. Require all checks to pass; keep
+its report separate from the rollout/startup result.
 
 For local manifest checks, run from the repository root:
 

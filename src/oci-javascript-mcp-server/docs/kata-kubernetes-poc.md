@@ -45,7 +45,7 @@ Kata requires all of these trusted environment values:
 | --- | --- |
 | `OCI_JAVASCRIPT_KUBERNETES_NAMESPACE` | Dedicated execution namespace. Must differ from the trusted host namespace. |
 | `OCI_JAVASCRIPT_KUBERNETES_KATA_RUNTIME_CLASS` | Reviewed Kubernetes RuntimeClass name. |
-| `OCI_JAVASCRIPT_KUBERNETES_KATA_RUNTIME_HANDLER` | Exact expected handler returned by the RuntimeClass read. |
+| `OCI_JAVASCRIPT_KUBERNETES_KATA_RUNTIME_HANDLER` | Exact expected handler checked by deployment validation. |
 | `OCI_JAVASCRIPT_KUBERNETES_IMAGE` | Runner image with a lowercase `@sha256:<64 hex>` digest; tags alone are rejected. |
 | `OCI_JAVASCRIPT_KUBERNETES_RUNNER_SERVICE_ACCOUNT` | Zero-authority service account in the execution namespace. |
 | `OCI_JAVASCRIPT_KUBERNETES_TRUSTED_HOST_NAMESPACE` | Trusted host namespace supplied by the downward API. |
@@ -90,21 +90,20 @@ tolerations, selectors, or security-context overrides are not accepted.
 
 ## Startup and execution behavior
 
-Startup loads only in-cluster credentials, reads the execution Namespace and
-RuntimeClass, compares the exact handler, validates namespace separation and
-the downward-API identity, and performs SelfSubjectAccessReview checks for the
-exact pod lifecycle, watch/list/delete, `pods/exec`, `pods/portforward`, Namespace, and RuntimeClass
-operations. The Namespace and RuntimeClass access reviews name the configured
-objects exactly; the example ClusterRole applies the same `resourceNames`,
-while generated pod operations remain execution-namespace scoped. It then
-performs non-persistent server dry-runs: the conforming pod must be accepted and
-every identified weakening of metadata/profile, image/pull policy, service
-account, token/service links, restart/host namespaces, command/environment,
-container cardinality, root/security context, capabilities/seccomp/filesystem,
-resources/deadline, ports/devices/probes/hooks, volumes and `/tmp`, plus the Kata
-RuntimeClass, must be rejected. This is reported only as
-`reviewed-variants-rejected`; it does not verify the exact deployed policy
-revision or the wider admission chain.
+Startup loads only in-cluster credentials, validates namespace separation and
+the downward-API identity, reads the exact execution Namespace, checks namespace
+and pod lifecycle/exec/port-forward permissions, and reconciles expired pods.
+The Namespace access review names the configured object exactly; generated pod
+operations remain execution-namespace scoped. Operational preflight completes
+before MCP stdio connects.
+
+Run the [deployment validator](kubernetes-isolation-profiles.md#deployment-validation)
+under the intended host identity before rollout to read the exact RuntimeClass,
+compare its expected handler and check conforming/negative pod dry-runs. The
+example ClusterRole retains exact RuntimeClass `resourceNames` authority for
+that validation. Server startup does not perform these checks or publish an
+assurance descriptor. Observed rejection does not certify the exact deployed
+policy revision, wider admission chain or effective Kata guest boundary.
 
 Each call creates one uniquely named pod with a fixed silent Node wait command.
 Only after the pod is Running does the host open a non-TTY Kubernetes exec
@@ -149,10 +148,10 @@ does not stop future intervals.
 Trusted stderr diagnostics contain only provider ID, random correlation ID,
 allowlisted phase/outcome/reason, and bounded duration. They exclude code,
 guest output, protocol payloads, OCI requests/responses, Kubernetes errors,
-credentials, endpoints, events, and resource details. The provider descriptor
-explicitly marks CRI mapping, node runtime, CNI isolation, PID limits,
-RuntimeClass overhead, and image provenance as unverified external evidence.
-The exact deployed admission-policy revision is also explicitly unverified.
+credentials, endpoints, events, and resource details. Operators retain separate
+deployment evidence for CRI mapping, node runtime, CNI isolation, PID limits,
+RuntimeClass overhead, image provenance and the exact deployed admission-policy
+revision; startup diagnostics do not establish these controls.
 
 The server defaults to four active tool calls across both tools and rejects
 overload without an application queue. Fake-provider test definitions cover
@@ -238,8 +237,9 @@ chain are deliberately deferred real-cluster evidence.
 
 ## CRI-neutral boundary and future OKE profile
 
-Provider code submits `runtimeClassName`, reads the RuntimeClass, and compares
-its handler. It never reads or modifies containerd, CRI-O, node files, runtime
+Provider code submits the configured `runtimeClassName`. The deployment validator
+reads the RuntimeClass and compares its expected handler. Neither reads or
+modifies containerd, CRI-O, node files, runtime
 sockets, shim installation, or hypervisor configuration. Those are deployment
 responsibilities bound by external evidence.
 
@@ -265,7 +265,8 @@ and node replacement must be recorded.
 These steps are non-blocking operational guidance for work after this POC:
 
 1. Apply the versioned controls, publish both images by digest, and run
-   server-side admission dry-runs before creating execution pods.
+   the deployment validator for identity, RuntimeClass and server-side admission
+   dry-runs before creating execution pods.
 2. Admit one tainted Kata node only after bootstrap proves the CRI-O handler,
    Kata configuration, hypervisor, CNI, PID limit, and RuntimeClass overhead.
 3. Canary a small fixed call count. Inspect managed pods with

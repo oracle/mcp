@@ -71,7 +71,8 @@ host-only OCI Secret synchronization, and Inspector connection, see the
 The [deployment validator](docs/kubernetes-isolation-profiles.md#deployment-validation)
 checks the intended Kubernetes identity, permissions, RuntimeClass and observed
 admission dry-run outcomes using an explicit kubeconfig and context. It is a
-separate command; current server startup probes remain in place.
+separate command to run before rollout. Server startup checks operational
+readiness; it does not probe admission or validate live RuntimeClass handlers.
 
 After publication, install into a project with automatic lifecycle scripts
 disabled, then explicitly prepare the reviewed native addon:
@@ -236,19 +237,19 @@ their limits and stay within the documented reviewed ranges; `/tmp` must also
 stay within its documented range. The example admission policies use CEL
 quantity bounds so every documented value is accepted without a synchronized
 policy edit. In-cluster profiles require digest-pinned
-images, separate namespaces, fail-closed exact RBAC checks including trusted-host
-`pods/exec` and `pods/portforward`, rejection of the
-reviewed admission variants, and an independent cleanup-only reconciler. Only
-`kata-in-cluster` adds a preflighted RuntimeClass/handler. Kubernetes exec and
-port-forward errors remain trusted diagnostics and are never copied into MCP result
-fields.
+images, separate namespaces, fail-closed exact operational RBAC checks including
+trusted-host `pods/exec` and `pods/portforward`, externally validated admission
+policy, and an independent cleanup-only reconciler. Only `kata-in-cluster` adds
+a configured RuntimeClass; deployment validation checks its live handler.
+Kubernetes exec and port-forward errors remain trusted diagnostics and are never
+copied into MCP result fields.
 
-Cluster-scoped preflight reads name exactly the configured execution Namespace
-and, for Kata, RuntimeClass; the example ClusterRoles apply matching
-`resourceNames`, while generated pod operations remain namespace-scoped.
-Admission evidence is reported only as `reviewed-variants-rejected` or
-`unverified`, and the exact deployed policy revision remains explicitly
-unverified. During cleanup, the gRPC session, loopback tunnel, exec runner, and
+The server's cluster-scoped Namespace read/access review names exactly the
+configured execution Namespace; generated pod operations remain namespace-scoped.
+The example ClusterRoles also retain an exact RuntimeClass `get` grant for Kata
+validation under the intended host identity. The standalone validator reports
+observed acceptance/rejection outcomes, without certifying the deployed policy
+revision or wider enforcement. During cleanup, the gRPC session, loopback tunnel, exec runner, and
 zero-grace pod deletion plus NotFound confirmation share one absolute cleanup
 deadline; an unconfirmed transport close or deletion returns `isolation provider cleanup
 failed`. Pod deletion confirmation establishes API-object removal, not that
@@ -303,7 +304,8 @@ It builds and tests before running Moon's publish task with npm credentials.
 
 Kubernetes tests use injectable fake APIs and gRPC transports across all three
 profiles. They validate configuration, credential-factory selection, pod shape,
-protobuf/mTLS exchange, startup admission probes, lifecycle races, cancellation,
+protobuf/mTLS exchange, operational startup, deployment-validation probes,
+lifecycle races, cancellation,
 cleanup, reconciliation, and provider-compatible MCP results. The opt-in local
 cluster harness adds real standard-runtime lifecycle evidence; it never claims
 Kata, CRI, CNI, or guest-kernel evidence. Offline resource-range fixtures and

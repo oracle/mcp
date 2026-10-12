@@ -42,7 +42,9 @@ context: |
   allow a safe local image; `in-cluster` uses service-account credentials,
   separate trusted-host and execution namespaces, a digest-pinned image, and a
   zero-authority runner service account; `kata-in-cluster` adds only an exact,
-  preflighted RuntimeClass and handler. Standard Kubernetes profiles remain
+  configured RuntimeClass, with live handler and admission checks owned by the
+  standalone deployment validator. Server startup checks operational readiness
+  and emits no assurance descriptor. Standard Kubernetes profiles remain
   shared-kernel container isolation. Kata is a functionally tested POC, not a
   production-approved VM boundary, until real-node, CNI, runtime, image,
   admission, operational, and security-review evidence is complete.

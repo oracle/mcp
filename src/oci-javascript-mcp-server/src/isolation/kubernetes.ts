@@ -12,18 +12,12 @@ import type { KubernetesApi, ResourceAttributes } from "./kubernetes-api.ts";
 import type { KubernetesConfig } from "./kubernetes-config.ts";
 import {
   diagnosticEvent,
-  providerDescriptor,
   stderrKubernetesDiagnosticSink,
   type KubernetesDiagnosticSink,
   type KubernetesPhase,
-  type KubernetesProviderDescriptor,
   type KubernetesReason
 } from "./kubernetes-diagnostics.ts";
-import {
-  buildExecutionPod,
-  runtimeAdmissionVariants,
-  unsafeAdmissionVariants
-} from "./kubernetes-pod.ts";
+import { buildExecutionPod } from "./kubernetes-pod.ts";
 import {
   runtimePolicyFor,
   type KubernetesRuntimePolicy
@@ -50,20 +44,13 @@ const SHARED_ACCESS: ReadonlyArray<Omit<ResourceAttributes, "namespace"> & {
   { resource: "pods", subresource: "portforward", verb: "create", namespaced: true },
   { resource: "pods", subresource: "portforward", verb: "get", namespaced: true }
 ];
-const RUNTIME_CLASS_ACCESS = {
-  group: "node.k8s.io",
-  resource: "runtimeclasses",
-  verb: "get",
-  namespaced: false
-} as const;
-
 export class KubernetesIsolationProvider implements IsolationProvider {
   readonly #config: KubernetesConfig;
   readonly #policy: KubernetesRuntimePolicy;
   readonly #api: KubernetesApi;
   readonly #diagnostics: KubernetesDiagnosticSink;
   #stopReconciliation: (() => void) | undefined;
-  #descriptor: KubernetesProviderDescriptor | undefined;
+  #ready = false;
 
   constructor(
     config: KubernetesConfig,
@@ -76,31 +63,15 @@ export class KubernetesIsolationProvider implements IsolationProvider {
     this.#diagnostics = diagnostics;
   }
 
-  get descriptor(): KubernetesProviderDescriptor | undefined {
-    return this.#descriptor;
-  }
-
   async preflight(options: { startReconciliation?: boolean } = {}): Promise<void> {
+    this.#ready = false;
     const started = Date.now();
     const correlationId = randomUUID();
     this.#emit(correlationId, "preflight", "started", "none", started);
     try {
       await this.#api.readNamespace(this.#config.namespace);
-      if (this.#policy.kind === "kata") {
-        const runtimeClass = await this.#api.readRuntimeClass(this.#policy.runtimeClassName);
-        if (runtimeClass.handler !== this.#policy.runtimeHandler) {
-          throw new PreflightError("runtime_class");
-        }
-      }
-      const permissions = this.#policy.kind === "kata"
-        ? [...SHARED_ACCESS, RUNTIME_CLASS_ACCESS]
-        : SHARED_ACCESS;
-      for (const permission of permissions) {
-        const name = permission.resource === "namespaces"
-          ? this.#config.namespace
-          : permission.resource === "runtimeclasses" && this.#policy.kind === "kata"
-            ? this.#policy.runtimeClassName
-            : undefined;
+      for (const permission of SHARED_ACCESS) {
+        const name = permission.resource === "namespaces" ? this.#config.namespace : undefined;
         const allowed = await this.#api.selfCan({
           group: permission.group,
           name,
@@ -113,29 +84,6 @@ export class KubernetesIsolationProvider implements IsolationProvider {
           throw new PreflightError("authorization");
         }
       }
-      const probe = buildExecutionPod(
-        this.#config,
-        this.#policy,
-        `${POD_NAME_PREFIX}preflight`,
-        correlationId,
-        Date.now() + 30_000
-      );
-      if (!await this.#api.dryRunCreatePod(this.#config.namespace, probe)) {
-        throw new PreflightError("admission");
-      }
-      let admissionEnforced = true;
-      const unsafe = [
-        ...unsafeAdmissionVariants(probe),
-        ...runtimeAdmissionVariants(probe, this.#policy)
-      ];
-      for (const variant of unsafe) {
-        if (await this.#api.dryRunCreatePod(this.#config.namespace, variant.pod)) {
-          if (this.#config.profile !== "local-development") {
-            throw new PreflightError("admission");
-          }
-          admissionEnforced = false;
-        }
-      }
       const reconciliation = await reconcileExpiredPods(
         this.#api,
         this.#config.namespace,
@@ -144,7 +92,6 @@ export class KubernetesIsolationProvider implements IsolationProvider {
       if (reconciliation.failureCount > 0) {
         throw new PreflightError("cleanup");
       }
-      this.#descriptor = providerDescriptor(this.#config, this.#policy, admissionEnforced);
       if (options.startReconciliation !== false) {
         this.#stopReconciliation ??= startExpiryReconciliation(
           this.#api,
@@ -170,6 +117,7 @@ export class KubernetesIsolationProvider implements IsolationProvider {
         );
       }
       this.#emit(correlationId, "preflight", "succeeded", "none", started);
+      this.#ready = true;
     } catch (error) {
       const reason = error instanceof PreflightError ? error.reason : "api";
       this.#emit(correlationId, "preflight", "failed", reason, started);
@@ -183,7 +131,7 @@ export class KubernetesIsolationProvider implements IsolationProvider {
   }
 
   run(code: string, options: Parameters<IsolationProvider["run"]>[1]): IsolationExecution {
-    if (!this.#descriptor) {
+    if (!this.#ready) {
       throw new Error("Kubernetes provider was not preflighted");
     }
     const name = `${POD_NAME_PREFIX}${randomUUID()}`;

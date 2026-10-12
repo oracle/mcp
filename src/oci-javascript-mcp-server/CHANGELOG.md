@@ -11,6 +11,13 @@
 
 ### Changed
 
+- Start in-cluster and Kata runners normally from an execution-scoped read-only
+  TLS Secret and connect directly over pod-network mTLS gRPC. Replace exec and
+  port-forward permissions with Secret lifecycle permissions; require narrow
+  host-to-runner ingress. Workstation local-development retains its tunnel path.
+- Delete and reconcile execution TLS Secrets alongside pods, including orphans
+  and uncertain or late creation, under the existing bounded cleanup contract.
+
 - Restrict Kubernetes startup preflight to namespace access, execution permissions
   and expiry reconciliation. Admission probes and live RuntimeClass/handler
   checks belong to deployment validation; remove server assurance descriptors

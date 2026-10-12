@@ -158,9 +158,10 @@ boundary described in the [Kata POC guide](kata-kubernetes-poc.md).
 
 ## Startup, execution, and cleanup
 
-All profiles read the execution namespace, verify the ten required namespace,
-pod lifecycle, exec and `pods/portforward` permissions, and reconcile expired
-pods for the exact namespace/profile. The Namespace `get` access review names
+All profiles read the execution namespace and verify namespace/pod lifecycle
+permissions. In-cluster profiles also require Secrets create/get/list/delete;
+workstation local-development instead requires exec and `pods/portforward`.
+Reconciliation covers pods and, in-cluster, TLS Secrets for the exact namespace/profile. The Namespace `get` access review names
 exactly the configured execution Namespace; generated pod operations remain
 execution-namespace scoped because pod names are dynamic. Periodic reconciliation
 starts after the startup sweep succeeds.
@@ -179,19 +180,18 @@ or an unavailable RuntimeClass during actual pod creation/scheduling; those
 fail through the normal bounded execution contract.
 
 The absolute 1–120 second execution deadline includes pod creation, scheduling,
-image availability, exec bootstrap, gRPC readiness, port-forward connection,
+image availability, TLS Secret provisioning (or local exec/port-forward), gRPC readiness,
 worker execution, OCI RPC, and result
 delivery. Abort or timeout remains authoritative in every phase. At
 finalization, the host stops accepting bridge work and aborts the run, then
 starts provider termination and a rejection-observing snapshot drain of pending
 OCI calls concurrently. Both consume one configured cleanup tail, capped by the
-trusted host at 60 seconds; the drain does not receive a second tail after exec
-close and zero-grace pod deletion. Kubernetes channel stop and pod
-delete/NotFound confirmation start concurrently against that same cleanup
+trusted host at 60 seconds; the drain does not receive a second tail. Kubernetes
+channel stop and pod/Secret delete/NotFound confirmation start concurrently against that same cleanup
 deadline. Pending runner/tunnel acquisition is independently bounded and cannot
 prevent pod deletion from being attempted. Late transport handles receive the
-original cleanup deadline; late pod creation triggers compensating deletion.
-Failure to confirm the gRPC session, tunnel, runner closure, or NotFound
+original cleanup deadline; late pod or Secret creation triggers compensating deletion.
+Failure to confirm the gRPC session, local tunnel/runner closure, or resource NotFound
 returns `isolation provider cleanup failed` even after a valid or timed-out
 worker result. If provider cleanup succeeds but pending OCI work does not settle
 before that deadline, `OCI cleanup did not complete` overrides the earlier outcome. Only an
@@ -205,15 +205,84 @@ cannot override either policy. Cancellation therefore prevents new bridge work
 and automatic retries; a late OCI promise remains rejection-observed but cannot
 change the finalized MCP result.
 
-Every host reconciles expired pods matching the generic manager label and exact
-profile. Both in-cluster profiles deploy a separate cleanup-only reconciler with
-get/list/watch/delete and no create, `pods/exec`, or `pods/portforward`. Local development relies on
+Every host reconciles expired pods and, in-cluster, TLS Secrets matching the
+generic manager label and exact profile. Independent Secret listing also finds
+orphans from partial creation. Both in-cluster profiles deploy a separate
+cleanup-only reconciler with pod get/list/watch/delete and Secret get/list/delete,
+with no create, `pods/exec`, or `pods/portforward`. Local development relies on
 host reconciliation. Unrelated, malformed, other-profile, wrong-namespace, and
-non-expired pods are preserved. Each candidate consumes at most five seconds;
+non-expired resources are preserved. Each candidate consumes at most five seconds;
 delete or confirmation failure increments one aggregate failure count and does
 not block later candidates. Startup consumes the full pass before failing,
 periodic host and cleanup-only passes emit one sanitized aggregate count, and a
 failed pass does not stop future intervals.
+
+## Direct in-cluster transport and rollout evidence
+
+Both in-cluster profiles require host-to-pod IP reachability on TCP 50051.
+Each runner starts normally with `--tls-files`, reads its immutable
+`<pod-name>-tls` Secret at `/run/oci-javascript/tls`, and authenticates the host
+using application mTLS. The Secret contains only the runner key/certificate and
+the host public certificate. OCI credentials and the host private key remain on
+the host. Mode 0440 and fsGroup 65532 provide non-root read access. Istio is not
+required; the example execution namespaces disable sidecar injection and ambient
+enrollment. See the [architecture decision](architecture-and-isolation-design.md#architecture-decision-direct-in-cluster-transport).
+
+Before rollout, restrict access to execution Secrets and enable encryption at
+rest for Secrets in the cluster. Update the matching host/runner images, RBAC,
+admission and NetworkPolicies as one deployment increment. Old policies reject
+the TLS mount and new policies reject the old wait command. The local-in-cluster
+example also uses direct transport; workstation `local-development` retains its
+explicit tunnel. Rollback drains executions, confirms pod and TLS Secret absence,
+and restores the previous matching images and policy/RBAC bundle.
+
+The following opt-in tests run inside the trusted host using its configured
+in-cluster identity. They do not use OCI APIs. Deploy the matching images and
+policy assets first, and run the standalone deployment validator below. Set the
+three variables to the actual target; the standard example values are shown:
+
+```bash
+export HOST_NAMESPACE=oci-js-standard-host
+export HOST_POD_LABEL=oci-js-standard-host
+export HOST_CONTAINER=host
+HOST_POD=$(kubectl -n "$HOST_NAMESPACE" get pods \
+  -l "app.kubernetes.io/name=$HOST_POD_LABEL" \
+  -o jsonpath='{.items[0].metadata.name}')
+TEST_DIRECTORY=$(kubectl -n "$HOST_NAMESPACE" exec "$HOST_POD" -c "$HOST_CONTAINER" -- \
+  node -e 'const fs=require("node:fs"); const d=fs.mkdtempSync("/tmp/oci-js-tests-"); fs.mkdirSync(d+"/test"); fs.symlinkSync("/app/src",d+"/src"); fs.symlinkSync("/app/node_modules",d+"/node_modules"); console.log(d)')
+kubectl -n "$HOST_NAMESPACE" cp \
+  test/kubernetes-direct-integration.test.ts \
+  "$HOST_POD:$TEST_DIRECTORY/test/kubernetes-direct-integration.test.ts" \
+  -c "$HOST_CONTAINER"
+kubectl -n "$HOST_NAMESPACE" exec "$HOST_POD" -c "$HOST_CONTAINER" -- \
+  env OCI_JAVASCRIPT_RUN_DIRECT_KUBERNETES_TESTS=true \
+  node --no-node-snapshot --experimental-strip-types --test \
+  "$TEST_DIRECTORY/test/kubernetes-direct-integration.test.ts"
+```
+
+Run from the package directory. The host mounts writable `/tmp`; copying the
+test does not modify its read-only application files. Operator exec/copy authority
+is separate from the host service account's execution Role, which has no exec
+or port-forward grants. For Kata use host namespace `oci-js-host`, pod label
+`oci-js-kata-host`, and container `host`, on actual reviewed Kata nodes.
+
+Require exit 0 for execution, cancellation, and orphan-Secret reconciliation.
+These tests confirm their own resource absence; they do not certify the CNI,
+Secret-store encryption, or VM boundary. Record additional target evidence:
+
+- While a runner exists, confirm its TLS projection is read-only and readable by
+  UID/GID 65532, and its pod has no service-account token or OCI credential mount.
+- Confirm trusted-host TCP 50051 access and rejection from an unauthorized
+  namespace/workload. Inspect CNI enforcement, not only the policy objects.
+- Confirm wrong execution certificates cannot open a session and runner-initiated
+  egress is blocked while replies on the established stream work.
+- Confirm conforming admission succeeds, every negative variant fails, and live
+  CEL type checking reports no expression warnings.
+- Confirm the independent reconciler removes expired pods and orphan TLS Secrets
+  when the MCP host is unavailable, while preserving unexpired resources.
+
+No live direct-transport, CNI, encryption-at-rest, or Kata evidence is established
+by the normal unit suite or offline kubectl dry-run.
 
 ## Deployment validation
 
@@ -278,8 +347,9 @@ as that account needs no `--impersonate` flag. For an operator kubeconfig,
 service account; the command does not grant permissions or retry as the operator.
 See [Kubernetes impersonation](https://kubernetes.io/docs/reference/access-authn-authz/user-impersonation/).
 The identity must also be allowed to create self-access reviews, read the
-execution namespace, perform the required pod lifecycle/exec/port-forward
-operations and, for Kata, read the configured RuntimeClass. Missing review
+execution namespace, perform pod lifecycle and in-cluster Secret lifecycle
+operations (exec/port-forward for workstation local-development) and, for Kata,
+read the configured RuntimeClass. Missing review
 support or permission fails validation rather than assuming the workload identity.
 
 If downward-API host pod name or UID variables are absent, dry-run probes use

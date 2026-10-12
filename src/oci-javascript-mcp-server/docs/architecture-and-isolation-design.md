@@ -196,7 +196,7 @@ flowchart LR
   B -->|signed HTTPS| O[OCI APIs]
   S --> P{IsolationProvider}
   P -->|Podman internal network and loopback gRPC| R[Credential-free runner]
-  P -->|Kubernetes exec bootstrap and loopback gRPC port-forward| R
+  P -->|Kubernetes direct in-cluster gRPC or local exec and port-forward| R
   R --> W[Fresh sandbox worker]
   W --> V[Fresh isolated-vm isolate]
   V -->|SDK-shaped oci facade| W
@@ -383,8 +383,9 @@ Each execution receives fresh mutually authenticated TLS identities. The
 bootstrap gives the runner its server key/certificate and the host's public
 certificate; the host's private key stays in the trusted host. Podman sends it
 over container stdin, then reaches gRPC through an internal network and host
-loopback port. Kubernetes uses non-TTY exec for bootstrap/lifecycle and one
-loopback port-forward for gRPC. No replay, resumption, or fallback is provided.
+loopback port. In-cluster Kubernetes profiles mount an execution-specific read-only TLS Secret
+and connect directly to the pod IP. Workstation local-development uses non-TTY
+exec for bootstrap/lifecycle and one loopback port-forward for gRPC. No replay, resumption, or fallback is provided.
 
 The current transport enforces:
 
@@ -457,7 +458,7 @@ The Kubernetes provider is one execution engine composed from:
 - a complete hardened pod builder;
 - a monotonic standard or Kata runtime policy;
 - operational startup preflight;
-- a create/watch/exec/port-forward/delete lifecycle;
+- a profile-specific create/watch/connect/delete lifecycle with TLS Secrets for in-cluster runs;
 - provider-neutral mTLS protobuf gRPC execution; and
 - host and independent expiry reconciliation.
 
@@ -479,10 +480,12 @@ mounted into the runner.
 Before MCP stdio connects, the selected profile:
 
 1. reads the execution namespace;
-2. verifies required namespace, pod lifecycle, exec and port-forward authority
+2. verifies required namespace and pod lifecycle authority, plus Secrets
+   create/get/list/delete for in-cluster profiles or exec/port-forward for local development
    through `SelfSubjectAccessReview`, naming the configured Namespace exactly
    while keeping dynamic pod operations execution-namespace scoped;
-3. reconciles expired pods for the exact namespace/profile, failing readiness
+3. reconciles expired pods and, for in-cluster profiles, TLS Secrets for the
+   exact namespace/profile, failing readiness
    when any candidate cleanup fails; and
 4. starts periodic reconciliation and marks private operational readiness.
 
@@ -514,22 +517,52 @@ The host constructs the complete pod. The base shape includes:
 - equal CPU, memory, and ephemeral-storage requests and limits; and
 - one bounded, memory-backed `/tmp` volume.
 
-The container first runs a fixed silent Node wait command. The host opens a
-non-TTY exec stream only after the pod is Running and then starts the fixed
-sandbox worker command. It sends one execution-scoped mTLS bootstrap over
-exec stdin, waits for `READY\n`, then opens one host-loopback port-forward to
-runner port 50051. The session uses native gRPC readiness and a deadline; no
-Service or declared container port is needed. No caller-configurable command,
-environment, or pod fragment is accepted.
+In-cluster pods start `/app/src/sandbox-worker.ts --tls-files` normally. An
+immutable Secret named `<pod-name>-tls` supplies exactly `serverKey`, `serverCert`,
+and `clientCert`, projected read-only at `/run/oci-javascript/tls` with mode 0440
+and the pod's existing fsGroup 65532. The bounded loader permits Kubernetes
+projection symlinks, rejects missing/empty/oversized files, and never falls back
+to stdin. Invalid TLS material fails startup with sanitized errors. The host
+verifies the created pod UID, observes Running plus a valid pod IP, and connects
+directly to port 50051. Native gRPC wait-for-ready covers listener startup.
+
+The workstation local-development profile retains the fixed silent wait command,
+non-TTY exec bootstrap, `READY\n` readiness signal, and loopback port-forward.
+Neither path creates a Service or permits caller-controlled commands, mounts,
+environment, or pod fragments.
+
+#### Architecture decision: direct in-cluster transport
+
+Use direct pod-network gRPC with application mTLS for both in-cluster profiles.
+This removes execution traffic and tunnel lifecycle from the Kubernetes control
+plane while preserving the protobuf contract and fresh execution-specific peer
+trust. API calls remain responsible for resource lifecycle. The host private key
+and OCI credentials never enter the TLS Secret or runner.
+
+The tradeoff is explicit host-to-runner network reachability and storing runner
+TLS material in the execution namespace's Secret store. Require restricted Secret
+access and encryption at rest. Keep default-deny policies and permit runner TCP
+50051 ingress only from the trusted-host namespace AND workload labels. Runner
+initiated egress remains denied; replies use the established bidirectional stream.
+
+Istio is deferred: application mTLS already supplies encryption and mutual
+execution-specific authentication. Execution namespaces explicitly disable mesh
+enrollment. A mesh follow-up can add workload policy and telemetry; replacing
+application mTLS would change the identity boundary to shared service-account
+identity unless execution-specific authorization is preserved. See
+[Istio's identity model](https://istio.io/latest/docs/ops/deployment/security-model/).
+Tunnels remain an explicit development choice because workstation API access does
+not imply pod-IP reachability. Direct failures never trigger tunnel fallback or
+execution replay.
 
 ### 10.4 Execution state machine
 
 ```mermaid
 stateDiagram-v2
   [*] --> Creating
-  Creating --> Pending: pod created
-  Pending --> Running: watch observes Running
-  Running --> Connecting: open non-TTY exec
+  Creating --> Pending: execution resources created
+  Pending --> Running: observe Running and direct pod IP
+  Running --> Connecting: direct mTLS or local exec and tunnel
   Connecting --> Executing: authenticated gRPC session ready
   Executing --> Closing: result, error, timeout, cancel, or channel failure
   Creating --> Closing: failure or cancel
@@ -538,7 +571,7 @@ stateDiagram-v2
   Closing --> CleanupFork
   state CleanupFork <<fork>>
   CleanupFork --> StoppingChannel: bounded channel stop
-  CleanupFork --> Deleting: zero-grace delete
+  CleanupFork --> Deleting: delete pod and direct TLS Secret
   StoppingChannel --> CleanupJoin: transport closure confirmed
   Deleting --> CleanupJoin: NotFound confirmed
   state CleanupJoin <<join>>
@@ -547,19 +580,19 @@ stateDiagram-v2
 ```
 
 The 1–120 second tool deadline covers create, scheduling, image availability,
-exec bootstrap, port-forward setup, gRPC readiness, worker execution, OCI
+TLS Secret provisioning or local exec/port-forward, gRPC readiness, worker execution, OCI
 RPC, and result delivery. Finalization then receives one separate configured
 allowance, capped by the host at 60 seconds.
-Channel close and confirmed pod deletion run concurrently with bounded pending-
+Channel close and confirmed pod/Secret deletion run concurrently with bounded pending-
 RPC draining against that same deadline, rather than consuming serial tails.
 Deletion is zero-grace and must be confirmed. gRPC termination, runner
 acquisition/stop, tunnel acquisition/stop, and delete/NotFound confirmation
 start as independent concurrent tasks against the caller-supplied cleanup
-deadline. A stalled acquisition or transport stop cannot prevent deletion from
+deadline; direct profiles replace runner/tunnel stops with TLS Secret deletion. A stalled acquisition or transport stop cannot prevent deletion from
 being attempted. Any unconfirmed transport closure or deletion overrides the
 earlier outcome with the cleanup-failure result. Late transport handles receive
-the original cleanup deadline; late pod creation triggers compensating deletion.
-Startup observes runner/tunnel failure immediately and fails if either closes
+the original cleanup deadline; late pod or Secret creation triggers compensating deletion.
+Local startup observes runner/tunnel failure immediately and fails if either closes
 before final gRPC status; completed gRPC status remains authoritative.
 
 For Kubernetes, confirmed deletion means the pod object is absent from the API.
@@ -573,10 +606,12 @@ semantics.
 
 ### 10.5 Reconciliation
 
-Each host reconciles at startup and periodically. It adopts only pods in the
+Each host reconciles at startup and periodically. It adopts only pods and, for
+in-cluster profiles, TLS Secrets in the
 configured namespace with the exact manager, provider, and profile labels and a
 well-formed expired timestamp. It preserves unrelated, malformed, other-profile,
-and non-expired pods.
+and non-expired resources. Secret listing is independent of pod listing, so an
+orphan Secret is discoverable even if no pod was created or pod listing fails.
 
 Listing receives a five-second bound that aborts its API request on timeout.
 The standalone reconciler also propagates shutdown cancellation into listing and
@@ -590,7 +625,7 @@ count and continue future intervals. Diagnostics never include candidate names
 or raw API errors.
 
 In-cluster profiles also deploy an independent cleanup-only reconciler outside
-the execution namespace. Its RBAC permits get/list/watch/delete but not create
+the execution namespace. Its RBAC permits pod get/list/watch/delete and Secret get/list/delete but not create
 or `pods/exec`, allowing orphan cleanup when every trusted host replica is down.
 Local development relies on host reconciliation.
 

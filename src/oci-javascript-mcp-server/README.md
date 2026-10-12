@@ -172,7 +172,8 @@ MCP client
        -> OCI broker -> OCI SDK + host credentials -> OCI APIs
        -> selected isolation provider
             -> Podman: private network + loopback port, or
-            -> Kubernetes: fresh pod + exec bootstrap + loopback port-forward
+            -> Kubernetes in-cluster: fresh pod + TLS Secret + direct pod-network gRPC
+            -> Kubernetes local-development: exec bootstrap + loopback port-forward
                  -> standard runtime (local/in-cluster), or reviewed Kata RuntimeClass
             -> locked-down, credential-free runner
                  -> fresh Node worker
@@ -214,9 +215,10 @@ is provided. The public MCP tools and response fields are unchanged.
   CPU, memory, process, file, and temporary-filesystem limits.
 - Each execution gets fresh mutual-TLS identities. The runner receives its
   server key and the host's public certificate, never the host's private key.
-- Kubernetes uses exec only for the TLS bootstrap and runner lifecycle, then
-  carries the same mTLS gRPC session over one host-loopback `pods/portforward`
-  connection. It creates no Service and declares no container port.
+- In-cluster Kubernetes starts the runner normally with a read-only, execution-specific
+  TLS Secret and connects directly to the pod IP. Workstation local-development
+  retains exec bootstrap and loopback `pods/portforward`. Neither creates a Service.
+  Istio is not required; see the [transport decision](docs/architecture-and-isolation-design.md#architecture-decision-direct-in-cluster-transport).
 - Sandbox code cannot import Node modules or directly access files or networks.
 - Credentials, signers, SDK clients, and HTTPS remain in the trusted host.
 - The host validates each request and enforces deadlines, message and result
@@ -238,7 +240,7 @@ stay within its documented range. The example admission policies use CEL
 quantity bounds so every documented value is accepted without a synchronized
 policy edit. In-cluster profiles require digest-pinned
 images, separate namespaces, fail-closed exact operational RBAC checks including
-trusted-host `pods/exec` and `pods/portforward`, externally validated admission
+trusted-host Secret lifecycle authority (exec/port-forward only for workstation development), externally validated admission
 policy, and an independent cleanup-only reconciler. Only `kata-in-cluster` adds
 a configured RuntimeClass; deployment validation checks its live handler.
 Kubernetes exec and port-forward errors remain trusted diagnostics and are never
@@ -249,8 +251,8 @@ configured execution Namespace; generated pod operations remain namespace-scoped
 The example ClusterRoles also retain an exact RuntimeClass `get` grant for Kata
 validation under the intended host identity. The standalone validator reports
 observed acceptance/rejection outcomes, without certifying the deployed policy
-revision or wider enforcement. During cleanup, the gRPC session, loopback tunnel, exec runner, and
-zero-grace pod deletion plus NotFound confirmation share one absolute cleanup
+revision or wider enforcement. During cleanup, gRPC closure, local tunnel/exec
+closure when selected, and pod/Secret deletion plus NotFound confirmation share one absolute cleanup
 deadline; an unconfirmed transport close or deletion returns `isolation provider cleanup
 failed`. Pod deletion confirmation establishes API-object removal, not that
 the process has stopped on its node. Zero-grace deletion can remove the object

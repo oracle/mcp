@@ -110,10 +110,10 @@ This creates the following required controls:
 | Area | Resources and purpose |
 | --- | --- |
 | Trust separation | `oci-js-standard-host` and `oci-js-standard-execution` namespaces. Only the host namespace may receive OCI credentials. |
-| Identities | A host service account with create/exec lifecycle authority, a zero-authority runner account with token automount disabled, and a cleanup-only reconciler account. |
+| Identities | A host service account with pod and TLS Secret lifecycle authority, a zero-authority runner account with token automount disabled, and a cleanup-only reconciler account. |
 | Admission | A fail-closed policy and binding that only admits the host-created, fixed runner-pod shape. |
-| Resource and network bounds | Execution-namespace quota, limit range, and default-deny ingress and egress NetworkPolicies. |
-| Availability and cleanup | One trusted host Deployment and a separate reconciler Deployment that can delete expired managed runner pods but cannot create or exec them. |
+| Resource and network bounds | Execution-namespace quota, limit range, and default-deny ingress/egress with TCP 50051 ingress allowed only from the trusted host. |
+| Availability and cleanup | One trusted host Deployment and a separate reconciler Deployment that can delete expired managed runner pods and TLS Secrets but cannot create or exec them. |
 
 Changing the Deployment image references automatically starts a rollout; no
 separate rollout restart is needed for an image update. If the OCI Secret is

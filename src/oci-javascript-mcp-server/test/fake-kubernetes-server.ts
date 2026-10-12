@@ -40,6 +40,7 @@ if (process.env.OCI_JAVASCRIPT_KUBERNETES_CLEANUP_TIMEOUT_SECONDS) {
 }
 
 class FakeKubernetesApi implements KubernetesApi {
+  failCreation = false;
   readonly profile: KubernetesProfile;
   readonly pods = new Map<string, KubernetesPod>();
   readonly bootstraps = new Map<string, RunnerTlsBootstrap>();
@@ -62,6 +63,7 @@ class FakeKubernetesApi implements KubernetesApi {
   async readNamespace() {}
   async selfCan(_attributes: ResourceAttributes) { return true; }
   async createPod(_namespace: string, pod: KubernetesPod) {
+    if (this.failCreation) throw new Error("private Kubernetes creation failure");
     this.pods.set(pod.metadata!.name!, structuredClone(pod));
     return "created-uid";
   }
@@ -96,11 +98,6 @@ class FakeKubernetesApi implements KubernetesApi {
         call.on("data", message => {
           if (message.execute) {
             code = decodeText(message.execute.codeUtf16le, 1024 * 1024);
-            if (code === "provider-failure") {
-              close();
-              server.forceShutdown();
-              return;
-            }
             if (code === "rpc" || code === "rpc-pending") {
               call.write({ rpc: {
                 id: 1,
@@ -168,11 +165,17 @@ function sendResult(call: Parameters<RunnerServer["session"]>[0], code: string):
   call.end();
 }
 
+const api = new FakeKubernetesApi(profile);
 const provider = await createIsolationProvider(environment, {
-  kubernetesApi: new FakeKubernetesApi(profile),
+  kubernetesApi: api,
   kubernetesDiagnostics: () => undefined,
   startReconciliation: false
 });
+const run = provider.run.bind(provider);
+provider.run = (code, options) => {
+  api.failCreation = code === "provider-failure";
+  return run(code, options);
+};
 
 await startServer({
   isolationProvider: provider,

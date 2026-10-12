@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -161,6 +161,37 @@ test("runner image retains its source boundary and accepts a synthetic TLS boots
   });
   child.stdin.write(`${JSON.stringify(createGrpcTlsBootstrap().runner)}\n`);
   await ready;
+  const closed = once(child, "close");
+  execFileSync(builder, ["stop", "--time", "1", name], { stdio: "pipe", timeout: 5000 });
+  await closed;
+});
+
+test("runner image starts normally from a read-only TLS projection without stdin", {
+  skip: !imagesEnabled,
+  timeout: 30_000
+}, async t => {
+  const directory = mkdtempSync(join(tmpdir(), "oci-js-runner-files-"));
+  const name = `oci-javascript-runner-files-${randomUUID()}`;
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const tls = createGrpcTlsBootstrap().runner;
+  // Synthetic smoke files permit any UID to read; Kubernetes fsGroup/0440 needs cluster evidence.
+  chmodSync(directory, 0o755);
+  for (const [key, value] of Object.entries(tls)) writeFileSync(join(directory, key), value, { mode: 0o444 });
+  const child = spawn(builder, ["run", "--read-only", "--network=none", "--name", name,
+    "--mount", `type=bind,source=${directory},target=/run/oci-javascript/tls,readonly`, runnerImage,
+    "node", "--no-node-snapshot", "--experimental-strip-types", "/app/src/sandbox-worker.ts", "--tls-files"
+  ], { stdio: ["ignore", "pipe", "pipe"], timeout: 20_000 });
+  t.after(() => { execFileSync(builder, ["rm", "--force", name], { stdio: "ignore" }); child.kill(); });
+  let stdout = "";
+  let stderr = "";
+  const ready = new Promise<void>((resolve, reject) => {
+    child.stdout.on("data", chunk => { stdout += String(chunk); if (stdout === "READY\n") resolve(); });
+    child.stderr.on("data", chunk => { stderr += String(chunk); });
+    child.once("error", reject);
+    child.once("exit", () => reject(new Error("runner TLS-file startup failed")));
+  });
+  await ready;
+  assert.equal(stderr, "");
   const closed = once(child, "close");
   execFileSync(builder, ["stop", "--time", "1", name], { stdio: "pipe", timeout: 5000 });
   await closed;

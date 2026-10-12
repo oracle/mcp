@@ -34,7 +34,7 @@ Credential-free execution pods run in the separate `oci-js-execution` namespace.
 The example RoleBinding names only the trusted host service account across
 namespaces. The runner service account has no authority and is never
 token-mounted. The cleanup-only reconciler runs outside the execution namespace
-under a third identity with get/list/watch/delete only—never create,
+under a third identity with pod get/list/watch/delete and Secret get/list/delete—never create,
 `pods/exec`, or `pods/portforward`.
 
 ## Configuration
@@ -92,7 +92,7 @@ tolerations, selectors, or security-context overrides are not accepted.
 
 Startup loads only in-cluster credentials, validates namespace separation and
 the downward-API identity, reads the exact execution Namespace, checks namespace
-and pod lifecycle/exec/port-forward permissions, and reconciles expired pods.
+and pod lifecycle/Secret permissions, and reconciles expired pods and TLS Secrets.
 The Namespace access review names the configured object exactly; generated pod
 operations remain execution-namespace scoped. Operational preflight completes
 before MCP stdio connects.
@@ -105,21 +105,21 @@ that validation. Server startup does not perform these checks or publish an
 assurance descriptor. Observed rejection does not certify the exact deployed
 policy revision, wider admission chain or effective Kata guest boundary.
 
-Each call creates one uniquely named pod with a fixed silent Node wait command.
-Only after the pod is Running does the host open a non-TTY Kubernetes exec
-stream and start `/app/src/sandbox-worker.ts`. It writes one execution-scoped
-mTLS bootstrap without closing exec stdin, waits for the exact readiness line,
-then forwards one loopback host connection through `pods/portforward` to runner
-port 50051. The same protobuf gRPC v4 session, OCI request validation,
-call/concurrency budgets, result limits, final-status requirement, and
-public-error sanitization used by Podman remain above the provider. No Service,
-declared container port, legacy framed fallback, or execution replay is used.
+Each call creates an immutable execution TLS Secret and a uniquely named pod.
+The worker starts normally with `--tls-files` and reads the fixed read-only
+projection at `/run/oci-javascript/tls` (mode 0440, fsGroup 65532). The host verifies
+its created pod UID and Running/IP state, then connects directly to port 50051
+using fresh application mTLS. The same protobuf v4 session, OCI validation,
+budgets, result limits, final-status requirement, and error sanitization remain.
+No Service, exec bootstrap, port-forward, or execution replay is used. Runner
+ingress permits only trusted-host namespace/workload selectors; egress remains
+denied. Istio is deferred; execution namespaces disable mesh enrollment.
 
-The tool timeout is end-to-end: creation, scheduling, image pull, exec bootstrap,
-readiness, port-forward setup, worker execution, and result delivery all consume the same 1–120 second
+The tool timeout is end-to-end: Secret/pod creation, scheduling, image pull,
+authenticated direct connection, worker execution, and result delivery consume the same 1–120 second
 deadline. Abort and timeout remain authoritative in every phase. At
 finalization, the host rejects new bridge work and aborts the run, then stops
-the gRPC session, loopback tunnel, exec runner, and performs zero-grace
+the gRPC session and performs zero-grace pod deletion plus TLS Secret
 deletion/NotFound confirmation against one absolute deadline. Kubernetes cleanup
 and the snapshot drain of pending OCI calls share that deadline. Provider termination and RPC draining run concurrently
 against one bounded cleanup tail (30 seconds by default, 60 maximum), not
@@ -186,7 +186,7 @@ credentials.
 
 Assets live in `examples/kata-kubernetes/v1/` and include separate namespaces,
 restricted Pod Security labels, all three service accounts, cross-namespace
-least-privilege RBAC, quota and limits, default-deny ingress/egress policies, a
+least-privilege RBAC, quota and limits, default-deny ingress/egress plus narrowly allowed host ingress, a
 RuntimeClass example, fail-closed ValidatingAdmissionPolicy/binding, a hardened
 trusted-host Deployment, and the cleanup-only Deployment.
 
@@ -274,7 +274,7 @@ These steps are non-blocking operational guidance for work after this POC:
 4. Stop all host replicas and verify the independent reconciler preserves
    non-expired pods, removes expired pods after recovery, and emits only bounded
    diagnostics. Repeat across reconciler restart and temporary API outage.
-5. For rollback, stop new admission, confirm all managed execution pods are
+5. For rollback, stop new admission, confirm all managed execution pods and TLS Secrets are
    deleted, verify reconciliation observes an empty namespace, and restore the
    previous approved Kata deployment. Do not silently select Podman.
 6. Before node maintenance, drain executions, confirm cleanup, cordon/drain the

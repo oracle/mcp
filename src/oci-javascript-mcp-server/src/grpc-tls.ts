@@ -5,15 +5,50 @@
  */
 
 import type { Readable } from "node:stream";
+import { open } from "node:fs/promises";
+import { join } from "node:path";
 
 export const RUNNER_READY_LINE = "READY\n" as const;
-const MAX_TLS_BOOTSTRAP_BYTES = 32 * 1024;
+export const MAX_TLS_BOOTSTRAP_BYTES = 32 * 1024;
+export const RUNNER_TLS_DIRECTORY = "/run/oci-javascript/tls";
 
 export type RunnerTlsBootstrap = {
   serverKey: string;
   serverCert: string;
   clientCert: string;
 };
+
+export function runnerTlsMode(args: readonly string[]): "stdin" | "files" {
+  if (args.length === 0) return "stdin";
+  if (args.length === 1 && args[0] === "--tls-files") return "files";
+  throw new Error("invalid sandbox TLS bootstrap");
+}
+
+export async function readRunnerTlsFiles(directory: string): Promise<RunnerTlsBootstrap> {
+  const result = {} as RunnerTlsBootstrap;
+  let remaining = MAX_TLS_BOOTSTRAP_BYTES;
+  try {
+    for (const key of ["serverKey", "serverCert", "clientCert"] as const) {
+      const file = await open(join(directory, key), "r");
+      try {
+        if (!(await file.stat()).isFile()) throw new Error("invalid file");
+        const bytes = Buffer.alloc(remaining + 1);
+        let size = 0;
+        while (size < bytes.length) {
+          const read = await file.read(bytes, size, bytes.length - size, null);
+          if (read.bytesRead === 0) break;
+          size += read.bytesRead;
+        }
+        if (size === 0 || size > remaining) throw new Error("invalid file size");
+        result[key] = bytes.subarray(0, size).toString("utf8");
+        remaining -= size;
+      } finally { await file.close(); }
+    }
+    return result;
+  } catch {
+    throw new Error("invalid sandbox TLS bootstrap");
+  }
+}
 
 export function readRunnerTlsBootstrap(input: Readable): Promise<RunnerTlsBootstrap> {
   return new Promise((resolve, reject) => {

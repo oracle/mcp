@@ -20,7 +20,11 @@ import {
   type HostMessage,
   type RunnerMessage
 } from "./grpc.ts";
-import { readRunnerTlsBootstrap, RUNNER_READY_LINE } from "./grpc-tls.ts";
+import { fileURLToPath } from "node:url";
+import {
+  readRunnerTlsBootstrap, readRunnerTlsFiles, runnerTlsMode,
+  RUNNER_TLS_DIRECTORY, RUNNER_READY_LINE
+} from "./grpc-tls.ts";
 import {
   DEFAULT_DECODE_LIMITS,
   ProtocolError,
@@ -83,7 +87,11 @@ function openSession(call: ServerDuplexStream<HostMessage, RunnerMessage>): void
 }
 
 async function startServer(): Promise<void> {
-  const tls = await readRunnerTlsBootstrap(process.stdin);
+  // Imported test runners retain stdin bootstrap; only the worker entry point owns arguments.
+  const args = process.argv[1] === fileURLToPath(import.meta.url) ? process.argv.slice(2) : [];
+  const tls = runnerTlsMode(args) === "files"
+    ? await readRunnerTlsFiles(RUNNER_TLS_DIRECTORY)
+    : await readRunnerTlsBootstrap(process.stdin);
   const credentials = ServerCredentials.createSsl(
     Buffer.from(tls.clientCert),
     [{

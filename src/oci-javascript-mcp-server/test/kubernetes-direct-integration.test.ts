@@ -15,6 +15,7 @@ import { reconcileExpiredExecutions } from "../src/isolation/kubernetes-reconcil
 import { runtimePolicyFor } from "../src/isolation/kubernetes-runtime-policy.ts";
 import { KubernetesIsolationProvider } from "../src/isolation/kubernetes.ts";
 import { runJavaScript } from "../src/sandbox.ts";
+import { cancelRunningExecution } from "./kubernetes-direct-startup.ts";
 
 const enabled = process.env.OCI_JAVASCRIPT_RUN_DIRECT_KUBERNETES_TESTS === "true";
 const gate = { skip: enabled ? false : "run inside a configured trusted host with OCI_JAVASCRIPT_RUN_DIRECT_KUBERNETES_TESTS=true" };
@@ -47,7 +48,7 @@ test("opt-in direct in-cluster execution cleans up its pod and TLS Secret", gate
   for (const name of secrets) assert.equal(await api.waitForSecretDeleted(config.namespace, name, Date.now() + 1000), true);
 });
 
-test("opt-in direct cancellation cleans up both attempted execution resources", gate, async () => {
+test("opt-in immediate cancellation cleans up partial execution resource creation", gate, async () => {
   const { config, api, names, secrets, provider } = await harness();
   const controller = new AbortController();
   const execution = provider.run("while (true) {}", {
@@ -59,6 +60,17 @@ test("opt-in direct cancellation cleans up both attempted execution resources", 
   } finally { await execution.terminate(); }
   for (const name of names) assert.equal(await api.podExists(config.namespace, name), false);
   for (const name of secrets) assert.equal(await api.waitForSecretDeleted(config.namespace, name, Date.now() + 1000), true);
+});
+
+test("opt-in running direct cancellation cleans up exactly one pod and TLS Secret", gate, async () => {
+  const { config, api, names, secrets, provider } = await harness();
+  const result = await cancelRunningExecution(provider, () => {
+    assert.equal(names.length, 1);
+    assert.equal(secrets.length, 1);
+  });
+  assert.equal(result.timedOut, true);
+  assert.equal(await api.podExists(config.namespace, names[0]!), false);
+  assert.equal(await api.waitForSecretDeleted(config.namespace, secrets[0]!, Date.now() + 1000), true);
 });
 
 test("opt-in expired orphan TLS Secret is reconciled without a pod", gate, async () => {

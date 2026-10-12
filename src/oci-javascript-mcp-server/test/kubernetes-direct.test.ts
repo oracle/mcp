@@ -14,6 +14,8 @@ import { KubernetesIsolationProvider, podGrpcAddress } from "../src/isolation/ku
 import { validInClusterEnvironment, validKataEnvironment } from "./kata-fixtures.ts";
 import { createGrpcTlsBootstrap } from "../src/grpc-tls-host.ts";
 import type { RunnerServer } from "../src/generated/runner.ts";
+import { cancelRunningExecution } from "./kubernetes-direct-startup.ts";
+import type { IsolationProvider, SandboxResult } from "../src/types.ts";
 
 class DirectApi implements KubernetesApi {
   events: string[] = [];
@@ -174,4 +176,27 @@ test("wrong execution TLS peer never receives an execute message", async () => {
     assert.equal((await execution.result).result, null);
     assert.equal(api.events.includes("execute"), false);
   } finally { await execution.terminate(); }
+});
+
+test("live cancellation harness waits for guest RPC and resource assertions before aborting", async () => {
+  const events: string[] = [];
+  const provider: IsolationProvider = {
+    run(_code, input) {
+      events.push("created");
+      const result = Promise.withResolvers<SandboxResult>();
+      input.signal.addEventListener("abort", () => {
+        events.push("cancelled");
+        result.resolve({ result: null, error: { message: "sandbox run deadline exceeded" },
+          stdout: "", stderr: "", exitCode: -1, timedOut: true });
+      }, { once: true });
+      queueMicrotask(() => {
+        if (input.signal.aborted) return;
+        events.push("guest-started");
+        void input.hostRpc({ binding: "oracle", namespace: "oci", operation: "config", payload: {} });
+      });
+      return { result: result.promise, async terminate() { events.push("terminated"); } };
+    }
+  };
+  assert.equal((await cancelRunningExecution(provider, () => events.push("resources-confirmed"))).timedOut, true);
+  assert.deepEqual(events, ["created", "guest-started", "resources-confirmed", "cancelled", "terminated"]);
 });

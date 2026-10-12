@@ -254,6 +254,10 @@ kubectl -n "$HOST_NAMESPACE" cp \
   test/kubernetes-direct-integration.test.ts \
   "$HOST_POD:$TEST_DIRECTORY/test/kubernetes-direct-integration.test.ts" \
   -c "$HOST_CONTAINER"
+kubectl -n "$HOST_NAMESPACE" cp \
+  test/kubernetes-direct-startup.ts \
+  "$HOST_POD:$TEST_DIRECTORY/test/kubernetes-direct-startup.ts" \
+  -c "$HOST_CONTAINER"
 kubectl -n "$HOST_NAMESPACE" exec "$HOST_POD" -c "$HOST_CONTAINER" -- \
   env OCI_JAVASCRIPT_RUN_DIRECT_KUBERNETES_TESTS=true \
   node --no-node-snapshot --experimental-strip-types --test \
@@ -266,7 +270,9 @@ is separate from the host service account's execution Role, which has no exec
 or port-forward grants. For Kata use host namespace `oci-js-host`, pod label
 `oci-js-kata-host`, and container `host`, on actual reviewed Kata nodes.
 
-Require exit 0 for execution, cancellation, and orphan-Secret reconciliation.
+Require exit 0 for execution, immediate and running cancellation, and orphan-Secret
+reconciliation. Running cancellation waits for a guest-to-host RPC handshake and
+asserts that exactly one pod and TLS Secret were created before cancelling.
 These tests confirm their own resource absence; they do not certify the CNI,
 Secret-store encryption, or VM boundary. Record additional target evidence:
 

@@ -21,6 +21,7 @@ import {
   type RunnerMessage
 } from "./grpc.ts";
 import { fileURLToPath } from "node:url";
+import { networkInterfaces } from "node:os";
 import {
   readRunnerTlsBootstrap, readRunnerTlsFiles, runnerTlsMode,
   RUNNER_TLS_DIRECTORY, RUNNER_READY_LINE
@@ -105,7 +106,10 @@ async function startServer(): Promise<void> {
     throw new Error("invalid sandbox runner port");
   }
   await new Promise<void>((resolve, reject) => {
-    server.bindAsync(`0.0.0.0:${port}`, credentials, error => {
+    // IPv6 wildcard also accepts IPv4; IPv4-only kernels retain their native listener.
+    const ipv6 = Object.values(networkInterfaces()).some(addresses =>
+      addresses?.some(address => address.family === "IPv6"));
+    server.bindAsync(ipv6 ? `[::]:${port}` : `0.0.0.0:${port}`, credentials, error => {
       if (error) {
         reject(error);
       } else {

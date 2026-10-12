@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { parseKubernetesConfig } from "../src/isolation/kubernetes-config.ts";
 import { KubernetesIsolationProvider } from "../src/isolation/kubernetes.ts";
 import { runJavaScript } from "../src/sandbox.ts";
-import { validKataEnvironment } from "./kata-fixtures.ts";
+import { validLocalEnvironment } from "./kata-fixtures.ts";
 import { StartupKubernetesApi } from "./kubernetes-startup-fixture.ts";
 
 const api = new StartupKubernetesApi();
@@ -24,7 +24,7 @@ if (scenario === "acquisition-cancel") {
   };
 }
 const provider = new KubernetesIsolationProvider(
-  parseKubernetesConfig(validKataEnvironment()), api, () => undefined
+  parseKubernetesConfig(validLocalEnvironment()), api, () => undefined
 );
 await provider.preflight({ startReconciliation: false });
 if (scenario === "acquisition-cancel") {

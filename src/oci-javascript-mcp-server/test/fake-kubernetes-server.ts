@@ -47,11 +47,18 @@ class FakeKubernetesApi implements KubernetesApi {
   constructor(profile: KubernetesProfile) {
     this.profile = profile;
   }
-  async createSecret() {}
+  readonly servers = new Map<string, Server>();
+  async createSecret(_namespace: string, secret: import("@kubernetes/client-node").V1Secret) {
+    const tls = Object.fromEntries(Object.entries(secret.data!).map(([key, value]) => [key, Buffer.from(value, "base64").toString()])) as RunnerTlsBootstrap;
+    this.bootstraps.set(secret.metadata!.name!.slice(0, -4), tls);
+  }
   async deleteSecret() {}
   async waitForSecretDeleted() { return true; }
   async listManagedSecrets() { return []; }
-  async waitForPodEndpoint() { return { uid: "created-uid", ip: "127.0.0.1" }; }
+  async waitForPodEndpoint(_namespace: string, name: string) {
+    await this.openServer(name, true);
+    return { uid: "created-uid", ip: "127.0.0.1" };
+  }
   async readNamespace() {}
   async selfCan(_attributes: ResourceAttributes) { return true; }
   async createPod(_namespace: string, pod: KubernetesPod) {
@@ -75,6 +82,9 @@ class FakeKubernetesApi implements KubernetesApi {
     };
   }
   async openTunnel(_namespace: string, podName: string): Promise<KubernetesGrpcTunnel> {
+    return this.openServer(podName, false);
+  }
+  async openServer(podName: string, direct: boolean): Promise<KubernetesGrpcTunnel> {
     const tls = this.bootstraps.get(podName)!;
     const server = new Server();
     let close!: () => void;
@@ -112,7 +122,7 @@ class FakeKubernetesApi implements KubernetesApi {
     };
     server.addService(RUNNER_SERVICE, handlers);
     const port = await new Promise<number>((resolve, reject) => server.bindAsync(
-      "127.0.0.1:0",
+      direct ? "127.0.0.1:50051" : "127.0.0.1:0",
       ServerCredentials.createSsl(
         Buffer.from(tls.clientCert),
         [{ private_key: Buffer.from(tls.serverKey), cert_chain: Buffer.from(tls.serverCert) }],
@@ -120,6 +130,7 @@ class FakeKubernetesApi implements KubernetesApi {
       ),
       (error, value) => error ? reject(error) : resolve(value)
     ));
+    this.servers.set(podName, server);
     return {
       address: `127.0.0.1:${port}`,
       closed,
@@ -129,7 +140,7 @@ class FakeKubernetesApi implements KubernetesApi {
       }
     };
   }
-  async deletePod(_namespace: string, name: string) { this.pods.delete(name); }
+  async deletePod(_namespace: string, name: string) { this.servers.get(name)?.forceShutdown(); this.pods.delete(name); }
   async podExists(_namespace: string, name: string) { return this.pods.has(name); }
   async waitForPodDeleted(_namespace: string, name: string) { return !this.pods.has(name); }
   async listManagedPods() { return []; }

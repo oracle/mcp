@@ -27,10 +27,10 @@ import { KubernetesIsolationProvider } from "../src/isolation/kubernetes.ts";
 import type { RunnerServer } from "../src/generated/runner.ts";
 import type { SandboxResult } from "../src/types.ts";
 import { runJavaScript } from "../src/sandbox.ts";
-import { validKataEnvironment } from "./kata-fixtures.ts";
+import { validLocalEnvironment } from "./kata-fixtures.ts";
 import { StartupKubernetesApi, StartupWebSocket } from "./kubernetes-startup-fixture.ts";
 
-test("Kata preflight requires exec and port-forward only on the trusted host", async () => {
+test("local development preflight requires exec and port-forward", async () => {
   const api = new FakeKubernetesApi();
   const provider = createProvider(api);
   await provider.preflight({ startReconciliation: false });
@@ -80,7 +80,7 @@ test("failed preflight revokes readiness after prior success and successful retr
   const execution = provider.run("42", runOptions());
   try {
     assert.deepEqual(await execution.result, successResult(42));
-    assert.equal(api.createdPods[0]?.spec?.runtimeClassName, "kata-qemu-runtime-rs");
+    assert.equal(api.createdPods[0]?.spec?.runtimeClassName, undefined);
   } finally {
     await execution.terminate();
   }
@@ -90,7 +90,7 @@ test("failed preflight revokes readiness after prior success and successful retr
 test("failed preflight diagnostics do not leave execution ready", async () => {
   const api = new FakeKubernetesApi();
   const provider = new KubernetesIsolationProvider(
-    parseKubernetesConfig(validKataEnvironment()), api,
+    parseKubernetesConfig(validLocalEnvironment()), api,
     event => {
       if (event.phase === "preflight" && event.outcome === "succeeded") {
         throw new Error("diagnostic sink unavailable");
@@ -205,7 +205,7 @@ test("Kubernetes confirms pod deletion while a real runner websocket is stuck CL
     return deletionConfirmed;
   };
   const provider = new KubernetesIsolationProvider(
-    parseKubernetesConfig(validKataEnvironment()), api, () => undefined
+    parseKubernetesConfig(validLocalEnvironment()), api, () => undefined
   );
   await provider.preflight({ startReconciliation: false });
   const execution = provider.run("42", runOptions());
@@ -255,7 +255,7 @@ test("Kubernetes confirms pod deletion while a real tunnel websocket is stuck CL
     api.failRunner("error");
     return tunnel;
   };
-  const provider = new KubernetesIsolationProvider(parseKubernetesConfig(validKataEnvironment()), api, () => undefined);
+  const provider = new KubernetesIsolationProvider(parseKubernetesConfig(validLocalEnvironment()), api, () => undefined);
   await provider.preflight({ startReconciliation: false });
   const execution = provider.run("42", runOptions());
   assert.equal((await execution.result).error?.message, "isolation provider failed");
@@ -468,7 +468,7 @@ for (const fault of ["output", "error", "exit"] as const) {
     const api = new StartupKubernetesApi();
     const phases: string[] = [];
     const provider = new KubernetesIsolationProvider(
-      parseKubernetesConfig(validKataEnvironment()), api, event => {
+      parseKubernetesConfig(validLocalEnvironment()), api, event => {
         if (event.outcome === "started") phases.push(event.phase);
       }
     );
@@ -508,7 +508,7 @@ for (const resource of ["runner", "tunnel"] as const) {
     const api = new StartupKubernetesApi();
     api.holdRunner = resource === "runner";
     const provider = new KubernetesIsolationProvider(
-      parseKubernetesConfig(validKataEnvironment()), api, () => undefined
+      parseKubernetesConfig(validLocalEnvironment()), api, () => undefined
     );
     await provider.preflight({ startReconciliation: false });
     const controller = new AbortController();
@@ -562,7 +562,7 @@ test("Kubernetes preserves a valid final gRPC status when lifecycle promises rej
 
 function createProvider(api: FakeKubernetesApi): KubernetesIsolationProvider {
   return new KubernetesIsolationProvider(
-    parseKubernetesConfig(validKataEnvironment()),
+    parseKubernetesConfig(validLocalEnvironment()),
     api,
     () => undefined
   );

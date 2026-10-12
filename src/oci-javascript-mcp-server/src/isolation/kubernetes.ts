@@ -5,6 +5,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { isIP } from "node:net";
 import { createGrpcTlsBootstrap } from "../grpc-tls-host.ts";
 import { MAX_RESULT_BYTES } from "../sandbox-common.ts";
 import type { IsolationExecution, IsolationProvider, SandboxResult } from "../types.ts";
@@ -18,6 +19,7 @@ import {
   type KubernetesReason
 } from "./kubernetes-diagnostics.ts";
 import { buildExecutionPod } from "./kubernetes-pod.ts";
+import { buildExecutionSecret, executionSecretName } from "./kubernetes-secret.ts";
 import {
   runtimePolicyFor,
   type KubernetesRuntimePolicy
@@ -146,7 +148,9 @@ export class KubernetesIsolationProvider implements IsolationProvider {
     let tunnelPromise: Promise<KubernetesGrpcTunnel> | undefined;
     let grpcExecution: IsolationExecution | undefined;
     let grpcCompleted = false;
-    let createSettled: Promise<void> | undefined;
+    let createSettled: Promise<string> | undefined;
+    const direct = this.#config.profile !== "local-development";
+    const secretName = executionSecretName(name);
     let terminating = false;
     let cleanup: Promise<void> | undefined;
     let terminationDeadlineMs: number | undefined;
@@ -158,6 +162,8 @@ export class KubernetesIsolationProvider implements IsolationProvider {
     let postCleanupDeletionRequired = false;
     let primaryCleanupFinished = false;
     let lateDeletion: Promise<void> | undefined;
+    let postCleanupSecretDeletionRequired = false;
+    let lateSecretDeletion: Promise<void> | undefined;
 
     const watchClosure = <T>(closed: Promise<T>, message: string) => {
       const premature = closed.then(() => {
@@ -201,9 +207,16 @@ export class KubernetesIsolationProvider implements IsolationProvider {
     };
 
     const startLateDeletionIfRequired = () => {
-      if (lateDeletion || !postCleanupDeletionRequired || !primaryCleanupFinished) return;
-      lateDeletion = deleteKnownPod(Date.now() + this.#config.cleanupTimeoutMs, false);
-      void lateDeletion.catch(() => undefined);
+      if (!primaryCleanupFinished) return;
+      if (!lateDeletion && postCleanupDeletionRequired) {
+        lateDeletion = deleteKnownPod(Date.now() + this.#config.cleanupTimeoutMs, false);
+        void lateDeletion.catch(() => undefined);
+      }
+      if (!lateSecretDeletion && postCleanupSecretDeletionRequired) {
+        lateSecretDeletion = deleteResourceByDeadline(this.#api, this.#config.namespace,
+          secretName, Date.now() + this.#config.cleanupTimeoutMs, "secret");
+        void lateSecretDeletion.catch(() => undefined);
+      }
     };
 
     const result = (async (): Promise<SandboxResult> => {
@@ -216,12 +229,27 @@ export class KubernetesIsolationProvider implements IsolationProvider {
           correlationId,
           options.deadlineMs
         );
+        const tls = createGrpcTlsBootstrap();
+        assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
+        if (direct) {
+          const creation = this.#api.createSecret(this.#config.namespace,
+            buildExecutionSecret(pod, tls.runner), options.deadlineMs, localAbort.signal);
+          const settled = () => {
+            if (terminating) {
+              postCleanupSecretDeletionRequired = true;
+              startLateDeletionIfRequired();
+            }
+          };
+          void creation.then(settled, settled);
+          await raceExecutionStage(creation, options.deadlineMs, localAbort.signal);
+          assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
+        }
         createSettled = this.#api.createPod(
           this.#config.namespace,
           pod,
           options.deadlineMs,
           localAbort.signal
-        ).then(() => undefined);
+        );
         const creationSettled = () => {
           if (terminating) {
             postCleanupDeletionRequired = true;
@@ -229,9 +257,20 @@ export class KubernetesIsolationProvider implements IsolationProvider {
           }
         };
         void createSettled.then(creationSettled, creationSettled);
-        await raceExecutionStage(createSettled, options.deadlineMs, localAbort.signal);
+        const uid = await raceExecutionStage(createSettled, options.deadlineMs, localAbort.signal);
         assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
         phase("pending");
+        let address: string;
+        if (direct) {
+          const endpoint = await raceExecutionStage(this.#api.waitForPodEndpoint(
+            this.#config.namespace, name, uid, options.deadlineMs, localAbort.signal
+          ), options.deadlineMs, localAbort.signal);
+          assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
+          if (endpoint.uid !== uid) throw new Error("Kubernetes pod identity changed");
+          address = podGrpcAddress(endpoint.ip);
+          phase("running");
+          phase("connecting");
+        } else {
         await this.#api.waitForPodRunning(
           this.#config.namespace,
           name,
@@ -241,7 +280,6 @@ export class KubernetesIsolationProvider implements IsolationProvider {
         assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
         phase("running");
         phase("connecting");
-        const tls = createGrpcTlsBootstrap();
         runnerPromise = this.#api.startRunner(
           this.#config.namespace,
           name,
@@ -275,9 +313,11 @@ export class KubernetesIsolationProvider implements IsolationProvider {
           options.deadlineMs, localAbort.signal);
         assertExecutionActive(options.deadlineMs, localAbort.signal, terminating);
         if (channelFailed) throw new Error("Kubernetes execution channel failed");
+        address = tunnel.address;
+        }
         phase("executing");
         grpcExecution = startGrpcExecution(
-          tunnel.address,
+          address,
           tls.credentials,
           code,
           {
@@ -291,7 +331,8 @@ export class KubernetesIsolationProvider implements IsolationProvider {
           grpcCompleted = true;
           return value;
         });
-        const workerResult = await Promise.race([grpcResult, prematureRunner!, prematureTunnel!]);
+        const workerResult = direct ? await grpcResult
+          : await Promise.race([grpcResult, prematureRunner!, prematureTunnel!]);
         this.#emit(correlationId, "executing", "succeeded", "none", started);
         return workerResult;
       } catch (error) {
@@ -338,11 +379,14 @@ export class KubernetesIsolationProvider implements IsolationProvider {
             const handle = await resolvePending(runner, runnerPromise);
             if (handle) await stopRunner(handle);
           })(), cleanupDeadlineMs),
-          deleteKnownPod(cleanupDeadlineMs, true)
+          deleteKnownPod(cleanupDeadlineMs, false),
+          ...(direct ? [deleteResourceByDeadline(this.#api, this.#config.namespace,
+            secretName, cleanupDeadlineMs, "secret")] : [])
         ]);
         if (outcomes.some(outcome => outcome.status === "rejected")) {
           throw new Error("Kubernetes execution cleanup failed");
         }
+        this.#emit(correlationId, "deleted", "succeeded", "none", started);
       } finally {
         primaryCleanupFinished = true;
         startLateDeletionIfRequired();
@@ -419,6 +463,13 @@ async function deletePodByDeadline(
   name: string,
   cleanupDeadlineMs: number
 ): Promise<void> {
+  return deleteResourceByDeadline(api, namespace, name, cleanupDeadlineMs, "pod");
+}
+
+async function deleteResourceByDeadline(
+  api: KubernetesApi, namespace: string, name: string, cleanupDeadlineMs: number,
+  kind: "pod" | "secret"
+): Promise<void> {
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
@@ -426,11 +477,13 @@ async function deletePodByDeadline(
   );
   try {
     await withCleanupDeadline(
-      api.deletePod(namespace, name, controller.signal),
+      kind === "pod" ? api.deletePod(namespace, name, controller.signal)
+        : api.deleteSecret(namespace, name, controller.signal),
       cleanupDeadlineMs
     );
     const deleted = await withCleanupDeadline(
-      api.waitForPodDeleted(namespace, name, cleanupDeadlineMs, controller.signal),
+      kind === "pod" ? api.waitForPodDeleted(namespace, name, cleanupDeadlineMs, controller.signal)
+        : api.waitForSecretDeleted(namespace, name, cleanupDeadlineMs, controller.signal),
       cleanupDeadlineMs
     );
     if (!deleted) {
@@ -440,6 +493,12 @@ async function deletePodByDeadline(
     clearTimeout(timeout);
     controller.abort();
   }
+}
+
+export function podGrpcAddress(ip: string): string {
+  const family = isIP(ip);
+  if (!family) throw new Error("Kubernetes pod endpoint is invalid");
+  return family === 6 ? `[${ip}]:50051` : `${ip}:50051`;
 }
 
 class PreflightError extends Error {

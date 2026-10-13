@@ -11,17 +11,20 @@ TRANSCRIPTION_GUIDE = """# Transcription workflows
 Use `transcribe_local_file` for the simplest end-to-end workflow: validate a
 local media file, upload it to Object Storage, submit a job, optionally wait,
 and download outputs. Inputs for successfully created jobs are retained; delete
-them through your normal Object Storage lifecycle or governance process. If job
-creation fails, the tool deletes the upload or returns its identity and cleanup
-failure metadata when automatic cleanup cannot complete.
+them through your normal Object Storage lifecycle or governance process. The
+tool records the upload identity before the PUT. Upload or job-creation failures
+return that identity, idempotent cleanup status, and sanitized failure metadata;
+post-create polling or download failures also return the job identity for resume.
 
 Use `create_transcription_job` when audio is already in Object Storage. A job
 can reference up to 100 object names. Oracle models default to `ORACLE` and the
 `GENERIC` domain. Whisper model names accepted by your tenancy can also be
 provided; use language `auto` where supported. Diarization supports 2–16
-speakers. `whisper_prompt` is Whisper-only, and punctuation cannot be disabled
-for Whisper. Unknown future model names remain accepted. SRT is the supported
-additional transcription format.
+speakers. Batch Whisper-family identifiers such as `WHISPER_MEDIUM`,
+`WHISPER_LARGE_V2`, and `WHISPER_LARGE_V3_TURBO` require punctuation and use
+`auto` or lowercase language-only codes such as `en`. `whisper_prompt` is
+Whisper-only. Unknown future non-Whisper model names remain accepted. SRT is the
+supported additional transcription format.
 
 ## Diarization decision
 
@@ -78,4 +81,3 @@ def register_resources(mcp: FastMCP) -> None:
         "speech://guides/local-files",
         description="Safety rules for local transcription inputs and downloaded outputs.",
     )(local_files_guide)
-

@@ -4,6 +4,7 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
+import errno
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -238,23 +239,68 @@ def test_local_transcription_cleans_upload_after_create_failure(
         "job creation failed"
     )
 
-    with pytest.raises(RuntimeError, match="job creation failed"):
-        transcription_tools.transcribe_local_file(
-            str(audio),
-            "compartment",
-            "bucket",
-            "display",
-            namespace_name="namespace",
-            input_object_name="inputs/audio.wav",
-            number_of_speakers=None,
-            whisper_prompt=None,
-            punctuation_enabled=True,
-            wait_for_completion=False,
-        )
+    result = transcription_tools.transcribe_local_file(
+        str(audio),
+        "compartment",
+        "bucket",
+        "display",
+        namespace_name="namespace",
+        input_object_name="inputs/audio.wav",
+        number_of_speakers=None,
+        whisper_prompt=None,
+        punctuation_enabled=True,
+        wait_for_completion=False,
+    )
 
     mock_clients.object_storage.delete_object.assert_called_once_with(
         "namespace", "bucket", "inputs/audio.wav"
     )
+    assert result.data["failure"] == {
+        "operation": "create_transcription_job",
+        "type": "ValueError",
+    }
+    assert result.data["cleanup"]["succeeded"] is True
+    assert result.data["cleanup"]["status"] == 204
+
+
+def test_local_transcription_recovers_from_ambiguous_upload(
+    mock_clients, monkeypatch, tmp_path
+):
+    audio = tmp_path / "audio.wav"
+    audio.write_bytes(b"audio")
+    monkeypatch.setenv("OCI_SPEECH_INPUT_ROOT", str(tmp_path))
+    mock_clients.object_storage.put_object.side_effect = (
+        oci.exceptions.RequestException("connection lost")
+    )
+    mock_clients.object_storage.delete_object.side_effect = oci.exceptions.ServiceError(
+        404,
+        "ObjectNotFound",
+        {"opc-request-id": "cleanup-request"},
+        "not found",
+    )
+
+    result = transcription_tools.transcribe_local_file(
+        str(audio),
+        "compartment",
+        "bucket",
+        "display",
+        namespace_name="namespace",
+        input_object_name="inputs/ambiguous.wav",
+        number_of_speakers=None,
+        whisper_prompt=None,
+        punctuation_enabled=True,
+        wait_for_completion=False,
+    )
+
+    assert result.data["upload"]["object_name"] == "inputs/ambiguous.wav"
+    assert result.data["upload"]["etag"] is None
+    assert result.data["failure"] == {
+        "operation": "upload_input",
+        "type": "RequestException",
+    }
+    assert result.data["cleanup"]["succeeded"] is True
+    assert result.data["cleanup"]["already_absent"] is True
+    mock_clients.speech.create_transcription_job.assert_not_called()
 
 
 def test_local_transcription_surfaces_upload_when_cleanup_fails(
@@ -300,7 +346,59 @@ def test_local_transcription_surfaces_upload_when_cleanup_fails(
     }
     assert result.data["cleanup"]["succeeded"] is False
     assert result.data["cleanup"]["error"]["request_id"] == "cleanup-request"
-    assert "explicit cleanup" in result.notes[0]
+    assert "verification" in result.notes[0]
+
+
+def test_local_transcription_surfaces_post_create_download_failure(
+    mock_clients, monkeypatch, tmp_path
+):
+    audio = tmp_path / "audio.wav"
+    audio.write_bytes(b"audio")
+    monkeypatch.setenv("OCI_SPEECH_INPUT_ROOT", str(tmp_path))
+    mock_clients.object_storage.put_object.return_value = resp(None)
+    created = oci.ai_speech.models.TranscriptionJob(
+        id="job", lifecycle_state="ACCEPTED"
+    )
+    completed = oci.ai_speech.models.TranscriptionJob(
+        id="job", lifecycle_state="SUCCEEDED"
+    )
+    mock_clients.speech.create_transcription_job.return_value = resp(
+        created, status=202
+    )
+    monkeypatch.setattr(
+        transcription_tools,
+        "wait_for_job",
+        lambda *args, **kwargs: resp(completed),
+    )
+    monkeypatch.setattr(
+        transcription_tools,
+        "download_job_outputs",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            OSError(errno.ENOSPC, "disk full")
+        ),
+    )
+
+    result = transcription_tools.transcribe_local_file(
+        str(audio),
+        "compartment",
+        "bucket",
+        "display",
+        namespace_name="namespace",
+        input_object_name="inputs/audio.wav",
+        number_of_speakers=None,
+        whisper_prompt=None,
+        punctuation_enabled=True,
+        wait_for_completion=True,
+        timeout_seconds=60,
+        poll_interval_seconds=2,
+    )
+
+    assert result.data["upload"]["object_name"] == "inputs/audio.wav"
+    assert result.data["job"]["id"] == "job"
+    assert result.data["failure"]["operation"] == "download_job_outputs"
+    assert result.data["failure"]["errno_name"] == "ENOSPC"
+    assert result.status == 202
+    assert "download_transcription_results" in result.notes[-1]
 
 
 def test_list_voices_and_synthesis(mock_clients, monkeypatch, tmp_path):

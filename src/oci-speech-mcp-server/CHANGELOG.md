@@ -12,9 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Transcription job and task tools for creating, retrieving, listing, updating,
   canceling, deleting, and moving supported resources between compartments.
 - Secure local-file transcription workflow that uploads media to OCI Object
-  Storage, creates and monitors a transcription job, removes the uploaded input
-  when job creation fails, and downloads completed results to a restricted local
-  output directory.
+  Storage, creates and monitors a transcription job, reports recovery state for
+  failures after remote side effects begin, and downloads completed results to a
+  restricted local output directory.
 - Voice discovery and text-to-speech synthesis with private, atomic local output
   handling, SSML structure validation, and OCI-supported SSML composition
   guidance.

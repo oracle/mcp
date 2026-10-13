@@ -189,13 +189,13 @@ def test_transcription_crud_and_tasks(mock_clients):
             "ORACLE", "GENERIC", "en-US", False, 2, None
         )
     whisper = transcription_tools.transcription_model(
-        "WHISPER", "GENERIC", "auto", False, None, "domain words"
+        "WHISPER_LARGE_V2", "GENERIC", "auto", False, None, "domain words"
     )
     assert whisper.transcription_settings.additional_settings["whisperPrompt"] == "domain words"
     assert transcription_tools.normalization(False, None).filters == []
 
     mock_clients.speech.create_transcription_job.reset_mock()
-    with pytest.raises(ValueError, match="whisper_prompt.*WHISPER"):
+    with pytest.raises(ValueError, match="whisper_prompt.*Whisper"):
         transcription_tools.create_transcription_job(
             "compartment",
             "display",
@@ -205,17 +205,33 @@ def test_transcription_crud_and_tasks(mock_clients):
             model_type="ORACLE",
             whisper_prompt="domain words",
         )
-    with pytest.raises(ValueError, match="punctuation_enabled.*WHISPER"):
+    with pytest.raises(ValueError, match="punctuation_enabled.*Whisper"):
         transcription_tools.create_transcription_job(
             "compartment",
             "display",
             "namespace",
             "bucket",
             ["audio.wav"],
-            model_type="WHISPER",
+            model_type="WHISPER_MEDIUM",
+            language_code="en",
             punctuation_enabled=False,
         )
-    transcription_tools.validate_transcription_options("FUTURE_MODEL", None, False)
+    with pytest.raises(ValueError, match="language_code.*language-only"):
+        transcription_tools.create_transcription_job(
+            "compartment",
+            "display",
+            "namespace",
+            "bucket",
+            ["audio.wav"],
+            model_type="WHISPER_LARGE_V2",
+            language_code="en-US",
+        )
+    transcription_tools.validate_transcription_options(
+        "WHISPER_LARGE_V2", "auto", "domain words", True
+    )
+    transcription_tools.validate_transcription_options(
+        "FUTURE_MODEL", "en-US", None, False
+    )
     mock_clients.speech.create_transcription_job.assert_not_called()
 
     mock_clients.speech.get_transcription_job.return_value = resp(job)

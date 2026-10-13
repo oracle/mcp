@@ -185,15 +185,17 @@ protocol messages and send diagnostics to standard error through normal logging.
 6. For a successful job, discover task output objects and stream them into
    `OCI_SPEECH_OUTPUT_ROOT`.
 
-If job creation fails after upload, the server deletes the uploaded input. If
-that cleanup also fails, the result contains the namespace, bucket, object name,
-and sanitized failure metadata so the caller can remove it explicitly. Inputs
-for successfully created jobs are retained; use Object Storage lifecycle rules
-or an explicit governance process to control their retention. Local output paths
-must be relative, cannot escape the configured root, and do not overwrite files
-unless `overwrite` is explicitly enabled. Downloads are written privately to a
-same-directory temporary file and atomically moved into place only after the
-stream completes.
+Before upload, the tool records the namespace, bucket, and object name needed
+for recovery. An ambiguous upload failure or a job-creation failure triggers an
+idempotent delete attempt and returns the upload identity, cleanup status, and
+sanitized failure metadata. After job creation, polling or output-download
+failures return both the upload and job identities so the caller can inspect or
+resume the workflow. Inputs for successfully created jobs are retained; use
+Object Storage lifecycle rules or an explicit governance process to control
+their retention. Local output paths must be relative, cannot escape the
+configured root, and do not overwrite files unless `overwrite` is explicitly
+enabled. Downloads are written privately to a same-directory temporary file and
+atomically moved into place only after the stream completes.
 
 Supported media suffixes are AAC, AC3, AMR, AU, FLAC, M4A, MKV, MP3, MP4, OGA,
 OGG, OPUS, WAV, and WEBM.
@@ -209,10 +211,12 @@ not listen to it or run speaker detection. Diarization produces speaker labels,
 not people's identities. Both Oracle ASR and OCI Whisper support it.
 
 SRT can be requested as an additional output format. The model type remains an
-explicit string so model names enabled for the tenancy—including supported
-Whisper variants—can be used without a server release. Whisper prompts are
-limited to 4,000 characters and are rejected for the Oracle model. Punctuation
-cannot be disabled for the Whisper model. Unknown future model names remain
+explicit string so model names enabled for the tenancy can be used without a
+server release. Whisper-family identifiers such as `WHISPER_MEDIUM`,
+`WHISPER_LARGE_V2`, and `WHISPER_LARGE_V3_TURBO` require punctuation and use
+`auto` or lowercase language-only codes such as `en`, rather than locale codes
+such as `en-US`. Whisper prompts are limited to 4,000 characters and are
+rejected for the Oracle model. Unknown future non-Whisper model names remain
 accepted without applying assumptions about their supported options.
 
 Use `MEDICAL` only where supported for the chosen capability and tenancy.

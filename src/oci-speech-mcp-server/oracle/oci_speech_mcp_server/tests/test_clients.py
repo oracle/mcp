@@ -4,11 +4,13 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
+from importlib.metadata import version as distribution_version
 from unittest.mock import MagicMock
 
 import pytest
 from oracle_mcp_common import AuthContext, AuthType
 
+from oracle.oci_speech_mcp_server import __project__
 from oracle.oci_speech_mcp_server.utils import clients
 
 
@@ -43,10 +45,11 @@ def test_all_auth_paths_apply_exact_user_agent(monkeypatch, auth_type, with_sign
     assert bundle is clients.get_clients()
     build.assert_called_once_with()
     assert constructors[0].call_count == 2
+    expected_user_agent = f"oci-speech-mcp/{distribution_version(__project__)}"
     for constructor in constructors:
         for call in constructor.call_args_list:
             config = call.args[0]
-            assert config["additional_user_agent"] == "oci-speech-mcp/1.0.0"
+            assert config["additional_user_agent"] == expected_user_agent
             assert config["log_requests"] is False
             if signer is None:
                 assert "signer" not in call.kwargs

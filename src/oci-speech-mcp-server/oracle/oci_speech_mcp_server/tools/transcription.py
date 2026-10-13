@@ -30,15 +30,98 @@ from ..utils.responses import (
 
 def validate_transcription_options(
     model_type: str,
+    language_code: str,
     whisper_prompt: str | None,
     punctuation_enabled: bool,
 ) -> None:
     """Reject known model-specific conflicts while allowing future model names."""
     known_model = model_type.strip().upper()
+    is_whisper = known_model == "WHISPER" or known_model.startswith("WHISPER_")
     if known_model == "ORACLE" and whisper_prompt:
-        raise ValueError("whisper_prompt is supported only when model_type=WHISPER.")
-    if known_model == "WHISPER" and not punctuation_enabled:
-        raise ValueError("punctuation_enabled must be true when model_type=WHISPER.")
+        raise ValueError("whisper_prompt is supported only by Whisper-family models.")
+    if is_whisper:
+        if not punctuation_enabled:
+            raise ValueError(
+                "punctuation_enabled must be true for Whisper-family models."
+            )
+        if language_code != "auto" and not (
+            language_code.isalpha()
+            and language_code.islower()
+            and len(language_code) in {2, 3}
+        ):
+            raise ValueError(
+                "Whisper-family language_code must be 'auto' or a lowercase "
+                "language-only code such as 'en'."
+            )
+
+
+def _cleanup_uploaded_input(
+    clients: Any,
+    namespace_name: str,
+    bucket_name: str,
+    object_name: str,
+) -> dict[str, Any]:
+    """Idempotently remove a possibly uploaded input and report safe status."""
+    try:
+        response = clients.object_storage.delete_object(
+            namespace_name, bucket_name, object_name
+        )
+        return {
+            "attempted": True,
+            "succeeded": True,
+            "status": getattr(response, "status", None),
+            "opc_request_id": response_header(response, "opc-request-id"),
+        }
+    except oci.exceptions.ServiceError as error:
+        if error.status == 404:
+            return {
+                "attempted": True,
+                "succeeded": True,
+                "status": 404,
+                "opc_request_id": error.request_id,
+                "already_absent": True,
+            }
+        return {
+            "attempted": True,
+            "succeeded": False,
+            "error": safe_error_details(error),
+        }
+    except Exception as error:
+        return {
+            "attempted": True,
+            "succeeded": False,
+            "error": safe_error_details(error),
+        }
+
+
+def _partial_transcription_result(
+    stage: str,
+    error: Exception,
+    upload: dict[str, Any],
+    *,
+    job: Any = None,
+    cleanup: dict[str, Any] | None = None,
+    status: int | None = None,
+    opc_request_id: str | None = None,
+    notes: list[str] | None = None,
+) -> OperationResult:
+    """Return safe recovery state after a local transcription side effect."""
+    failure = safe_error_details(error)
+    data = {
+        "upload": upload,
+        "job": to_dict(job),
+        "downloads": [],
+        "failure": {"operation": stage, **failure},
+    }
+    if cleanup is not None:
+        data["cleanup"] = cleanup
+    return OperationResult(
+        operation="transcribe_local_file",
+        data=data,
+        status=failure.get("status", status),
+        opc_request_id=failure.get("request_id", opc_request_id),
+        notes=notes or [],
+    )
 
 
 def transcription_model(
@@ -116,7 +199,9 @@ def create_transcription_job(
     freeform_tags: dict[str, str] | None = None,
 ) -> OperationResult:
     """Create a transcription job for media already in Object Storage."""
-    validate_transcription_options(model_type, whisper_prompt, punctuation_enabled)
+    validate_transcription_options(
+        model_type, language_code, whisper_prompt, punctuation_enabled
+    )
     details = oci.ai_speech.models.CreateTranscriptionJobDetails(
         compartment_id=compartment_id,
         display_name=display_name,
@@ -429,7 +514,9 @@ def transcribe_local_file(
 ) -> OperationResult:
     """Upload a local media file, transcribe it, and optionally download results."""
     try:
-        validate_transcription_options(model_type, whisper_prompt, punctuation_enabled)
+        validate_transcription_options(
+            model_type, language_code, whisper_prompt, punctuation_enabled
+        )
         source = validate_media_input(local_path)
         clients = get_clients()
         namespace = namespace_name
@@ -472,53 +559,56 @@ def transcribe_local_file(
             normalization=normalization(punctuation_enabled, profanity_mode),
             additional_transcription_formats=["SRT"] if include_srt else [],
         )
-        with source.open("rb") as media:
-            upload_response = clients.object_storage.put_object(
-                namespace,
-                bucket_name,
-                object_name,
-                media,
-                content_length=source.stat().st_size,
-            )
         upload_data = {
             "namespace_name": namespace,
             "bucket_name": bucket_name,
             "object_name": object_name,
-            "etag": response_header(upload_response, "etag"),
-            "opc_request_id": response_header(upload_response, "opc-request-id"),
+            "etag": None,
+            "opc_request_id": None,
         }
+        with source.open("rb") as media:
+            try:
+                upload_response = clients.object_storage.put_object(
+                    namespace,
+                    bucket_name,
+                    object_name,
+                    media,
+                    content_length=source.stat().st_size,
+                )
+            except Exception as upload_error:
+                cleanup = _cleanup_uploaded_input(
+                    clients, namespace, bucket_name, object_name
+                )
+                return _partial_transcription_result(
+                    "upload_input",
+                    upload_error,
+                    upload_data,
+                    cleanup=cleanup,
+                    notes=[
+                        "The upload outcome was ambiguous. Cleanup was attempted and "
+                        "the Object Storage identity is returned for verification."
+                    ],
+                )
+        upload_data.update(
+            etag=response_header(upload_response, "etag"),
+            opc_request_id=response_header(upload_response, "opc-request-id"),
+        )
         try:
             create_response = clients.speech.create_transcription_job(details)
         except Exception as create_error:
-            try:
-                clients.object_storage.delete_object(
-                    namespace, bucket_name, object_name
-                )
-            except Exception as cleanup_error:
-                return OperationResult(
-                    operation="transcribe_local_file",
-                    data={
-                        "upload": upload_data,
-                        "job": None,
-                        "downloads": [],
-                        "failure": {
-                            "operation": "create_transcription_job",
-                            **safe_error_details(create_error),
-                        },
-                        "cleanup": {
-                            "attempted": True,
-                            "succeeded": False,
-                            "error": safe_error_details(cleanup_error),
-                        },
-                    },
-                    status=getattr(create_error, "status", None),
-                    opc_request_id=getattr(create_error, "request_id", None),
-                    notes=[
-                        "Transcription job creation and uploaded-input cleanup both "
-                        "failed. The upload identity is returned for explicit cleanup."
-                    ],
-                )
-            raise
+            cleanup = _cleanup_uploaded_input(
+                clients, namespace, bucket_name, object_name
+            )
+            return _partial_transcription_result(
+                "create_transcription_job",
+                create_error,
+                upload_data,
+                cleanup=cleanup,
+                notes=[
+                    "Transcription job creation failed after upload. Cleanup was "
+                    "attempted and the upload identity is returned for verification."
+                ],
+            )
         job = create_response.data
         result_data: dict[str, Any] = {
             "upload": upload_data,
@@ -529,19 +619,53 @@ def transcribe_local_file(
             "The uploaded input is retained in Object Storage; manage it with your normal lifecycle policy."
         ]
         if wait_for_completion:
-            completed_response = wait_for_job(
-                job.id,
-                timeout_seconds=timeout_seconds,
-                poll_interval_seconds=poll_interval_seconds,
-            )
+            try:
+                completed_response = wait_for_job(
+                    job.id,
+                    timeout_seconds=timeout_seconds,
+                    poll_interval_seconds=poll_interval_seconds,
+                )
+            except Exception as wait_error:
+                return _partial_transcription_result(
+                    "wait_for_job",
+                    wait_error,
+                    upload_data,
+                    job=job,
+                    status=getattr(create_response, "status", None),
+                    opc_request_id=response_header(
+                        create_response, "opc-request-id"
+                    ),
+                    notes=[
+                        *notes,
+                        "Waiting for the job failed. Use the returned job ID to "
+                        "inspect or resume the workflow.",
+                    ],
+                )
             result_data["job"] = to_dict(completed_response.data)
             if completed_response.data.lifecycle_state == "SUCCEEDED":
                 directory = local_output_directory or f"transcriptions/{job.id}"
-                result_data["downloads"] = download_job_outputs(
-                    job.id,
-                    directory,
-                    overwrite=overwrite_local_outputs,
-                )
+                try:
+                    result_data["downloads"] = download_job_outputs(
+                        job.id,
+                        directory,
+                        overwrite=overwrite_local_outputs,
+                    )
+                except Exception as download_error:
+                    return _partial_transcription_result(
+                        "download_job_outputs",
+                        download_error,
+                        upload_data,
+                        job=completed_response.data,
+                        status=getattr(create_response, "status", None),
+                        opc_request_id=response_header(
+                            create_response, "opc-request-id"
+                        ),
+                        notes=[
+                            *notes,
+                            "Downloading job outputs failed. Use the returned job ID "
+                            "with download_transcription_results to retry.",
+                        ],
+                    )
             else:
                 notes.append(
                     f"The job ended in {completed_response.data.lifecycle_state}; no outputs were downloaded."

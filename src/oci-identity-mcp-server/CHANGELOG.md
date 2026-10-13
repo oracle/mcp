@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Fixed pagination limits in list tools to ensure results respect the requested maximum across API pages.
+- Fixed pagination limits in list tools to ensure results respect the requested maximum across API pages. For list_compartments, when include_root=True, the root compartment counts toward the total limit; with limit=1, only the root is returned and no child-compartment list request is made. (#476)
 
 ### Security
 

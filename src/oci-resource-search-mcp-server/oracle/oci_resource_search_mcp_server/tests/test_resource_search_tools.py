@@ -137,6 +137,65 @@ class TestResourceSearchTools:
 
             assert len(result) == 1
             assert result[0]["identifier"] == "resource1"
+    
+    @pytest.mark.asyncio
+    @patch("oracle.oci_resource_search_mcp_server.server.get_search_client")
+    async def test_search_resources_respects_total_limit_across_pages(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        resp1 = create_autospec(oci.response.Response)
+        resp1.data = oci.resource_search.models.ResourceSummaryCollection(
+            items=[
+                oci.resource_search.models.ResourceSummary(identifier="a"),
+                oci.resource_search.models.ResourceSummary(identifier="b"),
+            ]
+        )
+        resp1.has_next_page = True
+        resp1.next_page = "tok2"
+
+        resp2 = create_autospec(oci.response.Response)
+        resp2.data = oci.resource_search.models.ResourceSummaryCollection(
+            items=[
+                oci.resource_search.models.ResourceSummary(identifier="c"),
+                oci.resource_search.models.ResourceSummary(identifier="d"),
+            ]
+        )
+        resp2.has_next_page = True
+        resp2.next_page = "tok3"
+
+        mock_client.search_resources.side_effect = [resp1, resp2]
+        mock_type_response = create_autospec(oci.response.Response)
+        mock_type_response.data = [
+            oci.resource_search.models.ResourceType(name="instance")
+        ]
+        mock_type_response.has_next_page = False
+        mock_type_response.next_page = None
+        mock_client.list_resource_types.return_value = mock_type_response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "search_resources",
+                    {
+                        "tenant_id": TENANT_ID,
+                        "compartment_id": COMPARTMENT_ID,
+                        "display_name": "Resource",
+                        "limit": 3,
+                    },
+                )
+            ).structured_content["result"]
+
+        assert [item["identifier"] for item in result] == ["a", "b", "c"]
+        assert len(result) == 3
+
+        assert mock_client.search_resources.call_count == 2
+        calls = mock_client.search_resources.call_args_list
+        assert calls[0].kwargs["limit"] == 3
+        assert calls[1].kwargs["limit"] == 1
+        assert calls[1].kwargs["page"] == "tok2"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_resource_search_mcp_server.server.get_search_client")
@@ -179,6 +238,65 @@ class TestResourceSearchTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_resource_search_mcp_server.server.get_search_client")
+    async def test_search_resources_free_form_respects_total_limit_across_pages(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        resp1 = create_autospec(oci.response.Response)
+        resp1.data = oci.resource_search.models.ResourceSummaryCollection(
+            items=[
+                oci.resource_search.models.ResourceSummary(identifier="a"),
+                oci.resource_search.models.ResourceSummary(identifier="b"),
+            ]
+        )
+        resp1.has_next_page = True
+        resp1.next_page = "tok2"
+
+        resp2 = create_autospec(oci.response.Response)
+        resp2.data = oci.resource_search.models.ResourceSummaryCollection(
+            items=[
+                oci.resource_search.models.ResourceSummary(identifier="c"),
+                oci.resource_search.models.ResourceSummary(identifier="d"),
+            ]
+        )
+        resp2.has_next_page = True
+        resp2.next_page = "tok3"
+
+        mock_client.search_resources.side_effect = [resp1, resp2]
+
+        type_response = create_autospec(oci.response.Response)
+        type_response.data = [
+            oci.resource_search.models.ResourceType(name="instance")
+        ]
+        type_response.has_next_page = False
+        type_response.next_page = None
+        mock_client.list_resource_types.return_value = type_response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "search_resources_free_form",
+                    {
+                        "tenant_id": TENANT_ID,
+                        "text": "Resource",
+                        "limit": 3,
+                    },
+                )
+            ).structured_content["result"]
+
+        assert [item["identifier"] for item in result] == ["a", "b", "c"]
+        assert len(result) == 3
+
+        assert mock_client.search_resources.call_count == 2
+        calls = mock_client.search_resources.call_args_list
+        assert calls[0].kwargs["limit"] == 3
+        assert calls[1].kwargs["limit"] == 1
+        assert calls[1].kwargs["page"] == "tok2"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_resource_search_mcp_server.server.get_search_client")
     async def test_search_resources_by_type(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -215,6 +333,74 @@ class TestResourceSearchTools:
 
             assert len(result) == 1
             assert result[0]["resource_type"] == "dbsystem"
+    
+    @pytest.mark.asyncio
+    @patch("oracle.oci_resource_search_mcp_server.server.get_search_client")
+    async def test_search_resources_by_type_respects_total_limit_across_pages(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        resp1 = create_autospec(oci.response.Response)
+        resp1.data = oci.resource_search.models.ResourceSummaryCollection(
+            items=[
+                oci.resource_search.models.ResourceSummary(
+                    identifier="a", resource_type="instance"
+                ),
+                oci.resource_search.models.ResourceSummary(
+                    identifier="b", resource_type="instance"
+                ),
+            ]
+        )
+        resp1.has_next_page = True
+        resp1.next_page = "tok2"
+
+        resp2 = create_autospec(oci.response.Response)
+        resp2.data = oci.resource_search.models.ResourceSummaryCollection(
+            items=[
+                oci.resource_search.models.ResourceSummary(
+                    identifier="c", resource_type="instance"
+                ),
+                oci.resource_search.models.ResourceSummary(
+                    identifier="d", resource_type="instance"
+                ),
+            ]
+        )
+        resp2.has_next_page = True
+        resp2.next_page = "tok3"
+
+        mock_client.search_resources.side_effect = [resp1, resp2]
+
+        type_response = create_autospec(oci.response.Response)
+        type_response.data = [
+            oci.resource_search.models.ResourceType(name="instance")
+        ]
+        type_response.has_next_page = False
+        type_response.next_page = None
+        mock_client.list_resource_types.return_value = type_response
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "search_resources_by_type",
+                    {
+                        "tenant_id": TENANT_ID,
+                        "compartment_id": COMPARTMENT_ID,
+                        "resource_type": "instance",
+                        "limit": 3,
+                    },
+                )
+            ).structured_content["result"]
+
+        assert [item["identifier"] for item in result] == ["a", "b", "c"]
+        assert len(result) == 3
+
+        assert mock_client.search_resources.call_count == 2
+        calls = mock_client.search_resources.call_args_list
+        assert calls[0].kwargs["limit"] == 3
+        assert calls[1].kwargs["limit"] == 1
+        assert calls[1].kwargs["page"] == "tok2"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_resource_search_mcp_server.server.get_search_client")

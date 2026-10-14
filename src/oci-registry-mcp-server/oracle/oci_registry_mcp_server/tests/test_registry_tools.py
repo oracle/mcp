@@ -48,6 +48,118 @@ class TestRegistryTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_registry_mcp_server.server.get_ocir_client")
+    async def test_list_container_repositories_respects_limit(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        resp1 = create_autospec(oci.response.Response)
+        resp1.data = oci.artifacts.models.ContainerRepositoryCollection(
+            items=[
+                oci.artifacts.models.ContainerRepositorySummary(
+                    display_name="repo1",
+                    id="repo1_id",
+                    is_public=False,
+                    compartment_id="compartment1",
+                ),
+                oci.artifacts.models.ContainerRepositorySummary(
+                    display_name="repo2",
+                    id="repo2_id",
+                    is_public=False,
+                    compartment_id="compartment1",
+                ),
+            ]
+        )
+        resp1.has_next_page = True
+        resp1.next_page = "tok2"
+
+        resp2 = create_autospec(oci.response.Response)
+        resp2.data = oci.artifacts.models.ContainerRepositoryCollection(
+            items=[
+                oci.artifacts.models.ContainerRepositorySummary(
+                    display_name="repo3",
+                    id="repo3_id",
+                    is_public=False,
+                    compartment_id="compartment1",
+                ),
+            ]
+        )
+        resp2.has_next_page = True
+        resp2.next_page = "tok3"
+
+        mock_client.list_container_repositories.side_effect = [resp1, resp2]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_container_repositories",
+                    {"compartment_id": "compartment1", "limit": 3},
+                )
+            ).structured_content["result"]
+
+        assert len(result) == 3
+        assert [item["display_name"] for item in result] == [
+            "repo1",
+            "repo2",
+            "repo3",
+        ]
+
+        assert mock_client.list_container_repositories.call_count == 2
+        calls = mock_client.list_container_repositories.call_args_list
+
+        assert calls[0].kwargs["limit"] == 3
+        assert calls[0].kwargs["page"] is None
+
+        assert calls[1].kwargs["limit"] == 1
+        assert calls[1].kwargs["page"] == "tok2"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_registry_mcp_server.server.get_ocir_client")
+    async def test_list_container_repositories_continues_after_empty_page(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        resp1 = create_autospec(oci.response.Response)
+        resp1.data = oci.artifacts.models.ContainerRepositoryCollection(items=[])
+        resp1.has_next_page = True
+        resp1.next_page = "tok2"
+
+        resp2 = create_autospec(oci.response.Response)
+        resp2.data = oci.artifacts.models.ContainerRepositoryCollection(
+            items=[
+                oci.artifacts.models.ContainerRepositorySummary(
+                    display_name="repo1",
+                    id="repo1_id",
+                    is_public=False,
+                    compartment_id="compartment1",
+                ),
+            ]
+        )
+        resp2.has_next_page = False
+        resp2.next_page = None
+
+        mock_client.list_container_repositories.side_effect = [resp1, resp2]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_container_repositories",
+                    {"compartment_id": "compartment1"},
+                )
+            ).structured_content["result"]
+
+        assert len(result) == 1
+        assert result[0]["display_name"] == "repo1"
+
+        assert mock_client.list_container_repositories.call_count == 2
+        calls = mock_client.list_container_repositories.call_args_list
+        assert calls[0].kwargs["limit"] is None
+        assert calls[1].kwargs["limit"] is None
+        assert calls[1].kwargs["page"] == "tok2"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_registry_mcp_server.server.get_ocir_client")
     async def test_get_container_repository(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client

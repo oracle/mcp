@@ -133,10 +133,11 @@ def list_instances(
         next_page: str = None
 
         while has_next_page and (limit is None or len(instances) < limit):
+            remaining = None if limit is None else limit - len(instances)
             kwargs = {
                 "compartment_id": compartment_id,
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             if lifecycle_state:
@@ -149,8 +150,10 @@ def list_instances(
             data: list[oci.core.models.Instance] = response.data
             for d in data:
                 instance = map_instance(d)
-                instances.append(instance)
-
+                if limit is None or len(instances) < limit:
+                    instances.append(instance)
+                else:
+                    break
         logger.info(f"Found {len(instances)} Instances")
         return instances
 
@@ -341,10 +344,11 @@ def list_images(
         next_page: str = None
 
         while has_next_page and (limit is None or len(images) < limit):
+            remaining = None if limit is None else limit - len(images)
             kwargs = {
                 "compartment_id": compartment_id,
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             response = client.list_images(**kwargs)
@@ -357,7 +361,10 @@ def list_images(
 
             for d in data:
                 image = map_image(d)
-                images.append(image)
+                if limit is None or len(images) < limit:
+                    images.append(image)
+                else:
+                    break
 
         logger.info(f"Found {len(images)} Images")
         return images
@@ -434,10 +441,11 @@ def list_vnic_attachments(
         next_page: str = None
 
         while has_next_page and (limit is None or len(vnic_attachments) < limit):
+            remaining = None if limit is None else limit - len(vnic_attachments)
             kwargs = {
                 "compartment_id": compartment_id,
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             if instance_id:
@@ -450,8 +458,10 @@ def list_vnic_attachments(
             data: list[oci.core.models.VnicAttachment] = response.data
 
             for d in data:
-                vnic_attachments.append(map_vnic_attachment(d))
-
+                if limit is None or len(vnic_attachments) < limit:
+                    vnic_attachments.append(map_vnic_attachment(d))
+                else:
+                    break
         logger.info(f"Found {len(vnic_attachments)} Vnic Attachments")
         return vnic_attachments
 

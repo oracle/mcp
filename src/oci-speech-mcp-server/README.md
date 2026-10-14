@@ -25,9 +25,11 @@ session tokens or keep WebSockets open across MCP calls.
 | Customizations | `create_customization`, `get_customization`, `list_customizations`, `update_customization`, `delete_customization`, `change_customization_compartment` |
 | Events and Notifications | `setup_transcription_notifications` |
 
-List operations automatically follow OCI pagination but stop at the caller's
-bounded `max_items` value. Mutating operations return a consistent envelope with
-OCI data, status, ETag, request ID, and workflow notes where applicable.
+List operations that expose OCI page tokens automatically follow them but stop
+at the caller's bounded `max_items` value. `list_voices` is bounded to one OCI
+response because that API does not expose pagination. Mutating operations return
+a consistent envelope with OCI data, status, ETag, request ID, and workflow
+notes where applicable.
 
 ### Resources
 
@@ -179,23 +181,27 @@ protocol messages and send diagnostics to standard error through normal logging.
    inside `OCI_SPEECH_INPUT_ROOT`.
 2. Reject credential/operating-system secret locations and files larger than 2
    GiB.
-3. Upload the media to the selected Object Storage bucket.
+3. Upload the media to the selected Object Storage bucket with a create-only
+   condition, refusing to replace an existing caller-named object.
 4. Create an OCI Speech transcription job with a generated output prefix.
 5. Optionally wait for a terminal lifecycle state.
 6. For a successful job, discover task output objects and stream them into
    `OCI_SPEECH_OUTPUT_ROOT`.
 
 Before upload, the tool records the namespace, bucket, and object name needed
-for recovery. An ambiguous upload failure or a job-creation failure triggers an
-idempotent delete attempt and returns the upload identity, cleanup status, and
-sanitized failure metadata. After job creation, polling or output-download
-failures return both the upload and job identities so the caller can inspect or
-resume the workflow. Inputs for successfully created jobs are retained; use
-Object Storage lifecycle rules or an explicit governance process to control
-their retention. Local output paths must be relative, cannot escape the
-configured root, and do not overwrite files unless `overwrite` is explicitly
-enabled. Downloads are written privately to a same-directory temporary file and
-atomically moved into place only after the stream completes.
+for recovery. Uploads use `If-None-Match: *`, so a caller-provided name cannot
+replace an existing object. An ambiguous upload failure does not delete the
+object because this attempt cannot prove ownership. If job creation fails after
+a successful upload, cleanup uses that upload's ETag as a delete precondition.
+The result returns the upload identity, cleanup status, and sanitized failure
+metadata. After job creation, polling or output-download failures return both
+the upload and job identities so the caller can inspect or resume the workflow.
+Inputs for successfully created jobs are retained; use Object Storage lifecycle
+rules or an explicit governance process to control their retention. Local
+output paths must be relative, cannot escape the configured root, and do not
+overwrite files unless `overwrite` is explicitly enabled. Downloads are written
+privately to a same-directory temporary file and atomically published only after
+the stream completes.
 
 Supported media suffixes are AAC, AC3, AMR, AU, FLAC, M4A, MKV, MP3, MP4, OGA,
 OGG, OPUS, WAV, and WEBM.
@@ -213,7 +219,7 @@ not people's identities. Both Oracle ASR and OCI Whisper support it.
 SRT can be requested as an additional output format. The model type remains an
 explicit string so model names enabled for the tenancy can be used without a
 server release. Whisper-family identifiers such as `WHISPER_MEDIUM`,
-`WHISPER_LARGE_V2`, and `WHISPER_LARGE_V3_TURBO` require punctuation and use
+`WHISPER_LARGE_V2`, and `WHISPER_LARGE_V3T` require punctuation and use
 `auto` or lowercase language-only codes such as `en`, rather than locale codes
 such as `en-US`. Whisper prompts are limited to 4,000 characters and are
 rejected for the Oracle model. Unknown future non-Whisper model names remain
@@ -251,6 +257,10 @@ datasets. Inline entities can carry:
 - audio pronunciation objects from one declared Object Storage namespace and
   bucket;
 - reference examples containing entity-type placeholders.
+
+Customization aliases and display names accept only letters, digits, dashes,
+and underscores. The server rejects unsupported characters before submitting a
+training request.
 
 Every populated entity list creates a reusable entity customization. A list can
 instead reuse an existing entity customization by supplying its OCID or alias
@@ -380,8 +390,8 @@ the audio-producing application rather than a bounded stdio tool call.
 From the repository root:
 
 ```sh
-make test project=oci-speech-mcp-server
-make lint
+moon run oci-speech-mcp-server:test
+moon run root:lint
 ```
 
 The package enforces at least 90% unit-test coverage in `pyproject.toml`.

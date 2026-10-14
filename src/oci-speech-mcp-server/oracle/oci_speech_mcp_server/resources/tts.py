@@ -131,4 +131,3 @@ def register_resources(mcp: FastMCP) -> None:
         "speech://guides/ssml",
         description="Supported OCI Speech SSML tags, constraints, and examples.",
     )(ssml_guide)
-

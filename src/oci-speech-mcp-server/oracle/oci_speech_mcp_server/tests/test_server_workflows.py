@@ -165,6 +165,7 @@ def test_local_transcription_end_to_end(mock_clients, monkeypatch, tmp_path):
     assert result.data["downloads"][0]["local_path"] == "/safe/result.json"
     assert "retained" in result.notes[0]
     assert mock_clients.object_storage.put_object.call_args.kwargs["content_length"] == 5
+    assert mock_clients.object_storage.put_object.call_args.kwargs["if_none_match"] == "*"
 
 
 def test_local_transcription_async_and_failed(mock_clients, monkeypatch, tmp_path):
@@ -253,7 +254,7 @@ def test_local_transcription_cleans_upload_after_create_failure(
     )
 
     mock_clients.object_storage.delete_object.assert_called_once_with(
-        "namespace", "bucket", "inputs/audio.wav"
+        "namespace", "bucket", "inputs/audio.wav", if_match="tag"
     )
     assert result.data["failure"] == {
         "operation": "create_transcription_job",
@@ -272,13 +273,6 @@ def test_local_transcription_recovers_from_ambiguous_upload(
     mock_clients.object_storage.put_object.side_effect = (
         oci.exceptions.RequestException("connection lost")
     )
-    mock_clients.object_storage.delete_object.side_effect = oci.exceptions.ServiceError(
-        404,
-        "ObjectNotFound",
-        {"opc-request-id": "cleanup-request"},
-        "not found",
-    )
-
     result = transcription_tools.transcribe_local_file(
         str(audio),
         "compartment",
@@ -298,8 +292,44 @@ def test_local_transcription_recovers_from_ambiguous_upload(
         "operation": "upload_input",
         "type": "RequestException",
     }
-    assert result.data["cleanup"]["succeeded"] is True
-    assert result.data["cleanup"]["already_absent"] is True
+    assert result.data["cleanup"]["attempted"] is False
+    assert result.data["cleanup"]["succeeded"] is False
+    assert "ownership" in result.data["cleanup"]["reason"]
+    mock_clients.object_storage.delete_object.assert_not_called()
+    mock_clients.speech.create_transcription_job.assert_not_called()
+
+
+def test_local_transcription_does_not_overwrite_or_delete_existing_object(
+    mock_clients, monkeypatch, tmp_path
+):
+    audio = tmp_path / "audio.wav"
+    audio.write_bytes(b"audio")
+    monkeypatch.setenv("OCI_SPEECH_INPUT_ROOT", str(tmp_path))
+    mock_clients.object_storage.put_object.side_effect = oci.exceptions.ServiceError(
+        412,
+        "PreconditionFailed",
+        {"opc-request-id": "upload-request"},
+        "object exists",
+    )
+
+    result = transcription_tools.transcribe_local_file(
+        str(audio),
+        "compartment",
+        "bucket",
+        "display",
+        namespace_name="namespace",
+        input_object_name="inputs/existing.wav",
+        number_of_speakers=None,
+        whisper_prompt=None,
+        punctuation_enabled=True,
+        wait_for_completion=False,
+    )
+
+    assert mock_clients.object_storage.put_object.call_args.kwargs["if_none_match"] == "*"
+    assert result.status == 412
+    assert result.data["upload"]["object_name"] == "inputs/existing.wav"
+    assert result.data["cleanup"]["attempted"] is False
+    mock_clients.object_storage.delete_object.assert_not_called()
     mock_clients.speech.create_transcription_job.assert_not_called()
 
 
@@ -347,6 +377,9 @@ def test_local_transcription_surfaces_upload_when_cleanup_fails(
     assert result.data["cleanup"]["succeeded"] is False
     assert result.data["cleanup"]["error"]["request_id"] == "cleanup-request"
     assert "verification" in result.notes[0]
+    mock_clients.object_storage.delete_object.assert_called_once_with(
+        "namespace", "bucket", "inputs/audio.wav", if_match="tag"
+    )
 
 
 def test_local_transcription_surfaces_post_create_download_failure(
@@ -623,6 +656,18 @@ def test_customization_crud(mock_clients):
         customization_tools.update_customization("customization")
     with pytest.raises(ValueError, match="both domain"):
         customization_tools.update_customization("customization", domain="GENERIC")
+    with pytest.raises(ValueError, match="letters, digits"):
+        customization_tools.create_customization(
+            "compartment",
+            "valid_alias",
+            "invalid display",
+            inline_dataset(),
+        )
+    with pytest.raises(ValueError, match="letters, digits"):
+        customization_tools.update_customization(
+            "customization",
+            alias="invalid alias",
+        )
 
     mock_clients.speech.delete_customization.return_value = resp(None, status=204)
     assert (

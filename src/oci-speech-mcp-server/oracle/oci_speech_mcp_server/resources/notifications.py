@@ -32,4 +32,3 @@ def register_resources(mcp: FastMCP) -> None:
         "speech://guides/notifications",
         description="OCI Events and Notifications workflow for transcription jobs.",
     )(notifications_guide)
-

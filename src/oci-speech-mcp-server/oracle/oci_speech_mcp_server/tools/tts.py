@@ -67,14 +67,21 @@ def list_voices(
         kwargs["display_name"] = display_name
     try:
         response = get_clients().speech_tts.list_voices(**kwargs)
-        voices = page_items(response.data)[:max_items]
+        all_voices = page_items(response.data)
+        voices = all_voices[:max_items]
+        notes = [f"Text-to-speech calls are routed to {TTS_REGION}."]
+        if len(all_voices) > max_items:
+            notes.append(
+                "The voice list was truncated to max_items; the OCI ListVoices API "
+                "does not expose a continuation token."
+            )
         return OperationResult(
             operation="list_voices",
             data=to_dict(voices),
             status=getattr(response, "status", None),
             opc_request_id=response_header(response, "opc-request-id"),
             count=len(voices),
-            notes=[f"Text-to-speech calls are routed to {TTS_REGION}."],
+            notes=notes,
         )
     except Exception as error:
         raise_safe("list_voices", error)
@@ -142,7 +149,11 @@ def synthesize_speech(
         )
         destination = safe_output_path(output_filename, overwrite=overwrite)
         response = get_clients().speech_tts.synthesize_speech(details)
-        byte_count = write_stream(response.data, destination)
+        byte_count = write_stream(
+            response.data,
+            destination,
+            overwrite=overwrite,
+        )
         notes = []
         if text_type == "SSML":
             notes.append(
@@ -169,5 +180,7 @@ def synthesize_speech(
 
 
 def register_tools(mcp: FastMCP) -> None:
-    for tool in (list_voices, synthesize_speech):
-        mcp.tool()(tool)
+    from . import MUTATING_TOOL, READ_ONLY_TOOL
+
+    mcp.tool(annotations=READ_ONLY_TOOL)(list_voices)
+    mcp.tool(annotations=MUTATING_TOOL)(synthesize_speech)

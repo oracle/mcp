@@ -60,11 +60,24 @@ def _cleanup_uploaded_input(
     namespace_name: str,
     bucket_name: str,
     object_name: str,
+    etag: str | None,
 ) -> dict[str, Any]:
-    """Idempotently remove a possibly uploaded input and report safe status."""
+    """Remove an upload only when this call established ownership of its version."""
+    if etag is None:
+        return {
+            "attempted": False,
+            "succeeded": False,
+            "reason": (
+                "Upload ownership was not established, so no Object Storage "
+                "object was deleted."
+            ),
+        }
     try:
         response = clients.object_storage.delete_object(
-            namespace_name, bucket_name, object_name
+            namespace_name,
+            bucket_name,
+            object_name,
+            if_match=etag,
         )
         return {
             "attempted": True,
@@ -412,15 +425,34 @@ def download_job_outputs(
     storage = get_clients().object_storage
     task_summaries: list[Any] = []
     page: str | None = None
-    while True:
-        kwargs = {"limit": 100}
+    visited_pages: set[str] = set()
+    while len(task_summaries) < 100:
+        if page:
+            if page in visited_pages:
+                raise ValueError(
+                    "OCI returned a repeated transcription-task page token."
+                )
+            visited_pages.add(page)
+        remaining = 100 - len(task_summaries)
+        kwargs = {"limit": remaining}
         if page:
             kwargs["page"] = page
         response = speech.list_transcription_tasks(transcription_job_id, **kwargs)
-        task_summaries.extend(page_items(response.data))
+        returned = page_items(response.data)
+        if len(returned) > remaining:
+            raise ValueError(
+                "OCI returned more transcription tasks than the documented "
+                "100-task job limit."
+            )
+        task_summaries.extend(returned)
         page = response_header(response, "opc-next-page")
         if not page:
             break
+    if page:
+        raise ValueError(
+            "The transcription job has more than the documented 100-task limit; "
+            "outputs were not partially downloaded."
+        )
 
     downloaded: list[dict[str, Any]] = []
     used_names: set[str] = set()
@@ -441,7 +473,11 @@ def download_job_outputs(
                 location.bucket_name,
                 object_name,
             )
-            byte_count = write_stream(object_response.data, destination)
+            byte_count = write_stream(
+                object_response.data,
+                destination,
+                overwrite=overwrite,
+            )
             downloaded.append(
                 {
                     "task_id": task.id,
@@ -574,10 +610,15 @@ def transcribe_local_file(
                     object_name,
                     media,
                     content_length=source.stat().st_size,
+                    if_none_match="*",
                 )
             except Exception as upload_error:
                 cleanup = _cleanup_uploaded_input(
-                    clients, namespace, bucket_name, object_name
+                    clients,
+                    namespace,
+                    bucket_name,
+                    object_name,
+                    None,
                 )
                 return _partial_transcription_result(
                     "upload_input",
@@ -585,8 +626,9 @@ def transcribe_local_file(
                     upload_data,
                     cleanup=cleanup,
                     notes=[
-                        "The upload outcome was ambiguous. Cleanup was attempted and "
-                        "the Object Storage identity is returned for verification."
+                        "The upload did not establish ownership of the object version. "
+                        "No cleanup was attempted; the Object Storage identity is "
+                        "returned for verification."
                     ],
                 )
         upload_data.update(
@@ -597,7 +639,11 @@ def transcribe_local_file(
             create_response = clients.speech.create_transcription_job(details)
         except Exception as create_error:
             cleanup = _cleanup_uploaded_input(
-                clients, namespace, bucket_name, object_name
+                clients,
+                namespace,
+                bucket_name,
+                object_name,
+                upload_data["etag"],
             )
             return _partial_transcription_result(
                 "create_transcription_job",
@@ -686,18 +732,20 @@ def transcribe_local_file(
 
 
 def register_tools(mcp: FastMCP) -> None:
-    for tool in (
-        create_transcription_job,
-        get_transcription_job,
-        list_transcription_jobs,
-        update_transcription_job,
-        delete_transcription_job,
-        cancel_transcription_job,
-        change_transcription_job_compartment,
-        list_transcription_tasks,
-        get_transcription_task,
-        cancel_transcription_task,
-        download_transcription_results,
-        transcribe_local_file,
+    from . import ADDITIVE_TOOL, MUTATING_TOOL, READ_ONLY_TOOL
+
+    for tool, annotations in (
+        (create_transcription_job, ADDITIVE_TOOL),
+        (get_transcription_job, READ_ONLY_TOOL),
+        (list_transcription_jobs, READ_ONLY_TOOL),
+        (update_transcription_job, MUTATING_TOOL),
+        (delete_transcription_job, MUTATING_TOOL),
+        (cancel_transcription_job, MUTATING_TOOL),
+        (change_transcription_job_compartment, MUTATING_TOOL),
+        (list_transcription_tasks, READ_ONLY_TOOL),
+        (get_transcription_task, READ_ONLY_TOOL),
+        (cancel_transcription_task, MUTATING_TOOL),
+        (download_transcription_results, MUTATING_TOOL),
+        (transcribe_local_file, MUTATING_TOOL),
     ):
-        mcp.tool()(tool)
+        mcp.tool(annotations=annotations)(tool)

@@ -70,10 +70,14 @@ def raise_safe(operation: str, error: Exception) -> None:
     if isinstance(error, oci.exceptions.ServiceError):
         raise RuntimeError(
             f"{operation} failed with OCI status {error.status}, code {error.code}, "
-            f"request {error.request_id or 'unknown'}: {error.message}"
+            f"request {error.request_id or 'unknown'}."
         ) from None
     if isinstance(error, oci.exceptions.RequestException):
-        raise RuntimeError(f"{operation} failed: {error}") from None
+        raise RuntimeError(
+            f"{operation} failed due to an OCI transport error. "
+            "Check the server log and retry only after reconciling any possible "
+            "remote side effect."
+        ) from None
     if isinstance(error, TimeoutError):
         raise RuntimeError(f"{operation} failed: {error}") from None
     if isinstance(error, OSError):
@@ -119,16 +123,37 @@ def list_oci(
     try:
         items: list[Any] = []
         page: str | None = kwargs.pop("page", None)
+        visited_pages: set[str] = set()
         last_response: Any = None
+        notes: list[str] = []
         while len(items) < max_items:
-            request = {**kwargs, "limit": min(100, max_items - len(items))}
+            if page:
+                if page in visited_pages:
+                    raise ValueError("OCI pagination returned a repeated page token.")
+                visited_pages.add(page)
+            remaining = max_items - len(items)
+            request = {**kwargs, "limit": min(100, remaining)}
             if page:
                 request["page"] = page
             last_response = call(**request)
-            items.extend(page_items(last_response.data))
-            page = response_header(last_response, "opc-next-page")
+            returned = page_items(last_response.data)
+            items.extend(returned[:remaining])
+            next_page = response_header(last_response, "opc-next-page")
+            if len(returned) > remaining:
+                page = None
+                notes.append(
+                    "OCI returned more items than requested. The result was truncated "
+                    "to max_items and cannot be resumed losslessly."
+                )
+                break
+            page = next_page
             if not page:
                 break
+        if page:
+            notes.append(
+                "The result reached max_items; pass next_page with the same filters "
+                "to continue."
+            )
         return OperationResult(
             operation=operation,
             data=to_dict(items),
@@ -136,12 +161,13 @@ def list_oci(
             opc_request_id=response_header(last_response, "opc-request-id"),
             next_page=page,
             count=len(items),
+            notes=notes,
         )
     except Exception as error:
         raise_safe(operation, error)
 
 
-def write_stream(data: Any, path: Path) -> int:
+def write_stream(data: Any, path: Path, *, overwrite: bool = False) -> int:
     raw = getattr(data, "raw", data)
     stream = getattr(raw, "stream", None)
     if callable(stream):
@@ -165,7 +191,11 @@ def write_stream(data: Any, path: Path) -> int:
                 if chunk:
                     output.write(chunk)
                     written += len(chunk)
-        os.replace(temporary, path)
+        if overwrite:
+            os.replace(temporary, path)
+        else:
+            os.link(temporary, path, follow_symlinks=False)
+            temporary.unlink()
         return written
     except Exception:
         if descriptor >= 0:

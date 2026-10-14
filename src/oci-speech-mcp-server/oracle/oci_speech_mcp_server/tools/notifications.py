@@ -141,4 +141,6 @@ def setup_transcription_notifications(
 
 
 def register_tools(mcp: FastMCP) -> None:
-    mcp.tool()(setup_transcription_notifications)
+    from . import ADDITIVE_TOOL
+
+    mcp.tool(annotations=ADDITIVE_TOOL)(setup_transcription_notifications)

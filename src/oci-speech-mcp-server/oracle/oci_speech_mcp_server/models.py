@@ -35,6 +35,7 @@ class EntityListInput(BaseModel):
         default=None,
         min_length=1,
         max_length=64,
+        pattern=r"^[A-Za-z0-9_-]+$",
         description=(
             "Optional alias for a populated entity list, or the alias of an "
             "existing reusable entity customization when entities is empty."

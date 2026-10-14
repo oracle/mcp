@@ -219,4 +219,3 @@ def register_resources(mcp: FastMCP) -> None:
         "speech://guides/realtime",
         description="Safe client-side OCI Realtime Speech WebSocket integration guidance.",
     )(realtime_guide)
-

@@ -21,7 +21,7 @@ can reference up to 100 object names. Oracle models default to `ORACLE` and the
 `GENERIC` domain. Whisper model names accepted by your tenancy can also be
 provided; use language `auto` where supported. Diarization supports 2–16
 speakers. Batch Whisper-family identifiers such as `WHISPER_MEDIUM`,
-`WHISPER_LARGE_V2`, and `WHISPER_LARGE_V3_TURBO` require punctuation and use
+`WHISPER_LARGE_V2`, and `WHISPER_LARGE_V3T` require punctuation and use
 `auto` or lowercase language-only codes such as `en`. `whisper_prompt` is
 Whisper-only. Unknown future non-Whisper model names remain accepted. SRT is the
 supported additional transcription format.

@@ -18,6 +18,7 @@ from .transcription import (
 )
 from .tts import customize_tts_with_ssml_prompt, synthesize_narration_prompt
 
+
 def register_prompts(mcp: FastMCP) -> None:
     transcription.register_prompts(mcp)
     customization.register_prompts(mcp)

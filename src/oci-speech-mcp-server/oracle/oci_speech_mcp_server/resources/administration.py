@@ -49,8 +49,9 @@ names below; do not paste angle brackets into the final policy.
 
 ## Standard Speech and Object Storage workflow
 
-For transcription jobs, customizations, and their CRUDL operations in one
-compartment, grant the user group the aggregate Speech resource. Local-file and
+For transcription jobs and customizations—including create, get, list, update,
+delete, and change-compartment operations—in one compartment, grant the user
+group the aggregate Speech resource. Local-file and
 Object Storage transcription also needs object access:
 
 ```text
@@ -159,4 +160,3 @@ def register_resources(mcp: FastMCP) -> None:
         "speech://guides/service-limits",
         description="OCI Speech file, job, TTS, Realtime, retention, and region limits.",
     )(service_limits_guide)
-

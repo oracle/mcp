@@ -19,6 +19,7 @@ from .realtime import realtime_guide
 from .transcription import local_files_guide, transcription_guide
 from .tts import ssml_guide, text_to_speech_guide
 
+
 def register_resources(mcp: FastMCP) -> None:
     administration.register_resources(mcp)
     transcription.register_resources(mcp)

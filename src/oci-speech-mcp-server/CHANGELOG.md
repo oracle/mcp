@@ -12,9 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Transcription job and task tools for creating, retrieving, listing, updating,
   canceling, deleting, and moving supported resources between compartments.
 - Secure local-file transcription workflow that uploads media to OCI Object
-  Storage, creates and monitors a transcription job, reports recovery state for
-  failures after remote side effects begin, and downloads completed results to a
-  restricted local output directory.
+  Storage without replacing existing objects, creates and monitors a
+  transcription job, performs ETag-guarded cleanup after job-creation failures,
+  reports recovery state for failures after remote side effects begin, and
+  downloads completed results to a restricted local output directory.
 - Voice discovery and text-to-speech synthesis with private, atomic local output
   handling, SSML structure validation, and OCI-supported SSML composition
   guidance.
@@ -31,3 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   customizations, observability, and troubleshooting.
 - OCI SDK authentication through `oracle-mcp-common` with package-derived
   `oci-speech-mcp/1.0.0` client telemetry.
+- Truthful MCP tool safety annotations, hard-capped OCI pagination, and
+  sanitized service and transport errors.
+- Validation and guidance for OCI-supported customization names and current
+  Whisper model identifiers.

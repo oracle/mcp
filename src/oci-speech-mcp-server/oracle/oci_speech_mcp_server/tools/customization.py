@@ -4,7 +4,8 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
-from typing import Any, Literal
+import re
+from typing import Annotated, Any, Literal
 
 import oci
 from fastmcp import FastMCP
@@ -17,6 +18,19 @@ from ..models import (
 )
 from ..utils.clients import get_clients
 from ..utils.responses import call_oci, list_oci
+
+CUSTOMIZATION_NAME_PATTERN = r"^[A-Za-z0-9_-]+$"
+CustomizationName = Annotated[
+    str,
+    Field(min_length=1, pattern=CUSTOMIZATION_NAME_PATTERN),
+]
+
+
+def validate_customization_name(value: str, field_name: str) -> None:
+    if re.fullmatch(CUSTOMIZATION_NAME_PATTERN, value) is None:
+        raise ValueError(
+            f"{field_name} may contain only letters, digits, dashes, and underscores."
+        )
 
 
 def customization_dataset(
@@ -99,8 +113,8 @@ def dataset_notes(dataset: CustomizationDatasetInput) -> list[str]:
 
 def create_customization(
     compartment_id: str,
-    alias: str,
-    display_name: str,
+    alias: CustomizationName,
+    display_name: CustomizationName,
     dataset: CustomizationDatasetInput,
     description: str | None = None,
     domain: Literal["GENERIC", "MEDICAL"] = "GENERIC",
@@ -110,6 +124,8 @@ def create_customization(
     freeform_tags: dict[str, str] | None = None,
 ) -> OperationResult:
     """Create and train a Speech customization."""
+    validate_customization_name(alias, "alias")
+    validate_customization_name(display_name, "display_name")
     details = oci.ai_speech.models.CreateCustomizationDetails(
         compartment_id=compartment_id,
         alias=alias,
@@ -171,8 +187,8 @@ def list_customizations(
 
 def update_customization(
     customization_id: str,
-    alias: str | None = None,
-    display_name: str | None = None,
+    alias: CustomizationName | None = None,
+    display_name: CustomizationName | None = None,
     description: str | None = None,
     dataset: CustomizationDatasetInput | None = None,
     domain: Literal["GENERIC", "MEDICAL"] | None = None,
@@ -183,6 +199,10 @@ def update_customization(
     if_match: str | None = None,
 ) -> OperationResult:
     """Update and retrain a Speech customization."""
+    if alias is not None:
+        validate_customization_name(alias, "alias")
+    if display_name is not None:
+        validate_customization_name(display_name, "display_name")
     if all(
         value is None
         for value in (
@@ -260,12 +280,14 @@ def change_customization_compartment(
 
 
 def register_tools(mcp: FastMCP) -> None:
-    for tool in (
-        create_customization,
-        get_customization,
-        list_customizations,
-        update_customization,
-        delete_customization,
-        change_customization_compartment,
+    from . import ADDITIVE_TOOL, MUTATING_TOOL, READ_ONLY_TOOL
+
+    for tool, annotations in (
+        (create_customization, ADDITIVE_TOOL),
+        (get_customization, READ_ONLY_TOOL),
+        (list_customizations, READ_ONLY_TOOL),
+        (update_customization, MUTATING_TOOL),
+        (delete_customization, MUTATING_TOOL),
+        (change_customization_compartment, MUTATING_TOOL),
     ):
-        mcp.tool()(tool)
+        mcp.tool(annotations=annotations)(tool)

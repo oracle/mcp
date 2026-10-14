@@ -24,6 +24,10 @@ domain phrase with an uploaded example pronunciation. Use weights only when the
 dataset design calls for a deliberate relative bias; do not assign arbitrary
 weights to every entity.
 
+Customization aliases and display names accept only letters, digits, dashes,
+and underscores. Use the free-form description for human-readable text that
+needs spaces or punctuation.
+
 ## Entity lists and reuse
 
 An entity list groups entities under an `entity_type`, such as `medication`,
@@ -94,4 +98,3 @@ def register_resources(mcp: FastMCP) -> None:
         "speech://guides/customizations",
         description="OCI Speech entities, reusable entity lists, and contextual datasets.",
     )(customizations_guide)
-

@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 
 import oci
 import pytest
+from fastmcp import Client
 
 from oracle.oci_speech_mcp_server import prompts, resources, server
 from oracle.oci_speech_mcp_server.tools import transcription as transcription_tools
@@ -65,6 +66,49 @@ def test_resources_and_prompts():
     assert "partial-versus-final" in realtime_prompt
 
 
+@pytest.mark.asyncio
+async def test_tool_annotations_match_side_effects():
+    async with Client(server.mcp) as client:
+        tools = await client.list_tools()
+
+    assert len(tools) == 21
+    by_name = {tool.name: tool.annotations for tool in tools}
+    read_only = {
+        "get_customization",
+        "get_transcription_job",
+        "get_transcription_task",
+        "list_customizations",
+        "list_transcription_jobs",
+        "list_transcription_tasks",
+        "list_voices",
+    }
+    additive = {
+        "create_customization",
+        "create_transcription_job",
+        "setup_transcription_notifications",
+    }
+    mutating = {
+        "cancel_transcription_job",
+        "cancel_transcription_task",
+        "change_customization_compartment",
+        "change_transcription_job_compartment",
+        "delete_customization",
+        "delete_transcription_job",
+        "download_transcription_results",
+        "synthesize_speech",
+        "transcribe_local_file",
+        "update_customization",
+        "update_transcription_job",
+    }
+    assert set(by_name) == read_only | additive | mutating
+    for name, annotations in by_name.items():
+        assert annotations is not None, name
+        assert annotations.openWorldHint is True, name
+        assert annotations.readOnlyHint is (name in read_only), name
+        assert annotations.destructiveHint is (name not in read_only | additive), name
+        assert annotations.idempotentHint is (name in read_only), name
+
+
 def test_response_helpers_and_safe_errors(caplog):
     response = resp(oci.ai_speech.models.TranscriptionJob(id="job"))
     result = responses.operation_result("get", response, notes=["note"])
@@ -81,7 +125,7 @@ def test_response_helpers_and_safe_errors(caplog):
     )
     assert responses.response_header(SimpleNamespace(headers=None), "missing") is None
 
-    with pytest.raises(RuntimeError, match="OCI status 400"):
+    with pytest.raises(RuntimeError, match="OCI status 400") as service_failure:
         responses.call_oci(
             "bad",
             lambda: (_ for _ in ()).throw(
@@ -93,11 +137,14 @@ def test_response_helpers_and_safe_errors(caplog):
                 )
             ),
         )
-    with pytest.raises(RuntimeError, match="network"):
+    assert "invalid" not in str(service_failure.value)
+    with pytest.raises(RuntimeError, match="transport error") as request_failure:
         responses.call_oci(
-            "bad",
-            lambda: (_ for _ in ()).throw(oci.exceptions.RequestException("network")),
+            "bad", lambda: (_ for _ in ()).throw(
+                oci.exceptions.RequestException("https://secret.example/resource")
+            )
         )
+    assert "secret.example" not in str(request_failure.value)
     with pytest.raises(RuntimeError, match="unexpectedly"):
         responses.call_oci(
             "bad", lambda: (_ for _ in ()).throw(TypeError("private"))
@@ -153,6 +200,41 @@ def test_pagination(mock_clients):
         transcription_tools.list_transcription_jobs("c", max_items=1)
 
 
+def test_pagination_enforces_hard_cap_and_rejects_repeated_tokens():
+    over_returning = MagicMock(
+        return_value=resp(
+            SimpleNamespace(items=["one", "two", "three"]),
+            {"opc-next-page": "later"},
+        )
+    )
+    truncated = responses.list_oci(
+        "list_items",
+        over_returning,
+        {},
+        max_items=2,
+    )
+    assert truncated.data == ["one", "two"]
+    assert truncated.count == 2
+    assert truncated.next_page is None
+    assert "cannot be resumed losslessly" in truncated.notes[0]
+    assert over_returning.call_args.kwargs["limit"] == 2
+
+    repeating = MagicMock(
+        return_value=resp(
+            SimpleNamespace(items=[]),
+            {"opc-next-page": "repeat"},
+        )
+    )
+    with pytest.raises(RuntimeError, match="repeated page token"):
+        responses.list_oci(
+            "list_items",
+            repeating,
+            {"page": "repeat"},
+            max_items=2,
+        )
+    repeating.assert_called_once()
+
+
 def test_transcription_crud_and_tasks(mock_clients):
     job = oci.ai_speech.models.TranscriptionJob(id="job", lifecycle_state="ACCEPTED")
     mock_clients.speech.create_transcription_job.return_value = resp(job)
@@ -189,7 +271,7 @@ def test_transcription_crud_and_tasks(mock_clients):
             "ORACLE", "GENERIC", "en-US", False, 2, None
         )
     whisper = transcription_tools.transcription_model(
-        "WHISPER_LARGE_V2", "GENERIC", "auto", False, None, "domain words"
+        "WHISPER_LARGE_V3T", "GENERIC", "auto", False, None, "domain words"
     )
     assert whisper.transcription_settings.additional_settings["whisperPrompt"] == "domain words"
     assert transcription_tools.normalization(False, None).filters == []
@@ -227,7 +309,7 @@ def test_transcription_crud_and_tasks(mock_clients):
             language_code="en-US",
         )
     transcription_tools.validate_transcription_options(
-        "WHISPER_LARGE_V2", "auto", "domain words", True
+        "WHISPER_LARGE_V3T", "auto", "domain words", True
     )
     transcription_tools.validate_transcription_options(
         "FUTURE_MODEL", "en-US", None, False
@@ -314,6 +396,11 @@ def test_stream_writer_variants(tmp_path):
     assert responses.write_stream(data, iter_path) == 5
     byte_path = tmp_path / "bytes"
     assert responses.write_stream(b"four", byte_path) == 4
+    with pytest.raises(FileExistsError):
+        responses.write_stream(b"replacement", byte_path)
+    assert byte_path.read_bytes() == b"four"
+    assert responses.write_stream(b"replacement", byte_path, overwrite=True) == 11
+    assert byte_path.read_bytes() == b"replacement"
     with pytest.raises(ValueError, match="unsupported"):
         responses.write_stream(object(), tmp_path / "bad")
 

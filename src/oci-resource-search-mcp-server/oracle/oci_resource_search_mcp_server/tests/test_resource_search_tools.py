@@ -475,6 +475,49 @@ class TestResourceSearchTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_resource_search_mcp_server.server.get_search_client")
+    async def test_list_resource_types_respects_total_limit_across_pages(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        resp1 = create_autospec(oci.response.Response)
+        resp1.data = [
+            oci.resource_search.models.ResourceType(name="instance"),
+            oci.resource_search.models.ResourceType(name="volume"),
+        ]
+        resp1.has_next_page = True
+        resp1.next_page = "tok2"
+
+        resp2 = create_autospec(oci.response.Response)
+        resp2.data = [
+            oci.resource_search.models.ResourceType(name="bucket"),
+            oci.resource_search.models.ResourceType(name="vcn"),
+        ]
+        resp2.has_next_page = True
+        resp2.next_page = "tok3"
+
+        mock_client.list_resource_types.side_effect = [resp1, resp2]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_resource_types",
+                    {"limit": 3},
+                )
+            ).data
+
+        assert result == ["instance", "volume", "bucket"]
+        assert len(result) == 3
+
+        assert mock_client.list_resource_types.call_count == 2
+        calls = mock_client.list_resource_types.call_args_list
+        assert [call.kwargs["limit"] for call in calls] == [3, 1]
+        assert calls[0].kwargs.get("page") is None
+        assert calls[1].kwargs["page"] == "tok2"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_resource_search_mcp_server.server.get_search_client")
     async def test_list_all_resources_pagination(self, mock_get_client):
         # Two pages, second response lacks next_page attribute to hit hasattr False branch
         mock_client = MagicMock()

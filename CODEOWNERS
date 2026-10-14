@@ -17,3 +17,6 @@ moon.yml @krisrice @AlaaShaker @gebhardtr @dustin-sale
 # agent harness files
 docs/ @krisrice @AlaaShaker @gebhardtr @dustin-sale
 AGENTS.md @krisrice @AlaaShaker @gebhardtr @dustin-sale
+
+# Policy implementation and its dependencies require human maintainer review.
+/policy/ @krisrice @AlaaShaker @gebhardtr @dustin-sale

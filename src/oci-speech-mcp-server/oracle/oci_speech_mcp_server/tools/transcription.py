@@ -186,7 +186,7 @@ def create_transcription_job(
     output_prefix: str | None = None,
     description: str | None = None,
     model_type: str = "ORACLE",
-    domain: Literal["GENERIC", "MEDICAL"] = "GENERIC",
+    domain: Literal["GENERIC"] = "GENERIC",
     language_code: str = "en-US",
     diarization_enabled: bool = Field(
         default=False,
@@ -524,7 +524,7 @@ def transcribe_local_file(
     output_prefix: str | None = None,
     local_output_directory: str | None = None,
     model_type: str = "ORACLE",
-    domain: Literal["GENERIC", "MEDICAL"] = "GENERIC",
+    domain: Literal["GENERIC"] = "GENERIC",
     language_code: str = "en-US",
     diarization_enabled: bool = Field(
         default=False,

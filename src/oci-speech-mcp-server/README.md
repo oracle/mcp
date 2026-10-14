@@ -225,8 +225,9 @@ such as `en-US`. Whisper prompts are limited to 4,000 characters and are
 rejected for the Oracle model. Unknown future non-Whisper model names remain
 accepted without applying assumptions about their supported options.
 
-Use `MEDICAL` only where supported for the chosen capability and tenancy.
-Always verify current model and language availability in the
+Batch transcription supports the `GENERIC` domain. `MEDICAL` remains available
+to the separate customization and Realtime Speech capabilities where supported
+by the tenancy. Always verify current model and language availability in the
 [OCI Speech documentation](https://docs.oracle.com/en-us/iaas/Content/speech/home.htm).
 
 ## Text-to-speech

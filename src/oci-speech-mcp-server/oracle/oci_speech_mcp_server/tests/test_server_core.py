@@ -73,6 +73,7 @@ async def test_tool_annotations_match_side_effects():
 
     assert len(tools) == 21
     by_name = {tool.name: tool.annotations for tool in tools}
+    schemas_by_name = {tool.name: tool.inputSchema for tool in tools}
     read_only = {
         "get_customization",
         "get_transcription_job",
@@ -107,6 +108,8 @@ async def test_tool_annotations_match_side_effects():
         assert annotations.readOnlyHint is (name in read_only), name
         assert annotations.destructiveHint is (name not in read_only | additive), name
         assert annotations.idempotentHint is (name in read_only), name
+    for name in ("create_transcription_job", "transcribe_local_file"):
+        assert schemas_by_name[name]["properties"]["domain"]["const"] == "GENERIC"
 
 
 def test_response_helpers_and_safe_errors(caplog):
@@ -264,6 +267,7 @@ def test_transcription_crud_and_tasks(mock_clients):
     assert details.output_location.bucket_name == "bucket"
     assert details.additional_transcription_formats == ["SRT"]
     assert details.normalization.filters[0].mode == "MASK"
+    assert oci.util.to_dict(details.model_details)["domain"] == "GENERIC"
     assert details.model_details.transcription_settings.diarization.number_of_speakers == 2
 
     with pytest.raises(ValueError, match="requires diarization"):

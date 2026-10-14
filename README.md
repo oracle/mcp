@@ -163,6 +163,15 @@ Some MCP servers may not work with token-based authentication alone. See more ab
 
 All stdio actions are performed with the permissions of the configured OCI CLI profile. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 
+### Optional host-side authorization
+
+OCI IAM and the authentication setup above remain the source of truth for Oracle
+Cloud access. Separately, an MCP host may add an optional allow/deny check
+before it executes a sensitive tool call. That check runs on the host, not
+inside these servers, and does not replace OCI IAM or Oracle authorization
+controls. See
+[Optional host-side authorization](docs/optional-host-side-authorization.md).
+
 Remember to refresh the session once it expires with:
 ```bash
 oci session authenticate --profile-name <profile_name> --region <region> --auth security_token
@@ -454,6 +463,8 @@ moon run oci-javascript-mcp-server:build
 │   ├── oci-javascript-mcp-server/ # MCP server (Node.js package)
 │   ├── oracle-db-mcp-java-toolkit/ # MCP server (Java package)
 │   └── ...
+├── docs/
+│   └── optional-host-side-authorization.md  # Optional host gate pattern
 ├── LICENSE.txt
 ├── README.md
 ├── CONTRIBUTING.md

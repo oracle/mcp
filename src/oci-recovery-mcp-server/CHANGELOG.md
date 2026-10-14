@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Added a local three-file installer bundle with macOS/Linux and Windows launchers. It
+  clones or updates the `main` checkout, installs the Recovery server and OCI CLI in
+  isolated environments, prompts for a profile name suggesting `OCI_RECOVERY`, runs
+  `oci session authenticate --profile-name <name>` so the CLI prompts for region, and
+  prints client configuration for Claude, Codex, Cursor, and Cline without downloading
+  installer code.
+
 ### Changed
 
 - List tools now say when their result is incomplete. With `fetch_for_child_compartment=true`,

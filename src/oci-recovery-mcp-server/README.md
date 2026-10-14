@@ -45,9 +45,10 @@ checkout. Git and internet access are required.
 
 The installer asks for an OCI profile name, suggesting `OCI_RECOVERY` (or the next
 unused suffix if that profile already exists). You can enter a different name. It then
-runs `oci session authenticate --profile-name <name>`; the OCI CLI opens its sign-in flow
-and prompts you for the region. After authentication, the installer prints a JSON MCP
-configuration for Claude Code/Desktop, Cursor, and Cline, plus a TOML block for Codex.
+runs `oci session authenticate --profile-name <name> --config-location <selected-config-path>`;
+the OCI CLI opens its sign-in flow and prompts you for the region. After authentication,
+the installer prints a JSON MCP configuration for Claude Code/Desktop, Cursor, and Cline,
+plus a TOML block for Codex.
 The config uses the selected profile and its saved region.
 The server command in each config uses its absolute path, so the MCP client does not
 need `uv` on its `PATH`. Rerun the installer to pull updates from `main`; it stops if

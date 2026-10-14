@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Installer authentication and refresh commands now pass the resolved OCI config path,
+  keeping session profiles in the file used by the generated MCP configuration.
+- PowerShell refresh commands now use the call operator and PowerShell-safe quoting for
+  executable paths containing spaces.
 - Summary deadlines now stop compartment discovery between Identity requests.
 - Stdio limits lookups honor `OCI_REGION` before the profile region, matching shared auth.
 - `summarize_protected_database_backup_destination` now sets `truncated` when

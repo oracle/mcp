@@ -286,15 +286,29 @@ def _profile_name() -> str:
     return profile
 
 
-def _authenticate(oci_command: str, profile: str) -> None:
-    command = [oci_command, "session", "authenticate", "--profile-name", profile]
+def _authentication_command(
+    oci_command: str, profile: str, config_location: Path
+) -> list[str]:
+    return [
+        oci_command,
+        "session",
+        "authenticate",
+        "--profile-name",
+        profile,
+        "--config-location",
+        str(config_location),
+    ]
+
+
+def _authenticate(oci_command: str, profile: str, config_location: Path) -> None:
+    command = _authentication_command(oci_command, profile, config_location)
     print(
         "\nOCI session authentication will open the OCI sign-in flow. The OCI CLI "
         "will prompt for the region and create the selected profile.\n"
     )
     environment = os.environ.copy()
     if _configured_oci_config_file():
-        environment["OCI_CLI_CONFIG_FILE"] = str(_oci_config_path())
+        environment["OCI_CLI_CONFIG_FILE"] = str(config_location)
     result = _run(command, env=environment, check=False)
     if result.returncode:
         raise InstallError(
@@ -303,14 +317,17 @@ def _authenticate(oci_command: str, profile: str) -> None:
         )
 
 
-def _config_outputs(server_command: Path, profile: str) -> tuple[str, str]:
+def _config_outputs(
+    server_command: Path,
+    profile: str,
+    config_file: Path | None = None,
+) -> tuple[str, str]:
     environment = {
         "OCI_CONFIG_PROFILE": profile,
         "OCI_MCP_AUTH_TYPE": "security_token",
     }
-    configured = _configured_oci_config_file()
-    if configured:
-        environment["OCI_CONFIG_FILE"] = str(_oci_config_path())
+    if config_file is not None:
+        environment["OCI_CONFIG_FILE"] = str(config_file)
     entry = {
         "type": "stdio",
         "command": str(server_command),
@@ -331,9 +348,17 @@ def _config_outputs(server_command: Path, profile: str) -> tuple[str, str]:
     return json_config, toml_config
 
 
+def _powershell_quote(argument: str) -> str:
+    return "'" + argument.replace("'", "''") + "'"
+
+
+def _powershell_command(command: list[str]) -> str:
+    return "& " + " ".join(_powershell_quote(argument) for argument in command)
+
+
 def _shell_command(command: list[str]) -> str:
     if os.name == "nt":
-        return subprocess.list2cmdline(command)
+        return _powershell_command(command)
     return shlex.join(command)
 
 
@@ -354,28 +379,33 @@ def main() -> int:
         server_command = _sync_server(uv, python, checkout)
         oci_command = _select_oci_cli(uv, python, checkout)
         profile = _profile_name()
-        _authenticate(oci_command, profile)
+        config_path = _oci_config_path()
+        custom_config = _configured_oci_config_file() is not None
+        _authenticate(oci_command, profile, config_path)
 
-        json_config, toml_config = _config_outputs(server_command, profile)
+        client_config_path = config_path if custom_config else None
+        json_config, toml_config = _config_outputs(
+            server_command, profile, client_config_path
+        )
         print("\nRecovery MCP is installed and authenticated.\n")
         print(f"Checkout: {checkout}")
         print(f"OCI profile: {profile}")
-        if _configured_oci_config_file():
-            print(f"OCI config file: {_oci_config_path()}")
+        if custom_config:
+            print(f"OCI config file: {config_path}")
         print("\nFor Claude Code/Desktop, Cursor, or Cline, merge this JSON into the client's MCP server configuration:")
         print(json_config)
         print("\nFor Codex, add this TOML block to ~/.codex/config.toml:")
         print(toml_config)
 
-        refresh_command = [oci_command, "session", "authenticate", "--profile-name", profile]
+        refresh_command = _authentication_command(oci_command, profile, config_path)
         print("\nRefresh the session later with:")
         rendered_refresh_command = _shell_command(refresh_command)
-        if _configured_oci_config_file():
-            config_file = str(_oci_config_path())
+        if custom_config:
+            config_file = str(config_path)
             if os.name == "nt":
                 rendered_refresh_command = (
-                    f"$env:OCI_CLI_CONFIG_FILE = {json.dumps(config_file)}; "
-                    f"& {rendered_refresh_command}"
+                    f"$env:OCI_CLI_CONFIG_FILE = {_powershell_quote(config_file)}; "
+                    f"{rendered_refresh_command}"
                 )
             else:
                 rendered_refresh_command = (

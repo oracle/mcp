@@ -161,6 +161,7 @@ def list_all_resources(
         next_page: str = None
 
         while has_next_page and (limit is None or len(resources) < limit):
+            remaining = None if limit is None else limit - len(resources)
             kwargs = {
                 "tenant_id": tenant_id,
                 "search_details": StructuredSearchDetails(
@@ -168,7 +169,7 @@ def list_all_resources(
                     query=f"query all resources where compartmentId = '{compartment_id}'",
                 ),
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             response = client.search_resources(**kwargs)
@@ -177,8 +178,10 @@ def list_all_resources(
 
             data: list[oci.resource_search.models.ResourceSummary] = response.data.items
             for d in data:
-                resources.append(map_resource_summary(d))
-
+                if limit is None or len(resources) < limit:
+                    resources.append(map_resource_summary(d))
+                else:
+                    break
         logger.info(f"Found {len(resources)} Resources")
         return resources
 
@@ -214,6 +217,7 @@ def search_resources(
         next_page: str = None
 
         while has_next_page and (limit is None or len(resources) < limit):
+            remaining = None if limit is None else limit - len(resources)
             kwargs = {
                 "tenant_id": tenant_id,
                 "search_details": StructuredSearchDetails(
@@ -224,7 +228,7 @@ def search_resources(
                     ),
                 ),
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             response = client.search_resources(**kwargs)
@@ -233,8 +237,10 @@ def search_resources(
 
             data: list[oci.resource_search.models.ResourceSummary] = response.data.items
             for d in data:
-                resources.append(map_resource_summary(d))
-
+                if limit is None or len(resources) < limit:
+                    resources.append(map_resource_summary(d))
+                else:
+                    break
         logger.info(f"Found {len(resources)} Resources")
         return resources
 
@@ -267,6 +273,7 @@ def search_resources_free_form(
         next_page: str = None
 
         while has_next_page and (limit is None or len(resources) < limit):
+            remaining = None if limit is None else limit - len(resources)
             kwargs = {
                 "tenant_id": tenant_id,
                 "search_details": FreeTextSearchDetails(
@@ -274,7 +281,7 @@ def search_resources_free_form(
                     text=text,
                 ),
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             response = client.search_resources(**kwargs)
@@ -283,8 +290,10 @@ def search_resources_free_form(
 
             data: list[oci.resource_search.models.ResourceSummary] = response.data.items
             for d in data:
-                resources.append(map_resource_summary(d))
-
+                if limit is None or len(resources) < limit:
+                    resources.append(map_resource_summary(d))
+                else:
+                    break
         logger.info(f"Found {len(resources)} Resources")
         return resources
 
@@ -325,6 +334,7 @@ def search_resources_by_type(
         next_page: str = None
 
         while has_next_page and (limit is None or len(resources) < limit):
+            remaining = None if limit is None else limit - len(resources)
             kwargs = {
                 "tenant_id": tenant_id,
                 "search_details": StructuredSearchDetails(
@@ -334,7 +344,7 @@ def search_resources_by_type(
                     ),
                 ),
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             response = client.search_resources(**kwargs)
@@ -343,8 +353,10 @@ def search_resources_by_type(
 
             data: list[oci.resource_search.models.ResourceSummary] = response.data.items
             for d in data:
-                resources.append(map_resource_summary(d))
-
+                if limit is None or len(resources) < limit:
+                    resources.append(map_resource_summary(d))
+                else:
+                    break
         logger.info(f"Found {len(resources)} Resources")
         return resources
 
@@ -371,9 +383,10 @@ def list_resource_types(
         next_page: str = None
 
         while has_next_page and (limit is None or len(resource_types) < limit):
+            remaining = None if limit is None else limit - len(resource_types)
             kwargs = {
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             response = client.list_resource_types(**kwargs)
@@ -382,7 +395,10 @@ def list_resource_types(
 
             data: list[oci.resource_search.models.ResourceType] = response.data
             for d in data:
-                resource_types.append(d.name)
+                if limit is None or len(resource_types) < limit:
+                    resource_types.append(d.name)
+                else:
+                    break
 
         logger.info(f"Found {len(resource_types)} resource types")
         return resource_types

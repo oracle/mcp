@@ -206,7 +206,12 @@ def list_databases(
             # - If db_home_id not provided, discover all DB Homes in the compartment.
             # - If provided, just use that one.
             if db_home_id is None:
-                home_ids = compartments._fetch_db_home_ids_for_compartment(each_comp, region=region)
+                home_ids = compartments._db_home_ids_for_tool(
+                    each_comp,
+                    region,
+                    tool="list_databases",
+                    request_id=request_id,
+                )
             else:
                 home_ids = [db_home_id]
 
@@ -220,9 +225,16 @@ def list_databases(
                 if db_home_id is None:
                     kwargs["compartment_id"] = each_comp
 
-                response: oci.response.Response = client.list_databases(**kwargs)
-                raw = getattr(response.data, "items", response.data)
-                for item in raw or []:
+                # Follow the paging token so databases on later pages are not dropped.
+                raw: list = []
+                while True:
+                    response: oci.response.Response = client.list_databases(**kwargs)
+                    raw.extend(getattr(response.data, "items", response.data) or [])
+                    next_page = response.next_page if response.has_next_page else None
+                    if not next_page:
+                        break
+                    kwargs["page"] = next_page
+                for item in raw:
                     logger.debug(f"Item structure: {item}")
                     mapped = map_database_summary(item)
                     if mapped is None:

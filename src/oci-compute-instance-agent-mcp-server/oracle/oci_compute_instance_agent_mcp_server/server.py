@@ -189,11 +189,12 @@ def list_instance_agent_command_executions(
         next_page: str = None
 
         while has_next_page and (limit is None or len(commands) < limit):
+            remaining = None if limit is None else limit - len(commands)
             kwargs = {
                 "compartment_id": compartment_id,
                 "instance_id": instance_id,
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             response = client.list_instance_agent_command_executions(**kwargs)
@@ -202,8 +203,10 @@ def list_instance_agent_command_executions(
 
             data: list[oci.compute_instance_agent.models.InstanceAgentCommandExecutionSummary] = response.data
             for d in data:
-                commands.append(map_instance_agent_command_execution_summary(d))
-
+                if limit is None or len(commands) < limit:
+                    commands.append(map_instance_agent_command_execution_summary(d))
+                else:
+                    break
         logger.info(f"Found {len(commands)} Instance Agent Commands")
         return commands
 

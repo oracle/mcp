@@ -20,6 +20,12 @@ import {
   type HostMessage,
   type RunnerMessage
 } from "./grpc.ts";
+import { fileURLToPath } from "node:url";
+import { networkInterfaces } from "node:os";
+import {
+  readRunnerTlsBootstrap, readRunnerTlsFiles, runnerTlsMode,
+  RUNNER_TLS_DIRECTORY, RUNNER_READY_LINE
+} from "./grpc-tls.ts";
 import {
   DEFAULT_DECODE_LIMITS,
   ProtocolError,
@@ -82,7 +88,11 @@ function openSession(call: ServerDuplexStream<HostMessage, RunnerMessage>): void
 }
 
 async function startServer(): Promise<void> {
-  const tls = await loadTls();
+  // Imported test runners retain stdin bootstrap; only the worker entry point owns arguments.
+  const args = process.argv[1] === fileURLToPath(import.meta.url) ? process.argv.slice(2) : [];
+  const tls = runnerTlsMode(args) === "files"
+    ? await readRunnerTlsFiles(RUNNER_TLS_DIRECTORY)
+    : await readRunnerTlsBootstrap(process.stdin);
   const credentials = ServerCredentials.createSsl(
     Buffer.from(tls.clientCert),
     [{
@@ -96,7 +106,10 @@ async function startServer(): Promise<void> {
     throw new Error("invalid sandbox runner port");
   }
   await new Promise<void>((resolve, reject) => {
-    server.bindAsync(`0.0.0.0:${port}`, credentials, error => {
+    // IPv6 wildcard also accepts IPv4; IPv4-only kernels retain their native listener.
+    const ipv6 = Object.values(networkInterfaces()).some(addresses =>
+      addresses?.some(address => address.family === "IPv6"));
+    server.bindAsync(ipv6 ? `[::]:${port}` : `0.0.0.0:${port}`, credentials, error => {
       if (error) {
         reject(error);
       } else {
@@ -104,25 +117,7 @@ async function startServer(): Promise<void> {
       }
     });
   });
-}
-
-async function loadTls(): Promise<{
-  serverKey: string;
-  serverCert: string;
-  clientCert: string;
-}> {
-  let input = "";
-  for await (const chunk of process.stdin) {
-    input += String(chunk);
-    if (Buffer.byteLength(input, "utf8") > 32 * 1024) {
-      throw new Error("sandbox TLS bootstrap is too large");
-    }
-  }
-  const value = JSON.parse(input) as unknown;
-  if (!isTlsBootstrap(value)) {
-    throw new Error("invalid sandbox TLS bootstrap");
-  }
-  return value;
+  process.stdout.write(RUNNER_READY_LINE);
 }
 
 async function handleMessage(message: HostMessage): Promise<void> {
@@ -248,16 +243,4 @@ function isPositiveInteger(value: unknown): value is number {
 
 function isObject(value: unknown): value is JsonObject {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function isTlsBootstrap(value: unknown): value is {
-  serverKey: string;
-  serverCert: string;
-  clientCert: string;
-} {
-  return isObject(value)
-    && Object.keys(value).length === 3
-    && typeof value.serverKey === "string"
-    && typeof value.serverCert === "string"
-    && typeof value.clientCert === "string";
 }

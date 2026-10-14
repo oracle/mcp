@@ -27,31 +27,69 @@ test("npm package runs from node_modules with compiled bindings", { timeout: 30_
   assert.ok(![...files].some(path => path.endsWith(".tgz")), "package includes a prior tarball");
   for (const path of [
     "dist/server.js", "dist/generated/runner.js", "dist/isolation/grpc-execution.js",
-    "src/generated/runner.ts", "src/grpc.ts", "proto/runner.proto",
-    "buf.gen.yaml", "Containerfile", ".dockerignore"
+    "src/kubernetes-deployment-validation.ts", "dist/kubernetes-deployment-validation.js",
+    "dist/isolation/kubernetes.js", "dist/isolation/kubernetes-grpc.js",
+    "src/generated/runner.ts", "src/grpc.ts", "src/grpc-tls.ts", "src/grpc-tls-host.ts",
+    "proto/runner.proto",
+    "buf.gen.yaml", "Containerfile", "Containerfile.host", ".dockerignore",
+    "examples/kubernetes/v1/standard-in-cluster.yaml",
+    "examples/kata-kubernetes/v1/02-rbac.yaml",
+    "scripts/kubectl-dry-run-kubernetes.ts", "scripts/setup-native.mjs"
   ]) {
     assert.ok(files.has(path), `package is missing ${path}`);
+  }
+  for (const path of [
+    "src/isolation/pipe-execution.ts",
+    "src/isolation/worker-channel.ts",
+    "dist/isolation/pipe-execution.js",
+    "dist/isolation/worker-channel.js"
+  ]) {
+    assert.equal(files.has(path), false, `package includes removed transport ${path}`);
   }
 
   const installed = join(directory, "node_modules", "oci-javascript-mcp-server");
   mkdirSync(installed, { recursive: true });
   execFileSync("tar", ["-xzf", join(directory, pack.filename), "--strip-components=1", "-C", installed]);
+  const readme = readFileSync(join(installed, "README.md"), "utf8");
+  const architectureLink = readme.match(/\[formal architecture and isolation design\]\(([^)]+)\)/)?.[1];
+  assert.equal(architectureLink, "docs/architecture-and-isolation-design.md");
+  assert.ok(files.has(architectureLink!), "package is missing the README architecture link target");
+  assert.match(readFileSync(join(installed, architectureLink!), "utf8"), /^# OCI JavaScript MCP Server Architecture and Isolation Design/);
   // Reuse installed dependencies; server code and metadata come only from the tarball.
   symlinkSync(fileURLToPath(new URL("../node_modules", import.meta.url)), join(installed, "node_modules"), "dir");
+  const validator = join(installed, "dist/kubernetes-deployment-validation.js");
+  assert.match(execFileSync(process.execPath, [validator, "--help"], {
+    cwd: directory, env: {}, encoding: "utf8", timeout: 10_000
+  }), /--host-service-account/);
+  assert.throws(() => execFileSync(process.execPath, [validator, "--json"], {
+    cwd: directory, env: {}, encoding: "utf8", timeout: 10_000
+  }), (error: unknown) => {
+    const result = error as { status: number; stdout: string };
+    assert.equal(result.status, 1);
+    assert.equal(JSON.parse(String(result.stdout)).passed, false);
+    return true;
+  });
   const { bin } = JSON.parse(readFileSync(join(installed, "package.json"), "utf8"));
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: ["--no-node-snapshot", join(installed, bin["oci-javascript-mcp-server"])],
     cwd: directory,
+    stderr: "pipe",
     env: {
       PATH: process.env.PATH ?? "",
       OCI_JAVASCRIPT_PODMAN_CLI: fileURLToPath(new URL("./fake-podman.ts", import.meta.url)),
       OCI_JAVASCRIPT_PODMAN_IMAGE: "test-runner:dev"
     }
   });
+  let serverStderr = "";
+  transport.stderr?.on("data", chunk => { serverStderr += String(chunk); });
   const client = new Client({ name: "oci-javascript-package-test", version: "1.0.0" });
   try {
-    await client.connect(transport);
+    try {
+      await client.connect(transport);
+    } catch (error) {
+      throw new Error(`packaged server failed to start: ${serverStderr}`, { cause: error });
+    }
     const tools = await client.listTools();
     assert.deepEqual(tools.tools.map(tool => tool.name), ["run_javascript", "discover_oci"]);
     const result = await client.callTool({

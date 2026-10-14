@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oci-js-kata-reconciler
+  namespace: oci-js-host
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: oci-js-kata-reconciler
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: oci-js-kata-reconciler
+    spec:
+      serviceAccountName: oci-js-kata-reconciler
+      automountServiceAccountToken: true
+      containers:
+        - name: reconciler
+          image: registry.example/oci-javascript-mcp-host@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          command:
+            - node
+            - --no-node-snapshot
+            - --experimental-strip-types
+            - /app/src/kubernetes-reconciler.ts
+          env:
+            - name: OCI_JAVASCRIPT_KUBERNETES_PROFILE
+              value: kata-in-cluster
+            - name: OCI_JAVASCRIPT_KUBERNETES_NAMESPACE
+              value: oci-js-execution
+            - name: OCI_JAVASCRIPT_KUBERNETES_RECONCILE_INTERVAL_SECONDS
+              value: "30"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault

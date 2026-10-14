@@ -39,7 +39,7 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.15.0",
-    "@grpc/grpc-js": "^1.14.4",
+    "@grpc/grpc-js": "^1.14.6",
     "@modelcontextprotocol/sdk": "^1.31.0",
     "isolated-vm": "^7.0.0",
     "oci-common": "^2.132.0",

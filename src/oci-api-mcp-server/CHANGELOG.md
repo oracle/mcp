@@ -4,8 +4,7 @@
 
 ### Security
 
-- Updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).
-- Updated OCI CLI to 3.92.0 and refreshed the denylist for its mutating command surface.
+- Updated locked AnyIO to 4.15.1; updated locked multidict to 6.9.1; updated PyJWT to 2.15.1 and urllib3 to 2.8.0; updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247); updated OCI CLI to 3.92.0 and refreshed the denylist for its mutating command surface.
 
 ## 2.1.5
 

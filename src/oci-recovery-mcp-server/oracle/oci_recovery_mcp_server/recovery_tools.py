@@ -1445,7 +1445,12 @@ def list_backups(
             eligible_db_ids: list[str] = []
             db_unique_cache: dict[str, Optional[str]] = {}
             for each_comp in comp_ids:
-                home_ids = compartments._fetch_db_home_ids_for_compartment(each_comp, region=region)
+                home_ids = compartments._db_home_ids_for_tool(
+                    each_comp,
+                    region,
+                    tool="list_backups",
+                    request_id=request_id,
+                )
                 for hid in home_ids or []:
                     next_db_page = None
                     while True:

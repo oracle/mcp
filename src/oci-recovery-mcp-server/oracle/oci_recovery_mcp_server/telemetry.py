@@ -37,6 +37,10 @@ _MCP_TOOL_ID_CONTEXT: ContextVar[str] = ContextVar("mcp_tool_id", default="unkno
 # the call -- the tool body, helpers, every OCI client -- reads it instead of minting its
 # own, so the tool_call and oci_call events and the opc-request-id all share one id.
 _MCP_REQUEST_ID_CONTEXT: ContextVar[Optional[str]] = ContextVar("mcp_request_id", default=None)
+# Why the current tool call's result is partial. List tools return plain lists with no
+# truncated field, so helpers record the reason here and _tool_logger attaches it to
+# the result as a warning instead of changing the result's shape.
+_MCP_PARTIAL_RESULT_CONTEXT: ContextVar[Optional[list[str]]] = ContextVar("mcp_partial_result", default=None)
 # Used only when a request is made outside an active FastMCP session. It is not
 # persisted, so it cannot identify a person across server restarts.
 _MCP_SERVER_INSTANCE_ID = uuid.uuid4().hex
@@ -327,6 +331,35 @@ def _wrap_oci_client(client: Any, *, request_id: str, client_name: str):
     return _Proxy(client)
 
 
+def _note_partial_result(reason: str) -> None:
+    """Record that the running tool call's result leaves something out, and why."""
+    reasons = _MCP_PARTIAL_RESULT_CONTEXT.get()
+    if reasons is not None and reason not in reasons:
+        reasons.append(reason)
+
+
+def _with_partial_result_warning(out: Any, reasons: list[str]) -> Any:
+    """
+    The tool's result with a warning that it is partial, keeping its structured shape.
+
+    structuredContent is exactly what FastMCP would send for a list result, so clients
+    that parse it see no change; the warning is an extra text block (which a model
+    reads) and `_meta.partial_result` (which a program can check).
+    """
+    from fastmcp.tools import ToolResult
+    from mcp.types import TextContent
+
+    result = ToolResult(
+        content=out,
+        structured_content={"result": out},
+        meta={"partial_result": True, "partial_result_reasons": reasons},
+    )
+    result.content.append(
+        TextContent(type="text", text="Warning: this result is incomplete. " + " ".join(reasons))
+    )
+    return result
+
+
 def _tool_logger(tool_name: str):
     """
     Decorator to log MCP tool inputs/outputs/errors with a correlation id.
@@ -354,6 +387,7 @@ def _tool_logger(tool_name: str):
             request_id_token = _MCP_REQUEST_ID_CONTEXT.set(request_id)
             actor_id_token = _MCP_ACTOR_ID_CONTEXT.set(_mcp_actor_id())
             tool_id_token = _MCP_TOOL_ID_CONTEXT.set(tool_name)
+            partial_token = _MCP_PARTIAL_RESULT_CONTEXT.set([])
             logging_setup._log_event(
                 "tool_call",
                 request_id=request_id,
@@ -380,6 +414,9 @@ def _tool_logger(tool_name: str):
                     phase="end",
                     payload=end_payload,
                 )
+                reasons = _MCP_PARTIAL_RESULT_CONTEXT.get()
+                if reasons and isinstance(out, list):
+                    return _with_partial_result_warning(out, reasons)
                 return out
             except Exception as e:
                 dur_ms = int((time.time() - start) * 1000)
@@ -397,6 +434,7 @@ def _tool_logger(tool_name: str):
                 )
                 raise
             finally:
+                _MCP_PARTIAL_RESULT_CONTEXT.reset(partial_token)
                 _MCP_TOOL_ID_CONTEXT.reset(tool_id_token)
                 _MCP_ACTOR_ID_CONTEXT.reset(actor_id_token)
                 _MCP_REQUEST_ID_CONTEXT.reset(request_id_token)

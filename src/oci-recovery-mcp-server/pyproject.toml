@@ -92,6 +92,8 @@ omit = [
     "**/__init__.py",
     "**/tests/*",
     "**/integration_tests/*",
+    # The standalone setup helper is exercised by tests but is not server runtime code.
+    "scripts/install_oci_recovery_mcp.py",
     "dist/*",
     ".venv/*",
 ]

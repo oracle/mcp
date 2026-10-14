@@ -10,6 +10,7 @@ import json
 import os
 import pkgutil
 import re
+from copy import copy
 from functools import lru_cache
 from importlib import import_module
 from itertools import islice
@@ -336,18 +337,14 @@ def _extract_expected_kwargs_from_source(method: Callable[..., Any]) -> Optional
 
 def _supports_pagination(method: Callable[..., Any], operation_name: str) -> bool:
     try:
-        if operation_name.startswith("list_"):
+        param_names = _extract_expected_kwargs_from_source(method) or set()
+        try:
+            param_names |= set(inspect.signature(method).parameters)
+        except (TypeError, ValueError):
+            pass
+        if "page" in param_names or {"start_index", "count"} <= param_names:
             return True
-        if operation_name.startswith("summarize_"):
-            return True
-
-        expected_kwargs = _extract_expected_kwargs_from_source(method)
-        if expected_kwargs and (("page" in expected_kwargs) or ("limit" in expected_kwargs)):
-            return True
-
-        sig = inspect.signature(method)
-        param_names = set(sig.parameters.keys())
-        if "page" in param_names or "limit" in param_names:
+        if operation_name == "list_objects" and {"start", "limit"} <= param_names:
             return True
     except Exception:
         pass
@@ -840,8 +837,20 @@ def _extract_paginated_items(response_data: Any) -> Tuple[Any, Optional[str], An
     results = getattr(response_data, "results", None)
     if results is not None:
         return results, None, None
-    items = getattr(response_data, "items", response_data)
-    return (response_data if callable(items) else items), None, None
+    items = getattr(response_data, "items", None)
+    if items is not None and not callable(items):
+        return items, None, None
+
+    # Native envelopes declare their record arrays in the SDK model schema.
+    # Do not guess among multiple arrays (e.g. schemas is SCIM metadata).
+    schema = getattr(response_data, "swagger_types", {})
+    fields = [name for name, kind in schema.items() if kind.startswith("list[") and name != "schemas"]
+    if "resources" in fields:
+        fields = ["resources"]
+    if len(fields) == 1:
+        field = fields[0]
+        return getattr(response_data, field) or [], field, response_data
+    return None, None, None
 
 
 def _summarize_serialized_data(data: Any, sample_size: int) -> Dict[str, Any]:
@@ -961,6 +970,7 @@ def _call_with_pagination_if_applicable(
     operation_name: str,
     max_results: Optional[int] = None,
     uses_pagination: Optional[bool] = None,
+    pagination_metadata: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Any, Optional[str], bool]:
     if uses_pagination is None:
         uses_pagination = _supports_pagination(method, operation_name)
@@ -976,6 +986,11 @@ def _call_with_pagination_if_applicable(
         list_objects_prefixes = set()
         call_result = None
         more_results_available = False
+        native_field = None
+        native_envelope = None
+        visited = {(name, params[name]) for name in ("page", "start", "start_index") if name in params}
+        page_metadata = []
+        collection_seen = False
 
         while remaining_items is None or remaining_items > 0:
             if remaining_items is not None:
@@ -983,12 +998,38 @@ def _call_with_pagination_if_applicable(
                     call_params["limit"] = min(requested_limit, remaining_items)
                 else:
                     call_params.pop("limit", None)
+                if isinstance(params.get("count"), int) and params["count"] > 0:
+                    call_params["count"] = min(params["count"], remaining_items)
 
             call_result = oci.retry.DEFAULT_RETRY_STRATEGY.make_retrying_call(method, **call_params)
             response_data = call_result.data if hasattr(call_result, "data") else call_result
             available_slots = remaining_items
 
             current_items, collection_kind, collection_class = _extract_paginated_items(response_data)
+            if current_items is None:
+                if collection_seen:
+                    raise ValueError("Pagination response changed from a collection to a non-collection")
+                # A page/limit argument does not imply a collection response.
+                # Keep aggregate/scalar payloads intact and expose any continuation.
+                if pagination_metadata is not None:
+                    pagination_metadata["collection_paginated"] = False
+                    if getattr(call_result, "next_page", None):
+                        pagination_metadata["next_page"] = call_result.next_page
+                return (
+                    response_data,
+                    getattr(call_result, "headers", {}).get("opc-request-id"),
+                    bool(getattr(call_result, "has_next_page", False)),
+                )
+            collection_seen = True
+            if getattr(response_data, "swagger_types", None):
+                record_field = (
+                    "objects" if collection_kind == "object_storage" else
+                    "items" if collection_kind == "dns" else
+                    collection_kind or ("results" if hasattr(response_data, "results") else "items")
+                )
+                page_metadata.append({
+                    key: value for key, value in _serialize_oci_data(response_data).items() if key != record_field
+                })
             if collection_kind == "dns":
                 is_dns_record_collection = True
                 dns_record_collection_class = collection_class
@@ -996,6 +1037,10 @@ def _call_with_pagination_if_applicable(
                 is_list_objects_response = True
                 if response_data.prefixes:
                     list_objects_prefixes.update(response_data.prefixes)
+            elif collection_kind:
+                native_field = collection_kind
+                if native_envelope is None:
+                    native_envelope = copy(collection_class)
 
             if not hasattr(current_items, "__len__") or not hasattr(current_items, "__getitem__"):
                 current_items = list(current_items)
@@ -1006,23 +1051,46 @@ def _call_with_pagination_if_applicable(
             if remaining_items is not None:
                 remaining_items -= current_count
 
-            if remaining_items is not None and remaining_items <= 0:
-                if is_list_objects_response and getattr(response_data, "next_start_with", None) is not None:
-                    more_results_available = True
-                elif getattr(call_result, "has_next_page", False):
-                    more_results_available = True
+            if native_field == "resources" and params.get("count") == 0:
+                # SCIM count=0 requests only the total, not traversal of resources.
+                more_results_available = bool(getattr(response_data, "total_results", 0))
                 break
 
+            next_param = "page"
+            next_value = getattr(call_result, "next_page", None)
             if is_list_objects_response:
-                next_start_with = getattr(response_data, "next_start_with", None)
-                if next_start_with is None:
-                    break
-                call_params["start"] = next_start_with
-                continue
+                next_param = "start"
+                next_value = getattr(response_data, "next_start_with", None)
+            elif native_field == "resources" and (
+                "start_index" in params or "count" in params or next_value is None
+            ):
+                start_index = getattr(response_data, "start_index", None)
+                total_results = getattr(response_data, "total_results", None)
+                if isinstance(start_index, int) and isinstance(total_results, int):
+                    next_param = "start_index"
+                    next_value = start_index + current_count
+                    if next_value > total_results:
+                        next_value = None
+                    elif current_count == 0:
+                        raise ValueError("SCIM pagination made no progress before total_results was reached")
+            elif getattr(call_result, "has_next_page", False) and next_value is None:
+                raise ValueError("Paginated response has no usable next-page token")
 
-            if not getattr(call_result, "has_next_page", False):
+            if remaining_items is not None and remaining_items <= 0:
+                more_results_available = more_results_available or next_value is not None
+                # A backend token cannot resume records discarded within a page.
+                if pagination_metadata is not None and next_value is not None and current_count <= available_slots:
+                    pagination_metadata[next_param] = next_value
                 break
-            call_params["page"] = call_result.next_page
+            if next_value is None:
+                break
+            continuation = (next_param, next_value)
+            if continuation in visited or call_params.get(next_param) == next_value:
+                raise ValueError("Pagination returned a repeated continuation")
+            visited.add(continuation)
+            call_params[next_param] = next_value
+            if next_param == "start_index":
+                call_params.pop("page", None)
 
         response = call_result
         if is_dns_record_collection:
@@ -1032,8 +1100,15 @@ def _call_with_pagination_if_applicable(
                 objects=aggregated_results,
                 prefixes=list(list_objects_prefixes),
             )
+        elif native_envelope is not None:
+            setattr(native_envelope, native_field, aggregated_results)
+            if native_field == "resources":
+                native_envelope.items_per_page = len(aggregated_results)
+            data = native_envelope
         else:
             data = aggregated_results
+        if pagination_metadata is not None and page_metadata:
+            pagination_metadata["page_metadata"] = page_metadata
         has_more = more_results_available
         try:
             opc_request_id = response.headers.get("opc-request-id")
@@ -1260,13 +1335,17 @@ def invoke_oci_api(
         )
         logger.debug(f"invoke_oci_api final_params keys: {list(final_params.keys())}")
         logger.debug(f"op: {operation}")
+        pagination_metadata: Dict[str, Any] = {}
         data, opc_request_id, has_more_results = _call_with_pagination_if_applicable(
             method,
             final_params,
             operation,
             max_results,
             uses_pagination=uses_pagination,
+            pagination_metadata=pagination_metadata,
         )
+        if pagination_metadata.pop("collection_paginated", True) is False:
+            uses_pagination = False
 
         serialized_data = _serialize_oci_data(data)
         projected_data, matched_fields, unmatched_fields, available_fields = _project_top_level_fields(
@@ -1281,9 +1360,16 @@ def invoke_oci_api(
                 else "full"
             )
 
-        result_meta: Dict[str, Any] = {"result_mode": effective_result_mode, "pagination_used": uses_pagination}
+        result_meta: Dict[str, Any] = {
+            "result_mode": effective_result_mode,
+            "pagination_used": uses_pagination,
+            "has_more_results": has_more_results,
+            **pagination_metadata,
+        }
         if max_results is not None:
             result_meta["max_results"] = max_results
+            if has_more_results:
+                result_meta["truncated"] = True
         if normalized_fields is not None:
             result_meta["fields"] = matched_fields
             if unmatched_fields:

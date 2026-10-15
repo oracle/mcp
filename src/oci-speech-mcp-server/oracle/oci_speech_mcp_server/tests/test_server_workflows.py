@@ -42,6 +42,41 @@ def stream_data(*chunks):
     )
 
 
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (ValueError("invalid request"), False),
+        (
+            oci.exceptions.ServiceError(
+                400, "InvalidParameter", {"opc-request-id": "request"}, "invalid"
+            ),
+            True,
+        ),
+        (
+            oci.exceptions.ServiceError(
+                408, "RequestTimeout", {"opc-request-id": "request"}, "timeout"
+            ),
+            False,
+        ),
+        (
+            oci.exceptions.ServiceError(
+                429, "TooManyRequests", {"opc-request-id": "request"}, "throttled"
+            ),
+            False,
+        ),
+        (
+            oci.exceptions.ServiceError(
+                500, "InternalError", {"opc-request-id": "request"}, "failed"
+            ),
+            False,
+        ),
+        (oci.exceptions.RequestException("connection lost"), False),
+    ],
+)
+def test_create_failure_classification(error, expected):
+    assert transcription_tools._is_conclusive_create_failure(error) is expected
+
+
 def test_wait_for_job_success_and_timeout(mock_clients, monkeypatch):
     accepted = oci.ai_speech.models.TranscriptionJob(
         id="job", lifecycle_state="IN_PROGRESS"
@@ -106,6 +141,57 @@ def test_download_transcription_outputs(mock_clients, monkeypatch, tmp_path):
     empty = transcription_tools.download_transcription_results("job", "empty")
     assert empty.count == 0
     assert empty.notes
+
+
+def test_download_transcription_outputs_reports_partial_and_retries(
+    mock_clients, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("OCI_SPEECH_OUTPUT_ROOT", str(tmp_path))
+    mock_clients.speech.list_transcription_tasks.return_value = resp(
+        SimpleNamespace(
+            items=[oci.ai_speech.models.TranscriptionTaskSummary(id="task")]
+        )
+    )
+    task = oci.ai_speech.models.TranscriptionTask(
+        id="task",
+        lifecycle_state="SUCCEEDED",
+        output_location=oci.ai_speech.models.ObjectLocation(
+            namespace_name="namespace",
+            bucket_name="bucket",
+            object_names=["first.json", "second.json"],
+        ),
+    )
+    mock_clients.speech.get_transcription_task.return_value = resp(task)
+    mock_clients.object_storage.get_object.side_effect = [
+        resp(stream_data(b"first")),
+        oci.exceptions.RequestException("connection lost"),
+    ]
+
+    partial = transcription_tools.download_transcription_results(
+        "job", "results", overwrite=False
+    )
+
+    assert partial.count == 1
+    assert partial.data["failure"] == {
+        "operation": "download_job_outputs",
+        "type": "RequestException",
+    }
+    completed = partial.data["downloads"][0]
+    assert completed["object_name"] == "first.json"
+    assert Path(completed["local_path"]).read_bytes() == b"first"
+    assert "overwrite=true" in partial.notes[0]
+
+    mock_clients.object_storage.get_object.side_effect = [
+        resp(stream_data(b"first-retry")),
+        resp(stream_data(b"second")),
+    ]
+    retried = transcription_tools.download_transcription_results(
+        "job", "results", overwrite=True
+    )
+
+    assert retried.count == 2
+    assert Path(retried.data[0]["local_path"]).read_bytes() == b"first-retry"
+    assert Path(retried.data[1]["local_path"]).read_bytes() == b"second"
 
 
 def test_local_transcription_end_to_end(mock_clients, monkeypatch, tmp_path):
@@ -236,8 +322,11 @@ def test_local_transcription_cleans_upload_after_create_failure(
     monkeypatch.setenv("OCI_SPEECH_INPUT_ROOT", str(tmp_path))
     mock_clients.object_storage.put_object.return_value = resp(None)
     mock_clients.object_storage.delete_object.return_value = resp(None, status=204)
-    mock_clients.speech.create_transcription_job.side_effect = ValueError(
-        "job creation failed"
+    mock_clients.speech.create_transcription_job.side_effect = oci.exceptions.ServiceError(
+        400,
+        "InvalidParameter",
+        {"opc-request-id": "create-request"},
+        "job creation rejected",
     )
 
     result = transcription_tools.transcribe_local_file(
@@ -258,10 +347,54 @@ def test_local_transcription_cleans_upload_after_create_failure(
     )
     assert result.data["failure"] == {
         "operation": "create_transcription_job",
-        "type": "ValueError",
+        "type": "ServiceError",
+        "status": 400,
+        "code": "InvalidParameter",
+        "request_id": "create-request",
     }
     assert result.data["cleanup"]["succeeded"] is True
     assert result.data["cleanup"]["status"] == 204
+
+
+def test_local_transcription_preserves_upload_after_unknown_create_outcome(
+    mock_clients, monkeypatch, tmp_path
+):
+    audio = tmp_path / "audio.wav"
+    audio.write_bytes(b"audio")
+    monkeypatch.setenv("OCI_SPEECH_INPUT_ROOT", str(tmp_path))
+    mock_clients.object_storage.put_object.return_value = resp(None)
+    mock_clients.speech.create_transcription_job.side_effect = (
+        oci.exceptions.RequestException("response lost")
+    )
+
+    result = transcription_tools.transcribe_local_file(
+        str(audio),
+        "compartment",
+        "bucket",
+        "display",
+        namespace_name="namespace",
+        input_object_name="inputs/audio.wav",
+        number_of_speakers=None,
+        whisper_prompt=None,
+        punctuation_enabled=True,
+        wait_for_completion=False,
+    )
+
+    assert result.data["job_creation_outcome"] == "UNKNOWN"
+    assert result.data["upload"] == {
+        "namespace_name": "namespace",
+        "bucket_name": "bucket",
+        "object_name": "inputs/audio.wav",
+        "etag": "tag",
+        "opc_request_id": "req",
+    }
+    assert result.data["cleanup"]["attempted"] is False
+    assert result.data["failure"] == {
+        "operation": "create_transcription_job",
+        "type": "RequestException",
+    }
+    assert "outcome is unknown" in result.notes[0]
+    mock_clients.object_storage.delete_object.assert_not_called()
 
 
 def test_local_transcription_recovers_from_ambiguous_upload(
@@ -340,8 +473,11 @@ def test_local_transcription_surfaces_upload_when_cleanup_fails(
     audio.write_bytes(b"audio")
     monkeypatch.setenv("OCI_SPEECH_INPUT_ROOT", str(tmp_path))
     mock_clients.object_storage.put_object.return_value = resp(None)
-    mock_clients.speech.create_transcription_job.side_effect = ValueError(
-        "job creation failed"
+    mock_clients.speech.create_transcription_job.side_effect = oci.exceptions.ServiceError(
+        400,
+        "InvalidParameter",
+        {"opc-request-id": "create-request"},
+        "job creation rejected",
     )
     mock_clients.object_storage.delete_object.side_effect = oci.exceptions.ServiceError(
         500,
@@ -372,7 +508,10 @@ def test_local_transcription_surfaces_upload_when_cleanup_fails(
     }
     assert result.data["failure"] == {
         "operation": "create_transcription_job",
-        "type": "ValueError",
+        "type": "ServiceError",
+        "status": 400,
+        "code": "InvalidParameter",
+        "request_id": "create-request",
     }
     assert result.data["cleanup"]["succeeded"] is False
     assert result.data["cleanup"]["error"]["request_id"] == "cleanup-request"
@@ -407,7 +546,18 @@ def test_local_transcription_surfaces_post_create_download_failure(
         transcription_tools,
         "download_job_outputs",
         lambda *args, **kwargs: (_ for _ in ()).throw(
-            OSError(errno.ENOSPC, "disk full")
+            transcription_tools._PartialDownloadError(
+                OSError(errno.ENOSPC, "disk full"),
+                [
+                    {
+                        "task_id": "task",
+                        "object_name": "first.json",
+                        "local_path": "/safe/first.json",
+                        "bytes": 5,
+                        "opc_request_id": "req",
+                    }
+                ],
+            )
         ),
     )
 
@@ -430,8 +580,9 @@ def test_local_transcription_surfaces_post_create_download_failure(
     assert result.data["job"]["id"] == "job"
     assert result.data["failure"]["operation"] == "download_job_outputs"
     assert result.data["failure"]["errno_name"] == "ENOSPC"
+    assert result.data["downloads"][0]["local_path"] == "/safe/first.json"
     assert result.status == 202
-    assert "download_transcription_results" in result.notes[-1]
+    assert "overwrite=true" in result.notes[-1]
 
 
 def test_list_voices_and_synthesis(mock_clients, monkeypatch, tmp_path):

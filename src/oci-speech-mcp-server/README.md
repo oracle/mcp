@@ -191,11 +191,17 @@ protocol messages and send diagnostics to standard error through normal logging.
 Before upload, the tool records the namespace, bucket, and object name needed
 for recovery. Uploads use `If-None-Match: *`, so a caller-provided name cannot
 replace an existing object. An ambiguous upload failure does not delete the
-object because this attempt cannot prove ownership. If job creation fails after
-a successful upload, cleanup uses that upload's ETag as a delete precondition.
-The result returns the upload identity, cleanup status, and sanitized failure
-metadata. After job creation, polling or output-download failures return both
-the upload and job identities so the caller can inspect or resume the workflow.
+object because this attempt cannot prove ownership. After a successful upload,
+conclusive job-creation rejections use that upload's ETag as a cleanup
+precondition. Transport errors, timeouts, server errors, and other uncertain
+job-creation outcomes retain the upload and direct the caller to reconcile jobs
+before deleting the input or replaying the request. The result returns the
+upload identity, cleanup status, and sanitized failure metadata. After job
+creation, polling or output-download failures return both the upload and job
+identities so the caller can inspect or resume the workflow. If only some output
+files were written, their paths are returned; retry
+`download_transcription_results` with `overwrite=true` to atomically replace
+those completed files and continue.
 Inputs for successfully created jobs are retained; use Object Storage lifecycle
 rules or an explicit governance process to control their retention. Local
 output paths must be relative, cannot escape the configured root, and do not

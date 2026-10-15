@@ -28,6 +28,26 @@ from ..utils.responses import (
 )
 
 
+class _PartialDownloadError(Exception):
+    """Carry completed output records when a later download fails."""
+
+    def __init__(
+        self,
+        error: Exception,
+        downloads: list[dict[str, Any]],
+    ) -> None:
+        super().__init__("Transcription output download failed after partial progress.")
+        self.error = error
+        self.downloads = downloads
+
+
+def _is_conclusive_create_failure(error: Exception) -> bool:
+    """Return whether a create failure proves that no job was accepted."""
+    if not isinstance(error, oci.exceptions.ServiceError):
+        return False
+    return 400 <= error.status < 500 and error.status not in {408, 429}
+
+
 def validate_transcription_options(
     model_type: str,
     language_code: str,
@@ -114,6 +134,8 @@ def _partial_transcription_result(
     *,
     job: Any = None,
     cleanup: dict[str, Any] | None = None,
+    downloads: list[dict[str, Any]] | None = None,
+    job_creation_outcome: Literal["UNKNOWN"] | None = None,
     status: int | None = None,
     opc_request_id: str | None = None,
     notes: list[str] | None = None,
@@ -123,11 +145,13 @@ def _partial_transcription_result(
     data = {
         "upload": upload,
         "job": to_dict(job),
-        "downloads": [],
+        "downloads": downloads or [],
         "failure": {"operation": stage, **failure},
     }
     if cleanup is not None:
         data["cleanup"] = cleanup
+    if job_creation_outcome is not None:
+        data["job_creation_outcome"] = job_creation_outcome
     return OperationResult(
         operation="transcribe_local_file",
         data=data,
@@ -457,38 +481,41 @@ def download_job_outputs(
     downloaded: list[dict[str, Any]] = []
     used_names: set[str] = set()
     for summary in task_summaries:
-        task = speech.get_transcription_task(transcription_job_id, summary.id).data
-        if task.lifecycle_state != "SUCCEEDED" or not task.output_location:
-            continue
-        location = task.output_location
-        for object_name in location.object_names or []:
-            filename = safe_object_filename(object_name)
-            if filename in used_names:
-                filename = f"{task.id}-{filename}"
-            used_names.add(filename)
-            relative_path = str(Path(output_directory) / filename)
-            destination = safe_output_path(relative_path, overwrite=overwrite)
-            object_response = storage.get_object(
-                location.namespace_name,
-                location.bucket_name,
-                object_name,
-            )
-            byte_count = write_stream(
-                object_response.data,
-                destination,
-                overwrite=overwrite,
-            )
-            downloaded.append(
-                {
-                    "task_id": task.id,
-                    "object_name": object_name,
-                    "local_path": str(destination),
-                    "bytes": byte_count,
-                    "opc_request_id": response_header(
-                        object_response, "opc-request-id"
-                    ),
-                }
-            )
+        try:
+            task = speech.get_transcription_task(transcription_job_id, summary.id).data
+            if task.lifecycle_state != "SUCCEEDED" or not task.output_location:
+                continue
+            location = task.output_location
+            for object_name in location.object_names or []:
+                filename = safe_object_filename(object_name)
+                if filename in used_names:
+                    filename = f"{task.id}-{filename}"
+                used_names.add(filename)
+                relative_path = str(Path(output_directory) / filename)
+                destination = safe_output_path(relative_path, overwrite=overwrite)
+                object_response = storage.get_object(
+                    location.namespace_name,
+                    location.bucket_name,
+                    object_name,
+                )
+                byte_count = write_stream(
+                    object_response.data,
+                    destination,
+                    overwrite=overwrite,
+                )
+                downloaded.append(
+                    {
+                        "task_id": task.id,
+                        "object_name": object_name,
+                        "local_path": str(destination),
+                        "bytes": byte_count,
+                        "opc_request_id": response_header(
+                            object_response, "opc-request-id"
+                        ),
+                    }
+                )
+        except Exception as error:
+            raise _PartialDownloadError(error, downloaded.copy()) from error
     return downloaded
 
 
@@ -508,6 +535,23 @@ def download_transcription_results(
             data=downloaded,
             count=len(downloaded),
             notes=[] if downloaded else ["No successful task outputs were available."],
+        )
+    except _PartialDownloadError as error:
+        failure = safe_error_details(error.error)
+        return OperationResult(
+            operation="download_transcription_results",
+            data={
+                "downloads": error.downloads,
+                "failure": {"operation": "download_job_outputs", **failure},
+            },
+            status=failure.get("status"),
+            opc_request_id=failure.get("request_id"),
+            count=len(error.downloads),
+            notes=[
+                "Output download stopped after partial progress. Completed files "
+                "are returned in data.downloads. Retry this tool with overwrite=true "
+                "to atomically replace completed files and continue."
+            ],
         )
     except Exception as error:
         raise_safe("download_transcription_results", error)
@@ -638,22 +682,43 @@ def transcribe_local_file(
         try:
             create_response = clients.speech.create_transcription_job(details)
         except Exception as create_error:
-            cleanup = _cleanup_uploaded_input(
-                clients,
-                namespace,
-                bucket_name,
-                object_name,
-                upload_data["etag"],
-            )
+            if _is_conclusive_create_failure(create_error):
+                cleanup = _cleanup_uploaded_input(
+                    clients,
+                    namespace,
+                    bucket_name,
+                    object_name,
+                    upload_data["etag"],
+                )
+                notes = [
+                    "Transcription job creation was conclusively rejected after "
+                    "upload. Cleanup was attempted and the upload identity is "
+                    "returned for verification."
+                ]
+                job_creation_outcome = None
+            else:
+                cleanup = {
+                    "attempted": False,
+                    "succeeded": False,
+                    "reason": (
+                        "The transcription job creation outcome is unknown, so the "
+                        "uploaded input was retained."
+                    ),
+                }
+                notes = [
+                    "The job creation outcome is unknown. The uploaded input was "
+                    "retained to avoid breaking a job that OCI may have accepted. "
+                    "Reconcile with list_transcription_jobs before deleting the input "
+                    "or replaying the create request."
+                ]
+                job_creation_outcome = "UNKNOWN"
             return _partial_transcription_result(
                 "create_transcription_job",
                 create_error,
                 upload_data,
                 cleanup=cleanup,
-                notes=[
-                    "Transcription job creation failed after upload. Cleanup was "
-                    "attempted and the upload identity is returned for verification."
-                ],
+                job_creation_outcome=job_creation_outcome,
+                notes=notes,
             )
         job = create_response.data
         result_data: dict[str, Any] = {
@@ -695,6 +760,25 @@ def transcribe_local_file(
                         job.id,
                         directory,
                         overwrite=overwrite_local_outputs,
+                    )
+                except _PartialDownloadError as download_error:
+                    return _partial_transcription_result(
+                        "download_job_outputs",
+                        download_error.error,
+                        upload_data,
+                        job=completed_response.data,
+                        downloads=download_error.downloads,
+                        status=getattr(create_response, "status", None),
+                        opc_request_id=response_header(
+                            create_response, "opc-request-id"
+                        ),
+                        notes=[
+                            *notes,
+                            "Downloading job outputs stopped after partial progress. "
+                            "Completed files are returned in data.downloads. Use "
+                            "download_transcription_results with overwrite=true to "
+                            "atomically replace completed files and continue.",
+                        ],
                     )
                 except Exception as download_error:
                     return _partial_transcription_result(

@@ -13,8 +13,12 @@ local media file, upload it to Object Storage, submit a job, optionally wait,
 and download outputs. Inputs for successfully created jobs are retained; delete
 them through your normal Object Storage lifecycle or governance process. The
 tool records the upload identity before the PUT. Upload or job-creation failures
-return that identity, idempotent cleanup status, and sanitized failure metadata;
-post-create polling or download failures also return the job identity for resume.
+return that identity, cleanup status, and sanitized failure metadata. Conclusive
+job-creation rejections use ETag-guarded cleanup. Unknown outcomes retain the
+upload and require job reconciliation before deletion or replay. Post-create
+polling or download failures also return the job identity for resume. Partial
+downloads return completed file paths; retry `download_transcription_results`
+with `overwrite=true` to atomically replace completed files and continue.
 
 Use `create_transcription_job` when audio is already in Object Storage. A job
 can reference up to 100 object names. Oracle models default to `ORACLE` and the
@@ -62,7 +66,9 @@ Output names must be relative. Resolved outputs remain inside
 `OCI_SPEECH_OUTPUT_ROOT`, and existing files are not replaced unless the caller
 explicitly sets `overwrite=true`. Object names are reduced to safe basenames
 before download. Outputs are written to private same-directory temporary files
-and moved atomically into place only after the complete stream is received.
+and moved atomically into place only after the complete stream is received. A
+partial-download result identifies completed paths and instructs an
+`overwrite=true` retry rather than presenting the batch as wholly unsuccessful.
 """
 
 

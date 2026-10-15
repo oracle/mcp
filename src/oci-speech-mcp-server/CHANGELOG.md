@@ -13,9 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   canceling, deleting, and moving supported resources between compartments.
 - Secure local-file transcription workflow that uploads media to OCI Object
   Storage without replacing existing objects, creates and monitors a
-  transcription job, performs ETag-guarded cleanup after job-creation failures,
-  reports recovery state for failures after remote side effects begin, and
-  downloads completed results to a restricted local output directory.
+  transcription job, performs ETag-guarded cleanup after conclusive
+  job-creation rejections, retains inputs when creation outcomes are uncertain,
+  reports partial-download recovery state and safe retry guidance, and downloads
+  completed results to a restricted local output directory.
 - Voice discovery and text-to-speech synthesis with private, atomic local output
   handling, SSML structure validation, and OCI-supported SSML composition
   guidance.

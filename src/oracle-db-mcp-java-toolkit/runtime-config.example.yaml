@@ -1,0 +1,67 @@
+# Start with: java -DruntimeConfigFile=/path/to/runtime-config.yaml -jar oracle-db-mcp-toolkit.jar
+# Any non-blank -D property overrides the matching YAML setting below.
+# Keep this deployment-specific file out of source control and provide secrets through environment variables.
+network:
+  transport: "http"
+  http:
+    port: "8080"
+    # Set this explicitly for production HTTP deployments.
+    allowedOriginalHosts: "mcp.example.com"
+  cors:
+    allowedOrigin: "*"
+  https:
+    port: "45451"
+    certificatePath: "/path/to/certificate.p12"
+    certificatePassword: "${CERTIFICATE_PASSWORD}"
+
+toolSelection:
+  enabled: "read-query,write-query"
+dataIngestion:
+  rootDirectory: "/data/ingest"
+  maxFileSizeMb: "100"
+database:
+  url: "jdbc:oracle:thin:@tcps://db.example.com:1521/ORCLPDB1"
+  user: "${DB_USER}"
+  password: "${DB_PASSWORD}"
+  transactions:
+    idleTimeoutSeconds: "120"
+    maxLifetimeSeconds: "300"
+    maxPerUser: "4"
+  jdbc:
+    extensionsDirectory: "/opt/oracle/extensions"
+
+userAuth:
+  openIdDiscoveryRedirectEnabled: "false"
+  enabled: "true"
+  authorizationServer: "https://identity.example.com/tenant-id"
+  tokenValidation:
+    mode: "jwt"
+    introspection:
+      endpoint: "https://identity.example.com/introspect"
+      clientId: "${INTROSPECTION_CLIENT_ID}"
+      clientSecret: "${INTROSPECTION_CLIENT_SECRET}"
+    jwt:
+      issuer: "https://identity.example.com/tenant-id/"
+      jwksUri: "https://identity.example.com/tenant-id/discovery/keys"
+      audience: "api://mcp-server"
+      jwksCacheSeconds: "600"
+
+toolAuthorization:
+  editTools:
+    requireScope: "true"
+  listCredentials:
+    requireScope: "true"
+mcp:
+  oauth:
+    scopes: "openid"
+    resourceUrl: "https://mcp.example.com/mcp"
+
+deepDataSecurity:
+  enabled: "false"
+  # Set staticValue instead of the endpoint/client credentials when a database token is supplied directly.
+  databaseToken:
+    staticValue: "${DEEPSEC_DATABASE_TOKEN}"
+    tokenEndpoint: "https://identity.example.com/tenant-id/oauth2/v2.0/token"
+    clientId: "${DATABASE_TOKEN_CLIENT_ID}"
+    clientSecret: "${DATABASE_TOKEN_CLIENT_SECRET}"
+    scope: "api://database/.default"

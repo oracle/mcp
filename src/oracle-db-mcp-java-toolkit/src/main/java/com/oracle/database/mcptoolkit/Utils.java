@@ -10,6 +10,7 @@ package com.oracle.database.mcptoolkit;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oracle.database.mcptoolkit.config.ConfigRoot;
 import com.oracle.database.mcptoolkit.config.DataSourceConfig;
+import com.oracle.database.mcptoolkit.config.RuntimeConfigRoot;
 import com.oracle.database.mcptoolkit.config.ToolConfig;
 import com.oracle.database.mcptoolkit.config.ToolParameterConfig;
 import com.oracle.database.mcptoolkit.oauth.EndUserSecurityContextHolder;
@@ -325,6 +326,32 @@ public class Utils {
       config = ServerConfig.fromSystemPropertiesAndYaml(yamlConfig, defaultSourceKey);
     }
     return config;
+  }
+
+  /**
+   * Loads runtime settings from the YAML file specified by {@code runtimeConfigFile}.
+   * The legacy {@code configFile} remains dedicated to datasources and custom tools.
+   *
+   * @return parsed runtime configuration, or {@code null} when none was supplied or it cannot be read
+   */
+  static RuntimeConfigRoot loadRuntimeConfig() {
+    String runtimeConfigFilePath = LoadedConstants.RUNTIME_CONFIG_FILE;
+    if (runtimeConfigFilePath == null || runtimeConfigFilePath.isBlank()) {
+      LOG.info("Runtime config file is not specified. Using values from system properties.");
+      return null;
+    }
+    try (Reader reader = Files.newBufferedReader(Paths.get(runtimeConfigFilePath))) {
+      Object parsedYaml = new Yaml().load(reader);
+      if (parsedYaml != null && !(parsedYaml instanceof Map<?, ?>)) {
+        throw new IllegalArgumentException("Runtime config root must be a YAML mapping");
+      }
+      RuntimeConfigRoot runtimeConfig = RuntimeConfigRoot.fromYaml((Map<?, ?>) parsedYaml);
+      if (runtimeConfig != null) runtimeConfig.substituteEnvVars();
+      return runtimeConfig;
+    } catch (Exception e) {
+      LOG.log(Level.SEVERE, "Unable to load runtime config file: " + runtimeConfigFilePath, e);
+      return null;
+    }
   }
 
 /**

@@ -142,10 +142,11 @@ def list_log_groups(
         next_page: str = None
 
         while has_next_page and (limit is None or len(log_groups) < limit):
+            remaining = None if limit is None else limit - len(log_groups)
             kwargs = {
                 "compartment_id": compartment_id,
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             response = client.list_log_groups(**kwargs)
@@ -154,8 +155,10 @@ def list_log_groups(
 
             data: list[oci.logging.models.LogGroupSummary] = response.data
             for d in data:
-                log_groups.append(map_log_group_summary(d))
-
+                if limit is None or len(log_groups) < limit:
+                    log_groups.append(map_log_group_summary(d))
+                else:
+                    break
         logger.info(f"Found {len(log_groups)} Log Groups")
         return log_groups
 
@@ -206,10 +209,11 @@ def list_logs(
         next_page: str = None
 
         while has_next_page and (limit is None or len(logs) < limit):
+            remaining = None if limit is None else limit - len(logs)
             kwargs = {
                 "log_group_id": log_group_id,
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             response = client.list_logs(**kwargs)
@@ -218,8 +222,10 @@ def list_logs(
 
             data: list[oci.logging.models.LogSummary] = response.data
             for d in data:
-                logs.append(map_log_summary(d))
-
+                if limit is None or len(logs) < limit:
+                    logs.append(map_log_summary(d))
+                else:
+                    break
         logger.info(f"Found {len(logs)} Logs")
         return logs
 

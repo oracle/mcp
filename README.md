@@ -402,7 +402,10 @@ uv --directory src/oci-api-mcp-server run --locked oracle.oci-api-mcp-server
 ```
 
 `uv run` creates and updates the server project's own `.venv` from its lockfile.
-The API server's `common` dependency resolves to this repository's `src/common`.
+The Common consumers resolve `oracle-mcp-common` to this repository's `src/common`
+through `[tool.uv.sources]` entries with `workspace = true`. Moon infers their
+project dependencies from these declarations so Common changes trigger consumer
+tests and lock checks.
 Build a distribution only when you need to check packaging, with
 `moon run oci-api-mcp-server:build`.
 

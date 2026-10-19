@@ -9,7 +9,7 @@ This Python server discovers and invokes OCI SDK operations dynamically; it owns
 - [server.py](oracle/oci_cloud_mcp_server/server.py): SDK class/method validation, signatures, coercion helpers, operation execution and auth/transport wiring.
 - [Package metadata](oracle/oci_cloud_mcp_server/__init__.py): project/version used for user-agent derivation.
 - [Tests](oracle/oci_cloud_mcp_server/tests): concern-specific discovery, coercion, invocation, shaping, serialization and bootstrap definitions.
-- [Manifest](pyproject.toml) and [Moon dependency](moon.yml): Common workspace dependency, package entry point and coverage configuration; [README](README.md): native usage.
+- [Manifest](pyproject.toml): Common workspace dependency, package entry point and coverage configuration; [README](README.md): native usage.
 
 ## Setup / build / run
 

@@ -5,6 +5,8 @@ fileGroups:
     - 'src/**/*.py'
     - 'scripts/**/*.py'
     - 'tests/**/*.py'
+    - 'policy/**/*.py'
+    - '!policy/.venv/**/*'
     - '!src/*/.venv/**/*'
     - '!src/*/node_modules/**/*'
     - '!tests/.venv/**/*'

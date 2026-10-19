@@ -276,7 +276,7 @@ than you want them to.
 | Variable | Description |
 | --- | --- |
 | `ORACLE_MCP_TOOL_DEADLINE_SECONDS` | Time budget for compartment-subtree summary scans, checked between OCI requests. Default 120; `0` removes the limit. A scan that stops early returns `truncated: true` with partial counts rather than an error. |
-| `ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE` | Cap on compartments scanned when `fetch_for_child_compartment=true`. Default 200. |
+| `ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE` | Cap on compartments scanned when `fetch_for_child_compartment=true`. Default 200; `0` removes the cap. Over the cap, summary tools return `truncated: true`, and list tools return what they scanned with a warning and `_meta.partial_result: true`. |
 
 **Logging**
 

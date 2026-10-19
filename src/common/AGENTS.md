@@ -23,7 +23,7 @@ Use `moon run common:test` for package tests and `moon run root:lint` after Pyth
 
 `build_auth_context()` returns config/signer ingredients; servers retain client type, lifecycle, user-agent derivation and retry/circuit-breaker choices. `build_idcs_http_auth()` creates provider policy and `context_for()` derives explicit caller-token auth; listener startup, request-context retrieval and OCI client construction stay with the server. The README defines input precedence, explicit principal modes and profile-backed `auto`; do not infer automatic principal probing.
 
-Declared consumers at this baseline are [API](../oci-api-mcp-server/pyproject.toml), [Cloud](../oci-cloud-mcp-server/pyproject.toml), [Database](../oci-database-mcp-server/pyproject.toml), [DB Observability](../oci-db-observability-mcp-server/pyproject.toml) and [Document Understanding](../oci-document-understanding-mcp-server/pyproject.toml). API, Cloud and Database also declare Common edges in their package Moon files; the two newer consumers have no explicit package Moon file. Manifests and graph edges are different sources to recheck, and declarations alone do not establish runtime use; other servers, including Compute, are not assumed migrated.
+Declared consumers at this baseline are [API](../oci-api-mcp-server/pyproject.toml), [Cloud](../oci-cloud-mcp-server/pyproject.toml), [Database](../oci-database-mcp-server/pyproject.toml), [DB Observability](../oci-db-observability-mcp-server/pyproject.toml), [Document Understanding](../oci-document-understanding-mcp-server/pyproject.toml) and [Recovery](../oci-recovery-mcp-server/pyproject.toml). Five also declare Common edges in their package Moon files: [API](../oci-api-mcp-server/moon.yml), [Cloud](../oci-cloud-mcp-server/moon.yml), [Database](../oci-database-mcp-server/moon.yml), [Document Understanding](../oci-document-understanding-mcp-server/moon.yml) and [Recovery](../oci-recovery-mcp-server/moon.yml). DB Observability has no package Moon file. Inspect manifests, graph edges and the [ledger's call-site evidence](../../docs/authentication.md#adoption-ledger) separately; declarations alone do not establish runtime use, and other servers, including Compute, are not assumed migrated.
 
 ## Security and secrets handling
 
@@ -36,7 +36,7 @@ Public exports, configuration precedence, supported modes and aliases affect dec
 ## Known gaps
 
 - Not every Python server has migrated; consumer declarations must be inspected for each shared change.
-- [README requirements](README.md#package-requirements) and [manifest dependencies](pyproject.toml) differ on OCI/FastMCP versions. Use the manifest for install definitions and report the discrepancy without inventing a new version policy.
+- [README requirements](README.md#package-requirements) list OCI SDK 2.179.0+ while the [manifest](pyproject.toml) requires 2.185.0+. FastMCP requirements agree on 3.4.5+ in the 3.x series. Use the manifest for install definitions and report the remaining OCI discrepancy without inventing a new version policy.
 - Configured test thresholds and source-reviewed contracts are not executed validation results. See [shared gaps](../../docs/agent-development.md#known-gaps).
 
 ## Workflow and context routing

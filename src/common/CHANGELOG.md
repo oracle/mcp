@@ -2,6 +2,12 @@
 
 All notable changes to `oracle-mcp-common` are documented in this file.
 
+## Unreleased
+
+### Security
+
+- Updated locked AnyIO to 4.15.1, multidict to 6.9.1, PyJWT to 2.15.1, and urllib3 to 2.8.0.
+
 ## 0.1.4
 
 ### Added

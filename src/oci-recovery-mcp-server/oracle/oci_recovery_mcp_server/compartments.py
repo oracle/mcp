@@ -252,7 +252,7 @@ def _expand_compartment_scope(
     if deadline is not None and deadline.reached():
         return [root_compartment_id], False
 
-    cap = int(os.getenv("ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE", "200"))
+    cap = _max_compartments_in_scope()
     rid = request_id or telemetry._current_request_id()
 
     def _log_capped() -> None:
@@ -358,6 +358,11 @@ def _expand_compartment_scope(
         return scope or [root_compartment_id], False
 
 
+def _max_compartments_in_scope() -> int:
+    """The compartment cap for a subtree scan (default 200); 0 means no cap."""
+    return int(os.getenv("ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE", "200"))
+
+
 def _compartment_ids_for_tool(
     root_compartment_id: str,
     *,
@@ -375,12 +380,33 @@ def _compartment_ids_for_tool(
     - We should avoid tool->tool style calls from inside server handlers.
     - Instead, we reuse the underlying internal helper `_expand_compartment_scope(...)`
       which implements robust subtree expansion with caching + fallback.
+
+    List tools return plain lists with no truncated flag, so a subtree that was capped
+    or could not be read is recorded as a partial result, which the tool decorator
+    reports to the client as a warning alongside the unchanged list. Summary tools use
+    _compartment_scope_for_tool and report the same condition as truncated instead.
     """
-    return _compartment_scope_for_tool(
+    ids, complete = _compartment_scope_for_tool(
         root_compartment_id,
         fetch_for_child_compartment=fetch_for_child_compartment,
         request_id=request_id,
-    )[0]
+    )
+    if not complete:
+        reason = (
+            f"Only part of the compartment subtree under {root_compartment_id} was scanned: it "
+            f"has more than ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE ({_max_compartments_in_scope()}) "
+            "compartments, or Identity could not list it. Narrow compartment_id or raise "
+            "ORACLE_MCP_MAX_COMPARTMENTS_IN_SCOPE for a complete result."
+        )
+        logging_setup._log_event(
+            "compartment_scope_incomplete",
+            request_id=request_id or telemetry._current_request_id(),
+            tool=None,
+            payload={"root": root_compartment_id, "scanned": len(ids)},
+            level=logging.WARNING,
+        )
+        telemetry._note_partial_result(reason)
+    return ids
 
 
 def _compartment_scope_for_tool(
@@ -441,21 +467,35 @@ def _compartment_scope_for_tool(
 
 
 def _fetch_db_home_ids_for_compartment(
-    compartment_id: str, region: Optional[str] = None, *, raise_errors: bool = False
+    compartment_id: str, region: Optional[str] = None, *, raise_errors: bool = False, deadline=None
 ) -> list[str]:
     """
     Helper: enumerate DB Home OCIDs in a compartment.
     Used when a tool needs a db_home_id but the caller omitted it.
-    Returns a list of DB Home OCIDs (may be empty). With raise_errors, a failed
-    listing raises instead of returning empty, for callers that must tell the two apart.
+    Returns a list of DB Home OCIDs (may be empty), read across every result page:
+    callers treat it as the compartment's complete home set. With raise_errors, a
+    failed listing (on any page) raises instead of returning empty, for callers that
+    must tell the two apart. With a deadline, paging stops once it is reached; the
+    caller reports the result as truncated from the deadline's own expired flag.
     """
     try:
         client = clients.get_database_client(region)
-        resp = client.list_db_homes(compartment_id=compartment_id)
-        data = resp.data
-        # Normalize list shape (SDK may use .items or a raw list)
-        raw_list = getattr(data, "items", data)
-        raw_list = raw_list if isinstance(raw_list, list) else [raw_list] if raw_list is not None else []
+        raw_list: list = []
+        next_page = None
+        while True:
+            if next_page is None:
+                resp = client.list_db_homes(compartment_id=compartment_id)
+            else:
+                resp = client.list_db_homes(compartment_id=compartment_id, page=next_page)
+            data = resp.data
+            # Normalize list shape (SDK may use .items or a raw list)
+            page_items = getattr(data, "items", data)
+            raw_list.extend(
+                page_items if isinstance(page_items, list) else [page_items] if page_items is not None else []
+            )
+            next_page = getattr(resp, "next_page", None) if getattr(resp, "has_next_page", False) else None
+            if not next_page or (deadline is not None and deadline.reached()):
+                break
         ids: list[str] = []
         for h in raw_list:
             # Try attribute access first
@@ -479,6 +519,37 @@ def _fetch_db_home_ids_for_compartment(
         if raise_errors:
             raise
         # Conservative: on error, return empty so callers can react (e.g., empty results)
+        return []
+
+
+def _db_home_ids_for_tool(
+    compartment_id: str,
+    region: Optional[str],
+    *,
+    tool: str,
+    request_id: Optional[str] = None,
+) -> list[str]:
+    """
+    DB Home OCIDs for a list tool, which has no truncated flag to report a partial scope.
+
+    A compartment whose DB Homes cannot be listed (on any page) is skipped, so one
+    unreadable compartment does not fail a subtree scan, and recorded as a partial
+    result, so the skip is reported to the client instead of reading as "no databases".
+    """
+    try:
+        return _fetch_db_home_ids_for_compartment(compartment_id, region=region, raise_errors=True)
+    except Exception as e:
+        telemetry._note_partial_result(
+            f"DB Homes in compartment {compartment_id} could not be listed ({e}); "
+            "databases under them are not included."
+        )
+        logging_setup._log_event(
+            "db_home_discovery_skipped_compartment",
+            request_id=request_id,
+            tool=tool,
+            payload={"compartment_id": compartment_id, "error": str(e)},
+            level=logging.WARNING,
+        )
         return []
 
 

@@ -27,7 +27,7 @@ Use `moon run oci-db-observability-mcp-server:test` from the repository root for
 
 server.py starts the stdio process; mcp.py owns the MCP discovery/invocation surface. registry.py reads packaged metadata, sdk_schema.py derives operation schemas, and runtime.py validates/coerces inputs and dispatches allowlisted SDK operations. Metric catalog lookup is local; metric/alarm reads use OCI Monitoring. Use Identity for compartment discovery; catalog skills are discovery metadata, not installed agent workflow skills.
 
-The package declares Common; read [its contract](../common/README.md) and [guide](../common/AGENTS.md) for auth ownership and shared-change impact. A declared dependency alone does not establish every supported path’s coverage.
+The package declares Common as a local uv workspace source, from which Moon infers its dependency edge, and pins OCI 2.185.1 to satisfy Common's SDK requirement; read [its contract](../common/README.md) and [guide](../common/AGENTS.md) for auth ownership and shared-change impact. A declared dependency alone does not establish every supported path’s coverage.
 
 ## Security and secrets handling
 
@@ -40,8 +40,6 @@ Catalog JSON, generated schemas, coercion and serialized responses are caller co
 ## Known gaps
 
 - The README development section refers to removed Make tooling. Use the current inherited Moon test task and root lint definition instead.
-- The manifest pins OCI 2.182.1 while Common requires OCI >=2.185.0. Dependency resolution is a separate engineering issue; setup/test execution has not been established.
-- There is no package Moon file declaring a Common graph edge; the manifest declaration and actual runtime imports are separate evidence.
 - Source definitions and available tests do not establish passing validation or live security/transport behavior. Record actual checks separately through the [shared evidence routes](../../docs/agent-development.md#evidence-and-context-routes).
 
 ## Workflow and context routing

@@ -44,6 +44,124 @@ class TestComputeTools:
 
             assert len(result) == 1
             assert result[0]["id"] == "instance1"
+    
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_list_instances_respects_limit_across_pages(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        page1 = create_autospec(oci.response.Response)
+        page1.data = [
+            oci.core.models.Instance(
+                id=f"instance-{i}",
+                display_name=f"Instance {i}",
+                lifecycle_state="RUNNING",
+                shape="VM.Standard.E2.1",
+            )
+            for i in range(1, 3)
+        ]
+        page1.has_next_page = True
+        page1.next_page = "token-1"
+
+        page2 = create_autospec(oci.response.Response)
+        page2.data = [
+            oci.core.models.Instance(
+                id=f"instance-{i}",
+                display_name=f"Instance {i}",
+                lifecycle_state="RUNNING",
+                shape="VM.Standard.E2.1",
+            )
+            for i in range(3, 5)
+        ]
+        # A next page exists, but the requested result cap is reached.
+        page2.has_next_page = True
+        page2.next_page = "token-2"
+
+        mock_client.list_instances.side_effect = [page1, page2]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_instances",
+                    {"compartment_id": "test_compartment", "limit": 3},
+                )
+            ).structured_content["result"]
+
+        assert len(result) == 3
+        assert [item["id"] for item in result] == [
+            "instance-1",
+            "instance-2",
+            "instance-3",
+        ]
+
+        calls = mock_client.list_instances.call_args_list
+        assert [call.kwargs["limit"] for call in calls] == [3, 1]
+        assert [call.kwargs["page"] for call in calls] == [None, "token-1"]
+        assert mock_client.list_instances.call_count == 2
+
+    
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_list_instances_continues_after_empty_page_without_limit(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        page1 = create_autospec(oci.response.Response)
+        page1.data = []
+        page1.has_next_page = True
+        page1.next_page = "token-1"
+
+        page2 = create_autospec(oci.response.Response)
+        page2.data = [
+            oci.core.models.Instance(
+                id="instance-1",
+                display_name="Instance 1",
+                lifecycle_state="RUNNING",
+                shape="VM.Standard.E2.1",
+            )
+        ]
+        page2.has_next_page = True
+        page2.next_page = "token-2"
+
+        page3 = create_autospec(oci.response.Response)
+        page3.data = [
+            oci.core.models.Instance(
+                id="instance-2",
+                display_name="Instance 2",
+                lifecycle_state="RUNNING",
+                shape="VM.Standard.E2.1",
+            )
+        ]
+        page3.has_next_page = False
+        page3.next_page = None
+
+        mock_client.list_instances.side_effect = [page1, page2, page3]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_instances",
+                    {"compartment_id": "test_compartment"},
+                )
+            ).structured_content["result"]
+
+        assert [item["id"] for item in result] == [
+            "instance-1",
+            "instance-2",
+        ]
+        assert mock_client.list_instances.call_count == 3
+
+        calls = mock_client.list_instances.call_args_list
+        assert [call.kwargs["page"] for call in calls] == [
+            None,
+            "token-1",
+            "token-2",
+        ]
+        assert all(call.kwargs["limit"] is None for call in calls)
 
     @pytest.mark.asyncio
     @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
@@ -543,6 +661,61 @@ class TestComputeTools:
 
             assert len(result) == 1
             assert result[0]["id"] == "vnicattachment1"
+    
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_list_vnic_attachments_respects_limit_across_pages(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        page1 = create_autospec(oci.response.Response)
+        page1.data = [
+            oci.core.models.VnicAttachment(
+                id=f"vnic-{i}",
+                display_name=f"VNIC {i}",
+                lifecycle_state="ATTACHED",
+            )
+            for i in range(1, 3)
+        ]
+        page1.has_next_page = True
+        page1.next_page = "token-1"
+
+        page2 = create_autospec(oci.response.Response)
+        page2.data = [
+            oci.core.models.VnicAttachment(
+                id=f"vnic-{i}",
+                display_name=f"VNIC {i}",
+                lifecycle_state="ATTACHED",
+            )
+            for i in range(3, 5)
+        ]
+        page2.has_next_page = True
+        page2.next_page = "token-2"
+
+        mock_client.list_vnic_attachments.side_effect = [page1, page2]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_vnic_attachments",
+                    {"compartment_id": "test_compartment", "limit": 3},
+                )
+            ).structured_content["result"]
+
+        assert len(result) == 3
+        assert [item["id"] for item in result] == [
+            "vnic-1",
+            "vnic-2",
+            "vnic-3",
+        ]
+
+        calls = mock_client.list_vnic_attachments.call_args_list
+        assert [call.kwargs["limit"] for call in calls] == [3, 1]
+        assert [call.kwargs["page"] for call in calls] == [None, "token-1"]
+        assert mock_client.list_vnic_attachments.call_count == 2
 
     @pytest.mark.asyncio
     @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
@@ -870,3 +1043,75 @@ class TestGetClient:
         assert isinstance(config["additional_user_agent"], str) and "/" in config["additional_user_agent"]
         # Returned object is client instance
         assert srv_client is mock_client.return_value
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_list_images_filtered_pagination_respects_limit(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        # First page contains no matching images but has another page.
+        resp_page_1 = create_autospec(oci.response.Response)
+        resp_page_1.data = [
+            oci.core.models.Image(
+                id="ubuntu-image",
+                display_name="Ubuntu Image",
+                operating_system="Ubuntu",
+                operating_system_version="22.04",
+            )
+        ]
+        resp_page_1.has_next_page = True
+        resp_page_1.next_page = "token-1"
+
+        # The second page deliberately returns more matching images than
+        # the remaining allowance to verify local limit enforcement.
+        resp_page_2 = create_autospec(oci.response.Response)
+        resp_page_2.data = [
+            oci.core.models.Image(
+                id="oracle-image-1",
+                display_name="Oracle Linux 1",
+                operating_system="Oracle Linux",
+                operating_system_version="8",
+            ),
+            oci.core.models.Image(
+                id="oracle-image-2",
+                display_name="Oracle Linux 2",
+                operating_system="Oracle Linux",
+                operating_system_version="8",
+            ),
+            oci.core.models.Image(
+                id="oracle-image-3",
+                display_name="Oracle Linux 3",
+                operating_system="Oracle Linux",
+                operating_system_version="8",
+            ),
+        ]
+        resp_page_2.has_next_page = False
+        resp_page_2.next_page = None
+
+        mock_client.list_images.side_effect = [resp_page_1, resp_page_2]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_images",
+                    {
+                        "compartment_id": "test_compartment",
+                        "operating_system": "Oracle Linux",
+                        "limit": 2,
+                    },
+                )
+            ).structured_content["result"]
+
+        # Only matching images count toward the emitted result limit.
+        assert len(result) == 2
+        assert [image["id"] for image in result] == [
+            "oracle-image-1",
+            "oracle-image-2",
+        ]
+
+        # Continue after the filtered-out page and pass the remaining allowance.
+        calls = mock_client.list_images.call_args_list
+        assert [call.kwargs["limit"] for call in calls] == [2, 2]
+        assert calls[0].kwargs["page"] is None
+        assert calls[1].kwargs["page"] == "token-1"

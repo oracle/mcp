@@ -6,7 +6,8 @@ This TypeScript server runs JavaScript in an isolated runner and mediates OCI ca
 
 ## Entry points
 
-- [server.ts](src/server.ts): MCP tool handling and entry point; [oci-host.ts](src/oci-host.ts): host-side OCI calls, credentials and exposed SDK behavior.
+- [server.ts](src/server.ts): MCP registration, stdio startup and tool-call orchestration; [oci-host.ts](src/oci-host.ts): host-side OCI calls, credentials and exposed SDK behavior.
+- [tool-contracts.ts](src/tool-contracts.ts): server instructions, tool metadata, schemas, discovery validation and MCP result serialization. See [README development](README.md#development) for the boundary rationale and test roles.
 - [Protocol](src/protocol.ts), [gRPC boundary](src/grpc.ts) and [protobuf contract](proto/runner.proto): typed host/runner messages, bounded encoding and session contract; [sandbox.ts](src/sandbox.ts), [worker](src/sandbox-worker.ts) and [isolate](src/sandbox-isolate.ts): execution orchestration.
 - [Podman provider](src/isolation/podman.ts) and [gRPC lifecycle](src/isolation/grpc-execution.ts): process/network arguments, fresh mTLS identities, execution limits and cleanup.
 - [Test directory](test), [Moon tasks](moon.yml), [package.json](package.json) and [README](README.md): behavior definitions, native commands and runtime setup.
@@ -19,7 +20,7 @@ From the repository root, run `proto install`, then `moon run oci-javascript-mcp
 
 From the repository root, use `moon run oci-javascript-mcp-server:test` for tests with coverage, `moon run oci-javascript-mcp-server:check` for TypeScript checks and `moon run oci-javascript-mcp-server:build` for the npm tarball. All three depend on compile. The package exposes only the `start` npm script; former npm test/coverage/check/CI scripts are unavailable. Use the [shared validation map](../../docs/agent-development.md#validation-map) for sources and cross-runtime limits.
 
-Protocol work starts with [protocol tests](test/protocol.test.ts), [gRPC tests](test/grpc.test.ts) and [sandbox tests](test/sandbox.test.ts); host changes with [OCI host tests](test/oci-host.test.ts); MCP changes with [server tests](test/server.test.ts); packaging changes with [packaging tests](test/packaging.test.ts). Tests use [fake Podman](test/fake-podman.ts) for command construction and the mTLS gRPC session. c8 config enforces 90% **line** coverage with explicit exclusions; neither those definitions nor this unexecuted check list prove deployment isolation.
+Protocol work starts with [protocol tests](test/protocol.test.ts), [gRPC tests](test/grpc.test.ts) and [sandbox tests](test/sandbox.test.ts); host changes with [OCI host tests](test/oci-host.test.ts); tool-contract changes with [contract tests](test/tool-contracts.test.ts) and [server tests](test/server.test.ts); other MCP registration/startup changes with server tests; packaging changes with [packaging tests](test/packaging.test.ts). Tests use [fake Podman](test/fake-podman.ts) for command construction and the mTLS gRPC session. c8 config enforces 90% **line** coverage with explicit exclusions; neither those definitions nor this unexecuted check list prove deployment isolation.
 
 ## Architecture and dependencies
 
@@ -44,6 +45,7 @@ Protocol, host OCI, sandbox, provider or task/schema changes affect runtime exec
 
 | Read when | Context | Depends on | Evidence |
 | --- | --- | --- | --- |
+| **Know:** Changing MCP tool metadata, schemas, discovery validation or result signaling | [Tool contracts](src/tool-contracts.ts), [registration](src/server.ts), [boundary rationale and test roles](README.md#development) | Root quality rules, this guide and the [public tool contracts](README.md#tools) | [Contract tests](test/tool-contracts.test.ts) and [stdio integration tests](test/server.test.ts); actual scoped runs establish validation |
 | **Know:** Changing exposed OCI calls or credentials | [Host implementation](src/oci-host.ts), [README](README.md) | Root quality/security guidance and host/runner boundary | [Host tests](test/oci-host.test.ts); no Python/Common-auth assumption |
 | **Know:** Changing execution/protocol/isolation | [Protocol](src/protocol.ts), [schema](proto/runner.proto), [provider](src/isolation/podman.ts), [gRPC lifecycle](src/isolation/grpc-execution.ts) | [Security model](README.md#security-model), matching host/runner contract, recorded root-policy conflict | [Protocol](test/protocol.test.ts), [gRPC](test/grpc.test.ts), [sandbox](test/sandbox.test.ts) and [server tests](test/server.test.ts); fake provider limits explicit |
 | **Do:** Preparing or validating this runtime | [Moon tasks](moon.yml), [manifest](package.json), [validation map](../../docs/agent-development.md#validation-map) | Node/native dependencies, repository task directory, generated compile prerequisites | Actual test/coverage/type/package reports; [evidence routes](../../docs/agent-development.md#evidence-and-context-routes) |

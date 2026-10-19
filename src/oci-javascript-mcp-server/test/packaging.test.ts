@@ -26,7 +26,7 @@ test("npm package runs from node_modules with compiled bindings", { timeout: 30_
   const files = new Set(pack.files.map(file => file.path));
   assert.ok(![...files].some(path => path.endsWith(".tgz")), "package includes a prior tarball");
   for (const path of [
-    "dist/server.js", "dist/generated/runner.js", "dist/isolation/grpc-execution.js",
+    "dist/server.js", "dist/tool-contracts.js", "dist/generated/runner.js", "dist/isolation/grpc-execution.js",
     "src/generated/runner.ts", "src/grpc.ts", "proto/runner.proto",
     "buf.gen.yaml", "Containerfile", ".dockerignore"
   ]) {

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Breaking Changes
+
+- Mark failed `run_javascript` executions with MCP `isError: true` while retaining
+  all six structured result fields. Clients must handle the outer error flag.
+- Reject empty, malformed, or wrong-type `discover_oci` identifiers and child
+  identifiers without their required parents instead of silently falling back
+  to a shallower discovery level.
+
+### Added
+
+- Advertise output schemas, tool titles, risk annotations, and complete input
+  guidance for execution and progressive SDK discovery. Validate discovery
+  result variants and preserve existing extraction data.
+- Document executable constructed-client and bounded-pagination examples,
+  response limits, and resource reconciliation before retrying failed mutations.
+
 ### Fixed
 
 - Preserve OCI status codes, service codes, operation details, and request IDs in

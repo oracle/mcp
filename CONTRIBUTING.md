@@ -35,6 +35,9 @@ can be accepted.
 
 ## Pull request process
 
+Python server manifest changes are checked by the [repository policy gate](policy/README.md).
+That guide also describes human ownership and the GitHub settings required to activate enforcement.
+
 1. Ensure there is an issue created to track and discuss the fix or enhancement
    you intend to submit.
 2. Fork this repository.

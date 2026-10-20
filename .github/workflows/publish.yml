@@ -110,7 +110,6 @@ jobs:
     environment: ${{ inputs.registry }}
     env:
       RELEASE_PROJECT: ${{ inputs.project }}
-      MOON_TOOLCHAIN_FORCE_GLOBALS: 'true'
       UV_PUBLISH_URL: ${{ inputs.registry == 'testpypi' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
       UV_PUBLISH_CHECK_URL: ${{ inputs.registry == 'testpypi' && 'https://test.pypi.org/simple/' || 'https://pypi.org/simple/' }}
     steps:
@@ -124,24 +123,14 @@ jobs:
           registry-url: 'https://registry.npmjs.org/'
           package-manager-cache: false
 
-      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        if: inputs.registry != 'npm'
-        with:
-          version: '0.12.1'
-          enable-cache: false
-
       - name: Install pinned Moon
         run: |
           moon_version=$(sed -n 's/^moon = "=\([0-9][0-9.]*\)"$/\1/p' .prototools)
           test -n "$moon_version"
           npm install --global --ignore-scripts "@moonrepo/cli@$moon_version"
 
-      - name: Install pinned npm
-        if: inputs.registry == 'npm'
-        run: |
-          npm_version=$(sed -n 's/^npm = "=\([0-9][0-9.]*\)"$/\1/p' .prototools)
-          test -n "$npm_version"
-          npm install --global --ignore-scripts "npm@$npm_version"
+      - name: Install Moon toolchains
+        run: moon setup
 
       - name: Download package distributions
         if: inputs.project != 'all-python'
@@ -180,7 +169,7 @@ jobs:
       - name: Wait for common on the package index
         if: inputs.registry != 'npm' && inputs.project != 'common'
         run: |
-          common_version=$(python3 -c 'import tomllib; print(tomllib.load(open("src/common/pyproject.toml", "rb"))["project"]["version"])')
+          common_version=$("$(moon bin python)" -c 'import tomllib; print(tomllib.load(open("src/common/pyproject.toml", "rb"))["project"]["version"])')
           index_url=${UV_PUBLISH_CHECK_URL%/}
           for attempt in {1..12}; do
             if curl --fail --silent "$index_url/oracle-mcp-common/" | grep --fixed-strings --quiet "oracle_mcp_common-$common_version"; then

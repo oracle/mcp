@@ -80,8 +80,10 @@ export type IsolationRunOptions = {
 export interface IsolationExecution {
   /** Validated at the provider's host-side transport boundary. */
   readonly result: Promise<SandboxResult>;
+  /** Provider-requested cleanup allowance, bounded by the trusted host. */
+  readonly terminationTimeoutMs?: number;
   /** Idempotently stop execution and resolve after provider resources are released. */
-  terminate(): Promise<void>;
+  terminate(cleanupDeadlineMs?: number): Promise<void>;
 }
 
 export interface IsolationProvider {

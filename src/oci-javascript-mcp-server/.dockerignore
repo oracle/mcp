@@ -1,14 +1,25 @@
 *
+
+# Container builds require the manifests, install policy/setup, and TS sources.
+# This excludes local dependencies, tests, coverage, documentation, and VCS files.
 !package.json
 !package-lock.json
+!.npmrc
+!scripts/
+scripts/*
+!scripts/setup-native.mjs
 !buf.gen.yaml
 !proto/
+proto/*
 !proto/runner.proto
 !src/
-!src/grpc.ts
-!src/protocol.ts
-!src/sandbox-common.ts
-!src/sandbox-isolate.ts
-!src/sandbox-prelude.ts
-!src/sandbox-worker.ts
-!src/types.ts
+# Re-including directories admits descendants, so filter their contents before
+# including host sources. The context regression checks the complete source
+# tree; add new source directories here when introducing them.
+src/*
+!src/*.ts
+!src/isolation/
+src/isolation/*
+!src/isolation/*.ts
+# Bindings are freshly generated in each image's dependency stage. The runner
+# still copies only its explicit eight source files in Containerfile.

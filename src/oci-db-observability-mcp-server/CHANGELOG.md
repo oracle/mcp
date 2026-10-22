@@ -10,6 +10,12 @@
 
 - Updated locked dependencies: AnyIO 4.15.1, cryptography 49.0.0, joserfc 1.7.5, MCP Python SDK 1.30.0, pydantic-settings 2.15.0, PyJWT 2.15.1, and urllib3 2.8.0.
 
+## 0.1.1
+
+### Changed
+
+- Require `oracle-mcp-common>=0.2.0,<0.3.0` for shared OCI authentication.
+
 ## 0.1.0 - 2026-08-05
 
 - Initial release of the read-only Oracle Database Observability MCP server,

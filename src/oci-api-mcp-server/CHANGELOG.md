@@ -10,7 +10,7 @@
 
 ### Changed
 
-- Published a new release carrying the `oracle-mcp-common` 0.2 compatibility requirement.
+- Require `oracle-mcp-common>=0.2.0,<0.3.0` for shared OCI authentication.
 
 ## 2.1.5
 
@@ -21,7 +21,6 @@
 - Prevented the denylist generator from following destination symlinks when writing files.
 - Restricted execution to OCI CLI 3.89.3 installed in the MCP server environment.
 - Excluded development artifacts, local configuration, and container build files from source-distribution packages.
-- Updated the `oracle-mcp-common` compatibility requirement to 0.2.
 
 ## 2.1.4
 

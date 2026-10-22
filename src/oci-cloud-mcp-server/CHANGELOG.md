@@ -10,14 +10,13 @@
 
 ### Changed
 
-- Published a new release carrying the `oracle-mcp-common` 0.2 compatibility requirement.
+- Require `oracle-mcp-common>=0.2.0,<0.3.0` for shared OCI authentication.
 
 ## 2.2.3
 
 ### Changed
 
 - Excluded development artifacts, local configuration, and container build files from source-distribution packages.
-- Updated the `oracle-mcp-common` compatibility requirement to 0.2.
 
 ## 2.2.2
 

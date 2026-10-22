@@ -1144,7 +1144,7 @@ wheels = [
 
 [[package]]
 name = "oracle-mcp-common"
-version = "0.1.4"
+version = "0.2.0"
 source = { editable = "../common" }
 dependencies = [
     { name = "fastmcp" },
@@ -1171,7 +1171,7 @@ dev = [
 
 [[package]]
 name = "oracle-oci-recovery-mcp-server"
-version = "3.0.0"
+version = "3.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "cachetools" },

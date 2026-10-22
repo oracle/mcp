@@ -42,6 +42,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Updated locked AnyIO to 4.15.1; updated locked multidict to 6.9.1; updated locked PyJWT to 2.15.1.
 
+## 3.0.1
+
+### Changed
+
+- Require `oracle-mcp-common>=0.2.0,<0.3.0` for shared OCI authentication.
+
 ## 3.0.0
 
 Credential handling moves onto the shared `oracle-mcp-common` library end to end, and

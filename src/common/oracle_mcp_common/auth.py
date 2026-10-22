@@ -648,7 +648,10 @@ def _resource_principal_v212_signer(inputs: _ResolvedInputs) -> Any:
         Path(inputs.resource_principal_private_key_path).expanduser().absolute()
     )
     signer_type = _resource_principal_v212_signer_type(
-        inputs.resource_principal_rci, inputs.resource_principal_t0
+        inputs.resource_principal_rci,
+        inputs.resource_principal_t0,
+        inputs.resource_principal_resource_id,
+        inputs.resource_principal_tenancy_id,
     )
     signer = signer_type(
         resource_principal_token_endpoint=rpt_endpoint,
@@ -666,8 +669,10 @@ def _resource_principal_v212_signer(inputs: _ResolvedInputs) -> Any:
     return signer
 
 
-def _resource_principal_v212_signer_type(rci: str, t0: str) -> type[Any]:
-    """Return an SDK signer subclass that creates a fresh proof for every RPT attempt."""
+def _resource_principal_v212_signer_type(
+    rci: str, t0: str, resource_id: str, tenancy_id: str
+) -> type[Any]:
+    """Return an SDK signer subclass that creates a fresh proof for every RPT attempt, with the latest private key"""
     sdk_signer_type = oci.auth.signers.EphemeralResourcePrincipalV21Signer
     if not callable(getattr(sdk_signer_type, "make_call", None)):
         raise ValueError(
@@ -687,6 +692,13 @@ def _resource_principal_v212_signer_type(rci: str, t0: str) -> type[Any]:
                 return super().make_call(
                     method, resource_path, path_params, header_params, body
                 )
+
+            self.base_client.signer = oci.auth.signers.KeyPairSigner(
+                "2.1.2",
+                resource_id,
+                tenancy_id,
+                self.session_key_supplier.get_key_pair()["private"],
+            )
 
             def request_rpt() -> Any:
                 security_context = _resource_principal_security_context(rci, t0)

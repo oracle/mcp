@@ -6,13 +6,18 @@ https://oss.oracle.com/licenses/upl.
 
 from __future__ import annotations
 
+import base64
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import jwt
 import pytest
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from oci._vendor import requests
 from oracle_mcp_common import auth
 
 
@@ -669,6 +674,113 @@ def test_resource_principal_v212_regenerates_security_context_on_refresh(
     assert constructor.call_args.kwargs["security_context"] == "first"
 
 
+@pytest.mark.parametrize("use_symlink", [False, True])
+@pytest.mark.parametrize("use_retry_strategy", [False, True])
+def test_rpv212_exchange_uses_rotated_key(
+    tmp_path, monkeypatch, use_symlink, use_retry_strategy
+):
+    keys = [rsa.generate_private_key(public_exponent=65537, key_size=2048) for _ in range(2)]
+    key_paths = [tmp_path / f"key-{index}.pem" for index in range(2)]
+    for key, path in zip(keys, key_paths):
+        path.write_bytes(
+            key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption(),
+            )
+        )
+    key_file = tmp_path / "resource-principal.pem"
+    if use_symlink:
+        key_file.symlink_to(key_paths[0])
+    else:
+        key_file.write_bytes(key_paths[0].read_bytes())
+
+    current_key = keys[0]
+    token = jwt.encode(
+        {"exp": int(datetime.now(timezone.utc).timestamp()) + 3600},
+        key="",
+        algorithm="none",
+    )
+    exchanges = []
+
+    def verify_signature(request, key_id):
+        authorization = requests.utils.parse_dict_header(
+            request.headers["authorization"].removeprefix("Signature ")
+        )
+        assert authorization["keyId"] == key_id
+        signing_lines = []
+        for header in authorization["headers"].split():
+            value = (
+                f"{request.method.lower()} {request.path_url}"
+                if header == "(request-target)"
+                else request.headers[header]
+            )
+            signing_lines.append(f"{header}: {value}")
+        current_key.public_key().verify(
+            base64.b64decode(authorization["signature"]),
+            "\n".join(signing_lines).encode(),
+            padding.PKCS1v15(),
+            hashes.SHA256(),
+        )
+
+    def send(_session, request, **_kwargs):
+        verify_signature(request, "resource/v2.1.2/tenant/resource")
+        exchanges.append(request.method)
+        if request.method == "GET":
+            assert request.path_url == "/20180711/resourcePrincipalTokenV212/resource"
+            payload = {
+                "resourcePrincipalToken": "rpt",
+                "servicePrincipalSessionToken": "spst",
+            }
+        else:
+            assert request.path_url == "/v1/resourcePrincipalSessionToken"
+            public_key = current_key.public_key().public_bytes(
+                serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+            assert json.loads(request.body)["sessionPublicKey"] == "".join(
+                public_key.decode().splitlines()[1:-1]
+            )
+            payload = {"token": token}
+        response = requests.Response()
+        response.status_code = 200
+        response._content = json.dumps(payload).encode()
+        return response
+
+    monkeypatch.setattr(requests.sessions.Session, "send", send)
+    signer = auth.build_auth_context(
+        auth.AuthOptions(
+            auth_type="resource_principal_v212",
+            region="us-phoenix-1",
+            resource_principal_tenancy_id="tenant",
+            resource_principal_resource_id="resource",
+            resource_principal_private_key_path=str(key_file),
+            resource_principal_rci="c2VjcmV0LXJjaQ==",
+            resource_principal_t0="2020-01-01T00:00:00Z",
+            resource_principal_rpt_endpoint="https://database.example.com",
+            resource_principal_rpst_endpoint="https://auth.example.com",
+        )
+    ).signer
+    signer.retry_strategy = (
+        auth.oci.retry.NoneRetryStrategy() if use_retry_strategy else None
+    )
+
+    current_key = keys[1]
+    if use_symlink:
+        key_file.unlink()
+        key_file.symlink_to(key_paths[1])
+    else:
+        key_file.write_bytes(key_paths[1].read_bytes())
+
+    assert signer.refresh_security_token() == token
+    assert exchanges == ["GET", "POST", "GET", "POST"]
+    for method in ("GET", "POST"):
+        request = requests.Request(
+            method, "https://service.example.com/resource", data=b"{}"
+        ).prepare()
+        signer(request)
+        verify_signature(request, f"ST${token}")
+
+
 def test_rpv212_initial_rpt_retries_regenerate_the_security_context(monkeypatch):
     headers = []
 
@@ -681,6 +793,7 @@ def test_rpv212_initial_rpt_retries_regenerate_the_security_context(monkeypatch)
         def __init__(self, **_kwargs):
             self.resource_principal_token_path = "/rpt"
             self.retry_strategy = RetryStrategy()
+            self.session_key_supplier = MagicMock()
             self.base_client = SimpleNamespace(
                 call_api=lambda **kwargs: headers.append(kwargs["header_params"])
             )
@@ -692,12 +805,13 @@ def test_rpv212_initial_rpt_retries_regenerate_the_security_context(monkeypatch)
     monkeypatch.setattr(
         auth.oci.auth.signers, "EphemeralResourcePrincipalV21Signer", SDKSigner
     )
+    monkeypatch.setattr(auth.oci.auth.signers, "KeyPairSigner", MagicMock())
     contexts = iter(["first", "second"])
     monkeypatch.setattr(
         auth, "_resource_principal_security_context", lambda *_: next(contexts)
     )
 
-    signer_type = auth._resource_principal_v212_signer_type("rci", "t0")
+    signer_type = auth._resource_principal_v212_signer_type("rci", "t0", "resource", "tenant")
     signer = signer_type(security_context="initial")
 
     assert headers == [
@@ -718,7 +832,7 @@ def test_rpv212_rejects_an_sdk_without_a_retry_hook(monkeypatch):
     )
 
     with pytest.raises(ValueError, match="does not support RPv2.1.2"):
-        auth._resource_principal_v212_signer_type("rci", "t0")
+        auth._resource_principal_v212_signer_type("rci", "t0", "resource", "tenant")
 
 
 def test_resource_principal_rci_is_redacted_from_representations_and_errors(caplog):

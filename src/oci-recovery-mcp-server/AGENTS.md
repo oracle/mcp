@@ -2,7 +2,33 @@
 
 ## Scope and ownership
 
-This package owns Recovery Service protected-database discovery, database/backup inventory and dashboard summaries. Apply [root instructions](../../AGENTS.md) and [shared engineering context](../../docs/agent-development.md#start-here). The local [README](README.md) owns user-facing setup and service guidance; this guide routes engineering sources and local limitations.
+This package owns Recovery Service protected-database discovery, database/backup inventory and dashboard summaries. Apply [root instructions](../../AGENTS.md) and [shared engineering context](../../docs/agent-development.md#start-here). The local [README](README.md) owns user-facing setup and service guidance. This guide gives agents the steps to [set up the server for a user](#set-up-the-server-for-a-user), and it routes engineering sources and local limitations.
+
+## Set up the server for a user
+
+Follow these steps when a user, typically a DBA, asks you to set up this server in their MCP client. There is nothing to clone or build. Run the published [`oracle.oci-recovery-mcp-server`](https://pypi.org/project/oracle.oci-recovery-mcp-server/) package with `uvx` over stdio, authenticated with one of the user's OCI config profiles. For a shared network deployment with OCI IAM (IDCS) sign-in, see the README's [HTTP deployment](README.md#http-streamable-http-deployment) section instead. That is an operator task.
+
+1. **Check `uv`.** Run `uv --version`. If `uv` is missing, ask before installing it, then use the method in the official [uv installation guide](https://docs.astral.sh/uv/getting-started/installation/) for the user's OS. You don't need to install Python separately: `uvx` downloads a managed Python 3.13 if none is available.
+2. **Check the OCI CLI.** You need it only to create or refresh a session-token profile. Run `oci --version`. If it is missing and needed, ask first, then install it in an isolated tool environment with `uv tool install oci-cli`.
+3. **Choose an OCI profile.** Ask the user which profile to use. The config file is `~/.oci/config` (`%USERPROFILE%\.oci\config` on Windows), unless `OCI_CONFIG_FILE` or `OCI_CLI_CONFIG_FILE` names another one. To list profiles, read only the `[section]` names. Do not print or copy key files, fingerprints, tokens or other profile values.
+   - **Existing profile:** use it as is. The server detects whether it uses an API key or a session token.
+   - **New session-token profile:** suggest the name `OCI_RECOVERY`. If that profile already exists, suggest `OCI_RECOVERY_2`, `OCI_RECOVERY_3` and so on. Ask the user to run `oci session authenticate --profile-name <profile>` in their own terminal. If the config file is not the default one, add `--config-location <config-path>`. The command opens a browser sign-in and asks for a region, so the user has to answer it. Wait for them to confirm it finished.
+4. **Verify the profile.** For a session-token profile, run `oci session validate --profile <profile>`. If the config file is not the default one, add `--config-file <config-path>`. If it fails, fix the profile before touching the client configuration.
+5. **Register the server in the user's MCP client.** Use the client's own supported mechanism, either its CLI command for adding an MCP server or its settings file. Check the client's current documentation rather than assuming a file location or schema. The entry needs:
+   - name `oci-recovery`, transport `stdio`
+   - command `uvx`, args `["oracle.oci-recovery-mcp-server"]`
+   - env `OCI_CONFIG_PROFILE=<profile>`. Add `OCI_CONFIG_FILE=<config-path>` only for a non-default config file.
+
+   GUI clients often don't load the user's shell `PATH`. For those, use the absolute path from `which uvx` (`where.exe uvx` on Windows) as the command. Merge the entry into any existing configuration without removing other servers, and show the user the change before writing it. Leave `OCI_MCP_AUTH_TYPE` unset so the server detects the auth mode. Never put credentials, tokens or tenancy OCIDs in the client configuration.
+6. **Confirm it works.** Ask the user to restart or reload the client, then call a read-only tool such as `fetch_regions_subscribed`. If the call fails, check the server log under `~/.oci-recovery-mcp/` (set by `ORACLE_MCP_LOG_DIR` or `ORACLE_MCP_STATE_DIR`). Common causes are a wrong profile name, an expired session or a client that can't find `uvx`.
+
+Afterwards:
+
+- **Session expiry:** session tokens expire. Refresh one with `oci session refresh --profile <profile>`. Once it can no longer be refreshed, the user runs `oci session authenticate` again with the same profile name. The client configuration does not change.
+- **Updates and pinning:** `uvx` caches the package. To pin a version, use args `["oracle.oci-recovery-mcp-server@<version>"]`. To pick up the newest release, run `uvx oracle.oci-recovery-mcp-server@latest` once or use that spelling in the args.
+- **Optional settings:** for large tenancies and other optional settings, see the README's [environment variables](README.md#environment-variables) section.
+
+The server is read-only: it does not create, update or delete OCI resources.
 
 ## Entry points
 

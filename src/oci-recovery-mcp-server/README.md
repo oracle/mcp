@@ -15,47 +15,22 @@ The server exposes 25 MCP tools. It does not create, update, or delete OCI resou
 
 ## Requirements
 
-- Git and internet access to clone the repository and install missing tools
-- `curl` or `wget` on macOS/Linux if `uv` needs to be installed
-- Python 3.13 or later and [`uv`](https://docs.astral.sh/uv/) for manual installation
+- Python 3.13 or later
+- [`uv`](https://docs.astral.sh/uv/)
 - OCI credentials appropriate to the selected authentication mode
 
-## Local installer bundle
+## Set up with your coding agent
 
-The installer is a three-file bundle in [`scripts/`](scripts/). Keep the shell or
-PowerShell launcher and `install_oci_recovery_mcp.py` together. Run the launcher
-locally on the target machine:
+You don't need to install anything by hand. Ask the coding agent you already use
+(Claude Code, Codex, Cursor, Cline or similar) to do it:
 
-```sh
-sh /path/to/installer/install-oci-recovery-mcp.sh
-```
+> Set up the OCI Recovery MCP server for me by following
+> https://github.com/oracle/mcp/blob/main/src/oci-recovery-mcp-server/AGENTS.md#set-up-the-server-for-a-user
 
-On Windows, run this in PowerShell:
-
-```powershell
-& "C:\path\to\installer\install-oci-recovery-mcp.ps1"
-```
-
-The installer asks for a parent directory (Enter uses the current directory), then
-creates or updates `.local-rcv-mcp` there from the repository's `main` branch. It
-installs `uv` if needed, uses an available Python 3.13 or installs it with `uv`, and
-installs the Recovery server into its own virtual environment. It uses an OCI CLI
-already on `PATH`; otherwise it installs the CLI in a separate `.venv` inside the
-checkout. Git and internet access are required.
-
-The installer asks for an OCI profile name, suggesting `OCI_RECOVERY` (or the next
-unused suffix if that profile already exists). You can enter a different name. It then
-runs `oci session authenticate --profile-name <name> --config-location <selected-config-path>`;
-the OCI CLI opens its sign-in flow and prompts you for the region. After authentication,
-the installer prints a JSON MCP configuration for Claude Code/Desktop, Cursor, and Cline,
-plus a TOML block for Codex.
-The config uses the selected profile and its saved region.
-The server command in each config uses its absolute path, so the MCP client does not
-need `uv` on its `PATH`. Rerun the installer to pull updates from `main`; it stops if
-the checkout has tracked local changes or is on another branch.
-
-You can provide the three files directly to users or distribute the bundle through
-your chosen internal download location; the launchers do not fetch installer code.
+The agent checks for `uv` and the OCI CLI and helps you pick or create an OCI profile.
+It then adds the published package to its own MCP configuration, run through `uvx`.
+Some steps open a browser to sign in to OCI or ask you for a region. You answer those
+yourself.
 
 ## Install and run locally
 

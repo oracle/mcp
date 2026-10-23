@@ -88,6 +88,14 @@ def sign_oci_request(cfg: dict, method: str, path_with_query: str, host: str, bo
     return headers
 
 
+class GoldenGateHTTPError(RuntimeError):
+    """A sanitized service error with a machine-readable HTTP status."""
+
+    def __init__(self, status_code: int, message: str):
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class HttpClient:
     """Minimal HTTP client wrapper around requests for GoldenGate REST APIs."""
     def __init__(self, cfg: dict):
@@ -95,6 +103,10 @@ class HttpClient:
         self.base_url = cfg["baseUrl"].rstrip("/")
         self.timeout = DEFAULT_TIMEOUT_SECONDS
         self.session = requests.Session()
+
+    def close(self) -> None:
+        """Release the HTTP session after the MCP server stops."""
+        self.session.close()
 
     def _headers(self, method: str, url: str, body: dict | None = None, custom_headers: dict | None = None) -> tuple[dict, str | None]:
         """Build request headers and serialized body."""
@@ -127,7 +139,10 @@ class HttpClient:
             reason = _classify_request_error(exc)
             raise RuntimeError(f"{method.upper()} {redact_text(path)} failed: {reason}") from exc
         if not (200 <= resp.status_code < 300):
-            raise RuntimeError(f"{method.upper()} {redact_text(path)} failed: {resp.status_code} {redact_text(resp.text)}")
+            raise GoldenGateHTTPError(
+                resp.status_code,
+                f"{method.upper()} {redact_text(path)} failed: {resp.status_code} {redact_text(resp.text)}",
+            )
         if response_text:
             return resp.text
         try:

@@ -165,6 +165,28 @@ def test_table_statement_normalize_and_build() -> None:
     assert "NOTRIMSPACES" in built
     assert "TRIMVARSPACES" in built
 
+    as_of_scn = table_statement.build_table_statement(
+        {
+            "source": {"schema": "hr", "table": "*"},
+            "options": {"sqlPredicate": "AS OF SCN 168298293"},
+        }
+    )
+    assert as_of_scn == "TABLE hr.*, SQLPREDICATE 'AS OF SCN 168298293';"
+
+    raw_statements = table_statement.add_as_of_scn_to_table_statements(
+        "TABLE hr.employees; TABLE hr.departments, FILTER (@PRESENT(id));",
+        168298293,
+    )
+    assert raw_statements == (
+        "TABLE hr.employees, SQLPREDICATE 'AS OF SCN 168298293';\n"
+        "TABLE hr.departments, FILTER (@PRESENT(id)), SQLPREDICATE 'AS OF SCN 168298293';"
+    )
+    with pytest.raises(ValueError, match="already contains SQLPREDICATE"):
+        table_statement.add_as_of_scn_to_table_statements(
+            "TABLE hr.*, SQLPREDICATE 'WHERE ID > 0';",
+            168298293,
+        )
+
     alternatives = table_statement.build_table_statement(
         {
             "source": {"schema": "S", "table": "T"},
@@ -321,6 +343,48 @@ def test_config_read_from_password_env_and_file(tmp_path: Path, monkeypatch: pyt
     monkeypatch.delenv("OGG_PASSWORD", raising=False)
     cfg2 = config.read_config()
     assert cfg2["password"] == "filepass"
+
+
+@pytest.mark.parametrize("quote_char", ["'", '"'])
+def test_config_env_file_preserves_quoted_special_characters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, quote_char: str
+) -> None:
+    env_file = tmp_path / "goldengate.env"
+    special_password = "p@ss!$%&()[]{}# value\\tail"
+    env_file.write_text(
+        "OGG_BASE_URL=https://example.com\n"
+        "OGG_USERNAME='quoted-user'\n"
+        f"OGG_PASSWORD={quote_char}{special_password}{quote_char}\n",
+        encoding="utf-8",
+    )
+    for name in ("OGG_BASE_URL", "OGG_USERNAME", "OGG_PASSWORD", "OGG_PASSWORD_FILE", "OGG_PASSWORD_SECRET_OCID"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("OGG_ENV_FILE", str(env_file))
+
+    cfg = config.read_config()
+
+    assert cfg["username"] == "quoted-user"
+    assert cfg["password"] == special_password
+
+
+def test_config_env_file_does_not_override_process_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    env_file = tmp_path / "goldengate.env"
+    env_file.write_text(
+        "OGG_BASE_URL=https://file.example.com\nOGG_USERNAME=file-user\nOGG_PASSWORD='file!password'\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OGG_ENV_FILE", str(env_file))
+    monkeypatch.setenv("OGG_BASE_URL", "https://process.example.com")
+    monkeypatch.setenv("OGG_USERNAME", "process-user")
+    monkeypatch.setenv("OGG_PASSWORD", "process!password")
+    monkeypatch.delenv("OGG_PASSWORD_FILE", raising=False)
+    monkeypatch.delenv("OGG_PASSWORD_SECRET_OCID", raising=False)
+
+    cfg = config.read_config()
+
+    assert cfg["baseUrl"] == "https://process.example.com"
+    assert cfg["username"] == "process-user"
+    assert cfg["password"] == "process!password"
 
 
 def test_config_read_from_secret_ocid(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

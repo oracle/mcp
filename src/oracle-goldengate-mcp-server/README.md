@@ -159,9 +159,7 @@ uv run oracle.oracle-goldengate-mcp-server
 ```sh
 # From oracle-goldengate-mcp-server
 source .venv/bin/activate
-set -a
-source ./oracle-goldengate-mcp-server.env
-set +a
+export OGG_ENV_FILE=./oracle-goldengate-mcp-server.env
 uv run oracle.oracle-goldengate-mcp-server
 ```
 
@@ -182,6 +180,18 @@ Copy `oracle-goldengate-mcp-server.env.example` to `oracle-goldengate-mcp-server
   3. `OGG_PASSWORD`
 
 If multiple password sources are provided, the server resolves them in the same order above.
+
+Values in the environment file may use matching single or double quotes. The server removes only the surrounding
+quotes and preserves special characters literally, including `!`, `$`, `%`, `&`, `#`, spaces, and backslashes. For
+example:
+
+```text
+OGG_PASSWORD='a password with ! and other special characters'
+```
+
+The Windows launchers pass the environment file to the Python configuration loader instead of evaluating it as a
+batch script. Process environment variables still take precedence over values in the file. OCI Secret or a protected
+password file remains preferable to storing a plaintext password.
 
 Optional variables are also supported:
 - `OCI_TENANCY_OCID` (required when using `OGG_PASSWORD_SECRET_OCID`)
@@ -206,16 +216,18 @@ Optional variables are also supported:
 | get_extract_status | Return the status of an Extract. |
 | get_replicat_status | Return the status of a Replicat. |
 | create_connection | Create a credential store alias/connection. |
-| add_trandata_schema | Add TRANDATA at schema level for a given connection. |
-| add_trandata_table | Add TRANDATA at table level for a given connection. |
+| add_trandata_schema | Add TRANDATA at schema level, with configurable nonvalidated keys, scheduling columns, all-columns logging, and prepare CSN mode. |
+| add_trandata_table | Add TRANDATA at table level, with configurable primary-key, scheduling-column, all-columns logging, and prepare CSN mode options. |
 | create_extract | Create an Extract. |
-| create_initial_load_extract | Create an Initial Load Extract that reads tables and writes an EXTFILE. |
+| create_initial_load_extract | Create an Initial Load Extract that reads tables and writes an EXTFILE; use `asOfScn` for an Oracle flashback snapshot (`SQLPREDICATE 'AS OF SCN …'`), not as a process start position. |
 | update_extract | Update an Extract. |
 | create_replicat | Create a Replicat. |
 | update_replicat | Update a Replicat. |
 | create_distribution_path | Create a Distribution Path. |
-| create_data_stream | Create a GoldenGate Data Stream. |
-| start | Start a GoldenGate process. |
+| create_data_stream | Create a GoldenGate Data Stream, optionally using ordered `includeTables` and `excludeTables` object filters. |
+| get_initial_load_cdc_workflow | Return the ordered Oracle Initial Load-to-CDC workflow and required safety checks. |
+| start_initial_load_replicat | Start an Initial Load Replicat only after checking that its Initial Load Extract is stopped and its report has no strong failure indicator. |
+| start | Start a GoldenGate process; do not use it for an Initial Load Replicat because it does not enforce Initial Load prerequisites. |
 | stop | Stop a GoldenGate process. |
 | start_distribution_path | Start a Distribution Path. |
 | stop_distribution_path | Stop a Distribution Path. |
@@ -229,6 +241,19 @@ Optional variables are also supported:
 | get_replicat_details | Retrieve Replicat details. |
 | get_data_stream_info | Retrieve Data Stream metadata. |
 | get_data_stream_yaml | Retrieve Data Stream AsyncAPI YAML definition. |
+| get_data_stream_stats | Retrieve Data Stream overall, network, and table-level statistics. |
+
+For the required process order and wait points, see [Oracle Initial Load to CDC Workflow](docs/initialLoadToCdc.md).
+
+Process and trail names are validated against the constraints described in [CHANGELOG.md](CHANGELOG.md).
+Structured `advanced.reportCount.every` accepts a positive `value` and a `unit` of `SECONDS`, `MINUTES`, or
+`HOURS`, for example `{"value": 2, "unit": "MINUTES"}`. String expressions such as `"2 MINUTES"` remain supported.
+
+Generic Replicat starts require a verifiable local CDC producer; initial-load starts require matching file paths,
+successful execution history, and a report identifying the Extract run. Ambiguous or remote-only associations
+are refused. See the workflow document for the evidence requirements and limits. Every tool advertises its
+read/write effects; mutations are conservatively marked potentially destructive and non-idempotent. These hints
+do not replace the permissions enforced by GoldenGate.
 
 ⚠️ **NOTE**: All actions are performed with the permissions of the configured credentials. We advise least-privilege IAM setup, secure credential management, safe network practices, secure logging, and warn against exposing secrets.
 

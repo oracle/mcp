@@ -121,23 +121,27 @@ def list_services(
     sort_order: Literal["ASC", "DESC"] = Field("ASC", description="Sort order"),
     limit: Optional[int] = Field(
         None,
-        description="Max items per page (1-1000). If None, service default page size is used.",
+        description=(
+            "Maximum total items to return (1-1000). If None, fetch all pages. "
+            "With page set, fetch only that page using this size."
+        ),
         ge=1,
         le=1000,
     ),
     page: Optional[str] = Field(
-        None, description="Pagination token from a previous call"
+        None, description="Use next_page from a previous result to fetch one page"
     ),
     subscription_id: Optional[str] = Field(
         None, description="Subscription OCID filter"
     ),
-) -> list[dict]:
+) -> dict:
     """
+    Return items and next_page (None when exhausted).
     Maps to GET /20190729/services
     """
     try:
         client = get_limits_client()
-        services = list_services_with_pagination(
+        services, next_page = list_services_with_pagination(
             client,
             compartment_id=compartment_id,
             sort_by=sort_by,
@@ -147,7 +151,7 @@ def list_services(
             subscription_id=subscription_id,
         )
         service_summary = [map_service_summary(svc) for svc in services]
-        return service_summary
+        return {"items": service_summary, "next_page": next_page}
     except Exception as e:
         logger.error(f"Error in list_services: {e}")
         raise
@@ -166,23 +170,27 @@ def list_limit_definitions(
     sort_order: Literal["ASC", "DESC"] = Field("ASC", description="Sort order"),
     limit: Optional[int] = Field(
         None,
-        description="Max items per page (1-1000). If None, service default page size is used.",
+        description=(
+            "Maximum total items to return (1-1000). If None, fetch all pages. "
+            "With page set, fetch only that page using this size."
+        ),
         ge=1,
         le=1000,
     ),
     page: Optional[str] = Field(
-        None, description="Pagination token from a previous call"
+        None, description="Use next_page from a previous result to fetch one page"
     ),
     subscription_id: Optional[str] = Field(
         None, description="Subscription OCID filter"
     ),
-) -> list[dict]:
+) -> dict:
     """
+    Return items and next_page (None when exhausted).
     Maps to GET /20190729/limitDefinitions
     """
     try:
         client = get_limits_client()
-        items = list_limit_definitions_with_pagination(
+        items, next_page = list_limit_definitions_with_pagination(
             client,
             compartment_id=compartment_id,
             service_name=service_name,
@@ -193,7 +201,10 @@ def list_limit_definitions(
             page=page,
             subscription_id=subscription_id,
         )
-        return [map_limit_definition_summary(d) for d in items]
+        return {
+            "items": [map_limit_definition_summary(d) for d in items],
+            "next_page": next_page,
+        }
     except Exception as e:
         logger.error(f"Error in list_limit_definitions: {e}")
         raise
@@ -216,23 +227,27 @@ def list_limit_value(
     sort_order: Literal["ASC", "DESC"] = Field("ASC", description="Sort order"),
     limit: Optional[int] = Field(
         None,
-        description="Max items per page (1-1000). If None, service default page size is used.",
+        description=(
+            "Maximum total items to return (1-1000). If None, fetch all pages. "
+            "With page set, fetch only that page using this size."
+        ),
         ge=1,
         le=1000,
     ),
     page: Optional[str] = Field(
-        None, description="Pagination token from a previous call"
+        None, description="Use next_page from a previous result to fetch one page"
     ),
     subscription_id: Optional[str] = Field(
         None, description="Subscription OCID filter"
     ),
-) -> list[dict]:
+) -> dict:
     """
+    Return items and next_page (None when exhausted).
     Maps to GET /20190729/limitValues
     """
     try:
         client = get_limits_client()
-        items = list_limit_values_with_pagination(
+        items, next_page = list_limit_values_with_pagination(
             client,
             compartment_id=compartment_id,
             service_name=service_name,
@@ -245,7 +260,10 @@ def list_limit_value(
             page=page,
             subscription_id=subscription_id,
         )
-        return [map_limit_value_summary(d) for d in items]
+        return {
+            "items": [map_limit_value_summary(d) for d in items],
+            "next_page": next_page,
+        }
     except Exception as e:
         logger.error(f"Error in list_limit_value: {e}")
         raise
@@ -277,7 +295,7 @@ def get_resource_availability(
     """
     try:
         client = get_limits_client()
-        limits = list_limit_definitions_with_pagination(
+        limits, _ = list_limit_definitions_with_pagination(
             client,
             compartment_id=compartment_id,
             service_name=service_name,

@@ -281,7 +281,7 @@ class TestDescriptionAndSerializationHelpers:
         assert _extract_paginated_items(object_items)[1] == "object_storage"
         assert _extract_paginated_items([1, 2, 3])[0] == [1, 2, 3]
         assert _extract_paginated_items(custom_items)[0] == [1, 2, 3]
-        assert _extract_paginated_items(no_items)[0] is no_items
+        assert _extract_paginated_items(no_items)[0] is None
 
     def test_summarize_and_serialize_helpers_cover_scalar_and_fallback_paths(self, monkeypatch):
         summary = _summarize_serialized_data([{"a": 1}, {"b": 2}], 1)

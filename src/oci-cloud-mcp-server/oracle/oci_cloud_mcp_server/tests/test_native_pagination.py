@@ -22,6 +22,7 @@ def mock_execution(monkeypatch, sdk_class, operation, responses):
     sdk_method = getattr(sdk_class, operation)
 
     def execute(**kwargs):
+        execute.__signature__.bind_partial(**kwargs)
         captured.append(kwargs)
         return responses[len(captured) - 1]
 
@@ -284,3 +285,61 @@ async def test_later_page_shape_change_is_an_error_not_partial_success(monkeypat
     result = await invoke(sdk_class, "list_users")
     assert "changed from a collection" in result["error"]
     assert captured == [{}, {"page": "next"}]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("next_page", [None, "second-page"])
+async def test_search_users_only_uses_supported_continuation(monkeypatch, next_page):
+    sdk_class = oci.identity_domains.IdentityDomainsClient
+    models = oci.identity_domains.models
+    pages = [response(models.Users(resources=[models.User(id="first")],
+                      start_index=1, items_per_page=1, total_results=2), next_page)]
+    if next_page:
+        pages.append(response(models.Users(resources=[models.User(id="second")],
+                              start_index=2, items_per_page=1, total_results=2)))
+    captured = mock_execution(monkeypatch, sdk_class, "search_users", pages)
+    result = await invoke(sdk_class, "search_users", params={
+        "user_search_request": {"start_index": 1, "count": 1},
+    })
+    assert "error" not in result
+    assert [item["id"] for item in result["data"]["resources"]] == (
+        ["first", "second"] if next_page else ["first"]
+    )
+    assert result["result_meta"]["has_more_results"] is (next_page is None)
+    assert "start_index" not in result["result_meta"]
+    assert all("start_index" not in call for call in captured)
+    assert len(captured) == (2 if next_page else 1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["full", "summary", "auto"])
+@pytest.mark.parametrize("cap", [1, 2, 3])
+async def test_non_paginated_list_cap_reports_completeness(monkeypatch, mode, cap):
+    sdk_class = oci.identity.IdentityClient
+    mock_execution(monkeypatch, sdk_class, "list_regions", [response([
+        oci.identity.models.Region(name="first"), oci.identity.models.Region(name="second"),
+    ])])
+    result = await invoke(sdk_class, "list_regions", result_mode=mode, max_results=cap)
+    assert "error" not in result
+    meta = result["result_meta"]
+    assert meta["pagination_used"] is False
+    assert meta["has_more_results"] is (cap < 2)
+    assert meta.get("truncated", False) is (cap < 2)
+    data = result["data"] if mode == "full" else result["data"]["sample"]
+    assert len(data) == min(cap, 2)
+
+
+@pytest.mark.asyncio
+async def test_search_users_trimmed_page_remains_incomplete(monkeypatch):
+    sdk_class = oci.identity_domains.IdentityDomainsClient
+    models = oci.identity_domains.models
+    mock_execution(monkeypatch, sdk_class, "search_users", [response(models.Users(
+        resources=[models.User(id="first"), models.User(id="second")],
+        start_index=1, items_per_page=2, total_results=2,
+    ))])
+    result = await invoke(sdk_class, "search_users", max_results=1,
+                          params={"user_search_request": {"count": 2}})
+    assert "error" not in result
+    assert [item["id"] for item in result["data"]["resources"]] == ["first"]
+    assert result["result_meta"]["has_more_results"] is True
+    assert result["result_meta"]["truncated"] is True

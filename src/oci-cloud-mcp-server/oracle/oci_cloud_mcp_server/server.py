@@ -1067,6 +1067,13 @@ def _call_with_pagination_if_applicable(
                 start_index = getattr(response_data, "start_index", None)
                 total_results = getattr(response_data, "total_results", None)
                 if isinstance(start_index, int) and isinstance(total_results, int):
+                    accepted_params = _extract_expected_kwargs_from_source(method) or set()
+                    accepted_params |= set(inspect.signature(method).parameters)
+                    if "start_index" not in accepted_params:
+                        # Search offsets belong in request models, not SDK kwargs.
+                        # Preserve this page for manual continuation in that contract.
+                        more_results_available = more_results_available or start_index + current_count <= total_results
+                        break
                     next_param = "start_index"
                     next_value = start_index + current_count
                     if next_value > total_results:
@@ -1359,6 +1366,9 @@ def invoke_oci_api(
                 if uses_pagination or operation.startswith("list_") or operation.startswith("summarize_")
                 else "full"
             )
+
+        if max_results is not None and isinstance(projected_data, list):
+            has_more_results = has_more_results or len(projected_data) > max_results
 
         result_meta: Dict[str, Any] = {
             "result_mode": effective_result_mode,

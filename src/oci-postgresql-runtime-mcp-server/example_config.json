@@ -1,0 +1,23 @@
+{
+  "connections": {
+    "app-db": {
+      "host": "db.example.oraclecloud.com",
+      "port": 5432,
+      "database": "app_db",
+      "user": "app_user",
+      "password": "<REPLACE_WITH_PASSWORD>",
+      "sslmode": "verify-full",
+      "sslrootcert": "/absolute/path/to/server-ca.pem"
+    },
+    "app-db-local-bastion": {
+      "host": "db.example.oraclecloud.com",
+      "hostaddr": "127.0.0.1",
+      "port": 15432,
+      "database": "app_db",
+      "user": "app_user",
+      "password": "<REPLACE_WITH_PASSWORD>",
+      "sslmode": "verify-full",
+      "sslrootcert": "/absolute/path/to/server-ca.pem"
+    }
+  }
+}

@@ -5,14 +5,17 @@ https://oss.oracle.com/licenses/upl.
 """
 
 import contextlib
+import time
 from typing import Any, Optional
 
 import psycopg
-from sqlalchemy import create_engine, inspect as inspect_database, text
+from sqlalchemy import create_engine, event, inspect as inspect_database, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.engine.reflection import ObjectKind
 from sqlalchemy.exc import CompileError
 from sqlalchemy.types import TypeEngine
+
+from .pagination import _MAX_IDENTIFIER_BYTES, _MAX_PAGE_SIZE, _METADATA_LOCK_TIMEOUT_MS, _METADATA_TIMEOUT_MS
 
 
 _POSTGRESQL_DIALECT = postgresql.dialect()
@@ -27,11 +30,15 @@ def _normalize_identifier_list(
     if not isinstance(values, list):
         raise ValueError(f"{field_name} must be a list of strings")
 
+    if len(values) > _MAX_PAGE_SIZE:
+        raise ValueError(f"{field_name} may contain at most {_MAX_PAGE_SIZE} entries")
     normalized_values: list[str] = []
     seen_values: set[str] = set()
     for value in values:
         if not isinstance(value, str) or not value:
             raise ValueError(f"{field_name} entries must be non-empty strings")
+        if len(value.encode("utf-8")) > _MAX_IDENTIFIER_BYTES or "\x00" in value:
+            raise ValueError(f"{field_name} entries must be valid database identifiers")
         if value not in seen_values:
             normalized_values.append(value)
             seen_values.add(value)
@@ -48,6 +55,8 @@ def _normalize_table_refs(
     if not isinstance(table_refs, list):
         raise ValueError("table_refs must be a list of objects")
 
+    if len(table_refs) > _MAX_PAGE_SIZE:
+        raise ValueError(f"table_refs may contain at most {_MAX_PAGE_SIZE} entries")
     normalized_refs: list[dict[str, str]] = []
     seen_refs: set[tuple[str, str]] = set()
     for ref in table_refs:
@@ -59,6 +68,8 @@ def _normalize_table_refs(
             raise ValueError("table_refs entries must include a non-empty schema")
         if not isinstance(name, str) or not name:
             raise ValueError("table_refs entries must include a non-empty name")
+        if any(len(value.encode("utf-8")) > _MAX_IDENTIFIER_BYTES or "\x00" in value for value in (schema, name)):
+            raise ValueError("table_refs entries must be valid database identifiers")
         normalized_ref = {"schema": schema, "name": name}
         ref_key = (normalized_ref["schema"], normalized_ref["name"])
         if ref_key not in seen_refs:
@@ -71,16 +82,28 @@ def _normalize_table_refs(
 
 @contextlib.contextmanager
 def _metadata_inspector_cm(connect_kwargs: dict[str, Any]):
+    deadline = time.monotonic() + _METADATA_TIMEOUT_MS / 1000
+
     def connect():
-        conn = psycopg.connect(**connect_kwargs)
+        options = connect_kwargs.get("options") or ""
+        conn = psycopg.connect(**{
+            **connect_kwargs,
+            "options": f"{options} -cstatement_timeout={_METADATA_TIMEOUT_MS} "
+            f"-clock_timeout={_METADATA_LOCK_TIMEOUT_MS}",
+        })
         conn.read_only = True
         return conn
 
-    engine = create_engine(
-        "postgresql+psycopg://",
-        creator=connect,
-    )
+    def apply_remaining_timeout(conn, cursor, statement, parameters, context, executemany):
+        remaining_ms = int((deadline - time.monotonic()) * 1000)
+        if remaining_ms < 1:
+            raise TimeoutError("PostgreSQL metadata request exceeded its time budget")
+        cursor.execute(f"set local statement_timeout = {remaining_ms}")
+        cursor.execute(f"set local lock_timeout = {min(remaining_ms, _METADATA_LOCK_TIMEOUT_MS)}")
+
+    engine = create_engine("postgresql+psycopg://", creator=connect)
     try:
+        event.listen(engine, "before_cursor_execute", apply_remaining_timeout)
         yield inspect_database(engine)
     finally:
         engine.dispose()
@@ -220,51 +243,56 @@ def _multi(
         return {}
 
 
-def _requested_names_by_schema(table_refs: list[dict[str, str]]) -> dict[str, list[str]]:
-    names_by_schema: dict[str, list[str]] = {}
-    for ref in table_refs:
-        names_by_schema.setdefault(ref["schema"], []).append(ref["name"])
-    return names_by_schema
-
-
-def _ref_names(
-    inspector: Any,
-    schema: str,
-    names: Optional[list[str]],
-    kind: ObjectKind,
-) -> list[str]:
-    if names is None:
-        getter = (
-            inspector.get_view_names
-            if kind == ObjectKind.VIEW
-            else inspector.get_table_names
-        )
-        return sorted(getter(schema=schema) or [])
-    comments = _multi(inspector, "get_multi_table_comment", schema, names, kind)
-    return [
-        name
-        for name in names
-        if _reflected(comments, schema, name, None) is not None
-    ]
-
-
-def _table_refs_for_request(
+def _discover_table_refs(
     inspector: Any,
     *,
-    schemas: list[str],
+    schemas: Optional[list[str]],
     table_refs: Optional[list[dict[str, str]]],
     include_views: bool,
+    name_prefix: Optional[str],
+    after: Optional[tuple[str, ...]],
+    limit: int,
 ) -> list[dict[str, str]]:
-    names_by_schema = _requested_names_by_schema(table_refs) if table_refs else {}
-    refs = []
-    for schema in names_by_schema or {schema: None for schema in schemas}:
-        requested_names = names_by_schema.get(schema)
-        for name in _ref_names(inspector, schema, requested_names, ObjectKind.TABLE):
-            refs.append({"schema": schema, "name": name, "table_type": "BASE TABLE"})
-        if include_views:
-            for name in _ref_names(inspector, schema, requested_names, ObjectKind.VIEW):
-                refs.append({"schema": schema, "name": name, "table_type": "VIEW"})
-    return refs
+    conditions = [
+        "relation.relkind in ('r', 'p', 'v')" if include_views else "relation.relkind in ('r', 'p')",
+        "relation.relpersistence <> 't'",
+    ]
+    params: dict[str, Any] = {"limit": limit}
+    visible_join = ""
+    if table_refs is not None:
+        conditions.append("""exists (
+            select 1 from unnest(cast(:ref_schemas as pg_catalog.text[]),
+                cast(:ref_names as pg_catalog.text[])) as requested(schema, name)
+            where requested.schema = namespace.nspname and requested.name = relation.relname
+        )""")
+        params["ref_schemas"] = [ref["schema"] for ref in table_refs]
+        params["ref_names"] = [ref["name"] for ref in table_refs]
+    elif schemas is not None:
+        conditions.append("namespace.nspname = any(cast(:schemas as pg_catalog.text[]))")
+        params["schemas"] = schemas
+    else:
+        visible_join = "join information_schema.schemata as visible on visible.schema_name = namespace.nspname"
+        conditions.extend([
+            "namespace.nspname <> 'information_schema'",
+            "left(namespace.nspname, 3) <> 'pg_'",
+        ])
+    if name_prefix is not None:
+        conditions.append("left(relation.relname, char_length(:name_prefix)) = :name_prefix")
+        params["name_prefix"] = name_prefix
+    if after is not None:
+        conditions.append("""(namespace.nspname::text collate "C", relation.relname::text collate "C") >
+            (cast(:after_schema as text) collate "C", cast(:after_name as text) collate "C")""")
+        params["after_schema"], params["after_name"] = after
+    query = text("""
+        select namespace.nspname as schema, relation.relname as name,
+            case when relation.relkind = 'v' then 'VIEW' else 'BASE TABLE' end as table_type
+        from pg_catalog.pg_class as relation
+        join pg_catalog.pg_namespace as namespace on namespace.oid = relation.relnamespace
+    """ + visible_join + " where " + " and ".join(conditions) +
+        ' order by namespace.nspname::text collate "C", relation.relname::text collate "C" limit :limit')
+    with inspector.bind.connect() as connection:
+        rows = connection.execute(query, params).mappings().fetchmany(limit)
+    return [dict(row) for row in rows]
 
 
 def _table_metadata(
@@ -337,40 +365,36 @@ def _table_metadata(
 def _inspect_postgresql_tables(
     inspector: Any,
     *,
-    schemas: list[str],
+    schemas: Optional[list[str]],
     table_refs: Optional[list[dict[str, str]]],
     include_views: bool,
     detail: str,
     auto_full_limit: int,
-) -> tuple[str, list[dict[str, Any]]]:
-    refs = _table_refs_for_request(
-        inspector,
-        schemas=schemas,
-        table_refs=table_refs,
-        include_views=include_views,
-    )
+    page_size: int,
+    after: Optional[tuple[str, ...]],
+    name_prefix: Optional[str],
+) -> tuple[str, list[dict[str, Any]], bool]:
+    filters = {"schemas": schemas, "table_refs": table_refs,
+               "include_views": include_views, "name_prefix": name_prefix}
+    refs = _discover_table_refs(inspector, **filters, after=after, limit=page_size + 1)
+    has_more = len(refs) > page_size
+    refs = refs[:page_size]
     resolved_detail = detail
     if detail == "auto":
-        resolved_detail = "full" if len(refs) <= auto_full_limit else "summary"
+        # Probe the entire filtered scope, not only this page. Otherwise every
+        # short page of a large catalog would incorrectly request full metadata.
+        probe = _discover_table_refs(inspector, **filters, after=None, limit=auto_full_limit + 1)
+        resolved_detail = "full" if len(probe) <= auto_full_limit else "summary"
 
-    metadata = _table_metadata(
-        inspector,
-        refs,
-        detail=resolved_detail,
-    )
+    metadata = _table_metadata(inspector, refs, detail=resolved_detail)
     tables = []
     for ref in refs:
-        schema = ref["schema"]
-        name = ref["name"]
+        schema, name = ref["schema"], ref["name"]
         table = {
-            **{
-                "table_schema": schema,
-                "table_name": name,
-                "table_type": ref["table_type"],
-            },
-            **metadata[(schema, name)],
+            "table_schema": schema, "table_name": name,
+            "table_type": ref["table_type"], **metadata[(schema, name)],
         }
         if resolved_detail != "full":
             table["columns_omitted"] = True
         tables.append(table)
-    return resolved_detail, tables
+    return resolved_detail, tables, has_more

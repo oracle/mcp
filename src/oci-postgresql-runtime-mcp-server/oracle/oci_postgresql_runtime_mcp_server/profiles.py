@@ -10,6 +10,8 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+import keyring
+
 from . import __project__
 
 _DEFAULT_PORT = 5432
@@ -22,6 +24,15 @@ _ALLOWED_SSLMODES = {
 }
 _CONFIG_ENV_VAR = "POSTGRESQL_MCP_CONFIG"
 _INTEGER_PATTERN = re.compile(r"[+-]?\d+")
+_ENVIRONMENT_NAME_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_SECURE_KEYRING_BACKENDS = {
+    "keyring.backends.macOS.Keyring",
+    "keyring.backends.Windows.WinVaultKeyring",
+    "keyring.backends.SecretService.Keyring",
+    "keyring.backends.kwallet.DBusKeyring",
+    "keyring.backends.kwallet.DBusKeyringKWallet4",
+    "keyring.backends.libsecret.Keyring",
+}
 
 
 @dataclass(frozen=True)
@@ -64,6 +75,71 @@ def _normalize_sslmode(value: Any) -> str:
     return sslmode
 
 
+def _read_keyring_password(reference: dict[str, str]) -> str:
+    try:
+        backend = keyring.get_keyring()
+    except Exception:
+        raise ValueError("password_keyring could not initialize the OS keyring") from None
+
+    # Never let automatic chaining fall through to a plaintext or null backend.
+    backend_name = f"{type(backend).__module__}.{type(backend).__name__}"
+    if backend_name not in _SECURE_KEYRING_BACKENDS:
+        raise ValueError(
+            "password_keyring requires a supported OS keyring backend: "
+            "macOS Keychain, Windows Credential Locker, Secret Service, or KWallet"
+        )
+    try:
+        password = backend.get_password(reference["service"], reference["username"])
+    except Exception:
+        raise ValueError(
+            "password_keyring lookup failed; unlock and configure the OS keyring"
+        ) from None
+    if not isinstance(password, str) or not password:
+        raise ValueError("password_keyring entry is missing or empty")
+    return password
+
+
+def _resolve_password(connection: dict[str, Any]) -> str:
+    sources = [
+        name for name in ("password", "password_env", "password_keyring")
+        if name in connection
+    ]
+    if len(sources) != 1:
+        raise ValueError(
+            "connection must specify exactly one of password, password_env, "
+            "or password_keyring"
+        )
+
+    source = sources[0]
+    reference = connection[source]
+    if source == "password_env":
+        if (
+            not isinstance(reference, str)
+            or not _ENVIRONMENT_NAME_PATTERN.fullmatch(reference)
+        ):
+            raise ValueError("password_env must name a valid environment variable")
+        password = os.environ.get(reference)
+        if not password:
+            raise ValueError("password_env points to an unset or empty environment variable")
+        return password
+    if source == "password_keyring":
+        if (
+            not isinstance(reference, dict)
+            or set(reference) != {"service", "username"}
+            or any(
+                not isinstance(value, str) or not value.strip()
+                for value in reference.values()
+            )
+        ):
+            raise ValueError(
+                "password_keyring must contain non-empty service and username strings"
+            )
+        return _read_keyring_password(reference)
+    if not isinstance(reference, str) or not reference:
+        raise ValueError("password must be a non-empty string")
+    return reference
+
+
 def _normalize_connection(connection: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(connection, dict):
         raise ValueError("connection must be an object")
@@ -71,7 +147,6 @@ def _normalize_connection(connection: dict[str, Any]) -> dict[str, Any]:
     host = _pick_value(connection, "host")
     dbname = _pick_value(connection, "database", "dbname")
     user = _pick_value(connection, "user", "username")
-    password = _pick_value(connection, "password")
 
     missing_fields = [
         name
@@ -79,7 +154,6 @@ def _normalize_connection(connection: dict[str, Any]) -> dict[str, Any]:
             ("host", host),
             ("database", dbname),
             ("user", user),
-            ("password", password),
         )
         if not value
     ]
@@ -92,7 +166,7 @@ def _normalize_connection(connection: dict[str, Any]) -> dict[str, Any]:
         "host": host,
         "dbname": dbname,
         "user": user,
-        "password": password,
+        "password": _resolve_password(connection),
         "port": _DEFAULT_PORT,
         "connect_timeout": _DEFAULT_CONNECT_TIMEOUT,
         "application_name": __project__,

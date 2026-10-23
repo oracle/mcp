@@ -211,6 +211,8 @@ class FakeInspector:
         self.views = views or {}
         self.metadata = metadata
         self.table_name_calls = []
+        self.discovery_calls = []
+        self.reflection_calls = []
 
     @staticmethod
     def _key(table_name, schema=None):
@@ -220,6 +222,7 @@ class FakeInspector:
         return (self.views if getattr(kind, "name", "TABLE") == "VIEW" else self.tables).get(schema, [])
 
     def _multi(self, key, schema=None, filter_names=None, kind=None, default=None):
+        self.reflection_calls.append((key, schema, list(filter_names or [])))
         names = filter_names or self._object_names(schema, kind)
         object_names = set(self._object_names(schema, kind))
         data = self.metadata.get(key, {})
@@ -228,6 +231,28 @@ class FakeInspector:
             for name in names
             if (item_key := self._key(name, schema)) in data or name in object_names
         }
+
+    def discover(self, *, schemas, table_refs, include_views, name_prefix, after, limit):
+        self.discovery_calls.append({"schemas": schemas, "table_refs": table_refs,
+                                     "after": after, "limit": limit})
+        refs = [
+            {"schema": schema, "name": name, "table_type": kind}
+            for objects, kind in [(self.tables, "BASE TABLE"), (self.views if include_views else {}, "VIEW")]
+            for schema, names in objects.items() for name in names
+        ]
+        if table_refs is not None:
+            requested = {(ref["schema"], ref["name"]) for ref in table_refs}
+            refs = [ref for ref in refs if (ref["schema"], ref["name"]) in requested]
+        elif schemas is not None:
+            refs = [ref for ref in refs if ref["schema"] in schemas]
+        else:
+            refs = [ref for ref in refs if ref["schema"] != "information_schema" and not ref["schema"].startswith("pg_")]
+        if name_prefix is not None:
+            refs = [ref for ref in refs if ref["name"].startswith(name_prefix)]
+        refs.sort(key=lambda ref: (ref["schema"].encode(), ref["name"].encode()))
+        if after is not None:
+            refs = [ref for ref in refs if (ref["schema"].encode(), ref["name"].encode()) > tuple(value.encode() for value in after)]
+        return refs[:limit]
 
     def get_table_names(self, schema=None):
         self.table_name_calls.append(schema)
@@ -261,7 +286,8 @@ class FakeInspector:
 
 @contextlib.contextmanager
 def fake_metadata_inspector_cm(inspector):
-    yield inspector
+    with patch("oracle.oci_postgresql_runtime_mcp_server.inspection._discover_table_refs", side_effect=lambda _inspector, **kwargs: inspector.discover(**kwargs)):
+        yield inspector
 
 
 class TestTools:
@@ -505,9 +531,8 @@ class TestTools:
             "pgdata",
             "public",
         ]
-        cursor = FakeCursor(
-            fetchall_result=[{"schema_name": name} for name in schema_names]
-        )
+        expected = schema_names if include_system else ["app", "pgdata", "public"]
+        cursor = FakeCursor(fetchmany_result=[{"schema_name": name} for name in expected])
 
         with patch.object(
             server_module,
@@ -531,7 +556,8 @@ class TestTools:
         expected = schema_names if include_system else ["app", "pgdata", "public"]
         assert result["count"] == len(expected)
         assert result["schemas"] == expected
-        assert "information_schema.schemata" in cursor.executed[0][0]
+        assert "information_schema.schemata" in cursor.executed[2][0]
+        assert cursor.executed[2][1]["limit"] == 101
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -576,7 +602,7 @@ class TestTools:
         assert [
             (table["table_schema"], table["table_name"]) for table in result["tables"]
         ] == [(schema, name) for schema in expected_schemas for name in ["records", "report"]]
-        assert inspector.table_name_calls == expected_schemas
+        assert inspector.table_name_calls == []
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("filter_name", ["schemas", "table_refs"])
@@ -594,7 +620,7 @@ class TestTools:
         with patch.object(
             server_module, "config", TEST_CONFIG
         ), patch.object(server_module, "config_error_msg", None), patch.object(
-            server_module, "_fetch_all"
+            server_module, "_schema_page"
         ) as discovery, patch(
             "oracle.oci_postgresql_runtime_mcp_server.server._metadata_inspector_cm",
             lambda connect_kwargs: fake_metadata_inspector_cm(inspector),
@@ -613,19 +639,17 @@ class TestTools:
         discovery.assert_not_called()
         assert result["schemas"] == schemas
         assert result["count"] == 2
-        assert [table["table_name"] for table in result["tables"]] == ["pg_class", "tables"]
+        assert [table["table_name"] for table in result["tables"]] == ["tables", "pg_class"]
 
     def test_list_tables_propagates_schema_discovery_failure(self):
-        with patch.object(
-            server_module, "config", TEST_CONFIG
-        ), patch.object(server_module, "config_error_msg", None), patch.object(
-            server_module, "_fetch_all", side_effect=psycopg.OperationalError("schema lookup failed")
-        ), patch.object(
-            server_module, "_metadata_inspector_cm"
-        ) as inspect_metadata, pytest.raises(psycopg.OperationalError, match="schema lookup failed"):
-            server_module.list_tables(connection_name="app-db")
-
-        inspect_metadata.assert_not_called()
+        inspector = FakeInspector()
+        inspector.discover = Mock(side_effect=psycopg.OperationalError("schema lookup failed"))
+        with patch.object(server_module, "config", TEST_CONFIG), patch.object(
+            server_module, "config_error_msg", None
+        ), patch.object(server_module, "_metadata_inspector_cm", lambda kwargs: fake_metadata_inspector_cm(inspector)):
+            with pytest.raises(psycopg.OperationalError, match="schema lookup failed"):
+                server_module.list_tables(connection_name="app-db")
+        assert inspector.reflection_calls == []
 
     @pytest.mark.asyncio
     async def test_list_tables_returns_full_metadata_by_default(self):
@@ -703,7 +727,7 @@ class TestTools:
         assert result["tables"][0]["columns"][1]["type"] == "text"
         assert result["tables"][0]["columns"][1]["comment"] == "Login email"
         assert result["tables"][0]["primary_key"]["name"] == "customers_pkey"
-        assert inspector.table_name_calls == ["public"]
+        assert inspector.table_name_calls == []
 
     @pytest.mark.parametrize("detail", ["auto", "full"])
     @pytest.mark.parametrize("objects", ["tables", "views"])
@@ -919,7 +943,7 @@ class TestTools:
         assert result["schema"] == schema
         assert result["count"] == 0
         assert result["detail"] == "full"
-        assert inspector.table_name_calls == [schema]
+        assert inspector.table_name_calls == []
 
     def test_list_tables_accepts_schema_filters(self):
         inspector = FakeInspector()
@@ -941,7 +965,7 @@ class TestTools:
         assert result["schemas"] == ["app", "public"]
         assert "schema" not in result
         assert result["count"] == 0
-        assert inspector.table_name_calls == ["app", "public"]
+        assert inspector.table_name_calls == []
 
     def test_list_tables_accepts_table_refs(self):
         inspector = FakeInspector(
@@ -996,8 +1020,8 @@ class TestTools:
             )
 
         assert result["schemas"] == schemas
-        assert inspector.table_name_calls == schemas
-        assert [table["table_schema"] for table in result["tables"]] == schemas
+        assert inspector.table_name_calls == []
+        assert [table["table_schema"] for table in result["tables"]] == sorted(schemas)
 
     @pytest.mark.parametrize("name_key", ["name", "table_name"])
     def test_list_tables_preserves_exact_table_refs(self, name_key):
@@ -1034,7 +1058,7 @@ class TestTools:
         assert [
             {"schema": table["table_schema"], "name": table["table_name"]}
             for table in result["tables"]
-        ] == table_refs
+        ] == sorted(table_refs, key=lambda ref: (ref["schema"], ref["name"]))
 
     @pytest.mark.parametrize("invalid_identifier", ["", None, 1])
     @pytest.mark.parametrize("field_name", ["schemas", "schema", "name"])
@@ -1518,7 +1542,7 @@ class TestTools:
                 "current_database": "app_db",
             }
         )
-        schemas_cursor = FakeCursor(fetchall_result=[{"schema_name": "public"}])
+        schemas_cursor = FakeCursor(fetchmany_result=[{"schema_name": "public"}])
         query_cursor = FakeCursor(
             fetchmany_result=[
                 {
@@ -2227,7 +2251,7 @@ def test_metadata_connection_sets_driver_read_only_before_inspection():
 
     with patch.object(inspection.psycopg, "connect", return_value=conn), patch.object(
         inspection, "create_engine", side_effect=create_engine
-    ), patch.object(inspection, "inspect_database", return_value="inspector"):
+    ), patch.object(inspection.event, "listen"), patch.object(inspection, "inspect_database", return_value="inspector"):
         with inspection._metadata_inspector_cm({"host": "synthetic"}) as inspector:
             assert inspector == "inspector"
     engine.dispose.assert_called_once()

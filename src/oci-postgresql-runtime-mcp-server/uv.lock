@@ -701,6 +701,7 @@ version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastmcp" },
+    { name = "keyring" },
     { name = "pglast" },
     { name = "psycopg", extra = ["binary"] },
     { name = "sqlalchemy" },
@@ -716,6 +717,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastmcp", specifier = "==3.4.5" },
+    { name = "keyring", specifier = "==25.7.0" },
     { name = "pglast", specifier = "==7.21" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.3.6" },
     { name = "sqlalchemy", specifier = "==2.1.4" },

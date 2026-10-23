@@ -5,9 +5,12 @@
       "port": 5432,
       "database": "app_db",
       "user": "app_user",
-      "password": "<REPLACE_WITH_PASSWORD>",
       "sslmode": "verify-full",
-      "sslrootcert": "/absolute/path/to/server-ca.pem"
+      "sslrootcert": "/absolute/path/to/server-ca.pem",
+      "password_keyring": {
+        "service": "oracle-postgresql/app-db",
+        "username": "app_user"
+      }
     },
     "app-db-local-bastion": {
       "host": "db.example.oraclecloud.com",
@@ -15,9 +18,12 @@
       "port": 15432,
       "database": "app_db",
       "user": "app_user",
-      "password": "<REPLACE_WITH_PASSWORD>",
       "sslmode": "verify-full",
-      "sslrootcert": "/absolute/path/to/server-ca.pem"
+      "sslrootcert": "/absolute/path/to/server-ca.pem",
+      "password_keyring": {
+        "service": "oracle-postgresql/app-db-local-bastion",
+        "username": "app_user"
+      }
     }
   }
 }

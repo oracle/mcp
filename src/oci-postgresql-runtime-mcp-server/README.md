@@ -17,8 +17,8 @@ The database tools `test_connection`, `list_schemas`, `list_tables`, and `execut
 | `get_runtime_info` | Returns non-secret runtime version, Python version, and source fingerprint metadata. |
 | `list_connections` | Lists configured PostgreSQL connection profiles loaded at startup. |
 | `test_connection` | Tests the specified connection profile and returns basic server/session metadata. |
-| `list_schemas` | Lists schemas visible to the database role in the specified connection profile. |
-| `list_tables` | Lists tables and views in the specified connection profile with auto, summary, or full metadata. |
+| `list_schemas` | Lists a bounded page of schemas visible to the database role in the specified connection profile. |
+| `list_tables` | Lists a bounded page of tables and views with auto, summary, or full metadata. |
 | `execute_query` | Executes read-only SQL through the specified connection profile, with optional parameter values bound in order. |
 
 ## Usage
@@ -59,16 +59,40 @@ List schemas through a named profile:
 }
 ```
 
+### Metadata Pagination
+
+`list_schemas` and `list_tables` return one page per call. `page_size` defaults to 100 and accepts values from 1 through 1,000. This limits each response, not the number of schemas or tables supported by the database. `count` is the number of objects returned in this page, not the total matching inventory.
+
+When `has_more` is true, pass `next_cursor` as `cursor` in another call with the same connection, filters and metadata settings. The cursor carries the last returned name and request scope; it requires no open database session or server-side pagination state. Table ordering uses the schema and table name together, so continuation can cross schemas when no schema filter is supplied. Ordering is deterministic, but objects created, dropped or renamed between calls can change the inventory.
+
+For example, continue an unfiltered table listing as follows:
+
+```json
+{
+  "tool": "list_tables",
+  "arguments": {
+    "connection_name": "app-db",
+    "detail": "summary",
+    "page_size": 100,
+    "cursor": "<next_cursor from the previous response>"
+  }
+}
+```
+
+Do not collect every page unless the task requires a complete inventory. Narrow discovery by schema or table name, then use exact `table_refs` to fetch full metadata for the relevant objects. For unfiltered table discovery, the response’s `schemas` field lists the schemas represented by that page. The server limits catalog discovery before reflecting metadata. Table metadata applies a 60-second database-work budget across its queries; schema discovery uses a 60-second statement timeout. Both apply a five-second lock timeout. These controls do not guarantee a complete tool-call deadline. Metadata responses also have an approximately 1 MB size budget; a page can contain fewer than `page_size` objects when this budget is reached. Continuation starts after the last object actually returned. An object that cannot fit on its own produces an error instead of silently losing metadata.
+
 ### Table and View Metadata
 
 Use `list_schemas` to discover schemas through a specified profile. By default, it excludes `information_schema` and schema names beginning with `pg_`; set `include_system=true` to include them.
 
 Use `list_tables` with the following filters and metadata depth:
 
-- Omit `schemas` and `table_refs` to inspect all visible non-system schemas. Default discovery excludes `information_schema` and schema names beginning with `pg_`.
+- Omit `schemas` and `table_refs` to discover tables across visible non-system schemas, one page at a time. Default discovery excludes `information_schema` and schema names beginning with `pg_`.
 - Use `schemas` for exact schema names or `table_refs` for exact `{schema, name}` references. The filters are mutually exclusive. Explicit filters may target system schemas.
+- Use `name_prefix` for a literal, case-sensitive table/view-name prefix. `list_schemas` also accepts `name_prefix` for schema names. Prefixes are not SQL patterns: `%` and `_` match themselves.
+- Each explicit `schemas` or `table_refs` list accepts at most 1,000 entries. Identifiers and prefixes accept at most 1,024 UTF-8 bytes.
 - Views are included by default. Set `include_views=false` to inspect base tables only.
-- `detail=auto` returns full metadata for at most 100 matched tables/views across all selected schemas, and summary metadata above that. Use `auto_full_limit` to change this threshold.
+- `detail=auto` returns full metadata when the complete filtered scope contains at most 100 matched tables/views, and summary metadata above that. `auto_full_limit` changes this threshold independently of page size, with a maximum of 1,000. A bounded catalog probe determines the detail level; selecting a small page does not turn a large catalog into full metadata.
 - `detail=summary` returns names, comments, indexes, and foreign keys without column lists.
 - `detail=full` also returns columns, primary keys, unique constraints, and check constraints.
 
@@ -195,13 +219,26 @@ Example profile file:
       "port": 5432,
       "database": "app_db",
       "user": "app_user",
-      "password": "<REPLACE_WITH_PASSWORD>",
+      "password_keyring": {
+        "service": "oracle-postgresql/app-db",
+        "username": "app_user"
+      },
       "sslmode": "verify-full",
       "sslrootcert": "/absolute/path/to/server-ca.pem"
     }
   }
 }
 ```
+
+Each profile must select exactly one password source:
+
+- `password_keyring`: an object containing explicit `service` and `username` strings. The server reads that entry from a supported OS credential store. Select a supported backend before storing the secret, and use the same `PYTHON_KEYRING_BACKEND` for provisioning and server startup. Provision on the MCP host under its runtime user, using the server Python environment. For example, on macOS run `PYTHON_KEYRING_BACKEND=keyring.backends.macOS.Keyring python -m keyring set oracle-postgresql/app-db app_user` and enter the password at the prompt. For Linux Secret Service, select `keyring.backends.SecretService.Keyring` after setting up its daemon and session. Do not provision secrets through an automatically selected plaintext backend.
+- `password_env`: the name of an environment variable that contains the password, such as `APP_DB_PASSWORD`. Supply the value through the deployment's secret injection mechanism. The profile contains only the variable name. Storing the value in an MCP client's configuration file would still leave a plaintext secret on disk; an environment reference does not provide encryption at rest by itself.
+- `password`: a literal password, retained for compatibility. This source stores the secret in the profile file. Prefer a credential reference and protect any legacy password-bearing profile as a secret.
+
+Password sources resolve once when profiles load at startup. Restart the server after changing a referenced environment value or keyring entry. Conflicting sources, missing secrets and unavailable or unsupported keyring backends produce a configuration error; the server does not silently fall back to another source. Secrets are excluded from connection summaries and credential-resolution errors.
+
+Keyring support uses native macOS Keychain, Windows Credential Manager, Linux Secret Service, KWallet or libsecret backends. Configure a supported backend explicitly when necessary with `PYTHON_KEYRING_BACKEND`; plaintext third-party stores and automatic backend chains are not accepted. See [keyring's headless Linux requirements](https://keyring.readthedocs.io/en/latest/#using-keyring-on-headless-linux-systems) for the required daemon, D-Bus session and unlocked store. For SSH deployment, configure credentials and the keyring session on compute. The local desktop's keyring is not forwarded through SSH.
 
 Profiles default to `sslmode=verify-full`. The runtime accepts `require`, `verify-ca`, and `verify-full`. Set `sslmode=require` explicitly to require TLS without hostname verification. libpq can still verify the CA when `sslrootcert` or the default root CA file exists.
 
@@ -360,7 +397,7 @@ This server intentionally stays small. It does not manage migrations, pool conne
 
 ## Security
 
-⚠️ **NOTE**: Runtime SQL actions use the configured PostgreSQL connection profile and run with the permissions of that database user or role. OCI IAM controls the companion control-plane server, but it is not the authorization boundary for SQL execution. The SQL policy filters top-level syntax only and cannot prove that allowed expressions are free of side effects. Use least-privilege database grants, restrict function execution, keep verified TLS enabled, protect profile files, passwords, CA certificates, and network settings, and avoid logging or exposing secrets.
+⚠️ **NOTE**: Runtime SQL actions use the configured PostgreSQL connection profile and run with the permissions of that database user or role. OCI IAM controls the companion control-plane server, but it is not the authorization boundary for SQL execution. The SQL policy filters top-level syntax only and cannot prove that allowed expressions are free of side effects. Use least-privilege database grants, restrict function execution, keep verified TLS enabled, protect profile files, credential stores, passwords, CA certificates, and network settings, and avoid logging or exposing secrets.
 
 Providing shell access or another SQL client creates an execution path outside this MCP query policy. Restrict those paths and credentials if MCP filtering is required.
 
@@ -368,7 +405,7 @@ Providing shell access or another SQL client creates an execution path outside t
 
 Set `POSTGRESQL_MCP_TEST_DSN` to a libpq connection string for a disposable PostgreSQL database, then run `uv run pytest oracle/oci_postgresql_runtime_mcp_server/tests/`. The integration tests skip when the variable is unset. The database role must be able to create schemas and create tables in `public`.
 
-The integration tests create uniquely named fixtures and remove them afterward. They verify native scalar and array type names for tables and views, cross-schema composite foreign keys, constraint options, database enforcement, and schema visibility under different search paths. Foreign-key metadata must include explicit target schemas regardless of the connection search path.
+The integration tests create uniquely named fixtures and remove them afterward. They verify bounded metadata pages, continuation across schemas, native scalar and array type names for tables and views, cross-schema composite foreign keys, constraint options, database enforcement, and schema visibility under different search paths. Foreign-key metadata must include explicit target schemas regardless of the connection search path.
 
 ## Third-Party APIs
 

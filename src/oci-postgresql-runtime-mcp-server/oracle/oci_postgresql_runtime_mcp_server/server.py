@@ -25,6 +25,10 @@ from .inspection import (
     _normalize_identifier_list,
     _normalize_table_refs,
 )
+from .pagination import (
+    _DEFAULT_PAGE_SIZE, _MAX_PAGE_SIZE, _METADATA_TIMEOUT_MS, _METADATA_LOCK_TIMEOUT_MS,
+    _bounded_integer, _bounded_page, _decode_cursor, _name_prefix, _scope_digest,
+)
 from .profiles import (
     _CONFIG_ENV_VAR,
     _ConnectionProfile,
@@ -65,6 +69,7 @@ _SOURCE_FINGERPRINT_FILES = (
     "oracle/oci_postgresql_runtime_mcp_server/__init__.py",
     "oracle/oci_postgresql_runtime_mcp_server/inspection.py",
     "oracle/oci_postgresql_runtime_mcp_server/profiles.py",
+    "oracle/oci_postgresql_runtime_mcp_server/pagination.py",
     "oracle/oci_postgresql_runtime_mcp_server/server.py",
     "oracle/oci_postgresql_runtime_mcp_server/sql_policy.py",
 )
@@ -192,34 +197,34 @@ def _apply_statement_timeouts(cursor: Any) -> None:
     cursor.execute(f"set local lock_timeout = {_DEFAULT_LOCK_TIMEOUT_MS}")
 
 
-def _fetch_all(
-    connect_kwargs: dict[str, Any],
-    sql: str,
-    params: Optional[list[Any]] = None,
-) -> list[dict[str, Any]]:
-    with get_postgresql_connection_cm(connect_kwargs) as conn:
-        with conn.cursor(row_factory=dict_row) as cursor:
-            cursor.execute(sql, params)
-            return list(cursor.fetchall())
-
-
-def _list_schema_names(
+def _schema_page(
     connect_kwargs: dict[str, Any],
     *,
-    include_system: bool = False,
+    include_system: bool,
+    name_prefix: Optional[str],
+    after: Optional[tuple[str, ...]],
+    page_size: int,
 ) -> list[str]:
-    rows = _fetch_all(
-        connect_kwargs,
-        "select schema_name from information_schema.schemata order by schema_name",
-    )
-    schemas = [row["schema_name"] for row in rows]
-    if include_system:
-        return schemas
-    return [
-        schema
-        for schema in schemas
-        if schema != "information_schema" and not schema.startswith("pg_")
-    ]
+    conditions: list[str] = []
+    params: dict[str, Any] = {"limit": page_size + 1}
+    if not include_system:
+        conditions.extend(["schema_name <> 'information_schema'", "left(schema_name, 3) <> 'pg_'"])
+    if name_prefix is not None:
+        conditions.append("left(schema_name, char_length(%(name_prefix)s)) = %(name_prefix)s")
+        params["name_prefix"] = name_prefix
+    if after is not None:
+        conditions.append('schema_name::text collate "C" > %(after)s::text collate "C"')
+        params["after"] = after[0]
+    query = "select schema_name from information_schema.schemata"
+    if conditions:
+        query += " where " + " and ".join(conditions)
+    query += ' order by schema_name::text collate "C" limit %(limit)s'
+    with get_postgresql_connection_cm(connect_kwargs) as conn:
+        with conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(f"set local statement_timeout = {_METADATA_TIMEOUT_MS}")
+            cursor.execute(f"set local lock_timeout = {_METADATA_LOCK_TIMEOUT_MS}")
+            cursor.execute(query, params)
+            return [row["schema_name"] for row in cursor.fetchmany(page_size + 1)]
 
 
 def _resolve_column_origins(
@@ -422,40 +427,32 @@ def test_connection(
     }
 
 
-@mcp.tool(
-    description=(
-        "Lists PostgreSQL schemas visible to the supplied connection. By default, "
-        "information_schema and schemas whose names start with pg_ are excluded."
-    )
-)
+@mcp.tool(description="Lists a bounded page of visible PostgreSQL schemas. Follow next_cursor to continue.")
 def list_schemas(
-    connection_name: Annotated[
-        str,
-        Field(
-            description=(
-                "Configured PostgreSQL connection profile name loaded from "
-                f"{_CONFIG_ENV_VAR} or local_config.json."
-            )
-        ),
-    ],
-    include_system: Annotated[
-        bool,
-        Field(description="Include PostgreSQL system schemas when true."),
-    ] = False,
+    connection_name: Annotated[str, Field(description="Configured PostgreSQL connection profile name.")],
+    include_system: Annotated[bool, Field(description="Include PostgreSQL system schemas when true.")] = False,
+    page_size: Annotated[int, Field(ge=1, le=_MAX_PAGE_SIZE, description="Maximum schemas per page (1-1000).")] = _DEFAULT_PAGE_SIZE,
+    cursor: Annotated[Optional[str], Field(description="Opaque next_cursor from the same connection and filters.")] = None,
+    name_prefix: Annotated[Optional[str], Field(description="Exact, case-sensitive schema-name prefix.")] = None,
 ) -> dict[str, Any]:
-    connect_kwargs = _resolve_connect_kwargs(connection_name)
-    schemas = _list_schema_names(connect_kwargs, include_system=include_system)
-    return {"count": len(schemas), "schemas": schemas}
+    _bounded_integer("page_size", page_size)
+    prefix = _name_prefix(name_prefix)
+    scope = _scope_digest("list_schemas", connection_name, include_system=include_system, name_prefix=prefix)
+    after = _decode_cursor(cursor, scope, 1)
+    schemas = _schema_page(_resolve_connect_kwargs(connection_name), include_system=include_system,
+                           name_prefix=prefix, after=after, page_size=page_size)
+    return _bounded_page(schemas[:page_size], field="schemas", metadata={}, scope=scope,
+                         key=lambda name: (name,), has_more=len(schemas) > page_size)
 
 
 @mcp.tool(
     description=(
-        "Lists PostgreSQL tables and views with auto, summary, or full metadata. "
+        "Lists a bounded page of PostgreSQL tables and views with auto, summary, or full metadata. "
         "Without schemas or table_refs, inspects all visible schemas in the connected "
         "database except information_schema and schemas whose names start with pg_. "
         "System schemas can be selected explicitly through schemas or table_refs. "
         "Auto mode returns full column metadata for up to 100 matched objects, "
-        "then falls back to summary metadata."
+        "then falls back to summary metadata. Follow next_cursor to continue."
     )
 )
 def list_tables(
@@ -479,6 +476,7 @@ def list_tables(
     auto_full_limit: Annotated[
         int,
         Field(
+            ge=1, le=_MAX_PAGE_SIZE,
             description=(
                 "When detail is auto, return full metadata only when the matched "
                 "table/view count is at or below this limit."
@@ -506,49 +504,49 @@ def list_tables(
             )
         ),
     ] = None,
+    page_size: Annotated[int, Field(ge=1, le=_MAX_PAGE_SIZE, description="Maximum tables/views per page (1-1000).")] = _DEFAULT_PAGE_SIZE,
+    cursor: Annotated[Optional[str], Field(description="Opaque next_cursor from the same connection and filters.")] = None,
+    name_prefix: Annotated[Optional[str], Field(description="Exact, case-sensitive table/view-name prefix.")] = None,
 ) -> dict[str, Any]:
     if detail not in _TABLE_DETAIL_MODES:
         raise ValueError("detail must be one of: auto, summary, full")
-    if auto_full_limit < 1:
-        raise ValueError("auto_full_limit must be >= 1")
-
+    _bounded_integer("page_size", page_size)
+    _bounded_integer("auto_full_limit", auto_full_limit)
+    prefix = _name_prefix(name_prefix)
     normalized_schemas = _normalize_identifier_list("schemas", schemas)
     normalized_table_refs = _normalize_table_refs(table_refs)
     if normalized_schemas is not None and normalized_table_refs is not None:
         raise ValueError("schemas and table_refs are mutually exclusive")
-
-    if normalized_table_refs is not None:
-        selected_schemas = list(
-            dict.fromkeys(ref["schema"] for ref in normalized_table_refs)
-        )
-    else:
-        selected_schemas = normalized_schemas
+    scope = _scope_digest(
+        "list_tables", connection_name,
+        schemas=sorted(normalized_schemas) if normalized_schemas is not None else None,
+        table_refs=sorted((ref["schema"], ref["name"]) for ref in normalized_table_refs) if normalized_table_refs is not None else None,
+        include_views=include_views, name_prefix=prefix, detail=detail, auto_full_limit=auto_full_limit,
+    )
+    after = _decode_cursor(cursor, scope, 2)
     connect_kwargs = _resolve_connect_kwargs(connection_name)
-    if selected_schemas is None:
-        selected_schemas = _list_schema_names(connect_kwargs)
-
     with _metadata_inspector_cm(connect_kwargs) as inspector:
-        resolved_detail, tables = _inspect_postgresql_tables(
-            inspector,
-            schemas=selected_schemas,
-            table_refs=normalized_table_refs,
-            include_views=include_views,
-            detail=detail,
-            auto_full_limit=auto_full_limit,
+        resolved_detail, tables, has_more = _inspect_postgresql_tables(
+            inspector, schemas=normalized_schemas, table_refs=normalized_table_refs,
+            include_views=include_views, detail=detail, auto_full_limit=auto_full_limit,
+            page_size=page_size, after=after, name_prefix=prefix,
         )
-
-    result: dict[str, Any] = {
-        "detail_requested": detail,
-        "detail": resolved_detail,
-        "auto_full_limit": auto_full_limit,
-        "include_views": include_views,
-        "schemas": selected_schemas,
-        "table_refs": normalized_table_refs,
-        "count": len(tables),
-        "tables": tables,
+    selected_schemas = normalized_schemas
+    if selected_schemas is None:
+        selected_schemas = list(dict.fromkeys(
+            ref["schema"] for ref in normalized_table_refs
+        )) if normalized_table_refs is not None else list(dict.fromkeys(table["table_schema"] for table in tables))
+    metadata: dict[str, Any] = {
+        "detail_requested": detail, "detail": resolved_detail,
+        "auto_full_limit": auto_full_limit, "include_views": include_views,
+        "schemas": selected_schemas, "table_refs": normalized_table_refs,
     }
-    if normalized_table_refs is None and len(selected_schemas) == 1:
-        result["schema"] = selected_schemas[0]
+    if normalized_table_refs is None and normalized_schemas is not None and len(normalized_schemas) == 1:
+        metadata["schema"] = normalized_schemas[0]
+    result = _bounded_page(tables, field="tables", metadata=metadata, scope=scope,
+                           key=lambda table: (table["table_schema"], table["table_name"]), has_more=has_more)
+    if normalized_schemas is None and normalized_table_refs is None:
+        result["schemas"] = list(dict.fromkeys(table["table_schema"] for table in result["tables"]))
     return result
 
 

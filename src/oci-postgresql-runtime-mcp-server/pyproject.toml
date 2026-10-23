@@ -11,6 +11,7 @@ authors = [
 ]
 dependencies = [
     "fastmcp==3.4.5",
+    "keyring==25.7.0",
     "pglast==7.21",
     "psycopg[binary]==3.3.6",
     "sqlalchemy==2.1.4",

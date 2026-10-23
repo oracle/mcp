@@ -1,0 +1,94 @@
+# Security updates run independently of the required version-update schedules.
+# A zero PR limit disables routine version updates, not security updates.
+version: 2
+updates:
+  # Keep OCI server fixes within the src/oci-* CODEOWNERS boundary.
+  - package-ecosystem: uv
+    directories:
+      - /src/oci-*
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      oci-server-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # Common's manifests and lockfile share the non-OCI default owner.
+  - package-ecosystem: uv
+    directories:
+      - /src/common
+      - /src/mysql-mcp-server
+      - /src/oracle-data-studio-mcp-server
+      - /src/oracle-db-doc-mcp-server
+      - /src/oracle-goldengate-mcp-server
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      other-server-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  # The E2E environment has compatibility constraints separate from servers.
+  - package-ecosystem: uv
+    directory: /tests
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      tests-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: uv
+    directory: /policy
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      policy-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: pip
+    directories:
+      - /
+      - /src/dbtools-mcp-server
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      pip-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /src/oci-javascript-mcp-server
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      javascript-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: maven
+    directory: /src/oracle-db-mcp-java-toolkit
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      java-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      github-actions-security:
+        applies-to: security-updates
+        patterns: ["*"]

@@ -13,6 +13,42 @@ def normalize_table_statement(stmt: str) -> str:
     return with_prefix if with_prefix.endswith(";") else f"{with_prefix};"
 
 
+def add_as_of_scn_to_table_statements(stmt: str, scn: int) -> str:
+    """Add an Oracle flashback SQLPREDICATE to each raw TABLE statement."""
+    normalized = normalize_table_statement(stmt)
+    if "SQLPREDICATE" in normalized.upper():
+        raise ValueError("'asOfScn' cannot be combined with a tableStatement that already contains SQLPREDICATE.")
+
+    statements: list[str] = []
+    current: list[str] = []
+    in_quote = False
+    index = 0
+    while index < len(normalized):
+        char = normalized[index]
+        current.append(char)
+        if char == "'":
+            if in_quote and index + 1 < len(normalized) and normalized[index + 1] == "'":
+                current.append(normalized[index + 1])
+                index += 1
+            else:
+                in_quote = not in_quote
+        if char == ";" and not in_quote:
+            statement = "".join(current).strip()
+            if statement:
+                statements.append(statement)
+            current = []
+        index += 1
+
+    remainder = "".join(current).strip()
+    if remainder:
+        statements.append(f"{remainder};")
+    if not statements or any(not statement.upper().startswith("TABLE ") for statement in statements):
+        raise ValueError("tableStatement must contain only TABLE statements when used with 'asOfScn'.")
+
+    predicate = f"SQLPREDICATE 'AS OF SCN {scn}'"
+    return "\n".join(f"{statement[:-1].rstrip()}, {predicate};" for statement in statements)
+
+
 def _sq(val: str) -> str:
     return "'" + str(val).replace("'", "''") + "'"
 
@@ -23,6 +59,15 @@ def _join_cols(cols: list[str] | None) -> str:
 
 def _append_clause(buf: str, clause: str) -> str:
     return f"{buf}, {clause}"
+
+
+def _normalize_sql_predicate(predicate: str) -> str:
+    """Preserve complete SQL selection clauses while supporting legacy bare conditions."""
+    normalized = predicate.strip()
+    clause_prefixes = ("WHERE ", "AS OF ", "ORDER BY ", "GROUP BY ", "HAVING ")
+    if normalized.upper().startswith(clause_prefixes):
+        return normalized
+    return f"WHERE {normalized}"
 
 
 def build_table_statement(params: dict[str, Any]) -> str:
@@ -96,7 +141,7 @@ def build_table_statement(params: dict[str, Any]) -> str:
     if options.get("sqlExec"):
         out = _append_clause(out, f"SQLEXEC ({options['sqlExec']})")
     if options.get("sqlPredicate") and str(options["sqlPredicate"]).strip():
-        out = _append_clause(out, f"SQLPREDICATE {_sq('WHERE ' + options['sqlPredicate'])}")
+        out = _append_clause(out, f"SQLPREDICATE {_sq(_normalize_sql_predicate(options['sqlPredicate']))}")
     if options.get("tokens"):
         token_items = sorted(options["tokens"].items())
         token_expr = ", ".join([f"{k}={_sq(v)}" for k, v in token_items])

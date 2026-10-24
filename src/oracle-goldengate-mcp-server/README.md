@@ -189,6 +189,9 @@ example:
 OGG_PASSWORD='a password with ! and other special characters'
 ```
 
+Only one layer of file quotes is removed. For example, `OGG_PASSWORD='"example-password"'` preserves the double
+quotes as part of the password.
+
 The Windows launchers pass the environment file to the Python configuration loader instead of evaluating it as a
 batch script. Process environment variables still take precedence over values in the file. OCI Secret or a protected
 password file remains preferable to storing a plaintext password.
@@ -241,7 +244,7 @@ Optional variables are also supported:
 | get_replicat_details | Retrieve Replicat details. |
 | get_data_stream_info | Retrieve Data Stream metadata. |
 | get_data_stream_yaml | Retrieve Data Stream AsyncAPI YAML definition. |
-| get_data_stream_stats | Retrieve Data Stream overall, network, and table-level statistics. |
+| get_data_stream_stats | Retrieve only the named Data Stream's overall, network, and table-level statistics, preserving all matching table rows. Collections are empty when no matching statistics are available; this does not establish whether the stream exists. |
 
 For the required process order and wait points, see [Oracle Initial Load to CDC Workflow](docs/initialLoadToCdc.md).
 

@@ -1014,14 +1014,32 @@ def get_data_stream_yaml(dataStreamName: str = Field(..., description="Data stre
     return _ok(client.get(api.get_data_stream_yaml(dataStreamName), headers={"Content-Type": "application/json", "Accept": "application/yaml"}, response_text=True))
 
 
-@_tool(annotations=READ_ANNOTATIONS, description="Retrieve statistics for an existing GoldenGate Data Stream")
+def _filter_data_stream_statistics(data: Any, stream_name: str) -> dict:
+    """Select stream rows without dropping REST envelopes or table entries."""
+    if not isinstance(data, dict):
+        raise ValueError("Invalid Data Stream statistics collection: expected an object.")
+    payload = data.get("response", data)
+    if not isinstance(payload, dict) or not isinstance(payload.get("statistics"), list):
+        raise ValueError("Invalid Data Stream statistics collection: expected a statistics array.")
+    statistics = payload["statistics"]
+    if any(not isinstance(row, dict) for row in statistics):
+        raise ValueError("Invalid Data Stream statistics collection: expected object rows.")
+    # WindowRef identifies a UI view; it does not restrict the shared DISTSRVR collection.
+    filtered = {**payload, "statistics": [
+        row for row in statistics
+        if row.get("name") == stream_name and row.get("dataStreaming") is not False
+    ]}
+    return {**data, "response": filtered} if "response" in data else filtered
+
+
+@_tool(annotations=READ_ANNOTATIONS, description="Retrieve statistics for the named GoldenGate Data Stream only; collections are empty when no matching statistics are available.")
 def get_data_stream_stats(dataStreamName: str = Field(..., description="Data stream name")) -> str:
     """Retrieve overall, network, and table statistics for an existing GoldenGate Data Stream."""
     return _ok(
         {
-            "overall": client.get(api.get_data_stream_overall_stats(dataStreamName)),
-            "network": client.get(api.get_data_stream_network_stats(dataStreamName)),
-            "tables": client.get(api.get_data_stream_table_stats(dataStreamName)),
+            "overall": _filter_data_stream_statistics(client.get(api.get_data_stream_overall_stats(dataStreamName)), dataStreamName),
+            "network": _filter_data_stream_statistics(client.get(api.get_data_stream_network_stats(dataStreamName)), dataStreamName),
+            "tables": _filter_data_stream_statistics(client.get(api.get_data_stream_table_stats(dataStreamName)), dataStreamName),
         }
     )
 

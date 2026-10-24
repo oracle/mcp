@@ -946,9 +946,11 @@ class TestGoldenGateTools(unittest.TestCase):
             self.assertEqual(out, "yaml")
 
     def test_get_data_stream_stats(self):
-        overall = {"totalMessages": 10}
-        network = {"totalBytes": 100}
-        tables = {"items": [{"table": "HR.EMP"}]}
+        overall = {"statistics": [{"name": "DS1", "dataStreaming": True, "lcrsSent": 10}]}
+        network = {"statistics": [{"name": "DS1", "dataStreaming": True, "totalBytesSent": 100}]}
+        tables = {"statistics": [{"name": "DS1", "dataStreaming": True, "stats": {
+            "tableName": "HR.EMP", "lcrReceived": 10, "lcrSent": 10,
+        }}]}
         with patch.object(server.client, "get", side_effect=[overall, network, tables]) as m:
             out = server.get_data_stream_stats("DS1")
             self.assertEqual(
@@ -975,6 +977,69 @@ class TestGoldenGateTools(unittest.TestCase):
             "/services/pmsrvr/v2/mpoints/DISTSRVR/distsrvrTableStats?WindowRef="
             "%2Fservices%2Fadminsrvr%2Fv2%2Fcontent%2Findex.html%23%2FdataStream%2Fdsq7x%2FdataStreamStats",
         )
+
+    def test_get_data_stream_stats_filters_all_collections_and_preserves_table_rows(self):
+        for enveloped in (False, True):
+            with self.subTest(enveloped=enveloped):
+                responses = []
+                expected = {}
+                for key, schema, metrics in (
+                    ("overall", "distsrvrPathStats", [{"lcrsSent": 10}]),
+                    ("network", "distsrvrNetworkStats", [{"totalBytesSent": 100}]),
+                    ("tables", "distsrvrTableStats", [
+                        {"stats": {"tableName": "HR.EMP", "lcrReceived": 10, "lcrSent": 10}},
+                        {"stats": {"tableName": "HR.DEPT", "lcrReceived": 5, "lcrSent": 5}},
+                    ]),
+                ):
+                    selected = [{"name": "DS1", "dataStreaming": True, **metric} for metric in metrics]
+                    collection = {"$schema": f"mpoints:{schema}", "statistics": [
+                        {"name": "DS2", "dataStreaming": True, **metrics[0]},
+                        selected[0],
+                        {"name": "PATH1", "dataStreaming": False, **metrics[0]},
+                        {"name": "DS1", "dataStreaming": False, **metrics[0]},
+                        {"name": "DS10", "dataStreaming": True, **metrics[0]},
+                        *selected[1:],
+                    ]}
+                    filtered = {**collection, "statistics": selected}
+                    if enveloped:
+                        metadata = {"links": [{"rel": "self", "href": "/statistics"}], "messages": []}
+                        responses.append({**metadata, "response": collection})
+                        expected[key] = {**metadata, "response": filtered}
+                    else:
+                        responses.append(collection)
+                        expected[key] = filtered
+                original = json.loads(json.dumps(responses))
+                with patch.object(server.client, "get", side_effect=responses):
+                    self._assert_json(server.get_data_stream_stats("DS1"), expected)
+                self.assertEqual(responses, original)
+
+    def test_get_data_stream_stats_missing_stream_returns_empty_collections(self):
+        for statistics in ([], [{"name": "DS2", "dataStreaming": True}, {"name": "PATH1", "dataStreaming": False}]):
+            for enveloped in (False, True):
+                with self.subTest(statistics=statistics, enveloped=enveloped):
+                    collection = {"statistics": statistics}
+                    response = {"response": collection} if enveloped else collection
+                    empty = {"response": {"statistics": []}} if enveloped else {"statistics": []}
+                    with patch.object(server.client, "get", return_value=response):
+                        self._assert_json(server.get_data_stream_stats("DS1"), {
+                            "overall": empty, "network": empty, "tables": empty,
+                        })
+
+    def test_get_data_stream_stats_accepts_optional_data_streaming_flag(self):
+        response = {"statistics": [{"name": "DS1", "lcrsSent": 1}]}
+        with patch.object(server.client, "get", return_value=response):
+            self._assert_json(server.get_data_stream_stats("DS1"), {
+                "overall": response, "network": response, "tables": response,
+            })
+
+    def test_get_data_stream_stats_rejects_malformed_collections(self):
+        for response in (None, {"response": []}, {}, {"statistics": None}, {"statistics": [None]}):
+            with (
+                self.subTest(response=response),
+                patch.object(server.client, "get", return_value=response),
+                self.assertRaisesRegex(ValueError, "statistics collection"),
+            ):
+                server.get_data_stream_stats("DS1")
 
     def test_get_extract_stats(self):
         with patch.object(server.client, "post", return_value={"ok": True}) as m:

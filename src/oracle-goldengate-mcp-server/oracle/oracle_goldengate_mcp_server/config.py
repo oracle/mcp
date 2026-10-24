@@ -125,8 +125,12 @@ def read_config() -> dict:
     env_file = os.getenv("OGG_ENV_FILE")
     file_values = _load_env_file(env_file) if env_file else {}
 
-    def env(name: str) -> str | None:
-        return os.getenv(name, file_values.get(name))
+    def env(name: str, *, unquote_process: bool = False) -> str | None:
+        if name in os.environ:
+            value = os.environ[name]
+            return _unquote(value) if unquote_process else value
+        # The file parser already removed its one layer of surrounding quotes.
+        return file_values.get(name)
 
     base_url = env("OGG_BASE_URL")
     if not base_url:
@@ -135,7 +139,7 @@ def read_config() -> dict:
     cfg = {
         "baseUrl": base_url,
         "authMode": "basic",
-        "username": _unquote(env("OGG_USERNAME")),
+        "username": env("OGG_USERNAME", unquote_process=True),
         "tenancyOCID": env("OCI_TENANCY_OCID"),
         "userOCID": env("OCI_USER_OCID"),
         "keyFingerprint": env("OCI_KEY_FINGERPRINT"),
@@ -171,7 +175,7 @@ def read_config() -> dict:
             raise ValueError("Missing OGG_PASSWORD_FILE")
         cfg["password"] = _read_password_from_file(password_file)
     else:
-        cfg["password"] = _unquote(env("OGG_PASSWORD"))
+        cfg["password"] = env("OGG_PASSWORD", unquote_process=True)
 
     if not cfg.get("username") or cfg.get("password") is None:
         raise ValueError(

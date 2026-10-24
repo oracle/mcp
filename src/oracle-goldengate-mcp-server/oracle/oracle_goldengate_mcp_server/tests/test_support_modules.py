@@ -387,6 +387,39 @@ def test_config_env_file_does_not_override_process_environment(tmp_path: Path, m
     assert cfg["password"] == "process!password"
 
 
+@pytest.mark.parametrize("literal_quote", ["'", '"'])
+@pytest.mark.parametrize("process_password", [None, '"process!password"', "", "'\"process!password\"'"])
+def test_config_env_file_credentials_are_decoded_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, literal_quote: str, process_password: str | None
+) -> None:
+    env_file = tmp_path / "goldengate.env"
+    file_quote = '"' if literal_quote == "'" else "'"
+    literal_password = f"{literal_quote}example-password{literal_quote}"
+    literal_username = f"{literal_quote}example-user{literal_quote}"
+    env_file.write_text(
+        "OGG_BASE_URL=https://example.invalid\n"
+        f"OGG_USERNAME={file_quote}{literal_username}{file_quote}\n"
+        f"OGG_PASSWORD={file_quote}{literal_password}{file_quote}\n",
+        encoding="utf-8",
+    )
+    for name in ("OGG_USERNAME", "OGG_PASSWORD", "OGG_PASSWORD_FILE", "OGG_PASSWORD_SECRET_OCID", "OCI_PRIVATE_KEY_FILE"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("OGG_ENV_FILE", str(env_file))
+    if process_password is not None:
+        monkeypatch.setenv("OGG_PASSWORD", process_password)
+
+    cfg = config.read_config()
+
+    expected_password = {
+        None: literal_password,
+        '"process!password"': "process!password",
+        "": "",
+        "'\"process!password\"'": '"process!password"',
+    }[process_password]
+    assert cfg["password"] == expected_password
+    assert cfg["username"] == literal_username
+
+
 def test_config_read_from_secret_ocid(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     key_file = tmp_path / "oci.pem"
     key_file.write_text("-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----", encoding="utf-8")

@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-recovery-mcp-server"
-version = "3.0.0"
+version = "3.0.1"
 description = "OCI Recovery Service MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -15,7 +15,7 @@ dependencies = [
     "fastmcp==3.4.5",
     "oci==2.185.1",
     "pydantic==2.13.4",
-    "oracle-mcp-common>=0.1.4,<0.2.0",
+    "oracle-mcp-common>=0.2.0,<0.3.0",
 ]
 
 classifiers = [

@@ -4,10 +4,6 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
-import base64
-import binascii
-import hashlib
-import json
 from collections.abc import Callable
 from typing import Any, Optional
 
@@ -26,42 +22,22 @@ def _bounded_integer(name: str, value: int) -> None:
         raise ValueError(f"{name} must be between 1 and {_MAX_METADATA_LIMIT}")
 
 
-
-
-
-def _scope_digest(tool: str, connection_name: str, **filters: Any) -> str:
-    scope = {"tool": tool, "connection_name": connection_name, **filters}
-    return hashlib.sha256(to_json(scope)).hexdigest()
-
-
-def _encode_cursor(scope: str, after: tuple[str, ...]) -> str:
-    payload = to_json({"v": 1, "scope": scope, "after": after})
-    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
-
-
-def _decode_cursor(cursor: Optional[str], scope: str, width: int) -> Optional[tuple[str, ...]]:
+def _validate_cursor(cursor: Optional[list[str]], width: int) -> Optional[tuple[str, ...]]:
     if cursor is None:
         return None
     try:
-        if not isinstance(cursor, str) or not cursor or len(cursor) > 4096:
-            raise ValueError
-        payload = json.loads(base64.b64decode(
-            cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True,
-        ))
-        if not isinstance(payload, dict) or set(payload) != {"v", "scope", "after"}:
-            raise ValueError
-        if type(payload["v"]) is not int or payload["v"] != 1 or payload["scope"] != scope:
-            raise ValueError
-        after = payload["after"]
-        if not isinstance(after, list) or len(after) != width or any(
+        if not isinstance(cursor, list) or len(cursor) != width or any(
             not isinstance(value, str) or not value or "\x00" in value
             or len(value.encode("utf-8")) > _MAX_IDENTIFIER_BYTES
-            for value in after
+            for value in cursor
         ):
             raise ValueError
-        return tuple(after)
-    except (ValueError, TypeError, UnicodeError, binascii.Error) as exc:
-        raise ValueError("Invalid cursor or cursor does not match this connection and request") from exc
+    except ValueError:
+        raise ValueError(
+            f"cursor must be an array of {width} non-empty names, "
+            f"each at most {_MAX_IDENTIFIER_BYTES} UTF-8 bytes"
+        ) from None
+    return tuple(cursor)
 
 
 def _bounded_page(
@@ -69,7 +45,6 @@ def _bounded_page(
     *,
     field: str,
     metadata: dict[str, Any],
-    scope: str,
     key: Callable[[Any], tuple[str, ...]],
     has_more: bool,
 ) -> dict[str, Any]:
@@ -81,7 +56,7 @@ def _bounded_page(
     item_bytes = 0
     byte_limited = False
     for item in items:
-        next_cursor = _encode_cursor(scope, key(item))
+        next_cursor = list(key(item))
         # Reserve continuation metadata even for the final object. This keeps the
         # budget valid when a subsequent object's size makes the page incomplete.
         envelope = {
@@ -105,6 +80,6 @@ def _bounded_page(
     return {
         **metadata, field: emitted, "count": len(emitted),
         "has_more": more,
-        "next_cursor": _encode_cursor(scope, key(emitted[-1])) if more and emitted else None,
+        "next_cursor": list(key(emitted[-1])) if more and emitted else None,
         "truncation_reason": "max_result_bytes" if byte_limited else "limit" if more else None,
     }

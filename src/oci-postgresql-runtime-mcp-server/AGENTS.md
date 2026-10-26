@@ -9,7 +9,7 @@ This Python package exposes six PostgreSQL runtime tools: `get_runtime_info`, `l
 - [server.py](oracle/oci_postgresql_runtime_mcp_server/server.py): FastMCP registration, runtime fingerprint, connections, result limits and entry point.
 - [profiles.py](oracle/oci_postgresql_runtime_mcp_server/profiles.py): startup profile loading, password-source resolution, validation and redacted summaries.
 - [sql_policy.py](oracle/oci_postgresql_runtime_mcp_server/sql_policy.py): parsing, statement policy and bind-parameter handling.
-- [pagination.py](oracle/oci_postgresql_runtime_mcp_server/pagination.py): bounded catalog discovery, scoped continuation and metadata response limits.
+- [pagination.py](oracle/oci_postgresql_runtime_mcp_server/pagination.py): bounded catalog discovery, explicit continuation positions and metadata response limits.
 - [inspection.py](oracle/oci_postgresql_runtime_mcp_server/inspection.py): SQLAlchemy reflection, native column types and explicit foreign-key target schemas.
 - [Tests](oracle/oci_postgresql_runtime_mcp_server/tests/): tool/protocol, concurrency and optional database tests; [manifest](pyproject.toml), [lockfile](uv.lock) and [package metadata](oracle/oci_postgresql_runtime_mcp_server/__init__.py) define packaging and dependencies.
 
@@ -38,7 +38,7 @@ Optional integration tests skip without `POSTGRESQL_MCP_TEST_DSN`. Set it only f
 
 ## Architecture and dependencies
 
-FastMCP exposes synchronous tools; Psycopg connects, pglast validates SQL, and SQLAlchemy reflects metadata. Each database call requires `connection_name` and owns its connections, without shared active connections or cross-call pooling. Preserve [stateless lifecycle](README.md#connection-selection-and-lifecycle) and exact schema/table identifiers. Metadata discovery uses bounded database queries before reflection. Keep cursor scope, ordering, limit and response-size checks consistent; continuation must follow the last emitted object across schema boundaries.
+FastMCP exposes synchronous tools; Psycopg connects, pglast validates SQL, and SQLAlchemy reflects metadata. Each database call requires `connection_name` and owns its connections, without shared active connections or cross-call pooling. Preserve [stateless lifecycle](README.md#connection-selection-and-lifecycle) and exact schema/table identifiers. Metadata discovery uses bounded database queries before reflection. Keep cursor shape, ordering, limit and response-size checks consistent; continuation must follow the last emitted object across schema boundaries.
 
 ## Security and secrets handling
 

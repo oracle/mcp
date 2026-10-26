@@ -58,10 +58,9 @@ def catalog(catalog_database, monkeypatch):
     return catalog_database
 
 
-def _walk(**kwargs):
+def _walk(*, cursor=None, **kwargs):
     seen = []
     cursors = set()
-    cursor = None
     for _ in range(100):
         page = server.list_tables("integration", cursor=cursor, **kwargs)
         assert page["count"] == len(page["tables"])
@@ -71,8 +70,11 @@ def _walk(**kwargs):
             assert page["next_cursor"] is None
             return seen
         cursor = page["next_cursor"]
-        assert cursor and cursor not in cursors
-        cursors.add(cursor)
+        assert isinstance(cursor, list) and len(cursor) == 2
+        assert cursor == list(seen[-1][:2])
+        position = tuple(cursor)
+        assert position not in cursors
+        cursors.add(position)
     pytest.fail("Catalog continuation did not finish")
 
 
@@ -127,11 +129,12 @@ def test_schema_pages_have_complete_continuation(catalog):
         if not page["has_more"]:
             assert page["next_cursor"] is None
             break
+        assert page["next_cursor"] == [page["schemas"][-1]]
         cursor = page["next_cursor"]
     assert [name for name in names if name in catalog["schemas"]] == sorted(catalog["schemas"])
 
 
-def test_cursor_rejects_changed_filters(catalog):
-    page = server.list_tables("integration", limit=2, detail="summary")
-    with pytest.raises(ValueError):
-        server.list_tables("integration", schemas=[catalog["schemas"][0]], limit=2, detail="summary", cursor=page["next_cursor"])
+def test_explicit_cursor_starts_after_a_known_table(catalog):
+    position = [catalog["schemas"][1], catalog["prefix"] + "0365"]
+    seen = _walk(schemas=catalog["schemas"], cursor=position, limit=113, detail="summary")
+    assert seen == [row for row in catalog["expected"] if row[:2] > tuple(position)]

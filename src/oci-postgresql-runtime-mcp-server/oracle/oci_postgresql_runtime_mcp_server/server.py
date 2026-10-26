@@ -27,7 +27,7 @@ from .inspection import (
 )
 from .pagination import (
     _DEFAULT_METADATA_LIMIT, _MAX_METADATA_LIMIT, _STATEMENT_TIMEOUT_MS, _LOCK_TIMEOUT_MS,
-    _bounded_integer, _bounded_page, _decode_cursor, _scope_digest,
+    _bounded_integer, _bounded_page, _validate_cursor,
 )
 from .profiles import (
     _CONFIG_ENV_VAR,
@@ -440,16 +440,19 @@ def list_schemas(
         ),
     ] = _DEFAULT_METADATA_LIMIT,
     cursor: Annotated[
-        Optional[str],
-        Field(description="Opaque next_cursor from the same connection and filters."),
+        Optional[list[str]],
+        Field(
+            min_length=1,
+            max_length=1,
+            description="Last returned [schema] from next_cursor; repeat the same connection and filters.",
+        ),
     ] = None,
 ) -> dict[str, Any]:
     _bounded_integer("limit", limit)
-    scope = _scope_digest("list_schemas", connection_name, include_system=include_system)
-    after = _decode_cursor(cursor, scope, 1)
+    after = _validate_cursor(cursor, 1)
     schemas = _schema_page(_resolve_connect_kwargs(connection_name), include_system=include_system,
                            after=after, limit=limit)
-    return _bounded_page(schemas[:limit], field="schemas", metadata={}, scope=scope,
+    return _bounded_page(schemas[:limit], field="schemas", metadata={},
                          key=lambda name: (name,), has_more=len(schemas) > limit)
 
 
@@ -521,8 +524,12 @@ def list_tables(
         ),
     ] = _DEFAULT_METADATA_LIMIT,
     cursor: Annotated[
-        Optional[str],
-        Field(description="Opaque next_cursor from the same connection and filters."),
+        Optional[list[str]],
+        Field(
+            min_length=2,
+            max_length=2,
+            description="Last returned [schema, table] from next_cursor; repeat the same connection and filters.",
+        ),
     ] = None,
 ) -> dict[str, Any]:
     if detail not in _TABLE_DETAIL_MODES:
@@ -533,13 +540,7 @@ def list_tables(
     normalized_table_refs = _normalize_table_refs(table_refs)
     if normalized_schemas is not None and normalized_table_refs is not None:
         raise ValueError("schemas and table_refs are mutually exclusive")
-    scope = _scope_digest(
-        "list_tables", connection_name,
-        schemas=sorted(normalized_schemas) if normalized_schemas is not None else None,
-        table_refs=sorted((ref["schema"], ref["name"]) for ref in normalized_table_refs) if normalized_table_refs is not None else None,
-        include_views=include_views, detail=detail, auto_full_limit=auto_full_limit,
-    )
-    after = _decode_cursor(cursor, scope, 2)
+    after = _validate_cursor(cursor, 2)
     connect_kwargs = _resolve_connect_kwargs(connection_name)
     with _metadata_inspector_cm(connect_kwargs) as inspector:
         resolved_detail, tables, has_more = _inspect_postgresql_tables(
@@ -559,7 +560,7 @@ def list_tables(
     }
     if normalized_table_refs is None and normalized_schemas is not None and len(normalized_schemas) == 1:
         metadata["schema"] = normalized_schemas[0]
-    result = _bounded_page(tables, field="tables", metadata=metadata, scope=scope,
+    result = _bounded_page(tables, field="tables", metadata=metadata,
                            key=lambda table: (table["table_schema"], table["table_name"]), has_more=has_more)
     if normalized_schemas is None and normalized_table_refs is None:
         result["schemas"] = list(dict.fromkeys(table["table_schema"] for table in result["tables"]))

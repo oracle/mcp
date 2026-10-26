@@ -61,7 +61,7 @@ List schemas through a named profile:
 
 ### Metadata Pagination
 
-`list_schemas` and `list_tables` return up to `limit` objects per call: 100 by default, with a maximum of 1,000. When `has_more` is true, pass `next_cursor` as `cursor` with the same connection, filters and metadata settings. `count` describes the current page, not the total inventory.
+`list_schemas` and `list_tables` return up to `limit` objects per call: 100 by default, with a maximum of 1,000. `cursor` and `next_cursor` contain `[schema]` for `list_schemas` and `[schema, table]` for `list_tables`. When `has_more` is true, pass `next_cursor` as `cursor` with the same connection, filters and metadata settings. To change those settings, start a new listing without `cursor`. `count` describes the current page, not the total inventory.
 
 Results are ordered by schema and table name. With `schemas`, continuation stays within those schemas; without filters, it can cross visible non-system schemas. The cursor is stateless and needs no open database session. Objects created, dropped or renamed between calls can change the inventory.
 
@@ -73,7 +73,7 @@ Results are ordered by schema and table name. With `schemas`, continuation stays
     "schemas": ["app", "public"],
     "detail": "summary",
     "limit": 100,
-    "cursor": "<next_cursor from the previous response>"
+    "cursor": ["app", "orders"]
   }
 }
 ```

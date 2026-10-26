@@ -404,9 +404,9 @@ def _inspect_postgresql_tables(
     refs = candidates[:limit]
     resolved_detail = detail
     if detail == "auto":
-        # Probe the entire filtered scope, not only this page. Otherwise every
-        # short page of a large catalog would incorrectly request full metadata.
-        if after is None and (len(candidates) > auto_full_limit or not has_more):
+        # Enough candidates prove summary detail on any page. A short later
+        # page still needs a scope probe before choosing full metadata.
+        if len(candidates) > auto_full_limit or (after is None and not has_more):
             probe = candidates
         else:
             probe = _discover_table_refs(inspector, **filters, after=None, limit=auto_full_limit + 1)

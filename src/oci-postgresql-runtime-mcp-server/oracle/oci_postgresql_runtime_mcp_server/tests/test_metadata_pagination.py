@@ -76,6 +76,60 @@ def test_auto_uses_entire_filtered_scope_even_on_final_short_page(catalog, detai
         assert catalog.discovery_calls[-1]["limit"] == 3
 
 
+@pytest.mark.parametrize("filter_kind", ["schemas", "table_refs"])
+@pytest.mark.parametrize("limit,auto_full_limit", [(100, 100), (4, 2)])
+def test_later_auto_page_above_threshold_needs_no_scope_probe(catalog, filter_kind, limit, auto_full_limit):
+    names = [f"table_{index:05}" for index in range(limit + 3)]
+    catalog.tables = {"app": names, "other": ["unselected"]}
+    filters = {"schemas": ["app"]} if filter_kind == "schemas" else {
+        "table_refs": [{"schema": "app", "name": name} for name in names],
+    }
+    result = server.list_tables(
+        "app-db", **filters, limit=limit, auto_full_limit=auto_full_limit,
+        cursor=["app", names[0]],
+    )
+    assert result["detail"] == "summary"
+    assert result["count"] == limit and result["has_more"] is True
+    assert table_keys(result) == [("app", name) for name in names[1:limit + 1]]
+    assert all("columns" not in table for table in result["tables"])
+    assert catalog.discovery_calls == [{
+        "schemas": filters.get("schemas"), "table_refs": filters.get("table_refs"),
+        "after": ("app", names[0]), "limit": limit + 1,
+    }]
+
+
+@pytest.mark.parametrize("filter_kind", ["schemas", "table_refs"])
+@pytest.mark.parametrize("include_views", [False, True])
+@pytest.mark.parametrize("cursor_name", ["a", "b"])
+def test_later_auto_page_at_or_below_threshold_probes_same_filtered_scope(
+    catalog, monkeypatch, filter_kind, include_views, cursor_name,
+):
+    catalog.tables = {"app": ["a", "b", "c"], "other": [f"other_{index}" for index in range(10)]}
+    catalog.views = {"app": ["d_view"]}
+    filters = {"schemas": ["app"]} if filter_kind == "schemas" else {
+        "table_refs": [{"schema": "app", "name": name} for name in ("a", "b", "c", "d_view")],
+    }
+    discover = Mock(wraps=catalog.discover)
+    monkeypatch.setattr(catalog, "discover", discover)
+    result = server.list_tables(
+        "app-db", **filters, include_views=include_views,
+        cursor=["app", cursor_name], limit=2, auto_full_limit=3,
+    )
+    expected_detail = "summary" if include_views else "full"
+    expected_names = [name for name in ["a", "b", "c"] + (["d_view"] if include_views else [])
+                      if name > cursor_name][:2]
+    assert result["detail"] == expected_detail
+    assert table_keys(result) == [("app", name) for name in expected_names]
+    assert all(("columns" in table) == (expected_detail == "full") for table in result["tables"])
+    assert catalog.discovery_calls == [
+        {"schemas": filters.get("schemas"), "table_refs": filters.get("table_refs"),
+         "after": ("app", cursor_name), "limit": 3},
+        {"schemas": filters.get("schemas"), "table_refs": filters.get("table_refs"),
+         "after": None, "limit": 4},
+    ]
+    assert [call.kwargs["include_views"] for call in discover.call_args_list] == [include_views, include_views]
+
+
 def test_exact_table_filters_are_preserved(catalog):
     catalog.tables = {" app ": ["%_a", "%_b", "other"], "other": ["%_a"]}
     refs = [{"schema": " app ", "name": name} for name in ("%_a", "%_b")]

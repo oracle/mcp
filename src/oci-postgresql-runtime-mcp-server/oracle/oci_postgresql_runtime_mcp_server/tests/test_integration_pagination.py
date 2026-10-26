@@ -28,6 +28,9 @@ def catalog_database():
     prefix = "mcp_item_" + unique + "_"
     expected = []
     with psycopg.connect(**kwargs, autocommit=True) as setup:
+        identifier_bytes = int(setup.execute("SHOW max_identifier_length").fetchone()[0])
+        schemas[-1] += "s" * (identifier_bytes - len(schemas[-1].encode()))
+        boundary_name = "n" * identifier_bytes
         try:
             with setup.transaction():
                 for schema in schemas:
@@ -42,10 +45,15 @@ def catalog_database():
                     name = prefix + "percent%_quote'"
                     setup.execute(sql.SQL("CREATE TABLE {} (id integer)").format(sql.Identifier(schema, name)))
                     expected.append((schema, name, "BASE TABLE"))
-            yield {"kwargs": kwargs, "schemas": schemas, "prefix": prefix, "expected": sorted(expected)}
+                    for name in (prefix + "quote'\"_λ_表", boundary_name):
+                        setup.execute(sql.SQL("CREATE TABLE {} (id integer)").format(sql.Identifier(schema, name)))
+                        expected.append((schema, name, "BASE TABLE"))
+            yield {"kwargs": kwargs, "schemas": schemas, "prefix": prefix,
+                   "boundary_name": boundary_name, "expected": sorted(expected)}
         finally:
             for schema in schemas:
                 setup.execute(sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(sql.Identifier(schema)))
+
 
 
 @pytest.fixture
@@ -138,3 +146,58 @@ def test_explicit_cursor_starts_after_a_known_table(catalog):
     position = [catalog["schemas"][1], catalog["prefix"] + "0365"]
     seen = _walk(schemas=catalog["schemas"], cursor=position, limit=113, detail="summary")
     assert seen == [row for row in catalog["expected"] if row[:2] > tuple(position)]
+
+
+@pytest.mark.parametrize("include_views", [False, True])
+def test_many_exact_refs_keep_global_order_and_exact_identifiers(catalog, include_views):
+    names = {catalog["prefix"] + f"{index:04d}" for index in range(15)}
+    names.update({catalog["prefix"] + "view", catalog["prefix"] + "quote'\"_λ_表", catalog["boundary_name"]})
+    selected = [row for row in catalog["expected"] if row[1] in names]
+    refs = [{"schema": schema, "name": name} for schema, name, _ in reversed(selected)]
+    refs += [refs[0], {"schema": selected[0][0], "name": selected[0][1]},
+             {"schema": catalog["schemas"][0], "name": "000_not_present"},
+             {"schema": catalog["schemas"][-1] + "x", "name": catalog["prefix"] + "0000"},
+             {"schema": catalog["schemas"][-1], "name": catalog["boundary_name"] + "x"}]
+    expected = [row for row in selected if include_views or row[2] == "BASE TABLE"]
+    seen = _walk(table_refs=refs, include_views=include_views, limit=7, detail="summary")
+    assert seen == expected
+    assert len(seen) == len(set(seen))
+    final = server.list_tables(
+        "integration", table_refs=refs, include_views=include_views, limit=7,
+        detail="summary", cursor=list(expected[-2][:2]),
+    )
+    assert [(table["table_schema"], table["table_name"], table["table_type"]) for table in final["tables"]] == expected[-1:]
+    assert final["has_more"] is False and final["next_cursor"] is None
+    empty = server.list_tables(
+        "integration", table_refs=refs, include_views=include_views, limit=7,
+        detail="summary", cursor=list(expected[-1][:2]),
+    )
+    assert empty["tables"] == [] and empty["count"] == 0
+    assert empty["has_more"] is False and empty["next_cursor"] is None
+
+
+
+def test_overlong_exact_ref_names_do_not_alias_database_identifiers(catalog):
+    refs = [
+        {"schema": catalog["schemas"][-1] + "x", "name": catalog["prefix"] + "0000"},
+        {"schema": catalog["schemas"][-1], "name": catalog["boundary_name"] + "x"},
+    ]
+    page = server.list_tables("integration", table_refs=refs, limit=1, detail="summary")
+    assert page["tables"] == [] and page["count"] == 0
+    assert page["has_more"] is False and page["next_cursor"] is None
+
+
+@pytest.mark.parametrize("use_refs", [False, True])
+@pytest.mark.parametrize("cursor_part", ["schema", "name"])
+def test_overlong_manual_cursor_preserves_text_position(catalog, use_refs, cursor_part):
+    refs = [{"schema": schema, "name": catalog["prefix"] + "0000"} for schema in catalog["schemas"]]
+    refs.append({"schema": catalog["schemas"][-1], "name": catalog["boundary_name"]})
+    filters = {"table_refs": refs} if use_refs else {"schemas": catalog["schemas"]}
+    cursor = ([catalog["schemas"][-1] + "x", "a"] if cursor_part == "schema"
+              else [catalog["schemas"][-1], catalog["boundary_name"][:-1] + "λ"])
+    page = server.list_tables(
+        "integration", **filters, limit=1, detail="summary",
+        cursor=cursor,
+    )
+    assert page["tables"] == [] and page["count"] == 0
+    assert page["has_more"] is False and page["next_cursor"] is None

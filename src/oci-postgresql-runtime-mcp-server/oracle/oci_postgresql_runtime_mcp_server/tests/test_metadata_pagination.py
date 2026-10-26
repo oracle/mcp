@@ -362,3 +362,77 @@ def test_default_auto_small_catalog_has_full_metadata_without_another_probe(cata
     assert result["detail"] == "full"
     assert all("columns" in table for table in result["tables"])
     assert len(catalog.discovery_calls) == 1
+
+
+@pytest.mark.parametrize("include_views", [False, True])
+def test_many_exact_refs_page_in_global_order_and_reflect_only_emitted_matches(catalog, include_views):
+    schemas = ["a", "m space", "z" * 63]
+    names = [f"shared_{index:02}" for index in range(20)] + ["quote'\"_λ_表", "n" * 63]
+    catalog.tables = {schema: list(names) for schema in schemas}
+    catalog.views = {schema: ["shared_view"] for schema in schemas}
+    expected = sorted(
+        [(schema, name, "BASE TABLE") for schema in schemas for name in names]
+        + ([(schema, "shared_view", "VIEW") for schema in schemas] if include_views else []),
+        key=lambda item: (item[0].encode(), item[1].encode()),
+    )
+    refs = [{"schema": schema, "name": name} for schema in reversed(schemas)
+            for name in ["shared_view", *reversed(names)]]
+    refs += [refs[0], {"schema": "a", "name": "shared_00"},
+             {"schema": "a", "name": "000_not_present"},
+             {"schema": schemas[-1] + "x", "name": names[0]},
+             {"schema": schemas[-1], "name": names[-1] + "x"}]
+    cursor = None
+    seen = []
+    for _ in range(20):
+        reflected_before = len(catalog.reflection_calls)
+        page = server.list_tables(
+            "app-db", table_refs=refs, include_views=include_views,
+            limit=7, auto_full_limit=3, cursor=cursor,
+        )
+        keys = table_keys(page)
+        assert page["count"] == len(keys) <= 7
+        assert page["detail"] == "summary"
+        reflected = {(schema, name) for _, schema, names in catalog.reflection_calls[reflected_before:]
+                     for name in names}
+        assert reflected == set(keys)
+        assert len(page["table_refs"]) == len({(ref["schema"], ref["name"]) for ref in refs})
+        seen.extend((table["table_schema"], table["table_name"], table["table_type"]) for table in page["tables"])
+        if not page["has_more"]:
+            assert page["next_cursor"] is None
+            break
+        assert page["next_cursor"] == list(keys[-1])
+        cursor = page["next_cursor"]
+    else:
+        pytest.fail("Exact-ref pagination did not finish")
+    assert seen == expected
+    assert len(seen) == len(set(seen))
+    empty = server.list_tables(
+        "app-db", table_refs=refs, include_views=include_views, limit=7,
+        cursor=list(expected[-1][:2]),
+    )
+    assert empty["tables"] == [] and empty["count"] == 0
+    assert empty["has_more"] is False and empty["next_cursor"] is None
+
+
+def test_exact_ref_cursor_filters_requested_text_pairs_before_catalog_lookups():
+    inspector = Mock()
+    connection = Mock()
+    inspector.bind.connect.return_value = contextlib.nullcontext(connection)
+    connection.execute.return_value.mappings.return_value.fetchmany.return_value = []
+    refs = [{"schema": "a", "name": "known"}, {"schema": "z" * 64, "name": "n" * 64}]
+    inspection._discover_table_refs(
+        inspector, schemas=None, table_refs=refs, include_views=True,
+        after=("a", "known"), limit=8,
+    )
+    query, params = connection.execute.call_args.args
+    compact = "".join(str(query).lower().split())
+    predicate = '(requested.schemacollate"c",requested.namecollate"c")>'
+    assert predicate in compact
+    assert compact.index(predicate) < compact.index("pg_catalog.pg_namespace")
+    assert compact.index(predicate) < compact.index("pg_catalog.pg_class")
+    assert "cast(:after_schemaaspg_catalog.name)" not in compact
+    assert "relation.relname=cast(requested.nameaspg_catalog.name)" in compact
+    assert "relation.relnamespace=namespace.oid" in compact
+    assert params["ref_schemas"] == [ref["schema"] for ref in refs]
+    assert params["ref_names"] == [ref["name"] for ref in refs]
+    assert params["after_schema"] == "a" and params["after_name"] == "known"

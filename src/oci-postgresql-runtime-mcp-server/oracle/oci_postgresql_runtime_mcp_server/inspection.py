@@ -241,79 +241,93 @@ def _discover_table_refs(
     after: Optional[tuple[str, ...]],
     limit: int,
 ) -> list[dict[str, str]]:
-    conditions = [
-        "relation.relkind in ('r', 'p', 'v')" if include_views else "relation.relkind in ('r', 'p')",
-        "relation.relpersistence <> 't'",
-    ]
+    relation_kind_condition = (
+        "relation.relkind in ('r', 'p', 'v')" if include_views else "relation.relkind in ('r', 'p')"
+    )
     params: dict[str, Any] = {"limit": limit}
     if after is not None:
         params["after_schema"], params["after_name"] = after
-    order_by = 'namespace.nspname collate "C", relation.relname collate "C"'
+
     if table_refs is not None:
         params["ref_schemas"] = [ref["schema"] for ref in table_refs]
         params["ref_names"] = [ref["name"] for ref in table_refs]
-        requested_where = ""
+        requested_cursor_filter = ""
         if after is not None:
-            requested_where = """where (requested.schema collate "C", requested.name collate "C") >
+            requested_cursor_filter = """where (requested.schema collate "C", requested.name collate "C") >
                 (cast(:after_schema as text) collate "C", cast(:after_name as text) collate "C")"""
-        # Seek and sort the requested pairs before catalog lookup. The outer
-        # limit still applies after missing or excluded relations are removed.
-        from_clause = """(
-            select distinct requested.schema collate "C" as schema,
-                requested.name collate "C" as name
-            from unnest(cast(:ref_schemas as pg_catalog.text[]),
-                cast(:ref_names as pg_catalog.text[])) as requested(schema, name)
-            """ + requested_where + """ order by schema, name
-        ) as requested
-        join pg_catalog.pg_namespace as namespace
-            on namespace.nspname = cast(requested.schema as pg_catalog.name)
-            and namespace.nspname::text collate "C" = requested.schema collate "C"
-        cross join lateral (
-            select relation.relname, relation.relkind
-            from pg_catalog.pg_class as relation
-            where relation.relname = cast(requested.name as pg_catalog.name)
-                and relation.relnamespace = namespace.oid
-                and relation.relname::text collate "C" = requested.name collate "C"
-                and """ + " and ".join(conditions) + """
-            limit 1
-        ) as relation"""
-        # Text guards keep native name casts from aliasing overlong references.
-        conditions = []
-        order_by = 'requested.schema collate "C", requested.name collate "C"'
+
+        # Sort requested pairs before catalog lookup, then limit eligible matches.
+        # Exact text guards prevent native name casts from aliasing long references.
+        query = text(f"""
+            select namespace.nspname as schema, relation.relname as name,
+                case when relation.relkind = 'v' then 'VIEW' else 'BASE TABLE' end as table_type
+            from (
+                select distinct requested.schema collate "C" as schema,
+                    requested.name collate "C" as name
+                from unnest(cast(:ref_schemas as pg_catalog.text[]),
+                    cast(:ref_names as pg_catalog.text[])) as requested(schema, name)
+                {requested_cursor_filter}
+                order by schema, name
+            ) as requested
+            join pg_catalog.pg_namespace as namespace
+                on namespace.nspname = cast(requested.schema as pg_catalog.name)
+                and namespace.nspname::text collate "C" = requested.schema collate "C"
+            cross join lateral (
+                select relation.relname, relation.relkind
+                from pg_catalog.pg_class as relation
+                where relation.relname = cast(requested.name as pg_catalog.name)
+                    and relation.relnamespace = namespace.oid
+                    and relation.relname::text collate "C" = requested.name collate "C"
+                    and {relation_kind_condition}
+                    and relation.relpersistence <> 't'
+                limit 1
+            ) as relation
+            order by requested.schema collate "C", requested.name collate "C"
+            limit :limit
+        """)
     else:
         namespace_conditions = []
-        visible_join = ""
+        visible_schema_join = ""
         if schemas is not None:
             namespace_conditions.append("namespace.nspname = any(cast(:schemas as pg_catalog.text[]))")
             params["schemas"] = schemas
         else:
-            visible_join = "join information_schema.schemata as visible on visible.schema_name = namespace.nspname"
+            visible_schema_join = "join information_schema.schemata as visible on visible.schema_name = namespace.nspname"
             namespace_conditions.extend([
                 "namespace.nspname <> 'information_schema'",
                 "left(namespace.nspname, 3) <> 'pg_'",
             ])
-        conditions.append("relation.relnamespace = namespace.oid")
+
+        relation_cursor_filter = ""
         if after is not None:
-            # Native name-to-text comparisons use the catalog index without truncating cursors.
+            # Text bounds use the native catalog index without truncating cursors.
             namespace_conditions.append('namespace.nspname >= cast(:after_schema as text) collate "C"')
-            conditions.append("""relation.relname > (case
+            relation_cursor_filter = """and relation.relname > (case
                 when namespace.nspname = cast(:after_schema as text) collate "C"
                 then cast(:after_name as text) else ''::text end) collate "C"
-            """)
-        # Limit each schema in native name order so the catalog index can serve the page.
-        from_clause = """pg_catalog.pg_namespace as namespace """ + visible_join + """
+            """
+
+        # Bound each schema lookup before applying the limit to the entire page.
+        query = text(f"""
+            select namespace.nspname as schema, relation.relname as name,
+                case when relation.relkind = 'v' then 'VIEW' else 'BASE TABLE' end as table_type
+            from pg_catalog.pg_namespace as namespace
+            {visible_schema_join}
             cross join lateral (
                 select relation.relname, relation.relkind
                 from pg_catalog.pg_class as relation
-                where """ + " and ".join(conditions) + """
-                order by relation.relname collate "C" limit :limit
-            ) as relation"""
-        conditions = namespace_conditions
-    query = text("""
-        select namespace.nspname as schema, relation.relname as name,
-            case when relation.relkind = 'v' then 'VIEW' else 'BASE TABLE' end as table_type
-        from """ + from_clause + (" where " + " and ".join(conditions) if conditions else "") +
-        " order by " + order_by + " limit :limit")
+                where {relation_kind_condition}
+                    and relation.relpersistence <> 't'
+                    and relation.relnamespace = namespace.oid
+                    {relation_cursor_filter}
+                order by relation.relname collate "C"
+                limit :limit
+            ) as relation
+            where {" and ".join(namespace_conditions)}
+            order by namespace.nspname collate "C", relation.relname collate "C"
+            limit :limit
+        """)
+
     with inspector.bind.connect() as connection:
         rows = connection.execute(query, params).mappings().fetchmany(limit)
     return [dict(row) for row in rows]

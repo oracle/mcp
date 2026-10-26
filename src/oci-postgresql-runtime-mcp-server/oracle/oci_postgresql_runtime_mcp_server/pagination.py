@@ -13,25 +13,20 @@ from typing import Any, Optional
 
 from pydantic_core import to_json
 
-_DEFAULT_PAGE_SIZE = 100
-_MAX_PAGE_SIZE = 1000
+_DEFAULT_METADATA_LIMIT = 100
+_MAX_METADATA_LIMIT = 1000
 _MAX_METADATA_BYTES = 1_048_576
-_METADATA_TIMEOUT_MS = 60_000
-_METADATA_LOCK_TIMEOUT_MS = 5_000
+_STATEMENT_TIMEOUT_MS = 300_000
+_LOCK_TIMEOUT_MS = 5_000
 _MAX_IDENTIFIER_BYTES = 1024
 
 
 def _bounded_integer(name: str, value: int) -> None:
-    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= _MAX_PAGE_SIZE:
-        raise ValueError(f"{name} must be between 1 and {_MAX_PAGE_SIZE}")
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= _MAX_METADATA_LIMIT:
+        raise ValueError(f"{name} must be between 1 and {_MAX_METADATA_LIMIT}")
 
 
-def _name_prefix(value: Optional[str]) -> Optional[str]:
-    if value is not None and (
-        not isinstance(value, str) or "\x00" in value or len(value.encode("utf-8")) > _MAX_IDENTIFIER_BYTES
-    ):
-        raise ValueError(f"name_prefix must be a string of at most {_MAX_IDENTIFIER_BYTES} bytes")
-    return value or None
+
 
 
 def _scope_digest(tool: str, connection_name: str, **filters: Any) -> str:
@@ -111,5 +106,5 @@ def _bounded_page(
         **metadata, field: emitted, "count": len(emitted),
         "has_more": more,
         "next_cursor": _encode_cursor(scope, key(emitted[-1])) if more and emitted else None,
-        "truncation_reason": "max_result_bytes" if byte_limited else "page_size" if more else None,
+        "truncation_reason": "max_result_bytes" if byte_limited else "limit" if more else None,
     }

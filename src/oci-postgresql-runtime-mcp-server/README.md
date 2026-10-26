@@ -61,25 +61,24 @@ List schemas through a named profile:
 
 ### Metadata Pagination
 
-`list_schemas` and `list_tables` return one page per call. `page_size` defaults to 100 and accepts values from 1 through 1,000. This limits each response, not the number of schemas or tables supported by the database. `count` is the number of objects returned in this page, not the total matching inventory.
+`list_schemas` and `list_tables` return up to `limit` objects per call: 100 by default, with a maximum of 1,000. When `has_more` is true, pass `next_cursor` as `cursor` with the same connection, filters and metadata settings. `count` describes the current page, not the total inventory.
 
-When `has_more` is true, pass `next_cursor` as `cursor` in another call with the same connection, filters and metadata settings. The cursor carries the last returned name and request scope; it requires no open database session or server-side pagination state. Table ordering uses the schema and table name together, so continuation can cross schemas when no schema filter is supplied. Ordering is deterministic, but objects created, dropped or renamed between calls can change the inventory.
-
-For example, continue an unfiltered table listing as follows:
+Results are ordered by schema and table name. With `schemas`, continuation stays within those schemas; without filters, it can cross visible non-system schemas. The cursor is stateless and needs no open database session. Objects created, dropped or renamed between calls can change the inventory.
 
 ```json
 {
   "tool": "list_tables",
   "arguments": {
     "connection_name": "app-db",
+    "schemas": ["app", "public"],
     "detail": "summary",
-    "page_size": 100,
+    "limit": 100,
     "cursor": "<next_cursor from the previous response>"
   }
 }
 ```
 
-Do not collect every page unless the task requires a complete inventory. Narrow discovery by schema or table name, then use exact `table_refs` to fetch full metadata for the relevant objects. For unfiltered table discovery, the response’s `schemas` field lists the schemas represented by that page. The server limits catalog discovery before reflecting metadata. Table metadata applies a 60-second database-work budget across its queries; schema discovery uses a 60-second statement timeout. Both apply a five-second lock timeout. These controls do not guarantee a complete tool-call deadline. Metadata responses also have an approximately 1 MB size budget; a page can contain fewer than `page_size` objects when this budget is reached. Continuation starts after the last object actually returned. An object that cannot fit on its own produces an error instead of silently losing metadata.
+Narrow discovery with `schemas` or exact `table_refs` when possible. Responses are capped at approximately 1 MB, so a page can contain fewer than `limit` objects. Continuation starts after the last returned object. Metadata queries use a five-minute statement timeout and a five-second lock timeout.
 
 ### Table and View Metadata
 
@@ -89,10 +88,8 @@ Use `list_tables` with the following filters and metadata depth:
 
 - Omit `schemas` and `table_refs` to discover tables across visible non-system schemas, one page at a time. Default discovery excludes `information_schema` and schema names beginning with `pg_`.
 - Use `schemas` for exact schema names or `table_refs` for exact `{schema, name}` references. The filters are mutually exclusive. Explicit filters may target system schemas.
-- Use `name_prefix` for a literal, case-sensitive table/view-name prefix. `list_schemas` also accepts `name_prefix` for schema names. Prefixes are not SQL patterns: `%` and `_` match themselves.
-- Each explicit `schemas` or `table_refs` list accepts at most 1,000 entries. Identifiers and prefixes accept at most 1,024 UTF-8 bytes.
 - Views are included by default. Set `include_views=false` to inspect base tables only.
-- `detail=auto` returns full metadata when the complete filtered scope contains at most 100 matched tables/views, and summary metadata above that. `auto_full_limit` changes this threshold independently of page size, with a maximum of 1,000. A bounded catalog probe determines the detail level; selecting a small page does not turn a large catalog into full metadata.
+- `detail=auto` returns full metadata when the complete filtered scope contains at most 100 matched tables/views, and summary metadata above that. `auto_full_limit` changes this threshold independently of page size, with a maximum of 1,000.
 - `detail=summary` returns names, comments, indexes, and foreign keys without column lists.
 - `detail=full` also returns columns, primary keys, unique constraints, and check constraints.
 
@@ -230,11 +227,10 @@ Example profile file:
 }
 ```
 
-Each profile must select exactly one password source:
+Each profile must select exactly one password reference. Literal `password` fields are rejected:
 
 - `password_keyring`: an object containing explicit `service` and `username` strings. The server reads that entry from a supported OS credential store. Select a supported backend before storing the secret, and use the same `PYTHON_KEYRING_BACKEND` for provisioning and server startup. Provision on the MCP host under its runtime user, using the server Python environment. For example, on macOS run `PYTHON_KEYRING_BACKEND=keyring.backends.macOS.Keyring python -m keyring set oracle-postgresql/app-db app_user` and enter the password at the prompt. For Linux Secret Service, select `keyring.backends.SecretService.Keyring` after setting up its daemon and session. Do not provision secrets through an automatically selected plaintext backend.
 - `password_env`: the name of an environment variable that contains the password, such as `APP_DB_PASSWORD`. Supply the value through the deployment's secret injection mechanism. The profile contains only the variable name. Storing the value in an MCP client's configuration file would still leave a plaintext secret on disk; an environment reference does not provide encryption at rest by itself.
-- `password`: a literal password, retained for compatibility. This source stores the secret in the profile file. Prefer a credential reference and protect any legacy password-bearing profile as a secret.
 
 Password sources resolve once when profiles load at startup. Restart the server after changing a referenced environment value or keyring entry. Conflicting sources, missing secrets and unavailable or unsupported keyring backends produce a configuration error; the server does not silently fall back to another source. Secrets are excluded from connection summaries and credential-resolution errors.
 

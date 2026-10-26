@@ -17,7 +17,7 @@ This Python package exposes six PostgreSQL runtime tools: `get_runtime_info`, `l
 
 Use Python 3.13+ and `uv`. From the repository root, `proto install` installs pinned tools; `uv sync --directory src/oci-postgresql-runtime-mcp-server --locked --all-extras --dev` sets up the locked package environment. Follow the [shared validation map](../../docs/agent-development.md#validation-map).
 
-[Connection profiles](README.md#connection-profiles) load once at startup from `POSTGRESQL_MCP_CONFIG`, otherwise this server directory's `local_config.json`; changes and credential-source updates require a restart. Profiles select one literal password, environment reference or OS-keyring reference. Configure the keyring under the runtime user on the MCP host; missing or unsupported stores must fail without a fallback. TLS defaults to `verify-full`; preserve certificate and hostname verification for normal deployment. Keep profiles outside tracked files.
+[Connection profiles](README.md#connection-profiles) load once at startup from `POSTGRESQL_MCP_CONFIG`, otherwise this server directory's `local_config.json`; changes and credential-source updates require a restart. Profiles select one environment reference or OS-keyring reference. Configure the keyring under the runtime user on the MCP host; missing or unsupported stores must fail without a fallback. TLS defaults to `verify-full`; preserve certificate and hostname verification for normal deployment. Keep profiles outside tracked files.
 
 [Setup](README.md#setup) owns local launch and network prerequisites. For remote execution, follow [MCP on compute through SSH](README.md#approach-b-mcp-on-compute-through-ssh): SSH carries STDIO, and the remote process needs its own environment, profile and database route. Console command: `oracle.oci-postgresql-runtime-mcp-server`.
 
@@ -38,7 +38,7 @@ Optional integration tests skip without `POSTGRESQL_MCP_TEST_DSN`. Set it only f
 
 ## Architecture and dependencies
 
-FastMCP exposes synchronous tools; Psycopg connects, pglast validates SQL, and SQLAlchemy reflects metadata. Each database call requires `connection_name` and owns its connections, without shared active connections or cross-call pooling. Preserve [stateless lifecycle](README.md#connection-selection-and-lifecycle) and exact schema/table identifiers. Metadata discovery uses bounded database queries before reflection. Keep cursor scope, ordering, page-size and response-size checks consistent; continuation must follow the last emitted object across schema boundaries.
+FastMCP exposes synchronous tools; Psycopg connects, pglast validates SQL, and SQLAlchemy reflects metadata. Each database call requires `connection_name` and owns its connections, without shared active connections or cross-call pooling. Preserve [stateless lifecycle](README.md#connection-selection-and-lifecycle) and exact schema/table identifiers. Metadata discovery uses bounded database queries before reflection. Keep cursor scope, ordering, limit and response-size checks consistent; continuation must follow the last emitted object across schema boundaries.
 
 ## Security and secrets handling
 
@@ -50,7 +50,7 @@ Keep credentials, profiles, certificates, private endpoints and machine-specific
 
 ## Change impact
 
-Tool schemas, defaults, errors and response changes affect MCP callers. Profile, policy and metadata changes require corresponding tests and README review. The fingerprint covers six runtime modules; update its file list and tests when that scope changes. Follow root changelog rules and record public contract changes in the [changelog](CHANGELOG.md).
+Tool schemas, defaults, errors and response changes affect MCP callers. Profile, policy and metadata changes require corresponding tests and README review. The fingerprint covers six runtime modules; update its file list and tests when that scope changes.
 
 ## Known gaps
 

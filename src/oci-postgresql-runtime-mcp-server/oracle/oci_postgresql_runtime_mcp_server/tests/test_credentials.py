@@ -33,9 +33,35 @@ def _backend(password=_PASSWORD, *, module="keyring.backends.SecretService", nam
     return backend_type()
 
 
+@pytest.mark.parametrize("password", [_PASSWORD, None, "", 123, True, {}])
+@pytest.mark.parametrize("references", [
+    {}, {"password_env": _ENVIRONMENT_NAME}, {"password_keyring": _KEYRING_REFERENCE},
+    {"password_env": _ENVIRONMENT_NAME, "password_keyring": _KEYRING_REFERENCE},
+])
+def test_literal_password_is_rejected_before_credential_lookup(password, references, keyring_lookup):
+    with pytest.raises(ValueError, match="Literal password fields are not supported") as error:
+        profiles._normalize_connection({**_CONNECTION, "password": password, **references})
+    assert "password_env or password_keyring" in str(error.value)
+    assert _PASSWORD not in str(error.value)
+    keyring_lookup.assert_not_called()
+
+
+def test_config_loader_rejects_literal_password_with_safe_migration_error(monkeypatch, tmp_path, keyring_lookup):
+    path = tmp_path / "profiles.json"
+    path.write_text(json.dumps({"connections": {"app-db": {
+        **_CONNECTION, "password": _PASSWORD, "password_env": _ENVIRONMENT_NAME,
+    }}}))
+    monkeypatch.setenv("POSTGRESQL_MCP_CONFIG", str(path))
+    with pytest.raises(ValueError, match="Literal password fields are not supported") as error:
+        profiles.load_postgresql_config()
+    assert _PASSWORD not in "".join(traceback.format_exception(error.value))
+    keyring_lookup.assert_not_called()
+
+
 @pytest.mark.parametrize("password", [_PASSWORD, " this-is-not-the-secret "])
-def test_literal_password_keeps_existing_profile_shape(password, keyring_lookup):
-    normalized = profiles._normalize_connection({**_CONNECTION, "password": password})
+def test_environment_password_keeps_existing_driver_profile_shape(monkeypatch, password, keyring_lookup):
+    monkeypatch.setenv(_ENVIRONMENT_NAME, password)
+    normalized = profiles._normalize_connection({**_CONNECTION, "password_env": _ENVIRONMENT_NAME})
 
     assert set(normalized) == {"connect_kwargs"}
     assert normalized["connect_kwargs"]["password"] == password
@@ -80,12 +106,7 @@ def test_keyring_resolves_explicit_service_and_username(keyring_lookup, module, 
 
 @pytest.mark.parametrize("sources", [
     {},
-    {"password": _PASSWORD, "password_env": _ENVIRONMENT_NAME},
-    {"password": None, "password_env": _ENVIRONMENT_NAME},
-    {"password": "", "password_keyring": _KEYRING_REFERENCE},
     {"password_env": _ENVIRONMENT_NAME, "password_keyring": _KEYRING_REFERENCE},
-    {"password": _PASSWORD, "password_env": _ENVIRONMENT_NAME,
-     "password_keyring": _KEYRING_REFERENCE},
 ])
 def test_requires_exactly_one_source_before_any_lookup(sources, keyring_lookup):
     with pytest.raises(ValueError, match="exactly one") as error:
@@ -95,10 +116,6 @@ def test_requires_exactly_one_source_before_any_lookup(sources, keyring_lookup):
 
 
 @pytest.mark.parametrize("source,value,message", [
-    ("password", None, "non-empty string"),
-    ("password", "", "non-empty string"),
-    ("password", 123, "non-empty string"),
-    ("password", True, "non-empty string"),
     ("password_env", None, "valid environment variable"),
     ("password_env", "", "valid environment variable"),
     ("password_env", "NOT A NAME", "valid environment variable"),
@@ -200,3 +217,24 @@ def test_credentials_resolve_at_startup_and_refresh_only_on_reload(
     assert _PASSWORD not in path.read_text()
     reloaded = profiles.load_postgresql_config()
     assert reloaded["connections"]["app-db"]["connect_kwargs"]["password"] == replacement
+
+
+@pytest.mark.parametrize("sslmode", ["require", "verify-ca", "verify-full"])
+@pytest.mark.parametrize("source", ["password_env", "password_keyring"])
+def test_password_sources_preserve_tls_options(monkeypatch, keyring_lookup, sslmode, source):
+    monkeypatch.setenv(_ENVIRONMENT_NAME, _PASSWORD)
+    keyring_lookup.side_effect = None
+    keyring_lookup.return_value = _backend()
+    reference = _ENVIRONMENT_NAME if source == "password_env" else _KEYRING_REFERENCE
+    normalized = profiles._normalize_connection({
+        **_CONNECTION, source: reference, "sslmode": sslmode,
+        "sslrootcert": "/tmp/example-ca.pem", "hostaddr": "127.0.0.1",
+    })
+    profile = profiles._as_connection_profile(normalized)
+    assert set(normalized) == {"connect_kwargs"}
+    assert profile.connect_kwargs["password"] == _PASSWORD
+    assert profile.connect_kwargs["sslmode"] == sslmode
+    assert profile.connect_kwargs["sslrootcert"] == "/tmp/example-ca.pem"
+    assert profile.connect_kwargs["hostaddr"] == "127.0.0.1"
+    if source == "password_env":
+        keyring_lookup.assert_not_called()

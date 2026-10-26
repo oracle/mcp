@@ -26,8 +26,8 @@ from .inspection import (
     _normalize_table_refs,
 )
 from .pagination import (
-    _DEFAULT_PAGE_SIZE, _MAX_PAGE_SIZE, _METADATA_TIMEOUT_MS, _METADATA_LOCK_TIMEOUT_MS,
-    _bounded_integer, _bounded_page, _decode_cursor, _name_prefix, _scope_digest,
+    _DEFAULT_METADATA_LIMIT, _MAX_METADATA_LIMIT, _STATEMENT_TIMEOUT_MS, _LOCK_TIMEOUT_MS,
+    _bounded_integer, _bounded_page, _decode_cursor, _scope_digest,
 )
 from .profiles import (
     _CONFIG_ENV_VAR,
@@ -42,8 +42,6 @@ from .sql_policy import _param_count, _prepare_sql_execution
 _DEFAULT_MAX_ROWS = 100
 _MAX_RESULT_ROWS = 10_000
 _MAX_RESULT_BYTES = 1_048_576
-_DEFAULT_STATEMENT_TIMEOUT_MS = 300_000
-_DEFAULT_LOCK_TIMEOUT_MS = 5_000
 _DEFAULT_AUTO_FULL_TABLE_LIMIT = 100
 _MAX_ECHOED_SQL_CHARS = 4000
 _TABLE_DETAIL_MODES = {"auto", "summary", "full"}
@@ -193,25 +191,21 @@ def get_postgresql_connection_cm(connect_kwargs: dict[str, Any]):
 
 
 def _apply_statement_timeouts(cursor: Any) -> None:
-    cursor.execute(f"set local statement_timeout = {_DEFAULT_STATEMENT_TIMEOUT_MS}")
-    cursor.execute(f"set local lock_timeout = {_DEFAULT_LOCK_TIMEOUT_MS}")
+    cursor.execute(f"set local statement_timeout = {_STATEMENT_TIMEOUT_MS}")
+    cursor.execute(f"set local lock_timeout = {_LOCK_TIMEOUT_MS}")
 
 
 def _schema_page(
     connect_kwargs: dict[str, Any],
     *,
     include_system: bool,
-    name_prefix: Optional[str],
     after: Optional[tuple[str, ...]],
-    page_size: int,
+    limit: int,
 ) -> list[str]:
     conditions: list[str] = []
-    params: dict[str, Any] = {"limit": page_size + 1}
+    params: dict[str, Any] = {"limit": limit + 1}
     if not include_system:
         conditions.extend(["schema_name <> 'information_schema'", "left(schema_name, 3) <> 'pg_'"])
-    if name_prefix is not None:
-        conditions.append("left(schema_name, char_length(%(name_prefix)s)) = %(name_prefix)s")
-        params["name_prefix"] = name_prefix
     if after is not None:
         conditions.append('schema_name::text collate "C" > %(after)s::text collate "C"')
         params["after"] = after[0]
@@ -221,10 +215,10 @@ def _schema_page(
     query += ' order by schema_name::text collate "C" limit %(limit)s'
     with get_postgresql_connection_cm(connect_kwargs) as conn:
         with conn.cursor(row_factory=dict_row) as cursor:
-            cursor.execute(f"set local statement_timeout = {_METADATA_TIMEOUT_MS}")
-            cursor.execute(f"set local lock_timeout = {_METADATA_LOCK_TIMEOUT_MS}")
+            cursor.execute(f"set local statement_timeout = {_STATEMENT_TIMEOUT_MS}")
+            cursor.execute(f"set local lock_timeout = {_LOCK_TIMEOUT_MS}")
             cursor.execute(query, params)
-            return [row["schema_name"] for row in cursor.fetchmany(page_size + 1)]
+            return [row["schema_name"] for row in cursor.fetchmany(limit + 1)]
 
 
 def _resolve_column_origins(
@@ -429,20 +423,34 @@ def test_connection(
 
 @mcp.tool(description="Lists a bounded page of visible PostgreSQL schemas. Follow next_cursor to continue.")
 def list_schemas(
-    connection_name: Annotated[str, Field(description="Configured PostgreSQL connection profile name.")],
-    include_system: Annotated[bool, Field(description="Include PostgreSQL system schemas when true.")] = False,
-    page_size: Annotated[int, Field(ge=1, le=_MAX_PAGE_SIZE, description="Maximum schemas per page (1-1000).")] = _DEFAULT_PAGE_SIZE,
-    cursor: Annotated[Optional[str], Field(description="Opaque next_cursor from the same connection and filters.")] = None,
-    name_prefix: Annotated[Optional[str], Field(description="Exact, case-sensitive schema-name prefix.")] = None,
+    connection_name: Annotated[
+        str,
+        Field(description="Configured PostgreSQL connection profile name."),
+    ],
+    include_system: Annotated[
+        bool,
+        Field(description="Include PostgreSQL system schemas when true."),
+    ] = False,
+    limit: Annotated[
+        int,
+        Field(
+            ge=1,
+            le=_MAX_METADATA_LIMIT,
+            description="Maximum number of schemas to return (1-1000).",
+        ),
+    ] = _DEFAULT_METADATA_LIMIT,
+    cursor: Annotated[
+        Optional[str],
+        Field(description="Opaque next_cursor from the same connection and filters."),
+    ] = None,
 ) -> dict[str, Any]:
-    _bounded_integer("page_size", page_size)
-    prefix = _name_prefix(name_prefix)
-    scope = _scope_digest("list_schemas", connection_name, include_system=include_system, name_prefix=prefix)
+    _bounded_integer("limit", limit)
+    scope = _scope_digest("list_schemas", connection_name, include_system=include_system)
     after = _decode_cursor(cursor, scope, 1)
     schemas = _schema_page(_resolve_connect_kwargs(connection_name), include_system=include_system,
-                           name_prefix=prefix, after=after, page_size=page_size)
-    return _bounded_page(schemas[:page_size], field="schemas", metadata={}, scope=scope,
-                         key=lambda name: (name,), has_more=len(schemas) > page_size)
+                           after=after, limit=limit)
+    return _bounded_page(schemas[:limit], field="schemas", metadata={}, scope=scope,
+                         key=lambda name: (name,), has_more=len(schemas) > limit)
 
 
 @mcp.tool(
@@ -476,7 +484,7 @@ def list_tables(
     auto_full_limit: Annotated[
         int,
         Field(
-            ge=1, le=_MAX_PAGE_SIZE,
+            ge=1, le=_MAX_METADATA_LIMIT,
             description=(
                 "When detail is auto, return full metadata only when the matched "
                 "table/view count is at or below this limit."
@@ -504,15 +512,23 @@ def list_tables(
             )
         ),
     ] = None,
-    page_size: Annotated[int, Field(ge=1, le=_MAX_PAGE_SIZE, description="Maximum tables/views per page (1-1000).")] = _DEFAULT_PAGE_SIZE,
-    cursor: Annotated[Optional[str], Field(description="Opaque next_cursor from the same connection and filters.")] = None,
-    name_prefix: Annotated[Optional[str], Field(description="Exact, case-sensitive table/view-name prefix.")] = None,
+    limit: Annotated[
+        int,
+        Field(
+            ge=1,
+            le=_MAX_METADATA_LIMIT,
+            description="Maximum number of tables or views to return (1-1000).",
+        ),
+    ] = _DEFAULT_METADATA_LIMIT,
+    cursor: Annotated[
+        Optional[str],
+        Field(description="Opaque next_cursor from the same connection and filters."),
+    ] = None,
 ) -> dict[str, Any]:
     if detail not in _TABLE_DETAIL_MODES:
         raise ValueError("detail must be one of: auto, summary, full")
-    _bounded_integer("page_size", page_size)
+    _bounded_integer("limit", limit)
     _bounded_integer("auto_full_limit", auto_full_limit)
-    prefix = _name_prefix(name_prefix)
     normalized_schemas = _normalize_identifier_list("schemas", schemas)
     normalized_table_refs = _normalize_table_refs(table_refs)
     if normalized_schemas is not None and normalized_table_refs is not None:
@@ -521,7 +537,7 @@ def list_tables(
         "list_tables", connection_name,
         schemas=sorted(normalized_schemas) if normalized_schemas is not None else None,
         table_refs=sorted((ref["schema"], ref["name"]) for ref in normalized_table_refs) if normalized_table_refs is not None else None,
-        include_views=include_views, name_prefix=prefix, detail=detail, auto_full_limit=auto_full_limit,
+        include_views=include_views, detail=detail, auto_full_limit=auto_full_limit,
     )
     after = _decode_cursor(cursor, scope, 2)
     connect_kwargs = _resolve_connect_kwargs(connection_name)
@@ -529,7 +545,7 @@ def list_tables(
         resolved_detail, tables, has_more = _inspect_postgresql_tables(
             inspector, schemas=normalized_schemas, table_refs=normalized_table_refs,
             include_views=include_views, detail=detail, auto_full_limit=auto_full_limit,
-            page_size=page_size, after=after, name_prefix=prefix,
+            limit=limit, after=after,
         )
     selected_schemas = normalized_schemas
     if selected_schemas is None:

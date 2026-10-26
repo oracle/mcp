@@ -56,11 +56,12 @@ DEFAULT_TIMEOUT_CALLS = [
 
 
 def load_config_with_overrides(monkeypatch, tmp_path, **overrides):
+    monkeypatch.setenv("POSTGRESQL_MCP_TEST_PASSWORD", "super-secret")
     connection = {
         "host": "db.example.oraclecloud.com",
         "database": "app_db",
         "user": "app_user",
-        "password": "super-secret",
+        "password_env": "POSTGRESQL_MCP_TEST_PASSWORD",
         **overrides,
     }
     config_path = tmp_path / "profiles.json"
@@ -232,7 +233,7 @@ class FakeInspector:
             if (item_key := self._key(name, schema)) in data or name in object_names
         }
 
-    def discover(self, *, schemas, table_refs, include_views, name_prefix, after, limit):
+    def discover(self, *, schemas, table_refs, include_views, after, limit):
         self.discovery_calls.append({"schemas": schemas, "table_refs": table_refs,
                                      "after": after, "limit": limit})
         refs = [
@@ -247,8 +248,6 @@ class FakeInspector:
             refs = [ref for ref in refs if ref["schema"] in schemas]
         else:
             refs = [ref for ref in refs if ref["schema"] != "information_schema" and not ref["schema"].startswith("pg_")]
-        if name_prefix is not None:
-            refs = [ref for ref in refs if ref["name"].startswith(name_prefix)]
         refs.sort(key=lambda ref: (ref["schema"].encode(), ref["name"].encode()))
         if after is not None:
             refs = [ref for ref in refs if (ref["schema"].encode(), ref["name"].encode()) > tuple(value.encode() for value in after)]
@@ -323,6 +322,7 @@ class TestTools:
         assert _jsonable({"type": reflected_type}) == {"type": expected}
 
     def test_load_postgresql_config_from_env(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("POSTGRESQL_MCP_TEST_PASSWORD", "super-secret")
         config_path = tmp_path / "profiles.json"
         config_path.write_text(
             json.dumps(
@@ -332,7 +332,7 @@ class TestTools:
                             "host": "db.example.oraclecloud.com",
                             "database": "app_db",
                             "user": "app_user",
-                            "password": "super-secret",
+                            "password_env": "POSTGRESQL_MCP_TEST_PASSWORD",
                             "port": "5432",
                         }
                     }
@@ -397,6 +397,7 @@ class TestTools:
         assert "source_fingerprint_warning" in result
 
     def test_load_postgresql_config_preserves_tls_options(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("POSTGRESQL_MCP_TEST_PASSWORD", "super-secret")
         sslrootcert = tmp_path / "server-ca.pem"
         sslrootcert.write_text("certificate", encoding="utf-8")
         config_path = tmp_path / "profiles.json"
@@ -408,7 +409,7 @@ class TestTools:
                             "host": "db.example.oraclecloud.com",
                             "database": "app_db",
                             "user": "app_user",
-                            "password": "super-secret",
+                            "password_env": "POSTGRESQL_MCP_TEST_PASSWORD",
                             "port": "5432",
                             "connect_timeout": "7",
                             "sslmode": "verify-full",
@@ -2251,7 +2252,7 @@ def test_metadata_connection_sets_driver_read_only_before_inspection():
 
     with patch.object(inspection.psycopg, "connect", return_value=conn), patch.object(
         inspection, "create_engine", side_effect=create_engine
-    ), patch.object(inspection.event, "listen"), patch.object(inspection, "inspect_database", return_value="inspector"):
+    ), patch.object(inspection, "inspect_database", return_value="inspector"):
         with inspection._metadata_inspector_cm({"host": "synthetic"}) as inspector:
             assert inspector == "inspector"
     engine.dispose.assert_called_once()

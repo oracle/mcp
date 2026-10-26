@@ -100,14 +100,18 @@ def _read_keyring_password(reference: dict[str, str]) -> str:
 
 
 def _resolve_password(connection: dict[str, Any]) -> str:
+    if "password" in connection:
+        raise ValueError(
+            "Literal password fields are not supported. Remove password and use "
+            "exactly one of password_env or password_keyring."
+        )
     sources = [
-        name for name in ("password", "password_env", "password_keyring")
+        name for name in ("password_env", "password_keyring")
         if name in connection
     ]
     if len(sources) != 1:
         raise ValueError(
-            "connection must specify exactly one of password, password_env, "
-            "or password_keyring"
+            "connection must specify exactly one of password_env or password_keyring"
         )
 
     source = sources[0]
@@ -122,22 +126,18 @@ def _resolve_password(connection: dict[str, Any]) -> str:
         if not password:
             raise ValueError("password_env points to an unset or empty environment variable")
         return password
-    if source == "password_keyring":
-        if (
-            not isinstance(reference, dict)
-            or set(reference) != {"service", "username"}
-            or any(
-                not isinstance(value, str) or not value.strip()
-                for value in reference.values()
-            )
-        ):
-            raise ValueError(
-                "password_keyring must contain non-empty service and username strings"
-            )
-        return _read_keyring_password(reference)
-    if not isinstance(reference, str) or not reference:
-        raise ValueError("password must be a non-empty string")
-    return reference
+    if (
+        not isinstance(reference, dict)
+        or set(reference) != {"service", "username"}
+        or any(
+            not isinstance(value, str) or not value.strip()
+            for value in reference.values()
+        )
+    ):
+        raise ValueError(
+            "password_keyring must contain non-empty service and username strings"
+        )
+    return _read_keyring_password(reference)
 
 
 def _normalize_connection(connection: dict[str, Any]) -> dict[str, Any]:

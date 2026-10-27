@@ -67,7 +67,7 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["oracle/mysql_mcp_server/tests"]
 addopts = "--cov=oracle/mysql_mcp_server --cov-branch --cov-report=term-missing"
-markers = ["live: requires explicit MYSQL_MCP_RUN_LIVE_TESTS=1 and disposable database/OCI resources"]
+markers = ["live: requires explicit live-test opt-in and disposable resources"]
 
 [tool.coverage.run]
 omit = ["**/tests/*"]

@@ -1,0 +1,52 @@
+name: Repository policy
+
+# The workflow and checkout come from the protected base branch. Never execute PR code here.
+on:
+  pull_request_target:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  coverage-policy:
+    name: Coverage policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      POLICY_BASE: ${{ github.event.pull_request.base.sha }}
+      POLICY_HEAD: ${{ github.event.pull_request.head.sha }}
+      POLICY_PR: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch candidate as data and verify its parents
+        shell: bash
+        run: |
+          [[ "$POLICY_BASE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$POLICY_HEAD" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$POLICY_PR" =~ ^[0-9]+$ ]]
+          test "$(git rev-parse HEAD)" = "$POLICY_BASE"
+          git fetch --no-tags origin "refs/pull/$POLICY_PR/merge"
+          test "$(git rev-parse FETCH_HEAD^1)" = "$POLICY_BASE"
+          test "$(git rev-parse FETCH_HEAD^2)" = "$POLICY_HEAD"
+          echo "POLICY_CANDIDATE=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_ENV"
+
+      - name: Setup Moon
+        uses: ./.github/actions/setup-moon
+
+      - name: Install approved dependencies from wheels
+        run: |
+          "$(moon bin uv)" sync --project policy --locked --no-build --no-dev --python "$(moon bin python)"
+
+      - name: Check approved verifier regressions
+        run: policy/.venv/bin/python -I -m unittest discover -s policy/tests -v
+
+      - name: Evaluate with the approved policy and verifier
+        run: >-
+          policy/.venv/bin/python -I policy/check.py
+          "$POLICY_BASE" "$POLICY_CANDIDATE"

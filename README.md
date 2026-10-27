@@ -392,9 +392,14 @@ For Windows - **TODO**
 
 ## Local development
 
-Install [proto](https://moonrepo.dev/docs/proto/install) and run `proto install`
-from the repository root before using Moon. For a Python server, run its tests
-with Moon and launch its source checkout directly with `uv`:
+On macOS, install proto with [Homebrew](https://formulae.brew.sh/formula/proto)
+using `brew install proto`, then run `proto setup` and open a new terminal.
+For other platforms, see the [proto installation guide](https://moonrepo.dev/docs/proto/install).
+
+From the repository root, run `proto install moon --immutable-lockfile` and
+`moon setup`. See [Running tasks with moon](#running-tasks-with-moon) for
+platform setup. For a Python server, run its tests with Moon and launch its
+source checkout directly with `uv`:
 
 ```sh
 moon run oci-api-mcp-server:test
@@ -402,7 +407,10 @@ uv --directory src/oci-api-mcp-server run --locked oracle.oci-api-mcp-server
 ```
 
 `uv run` creates and updates the server project's own `.venv` from its lockfile.
-The API server's `common` dependency resolves to this repository's `src/common`.
+The Common consumers resolve `oracle-mcp-common` to this repository's `src/common`
+through `[tool.uv.sources]` entries with `workspace = true`. Moon infers their
+project dependencies from these declarations so Common changes trigger consumer
+tests and lock checks.
 Build a distribution only when you need to check packaging, with
 `moon run oci-api-mcp-server:build`.
 
@@ -525,12 +533,24 @@ orchestrated with [moon](https://moonrepo.dev/). Tool versions are pinned in
 install the pinned tools and run tasks from the repository root:
 
 ```bash
-proto install
+proto install moon --immutable-lockfile
+moon setup
 moon run oci-compute-mcp-server:test
 moon run oci-javascript-mcp-server:test
 moon run root:lint
 moon run :build
 ```
+
+The shared CI setup action downloads a pinned proto release and verifies its
+archive against the SHA-256 stored beside the version in the action before
+extracting or running it. It then follows the same sequence shown above.
+Moon's version and platform checksums are recorded in `.protolock`; proto
+verifies the Moon download against the lockfile.
+
+After changing the Moon pin, run `proto install moon` on Linux x64 and macOS
+ARM64 and commit the generated `.protolock` with `.prototools`. For another
+platform, run `proto install moon` once to generate its record before using
+`--immutable-lockfile`.
 
 Moon uses each project's language-specific package definition: `pyproject.toml`
 and `uv.lock` for Python, and `package.json` and `package-lock.json` for

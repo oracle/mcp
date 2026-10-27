@@ -1,0 +1,31 @@
+name: Setup Moon
+description: Install verified proto, pinned Moon, and workspace toolchains on Linux x64.
+runs:
+  using: composite
+  steps:
+    - name: Install proto
+      shell: bash
+      env:
+        PROTO_HOME: ${{ runner.temp }}/proto
+      run: |
+        version=0.62.2
+        checksum=d240e8c502ae8fdd72aad67348e4481211fa84c7cbb1a6c667993bd02b140c0b
+        asset=proto_cli-x86_64-unknown-linux-gnu
+        archive="$RUNNER_TEMP/proto.tar.xz"
+        curl -fsSL --retry 3 --proto '=https' --tlsv1.3 -o "$archive" \
+          "https://github.com/moonrepo/proto/releases/download/v$version/$asset.tar.xz"
+        printf '%s  %s\n' "$checksum" "$archive" | sha256sum -c -
+        mkdir -p "$PROTO_HOME/bin"
+        tar -xJf "$archive" -C "$PROTO_HOME/bin" --strip-components=1 "$asset/proto" "$asset/proto-shim"
+        "$PROTO_HOME/bin/proto" --version
+        echo "PROTO_HOME=$PROTO_HOME" >> "$GITHUB_ENV"
+        echo "$PROTO_HOME/bin" >> "$GITHUB_PATH"
+        echo "$PROTO_HOME/shims" >> "$GITHUB_PATH"
+
+    - name: Install pinned Moon
+      shell: bash
+      run: proto install moon --immutable-lockfile
+
+    - name: Install Moon toolchains
+      shell: bash
+      run: moon setup

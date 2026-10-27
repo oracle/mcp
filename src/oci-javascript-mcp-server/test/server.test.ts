@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -71,6 +72,11 @@ key_file=${join(directory, "key.pem")}
   try {
     const tools = await client.listTools();
     assert.deepEqual(tools.tools.map(tool => tool.name), ["run_javascript", "discover_oci"]);
+    const { version: installedSdkVersion } = createRequire(import.meta.url)("oci-sdk/package.json") as { version: string };
+    for (const tool of tools.tools) {
+      assert.ok(tool.description?.includes(`OCI SDK for TypeScript/JavaScript version ${installedSdkVersion}`),
+        `${tool.name} must advertise the installed SDK version`);
+    }
     const runTool = tools.tools[0];
     assert.equal(runTool.title, "Run OCI JavaScript");
     assert.deepEqual(runTool.annotations, {

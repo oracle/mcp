@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -54,6 +55,11 @@ test("npm package runs from node_modules with compiled bindings", { timeout: 30_
     await client.connect(transport);
     const tools = await client.listTools();
     assert.deepEqual(tools.tools.map(tool => tool.name), ["run_javascript", "discover_oci"]);
+    const { version: installedSdkVersion } = createRequire(import.meta.url)("oci-sdk/package.json") as { version: string };
+    for (const tool of tools.tools) {
+      assert.ok(tool.description?.includes(`OCI SDK for TypeScript/JavaScript version ${installedSdkVersion}`),
+        `${tool.name} must advertise the installed SDK version from the compiled package`);
+    }
     const result = await client.callTool({
       name: "run_javascript",
       arguments: { code: "40 + 2", timeout: 10 }

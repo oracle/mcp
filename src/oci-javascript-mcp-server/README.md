@@ -5,6 +5,12 @@ through a trusted host bridge. The sandbox receives an SDK-like `oci` binding,
 but never receives OCI credentials, the real SDK, Node built-ins, filesystem
 access, environment variables, or a network API.
 
+Both tool descriptions identify the OCI SDK for TypeScript/JavaScript version
+read from the installed `oci-sdk` package at server startup. This identifies the
+SDK definitions behind the facade and discovery; the facade's supported-operation
+and client-option restrictions still apply. Use `discover_oci` when remembered or
+external SDK definitions differ from the installed version.
+
 > **Security:** Podman is the only implemented isolation provider. On Linux, a
 > normal Podman container shares the host kernel and is not a VM boundary. The
 > deployment is responsible for selecting a Podman backend and surrounding

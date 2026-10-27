@@ -12,6 +12,9 @@
 
 ### Added
 
+- Include the installed OCI SDK for TypeScript/JavaScript version in both tool
+  descriptions, derived from package metadata at startup rather than a fixed
+  version or dependency range.
 - Advertise output schemas, tool titles, risk annotations, and complete input
   guidance for execution and progressive SDK discovery. Validate discovery
   result variants and preserve existing extraction data.

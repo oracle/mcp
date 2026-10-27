@@ -4,6 +4,7 @@
  * https://oss.oracle.com/licenses/upl.
  */
 
+import { createRequire } from "node:module";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import {
@@ -12,6 +13,8 @@ import {
   MIN_TIMEOUT_SECONDS
 } from "./sandbox-common.ts";
 import type { HostRpcHandler, JsonObject, OciDiscoverPayload, SandboxResult } from "./types.ts";
+
+const { version: ociSdkVersion } = createRequire(import.meta.url)("oci-sdk/package.json") as { version: string };
 
 export const SERVER_INSTRUCTIONS = (
   "Execute directly with run_javascript when the OCI SDK shape is known; otherwise use "
@@ -29,6 +32,8 @@ export const RUN_JAVASCRIPT_TOOL = {
   title: "Run OCI JavaScript",
   description: (
     "Run a complete JavaScript body against the injected OCI SDK-shaped oci namespace in a fresh sandbox. "
+    + `The facade exposes supported API operations from OCI SDK for TypeScript/JavaScript version ${ociSdkVersion}, `
+    + "subject to the adapter restrictions described below. "
     + "Supports constructed clients and static facade calls; region is the only client option. "
     + "Host IAM permissions govern OCI calls, which may read, create, update, or delete resources. "
     + "No imports, Node built-ins, OCI credentials, direct filesystem/network access, process state, "
@@ -140,7 +145,9 @@ const discoveryResultSchema = z.discriminatedUnion("type", [
 export const DISCOVER_OCI_TOOL = {
   title: "Discover OCI SDK",
   description: (
-    "Inspect installed OCI SDK declarations progressively: no arguments lists services; service lists "
+    `Inspects the installed OCI SDK for TypeScript/JavaScript version ${ociSdkVersion}; use these discovery `
+    + "results when remembered or external SDK definitions differ. "
+    + "Inspect declarations progressively: no arguments lists services; service lists "
     + "clients; service and client list operations; all three describe request/model and response shapes. "
     + "Use only the necessary depth when the SDK shape is unclear, then run_javascript. Runs on the host "
     + "without starting an isolation provider or making OCI network calls. Does not grant IAM permission "

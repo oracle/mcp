@@ -208,8 +208,6 @@ The server runs using stdio transport and can be started by running:
 uv run oracle.mysql_mcp_server
 ```
 
-For development, run `uv run --locked pytest` from this package directory for offline tests with an enforced 90% coverage minimum and branch measurement. Live tests are skipped by default; see the [credential live test instructions](oracle/mysql_mcp_server/tests/test_password_sources_live.py) for explicit opt-in, disposable database, TLS, and keyring requirements.
-
 ## API Tools
 
 1. `list_all_connections()`: List configured database connections and modes

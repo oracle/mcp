@@ -196,9 +196,7 @@ Provision keyring entries on the MCP host under the server's runtime account, us
 uv run python -m keyring set mysql-mcp-app appuser
 ```
 
-Supported stores are macOS Keychain, Windows Credential Locker, Secret Service (including libsecret), and KWallet. Chained, null, plaintext, and third-party backends are rejected. If automatic selection chooses a chain, select a supported backend explicitly, for example `PYTHON_KEYRING_BACKEND=keyring.backends.macOS.Keyring`, for both provisioning and server startup.
-
-Headless hosts need an unlocked store for the runtime account. On Linux, the secret-store daemon and server must share a D-Bus session; installing `keyring` alone is insufficient. See the [keyring headless setup guide](https://keyring.readthedocs.io/en/stable/#using-keyring-on-headless-linux-systems).
+Use an unlocked OS credential store under the MCP runtime account: macOS Keychain, Windows Credential Locker, Secret Service/libsecret, or KWallet. Use the same backend for provisioning and startup; if automatic selection chooses an unsupported backend, select one explicitly with `PYTHON_KEYRING_BACKEND`. See the [headless Linux setup guide](https://keyring.readthedocs.io/en/stable/#using-keyring-on-headless-linux-systems) for daemon and D-Bus requirements.
 
 Select exactly one source per connection. Missing secrets, conflicting sources, and unavailable or locked stores produce configuration errors without fallback. Passwords resolve at startup; restart after changing or rotating a secret. `list_all_connections` reports configuration errors until the server restarts with valid settings. Password values are omitted from configuration errors and connection summaries. See [example_config.json](example_config.json) for all three alternatives.
 
@@ -210,13 +208,7 @@ The server runs using stdio transport and can be started by running:
 uv run oracle.mysql_mcp_server
 ```
 
-## Development tests
-
-From this package directory, run `uv sync --locked --group dev` and `uv run --locked pytest`. The default suite uses mocked services and enforces at least 90% package coverage with branches enabled. MySQL is excluded from Moon, so CI runs this native command separately.
-
-Live tests are skipped by default. Existing HeatWave/OCI tests require `MYSQL_MCP_RUN_LIVE_TESTS=1` and `MYSQL_MCP_CONFIG` pointing to disposable resources; they can create and drop objects, load files, and invoke ML operations.
-
-Credential-only live tests require `MYSQL_MCP_RUN_CREDENTIAL_LIVE_TESTS=1`, `MYSQL_MCP_CONFIG` with exactly one disposable connection, and `MYSQL_MCP_TEST_SSL_CA` for its trusted, host-matching certificate. The runtime account must permit creating and deleting a synthetic OS keyring entry. With these set, run `uv run --locked pytest --no-cov oracle/mysql_mcp_server/tests/test_password_sources_live.py` separately from the coverage-enforced unit suite.
+For development, run `uv run --locked pytest` from this package directory for offline tests with an enforced 90% coverage minimum and branch measurement. Live tests are skipped by default; see the [credential live test instructions](oracle/mysql_mcp_server/tests/test_password_sources_live.py) for explicit opt-in, disposable database, TLS, and keyring requirements.
 
 ## API Tools
 

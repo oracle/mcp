@@ -9,7 +9,7 @@ A Python-based MCP (Model Context Protocol) server that provides a suite of tool
 ## Features
 
 - **Database Connection Management**
-  - Load connection configs from JSON with literal, environment, or OS keyring passwords
+  - Load connection configs from JSON or environment variables
   - List all configured database connections
   - Validate connectivity and resolve provider mode (MySQL AI vs. MySQL HeatWave)
 
@@ -38,7 +38,9 @@ A Python-based MCP (Model Context Protocol) server that provides a suite of tool
   - List objects in a bucket
 
 ## Prerequisites
-- Valid database connection file. Set `MYSQL_MCP_CONFIG` to its path, or create `local_config.json` in the package root. Relative paths in `MYSQL_MCP_CONFIG` are resolved from the server process working directory; use an absolute path for MCP clients.
+- Valid database connection file. Resolution order:
+  1) Path specified by environment variable `MYSQL_MCP_CONFIG` (relative paths use the server process working directory)
+  2) `local_config.json` (default)
 - Valid OCI configuration file (`~/.oci/config`) or environment variables
 
 
@@ -103,81 +105,66 @@ Example with `TENANCY_ID_OVERRIDE`:
 
 The server supports the following environment variables:
 
-- `MYSQL_MCP_CONFIG`: Path to the database connection JSON file
-- Variables named by `password_env`: Passwords inherited by the server process
 - `PROFILE_NAME`: OCI configuration profile name (default: "DEFAULT")
 - `TENANCY_ID_OVERRIDE`: Overrides the tenancy ID from the config file
 
-## Connection configuration
+## Configuration (utils.fill_config_defaults and utils.load_mysql_config)
 
-At startup, the server loads the file named by `MYSQL_MCP_CONFIG`, or `local_config.json` in the package root when that variable is unset. It does not search for other files or fall back when the selected file is missing.
+The server loads and validates connection configuration using two helpers in utils.py.
 
-Each `server_infos` entry requires `host`, `user`, `database`, `port`, and exactly one password source. Other connection keys are rejected.
+- utils.load_mysql_config:
+  - Search order (first existing file wins):
+    1) Path from env `MYSQL_MCP_CONFIG` (if set; relative to the server process working directory).
+    2) `<package_root>/local_config.json` (default when env not set). No other files are searched.
+  - Returns a validated dict after passing the loaded JSON through fill_config_defaults.
 
-| Password source | Example field | Behavior |
-| --- | --- | --- |
-| Literal password | `"password": "example-password"` | Uses the string in the connection file. Existing configurations remain supported without deprecation, including empty literal passwords. |
-| Environment reference | `"password_env": "MYSQL_APP_PASSWORD"` | Reads a non-empty password from the named environment variable in the server process. The reference must match `[A-Za-z_][A-Za-z0-9_]*`. |
-| OS keyring reference | `"password_keyring": {"service": "mysql-mcp-app", "username": "appuser"}` | Reads a non-empty password from the selected OS credential store. Both reference values must be non-empty strings. |
+- utils.fill_config_defaults:
+  - Validates the schema and applies defaults for the optional bastion section.
+  - Expected JSON shape:
+    {
+      "server_infos": {
+        "<connection_id>": {
+          "host": "<hostname or IP>",
+          "user": "<username>",
+          "password": "<password>",
+          "database": "<default_schema>",
+          "port": 3306
+        }
+      },
+      "bastion": {                         // optional; for SSH tunneling
+        "bastion_host": "<host>",
+        "bastion_username": "<user>",
+        "private_key_path": "<path to private key>",
+        "db_host": "<remote DB host>",
+        "db_port": 3306,                   // default 3306
+        "bastion_port": 22,                // default 22
+        "local_bind_host": "127.0.0.1",    // default 127.0.0.1
+        "local_bind_port": 3306            // default 3306
+      }
+    }
+  - Required server entry keys are `host`, `user`, `database`, `port`, and exactly one of `password`, `password_env`, or `password_keyring`.
+  - If a bastion block is present, only the allowed keys above are permitted; defaults are applied when omitted.
 
-For example, a connection file with an environment reference contains no password value:
-
-```json
+Example minimal config (local file):
 {
   "server_infos": {
-    "app": {
+    "local_server": {
       "host": "localhost",
-      "user": "appuser",
-      "password_env": "MYSQL_APP_PASSWORD",
-      "database": "appdb",
+      "user": "root",
+      "password": "",
+      "database": "mysql_mcp",
       "port": 3306
     }
   }
 }
-```
 
-Provision `MYSQL_APP_PASSWORD` through the runtime environment or a secret manager before the MCP client launches the server. Environment references do not encrypt secrets at rest. Do not move the password into an MCP client's `env` JSON, a checked-in `.env` file, or a shell command saved in history. The MCP client configuration above needs only the connection file path; the server must inherit the password variable from its launcher.
-
-### OS keyring setup
-
-Provision the credential on the MCP host, under the account that runs the server, using the same Python environment and selected backend as the server. From this package directory, enter the password at the prompt:
-
-```sh
-uv run python -m keyring set mysql-mcp-app appuser
-```
-
-Replace `password_env` in the example connection with:
-
-```json
-"password_keyring": {
-  "service": "mysql-mcp-app",
-  "username": "appuser"
-}
-```
-
-The keyring username is an explicit lookup key; it is not inferred from the database `user` field. The server supports macOS Keychain, Windows Credential Locker, Secret Service (including libsecret), and KWallet. It rejects chained, null, plaintext, and third-party backends. If automatic selection chooses a chain, configure the intended supported backend explicitly, for example with `PYTHON_KEYRING_BACKEND=keyring.backends.macOS.Keyring` on macOS. Use the same setting when provisioning and launching the server.
-
-Headless hosts need a working, unlocked credential store for the runtime account. On Linux, install and start the appropriate secret-store daemon and give the server access to the same D-Bus session. Installing the Python `keyring` package alone does not create or unlock that store. Follow the [keyring headless Linux setup guide](https://keyring.readthedocs.io/en/stable/#using-keyring-on-headless-linux-systems) for Secret Service prerequisites. Service accounts and remote MCP hosts do not automatically share the interactive user's credential store.
-
-### Migration and failures
-
-Existing literal `password` entries need no changes. To migrate a connection, provision its environment variable or keyring entry, then replace `password` with `password_env` or `password_keyring`. Never retain both fields. [example_config.json](example_config.json) shows all three alternatives with synthetic values.
-
-Passwords are resolved once during startup, and only connector-supported settings plus the resolved `password` reach MySQL Connector/Python. Restart the MCP server after rotating a password or changing its source. Conflicting sources, unset or empty environment values, missing keyring entries, and unavailable, locked, or unsupported stores produce configuration errors without falling back to another source. The server remains available over STDIO; `list_all_connections` reports the configuration error until the configuration is fixed and the server restarts. Password values are not included in configuration errors or connection summaries.
-
-### Optional SSH tunnel
-
-The optional `bastion` block keeps the existing SSH tunnel settings. Required keys are `bastion_host`, `bastion_username`, `private_key_path`, and `db_host`. Optional keys default to `bastion_port: 22`, `db_port: 3306`, `local_bind_host: "127.0.0.1"`, and `local_bind_port: 3306`. Other bastion keys are rejected.
-
-For example, a connection through an existing tunnel can use:
-
-```json
+Example with bastion:
 {
   "server_infos": {
     "remote_via_bastion": {
       "host": "127.0.0.1",
       "user": "dbuser",
-      "password_env": "MYSQL_REMOTE_PASSWORD",
+      "password": "secret",
       "database": "appdb",
       "port": 3306
     }
@@ -185,12 +172,35 @@ For example, a connection through an existing tunnel can use:
   "bastion": {
     "bastion_host": "bastion.example.com",
     "bastion_username": "ubuntu",
-    "private_key_path": "<absolute-path-to-private-key>",
-    "db_host": "db.example.com",
+    "private_key_path": "/home/user/.ssh/id_rsa",
+    "db_host": "mysql.internal",
     "db_port": 3306
+    // optional keys (with defaults if omitted): bastion_port, local_bind_host, local_bind_port
   }
 }
+
+Note:
+- Set `MYSQL_MCP_CONFIG` to point at a specific JSON file if you don't want to use `local_config.json`.
+- The defaults and schema enforcement are performed at startup; invalid or incomplete entries raise clear exceptions.
+
+### Password sources
+
+Existing `password` strings remain supported, including empty strings. To keep a password outside the connection file, replace `password` with one of these fields:
+
+- `"password_env": "MYSQL_APP_PASSWORD"`: Read a non-empty password from the named environment variable in the server process. Provision it through the launcher or a secret manager. Environment references do not encrypt secrets at rest; do not put the actual password in the MCP client's `env` JSON or a checked-in `.env` file.
+- `"password_keyring": {"service": "mysql-mcp-app", "username": "appuser"}`: Read a non-empty password using an explicit service and username from the OS credential store. The keyring username is not inferred from the database user.
+
+Provision keyring entries on the MCP host under the server's runtime account, using the same Python environment and backend. Enter the password at the prompt:
+
+```sh
+uv run python -m keyring set mysql-mcp-app appuser
 ```
+
+Supported stores are macOS Keychain, Windows Credential Locker, Secret Service (including libsecret), and KWallet. Chained, null, plaintext, and third-party backends are rejected. If automatic selection chooses a chain, select a supported backend explicitly, for example `PYTHON_KEYRING_BACKEND=keyring.backends.macOS.Keyring`, for both provisioning and server startup.
+
+Headless hosts need an unlocked store for the runtime account. On Linux, the secret-store daemon and server must share a D-Bus session; installing `keyring` alone is insufficient. See the [keyring headless setup guide](https://keyring.readthedocs.io/en/stable/#using-keyring-on-headless-linux-systems).
+
+Select exactly one source per connection. Missing secrets, conflicting sources, and unavailable or locked stores produce configuration errors without fallback. Passwords resolve at startup; restart after changing or rotating a secret. `list_all_connections` reports configuration errors until the server restarts with valid settings. Password values are omitted from configuration errors and connection summaries. See [example_config.json](example_config.json) for all three alternatives.
 
 ## Usage
 
@@ -202,16 +212,11 @@ uv run oracle.mysql_mcp_server
 
 ## Development tests
 
-MySQL is excluded from Moon. From this package directory, install the locked test dependencies and run the offline suite:
+From this package directory, run `uv sync --locked --group dev` and `uv run --locked pytest`. The default suite uses mocked services and enforces at least 90% package coverage with branches enabled. MySQL is excluded from Moon, so CI runs this native command separately.
 
-```sh
-uv sync --locked --group dev
-uv run --locked pytest
-```
+Live tests are skipped by default. Existing HeatWave/OCI tests require `MYSQL_MCP_RUN_LIVE_TESTS=1` and `MYSQL_MCP_CONFIG` pointing to disposable resources; they can create and drop objects, load files, and invoke ML operations.
 
-The default pytest configuration measures branch coverage across the production package and fails below 90%. Offline tests use synthetic configuration and mocked external services; they do not read the user's database or OCI configuration.
-
-Live database and OCI tests are skipped by default. Run them only against disposable resources by explicitly setting `MYSQL_MCP_RUN_LIVE_TESTS=1` and `MYSQL_MCP_CONFIG` to a dedicated test configuration. These tests can create and drop database objects, ingest files, and invoke ML and object-storage operations. Real credential-store and authenticated database checks are separate from the mocked offline suite.
+Credential-only live tests require `MYSQL_MCP_RUN_CREDENTIAL_LIVE_TESTS=1`, `MYSQL_MCP_CONFIG` with exactly one disposable connection, and `MYSQL_MCP_TEST_SSL_CA` for its trusted, host-matching certificate. The runtime account must permit creating and deleting a synthetic OS keyring entry. With these set, run `uv run --locked pytest --no-cov oracle/mysql_mcp_server/tests/test_password_sources_live.py` separately from the coverage-enforced unit suite.
 
 ## API Tools
 
@@ -233,7 +238,7 @@ Live database and OCI tests are skipped by default. Run them only against dispos
 ## Security
 
 - Uses OCI’s config-based authentication
-- MySQL passwords can use literal JSON values, environment references, or supported OS credential stores. Protect connection files containing literal passwords with appropriate file permissions.
+- MySQL connection parameters may be stored in JSON config or environment variables
 
 ## Example Prompts
 

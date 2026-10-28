@@ -4,6 +4,7 @@ Licensed under the Universal Permissive License v1.0 as shown at http://oss.orac
 """
 
 import os.path
+import sys
 
 import requests
 import json
@@ -1334,7 +1335,7 @@ def ragify_column(dbtools_connection_display_name: str, table_name: str, column_
 
     # 1. Add the vector column
     alter_sql = f"ALTER TABLE {safe_table_name} ADD ({safe_vector_column_name} VECTOR({MODEL_EMBEDDING_DIMENSION}))"
-    print("Executing ALTER TABLE statement for ragify_column.")
+    print("Executing ALTER TABLE statement for ragify_column.", file=sys.stderr)
     
     alter_result_str = execute_sql_tool(dbtools_connection_display_name, alter_sql)
     try:
@@ -1342,13 +1343,13 @@ def ragify_column(dbtools_connection_display_name: str, table_name: str, column_
         alter_result = json.loads(alter_result_str)
         if alter_result.get("items") and len(alter_result["items"]) > 0 and alter_result["items"][0].get("errorCode", 0) != 0:
              error_message = alter_result['items'][0].get('errorMessage')
-             print(f"Warning during ALTER TABLE: {error_message}. Proceeding anyway.")
+             print(f"Warning during ALTER TABLE: {error_message}. Proceeding anyway.", file=sys.stderr)
         # If no error code, assume success or non-critical issue, proceed silently.
     except json.JSONDecodeError:
         # Handle non-JSON response
-        print(f"Warning: Non-JSON response during ALTER TABLE: {alter_result_str}. Proceeding anyway.")
+        print(f"Warning: Non-JSON response during ALTER TABLE: {alter_result_str}. Proceeding anyway.", file=sys.stderr)
     except Exception as e:
-        print(f"Warning: Exception occurred during ALTER TABLE or response handling: {e}. Proceeding anyway.")
+        print(f"Warning: Exception occurred during ALTER TABLE or response handling: {e}. Proceeding anyway.", file=sys.stderr)
         
     # Regardless of ALTER outcome/warnings, proceed to COMMENT and UPDATE
     # 2. Add a comment to the vector column indicating source columns
@@ -1356,17 +1357,17 @@ def ragify_column(dbtools_connection_display_name: str, table_name: str, column_
     # Ensure comment text isn't too long for Oracle's limit (4000 bytes, but play safe)
     comment_text = comment_text[:3900].replace("'", "''")
     comment_sql = f"COMMENT ON COLUMN {safe_table_name}.{safe_vector_column_name} IS '{comment_text}'"
-    print("Executing COMMENT ON COLUMN statement for ragify_column.")
+    print("Executing COMMENT ON COLUMN statement for ragify_column.", file=sys.stderr)
     
     comment_result_str = execute_sql_tool(dbtools_connection_display_name, comment_sql)
     # Basic check for comment result - less critical, so just print errors
     try:
         comment_result = json.loads(comment_result_str)
         if comment_result.get("items") and len(comment_result["items"]) > 0 and comment_result["items"][0].get("errorCode", 0) != 0:
-             print(f"Warning: Error during COMMENT ON COLUMN: {comment_result['items'][0].get('errorMessage')}")
+             print(f"Warning: Error during COMMENT ON COLUMN: {comment_result['items'][0].get('errorMessage')}", file=sys.stderr)
     except Exception as e:
-        print(f"Warning: Could not parse COMMENT ON COLUMN response or other error: {e}")
-        print(f"COMMENT response raw: {comment_result_str}")
+        print(f"Warning: Could not parse COMMENT ON COLUMN response or other error: {e}", file=sys.stderr)
+        print(f"COMMENT response raw: {comment_result_str}", file=sys.stderr)
 
     # Construct the concatenation expression for the source columns
     # Using COALESCE to handle potential NULLs gracefully, replacing them with empty strings
@@ -1379,14 +1380,14 @@ def ragify_column(dbtools_connection_display_name: str, table_name: str, column_
 
     # 3. Populate the vector column
     update_sql = f"UPDATE {safe_table_name}\nSET {safe_vector_column_name} = VECTOR_EMBEDDING({safe_model_name} USING ({concatenated_columns}) AS data)\nWHERE {where_clause}"
-    print("Executing UPDATE statement for ragify_column.")
+    print("Executing UPDATE statement for ragify_column.", file=sys.stderr)
 
     update_result_str = execute_sql_tool(dbtools_connection_display_name, update_sql)
     try:
         update_result = json.loads(update_result_str)
          # Check for errors in the response items
         if update_result.get("items") and len(update_result["items"]) > 0 and update_result["items"][0].get("errorCode", 0) != 0:
-             print(f"Error during UPDATE: {update_result['items'][0].get('errorMessage')}")
+             print(f"Error during UPDATE: {update_result['items'][0].get('errorMessage')}", file=sys.stderr)
              # Even if update fails, the column was likely added. Return the update error.
              return json.dumps({"status": "error", "step": "UPDATE", "details": update_result})
         
@@ -1394,11 +1395,11 @@ def ragify_column(dbtools_connection_display_name: str, table_name: str, column_
         return json.dumps({"status": "success", "details": update_result})
 
     except json.JSONDecodeError:
-         print(f"Non-JSON response during UPDATE: {update_result_str}")
+         print(f"Non-JSON response during UPDATE: {update_result_str}", file=sys.stderr)
          # If ALTER reported 'column exists', this non-JSON might be less critical, but still report as warning.
          return json.dumps({"status": "warning", "step": "UPDATE", "message": "ALTER TABLE step completed (possibly with warnings like 'column exists'), but UPDATE step returned non-JSON response.", "details": update_result_str})
     except Exception as e:
-        print(f"Unexpected error parsing UPDATE response: {e}")
+        print(f"Unexpected error parsing UPDATE response: {e}", file=sys.stderr)
         return json.dumps({"status": "error", "step": "UPDATE", "details": f"Unexpected error: {str(e)}"})
 
 @mcp.tool()

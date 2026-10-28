@@ -39,7 +39,7 @@ A Python-based MCP (Model Context Protocol) server that provides a suite of tool
 
 ## Prerequisites
 - Valid database connection file. Resolution order:
-  1) Path specified by environment variable `MYSQL_MCP_CONFIG` (absolute or relative to this module)
+  1) Path specified by environment variable `MYSQL_MCP_CONFIG` (relative paths use the server process working directory)
   2) `local_config.json` (default)
 - Valid OCI configuration file (`~/.oci/config`) or environment variables
 
@@ -114,10 +114,8 @@ The server loads and validates connection configuration using two helpers in uti
 
 - utils.load_mysql_config:
   - Search order (first existing file wins):
-    1) Path from env `MYSQL_MCP_CONFIG` (if set). If relative, also tries `<module_dir>/<value>`.
-    2) `<module_dir>/local_config.json` (default when env not set)
-    3) `<module_dir>/config.json`
-    4) `<cwd>/config.json`
+    1) Path from env `MYSQL_MCP_CONFIG` (if set; relative to the server process working directory).
+    2) `<package_root>/local_config.json` (default when env not set). No other files are searched.
   - Returns a validated dict after passing the loaded JSON through fill_config_defaults.
 
 - utils.fill_config_defaults:
@@ -144,7 +142,7 @@ The server loads and validates connection configuration using two helpers in uti
         "local_bind_port": 3306            // default 3306
       }
     }
-  - Required server entry keys are exactly: {"host","user","password","database","port"}.
+  - Required server entry keys are `host`, `user`, `database`, `port`, and exactly one of `password`, `password_env`, or `password_keyring`.
   - If a bastion block is present, only the allowed keys above are permitted; defaults are applied when omitted.
 
 Example minimal config (local file):
@@ -184,6 +182,23 @@ Example with bastion:
 Note:
 - Set `MYSQL_MCP_CONFIG` to point at a specific JSON file if you don't want to use `local_config.json`.
 - The defaults and schema enforcement are performed at startup; invalid or incomplete entries raise clear exceptions.
+
+### Password sources
+
+Existing `password` strings remain supported, including empty strings. To keep a password outside the connection file, replace `password` with one of these fields:
+
+- `"password_env": "MYSQL_APP_PASSWORD"`: Read a non-empty password from the named environment variable in the server process. Provision it through the launcher or a secret manager. Environment references do not encrypt secrets at rest; do not put the actual password in the MCP client's `env` JSON or a checked-in `.env` file.
+- `"password_keyring": {"service": "mysql-mcp-app", "username": "appuser"}`: Read a non-empty password using an explicit service and username from the OS credential store. The keyring username is not inferred from the database user.
+
+Provision keyring entries on the MCP host under the server's runtime account, using the same Python environment and backend. Enter the password at the prompt:
+
+```sh
+uv run python -m keyring set mysql-mcp-app appuser
+```
+
+Use an unlocked OS credential store under the MCP runtime account: macOS Keychain, Windows Credential Locker, Secret Service/libsecret, or KWallet. Use the same backend for provisioning and startup; if automatic selection chooses an unsupported backend, select one explicitly with `PYTHON_KEYRING_BACKEND`. See the [headless Linux setup guide](https://keyring.readthedocs.io/en/stable/#using-keyring-on-headless-linux-systems) for daemon and D-Bus requirements.
+
+Select exactly one source per connection. Missing secrets, conflicting sources, and unavailable or locked stores produce configuration errors without fallback. Passwords resolve at startup; restart after changing or rotating a secret. `list_all_connections` reports configuration errors until the server restarts with valid settings. Password values are omitted from configuration errors and connection summaries. See [example_config.json](example_config.json) for all three alternatives.
 
 ## Usage
 

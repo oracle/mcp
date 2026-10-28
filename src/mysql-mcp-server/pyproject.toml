@@ -9,6 +9,7 @@ license-files = ["LICENSE.txt"]
 
 dependencies = [
     "fastmcp==3.4.5",
+    "keyring==25.7.0",
     "mysql-connector-python==9.5.0",
     "oci==2.185.1"
 ]
@@ -55,3 +56,22 @@ exclude = [
   "/Containerfile",
   "/.containerignore",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.2.0",
+    "pytest-cov>=7.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["oracle/mysql_mcp_server/tests"]
+addopts = "--cov=oracle/mysql_mcp_server --cov-branch --cov-report=term-missing"
+markers = ["live: requires explicit live-test opt-in and disposable resources"]
+
+[tool.coverage.run]
+omit = ["**/tests/*"]
+
+[tool.coverage.report]
+precision = 2
+fail_under = 90

@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-db-observability-mcp-server"
-version = "0.1.0"
+version = "0.1.1"
 description = "Unified Oracle Database Observability MCP server"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -14,7 +14,7 @@ dependencies = [
     "oci==2.185.1",
     "pydantic==2.13.4",
     "jsonschema>=4.25.0,<5.0.0",
-    "oracle-mcp-common>=0.1.2,<0.2.0",
+    "oracle-mcp-common>=0.2.0,<0.3.0",
 ]
 
 classifiers = [

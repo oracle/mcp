@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Report explicit boolean result truncation consistently in `invoke_oci_api` auto, summary, and full modes, including complete collection envelopes; keep summary-sample truncation separate from source completeness.
 - Check SDK support before using SCIM offset keywords; preserve search pages requiring request-body continuation. Include locally capped non-paginated lists in completeness metadata.
 
 - Select `invoke_oci_api` pagination from SDK continuation arguments instead of operation-name prefixes, and serialize scalar summaries and aggregate responses without iterable conversion.

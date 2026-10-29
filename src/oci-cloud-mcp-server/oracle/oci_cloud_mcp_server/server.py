@@ -1374,12 +1374,11 @@ def invoke_oci_api(
             "result_mode": effective_result_mode,
             "pagination_used": uses_pagination,
             "has_more_results": has_more_results,
+            "truncated": has_more_results,
             **pagination_metadata,
         }
         if max_results is not None:
             result_meta["max_results"] = max_results
-            if has_more_results:
-                result_meta["truncated"] = True
         if normalized_fields is not None:
             result_meta["fields"] = matched_fields
             if unmatched_fields:
@@ -1392,17 +1391,12 @@ def invoke_oci_api(
             trim_limit = None if uses_pagination else max_results
             if trim_limit is not None and isinstance(projected_data, list):
                 rendered_data = projected_data[:trim_limit]
-                truncated = len(projected_data) > trim_limit
             else:
                 rendered_data = projected_data
-                truncated = False
             if isinstance(projected_data, list):
                 result_meta["returned_items"] = len(rendered_data)
-                if uses_pagination and has_more_results:
-                    result_meta["truncated"] = True
-                else:
+                if not (uses_pagination and has_more_results):
                     result_meta["total_items"] = len(projected_data)
-                    result_meta["truncated"] = truncated
 
         result = {
             "client": client_fqn,

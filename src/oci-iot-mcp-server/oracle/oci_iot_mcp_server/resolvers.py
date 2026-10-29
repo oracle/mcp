@@ -1,9 +1,14 @@
 from .control_plane import (
     get_digital_twin_instance_record,
-    list_digital_twin_instances_records,
-    list_iot_domains_records,
+    list_digital_twin_instances_page_record,
+    list_iot_domains_page_record,
 )
-from .errors import ambiguity_error, invalid_input_error, not_found_error, error_result
+from .errors import (
+    ambiguity_error,
+    invalid_input_error,
+    not_found_error,
+    error_result,
+)
 from .tool_models import success_result
 
 

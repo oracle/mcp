@@ -163,6 +163,38 @@ def get_iot_domain_record(iot_domain_id: str) -> dict:
     return _map_one("get_iot_domain", map_iot_domain, iot_domain_id=iot_domain_id)
 
 
+def list_iot_domains_page_record(
+    *,
+    compartment_id: str,
+    id: str | None = None,
+    iot_domain_group_id: str | None = None,
+    display_name: str | None = None,
+    lifecycle_state: str | None = None,
+    page: str | None = None,
+    limit: int | None = None,
+    sort_order: str | None = None,
+    sort_by: str | None = None,
+    opc_request_id: str | None = None,
+) -> dict:
+    kwargs = {
+        "compartment_id": compartment_id,
+        "id": id,
+        "iot_domain_group_id": iot_domain_group_id,
+        "display_name": display_name,
+        "lifecycle_state": lifecycle_state,
+        "page": page,
+        "limit": limit,
+        "sort_order": sort_order,
+        "sort_by": sort_by,
+        "opc_request_id": opc_request_id,
+    }
+    return _map_page(
+        "list_iot_domains",
+        map_iot_domain,
+        **{key: value for key, value in kwargs.items() if value is not None},
+    )
+
+
 def get_iot_domain_group_record(iot_domain_group_id: str) -> dict:
     return _map_one(
         "get_iot_domain_group",

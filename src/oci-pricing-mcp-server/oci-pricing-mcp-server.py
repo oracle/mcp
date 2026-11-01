@@ -25,7 +25,7 @@ from fastmcp import FastMCP
 
 # Optional deps for ISO 4217 validation
 try:
-    from babel.numbers import get_currency_name  # type: ignore
+    from babel.numbers import UnknownCurrencyError, validate_currency  # type: ignore
     _HAS_BABEL = True
 except Exception:
     _HAS_BABEL = False
@@ -362,19 +362,23 @@ _CCY_RE = re.compile(r"^[A-Z]{3}$")
 def _is_valid_iso4217(code: str) -> bool:
     """
     True if code is an uppercase AAA and exists per Babel or pycountry.
-    Fallback: if neither dependency is available, accept AAA-form codes.
+    Fallback: if neither dependency can check the code, accept AAA-form codes.
     """
     if not _CCY_RE.match(code):
         return False
 
+    babel_rejected = False
     # Prefer Babel (aligns better with current tender currencies)
     if _HAS_BABEL:
         try:
-            # Unknown codes often raise UnknownCurrencyError
-            get_currency_name(code)
+            # Checks the locale-independent list of all known currency codes.
+            # get_currency_name() is not a check: it returns unknown codes as-is.
+            validate_currency(code)
             return True
-        except Exception:
+        except UnknownCurrencyError:
             # Fall through to pycountry check
+            babel_rejected = True
+        except Exception:
             pass
 
     if _HAS_PYCOUNTRY:
@@ -384,7 +388,7 @@ def _is_valid_iso4217(code: str) -> bool:
             pass
 
     # Offline / no deps: allow AAA-form as best-effort fallback
-    return True
+    return not babel_rejected
 
 
 def _norm_currency_strict(cur: str | None, default: str = DEFAULT_CCY) -> tuple[str, str | None]:

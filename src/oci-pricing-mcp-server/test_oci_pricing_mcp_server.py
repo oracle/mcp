@@ -255,7 +255,8 @@ class TestOciPricingMcpServer(unittest.TestCase):
             self.skipTest("pricing_get_sku not found in module")
 
         # NOTE: case-mixed/lowercase are now accepted (auto-uppercased). Exclude them.
-        bad_list = ["USDT", "12$", "JP", "EUR1", ""]
+        # "ZZZ" and "QQQ" have the AAA form but are not ISO 4217 codes.
+        bad_list = ["USDT", "12$", "JP", "EUR1", "", "ZZZ", "QQQ"]
         for bad in bad_list:
             out = self._call(
                 "pricing_get_sku",
@@ -273,7 +274,8 @@ class TestOciPricingMcpServer(unittest.TestCase):
             self.skipTest("pricing_search_name not found in module")
 
         # NOTE: case-mixed/lowercase are now accepted (auto-uppercased). Exclude them.
-        bad_list = ["USDT", "12$", "JP", "EUR1", ""]
+        # "ZZZ" and "QQQ" have the AAA form but are not ISO 4217 codes.
+        bad_list = ["USDT", "12$", "JP", "EUR1", "", "ZZZ", "QQQ"]
         for bad in bad_list:
             out = self._call(
                 "pricing_search_name",
@@ -856,12 +858,26 @@ class TestOciPricingMcpServer(unittest.TestCase):
         raising_pycountry = mock.Mock()
         raising_pycountry.currencies.get.side_effect = RuntimeError("offline")
         with mock.patch.object(module, "_HAS_BABEL", True), mock.patch.object(
-            module, "get_currency_name", side_effect=RuntimeError("unknown")
+            module, "validate_currency", side_effect=RuntimeError("offline")
         ), mock.patch.object(module, "_HAS_PYCOUNTRY", True), mock.patch.object(
             module, "pycountry", raising_pycountry
         ):
             module._is_valid_iso4217.cache_clear()
             self.assertTrue(module._is_valid_iso4217("ZZZ"))
+
+        # A Babel rejection is final when pycountry cannot answer.
+        with mock.patch.object(module, "_HAS_BABEL", True), mock.patch.object(
+            module, "_HAS_PYCOUNTRY", False
+        ):
+            module._is_valid_iso4217.cache_clear()
+            self.assertFalse(module._is_valid_iso4217("ZZZ"))
+            self.assertTrue(module._is_valid_iso4217("JPY"))
+        with mock.patch.object(module, "_HAS_BABEL", True), mock.patch.object(
+            module, "_HAS_PYCOUNTRY", True
+        ), mock.patch.object(module, "pycountry", raising_pycountry):
+            module._is_valid_iso4217.cache_clear()
+            self.assertFalse(module._is_valid_iso4217("ZZZ"))
+        module._is_valid_iso4217.cache_clear()
 
         with mock.patch.object(module, "_is_valid_iso4217", return_value=False):
             self.assertEqual(

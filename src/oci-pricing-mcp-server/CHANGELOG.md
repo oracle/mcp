@@ -5,6 +5,7 @@
 ### Fixed
 
 - Resolve Price List pagination `next` hrefs against the current page URL so query-relative and path-relative links stay on the API path. Off-host destinations are still rejected.
+- Reject well-formed but unknown currency codes (for example `ZZZ`) with `invalid-currency-format` in `pricing_get_sku` and `pricing_search_name`. Babel's `get_currency_name()` returns unknown codes unchanged, so every three-letter code passed validation and was sent to the Price List API.
 
 ### Security
 

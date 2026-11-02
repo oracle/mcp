@@ -4,6 +4,10 @@ All notable changes to OCI Database MCP Server are documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- Require `oracle-mcp-common>=0.2.0,<0.3.0` for shared OCI authentication.
+
 ### Fixed
 
 - Allow explicit null for optional region arguments so calls use the configured default region, matching omission.
@@ -11,12 +15,6 @@ All notable changes to OCI Database MCP Server are documented in this file.
 ### Security
 
 - Updated locked AnyIO to 4.15.1; updated locked multidict to 6.9.1; updated PyJWT to 2.15.1 and urllib3 to 2.8.0; updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).
-
-## 1.3.4
-
-### Changed
-
-- Require `oracle-mcp-common>=0.2.0,<0.3.0` for shared OCI authentication.
 
 ## 1.3.3
 

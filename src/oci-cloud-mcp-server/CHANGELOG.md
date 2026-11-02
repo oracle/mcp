@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Require `oracle-mcp-common>=0.2.0,<0.3.0` for shared OCI authentication.
+
 ### Fixed
 
 - Check SDK support before using SCIM offset keywords; preserve search pages requiring request-body continuation. Include locally capped non-paginated lists in completeness metadata.
@@ -12,12 +16,6 @@
 ### Security
 
 - Updated locked AnyIO to 4.15.1; updated locked multidict to 6.9.1; updated PyJWT to 2.15.1 and urllib3 to 2.8.0; updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).
-
-## 2.2.4
-
-### Changed
-
-- Require `oracle-mcp-common>=0.2.0,<0.3.0` for shared OCI authentication.
 
 ## 2.2.3
 

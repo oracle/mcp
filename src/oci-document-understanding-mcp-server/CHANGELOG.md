@@ -8,6 +8,8 @@
 
 ### Changed
 
+- Require `oracle-mcp-common>=0.2.0,<0.3.0` for shared OCI authentication.
+- Read the runtime and SDK user-agent version from installed package metadata.
 - Require FastMCP 3.4.5 or later and OCI Python SDK 2.185.0 so the server resolves alongside `oracle-mcp-common`.
 - Updated locked AnyIO to 4.15.1.
 
@@ -18,13 +20,6 @@
 ### Security
 
 - Update locked PyJWT to 2.15.1, urllib3 to 2.8.0, cryptography to 50.0.2, and PyOpenSSL to 26.4.0 to address dependency security advisories.
-
-## 0.1.1
-
-### Changed
-
-- Require `oracle-mcp-common>=0.2.0,<0.3.0` for shared OCI authentication.
-- Read the runtime and SDK user-agent version from installed package metadata.
 
 ## 0.1.0
 

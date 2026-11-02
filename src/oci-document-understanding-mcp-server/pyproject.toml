@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "oracle.oci-document-understanding-mcp-server"
-version = "0.1.1"
+version = "0.1.0"
 description = "Stdio MCP server for OCI Document Understanding workflows."
 readme = "README.md"
 requires-python = ">=3.13"

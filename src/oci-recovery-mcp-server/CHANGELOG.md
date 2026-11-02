@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Require `oracle-mcp-common>=0.2.0,<0.3.0` for shared OCI authentication.
 - List tools now say when their result is incomplete. With `fetch_for_child_compartment=true`,
   `list_databases`, `list_backups`, `list_protected_databases`, `list_protection_policies`,
   `list_recovery_service_subnets`, `list_restore`, `list_db_homes`, `list_db_systems` and
@@ -41,12 +42,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Updated locked AnyIO to 4.15.1; updated locked multidict to 6.9.1; updated locked PyJWT to 2.15.1.
-
-## 3.0.1
-
-### Changed
-
-- Require `oracle-mcp-common>=0.2.0,<0.3.0` for shared OCI authentication.
 
 ## 3.0.0
 

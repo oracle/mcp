@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-### Changed
+### Added
 
-- Require `oracle-mcp-common>=0.2.0,<0.3.0` for shared OCI authentication.
+- Support `resource_principal_v212` authentication through the shared Common library.
 
 ### Fixed
 

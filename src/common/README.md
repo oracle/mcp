@@ -18,7 +18,7 @@ An adopting server normally declares a bounded dependency on this package:
 
 ```toml
 dependencies = [
-  "oracle-mcp-common>=0.2.0,<0.3.0",
+  "oracle-mcp-common>=0.1.0,<0.2.0",
 ]
 ```
 

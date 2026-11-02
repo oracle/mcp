@@ -4,6 +4,10 @@ All notable changes to OCI Database MCP Server are documented in this file.
 
 ## Unreleased
 
+### Added
+
+- Support `resource_principal_v212` authentication through the shared Common library.
+
 ### Fixed
 
 - Allow explicit null for optional region arguments so calls use the configured default region, matching omission.

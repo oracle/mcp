@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Resolve Price List pagination `next` hrefs against the current page URL so query-relative and path-relative links stay on the API path. Off-host destinations are still rejected.
+
 ### Security
 
 - Updated locked PyJWT to 2.15.1; updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247); updated the FastMCP dependency and lockfile to 3.4.5; updated locked AnyIO to 4.15.1.

@@ -10,6 +10,8 @@ package com.oracle.database.mcptoolkit.web;
 import com.oracle.database.mcptoolkit.LoadedConstants;
 import jakarta.servlet.http.HttpServletRequest;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Objects;
 
 /**
@@ -56,6 +58,57 @@ public class WebUtils {
       url.append(":").append(port);
 
     return url.toString();
+  }
+
+  /**
+   * Resolves the protected resource identifier without changing a configured value.
+   * A configured identifier may include a public path prefix or query component.
+   *
+   * @param request the servlet request used only when the configured value is absent or blank
+   * @param configuredResourceUrl the optional externally visible MCP resource identifier
+   * @return the configured identifier, or the existing request-derived default
+   */
+  static String resolveMcpResourceUrl(
+      final HttpServletRequest request, final String configuredResourceUrl) {
+    if (configuredResourceUrl != null && !configuredResourceUrl.isBlank()) {
+      return configuredResourceUrl;
+    }
+    return buildURLFromRequest(request) + "/mcp";
+  }
+
+  /**
+   * Validates an optional public metadata URL before it is advertised in a challenge.
+   * No network lookup or URL normalization is performed.
+   *
+   * @param configuredUrl an ASCII HTTPS URI, or an absent/blank value
+   * @return the unchanged configured URL, or null to retain the request-derived default
+   * @throws IllegalArgumentException if a nonblank value is not a valid public metadata URL
+   */
+  static String validateMcpResourceMetadataUrl(final String configuredUrl) {
+    if (configuredUrl == null || configuredUrl.isBlank()) {
+      return null;
+    }
+    if (configuredUrl.chars().anyMatch(c -> c <= 0x20 || c >= 0x7f)) {
+      throw invalidMcpResourceMetadataUrl();
+    }
+    try {
+      final URI uri = new URI(configuredUrl);
+      final int port = uri.getPort();
+      if (!"https".equalsIgnoreCase(uri.getScheme()) || uri.getHost() == null
+          || uri.getRawUserInfo() != null || uri.getRawFragment() != null
+          || (port != -1 && (port < 1 || port > 65535))) {
+        throw invalidMcpResourceMetadataUrl();
+      }
+    } catch (URISyntaxException e) {
+      throw invalidMcpResourceMetadataUrl();
+    }
+    return configuredUrl;
+  }
+
+  private static IllegalArgumentException invalidMcpResourceMetadataUrl() {
+    return new IllegalArgumentException(
+      "mcp.oauth.resourceMetadataUrl must be an absolute ASCII HTTPS URL "
+        + "without user-info or a fragment, and with a valid port");
   }
 
   /**

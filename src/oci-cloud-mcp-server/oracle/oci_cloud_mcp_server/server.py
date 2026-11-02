@@ -829,21 +829,23 @@ def _describe_operation(
 
 def _extract_paginated_items(response_data: Any) -> Tuple[Any, Optional[str], Any]:
     if isinstance(response_data, oci.dns.models.RecordCollection) or isinstance(response_data, oci.dns.models.RRSet):
-        return response_data.items, "dns", response_data.__class__
+        return response_data.items or [], "dns", response_data.__class__
     if isinstance(response_data, oci.object_storage.models.ListObjects):
-        return response_data.objects, "object_storage", None
+        return response_data.objects or [], "object_storage", None
     if isinstance(response_data, list):
         return response_data, None, None
+    schema = getattr(response_data, "swagger_types", {})
+    # SDK arrays may be unset on an empty page. Keep their collection identity
+    # so a valid continuation is followed and the legacy output shape is stable.
     results = getattr(response_data, "results", None)
-    if results is not None:
-        return results, None, None
+    if results is not None or schema.get("results", "").startswith("list["):
+        return results if results is not None else [], None, None
     items = getattr(response_data, "items", None)
-    if items is not None and not callable(items):
-        return items, None, None
+    if (items is not None and not callable(items)) or schema.get("items", "").startswith("list["):
+        return items if items is not None else [], None, None
 
     # Native envelopes declare their record arrays in the SDK model schema.
     # Do not guess among multiple arrays (e.g. schemas is SCIM metadata).
-    schema = getattr(response_data, "swagger_types", {})
     fields = [name for name, kind in schema.items() if kind.startswith("list[") and name != "schemas"]
     if "resources" in fields:
         fields = ["resources"]

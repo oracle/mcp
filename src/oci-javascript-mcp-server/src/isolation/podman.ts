@@ -144,7 +144,7 @@ export class PodmanIsolationProvider implements IsolationProvider {
         if (!closed) await waitForClose(close, 500);
         if (!closed) errors.push(new Error("sandbox runner did not close"));
       }
-      await runPodman(this.#cliPath, ["network", "rm", "--ignore", network])
+      await removePodmanNetwork(this.#cliPath, network)
         .catch(error => errors.push(error));
       if (errors.length > 0) {
         throw errors[0];
@@ -214,21 +214,43 @@ function createTlsBootstrap() {
   };
 }
 
-function runPodman(command: string, args: string[]): Promise<void> {
+async function removePodmanNetwork(command: string, network: string): Promise<void> {
+  const exists = () => runPodman(command, ["network", "exists", network], [0, 1]);
+  if (await exists() === 1) {
+    return;
+  }
+  try {
+    await runPodman(command, ["network", "rm", network]);
+  } catch (error) {
+    // Another cleanup may have removed the network after the first check.
+    if (await exists() !== 1) {
+      throw error;
+    }
+  }
+}
+
+function runPodman(
+  command: string,
+  args: string[],
+  successfulExitCodes: readonly number[] = [0]
+): Promise<number> {
   return new Promise((resolve, reject) => {
     let settled = false;
     const child = spawn(command, args, { env: runnerEnvironment(), stdio: "ignore" });
-    const finish = (error?: Error) => {
+    const finish = (error?: Error, code = 0) => {
       if (settled) {
         return;
       }
       settled = true;
       clearTimeout(timeout);
-      error ? reject(error) : resolve();
+      error ? reject(error) : resolve(code);
     };
     child.once("error", () => finish(new Error("Podman command failed")));
     child.once("close", code => finish(
-      code === 0 ? undefined : new Error("Podman command exited unsuccessfully")
+      successfulExitCodes.includes(code ?? -1)
+        ? undefined
+        : new Error("Podman command exited unsuccessfully"),
+      code ?? -1
     ));
     const timeout = setTimeout(() => {
       child.kill("SIGKILL");

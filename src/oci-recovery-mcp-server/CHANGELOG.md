@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Support `resource_principal_v212` authentication through the shared Common library.
+
 ### Changed
 
 - List tools now say when their result is incomplete. With `fetch_for_child_compartment=true`,

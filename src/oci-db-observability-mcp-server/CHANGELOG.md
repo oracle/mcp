@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Support `resource_principal_v212` authentication through the shared Common library.
+
 ### Fixed
 
 - Use the local Common workspace package during development so shared changes trigger validation; update the OCI SDK to 2.185.1 to satisfy Common's requirements.

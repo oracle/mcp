@@ -130,7 +130,7 @@ This is the fastest way to learn:
 - max_results: Optional total result cap for paginated operations, or top-level list trim for non-paginated responses.
 - result_mode: `auto` (default), `full`, or `summary`. `auto` keeps list, summarize, and paginated results compact while leaving other operations full by default.
 
-Collection handling preserves existing list, `items`, Logging Search `results`, DNS, and Object Storage output shapes. Other SDK envelopes with a single declared record array (including Identity Domains `resources`) retain their native object shape with aggregated records. Original per-page non-record fields are retained in `result_meta.page_metadata`, including search summaries and SCIM paging metadata. Aggregated SCIM envelopes retain the first `start_index` and service `total_results`, with `items_per_page` reflecting the number of returned resources.
+Collection handling preserves existing list, `items`, Logging Search `results`, DNS, and Object Storage output shapes. Unset SDK record arrays are treated as empty pages, not scalar responses; continuation and page metadata are still processed, including Object Storage pages containing only prefixes. Other SDK envelopes with a single declared record array (including Identity Domains `resources`) retain their native object shape with aggregated records. Original per-page non-record fields are retained in `result_meta.page_metadata`, including search summaries and SCIM paging metadata. Aggregated SCIM envelopes retain the first `start_index` and service `total_results`, with `items_per_page` reflecting the number of returned resources.
 
 Identity Domains follows `page` tokens when available, or, when the SDK method accepts `start_index`, SCIM continuation derived from the response's resource count and `total_results`. Explicit `start_index`/`count` parameters select SCIM mode. Search operations such as `search_users` carry offsets inside their request model; without a page token, the fetched page is preserved and `has_more_results` reports remaining resources. Continue those searches manually by updating the request model offset. Object Storage continues via `start`, not `page`. `result_meta.has_more_results` is available in full and summary modes; when a cap stops at a page boundary, continuation is reported as `page`, `start`, or `start_index` in `result_meta`. If the cap cuts a page, no lossless continuation is advertised. Preserve the original query parameters when continuing.
 
@@ -268,7 +268,7 @@ authentication. Set `OCI_MCP_AUTH_TYPE` to one of:
 - `auto` (default): use a security token only when the selected profile directly declares `security_token_file`; otherwise use that profile's API key
 - `api_key` or `security_token`: explicitly select an OCI CLI-compatible profile mode
 - `identity_domain_upst`: exchange a file-backed Identity Domains JWT for an OCI UPST
-- `instance_principal`, `resource_principal`, `instance_principal_delegation`, `resource_principal_delegation`, or `oke_workload_identity`
+- `instance_principal`, `resource_principal`, `resource_principal_v212`, `instance_principal_delegation`, `resource_principal_delegation`, or `oke_workload_identity`
 
 Profile-backed modes load the default `~/.oci/config`, or the file and profile
 selected by `OCI_CONFIG_FILE` and `OCI_CONFIG_PROFILE`. `OCI_REGION` overrides
@@ -286,6 +286,13 @@ server's derived additional user-agent suffix for MCP telemetry.
 | `instance_principal_delegation`, `resource_principal_delegation` | `OCI_MCP_DELEGATION_TOKEN_FILE` |
 | `oke_workload_identity` | None by default; `OCI_MCP_OKE_SERVICE_ACCOUNT_TOKEN_PATH` optionally overrides the mounted token |
 | `identity_domain_upst` | `OCI_MCP_IDENTITY_DOMAIN_URL`, `OCI_MCP_UPST_JWT_FILE`, `OCI_MCP_IDENTITY_DOMAIN_CLIENT_ID`, `OCI_MCP_IDENTITY_DOMAIN_CLIENT_SECRET_FILE`, and `OCI_REGION` |
+| `resource_principal_v212` | `OCI_REGION`, `OCI_MCP_RP_TENANCY_ID`, `OCI_MCP_RP_RESOURCE_ID`, `OCI_MCP_RP_PRIVATE_KEY_PATH`, `OCI_MCP_RP_RCI`, and `OCI_MCP_RP_T0` |
+
+`resource_principal_v212` enables the Database-service RPv2.1.2
+resource-principal exchange. The RPT and RPST endpoints default to the
+region's OCI realm; override them only when required with
+`OCI_MCP_RP_RPT_ENDPOINT` and `OCI_MCP_RP_RPST_ENDPOINT`. Treat
+`OCI_MCP_RP_RCI` as sensitive HMAC-key material and do not log or commit it.
 
 HTTP transport authentication remains separate from `stdio`. At startup, the
 server uses `oracle-mcp-common` to configure the OCI IAM/IDCS provider from

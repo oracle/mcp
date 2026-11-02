@@ -2,9 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- Support `resource_principal_v212` authentication through the shared Common library.
+
 ### Fixed
 
 - Report explicit boolean result truncation consistently in `invoke_oci_api` auto, summary, and full modes, including complete collection envelopes; keep summary-sample truncation separate from source completeness.
+- Continue traversal across unset SDK record arrays, preserving Logging Search, DNS, and Object Storage collection shapes and metadata even on empty or prefix-only pages.
 - Check SDK support before using SCIM offset keywords; preserve search pages requiring request-body continuation. Include locally capped non-paginated lists in completeness metadata.
 
 - Select `invoke_oci_api` pagination from SDK continuation arguments instead of operation-name prefixes, and serialize scalar summaries and aggregate responses without iterable conversion.

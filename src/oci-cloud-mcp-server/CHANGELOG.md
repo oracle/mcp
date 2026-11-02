@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Support `resource_principal_v212` authentication through the shared Common library.
+
 ### Fixed
 
 - Check SDK support before using SCIM offset keywords; preserve search pages requiring request-body continuation. Include locally capped non-paginated lists in completeness metadata.

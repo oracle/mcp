@@ -836,7 +836,7 @@ def test_rpv212_rejects_an_sdk_without_a_retry_hook(monkeypatch):
 
 
 def test_resource_principal_rci_is_redacted_from_representations_and_errors(caplog):
-    secret = "sentinel-rci-secret"
+    secret = "this-is-not-the-secret"
     options = auth.AuthOptions(resource_principal_rci=secret)
     inputs = auth._resolve_inputs(options)
 
@@ -1206,7 +1206,7 @@ def test_idcs_http_auth_requires_scopes_and_safe_request_token_and_region(monkey
 
 
 def test_idcs_http_auth_sanitizes_token_exchange_failures(monkeypatch):
-    secret = "client-secret-value"
+    secret = "this-is-not-the-secret"
     token = "request-token-value"
     set_idcs_http_environment(monkeypatch, IDCS_CLIENT_SECRET=secret)
     monkeypatch.setattr(auth, "OCIProvider", MagicMock(return_value=MagicMock()))

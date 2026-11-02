@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 2.0.0
+
+### Breaking Changes
+
+- The locked cryptography update removes support for Intel macOS and 32-bit Windows. Use Apple Silicon macOS, 64-bit Windows, or a supported Linux environment.
+
 ### Fixed
 
 - Allow explicit null for optional tool inputs across Essbase, ADP, and Data Transforms, matching omission.

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.2.0
+
+### Breaking Changes
+
+- The locked cryptography update removes support for Intel macOS and 32-bit Windows. Use Apple Silicon macOS, 64-bit Windows, or a supported Linux environment.
+
 ### Added
 
 - Support `resource_principal_v212` authentication through the shared Common library.
@@ -12,7 +18,11 @@
 
 ### Security
 
-- Updated locked dependencies: AnyIO 4.15.1, cryptography 49.0.0, joserfc 1.7.5, MCP Python SDK 1.30.0, pydantic-settings 2.15.0, PyJWT 2.15.1, and urllib3 2.8.0.
+- Updated locked dependencies: AnyIO 4.15.1, cryptography 50.0.0, joserfc 1.7.5, MCP Python SDK 1.30.0, pydantic-settings 2.15.0, PyJWT 2.15.1, and urllib3 2.8.0.
+
+### Changed
+
+- Require `oracle-mcp-common>=0.2.0,<0.3.0` for the coordinated Common authentication release.
 
 ## 0.1.0 - 2026-08-05
 

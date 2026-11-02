@@ -148,6 +148,76 @@ for (const scenario of [
   });
 }
 
+test("Podman cleanup deadline prevents later commands after its budget", async t => {
+  let now = 1000;
+  t.mock.method(Date, "now", () => now);
+  let removeCalls = 0;
+  t.mock.method(childProcess, "spawn", (_command: string, args: string[]) => {
+    const child = new EventEmitter();
+    queueMicrotask(() => {
+      if (args[1] === "create") child.emit("close", 1);
+      else {
+        if (args[1] === "exists") now += 6000;
+        if (args[1] === "rm") removeCalls += 1;
+        child.emit("close", 0);
+      }
+    });
+    return child as childProcess.ChildProcess;
+  });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  const execution = new PodmanIsolationProvider().run("42", {
+    deadlineMs: Date.now() + 30_000,
+    signal: new AbortController().signal,
+    hostRpc: async () => assert.fail("no OCI calls expected")
+  });
+  await assert.rejects(execution.result, /Podman command exited unsuccessfully/);
+  await assert.rejects(execution.terminate(), /Podman.*(?:timed out|deadline exceeded)/);
+  assert.equal(removeCalls, 0);
+});
+
+test("Podman cleanup deadline waits for killed command close", async t => {
+  const realSetTimeout = globalThis.setTimeout;
+  const shortTimeout = ((callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) =>
+    realSetTimeout(callback, delay !== undefined && delay >= 4900 && delay <= 5000 ? 10 : delay, ...args)
+  ) as typeof setTimeout;
+  t.mock.method(globalThis, "setTimeout", shortTimeout);
+  let closed = false;
+  let killed = false;
+  t.mock.method(childProcess, "spawn", (_command: string, args: string[]) => {
+    const child = new childProcess.ChildProcess();
+    if (args[1] === "create") queueMicrotask(() => child.emit("close", 1));
+    else {
+      const close = () => {
+        killed = true;
+        realSetTimeout(() => { closed = true; child.emit("close", null, "SIGKILL"); }, 20);
+        return true;
+      };
+      if (process.platform === "win32") t.mock.method(child, "kill", close);
+      else {
+        Object.defineProperty(child, "pid", { value: 12345, configurable: true });
+        t.mock.method(process, "kill", (pid: number, signal?: number | NodeJS.Signals) => {
+          assert.equal(pid, -12345);
+          assert.equal(signal, "SIGKILL");
+          return close();
+        });
+      }
+    }
+    return child;
+  });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  const execution = new PodmanIsolationProvider().run("42", {
+    deadlineMs: Date.now() + 30_000,
+    signal: new AbortController().signal,
+    hostRpc: async () => assert.fail("no OCI calls expected")
+  });
+  await assert.rejects(execution.result, /Podman command exited unsuccessfully/);
+  await assert.rejects(execution.terminate(), /Podman.*(?:timed out|deadline exceeded)/);
+  assert.equal(killed, true);
+  assert.equal(closed, true);
+});
+
 for (const scenario of ["early exit", "spawn error", "missing input", "cancel"] as const) {
   test(`Podman owns process and resource cleanup: ${scenario}`, { timeout: 5000 }, async t => {
     const controller = new AbortController();

@@ -150,21 +150,74 @@ def _validate_report_sql_definition(sql_definition):
     return normalized, None
 
 def _query_exact_connection_matches(display_name: str):
-    """Search connections and return exact display-name matches."""
+    """Search all Resource Search pages and return exact display-name matches."""
     if not _is_safe_resource_search_filter(display_name):
         return None, json.dumps({
             "error": "Invalid connection name filter",
-            "details": "Only letters, digits, spaces, and .:_/@()+- are allowed."
+            "details": (
+                "Only letters, digits, spaces, and .:_/@()+- are allowed."
+            ),
         })
 
     search_details = StructuredSearchDetails(
-        query=f"query databasetoolsconnection resources return allAdditionalFields where displayName =~ '{display_name}'",
+        query=(
+            "query databasetoolsconnection resources return allAdditionalFields "
+            f"where displayName =~ '{display_name}'"
+        ),
         type="Structured",
-        matching_context_type="NONE"
+        matching_context_type="NONE",
     )
-    resp = search_client.search_resources(search_details=search_details, tenant_id=config['tenancy']).data
-    items = getattr(resp, "items", []) if resp else []
-    exact_items = [item for item in items if getattr(item, "display_name", None) == display_name]
+
+    exact_items = []
+    seen_pages = set()
+    page = None
+    while True:
+        kwargs = {
+            "search_details": search_details,
+            "tenant_id": config["tenancy"],
+        }
+        if page is not None:
+            kwargs["page"] = page
+
+        try:
+            response = search_client.search_resources(**kwargs)
+        except Exception as exc:
+            return None, json.dumps({
+                "error": "Connection search failed",
+                "details": str(exc),
+            })
+
+        data = response.data
+        items = getattr(data, "items", []) if data else []
+
+        exact_items.extend(
+            item
+            for item in items
+            if getattr(item, "display_name", None) == display_name
+        )
+
+        if not getattr(response, "has_next_page", False):
+            break
+
+        next_page = getattr(response, "next_page", None)
+        if not next_page:
+            return None, json.dumps({
+                "error": "Connection search incomplete",
+                "details": (
+                    "Resource Search indicated another page but returned "
+                    "no continuation token."
+                ),
+            })
+
+        if next_page in seen_pages:
+            return None, json.dumps({
+                "error": "Connection search incomplete",
+                "details": "Resource Search returned a repeated pagination token.",
+            })
+
+        seen_pages.add(next_page)
+        page = next_page
+
     return exact_items, None
 
 def _connection_item_to_minimal_info(item):

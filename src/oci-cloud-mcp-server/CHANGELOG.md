@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Require `oracle-mcp-common>=0.1.4` for the documented audience-qualified HTTP resource scopes.
+
 - Check SDK support before using SCIM offset keywords; preserve search pages requiring request-body continuation. Include locally capped non-paginated lists in completeness metadata.
 
 - Select `invoke_oci_api` pagination from SDK continuation arguments instead of operation-name prefixes, and serialize scalar summaries and aggregate responses without iterable conversion.

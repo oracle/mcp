@@ -6,6 +6,8 @@ All notable changes to OCI Database MCP Server are documented in this file.
 
 ### Fixed
 
+- Require `oracle-mcp-common>=0.1.4` for the documented audience-qualified HTTP resource scopes.
+
 - Allow explicit null for optional region arguments so calls use the configured default region, matching omission.
 
 ### Security

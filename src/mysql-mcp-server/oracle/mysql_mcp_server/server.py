@@ -191,11 +191,11 @@ def _get_db_connection(connection_id: str) -> MySQLConnectionAbstract:
 
     try:
         conn = connector.connect(**connection_info)
-    except Exception as e:
+    except Exception:
         raise DatabaseConnectionError(
-            f"Connection failed with error: {e}. "
+            "Connection failed. Check the connection settings and credentials. "
             "Request assistance from a database administrator, or use list_all_connections() to find a different database connection."
-        ) from e
+        ) from None
 
     return conn
 

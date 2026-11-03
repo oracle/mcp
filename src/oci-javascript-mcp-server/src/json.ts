@@ -7,98 +7,9 @@
 import type { Json } from "./types.ts";
 
 const WIRE_TYPE_KEY = "__oci_wire_type";
-const MAX_DEPTH = 24;
-
-export function toJson(value: unknown): Json {
-  return encode(value, 0, new WeakSet<object>());
-}
 
 export function fromJson(value: Json): unknown {
   return decode(value);
-}
-
-function encode(value: unknown, depth: number, seen: WeakSet<object>): Json {
-  if (depth > MAX_DEPTH) {
-    return wireValue("repr", { value: "[MaxDepth]" });
-  }
-  if (value === null || value === undefined) {
-    return null;
-  }
-  if (typeof value === "string" || typeof value === "boolean") {
-    return value;
-  }
-  if (typeof value === "number") {
-    if (Number.isFinite(value)) {
-      return value;
-    }
-    if (Number.isNaN(value)) {
-      return wireValue("float", { value: "nan" });
-    }
-    return wireValue("float", { value: value > 0 ? "inf" : "-inf" });
-  }
-  if (typeof value === "bigint") {
-    return wireValue("bigint", { value: value.toString() });
-  }
-  if (typeof value === "function" || typeof value === "symbol") {
-    return wireValue("repr", { value: String(value) });
-  }
-
-  if (value instanceof Date) {
-    return wireValue("datetime", { value: value.toISOString() });
-  }
-  if (value instanceof Uint8Array) {
-    return wireValue("bytes", {
-      encoding: "base64",
-      value: Buffer.from(value).toString("base64")
-    });
-  }
-
-  if (typeof value === "object") {
-    if (seen.has(value)) {
-      return wireValue("repr", { value: "[Circular]" });
-    }
-    seen.add(value);
-    try {
-      if (Array.isArray(value)) {
-        return value.map(item => encode(item, depth + 1, seen));
-      }
-      if (value instanceof Map) {
-        return wireValue("map", {
-          items: Array.from(value.entries()).map(([key, item]) => [
-            encode(key, depth + 1, seen),
-            encode(item, depth + 1, seen)
-          ])
-        });
-      }
-      if (value instanceof Set) {
-        return wireValue("set", {
-          items: Array.from(value.values()).map(item => encode(item, depth + 1, seen))
-        });
-      }
-      if (value instanceof Error) {
-        return {
-          name: value.name,
-          message: value.message,
-          stack: value.stack ?? null
-        };
-      }
-      const result: Record<string, Json> = {};
-      for (const [key, item] of Object.entries(value)) {
-        if (item !== undefined) {
-          result[key] = encode(item, depth + 1, seen);
-        }
-      }
-      return result;
-    } finally {
-      seen.delete(value);
-    }
-  }
-
-  return wireValue("repr", { value: String(value) });
-}
-
-function wireValue(typeName: string, fields: Record<string, Json>): Json {
-  return { [WIRE_TYPE_KEY]: typeName, ...fields };
 }
 
 function decode(value: Json): unknown {

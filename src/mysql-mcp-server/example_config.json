@@ -3,15 +3,25 @@
     "example_local_server": {
       "host": "<local-db-hostname-or-ip>",
       "user": "<local-db-username>",
-      "password": "<local-db-password>",
+      "password_env": "MYSQL_LOCAL_PASSWORD",
       "database": "<local-default-schema>",
       "port": 3306
     },
     "example_remote_server": {
       "host": "<remote-db-hostname-or-ip-or-tunnel-endpoint>",
       "user": "<remote-db-username>",
-      "password": "<remote-db-password>",
+      "password_keyring": {
+        "service": "mysql-mcp-app",
+        "username": "appuser"
+      },
       "database": "<remote-default-schema>",
+      "port": 3306
+    },
+    "example_literal_password": {
+      "host": "localhost",
+      "user": "appuser",
+      "password": "example-password",
+      "database": "appdb",
       "port": 3306
     }
   },

@@ -1,0 +1,24 @@
+inheritedBy:
+  file: 'Containerfile'
+
+tasks:
+  containerize:
+    description: 'Builds and tags the project Podman image'
+    type: 'run'
+    script: |
+      set -euo pipefail
+      name=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["name"])')
+      version=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+      podman build -t "$name:$version" .
+      podman tag "$name:$version" "$name:latest"
+    toolchains:
+      - 'unstable_python'
+    inputs:
+      - 'Containerfile'
+      - 'pyproject.toml'
+      - '**/*'
+      - '!dist/**/*'
+      - '!.venv/**/*'
+    options:
+      cache: false
+      runInCI: false

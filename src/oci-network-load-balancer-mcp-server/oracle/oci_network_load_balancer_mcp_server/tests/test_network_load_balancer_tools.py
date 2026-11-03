@@ -85,6 +85,171 @@ class TestNlbTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_list_nlbs_pagination_respects_limit(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        first = create_autospec(oci.response.Response)
+        first.data = oci.network_load_balancer.models.NetworkLoadBalancerCollection(
+            items=[
+                oci.network_load_balancer.models.NetworkLoadBalancerSummary(id="n1"),
+                oci.network_load_balancer.models.NetworkLoadBalancerSummary(id="n2"),
+            ]
+        )
+        first.has_next_page = True
+        first.next_page = "np1"
+
+        second = create_autospec(oci.response.Response)
+        second.data = oci.network_load_balancer.models.NetworkLoadBalancerCollection(
+            items=[
+                oci.network_load_balancer.models.NetworkLoadBalancerSummary(id="n3"),
+                oci.network_load_balancer.models.NetworkLoadBalancerSummary(id="n4"),
+            ]
+        )
+        second.has_next_page = True
+        second.next_page = "np2"
+
+        mock_client.list_network_load_balancers.side_effect = [first, second]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_network_load_balancers",
+                    {"compartment_id": "c1", "limit": 3},
+                )
+            ).structured_content["result"]
+
+        # The result must not exceed the requested limit.
+        assert [item["id"] for item in result] == ["n1", "n2", "n3"]
+        assert len(result) == 3
+
+        # The API request limit decreases by the number of items already collected.
+        calls = mock_client.list_network_load_balancers.call_args_list
+        assert len(calls) == 2
+        assert calls[0].kwargs["page"] is None
+        assert calls[0].kwargs["limit"] == 3
+        assert calls[1].kwargs["page"] == "np1"
+        assert calls[1].kwargs["limit"] == 1
+
+        # Even though the second response has another continuation token,
+        # reaching the limit must prevent a third API request.
+        assert second.has_next_page is True
+        assert second.next_page == "np2"
+        assert len(calls) == 2
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_list_nlbs_pagination_continues_after_empty_page(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        first = create_autospec(oci.response.Response)
+        first.data = oci.network_load_balancer.models.NetworkLoadBalancerCollection(
+            items=[
+                oci.network_load_balancer.models.NetworkLoadBalancerSummary(id="n1")
+            ]
+        )
+        first.has_next_page = True
+        first.next_page = "np1"
+
+        empty = create_autospec(oci.response.Response)
+        empty.data = oci.network_load_balancer.models.NetworkLoadBalancerCollection(
+            items=[]
+        )
+        empty.has_next_page = True
+        empty.next_page = "np2"
+
+        third = create_autospec(oci.response.Response)
+        third.data = oci.network_load_balancer.models.NetworkLoadBalancerCollection(
+            items=[
+                oci.network_load_balancer.models.NetworkLoadBalancerSummary(id="n2")
+            ]
+        )
+        third.has_next_page = False
+        third.next_page = None
+
+        mock_client.list_network_load_balancers.side_effect = [
+            first,
+            empty,
+            third,
+        ]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_network_load_balancers",
+                    {"compartment_id": "c1"},
+                )
+            ).structured_content["result"]
+
+        assert [item["id"] for item in result] == ["n1", "n2"]
+
+        calls = mock_client.list_network_load_balancers.call_args_list
+        assert len(calls) == 3
+        assert calls[1].kwargs["page"] == "np1"
+        assert calls[2].kwargs["page"] == "np2"
+    
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_list_nlbs_pagination_without_limit_returns_all_pages(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        first = create_autospec(oci.response.Response)
+        first.data = oci.network_load_balancer.models.NetworkLoadBalancerCollection(
+            items=[
+                oci.network_load_balancer.models.NetworkLoadBalancerSummary(id="n1")
+            ]
+        )
+        first.has_next_page = True
+        first.next_page = "np1"
+
+        second = create_autospec(oci.response.Response)
+        second.data = oci.network_load_balancer.models.NetworkLoadBalancerCollection(
+            items=[
+                oci.network_load_balancer.models.NetworkLoadBalancerSummary(id="n2")
+            ]
+        )
+        second.has_next_page = True
+        second.next_page = "np2"
+
+        third = create_autospec(oci.response.Response)
+        third.data = oci.network_load_balancer.models.NetworkLoadBalancerCollection(
+            items=[
+                oci.network_load_balancer.models.NetworkLoadBalancerSummary(id="n3")
+            ]
+        )
+        third.has_next_page = False
+        third.next_page = None
+
+        mock_client.list_network_load_balancers.side_effect = [
+            first,
+            second,
+            third,
+        ]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_network_load_balancers",
+                    {"compartment_id": "c1"},
+                )
+            ).structured_content["result"]
+
+        assert [item["id"] for item in result] == ["n1", "n2", "n3"]
+
+        calls = mock_client.list_network_load_balancers.call_args_list
+        assert len(calls) == 3
+        assert calls[0].kwargs["page"] is None
+        assert calls[1].kwargs["page"] == "np1"
+        assert calls[2].kwargs["page"] == "np2"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
     async def test_list_nlbs_error(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -168,6 +333,108 @@ class TestNlbTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_list_listeners_pagination_respects_limit(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        first = create_autospec(oci.response.Response)
+        first.data = oci.network_load_balancer.models.ListenerCollection(
+            items=[
+                oci.network_load_balancer.models.ListenerSummary(name="listener1"),
+                oci.network_load_balancer.models.ListenerSummary(name="listener2"),
+            ]
+        )
+        first.has_next_page = True
+        first.next_page = "lp1"
+
+        second = create_autospec(oci.response.Response)
+        second.data = oci.network_load_balancer.models.ListenerCollection(
+            items=[
+                oci.network_load_balancer.models.ListenerSummary(name="listener3"),
+                oci.network_load_balancer.models.ListenerSummary(name="listener4"),
+            ]
+        )
+        second.has_next_page = True
+        second.next_page = "lp2"
+
+        mock_client.list_listeners.side_effect = [first, second]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_network_load_balancer_listeners",
+                    {"network_load_balancer_id": "nlb1", "limit": 3},
+                )
+            ).structured_content["result"]
+
+        assert [item["name"] for item in result] == [
+            "listener1",
+            "listener2",
+            "listener3",
+        ]
+        assert len(result) == 3
+
+        calls = mock_client.list_listeners.call_args_list
+        assert len(calls) == 2
+        assert calls[0].kwargs["page"] is None
+        assert calls[0].kwargs["limit"] == 3
+        assert calls[1].kwargs["page"] == "lp1"
+        assert calls[1].kwargs["limit"] == 1
+
+        # The continuation token exists, but the limit has been reached.
+        assert second.has_next_page is True
+        assert second.next_page == "lp2"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_list_listeners_pagination_continues_after_empty_page(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        first = create_autospec(oci.response.Response)
+        first.data = oci.network_load_balancer.models.ListenerCollection(
+            items=[
+                oci.network_load_balancer.models.ListenerSummary(name="listener1")
+            ]
+        )
+        first.has_next_page = True
+        first.next_page = "lp1"
+
+        empty = create_autospec(oci.response.Response)
+        empty.data = oci.network_load_balancer.models.ListenerCollection(items=[])
+        empty.has_next_page = True
+        empty.next_page = "lp2"
+
+        third = create_autospec(oci.response.Response)
+        third.data = oci.network_load_balancer.models.ListenerCollection(
+            items=[
+                oci.network_load_balancer.models.ListenerSummary(name="listener2")
+            ]
+        )
+        third.has_next_page = False
+        third.next_page = None
+
+        mock_client.list_listeners.side_effect = [first, empty, third]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_network_load_balancer_listeners",
+                    {"network_load_balancer_id": "nlb1"},
+                )
+            ).structured_content["result"]
+
+        assert [item["name"] for item in result] == ["listener1", "listener2"]
+
+        calls = mock_client.list_listeners.call_args_list
+        assert len(calls) == 3
+        assert calls[1].kwargs["page"] == "lp1"
+        assert calls[2].kwargs["page"] == "lp2"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
     async def test_list_listeners_error(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -247,6 +514,106 @@ class TestNlbTools:
             ).structured_content["result"]
 
         assert [b["name"] for b in result] == ["bs1", "bs2", "bs3"]
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_list_backend_sets_pagination_respects_limit(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        first = create_autospec(oci.response.Response)
+        first.data = oci.network_load_balancer.models.BackendSetCollection(
+            items=[
+                oci.network_load_balancer.models.BackendSetSummary(name="bs1"),
+                oci.network_load_balancer.models.BackendSetSummary(name="bs2"),
+            ]
+        )
+        first.has_next_page = True
+        first.next_page = "bp1"
+
+        second = create_autospec(oci.response.Response)
+        second.data = oci.network_load_balancer.models.BackendSetCollection(
+            items=[
+                oci.network_load_balancer.models.BackendSetSummary(name="bs3"),
+                oci.network_load_balancer.models.BackendSetSummary(name="bs4"),
+            ]
+        )
+        second.has_next_page = True
+        second.next_page = "bp2"
+
+        mock_client.list_backend_sets.side_effect = [first, second]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_network_load_balancer_backend_sets",
+                    {"network_load_balancer_id": "nlb1", "limit": 3},
+                )
+            ).structured_content["result"]
+
+        assert [item["name"] for item in result] == ["bs1", "bs2", "bs3"]
+        assert len(result) == 3
+
+        calls = mock_client.list_backend_sets.call_args_list
+        assert len(calls) == 2
+        assert calls[0].kwargs["page"] is None
+        assert calls[0].kwargs["limit"] == 3
+        assert calls[1].kwargs["page"] == "bp1"
+        assert calls[1].kwargs["limit"] == 1
+
+        # The continuation token exists, but the limit has been reached.
+        assert second.has_next_page is True
+        assert second.next_page == "bp2"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_list_backend_sets_pagination_continues_after_empty_page(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        first = create_autospec(oci.response.Response)
+        first.data = oci.network_load_balancer.models.BackendSetCollection(
+            items=[
+                oci.network_load_balancer.models.BackendSetSummary(name="bs1")
+            ]
+        )
+        first.has_next_page = True
+        first.next_page = "bp1"
+
+        empty = create_autospec(oci.response.Response)
+        empty.data = oci.network_load_balancer.models.BackendSetCollection(items=[])
+        empty.has_next_page = True
+        empty.next_page = "bp2"
+
+        third = create_autospec(oci.response.Response)
+        third.data = oci.network_load_balancer.models.BackendSetCollection(
+            items=[
+                oci.network_load_balancer.models.BackendSetSummary(name="bs2")
+            ]
+        )
+        third.has_next_page = False
+        third.next_page = None
+
+        mock_client.list_backend_sets.side_effect = [first, empty, third]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_network_load_balancer_backend_sets",
+                    {"network_load_balancer_id": "nlb1"},
+                )
+            ).structured_content["result"]
+
+        assert [item["name"] for item in result] == ["bs1", "bs2"]
+
+        calls = mock_client.list_backend_sets.call_args_list
+        assert len(calls) == 3
+        assert calls[1].kwargs["page"] == "bp1"
+        assert calls[2].kwargs["page"] == "bp2"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
@@ -338,6 +705,111 @@ class TestNlbTools:
             ).structured_content["result"]
 
         assert [b["name"] for b in result] == ["b1", "b2", "b3"]
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_list_backends_pagination_respects_limit(self, mock_get_client):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        first = create_autospec(oci.response.Response)
+        first.data = oci.network_load_balancer.models.BackendCollection(
+            items=[
+                oci.network_load_balancer.models.BackendSummary(name="b1"),
+                oci.network_load_balancer.models.BackendSummary(name="b2"),
+            ]
+        )
+        first.has_next_page = True
+        first.next_page = "bp1"
+
+        second = create_autospec(oci.response.Response)
+        second.data = oci.network_load_balancer.models.BackendCollection(
+            items=[
+                oci.network_load_balancer.models.BackendSummary(name="b3"),
+                oci.network_load_balancer.models.BackendSummary(name="b4"),
+            ]
+        )
+        second.has_next_page = True
+        second.next_page = "bp2"
+
+        mock_client.list_backends.side_effect = [first, second]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_network_load_balancer_backends",
+                    {
+                        "network_load_balancer_id": "nlb1",
+                        "backend_set_name": "bs1",
+                        "limit": 3,
+                    },
+                )
+            ).structured_content["result"]
+
+        assert [item["name"] for item in result] == ["b1", "b2", "b3"]
+        assert len(result) == 3
+
+        calls = mock_client.list_backends.call_args_list
+        assert len(calls) == 2
+        assert calls[0].kwargs["page"] is None
+        assert calls[0].kwargs["limit"] == 3
+        assert calls[1].kwargs["page"] == "bp1"
+        assert calls[1].kwargs["limit"] == 1
+
+        # The continuation token exists, but the limit has been reached.
+        assert second.has_next_page is True
+        assert second.next_page == "bp2"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")
+    async def test_list_backends_pagination_continues_after_empty_page(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        first = create_autospec(oci.response.Response)
+        first.data = oci.network_load_balancer.models.BackendCollection(
+            items=[
+                oci.network_load_balancer.models.BackendSummary(name="b1")
+            ]
+        )
+        first.has_next_page = True
+        first.next_page = "bp1"
+
+        empty = create_autospec(oci.response.Response)
+        empty.data = oci.network_load_balancer.models.BackendCollection(items=[])
+        empty.has_next_page = True
+        empty.next_page = "bp2"
+
+        third = create_autospec(oci.response.Response)
+        third.data = oci.network_load_balancer.models.BackendCollection(
+            items=[
+                oci.network_load_balancer.models.BackendSummary(name="b2")
+            ]
+        )
+        third.has_next_page = False
+        third.next_page = None
+
+        mock_client.list_backends.side_effect = [first, empty, third]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_network_load_balancer_backends",
+                    {
+                        "network_load_balancer_id": "nlb1",
+                        "backend_set_name": "bs1",
+                    },
+                )
+            ).structured_content["result"]
+
+        assert [item["name"] for item in result] == ["b1", "b2"]
+
+        calls = mock_client.list_backends.call_args_list
+        assert len(calls) == 3
+        assert calls[1].kwargs["page"] == "bp1"
+        assert calls[2].kwargs["page"] == "bp2"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_network_load_balancer_mcp_server.server.get_nlb_client")

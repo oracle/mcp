@@ -267,13 +267,18 @@ async def test_list_migrations_limit_stops_pagination(mock_get_client):
     resp1.next_page = "np1"
 
     resp2 = create_autospec(oci.response.Response)
-    resp2.data = SimpleNamespace(items=[oci.cloud_migrations.models.Migration(id="m3")])
-    resp2.has_next_page = False
-    resp2.next_page = None
+    resp2.data = SimpleNamespace(
+        items=[
+            oci.cloud_migrations.models.Migration(id="m3"),
+        ]
+    )
+    resp2.has_next_page = True
+    resp2.next_page = "np2"
 
     mock_client.list_migrations.side_effect = [resp1, resp2]
 
-    limit = 2
+    limit = 3
+
     async with Client(mcp) as client:
         result = (
             await client.call_tool(
@@ -282,11 +287,18 @@ async def test_list_migrations_limit_stops_pagination(mock_get_client):
             )
         ).structured_content["result"]
 
-    assert [r["id"] for r in result] == ["m1", "m2"]
-    assert mock_client.list_migrations.call_count == 1
-    kwargs = mock_client.list_migrations.call_args.kwargs
-    assert kwargs["limit"] == limit
-    assert kwargs["page"] is None
+    assert [item["id"] for item in result] == ["m1", "m2", "m3"]
+
+    calls = mock_client.list_migrations.call_args_list
+    assert len(calls) == 2
+
+    assert calls[0].kwargs["limit"] == 3
+    assert calls[0].kwargs["page"] is None
+
+    assert calls[1].kwargs["limit"] == 1
+    assert calls[1].kwargs["page"] == "np1"
+
+    assert mock_client.list_migrations.call_count == 2
 
 
 @pytest.mark.asyncio

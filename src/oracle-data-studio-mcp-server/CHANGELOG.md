@@ -2,9 +2,23 @@
 
 ## Unreleased
 
+## 2.0.0
+
+### Breaking Changes
+
+- The locked cryptography update removes support for Intel macOS and 32-bit Windows. Use Apple Silicon macOS, 64-bit Windows, or a supported Linux environment.
+
+### Fixed
+
+- Allow explicit null for optional tool inputs across Essbase, ADP, and Data Transforms, matching omission.
+
+### Changed
+
+- Raised the server's unit-test coverage gate to 90%, including branch coverage, with focused offline tests for connection and SDK failures, partial responses, mutation confirmation, and Data Transforms builders.
+
 ### Security
 
-- Updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).
+- Updated locked AnyIO to 4.15.1; updated locked PyJWT to 2.15.1 and urllib3 to 2.8.0; updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).
 
 ## 1.0.2
 

@@ -12,25 +12,20 @@ import {
   MAX_CODE_BYTES,
   MAX_STDERR_BYTES,
   MAX_STDOUT_BYTES,
-  normalizeTimeoutMs,
   withDeadline
 } from "./sandbox-common.ts";
 import { SANDBOX_BOOTSTRAP } from "./sandbox-prelude.ts";
-import type { Json, OciReflectionManifest, SandboxResult } from "./types.ts";
+import type { Json, OciReflectionManifest, SandboxError, SandboxResult } from "./types.ts";
 
 type SandboxApi = {
   encodeLastResult: ivm.Reference<() => Json>;
-  run: ivm.Reference<(code: string) => Promise<void>>;
-};
-
-type RunState = {
-  deadlineMs: number;
+  run: ivm.Reference<(code: string) => Promise<SandboxError | null>>;
 };
 
 export async function runJavaScriptInIsolate(
   code: string,
   options: {
-    timeoutSeconds?: number;
+    deadlineMs: number;
     hostRpc: (request: unknown) => Promise<Json>;
     reflectionManifest?: OciReflectionManifest;
     memoryLimitMb: number;
@@ -41,10 +36,6 @@ export async function runJavaScriptInIsolate(
     throw new Error(`JavaScript code exceeds ${MAX_CODE_BYTES} bytes`);
   }
 
-  const timeoutMs = normalizeTimeoutMs(options.timeoutSeconds);
-  const state: RunState = {
-    deadlineMs: Date.now() + timeoutMs
-  };
   const output = {
     stdout: "",
     stderr: "",
@@ -62,15 +53,17 @@ export async function runJavaScriptInIsolate(
       SANDBOX_BOOTSTRAP,
       [
         new ivm.Reference((line: unknown) => {
-          output.stdout = appendCapped(output.stdout, String(line), MAX_STDOUT_BYTES);
-          if (Buffer.byteLength(output.stdout, "utf8") >= MAX_STDOUT_BYTES) {
+          const appended = appendCapped(output.stdout, String(line), MAX_STDOUT_BYTES);
+          output.stdout = appended.text;
+          if (appended.limitReached) {
             output.exceeded = true;
             throw new Error("Sandbox stdout exceeded limit");
           }
         }),
         new ivm.Reference((line: unknown) => {
-          output.stderr = appendCapped(output.stderr, String(line), MAX_STDERR_BYTES);
-          if (Buffer.byteLength(output.stderr, "utf8") >= MAX_STDERR_BYTES) {
+          const appended = appendCapped(output.stderr, String(line), MAX_STDERR_BYTES);
+          output.stderr = appended.text;
+          if (appended.limitReached) {
             output.exceeded = true;
             throw new Error("Sandbox stderr exceeded limit");
           }
@@ -83,7 +76,7 @@ export async function runJavaScriptInIsolate(
       ],
       {
         result: { reference: true },
-        timeout: timeoutMs
+        timeout: remainingRunMs(options.deadlineMs)
       }
     ) as ivm.Reference<Record<string, unknown>>;
 
@@ -92,14 +85,14 @@ export async function runJavaScriptInIsolate(
         reference: true
       }) as ivm.Reference<() => Json>,
       run: await bootstrap.get("run", { reference: true }) as ivm.Reference<
-        (code: string) => Promise<void>
+        (code: string) => Promise<SandboxError | null>
       >
     };
     bootstrap.release();
 
     try {
-      const evalTimeoutMs = remainingRunMs(state);
-      await withDeadline(
+      const evalTimeoutMs = remainingRunMs(options.deadlineMs);
+      const ociError = await withDeadline(
         api.run.apply(undefined, [code], {
           arguments: { copy: true },
           result: { promise: true, copy: true },
@@ -107,7 +100,13 @@ export async function runJavaScriptInIsolate(
         }),
         evalTimeoutMs
       );
-      const resultTimeoutMs = remainingRunMs(state);
+      if (ociError) {
+        if (Buffer.byteLength(JSON.stringify(ociError), "utf8") > options.maxResultBytes) {
+          throw new Error(`Sandbox error exceeded result limit ${options.maxResultBytes} bytes`);
+        }
+        throw ociError;
+      }
+      const resultTimeoutMs = remainingRunMs(options.deadlineMs);
       const result = await withDeadline(
         api.encodeLastResult.apply(undefined, [], {
           result: { copy: true },
@@ -121,12 +120,15 @@ export async function runJavaScriptInIsolate(
           `Sandbox result was ${resultBytes} bytes, exceeding result limit ${options.maxResultBytes} bytes`
         );
       }
+      if (output.exceeded) {
+        throw new Error("Sandbox output exceeded limit");
+      }
       return {
         result,
         error: null,
         stdout: output.stdout,
         stderr: output.stderr,
-        exitCode: output.exceeded ? 1 : 0,
+        exitCode: 0,
         timedOut: false
       };
     } catch (error) {
@@ -179,8 +181,8 @@ function dispatchHostRpc(
   })();
 }
 
-function remainingRunMs(state: RunState): number {
-  const remainingMs = state.deadlineMs - Date.now();
+function remainingRunMs(deadlineMs: number): number {
+  const remainingMs = deadlineMs - Date.now();
   if (remainingMs <= 0) {
     throw new Error("sandbox run deadline exceeded");
   }

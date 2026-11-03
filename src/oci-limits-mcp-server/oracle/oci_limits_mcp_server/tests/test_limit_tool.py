@@ -38,10 +38,11 @@ class TestLimitsTools:
                         "compartment_id": "ocid1.compartment.oc1..xxxx",
                     },
                 )
-            ).structured_content["result"]
+            ).structured_content
 
-            assert len(result) == 1
-            assert result[0]["name"] == "service1"
+            assert result["next_page"] is None
+            assert len(result["items"]) == 1
+            assert result["items"][0]["name"] == "service1"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_limits_mcp_server.server.get_limits_client")
@@ -67,10 +68,11 @@ class TestLimitsTools:
                         "compartment_id": "ocid1.compartment.oc1..xxxx",
                     },
                 )
-            ).structured_content["result"]
+            ).structured_content
 
-            assert len(result) == 1
-            assert result[0]["name"] == "limit1"
+            assert result["next_page"] is None
+            assert len(result["items"]) == 1
+            assert result["items"][0]["name"] == "limit1"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_limits_mcp_server.server.get_limits_client")
@@ -99,10 +101,11 @@ class TestLimitsTools:
                         "scope_type": "GLOBAL",
                     },
                 )
-            ).structured_content["result"]
+            ).structured_content
 
-            assert len(result) == 1
-            assert result[0]["name"] == "limit_value1"
+            assert result["next_page"] is None
+            assert len(result["items"]) == 1
+            assert result["items"][0]["name"] == "limit_value1"
 
     def test_provide_availability_domains_redirects_to_identity_server(self):
         result = server.provide_availability_domains_for_limits(
@@ -447,7 +450,7 @@ class TestPaginationHelpers:
             subscription_id="ocid1.subscription.oc1..xxxx",
         )
 
-        assert result == [first, second]
+        assert result == ([first, second], None)
         assert mock_client.list_services.call_args_list[0].kwargs["page"] is None
         assert mock_client.list_services.call_args_list[1].kwargs["page"] == "page-2"
 
@@ -468,7 +471,7 @@ class TestPaginationHelpers:
             page="requested-page",
         )
 
-        assert result == [definition]
+        assert result == ([definition], "unused-next-page")
         mock_client.list_limit_definitions.assert_called_once()
         assert (
             mock_client.list_limit_definitions.call_args.kwargs["page"]
@@ -491,7 +494,7 @@ class TestPaginationHelpers:
             name="limit1",
         )
 
-        assert result == []
+        assert result == ([], None)
 
     def test_list_services_reraises_client_errors(self):
         mock_client = MagicMock()

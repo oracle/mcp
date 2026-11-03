@@ -18,7 +18,7 @@ import re
 import unicodedata
 from functools import lru_cache
 from typing import Any, TypedDict
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from fastmcp import FastMCP
@@ -258,20 +258,18 @@ async def iter_all(
         )
         if not nxt:
             break
-        next_url = _safe_next_url(nxt)
+        next_url = _safe_next_url(nxt, url)
         if next_url is None:
             break
         url, params = next_url, None
 
 
-def _safe_next_url(next_href: str) -> str | None:
-    parsed = urlparse(next_href)
-    if parsed.scheme or parsed.netloc:
-        if parsed.scheme == "https" and parsed.netloc == APEX_HOST:
-            return next_href
-        return None
-    path = next_href if next_href.startswith("/") else f"/{next_href}"
-    return f"https://{APEX_HOST}{path}"
+def _safe_next_url(next_href: str, current_url: str) -> str | None:
+    resolved = urljoin(current_url, next_href)
+    parsed = urlparse(resolved)
+    if parsed.scheme == "https" and parsed.netloc == APEX_HOST:
+        return resolved
+    return None
 
 
 # -------------------- fuzzy search --------------------

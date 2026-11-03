@@ -135,10 +135,11 @@ def list_migrations(
         next_page: str = None
 
         while has_next_page and (limit is None or len(migrations) < limit):
+            remaining = None if limit is None else limit - len(migrations)
             kwargs = {
                 "compartment_id": compartment_id,
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             if lifecycle_state is not None:
@@ -150,8 +151,10 @@ def list_migrations(
 
             data: list[oci.cloud_migrations.models.MigrationSummary] = response.data.items
             for d in data:
-                migrations.append(map_migration_summary(d))
-
+                if limit is None or len(migrations) < limit:
+                    migrations.append(map_migration_summary(d))
+                else:
+                    break
         logger.info(f"Found {len(migrations)} Migrations")
         return migrations
 

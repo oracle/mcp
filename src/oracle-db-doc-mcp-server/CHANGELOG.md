@@ -2,9 +2,11 @@
 
 ## Unreleased
 
+## 1.0.5
+
 ### Security
 
-- Updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).
+- Updated locked AnyIO to 4.15.1 and SoupSieve to 2.9; updated locked PyJWT to 2.15.1; updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).
 
 ## 1.0.4
 

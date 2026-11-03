@@ -12,7 +12,6 @@ const __hostConsoleError = $1;
 const __hostRpc = $2;
 const __ociReflectionManifest = $3 || { services: {} };
 const __ociWireTypeKey = "__oci_wire_type";
-const __ociBase64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const __ociMaxDepth = 24;
 const __arrayFrom = Array.from;
 const __arrayIsArray = Array.isArray;
@@ -34,55 +33,23 @@ const __objectGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
 const __objectKeys = Object.keys;
 const __promise = Promise;
 const __proxy = Proxy;
+const __reflectApply = Reflect.apply;
 const __reflectOwnKeys = Reflect.ownKeys;
 const __set = Set;
 const __string = String;
 const __uint8Array = Uint8Array;
+const __toBase64 = Uint8Array.prototype.toBase64;
+const __fromBase64 = Uint8Array.fromBase64;
 const __weakSet = WeakSet;
 const __serviceProxyCache = new __map();
 const __clientProxyCache = new __map();
+const __ociErrors = new WeakMap();
+const __ociGetError = __ociErrors.get.bind(__ociErrors);
+const __ociSetError = __ociErrors.set.bind(__ociErrors);
 const __ociRegionIdPattern = /^[a-z][a-z0-9-]*-[a-z0-9-]+-[0-9]+$/;
 
 function __ociWireValue(typeName, fields) {
   return __objectAssign({ [__ociWireTypeKey]: typeName }, fields);
-}
-
-function __ociBase64Encode(bytes) {
-  let result = "";
-  for (let index = 0; index < bytes.length; index += 3) {
-    const first = bytes[index];
-    const second = index + 1 < bytes.length ? bytes[index + 1] : 0;
-    const third = index + 2 < bytes.length ? bytes[index + 2] : 0;
-    const triple = (first << 16) | (second << 8) | third;
-    result += __ociBase64Alphabet[(triple >> 18) & 63];
-    result += __ociBase64Alphabet[(triple >> 12) & 63];
-    result += index + 1 < bytes.length ? __ociBase64Alphabet[(triple >> 6) & 63] : "=";
-    result += index + 2 < bytes.length ? __ociBase64Alphabet[triple & 63] : "=";
-  }
-  return result;
-}
-
-function __ociBase64Decode(value) {
-  const clean = __string(value || "").replace(/[^A-Za-z0-9+/=]/g, "");
-  const bytes = [];
-  for (let index = 0; index < clean.length; index += 4) {
-    const first = __ociBase64Alphabet.indexOf(clean[index]);
-    const second = __ociBase64Alphabet.indexOf(clean[index + 1]);
-    const third = clean[index + 2] === "=" ? -1 : __ociBase64Alphabet.indexOf(clean[index + 2]);
-    const fourth = clean[index + 3] === "=" ? -1 : __ociBase64Alphabet.indexOf(clean[index + 3]);
-    if (first < 0 || second < 0) {
-      break;
-    }
-    const triple = (first << 18) | (second << 12) | ((third < 0 ? 0 : third) << 6) | (fourth < 0 ? 0 : fourth);
-    bytes.push((triple >> 16) & 255);
-    if (third >= 0) {
-      bytes.push((triple >> 8) & 255);
-    }
-    if (fourth >= 0) {
-      bytes.push(triple & 255);
-    }
-  }
-  return __uint8Array.from(bytes);
 }
 
 function __ociToWire(value, seen = new __weakSet(), depth = 0) {
@@ -112,7 +79,7 @@ function __ociToWire(value, seen = new __weakSet(), depth = 0) {
     return __ociWireValue("datetime", { value: value.toISOString() });
   }
   if (value instanceof __uint8Array) {
-    return __ociWireValue("bytes", { encoding: "base64", value: __ociBase64Encode(value) });
+    return __ociWireValue("bytes", { encoding: "base64", value: __reflectApply(__toBase64, value, []) });
   }
   if (typeName === "object") {
     if (seen.has(value)) {
@@ -179,7 +146,7 @@ function __ociFromWire(value) {
     return __bigInt(value.value);
   }
   if (wireType === "bytes") {
-    return __ociBase64Decode(value.value);
+    return __fromBase64(value.value);
   }
   if (wireType === "float") {
     return __ociFloatFromWire(value.value);
@@ -284,6 +251,8 @@ function __ociErrorFromEnvelope(error) {
       }
     }
   }
+  // Keep the sanitized envelope: isolated-vm drops custom properties on thrown Errors.
+  __ociSetError(thrown, __objectAssign({ name: "Error" }, error));
   return thrown;
 }
 
@@ -686,7 +655,14 @@ return __objectFreeze({
     return __ociToWire(globalThis._);
   },
   run: async function __ociRun(code) {
-    await __eval(__ociExecutionScript(code));
+    try {
+      await __eval(__ociExecutionScript(code));
+      return null;
+    } catch (error) {
+      const details = __ociGetError(error);
+      if (details) return details;
+      throw error;
+    }
   }
 });
 `;

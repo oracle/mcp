@@ -1,0 +1,6 @@
+{
+  "format": "dbo-discovery-registry",
+  "formatVersion": 1,
+  "skills": "skills.json",
+  "tools": "tools.json"
+}

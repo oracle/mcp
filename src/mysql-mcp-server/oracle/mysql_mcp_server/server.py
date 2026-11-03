@@ -191,11 +191,11 @@ def _get_db_connection(connection_id: str) -> MySQLConnectionAbstract:
 
     try:
         conn = connector.connect(**connection_info)
-    except Exception as e:
+    except Exception:
         raise DatabaseConnectionError(
-            f"Connection failed with error: {e}. "
+            "Connection failed. Check the connection settings and credentials. "
             "Request assistance from a database administrator, or use list_all_connections() to find a different database connection."
-        ) from e
+        ) from None
 
     return conn
 
@@ -246,7 +246,7 @@ def list_all_connections() -> str:
 
 @mcp.tool()
 def execute_sql_tool_by_connection_id(
-    connection_id: str, sql_script: str, params: list = None
+    connection_id: str, sql_script: str, params: Optional[list] = None
 ) -> str:
     """
     Execute a SQL script on the specified database connection.
@@ -1021,7 +1021,7 @@ def _get_compartment_by_name(
 
 @mcp.tool()
 def object_storage_list_buckets(
-    compartment_name: str = None, compartment_id: str = None
+    compartment_name: Optional[str] = None, compartment_id: Optional[str] = None
 ) -> str:
     """
     [MCP Tool] List all accessible Object Storage buckets in a compartment.

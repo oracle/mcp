@@ -1,5 +1,10 @@
 # Oracle Data Studio MCP Server
 
+## Platform compatibility
+
+The locked cryptography dependency no longer supports Intel macOS or 32-bit
+Windows. Use Apple Silicon macOS, 64-bit Windows, or a supported Linux environment.
+
 ## Overview
 
 This server provides task-oriented MCP tools for three Oracle Data
@@ -276,10 +281,12 @@ that this server relies on.
 git clone https://github.com/oracle/mcp.git
 cd mcp/src/oracle-data-studio-mcp-server
 uv sync --all-extras
-uv run pytest oracle/data_studio_mcp_server/tests/test_unit.py
+uv run pytest --cov=. --cov-branch --cov-report=term-missing
 ```
 
-86 tests, runs in ~1 second.
+The offline unit suite enforces at least 90% coverage, including branches,
+for this server independently. From the repository root, run
+`moon run oracle-data-studio-mcp-server:test` for the same coverage checks.
 
 ## Third-Party APIs
 

@@ -195,6 +195,50 @@ class TestLoggingTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
+    async def test_list_log_groups_respects_total_limit_across_pages(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        resp1 = create_autospec(oci.response.Response)
+        resp1.data = [
+            oci.logging.models.LogGroup(id="lg1", display_name="G1"),
+            oci.logging.models.LogGroup(id="lg2", display_name="G2"),
+        ]
+        resp1.has_next_page = True
+        resp1.next_page = "p2"
+
+        resp2 = create_autospec(oci.response.Response)
+        resp2.data = [
+            oci.logging.models.LogGroup(id="lg3", display_name="G3"),
+            oci.logging.models.LogGroup(id="lg4", display_name="G4"),
+        ]
+        resp2.has_next_page = True
+        resp2.next_page = "p3"
+
+        mock_client.list_log_groups.side_effect = [resp1, resp2]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_log_groups",
+                    {"compartment_id": "tenancy", "limit": 3},
+                )
+            ).structured_content["result"]
+
+        assert [item["id"] for item in result] == ["lg1", "lg2", "lg3"]
+        assert len(result) == 3
+
+        assert mock_client.list_log_groups.call_count == 2
+        calls = mock_client.list_log_groups.call_args_list
+        assert calls[0].kwargs["limit"] == 3
+        assert calls[0].kwargs["page"] is None
+        assert calls[1].kwargs["limit"] == 1
+        assert calls[1].kwargs["page"] == "p2"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
     async def test_get_log_group(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -316,6 +360,50 @@ class TestLoggingTools:
         kwargs = mock_client.list_logs.call_args.kwargs
         assert kwargs["limit"] == limit
         assert kwargs["page"] is None
+    
+    @pytest.mark.asyncio
+    @patch("oracle.oci_logging_mcp_server.server.get_logging_client")
+    async def test_list_logs_respects_total_limit_across_pages(
+        self, mock_get_client
+    ):
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+
+        resp1 = create_autospec(oci.response.Response)
+        resp1.data = [
+            oci.logging.models.Log(id="l1", display_name="L1"),
+            oci.logging.models.Log(id="l2", display_name="L2"),
+        ]
+        resp1.has_next_page = True
+        resp1.next_page = "p2"
+
+        resp2 = create_autospec(oci.response.Response)
+        resp2.data = [
+            oci.logging.models.Log(id="l3", display_name="L3"),
+            oci.logging.models.Log(id="l4", display_name="L4"),
+        ]
+        resp2.has_next_page = True
+        resp2.next_page = "p3"
+
+        mock_client.list_logs.side_effect = [resp1, resp2]
+
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_logs",
+                    {"log_group_id": "lg", "limit": 3},
+                )
+            ).structured_content["result"]
+
+        assert [item["id"] for item in result] == ["l1", "l2", "l3"]
+        assert len(result) == 3
+
+        assert mock_client.list_logs.call_count == 2
+        calls = mock_client.list_logs.call_args_list
+        assert calls[0].kwargs["limit"] == 3
+        assert calls[0].kwargs["page"] is None
+        assert calls[1].kwargs["limit"] == 1
+        assert calls[1].kwargs["page"] == "p2"
 
     @pytest.mark.asyncio
     @patch("oracle.oci_logging_mcp_server.server.get_logging_client")

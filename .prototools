@@ -1,5 +1,8 @@
-moon = "=2.5.2"
+moon = "=2.6.2"
 node = "=26.8.1"
 npm = "=11.12.1"
 python = "=3.13.15"
 uv = "=0.12.1"
+
+[settings]
+unstable-lockfile = true

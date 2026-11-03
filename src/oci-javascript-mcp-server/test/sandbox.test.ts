@@ -94,9 +94,59 @@ test("Podman removes the execution network even when creation reports failure", 
   const network = commands[0].at(-1);
   assert.deepEqual(commands, [
     ["network", "create", "--internal", "--disable-dns", network],
-    ["network", "rm", "--ignore", network]
+    ["network", "exists", network],
+    ["network", "rm", network]
   ]);
 });
+
+for (const scenario of [
+  { name: "existing network", exists: [0], remove: 0, fails: false },
+  { name: "already absent network", exists: [1], remove: undefined, fails: false },
+  { name: "existence command failure", exists: [125], remove: undefined, fails: true },
+  { name: "failed removal still present", exists: [0, 0], remove: 1, fails: true },
+  { name: "network disappeared during removal", exists: [0, 1], remove: 1, fails: false },
+  { name: "failed removal with failed recheck", exists: [0, 125], remove: 1, fails: true }
+] as const) {
+  test(`Podman network cleanup compatibility: ${scenario.name}`, async t => {
+    let existsCalls = 0;
+    let removeCalls = 0;
+    const spawn = t.mock.method(childProcess, "spawn", (_command: string, args: string[]) => {
+      const child = new EventEmitter();
+      let code: number;
+      if (args[0] === "network" && args[1] === "create") {
+        code = 1;
+      } else if (args[0] === "network" && args[1] === "exists") {
+        code = scenario.exists[existsCalls++] ?? 125;
+      } else if (args[0] === "network" && args[1] === "rm") {
+        removeCalls += 1;
+        code = args.includes("--ignore") ? 125 : scenario.remove ?? 125;
+      } else {
+        assert.fail(`unexpected command ${JSON.stringify(args)}`);
+      }
+      queueMicrotask(() => child.emit("close", code));
+      return child as childProcess.ChildProcess;
+    });
+    syncBuiltinESMExports();
+    t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+    const execution = new PodmanIsolationProvider().run("42", {
+      deadlineMs: Date.now() + 10_000,
+      signal: new AbortController().signal,
+      hostRpc: async () => assert.fail("no OCI calls expected")
+    });
+    await assert.rejects(execution.result, /Podman command exited unsuccessfully/);
+    if (scenario.fails) {
+      await assert.rejects(execution.terminate(), /Podman command exited unsuccessfully/);
+    } else {
+      await Promise.all([execution.terminate(), execution.terminate()]);
+    }
+    assert.equal(existsCalls, scenario.exists.length);
+    assert.equal(removeCalls, scenario.remove === undefined ? 0 : 1);
+    const commands = spawn.mock.calls.map(call => call.arguments[1]);
+    assert(commands.every(args => !args.includes("--ignore")));
+    const network = commands[0].at(-1);
+    assert(commands.every(args => args.at(-1) === network));
+  });
+}
 
 for (const scenario of ["early exit", "spawn error", "missing input", "cancel"] as const) {
   test(`Podman owns process and resource cleanup: ${scenario}`, { timeout: 5000 }, async t => {
@@ -139,11 +189,12 @@ for (const scenario of ["early exit", "spawn error", "missing input", "cancel"] 
     await Promise.all([execution.terminate(), execution.terminate()]);
     const commands = spawn.mock.calls.map(call => call.arguments[1]);
     const name = commands[0].at(-1);
-    assert.deepEqual(commands.slice(-2), [
+    assert.deepEqual(commands.slice(-3), [
       ["rm", "--force", "--ignore", name],
-      ["network", "rm", "--ignore", name]
+      ["network", "exists", name],
+      ["network", "rm", name]
     ]);
-    assert.equal(commands.length, 4);
+    assert.equal(commands.length, 5);
     assert.equal(kill.mock.callCount(), scenario === "missing input" || scenario === "cancel" ? 1 : 0);
   });
 }
@@ -174,9 +225,10 @@ test("Podman removes resources when its run CLI never closes", { timeout: 5000 }
   await assert.rejects(execution.terminate(), /sandbox runner did not close/);
   const commands = spawn.mock.calls.map(call => call.arguments[1]);
   const name = commands[0].at(-1);
-  assert.deepEqual(commands.slice(-2), [
+  assert.deepEqual(commands.slice(-3), [
     ["rm", "--force", "--ignore", name],
-    ["network", "rm", "--ignore", name]
+    ["network", "exists", name],
+    ["network", "rm", name]
   ]);
   assert.equal(kill.mock.callCount(), 1);
 });
@@ -231,7 +283,7 @@ test("Podman trusts gRPC status after receiving a result", { timeout: 5000 }, as
   await execution.terminate();
   assert.equal(result.result, 42);
   assert.equal(result.exitCode, 0);
-  assert.equal(spawn.mock.callCount(), 4);
+  assert.equal(spawn.mock.callCount(), 5);
 });
 
 test("sandbox delegates execution through the selected isolation provider", async () => {

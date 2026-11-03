@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- Use supported Podman network cleanup commands, tolerate already removed networks,
+  and preserve command failures when the network is still present.
+
 ## 0.1.2
 
 ### Fixed

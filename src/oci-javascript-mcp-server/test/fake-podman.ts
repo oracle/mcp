@@ -12,10 +12,9 @@ if (command === "network" && args[0] === "create") {
   assert.equal(args.length, 4);
   assert.deepEqual(args.slice(0, 3), ["create", "--internal", "--disable-dns"]);
   assert.match(args[3] ?? "", /^oci-javascript-[0-9a-f-]{36}$/);
-} else if (command === "network" && args[0] === "rm") {
-  assert.equal(args.length, 3);
-  assert.equal(args[1], "--ignore");
-  assert.match(args[2] ?? "", /^oci-javascript-[0-9a-f-]{36}$/);
+} else if (command === "network" && (args[0] === "exists" || args[0] === "rm")) {
+  assert.equal(args.length, 2);
+  assert.match(args[1] ?? "", /^oci-javascript-[0-9a-f-]{36}$/);
 } else if (command === "run") {
   const nameIndex = args.indexOf("--name");
   const name = args[nameIndex + 1];

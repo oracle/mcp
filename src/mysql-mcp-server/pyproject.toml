@@ -8,7 +8,7 @@ license = "UPL-1.0"
 license-files = ["LICENSE.txt"]
 
 dependencies = [
-    "fastmcp==3.4.10",
+    "fastmcp==4.1.5",
     "mysql-connector-python==9.5.0",
     "oci==2.185.1"
 ]

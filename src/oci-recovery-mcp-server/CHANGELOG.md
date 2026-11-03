@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## 3.1.0
+
+### Added
+
+- Support `resource_principal_v212` authentication through the shared Common library.
+
 ### Changed
+
+- Require `oracle-mcp-common>=0.2.0,<0.3.0` for the coordinated Common authentication release.
 
 - List tools now say when their result is incomplete. With `fetch_for_child_compartment=true`,
   `list_databases`, `list_backups`, `list_protected_databases`, `list_protection_policies`,

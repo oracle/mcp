@@ -4,16 +4,19 @@
 # redundant but for clarity owner of this file
 CODEOWNERS @krisrice
 
-.git*/ @krisrice @AlaaShaker @gebhardtr @dustin-sale
-scripts/ @krisrice @AlaaShaker @gebhardtr @dustin-sale
-src/oci-* @krisrice @AlaaShaker @gebhardtr @dustin-sale
-tests/ @krisrice @AlaaShaker @gebhardtr @dustin-sale
-.moon/ @krisrice @AlaaShaker @gebhardtr @dustin-sale
-moon.yml @krisrice @AlaaShaker @gebhardtr @dustin-sale
-*.md @krisrice @AlaaShaker @gebhardtr @dustin-sale
-*.txt @krisrice @AlaaShaker @gebhardtr @dustin-sale
-*.ini @krisrice @AlaaShaker @gebhardtr @dustin-sale
+.git*/ @krisrice @AlaaShaker @gebhardtr @dustin-sale @irfan-ahmed @robander
+scripts/ @krisrice @AlaaShaker @gebhardtr @dustin-sale @irfan-ahmed @robander
+src/oci-* @krisrice @AlaaShaker @gebhardtr @dustin-sale @irfan-ahmed @robander
+tests/ @krisrice @AlaaShaker @gebhardtr @dustin-sale @irfan-ahmed @robander
+.moon/ @krisrice @AlaaShaker @gebhardtr @dustin-sale @irfan-ahmed @robander
+moon.yml @krisrice @AlaaShaker @gebhardtr @dustin-sale @irfan-ahmed @robander
+*.md @krisrice @AlaaShaker @gebhardtr @dustin-sale @irfan-ahmed @robander
+*.txt @krisrice @AlaaShaker @gebhardtr @dustin-sale @irfan-ahmed @robander
+*.ini @krisrice @AlaaShaker @gebhardtr @dustin-sale @irfan-ahmed @robander
 
 # agent harness files
-docs/ @krisrice @AlaaShaker @gebhardtr @dustin-sale
-AGENTS.md @krisrice @AlaaShaker @gebhardtr @dustin-sale
+docs/ @krisrice @AlaaShaker @gebhardtr @dustin-sale @irfan-ahmed @robander
+AGENTS.md @krisrice @AlaaShaker @gebhardtr @dustin-sale @irfan-ahmed @robander
+
+# Policy implementation and its dependencies require human maintainer review.
+/policy/ @krisrice @AlaaShaker @gebhardtr @dustin-sale @irfan-ahmed @robander

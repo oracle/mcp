@@ -356,7 +356,7 @@ test("host RPC invokes OCI JavaScript SDK clients", async () => {
   });
   assert.equal(
     (calls[0] as { constructor: { additionalUserAgent?: string } }).constructor.additionalUserAgent,
-    "oci-javascript-mcp/0.1.1"
+    "oci-javascript-mcp/0.1.2"
   );
   assert.deepEqual(calls[1], {
       listInstances: {

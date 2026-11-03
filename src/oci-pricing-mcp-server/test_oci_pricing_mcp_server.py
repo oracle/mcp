@@ -777,6 +777,39 @@ class TestOciPricingMcpServer(unittest.TestCase):
         self.assertEqual(calls[0], (module.API, {"currencyCode": "USD"}))
         self.assertEqual(calls[1], ("https://apexapps.oracle.com/next-page", None))
 
+    def test_iter_all_follows_query_relative_next_and_rejects_off_host(self):
+        module = self.module
+        calls = []
+        expected_second = (
+            "https://apexapps.oracle.com/pls/apex/cetools/api/v1/products/"
+            "?offset=25&currencyCode=EUR"
+        )
+
+        async def fake_fetch(_client, url, params=None):
+            calls.append((url, params))
+            if len(calls) == 1:
+                return {
+                    "items": [{"partNumber": "PN1"}],
+                    "links": [{"rel": "next", "href": "?offset=25&currencyCode=EUR"}],
+                }
+            if url == expected_second:
+                return {
+                    "items": [{"partNumber": "PN2"}],
+                    "links": [{"rel": "next", "href": "https://evil.example/steal"}],
+                }
+            return {"items": [{"partNumber": "SHOULD-NOT-FETCH"}], "links": []}
+
+        async def collect_items():
+            with mock.patch.object(module, "fetch", fake_fetch):
+                return [item async for item in module.iter_all(object(), "EUR", 4)]
+
+        items = asyncio.run(collect_items())
+
+        self.assertEqual([item["partNumber"] for item in items], ["PN1", "PN2"])
+        self.assertEqual(calls[0], (module.API, {"currencyCode": "EUR"}))
+        self.assertEqual(calls[1], (expected_second, None))
+        self.assertEqual(len(calls), 2)
+
     def test_search_items_aliases_adb_intent_and_deduplication(self):
         items = [
             {

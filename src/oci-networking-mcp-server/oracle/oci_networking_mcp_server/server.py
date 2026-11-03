@@ -179,7 +179,7 @@ def create_vcn(compartment_id: str, cidr_block: str, display_name: str) -> Vcn:
 @mcp.tool(
     description="Lists the subnets in the specified compartment. Optionally filter by VCN."
 )
-def list_subnets(compartment_id: str, vcn_id: str = None) -> list[Subnet]:
+def list_subnets(compartment_id: str, vcn_id: str | None = None) -> list[Subnet]:
     subnets: list[Subnet] = []
 
     try:
@@ -254,7 +254,7 @@ def create_subnet(
 )
 def list_security_lists(
     compartment_id: Annotated[str, "Compartment ocid"],
-    vcn_id: Annotated[str, "VCN ocid"] = None,
+    vcn_id: Annotated[str | None, "VCN ocid"] = None,
 ) -> list[SecurityList]:
     security_lists: list[SecurityList] = []
 
@@ -306,8 +306,8 @@ def get_security_list(security_list_id: Annotated[str, "security list id"]):
 )
 def list_network_security_groups(
     compartment_id: Annotated[str, "compartment ocid"],
-    vlan_id: Annotated[str, "vlan ocid"] = None,
-    vcn_id: Annotated[str, "vcn ocid"] = None,
+    vlan_id: Annotated[str | None, "vlan ocid"] = None,
+    vcn_id: Annotated[str | None, "vcn ocid"] = None,
 ) -> list[NetworkSecurityGroup]:
     nsgs: list[NetworkSecurityGroup] = []
 

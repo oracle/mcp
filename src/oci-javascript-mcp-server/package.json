@@ -1,6 +1,6 @@
 {
   "name": "oci-javascript-mcp-server",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Isolated OCI JavaScript code execution MCP server",
   "type": "module",
   "keywords": [
@@ -48,12 +48,12 @@
     "@bufbuild/protobuf": "2.15.0",
     "@grpc/grpc-js": "^1.14.6",
     "@kubernetes/client-node": "^2.0.0",
-    "@modelcontextprotocol/sdk": "^1.31.0",
+    "@modelcontextprotocol/sdk": "^1.32.0",
     "isolated-vm": "^7.0.0",
     "oci-common": "^2.132.0",
     "oci-sdk": "^2.132.0",
     "selfsigned": "^3.0.1",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "overrides": {
     "uuid": "11.1.1"

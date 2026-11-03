@@ -1,6 +1,3 @@
-dependsOn:
-  - 'common'
-
 tasks:
   test:
     inputs:

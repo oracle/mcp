@@ -253,9 +253,16 @@ def test_logging_falls_back_to_stderr_when_the_log_file_cannot_be_opened(monkeyp
     unhandled OSError here would take the process down before main() could report
     anything at all.
     """
-    unwritable = tmp_path / "no-write"
-    unwritable.mkdir(mode=0o500)
-    monkeypatch.setenv("ORACLE_MCP_LOG_DIR", str(unwritable / "logs"))
+    monkeypatch.setenv("ORACLE_MCP_LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.delenv("ORACLE_MCP_LOG_FILE", raising=False)
+
+    def fail_to_open_log_file(*args, **kwargs):
+        """Fail deterministically, even when running as root."""
+        raise PermissionError("Log file is not writable")
+
+    monkeypatch.setattr(
+        logging_setup, "_PrivateRotatingFileHandler", fail_to_open_log_file
+    )
 
     root = logging.getLogger()
     original_handlers = list(root.handlers)

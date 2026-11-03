@@ -9,7 +9,69 @@ from typing import Optional
 from enum import Enum
 import json
 import os
+import re
+
+import keyring
 import oci
+
+_PASSWORD_SOURCES = {"password", "password_env", "password_keyring"}
+_SECURE_KEYRING_BACKENDS = {
+    "keyring.backends.macOS.Keyring",
+    "keyring.backends.Windows.WinVaultKeyring",
+    "keyring.backends.SecretService.Keyring",
+    "keyring.backends.kwallet.DBusKeyring",
+    "keyring.backends.kwallet.DBusKeyringKWallet4",
+    "keyring.backends.libsecret.Keyring",
+}
+
+
+def _resolve_password(connection: dict) -> str:
+    sources = _PASSWORD_SOURCES.intersection(connection)
+    if len(sources) != 1:
+        raise ValueError("Specify exactly one of password, password_env, or password_keyring")
+
+    source = sources.pop()
+    reference = connection[source]
+    if source == "password":
+        if not isinstance(reference, str):
+            raise ValueError("password must be a string")
+        return reference
+
+    if source == "password_env":
+        if not isinstance(reference, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", reference):
+            raise ValueError("password_env must name a valid environment variable")
+        password = os.environ.get(reference)
+        if not password:
+            raise ValueError("password_env points to an unset or empty environment variable")
+        return password
+
+    if (
+        not isinstance(reference, dict)
+        or set(reference) != {"service", "username"}
+        or any(not isinstance(value, str) or not value.strip() for value in reference.values())
+    ):
+        raise ValueError("password_keyring must contain non-empty service and username strings")
+
+    try:
+        backend = keyring.get_keyring()
+    except Exception:
+        raise ValueError("password_keyring could not initialize the OS keyring") from None
+
+    # Reject automatic chains that could fall through to plaintext or null stores.
+    backend_name = f"{type(backend).__module__}.{type(backend).__name__}"
+    if backend_name not in _SECURE_KEYRING_BACKENDS:
+        raise ValueError(
+            "password_keyring requires a supported OS keyring backend: "
+            "macOS Keychain, Windows Credential Locker, Secret Service, or KWallet"
+        )
+    try:
+        password = backend.get_password(reference["service"], reference["username"])
+    except Exception:
+        raise ValueError("password_keyring lookup failed; unlock and configure the OS keyring") from None
+    if not isinstance(password, str) or not password:
+        raise ValueError("password_keyring entry is missing or empty")
+    return password
+
 
 class OciInfo:
 
@@ -31,8 +93,9 @@ def fill_config_defaults(config : dict) -> dict:
     Summary:
       - Requires a top-level "server_infos" mapping of connection IDs to MySQL
         connection dictionaries.
-      - Ensures each server entry includes exactly the required keys:
-        {"host", "user", "password", "database", "port"}.
+      - Requires host, user, database, port and exactly one password source:
+        password, password_env, or password_keyring.
+      - Resolves passwords at startup and removes reference fields before connection.
       - If a "bastion" block is present, applies defaults and validates allowed/required keys.
 
     Args:
@@ -75,6 +138,8 @@ def fill_config_defaults(config : dict) -> dict:
       - This function does not mutate the input; it operates on a deep copy.
       - Use together with load_mysql_config() to read and validate on startup.
     """
+    if not isinstance(config, dict):
+        raise ValueError("Config must be a JSON object")
     config = copy.deepcopy(config)
 
     server_configs = config.get("server_infos")
@@ -82,15 +147,24 @@ def fill_config_defaults(config : dict) -> dict:
     if server_configs is None:
         raise Exception("Config must specify 'server_infos'")
 
+    if not isinstance(server_configs, dict):
+        raise ValueError("server_infos must be an object")
+
     if len(server_configs) == 0:
         raise Exception("Config must provide at least one server")
 
     required_server_keys = set([
-        "host", "user", "password", "database", "port"
+        "host", "user", "database", "port"
     ])
     for server_config in server_configs.values():
-        if required_server_keys != set(server_config.keys()):
+        if not isinstance(server_config, dict):
+            raise ValueError("Config server_info entries must be objects")
+        if required_server_keys != set(server_config) - _PASSWORD_SOURCES:
             raise Exception(f"Config server_info entries must specify all of the following keys {required_server_keys}")
+        password = _resolve_password(server_config)
+        for source in _PASSWORD_SOURCES:
+            server_config.pop(source, None)
+        server_config["password"] = password
 
     bastion_info = config.get("bastion")
     if bastion_info is not None:

@@ -2,13 +2,22 @@
 
 ## [Unreleased]
 
+## 0.2.0
+
 ### Breaking Changes
 
 - The locked cryptography security update removes upstream support for Intel macOS and 32-bit Windows.
 
+### Added
+
+- Support `resource_principal_v212` authentication through the shared Common library.
+
 ### Changed
 
-- Require FastMCP 3.4.5 or later and OCI Python SDK 2.185.0 so the server resolves alongside `oracle-mcp-common`.
+- Require `oracle-mcp-common>=0.2.0,<0.3.0` for the coordinated Common authentication release.
+
+- Read the runtime and SDK user-agent version from installed package metadata.
+- Require FastMCP 3.4.10 or later and OCI Python SDK 2.185.0 so the server resolves alongside `oracle-mcp-common`.
 - Updated locked AnyIO to 4.15.1.
 
 ### Fixed

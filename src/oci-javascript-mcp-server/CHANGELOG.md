@@ -23,6 +23,8 @@
   checks belong to deployment validation; remove server assurance descriptors
   and gate execution on operational readiness.
 
+## 0.1.2
+
 ### Fixed
 
 - Bound Kubernetes reconciliation listing and propagate standalone reconciler

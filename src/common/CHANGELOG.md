@@ -4,6 +4,8 @@ All notable changes to `oracle-mcp-common` are documented in this file.
 
 ## Unreleased
 
+## 0.2.0
+
 ### Added
 
 - Added RPv2.1.2 authentication with refreshed time-bound security contexts and realm-aware bootstrap endpoints.

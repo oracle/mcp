@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## 1.0.0
 
+### Changed
+
+- Aligned runtime dependencies with the current monorepo releases of FastMCP
+  3.4.10 and `oracle-mcp-common` 0.2.x.
+
 ### Added
 
 - Initial release of the local, stdio OCI Speech MCP server.

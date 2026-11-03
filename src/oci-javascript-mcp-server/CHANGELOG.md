@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.2
+
 ### Fixed
 
 - Preserve OCI status codes, service codes, operation details, and request IDs in

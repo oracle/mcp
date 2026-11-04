@@ -108,7 +108,13 @@ MCP client
 ```
 
 The host owns credentials, OCI clients, request validation, deadlines, budgets,
-bounded result encoding, and teardown. The container and isolate
+bounded result encoding, and teardown. Cleanup CLI operations share a five-second
+wall-clock budget below the sandbox's six-second outer termination guard. A
+command uses the smaller of its own limit and the remaining cleanup budget;
+timed-out commands are killed and awaited before cleanup continues. On POSIX the
+CLI receives its own process group, which is killed together on timeout. Exhausting
+the budget is reported as a cleanup failure and can leave resources for operator
+recovery; it is not a successful script or cleanup result. The container and isolate
 receive reflection metadata and a narrow RPC bridge, but no credential or
 signer. The `IsolationProvider` seam keeps these host controls independent of
 the runtime backend.

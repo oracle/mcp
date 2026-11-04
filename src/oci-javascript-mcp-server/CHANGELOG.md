@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+
+- Share one deadline across Podman cleanup commands and wait for timed-out CLIs
+  to close before returning, avoiding cleanup work continuing after the tool reply.
+
+- Use supported Podman network cleanup commands, tolerate already removed networks,
+  and preserve command failures when the network is still present.
+
 ## 0.1.2
 
 ### Fixed

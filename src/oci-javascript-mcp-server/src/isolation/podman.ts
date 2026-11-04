@@ -16,6 +16,9 @@ import { startGrpcExecution } from "./grpc-execution.ts";
 const DEFAULT_IMAGE = "localhost/oci-javascript-mcp-runner:dev";
 const DEFAULT_MEMORY_LIMIT_MB = 128;
 const RUNNER_PORT = 50051;
+const PODMAN_COMMAND_TIMEOUT_MS = 5000;
+// Reserve time below the sandbox's 6s outer guard to join killed children.
+const PROVIDER_CLEANUP_TIMEOUT_MS = 5000;
 const SAFE_IMAGE_REFERENCE = /^[A-Za-z0-9][A-Za-z0-9._/:@-]{0,255}$/;
 
 export class PodmanIsolationProvider implements IsolationProvider {
@@ -131,20 +134,23 @@ export class PodmanIsolationProvider implements IsolationProvider {
     let cleanup: Promise<void> | undefined;
     const terminate = () => cleanup ??= (async () => {
       stopping = true;
+      const cleanupDeadlineMs = Date.now() + PROVIDER_CLEANUP_TIMEOUT_MS;
       await ready;
       await active?.terminate();
       if (child) {
-        if (completed && !closed) await waitForClose(close, 500);
+        if (completed && !closed) {
+          await waitForClose(close, Math.min(500, Math.max(0, cleanupDeadlineMs - Date.now())));
+        }
         if (!closed) killChildTree(child);
       }
       const errors: unknown[] = [];
       if (child) {
-        await runPodman(this.#cliPath, ["rm", "--force", "--ignore", name])
+        await runPodman(this.#cliPath, ["rm", "--force", "--ignore", name], [0], cleanupDeadlineMs)
           .catch(error => errors.push(error));
         if (!closed) await waitForClose(close, 500);
         if (!closed) errors.push(new Error("sandbox runner did not close"));
       }
-      await runPodman(this.#cliPath, ["network", "rm", "--ignore", network])
+      await removePodmanNetwork(this.#cliPath, network, cleanupDeadlineMs)
         .catch(error => errors.push(error));
       if (errors.length > 0) {
         throw errors[0];
@@ -214,26 +220,69 @@ function createTlsBootstrap() {
   };
 }
 
-function runPodman(command: string, args: string[]): Promise<void> {
+async function removePodmanNetwork(
+  command: string,
+  network: string,
+  deadlineMs: number
+): Promise<void> {
+  const exists = () => runPodman(command, ["network", "exists", network], [0, 1], deadlineMs);
+  if (await exists() === 1) {
+    return;
+  }
+  try {
+    await runPodman(command, ["network", "rm", network], [0], deadlineMs);
+  } catch (error) {
+    // Another cleanup may have removed the network after the first check.
+    if (await exists() !== 1) {
+      throw error;
+    }
+  }
+}
+
+function runPodman(
+  command: string,
+  args: string[],
+  successfulExitCodes: readonly number[] = [0],
+  deadlineMs = Date.now() + PODMAN_COMMAND_TIMEOUT_MS
+): Promise<number> {
+  const timeoutMs = Math.min(PODMAN_COMMAND_TIMEOUT_MS, deadlineMs - Date.now());
+  if (timeoutMs <= 0) {
+    return Promise.reject(new Error("Podman cleanup deadline exceeded"));
+  }
   return new Promise((resolve, reject) => {
     let settled = false;
-    const child = spawn(command, args, { env: runnerEnvironment(), stdio: "ignore" });
-    const finish = (error?: Error) => {
+    let timedOut = false;
+    const child = spawn(command, args, {
+      env: runnerEnvironment(),
+      stdio: "ignore",
+      detached: process.platform !== "win32"
+    });
+    const finish = (error?: Error, code = 0) => {
       if (settled) {
         return;
       }
       settled = true;
       clearTimeout(timeout);
-      error ? reject(error) : resolve();
+      error ? reject(error) : resolve(code);
     };
     child.once("error", () => finish(new Error("Podman command failed")));
     child.once("close", code => finish(
-      code === 0 ? undefined : new Error("Podman command exited unsuccessfully")
+      timedOut || Date.now() > deadlineMs
+        ? new Error("Podman command timed out")
+        : successfulExitCodes.includes(code ?? -1)
+        ? undefined
+        : new Error("Podman command exited unsuccessfully"),
+      code ?? -1
     ));
     const timeout = setTimeout(() => {
-      child.kill("SIGKILL");
-      finish(new Error("Podman command timed out"));
-    }, 5_000);
+      timedOut = true;
+      // Settle on close, so callers cannot move on while the CLI is still alive.
+      try {
+        killChildTree(child);
+      } catch {
+        finish(new Error("Podman command could not be stopped"));
+      }
+    }, timeoutMs);
     timeout.unref();
   });
 }

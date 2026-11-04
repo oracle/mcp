@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Breaking Changes
+
+- Mark failed `run_javascript` executions with MCP `isError: true` while retaining
+  all six structured result fields. Clients must handle the outer error flag.
+- Reject empty, malformed, or wrong-type `discover_oci` identifiers and child
+  identifiers without their required parents instead of silently falling back
+  to a shallower discovery level.
+
 ### Security
 
 - Constrain the Kata examples to separate trusted-host and Linux x86_64 execution
@@ -12,6 +20,14 @@
 
 ### Added
 
+- Include the installed OCI SDK for TypeScript/JavaScript version in both tool
+  descriptions, derived from package metadata at startup rather than a fixed
+  version or dependency range.
+- Advertise output schemas, tool titles, risk annotations, and complete input
+  guidance for execution and progressive SDK discovery. Validate discovery
+  result variants and preserve existing extraction data.
+- Document executable constructed-client and bounded-pagination examples,
+  response limits, and resource reconciliation before retrying failed mutations.
 - Add a standalone Kubernetes deployment validator with explicit
   kubeconfig/context and verified host identity, optional service-account
   impersonation, bounded permission/RuntimeClass/admission checks, JSON reporting

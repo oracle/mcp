@@ -7,23 +7,23 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { z } from "zod";
 import { createIsolationProvider } from "./isolation/provider-factory.ts";
 import { createOciReflectionManifest, createOciSdkHostRpc } from "./oci-host.ts";
-import {
-  DEFAULT_TIMEOUT_SECONDS,
-  MAX_TIMEOUT_SECONDS,
-  MIN_TIMEOUT_SECONDS,
-  positiveIntegerEnv
-} from "./sandbox-common.ts";
+import { positiveIntegerEnv } from "./sandbox-common.ts";
 import { runJavaScript } from "./sandbox.ts";
+import {
+  discoverOci,
+  DISCOVER_OCI_TOOL,
+  executionToolResult,
+  jsonToolResult,
+  RUN_JAVASCRIPT_TOOL,
+  SERVER_INSTRUCTIONS
+} from "./tool-contracts.ts";
 import type {
   HostRpcHandler,
   IsolationProvider,
-  JsonObject,
   OciReflectionManifest
 } from "./types.ts";
 
@@ -46,45 +46,14 @@ const server = new McpServer({
   name: "oci-javascript-mcp-server",
   version: "0.1.1"
 }, {
-  instructions: (
-    "Run one complete JavaScript script against the injected OCI binding. "
-    + "Await every OCI call. "
-    + "Leave the result value as the final expression; "
-    + "stdout/stderr are for logs. "
-    + "Uncaught JavaScript or OCI errors are returned in error. "
-    + "Try normal JavaScript first, use list limit/page tokens for pagination, and call "
-    + "discover_oci only after an SDK shape error or genuine uncertainty."
-  )
+  instructions: SERVER_INSTRUCTIONS
 });
 
 server.registerTool(
   "run_javascript",
-  {
-    description: (
-      "Primary tool for Oracle Cloud Infrastructure (OCI) tasks. "
-      + "Run one complete JavaScript script in a fresh sandbox with an injected "
-      + "`oci` binding. Await every OCI call and leave the result value as the final expression; "
-      + "stdout/stderr are for incidental logs. Try straightforward code first; "
-      + "uncaught JavaScript or OCI errors are returned in `error`; "
-      + "use OCI list limit/page tokens for pagination, and use `discover_oci` only after "
-      + "SDK shape errors or genuine uncertainty. "
-      + "The sandbox has no OCI credentials, filesystem, network, or environment access."
-    ),
-    inputSchema: {
-      code: z.string().describe(
-        "JavaScript to execute. Use the injected `oci` binding and leave the result value as the final expression."
-      ),
-      timeout: z.number().min(MIN_TIMEOUT_SECONDS).max(MAX_TIMEOUT_SECONDS).default(
-        DEFAULT_TIMEOUT_SECONDS
-      ).describe("Maximum wall-clock seconds allowed for execution.")
-    },
-    annotations: {
-      openWorldHint: true,
-      readOnlyHint: false
-    }
-  },
+  RUN_JAVASCRIPT_TOOL,
   async (args, extra) => {
-    return jsonToolResult(await limitToolCall(async () => {
+    return executionToolResult(await limitToolCall(async () => {
       reflectionManifest ??= createOciReflectionManifest();
       const result = await runJavaScript(args.code, {
         timeoutSeconds: args.timeout,
@@ -93,63 +62,20 @@ server.registerTool(
         reflectionManifest,
         isolationProvider
       });
-      return {
-        result: result.result,
-        error: result.error,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        exit_code: result.exitCode,
-        timed_out: result.timedOut
-      };
+      return result;
     }));
   }
 );
 
 server.registerTool(
   "discover_oci",
-  {
-    description: (
-      "Fallback OCI JavaScript SDK introspection. Do not call this by default. "
-      + "Use it after a JavaScript attempt fails or when the service, client, "
-      + "operation, or request/model shape is genuinely unclear."
-    ),
-    inputSchema: {
-      service: z.string().optional().describe(
-        "OCI SDK service export name, e.g. core, identity, resourcesearch."
-      ),
-      client: z.string().optional().describe(
-        "Client class name, e.g. ComputeClient or IdentityClient."
-      ),
-      operation: z.string().optional().describe("Operation name, e.g. listInstances.")
-    },
-    annotations: {
-      openWorldHint: false,
-      readOnlyHint: true
-    }
-  },
+  DISCOVER_OCI_TOOL,
   async args => {
-    return jsonToolResult(await limitToolCall(async () => {
-      const result = await hostRpc({
-        binding: "oracle",
-        namespace: "oci",
-        operation: "discover",
-        payload: args as JsonObject
-      });
-      return result && typeof result === "object" && !Array.isArray(result)
-        ? result as JsonObject
-        : { value: result };
-    }));
+    return jsonToolResult(await limitToolCall(() => discoverOci(args, hostRpc)));
   }
 );
 
 await server.connect(new StdioServerTransport());
-
-function jsonToolResult(result: JsonObject): CallToolResult {
-  return {
-    content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-    structuredContent: result
-  };
-}
 
 async function limitToolCall<T>(callback: () => Promise<T>): Promise<T> {
   if (activeToolCalls >= MAX_CONCURRENT_TOOL_CALLS) {

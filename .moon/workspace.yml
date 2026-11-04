@@ -5,7 +5,6 @@ projects:
     - 'src/*/pyproject.toml'
     - '!src/dbtools-mcp-server/pyproject.toml'
     - '!src/mysql-mcp-server/pyproject.toml'
-    - '!src/oci-pricing-mcp-server/pyproject.toml'
     - '!src/oracle-db-doc-mcp-server/pyproject.toml'
     - '!src/oracle-db-mcp-java-toolkit/pyproject.toml'
 

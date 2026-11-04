@@ -1,0 +1,38 @@
+# VCS / OS
+.git
+.gitignore
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+pip-wheel-metadata/
+
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.cache/
+
+# Build artifacts
+build/
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# Secrets & local env
+.env
+.env.*
+
+# Validation artifacts
+htmlcov/
+.coverage*

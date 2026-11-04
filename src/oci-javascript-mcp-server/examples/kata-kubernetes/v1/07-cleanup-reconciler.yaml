@@ -13,6 +13,8 @@ spec:
       labels:
         app.kubernetes.io/name: oci-js-kata-reconciler
     spec:
+      nodeSelector:
+        oci.oracle.com.node-restriction.kubernetes.io/workload-pool: trusted-host
       serviceAccountName: oci-js-kata-reconciler
       automountServiceAccountToken: true
       containers:

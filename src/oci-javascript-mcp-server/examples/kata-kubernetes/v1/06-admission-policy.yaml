@@ -8,22 +8,79 @@ spec:
     resourceRules:
       - apiGroups: [""]
         apiVersions: ["v1"]
-        operations: ["CREATE"]
-        resources: ["pods"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods", "pods/ephemeralcontainers", "pods/resize"]
         scope: Namespaced
   validations:
+    # Bind by the immutable namespace-name label, then require its security labels.
+    - expression: >-
+        namespaceObject.metadata.labels['oci.oracle.com/kubernetes-profile'] == 'kata-in-cluster' &&
+        namespaceObject.metadata.labels['pod-security.kubernetes.io/enforce'] == 'restricted'
+      message: the execution namespace must retain its Kata profile and restricted Pod Security labels
     - expression: request.userInfo.username == 'system:serviceaccount:oci-js-host:oci-js-host'
-      message: only the trusted host service account may create execution pods
+      message: only the trusted host service account may submit execution pods
     - expression: "!has(object.metadata.ownerReferences) && object.metadata.labels['app.kubernetes.io/managed-by'] == 'oci-javascript-mcp' && object.metadata.labels['oci.oracle.com/isolation-provider'] == 'kubernetes' && object.metadata.labels['oci.oracle.com/kubernetes-profile'] == 'kata-in-cluster' && object.spec.runtimeClassName == 'kata-qemu-runtime-rs' && object.spec.serviceAccountName == 'oci-js-runner'"
       message: runtime, service account, and ownership must match the reviewed shape
+    - expression: >-
+        size(object.metadata.labels) == 3 && !has(object.metadata.finalizers) &&
+        has(object.metadata.annotations) && size(object.metadata.annotations) == 5 &&
+        object.metadata.annotations.all(key, key in [
+          'oci.oracle.com/execution-correlation', 'oci.oracle.com/expires-at',
+          'oci.oracle.com/trusted-host-namespace', 'oci.oracle.com/trusted-host-name',
+          'oci.oracle.com/trusted-host-uid']) &&
+        object.metadata.annotations.all(key, object.metadata.annotations[key] != '') &&
+        object.metadata.annotations['oci.oracle.com/trusted-host-namespace'] == 'oci-js-host'
+      message: only the provider-owned labels and execution/host identity annotations are allowed
+    # RuntimeClass admission supplies these exact selectors and the pool toleration.
+    # DefaultTolerationSeconds supplies the two bounded NoExecute tolerations.
+    - expression: >-
+        object.spec.nodeSelector == {
+          'kubernetes.io/os': 'linux',
+          'kubernetes.io/arch': 'amd64',
+          'oci.oracle.com.node-restriction.kubernetes.io/workload-pool': 'kata-execution',
+          'oci.oracle.com.node-restriction.kubernetes.io/kata-profile': 'kata-qemu-runtime-rs-v1'} &&
+        !has(object.spec.affinity) &&
+        !has(object.spec.topologySpreadConstraints) &&
+        (!has(object.spec.schedulerName) || object.spec.schedulerName == 'default-scheduler') &&
+        (!has(object.spec.priorityClassName) || object.spec.priorityClassName == '') &&
+        (!has(object.spec.priority) || object.spec.priority == 0) &&
+        (!has(object.spec.preemptionPolicy) || object.spec.preemptionPolicy == 'PreemptLowerPriority') &&
+        (request.operation != 'CREATE' || !has(object.spec.nodeName) || object.spec.nodeName == '') &&
+        !has(object.spec.schedulingGates)
+      message: only the reviewed RuntimeClass scheduling profile, default scheduler and default priority are allowed
+    - expression: >-
+        size(object.spec.tolerations) == 3 &&
+        object.spec.tolerations.filter(t, t.key == 'oci.oracle.com/workload-pool').size() == 1 &&
+        object.spec.tolerations.filter(t, t.key == 'node.kubernetes.io/not-ready').size() == 1 &&
+        object.spec.tolerations.filter(t, t.key == 'node.kubernetes.io/unreachable').size() == 1 &&
+        object.spec.tolerations.all(t,
+          (t.key == 'oci.oracle.com/workload-pool' && t.operator == 'Equal' &&
+           t.value == 'kata-execution' && t.effect == 'NoSchedule' && !has(t.tolerationSeconds)) ||
+          (t.key in ['node.kubernetes.io/not-ready', 'node.kubernetes.io/unreachable'] &&
+           t.operator == 'Exists' && (!has(t.value) || t.value == '') &&
+           t.effect == 'NoExecute' && t.tolerationSeconds == 300))
+      message: only the execution-pool toleration and default 300-second node-health tolerations are allowed
+    - expression: >-
+        request.operation != 'UPDATE' ||
+        (object.spec == oldObject.spec &&
+         object.metadata.labels == oldObject.metadata.labels &&
+         object.metadata.annotations == oldObject.metadata.annotations)
+      message: execution pod configuration and provider metadata are immutable after creation
     - expression: object.spec.automountServiceAccountToken == false && object.spec.enableServiceLinks == false && object.spec.restartPolicy == 'Never'
       message: token mounting, service links, and restart behavior must remain disabled
     - expression: (!has(object.spec.hostNetwork) || object.spec.hostNetwork == false) && (!has(object.spec.hostPID) || object.spec.hostPID == false) && (!has(object.spec.hostIPC) || object.spec.hostIPC == false)
       message: host namespaces are forbidden
     - expression: size(object.spec.containers) == 1 && !has(object.spec.initContainers) && !has(object.spec.ephemeralContainers) && object.spec.containers[0].name == 'runner' && object.spec.containers[0].image == 'registry.example/oci-javascript-runner@sha256:0000000000000000000000000000000000000000000000000000000000000000' && object.spec.containers[0].imagePullPolicy == 'IfNotPresent'
       message: exactly one digest-pinned runner container is required
-    - expression: object.spec.containers[0].command == ['node', '--no-node-snapshot', '--experimental-strip-types', '/app/src/sandbox-worker.ts', '--tls-files'] && !has(object.spec.containers[0].env)
-      message: the fixed TLS-file worker command and empty environment are required
+    - expression: >-
+        object.spec.containers[0].command == ['node', '--no-node-snapshot', '--experimental-strip-types', '/app/src/sandbox-worker.ts', '--tls-files'] &&
+        !has(object.spec.containers[0].args) && !has(object.spec.containers[0].env) &&
+        !has(object.spec.containers[0].envFrom) &&
+        (!has(object.spec.containers[0].workingDir) || object.spec.containers[0].workingDir == '') &&
+        (!has(object.spec.containers[0].stdin) || object.spec.containers[0].stdin == false) &&
+        (!has(object.spec.containers[0].stdinOnce) || object.spec.containers[0].stdinOnce == false) &&
+        (!has(object.spec.containers[0].tty) || object.spec.containers[0].tty == false)
+      message: the fixed TLS-file worker command, empty environment and non-interactive channel are required
     - expression: object.spec.securityContext.runAsNonRoot == true && object.spec.securityContext.runAsUser == 65532 && object.spec.securityContext.runAsGroup == 65532 && object.spec.securityContext.fsGroup == 65532 && object.spec.securityContext.seccompProfile.type == 'RuntimeDefault'
       message: the reviewed pod security context is required
     - expression: object.spec.containers[0].securityContext.runAsNonRoot == true && object.spec.containers[0].securityContext.runAsUser == 65532 && object.spec.containers[0].securityContext.runAsGroup == 65532 && object.spec.containers[0].securityContext.allowPrivilegeEscalation == false && object.spec.containers[0].securityContext.privileged == false && object.spec.containers[0].securityContext.readOnlyRootFilesystem == true && object.spec.containers[0].securityContext.capabilities.drop == ['ALL'] && !has(object.spec.containers[0].securityContext.capabilities.add) && object.spec.containers[0].securityContext.seccompProfile.type == 'RuntimeDefault'
@@ -45,4 +102,51 @@ spec:
   matchResources:
     namespaceSelector:
       matchLabels:
-        oci.oracle.com/kubernetes-profile: kata-in-cluster
+        kubernetes.io/metadata.name: oci-js-execution
+---
+# Apply to every pod in the trusted-host namespace, including the reconciler
+# and any broker deployed there. The runner policy separately forbids affinity
+# or tolerations that could override its RuntimeClass placement.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: oci-js-kata-trusted-host-placement-v1
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+        scope: Namespaced
+  validations:
+    - expression: >-
+        has(object.spec.nodeSelector) &&
+        object.spec.nodeSelector['oci.oracle.com.node-restriction.kubernetes.io/workload-pool'] == 'trusted-host' &&
+        !has(object.spec.runtimeClassName) &&
+        (!has(object.spec.schedulerName) || object.spec.schedulerName == 'default-scheduler') &&
+        (request.operation != 'CREATE' || !has(object.spec.nodeName) || object.spec.nodeName == '') &&
+        (request.operation != 'UPDATE' ||
+         (!has(object.spec.nodeName) && !has(oldObject.spec.nodeName)) ||
+         (has(object.spec.nodeName) && has(oldObject.spec.nodeName) &&
+          object.spec.nodeName == oldObject.spec.nodeName))
+      message: trusted host, broker and cleanup pods must remain on the separate trusted-host pool
+    - expression: >-
+        !has(object.spec.tolerations) || object.spec.tolerations.all(t,
+          t.key in ['node.kubernetes.io/not-ready', 'node.kubernetes.io/unreachable'] &&
+          t.operator == 'Exists' && (!has(t.value) || t.value == '') &&
+          t.effect == 'NoExecute' && t.tolerationSeconds == 300)
+      message: trusted workloads must not tolerate the execution-pool taint
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: oci-js-kata-trusted-host-placement-v1
+spec:
+  policyName: oci-js-kata-trusted-host-placement-v1
+  validationActions: ["Deny"]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: oci-js-host

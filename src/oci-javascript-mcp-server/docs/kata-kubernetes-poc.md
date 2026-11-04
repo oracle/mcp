@@ -190,9 +190,50 @@ least-privilege RBAC, quota and limits, default-deny ingress/egress plus narrowl
 RuntimeClass example, fail-closed ValidatingAdmissionPolicy/binding, a hardened
 trusted-host Deployment, and the cleanup-only Deployment.
 
-Apply the versioned assets after replacing the reviewed image-digest placeholders
-and filling the RuntimeClass scheduling and overhead fields from real-node
-evidence:
+The example RuntimeClass selects Linux `amd64` execution nodes with the protected
+labels below. Both trusted Deployments select the separate trusted-host pool.
+Configure these labels and the execution taint in node-pool provisioning so
+replacement nodes retain the same restrictions. Enable the Node authorizer and
+NodeRestriction admission plugin; only the trusted provisioning/admission path
+may assign the protected labels.
+
+| Node pool | Required configuration |
+| --- | --- |
+| Execution | `oci.oracle.com.node-restriction.kubernetes.io/workload-pool=kata-execution`, `oci.oracle.com.node-restriction.kubernetes.io/kata-profile=kata-qemu-runtime-rs-v1`, and taint `oci.oracle.com/workload-pool=kata-execution:NoSchedule` |
+| Trusted host | `oci.oracle.com.node-restriction.kubernetes.io/workload-pool=trusted-host`; no execution-pool taint or toleration |
+
+`kata-qemu-runtime-rs-v1` is the example's reviewed-profile identifier, not a
+runtime attestation. Before assigning it, bind it to independent evidence for
+the exact CRI handler, Kata configuration, QEMU mapping and VM boundary on each
+admitted node. Replace the example profile identifier and scheduling values
+together in `05-runtime-class.yaml` and `06-admission-policy.yaml` when adopting
+a different reviewed profile. Add measured RuntimeClass overhead before rollout.
+Missing matching nodes leaves workloads Pending; do not remove placement
+constraints to make them schedule. Drain nodes before changing their pool role.
+
+RuntimeClass admission injects the fixed execution selectors and pool toleration;
+the provider does not accept caller-supplied scheduling fragments. The execution
+policy permits exactly those selectors and three tolerations: the execution-pool
+`NoSchedule` toleration and the default 300-second `NoExecute` tolerations for
+`node.kubernetes.io/not-ready` and `node.kubernetes.io/unreachable`. A cluster with
+different default toleration settings needs a separately reviewed policy update.
+Runners require the default scheduler, priority zero, no PriorityClass and default
+`PreemptLowerPriority` behavior; additional topology-spread constraints are forbidden.
+Extra affinity, selectors, tolerations, labels, annotations, environment sources,
+arguments and interactive channels are rejected. Only the five provider-owned
+execution/host annotations are allowed; the runner spec and provider metadata
+cannot change through pod updates, resize or ephemeral-container requests.
+
+The bindings select the immutable namespace-name labels, so removing the custom
+profile label cannot bypass enforcement. A separate fail-closed placement policy
+applies to every pod in `oci-js-host`, including the reconciler and any broker
+deployed there. It requires the trusted-host pool and forbids an execution-pool
+toleration or direct node assignment on creation. Keep trusted brokers in this
+namespace to apply that policy. These manifests do not constrain unrelated
+namespaces or certify node labels, taints, actual runtime mapping or CNI behavior.
+
+Apply the versioned assets after reviewing the node/profile evidence, replacing
+the image-digest placeholders and configuring RuntimeClass overhead:
 
 ```bash
 kubectl apply -f examples/kata-kubernetes/v1/

@@ -35,6 +35,8 @@ type Manifest = {
   subjects?: Array<{ kind: string; name: string; namespace?: string }>;
   roleRef?: { name: string };
   spec?: Record<string, any>;
+  handler?: string;
+  scheduling?: Record<string, any>;
   automountServiceAccountToken?: boolean;
 };
 
@@ -68,6 +70,45 @@ test("trusted host and execution namespaces remain separate with restricted exec
     item => item.kind === "ServiceAccount" && item.metadata.name === "oci-js-runner"
   )!;
   assert.equal(runner.automountServiceAccountToken, false);
+});
+
+test("Kata RuntimeClass pins the reviewed profile to a dedicated Linux x86_64 execution pool", () => {
+  const runtime = manifests.find(item => item.kind === "RuntimeClass")!;
+  assert.equal(runtime.handler, "kata-qemu-runtime-rs");
+  assert.ok(runtime.scheduling, "RuntimeClass scheduling must constrain the worker pool");
+  assert.deepEqual(plain(runtime.scheduling), {
+    nodeSelector: {
+      "kubernetes.io/os": "linux",
+      "kubernetes.io/arch": "amd64",
+      "oci.oracle.com.node-restriction.kubernetes.io/workload-pool": "kata-execution",
+      "oci.oracle.com.node-restriction.kubernetes.io/kata-profile": "kata-qemu-runtime-rs-v1"
+    },
+    tolerations: [{ key: "oci.oracle.com/workload-pool", operator: "Equal", value: "kata-execution", effect: "NoSchedule" }]
+  });
+});
+
+test("trusted host and reconciler placement excludes the execution pool", () => {
+  for (const deployment of manifests.filter(item => item.kind === "Deployment")) {
+    assert.ok(deployment.spec?.template.spec.nodeSelector, `${deployment.metadata.name} must select trusted nodes`);
+    assert.deepEqual(plain(deployment.spec?.template.spec.nodeSelector), {
+      "oci.oracle.com.node-restriction.kubernetes.io/workload-pool": "trusted-host"
+    }, deployment.metadata.name);
+    assert.equal(deployment.spec?.template.spec.runtimeClassName, undefined);
+    assert.equal(deployment.spec?.template.spec.tolerations, undefined);
+  }
+  const bindings = manifests.filter(item => item.kind === "ValidatingAdmissionPolicyBinding");
+  for (const binding of bindings) {
+    assert.deepEqual(plain(binding.spec?.validationActions), ["Deny"]);
+    assert.ok(manifests.some(item => item.kind === "ValidatingAdmissionPolicy"
+      && item.metadata.name === binding.spec?.policyName));
+  }
+  assert.deepEqual(bindings.map(binding => plain(binding.spec?.matchResources.namespaceSelector)), [
+    { matchLabels: { "kubernetes.io/metadata.name": "oci-js-execution" } },
+    { matchLabels: { "kubernetes.io/metadata.name": "oci-js-host" } }
+  ]);
+  const hostPolicy = manifests.find(item => item.metadata.name === "oci-js-kata-trusted-host-placement-v1"
+    && item.kind === "ValidatingAdmissionPolicy")!;
+  assert.equal(hostPolicy?.spec?.failurePolicy, "Fail");
 });
 
 test("execution grants name only the cross-namespace host and cleanup identity stays delete-only", () => {

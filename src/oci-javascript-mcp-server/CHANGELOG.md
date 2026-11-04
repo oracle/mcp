@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Security
+
+- Constrain the Kata examples to separate trusted-host and Linux x86_64 execution
+  pools with an exact node-profile selector and pool toleration. Harden admission
+  against extra environment sources, arguments, metadata and scheduling overrides,
+  enforce immutable runner configuration, and bind policies by namespace name.
+  Node provisioning, runtime/VM evidence and server-side validation remain required.
+
 ### Added
 
 - Add a standalone Kubernetes deployment validator with explicit

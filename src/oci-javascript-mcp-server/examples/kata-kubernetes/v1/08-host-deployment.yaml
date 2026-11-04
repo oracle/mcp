@@ -20,6 +20,8 @@ spec:
       labels:
         app.kubernetes.io/name: oci-js-kata-host
     spec:
+      nodeSelector:
+        oci.oracle.com.node-restriction.kubernetes.io/workload-pool: trusted-host
       serviceAccountName: oci-js-host
       automountServiceAccountToken: true
       containers:

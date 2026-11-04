@@ -7,7 +7,10 @@
 import assert from "node:assert/strict";
 import childProcess from "node:child_process";
 import { EventEmitter } from "node:events";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -18,10 +21,14 @@ import type { RunnerServer } from "../src/generated/runner.ts";
 import { MAX_CODE_BYTES, MAX_STDERR_BYTES, MAX_STDOUT_BYTES } from "../src/sandbox-common.ts";
 import { runJavaScriptInIsolate } from "../src/sandbox-isolate.ts";
 import { runJavaScript as runJavaScriptWithProvider } from "../src/sandbox.ts";
+import { createOciSdkHostRpc } from "../src/oci-host.ts";
+import { executionToolResult, RUN_JAVASCRIPT_TOOL } from "../src/tool-contracts.ts";
 import type {
   HostRpcRequest,
   IsolationProvider,
   IsolationRunOptions,
+  Json,
+  JsonObject,
   OciReflectionManifest,
   SandboxResult
 } from "../src/types.ts";
@@ -46,6 +53,156 @@ function runJavaScript(code: string, options: TestRunOptions): Promise<SandboxRe
 function testProvider(run: IsolationProvider["run"]): IsolationProvider {
   return { run };
 }
+
+function javascriptBlocks(text: string): string[] {
+  return Array.from(text.matchAll(/```js\n([\s\S]*?)\n```/g), match => match[1]);
+}
+
+test("advertised and README canonical examples execute constructed clients with the default region", async () => {
+  const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+  const advertised = javascriptBlocks(RUN_JAVASCRIPT_TOOL.inputSchema.code.description!)[0];
+  const documented = javascriptBlocks(readme).find(code => code.includes("listRegionSubscriptions"));
+  assert.equal(documented, advertised);
+  for (const code of [advertised, documented!]) {
+    const calls: HostRpcRequest[] = [];
+    const result = await runJavaScriptInIsolate(code, {
+      deadlineMs: Date.now() + 5000, memoryLimitMb: 16, maxResultBytes: 1024,
+      hostRpc: async (request): Promise<Json> => {
+        const rpc = request as HostRpcRequest;
+        calls.push(rpc);
+        return { ok: true, value: rpc.operation === "config"
+          ? { tenancyId: "ocid1.tenancy.oc1..example" }
+          : { items: [{ regionName: "us-ashburn-1", ignored: true }, { regionName: "us-phoenix-1" }] } };
+      }
+    });
+    assert.equal(result.error, null);
+    assert.deepEqual(result.result, ["us-ashburn-1", "us-phoenix-1"]);
+    assert.deepEqual(calls, [
+      { binding: "oracle", namespace: "oci", operation: "config", payload: {} },
+      { binding: "oracle", namespace: "oci", operation: "invoke", payload: {
+        service: "identity", client: { name: "IdentityClient" }, operation: "listRegionSubscriptions",
+        request: { tenancyId: "ocid1.tenancy.oc1..example" }
+      } }
+    ]);
+  }
+});
+
+test("README pagination continues in fresh executions through an empty page and a final page", async () => {
+  const source = javascriptBlocks(readFileSync(new URL("../README.md", import.meta.url), "utf8"))
+    .find(code => code.includes("listCompartments"));
+  assert.ok(source, "README must provide an executable one-page example");
+  const fixtures: Array<{ page: string | undefined; response: JsonObject; expected: JsonObject }> = [
+    { page: undefined, response: { items: [{ id: "first", name: "A", ignored: true }], opcNextPage: "page-2" },
+      expected: { items: [{ id: "first", name: "A" }], nextPage: "page-2" } },
+    { page: "page-2", response: { items: [], opcNextPage: "page-3" }, expected: { items: [], nextPage: "page-3" } },
+    { page: "page-3", response: { items: [{ id: "last", name: "Z" }] },
+      expected: { items: [{ id: "last", name: "Z" }], nextPage: null } }
+  ];
+  for (const { page, response, expected } of fixtures) {
+    const calls: HostRpcRequest[] = [];
+    const code = page === undefined ? source : source.replace("const page = undefined;", `const page = ${JSON.stringify(page)};`);
+    const result = await runJavaScriptInIsolate(code, {
+      deadlineMs: Date.now() + 5000, memoryLimitMb: 16, maxResultBytes: 1024,
+      hostRpc: async (request): Promise<Json> => {
+        const rpc = request as HostRpcRequest;
+        calls.push(rpc);
+        return { ok: true, value: rpc.operation === "config" ? { tenancyId: "ocid1.tenancy.oc1..example" } : response };
+      }
+    });
+    assert.equal(result.error, null);
+    assert.deepEqual(result.result, expected);
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls[1].payload, {
+      service: "identity", client: { name: "IdentityClient", options: { region: "us-ashburn-1" } },
+      operation: "listCompartments", request: {
+        compartmentId: "ocid1.tenancy.oc1..example", limit: 25, sortBy: "NAME", sortOrder: "ASC",
+        ...(page === undefined ? {} : { page })
+      }
+    });
+  }
+});
+
+test("execution contracts distinguish host-response limits from final-result limits and retain completed mutations", async t => {
+  const directory = mkdtempSync(join(tmpdir(), "oci-contract-sdk-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  writeFileSync(join(directory, "config"), "[DEFAULT]\n");
+  const previous = { file: process.env.OCI_CONFIG_FILE, profile: process.env.OCI_CONFIG_PROFILE };
+  t.after(() => {
+    if (previous.file === undefined) delete process.env.OCI_CONFIG_FILE;
+    else process.env.OCI_CONFIG_FILE = previous.file;
+    if (previous.profile === undefined) delete process.env.OCI_CONFIG_PROFILE;
+    else process.env.OCI_CONFIG_PROFILE = previous.profile;
+  });
+  process.env.OCI_CONFIG_FILE = join(directory, "config");
+  process.env.OCI_CONFIG_PROFILE = "DEFAULT";
+  const mutations: JsonObject[] = [];
+  let listCalls = 0;
+  class IdentityClient {
+    async listCompartments(request: JsonObject) {
+      listCalls += 1;
+      return { items: [{ id: "example", details: "x".repeat(request.limit === 1 ? 1024 * 1024 : 8) }] };
+    }
+    async createCompartment(request: JsonObject) {
+      mutations.push(request);
+      return { compartment: { id: "created-example" } };
+    }
+    close() {}
+  }
+  const hostRpc = createOciSdkHostRpc(() => ({
+    sdk: { ConfigFileAuthenticationDetailsProvider: class Provider {}, identity: { IdentityClient } }, common: {}
+  }));
+  const overResponse = await runJavaScript(`
+    const client = new oci.identity.IdentityClient();
+    const response = await client.listCompartments({ compartmentId: "example", limit: 1 });
+    return response.items.map(item => item.id);
+  `, { hostRpc, timeoutSeconds: 10 });
+  assert.match(overResponse.error?.message ?? "", /exceeding response limit.*smaller limit/);
+  assert.equal(executionToolResult(overResponse).isError, true);
+  const overResult = await runJavaScript(`
+    const client = new oci.identity.IdentityClient();
+    await client.listCompartments({ compartmentId: "example", limit: 2 });
+    return "x".repeat(1024 * 1024);
+  `, { hostRpc, timeoutSeconds: 10 });
+  assert.match(overResult.error?.message ?? "", /exceeding result limit/);
+  assert.equal(executionToolResult(overResult).isError, true);
+  assert.equal(listCalls, 2);
+  const failedMutation = await runJavaScript(`
+    const client = new oci.identity.IdentityClient();
+    const response = await client.createCompartment({
+      createCompartmentDetails: { compartmentId: "example", name: "example", description: "example" },
+      opcRetryToken: "example-logical-request"
+    });
+    console.log(response.compartment.id);
+    throw new Error("later script failure");
+  `, { hostRpc, timeoutSeconds: 10 });
+  assert.equal(failedMutation.error?.message, "later script failure");
+  assert.match(failedMutation.stdout, /created-example/);
+  assert.equal(executionToolResult(failedMutation).isError, true);
+  assert.deepEqual(mutations, [{
+    createCompartmentDetails: { compartmentId: "example", name: "example", description: "example" },
+    opcRetryToken: "example-logical-request"
+  }]);
+});
+
+test("provider startup and cleanup failures retain MCP execution error envelopes", async () => {
+  for (const cleanup of [false, true]) {
+    const result = await runJavaScript("return 42;", {
+      hostRpc: async () => null,
+      isolationProvider: testProvider(() => {
+        if (!cleanup) throw new Error("private provider failure");
+        return { result: Promise.resolve({ result: 42, error: null, stdout: "", stderr: "", exitCode: 0, timedOut: false }),
+          async terminate() { throw new Error("private cleanup failure"); } };
+      })
+    });
+    const response = executionToolResult(result);
+    assert.equal(response.isError, true);
+    assert.deepEqual(response.structuredContent, {
+      result: null, error: { message: cleanup ? "isolation provider cleanup failed" : "isolation provider failed" },
+      stdout: "", stderr: "", exit_code: 1, timed_out: false
+    });
+    assert.deepEqual(JSON.parse((response.content[0] as { text: string }).text), response.structuredContent);
+  }
+});
 
 test("isolate preserves the remaining subsecond session deadline", async t => {
   let now = 1000;

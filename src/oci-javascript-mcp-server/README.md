@@ -69,8 +69,10 @@ host-only OCI Secret synchronization, and Inspector connection, see the
 [local Kubernetes in-cluster setup guide](docs/kubernetes-local-in-cluster-setup.md).
 
 The [deployment validator](docs/kubernetes-isolation-profiles.md#deployment-validation)
-checks the intended Kubernetes identity, permissions, RuntimeClass and observed
-admission dry-run outcomes using an explicit kubeconfig and context. It is a
+checks the intended Kubernetes identity, permissions, explicit admission properties,
+Kata runtime/pool configuration and observed admission dry-run outcomes. In-cluster
+targets require explicit workload and deployment-inspection contexts in the same
+kubeconfig/cluster. It is a
 separate command to run before rollout. Server startup checks operational
 readiness; it does not probe admission or validate live RuntimeClass handlers.
 

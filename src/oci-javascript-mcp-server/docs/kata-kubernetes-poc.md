@@ -99,11 +99,17 @@ before MCP stdio connects.
 
 Run the [deployment validator](kubernetes-isolation-profiles.md#deployment-validation)
 under the intended host identity before rollout to read the exact RuntimeClass,
-compare its expected handler and check conforming/negative pod dry-runs. The
+compare its expected handler, exact profile selectors and toleration, inspect
+execution/trusted node-pool configuration, and check conforming/negative pod dry-runs. The
 example ClusterRole retains exact RuntimeClass `resourceNames` authority for
 that validation. Server startup does not perform these checks or publish an
 assurance descriptor. Observed rejection does not certify the exact deployed
-policy revision, wider admission chain or effective Kata guest boundary.
+policy revision, wider admission chain or effective Kata guest boundary. Supply
+an explicit `--inspection-context` for admission-object reads, node inventory and
+credential-free trusted-host placement probes; execution probes retain the host
+identity. The validator checks fail-closed policy/binding properties without
+hashing policies or comparing CEL expression text. See the profile guide for
+expected names, label overrides, inspection permissions and evidence limits.
 
 Each call creates an immutable execution TLS Secret and a uniquely named pod.
 The worker starts normally with `--tls-files` and reads the fixed read-only

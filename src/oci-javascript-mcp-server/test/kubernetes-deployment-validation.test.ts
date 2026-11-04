@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerHooks } from "node:module";
 import test, { type TestContext } from "node:test";
+import { loadAllYaml, type V1Node, type V1Namespace } from "@kubernetes/client-node";
 import { buildExecutionPod } from "../src/isolation/kubernetes-pod.ts";
 import { runtimePolicyFor } from "../src/isolation/kubernetes-runtime-policy.ts";
 import type { KubernetesPod, ResourceAttributes } from "../src/isolation/kubernetes-api.ts";
@@ -23,12 +24,53 @@ import {
   parseValidationOptions,
   validateDeployment,
   type AdmissionProbeResult,
+  type DeploymentInspectionApi,
   type DeploymentValidationApi
 } from "../src/kubernetes-deployment-validation.ts";
 import { conformingPodAdmission, validInClusterEnvironment, validKataEnvironment, validLocalEnvironment } from "./kata-fixtures.ts";
 
 const args = ["--kubeconfig", "/tmp/deployment-validation-config", "--context", "target"];
-const hostArgs = [...args, "--host-service-account", "oci-js-host", "--impersonate"];
+const hostArgs = [...args, "--host-service-account", "oci-js-host", "--impersonate", "--inspection-context", "target"];
+
+test("deployment validation rejects a fail-open policy before submitting pod probes", async () => {
+  const api = new ValidationApi("in-cluster");
+  const policy = referenceAdmission("in-cluster", "ValidatingAdmissionPolicy");
+  policy.spec.failurePolicy = "Ignore";
+  Object.assign(api, { inspection: {
+    identity: async () => ({ username: "deployment-reader", groups: [] }),
+    readPolicy: async () => policy,
+    readBinding: async () => referenceAdmission("in-cluster", "ValidatingAdmissionPolicyBinding")
+  } });
+  const report = await validateDeployment(parseValidationOptions(hostArgs, validInClusterEnvironment()), api);
+  assert.equal(report.passed, false);
+  assert.equal(api.pods.length, 0);
+  assert.equal(report.checks.find(check => check.id === "deployment:admission")?.outcome, "failed");
+});
+
+test("Kata validation rejects a RuntimeClass that can schedule outside the reviewed pool", async () => {
+  const api = new ValidationApi("kata-in-cluster");
+  api.runtime.scheduling = undefined;
+  const report = await validateDeployment(parseValidationOptions(hostArgs, validKataEnvironment()), api);
+  assert.equal(report.passed, false);
+  assert.equal(api.pods.length, 0);
+  assert.equal(report.checks.find(check => check.id === "deployment:runtime-class")?.outcome, "failed");
+});
+
+test("Kata validation probes environment sources and rejects a permissive trusted-host placement policy", async () => {
+  const api = new ValidationApi("kata-in-cluster");
+  Object.assign(api.inspection, { dryRunCreatePod: async () => ({ outcome: "accepted" as const }) });
+  const report = await validateDeployment(parseValidationOptions(hostArgs, validKataEnvironment()), api);
+  assert.equal(report.passed, false);
+  assert(api.pods.some(pod => pod.spec!.containers[0]!.envFrom?.[0]?.configMapRef?.name === "unsafe-environment"));
+  assert.equal(report.checks.find(check => check.id === "admission:trusted-host:pool")?.outcome, "failed");
+});
+
+function referenceAdmission(profile: string, kind: string, host = false): any {
+  const path = profile === "kata-in-cluster" ? "examples/kata-kubernetes/v1/06-admission-policy.yaml"
+    : "examples/kubernetes/v1/standard-in-cluster.yaml";
+  return structuredClone(loadAllYaml(readFileSync(path, "utf8")).find((item: any) =>
+    item.kind === kind && item.metadata.name.includes(host ? "trusted-host-placement" : "execution-pods")));
+}
 
 test("deployment validation keeps target profiles separate from connection credentials", () => {
   for (const environment of [validInClusterEnvironment(), validKataEnvironment()]) {
@@ -49,6 +91,62 @@ test("deployment validation keeps target profiles separate from connection crede
   assert.equal(local.config.credentialMode === "explicit-kubeconfig" && local.config.kubeconfigContext, "target");
 });
 
+test("inspection requires explicit credentials and validates configured policy and pool names", () => {
+  assert.throws(() => parseValidationOptions([...args, "--host-service-account", "host"], validInClusterEnvironment()), /inspection-context/);
+  assert.throws(() => parseValidationOptions([...args, "--inspection-context", "target"], validLocalEnvironment()), /in-cluster/);
+  assert.throws(() => parseValidationOptions([...hostArgs, "--kata-profile", "other"], validInClusterEnvironment()), /kata-in-cluster/);
+  for (const flag of ["--admission-policy", "--admission-binding", "--host-placement-policy", "--host-placement-binding", "--kata-profile", "--execution-pool", "--trusted-host-pool"]) {
+    assert.throws(() => parseValidationOptions([...hostArgs, flag, "Invalid_Name"], validKataEnvironment()), /DNS/);
+  }
+  assert.throws(() => parseValidationOptions([...hostArgs, "--execution-pool", "x".repeat(64)], validKataEnvironment()), /63/);
+  assert.throws(() => parseValidationOptions([...hostArgs, "--execution-pool", "same", "--trusted-host-pool", "same"], validKataEnvironment()), /differ/);
+  const custom = parseValidationOptions([...hostArgs, "--admission-policy", "custom-policy", "--host-placement-policy", "custom-host",
+    "--kata-profile", "custom-profile", "--execution-pool", "exec-pool", "--trusted-host-pool", "host-pool"], validKataEnvironment());
+  assert.equal(custom.admissionBinding, "custom-policy");
+  assert.equal(custom.hostPlacementBinding, "custom-host");
+  assert.equal(custom.kataProfile, "custom-profile");
+});
+
+test("missing inspection, weak namespace labels, mismatched object identities and empty node pools fail before probes", async () => {
+  const cases: Array<[string, (api: ValidationApi) => void, string]> = [
+    ["inspection", api => { Object.assign(api, { inspection: undefined }); }, "deployment:inspection-identity"],
+    ["reader identity", api => { api.inspection.identity = async () => ({ username: "", groups: [] }); }, "deployment:inspection-identity"],
+    ["namespace", api => { api.readNamespace = async name => ({ metadata: { name, labels: {} } }); }, "namespace"],
+    ["runtime identity", api => { api.runtime.metadata!.name = "wrong-runtime"; }, "deployment:runtime-class"],
+    ["binding identity", api => { api.inspection.readBinding = async () => ({ ...referenceAdmission("kata-in-cluster", "ValidatingAdmissionPolicyBinding"), metadata: { name: "wrong" } }); }, "deployment:admission"],
+    ["host namespace", api => { api.inspection.readNamespace = async name => ({ metadata: { name, labels: {} } }); }, "deployment:trusted-host-namespace"],
+    ["nodes", api => { api.inspection.listNodes = async () => []; }, "deployment:node-pools"]
+  ];
+  for (const [name, mutate, expected] of cases) {
+    const api = new ValidationApi("kata-in-cluster");
+    mutate(api);
+    const report = await validateDeployment(parseValidationOptions(hostArgs, validKataEnvironment()), api);
+    assert.equal(report.passed, false, name);
+    assert.equal(api.pods.length, 0, name);
+    assert.equal(report.checks.find(check => check.id === expected)?.outcome, "failed", name);
+  }
+});
+
+test("cancellation of policy inspection cannot issue a late binding read or mutate returned evidence", async () => {
+  const api = new ValidationApi("in-cluster");
+  let resolvePolicy!: (value: any) => void;
+  let signal!: AbortSignal;
+  api.inspection.readPolicy = async (_name: string, incoming?: AbortSignal) => {
+    signal = incoming!;
+    return await new Promise(resolve => { resolvePolicy = resolve; });
+  };
+  let bindings = 0;
+  api.inspection.readBinding = async () => { bindings++; return referenceAdmission("in-cluster", "ValidatingAdmissionPolicyBinding"); };
+  const report = await validateDeployment({ ...parseValidationOptions(hostArgs, validInClusterEnvironment()), timeoutMs: 10 }, api);
+  assert.equal(report.passed, false);
+  assert.equal(signal.aborted, true);
+  const snapshot = JSON.stringify(report);
+  resolvePolicy(referenceAdmission("in-cluster", "ValidatingAdmissionPolicy"));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(bindings, 0);
+  assert.equal(JSON.stringify(report), snapshot);
+});
+
 test("validation rejects ambiguous credentials, incomplete identity, and invalid timeouts", () => {
   for (const invalid of [[], ["--kubeconfig", "x"], [...args, "--unknown"],
     [...hostArgs, "--timeout-seconds", "0"], [...hostArgs, "--timeout-seconds", "301"],
@@ -63,12 +161,12 @@ test("validation rejects ambiguous credentials, incomplete identity, and invalid
     ...validInClusterEnvironment(), OCI_JAVASCRIPT_ISOLATION_PROVIDER: "podman"
   }), /kubernetes/);
   assert.doesNotThrow(() => parseValidationOptions([
-    ...args, "--host-service-account", "host.account"
+    ...args, "--host-service-account", "host.account", "--inspection-context", "target"
   ], validInClusterEnvironment()));
 });
 
 test("in-cluster validation requires the intended username and exact service-account groups", async () => {
-  const options = parseValidationOptions(args.concat("--host-service-account", "oci-js-host"), validInClusterEnvironment());
+  const options = parseValidationOptions(args.concat("--host-service-account", "oci-js-host", "--inspection-context", "target"), validInClusterEnvironment());
   for (const groups of [[], ["system:authenticated"], [...hostGroups, "system:masters"]]) {
     const api = new ValidationApi("in-cluster");
     api.groups = groups;
@@ -89,9 +187,9 @@ test("standard and Kata validation dry-run every reviewed variant without execut
     const report = await validateDeployment(options, api);
     assert.equal(report.passed, true);
     assert.equal(report.identity?.username, options.expectedIdentity);
-    assert.equal(api.pods.length, options.config.profile === "kata-in-cluster" ? 73 : 72);
+    assert.equal(api.pods.length, options.config.profile === "kata-in-cluster" ? 93 : 72);
     assert.equal(api.runtimeReads, options.config.profile === "kata-in-cluster" ? 1 : 0);
-    assert.equal(api.permissions.length, 9);
+    assert.equal(api.permissions.length, options.config.profile === "kata-in-cluster" ? 11 : 10);
     assert.equal(api.pods[0]?.spec?.runtimeClassName, options.config.profile === "kata-in-cluster" ? "kata-qemu-runtime-rs" : undefined);
   }
 });
@@ -172,7 +270,7 @@ test("kubeconfig adapter requires an explicit existing context and configures im
     contexts: [{ name: "target", context: { cluster: "cluster", user: "operator" } }],
     "current-context": "not-selected"
   }));
-  const options = parseValidationOptions(["--kubeconfig", kubeconfigPath, "--context", "absent", "--host-service-account", "oci-js-host"], validInClusterEnvironment());
+  const options = parseValidationOptions(["--kubeconfig", kubeconfigPath, "--context", "absent", "--host-service-account", "oci-js-host", "--inspection-context", "target"], validInClusterEnvironment());
   assert.throws(() => createKubeconfigValidationApi(options), /context/);
 });
 
@@ -184,7 +282,12 @@ test("real SDK uses the explicit context and host impersonation for every dry-ru
     assert.equal(report.passed, true, JSON.stringify(report.checks.filter(check => check.outcome === "failed")));
     assert.equal(readFileSync(fixture.options.kubeconfigPath, "utf8"), original);
     for (const request of fixture.requests) {
-      assert.equal(request.headers["impersonate-user"], fixture.options.expectedIdentity);
+      const isInspection = request.url.pathname.includes("admissionregistration.k8s.io")
+        || request.url.pathname === "/api/v1/nodes"
+        || request.url.pathname.endsWith("/namespaces/oci-js-host")
+        || request.url.pathname.includes("/namespaces/oci-js-host/")
+        || (request.url.pathname.endsWith("selfsubjectreviews") && request.headers["impersonate-user"] === undefined);
+      assert.equal(request.headers["impersonate-user"], isInspection ? undefined : fixture.options.expectedIdentity);
       assert.equal(request.headers.authorization, "Bearer secret-test-token");
       assert.equal(request.headers["impersonate-group"], undefined);
       assert(!/\/(?:exec|portforward|watch)(?:\/|$)/.test(request.url.pathname));
@@ -192,10 +295,15 @@ test("real SDK uses the explicit context and host impersonation for every dry-ru
       if (request.url.pathname.endsWith("/pods")) assert.equal(request.url.searchParams.get("dryRun"), "All");
     }
     const reviews = fixture.requests.filter(request => request.url.pathname.endsWith("selfsubjectaccessreviews"));
-    assert.equal(reviews.length, 9);
+    assert.equal(reviews.length, profile === "kata-in-cluster" ? 11 : 10);
     const pods = fixture.requests.filter(request => request.url.pathname.endsWith("/pods"));
-    assert.equal(pods.length, profile === "kata-in-cluster" ? 73 : 72);
+    assert.equal(pods.length, profile === "kata-in-cluster" ? 99 : 72);
     assert.equal(pods[0].body.spec.runtimeClassName, profile === "kata-in-cluster" ? "kata-qemu-runtime-rs" : undefined);
+    for (const hostProbe of pods.filter(request => request.url.pathname.includes("/namespaces/oci-js-host/"))) {
+      assert.equal(hostProbe.body.spec.serviceAccountName, "oci-js-host");
+      assert.equal(hostProbe.body.spec.automountServiceAccountToken, false);
+      assert(!JSON.stringify(hostProbe.body).includes("oci-js-kata-oci-config"));
+    }
     assert.equal(report.checks.find(check => check.id === "admission:image")?.statusCode, 422);
     assert.equal(report.checks.find(check => check.id === "admission:image")?.reason, "Invalid");
     assert.doesNotMatch(JSON.stringify(report), /secret-test-token|raw rejected pod|127\.0\.0\.1/);
@@ -209,6 +317,38 @@ test("real SDK supports direct service-account credentials without impersonation
   const report = await validateDeployment(options, createKubeconfigValidationApi(options));
   assert.equal(report.passed, true, JSON.stringify(report.checks.filter(check => check.outcome === "failed")));
   assert(fixture.requests.every(request => request.headers["impersonate-user"] === undefined));
+});
+
+test("deployment inspection requires the same explicit kubeconfig cluster", async t => {
+  const fixture = await fakeApi(t);
+  const source = JSON.parse(readFileSync(fixture.options.kubeconfigPath, "utf8"));
+  source.clusters.push({ name: "other-cluster", cluster: { server: "https://other.invalid" } });
+  source.contexts.push({ name: "other", context: { cluster: "other-cluster", user: "operator" } });
+  writeFileSync(fixture.options.kubeconfigPath, JSON.stringify(source));
+  assert.throws(() => createKubeconfigValidationApi({ ...fixture.options, inspectionContext: "other" }), /same kubeconfig cluster/);
+  assert.equal(fixture.requests.length, 0);
+});
+
+test("node inspection follows pagination and fails on repeated cursors, excessive inventory or excessive pages", async t => {
+  const fixture = await fakeApi(t, "kata-in-cluster");
+  fixture.state.nodeResponse = index => index === 0
+    ? { metadata: { continue: "next-page" }, items: [nodeFixtures()[0]] } : { items: [nodeFixtures()[1]] };
+  const api = createKubeconfigValidationApi(fixture.options).inspection!;
+  assert.equal((await api.listNodes(AbortSignal.timeout(2000))).length, 2);
+  const requests = fixture.requests.filter(request => request.url.pathname === "/api/v1/nodes");
+  assert.equal(requests[1].url.searchParams.get("continue"), "next-page");
+  assert(requests.every(request => request.url.searchParams.get("limit") === "250" && request.headers["impersonate-user"] === undefined));
+  for (const response of [
+    () => ({ metadata: { continue: "repeat" }, items: [] }),
+    () => ({ items: Array.from({ length: 1001 }, () => nodeFixtures()[0]) }),
+    (index: number) => ({ metadata: { continue: `page-${index}` }, items: [] })
+  ]) {
+    fixture.state.nodeResponse = response;
+    await assert.rejects(api.listNodes(AbortSignal.timeout(2000)), /validation bound/);
+  }
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(api.listNodes(controller.signal), /aborted/);
 });
 
 test("SDK recognizes only structured matching Kubernetes rejection evidence", async t => {
@@ -272,7 +412,7 @@ test("namespace access and each lifecycle permission must pass before admission"
   namespace.readNamespace = async () => { throw new Error("raw namespace endpoint"); };
   assert.equal((await validateDeployment(options, namespace)).passed, false);
   assert.equal(namespace.pods.length, 0);
-  for (let missing = 0; missing < 9; missing++) {
+  for (let missing = 0; missing < 10; missing++) {
     const api = new ValidationApi("in-cluster");
     let count = 0;
     api.selfCan = async () => count++ !== missing;
@@ -393,6 +533,17 @@ class ValidationApi implements DeploymentValidationApi {
   groups = hostGroups;
   fault?: "identity" | "permission" | "runtime" | "conforming" | "api";
   readonly profile: "local-development" | "in-cluster" | "kata-in-cluster";
+  runtime = loadAllYaml(readFileSync("examples/kata-kubernetes/v1/05-runtime-class.yaml", "utf8"))[0] as import("@kubernetes/client-node").V1RuntimeClass;
+  inspection: DeploymentInspectionApi = {
+    identity: async () => ({ username: "deployment-reader", groups: [] }),
+    readNamespace: async (name: string) => namespaceFixture(name, this.profile),
+    readPolicy: async (name: string) => referenceAdmission(this.profile, "ValidatingAdmissionPolicy", name.includes("trusted-host-placement")),
+    readBinding: async (name: string) => referenceAdmission(this.profile, "ValidatingAdmissionPolicyBinding", name.includes("trusted-host-placement")),
+    listNodes: async () => nodeFixtures(),
+    dryRunCreatePod: async (_namespace: string, pod: KubernetesPod): Promise<AdmissionProbeResult> =>
+      deploymentProbeAccepted(pod, this.profile, true) ? { outcome: "accepted" }
+        : { outcome: "rejected", statusCode: 422, reason: "Invalid" }
+  };
   constructor(profile: "local-development" | "in-cluster" | "kata-in-cluster") {
     this.profile = profile;
   }
@@ -403,10 +554,10 @@ class ValidationApi implements DeploymentValidationApi {
       groups: this.groups
     };
   }
-  async readNamespace(_name: string, _signal: AbortSignal): Promise<void> {}
+  async readNamespace(name: string, _signal: AbortSignal): Promise<V1Namespace> { return namespaceFixture(name, this.profile); }
   async readRuntimeClass(_name: string, _signal: AbortSignal) {
     this.runtimeReads += 1;
-    return { handler: this.fault === "runtime" ? "wrong-runtime" : "kata-qemu-runtime-rs" };
+    return this.fault === "runtime" ? { handler: "wrong-runtime" } : this.runtime;
   }
   async selfCan(permission: ResourceAttributes, _signal: AbortSignal): Promise<boolean> {
     this.permissions.push(permission);
@@ -415,9 +566,48 @@ class ValidationApi implements DeploymentValidationApi {
   async dryRunCreatePod(_namespace: string, pod: KubernetesPod, _signal: AbortSignal): Promise<AdmissionProbeResult> {
     this.pods.push(pod);
     if (this.negativeError && this.pods.length === 2) throw Object.assign(new Error("secret cluster endpoint"), { code: 503 });
-    return this.acceptAll || (this.fault !== "conforming" && conformingPodAdmission(pod, this.profile))
+    return this.acceptAll || (this.fault !== "conforming" && deploymentProbeAccepted(pod, this.profile))
       ? { outcome: "accepted" } : { outcome: "rejected", statusCode: 422, reason: "Invalid" };
   }
+}
+
+function deploymentProbeAccepted(pod: KubernetesPod, profile: "local-development" | "in-cluster" | "kata-in-cluster", host = false): boolean {
+  const spec = pod.spec!;
+  if (host) return spec.nodeSelector?.["oci.oracle.com.node-restriction.kubernetes.io/workload-pool"] === "trusted-host"
+    && !spec.runtimeClassName && !spec.nodeName && !spec.tolerations
+    && (!spec.schedulerName || spec.schedulerName === "default-scheduler");
+  if (!conformingPodAdmission(pod, profile)) return false;
+  if (profile !== "kata-in-cluster") return true;
+  const container = spec.containers[0]!;
+  return !container.envFrom && !container.args && !container.workingDir && !container.stdin && !container.stdinOnce && !container.tty
+    && Object.keys(pod.metadata!.labels!).length === 3 && Object.keys(pod.metadata!.annotations!).length === 5
+    && pod.metadata!.annotations!["oci.oracle.com/trusted-host-namespace"] === "oci-js-host"
+    && !!pod.metadata!.annotations!["oci.oracle.com/expires-at"] && !pod.metadata!.finalizers
+    && !spec.nodeSelector && !spec.affinity && !spec.tolerations && !spec.nodeName && !spec.schedulerName
+    && !spec.schedulingGates && !spec.topologySpreadConstraints && !spec.priorityClassName && !spec.preemptionPolicy;
+}
+
+function namespaceFixture(name: string, profile: string) {
+  return { apiVersion: "v1", kind: "Namespace", metadata: { name, labels: {
+    "kubernetes.io/metadata.name": name,
+    "oci.oracle.com/kubernetes-profile": profile,
+    "pod-security.kubernetes.io/enforce": "restricted"
+  } } };
+}
+
+function nodeFixtures(): V1Node[] {
+  return [{ metadata: { name: "execution-node", labels: {
+    "kubernetes.io/os": "linux", "kubernetes.io/arch": "amd64",
+    "oci.oracle.com.node-restriction.kubernetes.io/workload-pool": "kata-execution",
+    "oci.oracle.com.node-restriction.kubernetes.io/kata-profile": "kata-qemu-runtime-rs-v1"
+  } }, spec: { taints: [{ key: "oci.oracle.com/workload-pool", value: "kata-execution", effect: "NoSchedule" }] },
+  status: { conditions: [{ type: "Ready", status: "True" }], nodeInfo: {
+    architecture: "amd64", operatingSystem: "linux", bootID: "example", containerRuntimeVersion: "example",
+    kernelVersion: "example", kubeProxyVersion: "example", kubeletVersion: "example", machineID: "example",
+    osImage: "example", systemUUID: "example"
+  } } }, { metadata: { name: "trusted-node", labels: {
+    "oci.oracle.com.node-restriction.kubernetes.io/workload-pool": "trusted-host"
+  } }, status: { conditions: [{ type: "Ready", status: "True" }] } }];
 }
 
 type RecordedRequest = { method: string; url: URL; headers: IncomingHttpHeaders; body: any };
@@ -429,6 +619,8 @@ async function fakeApi(t: TestContext, profile: "in-cluster" | "kata-in-cluster"
     identityDenied: false,
     acceptAll: false,
     podResponse: undefined as { code: number; body: unknown } | undefined,
+    nodeRequests: 0,
+    nodeResponse: undefined as ((index: number) => { items: V1Node[]; metadata?: { continue: string } }) | undefined,
     stallNamespace: undefined as ((response: import("node:http").ServerResponse) => void) | undefined
   };
   const server = createServer(async (request, response) => {
@@ -451,7 +643,13 @@ async function fakeApi(t: TestContext, profile: "in-cluster" | "kata-in-cluster"
     if (url.pathname.endsWith("selfsubjectaccessreviews")) {
       return send({ apiVersion: "authorization.k8s.io/v1", kind: "SelfSubjectAccessReview", status: { allowed: true } });
     }
-    if (url.pathname.includes("/runtimeclasses/")) return send({ handler: "kata-qemu-runtime-rs" });
+    if (url.pathname.includes("/runtimeclasses/")) return send(loadAllYaml(readFileSync("examples/kata-kubernetes/v1/05-runtime-class.yaml", "utf8"))[0]);
+    if (url.pathname.includes("/validatingadmissionpolic")) {
+      return send(referenceAdmission(profile, url.pathname.includes("validatingadmissionpolicybindings")
+        ? "ValidatingAdmissionPolicyBinding" : "ValidatingAdmissionPolicy", url.pathname.includes("trusted-host-placement")));
+    }
+    if (url.pathname === "/api/v1/nodes") return send({ apiVersion: "v1", kind: "NodeList",
+      ...(state.nodeResponse?.(state.nodeRequests++) ?? { items: nodeFixtures() }) });
     if (url.pathname.endsWith("/pods")) {
       if (state.podResponse) return send(state.podResponse.body, state.podResponse.code);
       // The shared fixture compares mount JSON; normalize the SDK's property ordering.
@@ -459,12 +657,12 @@ async function fakeApi(t: TestContext, profile: "in-cluster" | "kata-in-cluster"
       pod.spec.containers[0].volumeMounts = pod.spec.containers[0].volumeMounts?.map(
         ({ name, mountPath, readOnly, ...rest }: Record<string, unknown>) => ({ name, mountPath, readOnly, ...rest })
       );
-      return state.acceptAll || conformingPodAdmission(pod, profile) ? send(body, 201) : send({
+      return state.acceptAll || deploymentProbeAccepted(pod, profile, url.pathname.includes("/namespaces/oci-js-host/")) ? send(body, 201) : send({
         apiVersion: "v1", kind: "Status", status: "Failure", code: 422, reason: "Invalid", message: "raw rejected pod"
       }, 422);
     }
     if (state.stallNamespace) return state.stallNamespace(response);
-    send({ apiVersion: "v1", kind: "Namespace", metadata: { name: "execution" } });
+    send(namespaceFixture(decodeURIComponent(url.pathname.split("/").at(-1)!), profile));
   });
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -483,7 +681,7 @@ async function fakeApi(t: TestContext, profile: "in-cluster" | "kata-in-cluster"
     contexts: [{ name: "target", context: { cluster: "cluster", user: "operator" } }],
     "current-context": "not-selected"
   }));
-  const cliArgs = ["--kubeconfig", path, "--context", "target", "--host-service-account", "oci-js-host", "--impersonate"];
+  const cliArgs = ["--kubeconfig", path, "--context", "target", "--host-service-account", "oci-js-host", "--impersonate", "--inspection-context", "target"];
   const environment = profile === "kata-in-cluster" ? validKataEnvironment() : validInClusterEnvironment();
   return { requests, state, options: parseValidationOptions(cliArgs, environment), cliArgs, environment };
 }

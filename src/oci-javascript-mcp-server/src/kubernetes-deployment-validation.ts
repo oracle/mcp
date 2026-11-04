@@ -9,6 +9,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import {
   AuthenticationV1Api,
+  AdmissionregistrationV1Api,
   AuthorizationV1Api,
   CoreV1Api,
   KubeConfig,
@@ -16,17 +17,28 @@ import {
   Observable,
   type ConfigurationOptions,
   type RequestContext,
-  type ResponseContext
+  type ResponseContext,
+  type V1Namespace, type V1RuntimeClass, type V1Node,
+  type V1ValidatingAdmissionPolicy, type V1ValidatingAdmissionPolicyBinding
 } from "@kubernetes/client-node";
 import { requiredExecutionPermissions, type KubernetesPod, type ResourceAttributes } from "./isolation/kubernetes-api.ts";
 import { parseKubernetesConfig, type KubernetesConfig } from "./isolation/kubernetes-config.ts";
 import { buildExecutionPod, runtimeAdmissionVariants, unsafeAdmissionVariants } from "./isolation/kubernetes-pod.ts";
 import { runtimePolicyFor } from "./isolation/kubernetes-runtime-policy.ts";
+import { inspectAdmission, inspectKataRuntime, inspectKataNodes } from "./kubernetes-deployment-checks.ts";
 
 export type ValidationOptions = {
   config: KubernetesConfig;
   kubeconfigPath: string;
   context: string;
+  inspectionContext?: string;
+  admissionPolicy: string;
+  admissionBinding: string;
+  hostPlacementPolicy: string;
+  hostPlacementBinding: string;
+  kataProfile: string;
+  executionPool: string;
+  trustedHostPool: string;
   expectedIdentity?: string;
   impersonate: boolean;
   timeoutMs: number;
@@ -41,9 +53,19 @@ export type AdmissionProbeResult =
 
 export interface DeploymentValidationApi {
   identity(signal: AbortSignal): Promise<ValidationIdentity>;
-  readNamespace(name: string, signal: AbortSignal): Promise<void>;
-  readRuntimeClass(name: string, signal: AbortSignal): Promise<{ handler: string }>;
+  readNamespace(name: string, signal: AbortSignal): Promise<V1Namespace>;
+  readRuntimeClass(name: string, signal: AbortSignal): Promise<V1RuntimeClass>;
+  inspection?: DeploymentInspectionApi;
   selfCan(permission: ResourceAttributes, signal: AbortSignal): Promise<boolean>;
+  dryRunCreatePod(namespace: string, pod: KubernetesPod, signal: AbortSignal): Promise<AdmissionProbeResult>;
+}
+
+export interface DeploymentInspectionApi {
+  identity(signal: AbortSignal): Promise<ValidationIdentity>;
+  readNamespace(name: string, signal: AbortSignal): Promise<V1Namespace>;
+  readPolicy(name: string, signal: AbortSignal): Promise<V1ValidatingAdmissionPolicy>;
+  readBinding(name: string, signal: AbortSignal): Promise<V1ValidatingAdmissionPolicyBinding>;
+  listNodes(signal: AbortSignal): Promise<V1Node[]>;
   dryRunCreatePod(namespace: string, pod: KubernetesPod, signal: AbortSignal): Promise<AdmissionProbeResult>;
 }
 
@@ -56,9 +78,12 @@ export type ValidationCheck = {
 };
 
 export type ValidationReport = {
+  startedAt: string;
   profile: KubernetesConfig["profile"];
   context: string;
   identity: ValidationIdentity | null;
+  inspectionIdentity?: ValidationIdentity;
+  inspectedResources?: Array<{ kind: string; name: string; uid?: string; resourceVersion?: string; generation?: number }>;
   probeMetadata: ValidationOptions["probeMetadata"];
   dryRunOnly: true;
   passed: boolean;
@@ -77,6 +102,14 @@ account; Kata additionally requires its RuntimeClass and expected handler.
 
 --kubeconfig PATH             Explicit kubeconfig; no default discovery
 --context NAME                Exact context in that file
+--inspection-context NAME     Deployment inspection context (required in-cluster)
+--admission-policy NAME       Execution policy name (default: profile example name)
+--admission-binding NAME      Execution binding name (default: policy name)
+--host-placement-policy NAME  Kata trusted-host placement policy name
+--host-placement-binding NAME Kata trusted-host placement binding name
+--kata-profile NAME           Expected protected Kata node-profile label (default kata-qemu-runtime-rs-v1)
+--execution-pool NAME         Expected Kata execution pool (default kata-execution)
+--trusted-host-pool NAME      Expected Kata trusted pool (default trusted-host)
 --host-service-account NAME   Expected host identity for in-cluster profiles
 --impersonate                 Act as that service account (requires permission)
 --timeout-seconds N           Whole validation deadline, 1–300 (default 60)
@@ -101,6 +134,10 @@ export function parseValidationOptions(
     ({ values } = parseArgs({ args: argv, options: {
       kubeconfig: { type: "string" }, context: { type: "string" },
       "host-service-account": { type: "string" }, impersonate: { type: "boolean" },
+      "inspection-context": { type: "string" },
+      "admission-policy": { type: "string" }, "admission-binding": { type: "string" },
+      "host-placement-policy": { type: "string" }, "host-placement-binding": { type: "string" },
+      "kata-profile": { type: "string" }, "execution-pool": { type: "string" }, "trusted-host-pool": { type: "string" },
       "timeout-seconds": { type: "string", default: "60" }, json: { type: "boolean" },
       help: { type: "boolean" }
     }, allowPositionals: false }));
@@ -144,8 +181,40 @@ export function parseValidationOptions(
   if (!local && (!hostAccount || !/^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?$/.test(hostAccount))) {
     throw new ValidationInputError("--host-service-account must name the in-cluster host service account");
   }
+  if (!local && !values["inspection-context"]) {
+    throw new ValidationInputError("--inspection-context is required for in-cluster deployment inspection");
+  }
+  const inspectionFlags = ["inspection-context", "admission-policy", "admission-binding", "host-placement-policy",
+    "host-placement-binding", "kata-profile", "execution-pool", "trusted-host-pool"] as const;
+  if (local && inspectionFlags.some(key => values[key] !== undefined)) {
+    throw new ValidationInputError("Deployment inspection options require an in-cluster target profile");
+  }
+  if (config.profile !== "kata-in-cluster" && ["host-placement-policy", "host-placement-binding", "kata-profile",
+    "execution-pool", "trusted-host-pool"].some(key => values[key as keyof typeof values] !== undefined)) {
+    throw new ValidationInputError("Kata inspection options require the kata-in-cluster profile");
+  }
+  const admissionPolicy = values["admission-policy"] ?? (config.profile === "kata-in-cluster"
+    ? "oci-js-kata-execution-pods-v1" : "oci-js-standard-execution-pods-v1");
+  const hostPlacementPolicy = values["host-placement-policy"] ?? "oci-js-kata-trusted-host-placement-v1";
+  const settings = {
+    admissionPolicy, admissionBinding: values["admission-binding"] ?? admissionPolicy,
+    hostPlacementPolicy, hostPlacementBinding: values["host-placement-binding"] ?? hostPlacementPolicy,
+    kataProfile: values["kata-profile"] ?? "kata-qemu-runtime-rs-v1",
+    executionPool: values["execution-pool"] ?? "kata-execution",
+    trustedHostPool: values["trusted-host-pool"] ?? "trusted-host"
+  };
+  if (Object.values(settings).some(value => !/^[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?$/.test(value))) {
+    throw new ValidationInputError("Deployment inspection names must be DNS names");
+  }
+  if ([settings.kataProfile, settings.executionPool, settings.trustedHostPool].some(value => value.length > 63)) {
+    throw new ValidationInputError("Node profile and pool label values must be at most 63 characters");
+  }
+  if (config.profile === "kata-in-cluster" && settings.executionPool === settings.trustedHostPool) {
+    throw new ValidationInputError("Execution and trusted-host pools must differ");
+  }
   return {
     config, kubeconfigPath, context: values.context,
+    inspectionContext: values["inspection-context"], ...settings,
     expectedIdentity: config.credentialMode === "in-cluster"
       ? `system:serviceaccount:${config.trustedHostNamespace}:${hostAccount}` : undefined,
     impersonate: values.impersonate ?? false,
@@ -159,39 +228,54 @@ export function parseValidationOptions(
 }
 
 export function createKubeconfigValidationApi(options: ValidationOptions): DeploymentValidationApi {
-  const kubeconfig = new KubeConfig();
-  try {
-    kubeconfig.loadFromFile(options.kubeconfigPath);
-    const context = kubeconfig.getContextObject(options.context);
-    if (!context) throw new Error("missing context");
-    kubeconfig.setCurrentContext(context.name);
-    const user = kubeconfig.getCurrentUser();
-    if (!user || !kubeconfig.getCurrentCluster()) throw new Error("incomplete context");
-    // SDK credential acquisition precedes request-signal middleware and is not cancellable.
-    if (user.exec != null || user.authProvider != null) {
-      throw new ValidationInputError("Kubeconfig exec and auth-provider helpers are unsupported; use token or client-certificate credentials");
-    }
-    if (options.impersonate) {
-      kubeconfig.users = kubeconfig.users.map(value => value.name === user.name
-        ? { ...value, impersonateUser: options.expectedIdentity } : value);
-    }
-  } catch (error) {
-    if (error instanceof ValidationInputError) throw error;
-    throw new ValidationInputError("Unable to load the explicit kubeconfig and context");
+  const kubeconfig = loadValidationKubeconfig(options.kubeconfigPath, options.context);
+  if (options.impersonate) {
+    const user = kubeconfig.getCurrentUser()!;
+    kubeconfig.users = kubeconfig.users.map(value => value.name === user.name
+      ? { ...value, impersonateUser: options.expectedIdentity } : value);
   }
   const core = kubeconfig.makeApiClient(CoreV1Api);
   const node = kubeconfig.makeApiClient(NodeV1Api);
   const authentication = kubeconfig.makeApiClient(AuthenticationV1Api);
   const authorization = kubeconfig.makeApiClient(AuthorizationV1Api);
+  let inspection: DeploymentInspectionApi | undefined;
+  if (options.inspectionContext) {
+    const inspector = loadValidationKubeconfig(options.kubeconfigPath, options.inspectionContext);
+    if (inspector.getCurrentCluster()?.name !== kubeconfig.getCurrentCluster()?.name) {
+      throw new ValidationInputError("Inspection and workload contexts must use the same kubeconfig cluster");
+    }
+    const admission = inspector.makeApiClient(AdmissionregistrationV1Api);
+    const inspectorCore = inspector.makeApiClient(CoreV1Api);
+    const inspectorAuth = inspector.makeApiClient(AuthenticationV1Api);
+    inspection = {
+      identity: signal => readIdentity(inspectorAuth, signal),
+      readNamespace: (name, signal) => inspectorCore.readNamespace({ name }, requestOptions(signal)),
+      readPolicy: (name, signal) => admission.readValidatingAdmissionPolicy({ name }, requestOptions(signal)),
+      readBinding: (name, signal) => admission.readValidatingAdmissionPolicyBinding({ name }, requestOptions(signal)),
+      dryRunCreatePod: (namespace, pod, signal) => dryRunPod(inspectorCore, namespace, pod, signal),
+      async listNodes(signal) {
+        const nodes: V1Node[] = [];
+        const seen = new Set<string>();
+        let token: string | undefined;
+        do {
+          if (signal.aborted) throw new Error("aborted");
+          const page = await inspectorCore.listNode({ limit: 250, _continue: token }, requestOptions(signal));
+          nodes.push(...page.items);
+          token = page.metadata?._continue;
+          if (nodes.length > 1000 || (token && (seen.has(token) || seen.size >= 9))) {
+            throw new Error("Node inventory exceeded its validation bound");
+          }
+          if (token) seen.add(token);
+        } while (token);
+        return nodes;
+      }
+    };
+  }
   return {
-    async identity(signal) {
-      const review = await authentication.createSelfSubjectReview({
-        body: { apiVersion: "authentication.k8s.io/v1", kind: "SelfSubjectReview" }
-      }, requestOptions(signal));
-      return { username: review.status?.userInfo?.username ?? "", groups: review.status?.userInfo?.groups ?? [] };
-    },
+    inspection,
+    identity: signal => readIdentity(authentication, signal),
     async readNamespace(name, signal) {
-      await core.readNamespace({ name }, requestOptions(signal));
+      return await core.readNamespace({ name }, requestOptions(signal));
     },
     async readRuntimeClass(name, signal) {
       return await node.readRuntimeClass({ name }, requestOptions(signal));
@@ -204,16 +288,48 @@ export function createKubeconfigValidationApi(options: ValidationOptions): Deplo
       return review.status?.allowed === true;
     },
     async dryRunCreatePod(namespace, pod, signal) {
-      try {
-        await core.createNamespacedPod({ namespace, body: pod, dryRun: "All" }, requestOptions(signal));
-        return { outcome: "accepted" };
-      } catch (error) {
-        const rejection = admissionRejection(error);
-        if (rejection) return rejection;
-        throw error;
-      }
+      return await dryRunPod(core, namespace, pod, signal);
     }
   };
+}
+
+async function dryRunPod(core: CoreV1Api, namespace: string, pod: KubernetesPod,
+  signal: AbortSignal): Promise<AdmissionProbeResult> {
+  try {
+    await core.createNamespacedPod({ namespace, body: pod, dryRun: "All" }, requestOptions(signal));
+    return { outcome: "accepted" };
+  } catch (error) {
+    const rejection = admissionRejection(error);
+    if (rejection) return rejection;
+    throw error;
+  }
+}
+
+function loadValidationKubeconfig(path: string, contextName: string): KubeConfig {
+  const kubeconfig = new KubeConfig();
+  try {
+    kubeconfig.loadFromFile(path);
+    const context = kubeconfig.getContextObject(contextName);
+    if (!context) throw new Error("missing context");
+    kubeconfig.setCurrentContext(context.name);
+    const user = kubeconfig.getCurrentUser();
+    if (!user || !kubeconfig.getCurrentCluster()) throw new Error("incomplete context");
+    // SDK credential acquisition precedes request-signal middleware and is not cancellable.
+    if (user.exec != null || user.authProvider != null) {
+      throw new ValidationInputError("Kubeconfig exec and auth-provider helpers are unsupported; use token or client-certificate credentials");
+    }
+  } catch (error) {
+    if (error instanceof ValidationInputError) throw error;
+    throw new ValidationInputError("Unable to load the explicit kubeconfig and context");
+  }
+  return kubeconfig;
+}
+
+async function readIdentity(api: AuthenticationV1Api, signal: AbortSignal): Promise<ValidationIdentity> {
+  const review = await api.createSelfSubjectReview({
+    body: { apiVersion: "authentication.k8s.io/v1", kind: "SelfSubjectReview" }
+  }, requestOptions(signal));
+  return { username: review.status?.userInfo?.username ?? "", groups: review.status?.userInfo?.groups ?? [] };
 }
 
 export async function validateDeployment(
@@ -225,6 +341,7 @@ export async function validateDeployment(
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
   const signal = parentSignal ? AbortSignal.any([parentSignal, controller.signal]) : controller.signal;
   const report: ValidationReport = {
+    startedAt: new Date().toISOString(),
     profile: options.config.profile, context: options.context, identity: null,
     probeMetadata: options.probeMetadata, dryRunOnly: true, passed: false, checks: []
   };
@@ -256,19 +373,86 @@ export async function validateDeployment(
           : "Kubeconfig API identity is verified"
       };
     })) return report;
-    if (!await check("namespace", () => api.readNamespace(options.config.namespace, signal),
-      () => ({ passed: true, detail: "Execution namespace is readable" }))) return report;
-    for (const permission of requiredExecutionPermissions(options.config.profile).filter(value => value.namespaced)) {
-      const { resource, subresource, verb } = permission;
+    let namespaceLabels: Record<string, string> = {};
+    if (!await check("namespace", () => api.readNamespace(options.config.namespace, signal), value => {
+      namespaceLabels = value.metadata?.labels ?? {};
+      return { passed: value.metadata?.name === options.config.namespace && (options.config.profile === "local-development"
+        || (namespaceLabels["oci.oracle.com/kubernetes-profile"] === options.config.profile
+          && namespaceLabels["pod-security.kubernetes.io/enforce"] === "restricted"
+          && namespaceLabels["kubernetes.io/metadata.name"] === options.config.namespace)),
+      detail: "Execution namespace identity, profile and restricted Pod Security labels must match" };
+    })) return report;
+    for (const permission of requiredExecutionPermissions(options.config.profile)) {
+      const { resource, subresource, verb, group, namespaced } = permission;
       if (!await check(`permission:${resource}${subresource ? `/${subresource}` : ""}:${verb}`,
-        () => api.selfCan({ resource, subresource, verb, namespace: options.config.namespace }, signal),
+        () => api.selfCan({ resource, subresource, verb, group, namespace: namespaced ? options.config.namespace : undefined,
+          name: resource === "namespaces" ? options.config.namespace : undefined }, signal),
         passed => ({ passed, detail: "Required execution permission must be allowed" }))) return report;
     }
     const policy = runtimePolicyFor(options.config);
-    if (policy.kind === "kata" && !await check("runtime-class",
-      () => api.readRuntimeClass(policy.runtimeClassName, signal),
-      runtime => ({ passed: runtime.handler === policy.runtimeHandler,
-        detail: "Configured RuntimeClass must have the expected handler" }))) return report;
+    const propertyResult = (problems: string[], success: string): CheckResult => ({
+      passed: problems.length === 0, detail: problems.length ? problems.join("; ") : success
+    });
+    const remember = (kind: string, value: { metadata?: V1Namespace["metadata"] }) => {
+      const metadata = value.metadata;
+      (report.inspectedResources ??= []).push({ kind, name: metadata?.name ?? "", uid: metadata?.uid,
+        resourceVersion: metadata?.resourceVersion, generation: metadata?.generation });
+    };
+    const kataExpected = { handler: policy.kind === "kata" ? policy.runtimeHandler : "",
+      profile: options.kataProfile, executionPool: options.executionPool, trustedHostPool: options.trustedHostPool };
+    if (policy.kind === "kata") {
+      if (!await check("permission:runtimeclasses:get", () => api.selfCan({ group: "node.k8s.io",
+        resource: "runtimeclasses", name: policy.runtimeClassName, verb: "get" }, signal),
+      passed => ({ passed, detail: "Host identity must be allowed to read the exact RuntimeClass" }))) return report;
+      if (!await check("deployment:runtime-class", () => api.readRuntimeClass(policy.runtimeClassName, signal), runtime => {
+        remember("RuntimeClass", runtime);
+        const problems = inspectKataRuntime(runtime, kataExpected);
+        if (runtime.metadata?.name !== policy.runtimeClassName) problems.push("RuntimeClass identity does not match");
+        return propertyResult(problems, "RuntimeClass handler, profile and scheduling match");
+      })) return report;
+    }
+    if (options.config.profile !== "local-development") {
+      const inspection = api.inspection;
+      if (!await check("deployment:inspection-identity", async () => {
+        if (!inspection) throw new Error("Deployment inspection is unavailable");
+        return await inspection.identity(signal);
+      }, identity => {
+        report.inspectionIdentity = identity;
+        return { passed: !!identity.username, detail: "Explicit inspection-context identity must be available" };
+      })) return report;
+      const inspectPolicy = async (id: string, name: string, bindingName: string,
+        namespace: string, labels: Record<string, string>, operations: string[], resources: string[]) =>
+        check(id, async () => {
+          const deployedPolicy = await inspection!.readPolicy(name, signal);
+          if (signal.aborted) throw new Error("aborted");
+          const binding = await inspection!.readBinding(bindingName, signal);
+          return { deployedPolicy, binding };
+        }, ({ deployedPolicy, binding }) => {
+          remember("ValidatingAdmissionPolicy", deployedPolicy);
+          remember("ValidatingAdmissionPolicyBinding", binding);
+          const problems = inspectAdmission(deployedPolicy, binding,
+            { policyName: name, namespace, namespaceLabels: labels, operations, resources });
+          if (binding.metadata?.name !== bindingName) problems.push("Admission binding identity does not match");
+          return propertyResult(problems, "Admission policy and binding enforce the required namespace and request coverage");
+        });
+      if (!await inspectPolicy("deployment:admission", options.admissionPolicy, options.admissionBinding,
+        options.config.namespace, namespaceLabels, policy.kind === "kata" ? ["CREATE", "UPDATE"] : ["CREATE"],
+        policy.kind === "kata" ? ["pods", "pods/ephemeralcontainers", "pods/resize"] : ["pods"])) return report;
+      if (policy.kind === "kata" && options.config.credentialMode === "in-cluster") {
+        let hostLabels: Record<string, string> = {};
+        const hostNamespace = options.config.trustedHostNamespace;
+        if (!await check("deployment:trusted-host-namespace", () => inspection!.readNamespace(hostNamespace, signal), value => {
+          hostLabels = value.metadata?.labels ?? {};
+          return { passed: value.metadata?.name === hostNamespace && hostLabels["kubernetes.io/metadata.name"] === hostNamespace
+            && hostLabels["pod-security.kubernetes.io/enforce"] === "restricted",
+          detail: "Trusted-host namespace identity and restricted Pod Security labels must match" };
+        })) return report;
+        if (!await inspectPolicy("deployment:host-placement", options.hostPlacementPolicy, options.hostPlacementBinding,
+          hostNamespace, hostLabels, ["CREATE", "UPDATE"], ["pods"])) return report;
+        if (!await check("deployment:node-pools", () => inspection!.listNodes(signal), nodes =>
+          propertyResult(inspectKataNodes(nodes, kataExpected), "Kata execution and trusted-host pool configuration match"))) return report;
+      }
+    }
     const probe = buildExecutionPod(options.config, policy, `oci-javascript-k8s-validation-${randomUUID()}`,
       randomUUID(), Date.now() + 30_000);
     const admission = (result: AdmissionProbeResult, expected: "accepted" | "rejected"): CheckResult => {
@@ -285,16 +469,78 @@ export async function validateDeployment(
     };
     if (!await check("admission:conforming", () => api.dryRunCreatePod(options.config.namespace, probe, signal),
       result => admission(result, "accepted"))) return report;
-    for (const variant of [...unsafeAdmissionVariants(probe), ...runtimeAdmissionVariants(probe, policy)]) {
+    for (const variant of [...unsafeAdmissionVariants(probe), ...runtimeAdmissionVariants(probe, policy),
+      ...(policy.kind === "kata" ? kataDeploymentVariants(probe) : [])]) {
       await check(`admission:${variant.id}`, () => api.dryRunCreatePod(
         options.config.namespace, variant.pod, signal), result => admission(result, "rejected"));
       if (signal.aborted) return report;
+    }
+    if (policy.kind === "kata" && options.config.credentialMode === "in-cluster") {
+      const host = structuredClone(probe);
+      const namespace = options.config.trustedHostNamespace;
+      host.metadata!.namespace = namespace;
+      delete host.spec!.runtimeClassName;
+      host.spec!.serviceAccountName = options.expectedIdentity!.split(":").at(-1)!;
+      host.spec!.nodeSelector = { "oci.oracle.com.node-restriction.kubernetes.io/workload-pool": options.trustedHostPool };
+      // Probe placement using a credential-free dummy pod. No host OCI Secret is referenced.
+      host.spec!.volumes = host.spec!.volumes!.filter(volume => volume.name === "tmp");
+      host.spec!.containers[0]!.volumeMounts = host.spec!.containers[0]!.volumeMounts!.filter(mount => mount.name === "tmp");
+      if (!await check("admission:trusted-host:conforming", () => api.inspection!.dryRunCreatePod(namespace, host, signal),
+        result => admission(result, "accepted"))) return report;
+      const variants: Array<[string, (pod: KubernetesPod) => void]> = [
+        ["pool", pod => { pod.spec!.nodeSelector!["oci.oracle.com.node-restriction.kubernetes.io/workload-pool"] = options.executionPool; }],
+        ["node-name", pod => { pod.spec!.nodeName = "unsafe-execution-node"; }],
+        ["runtime-class", pod => { pod.spec!.runtimeClassName = policy.runtimeClassName; }],
+        ["toleration", pod => { pod.spec!.tolerations = [{ operator: "Exists" }]; }],
+        ["scheduler", pod => { pod.spec!.schedulerName = "unsafe-scheduler"; }]
+      ];
+      for (const [id, mutate] of variants) {
+        const unsafe = structuredClone(host);
+        mutate(unsafe);
+        await check(`admission:trusted-host:${id}`, () => api.inspection!.dryRunCreatePod(namespace, unsafe, signal),
+          result => admission(result, "rejected"));
+        if (signal.aborted) return report;
+      }
     }
     report.passed = report.checks.every(value => value.outcome === "passed");
     return report;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function kataDeploymentVariants(pod: KubernetesPod): Array<{ id: string; pod: KubernetesPod }> {
+  const mutations: Array<[string, (value: KubernetesPod) => void]> = [
+    ["environment-source", value => { value.spec!.containers[0]!.envFrom = [{ configMapRef: { name: "unsafe-environment" } }]; }],
+    ["arguments", value => { value.spec!.containers[0]!.args = ["--unsafe"]; }],
+    ["working-directory", value => { value.spec!.containers[0]!.workingDir = "/tmp"; }],
+    ["stdin", value => { value.spec!.containers[0]!.stdin = true; }],
+    ["stdin-once", value => { value.spec!.containers[0]!.stdinOnce = true; }],
+    ["tty", value => { value.spec!.containers[0]!.tty = true; }],
+    ["extra-annotation", value => { value.metadata!.annotations!["io.katacontainers.config.hypervisor.path"] = "/unsafe"; }],
+    ["extra-label", value => { value.metadata!.labels!["unsafe.example/label"] = "unsafe"; }],
+    ["finalizer", value => { value.metadata!.finalizers = ["unsafe.example/finalizer"]; }],
+    ["host-namespace", value => { value.metadata!.annotations!["oci.oracle.com/trusted-host-namespace"] = "unsafe-host"; }],
+    ["missing-expiry", value => { delete value.metadata!.annotations!["oci.oracle.com/expires-at"]; }],
+    ["node-selector", value => { value.spec!.nodeSelector = { "unsafe.example/node": "unsafe" }; }],
+    ["affinity", value => { value.spec!.affinity = { nodeAffinity: { preferredDuringSchedulingIgnoredDuringExecution: [
+      { weight: 1, preference: { matchExpressions: [{ key: "unsafe.example/node", operator: "Exists" }] } }
+    ] } }; }],
+    ["toleration", value => { value.spec!.tolerations = [{ operator: "Exists" }]; }],
+    ["node-name", value => { value.spec!.nodeName = "unsafe-node"; }],
+    ["scheduler", value => { value.spec!.schedulerName = "unsafe-scheduler"; }],
+    ["scheduling-gate", value => { value.spec!.schedulingGates = [{ name: "unsafe.example/gate" }]; }],
+    ["topology-spread", value => { value.spec!.topologySpreadConstraints = [
+      { maxSkew: 1, topologyKey: "kubernetes.io/hostname", whenUnsatisfiable: "DoNotSchedule" }
+    ]; }],
+    ["priority-class", value => { value.spec!.priorityClassName = "system-node-critical"; }],
+    ["preemption", value => { value.spec!.preemptionPolicy = "Never"; }]
+  ];
+  return mutations.map(([id, mutate]) => {
+    const unsafe = structuredClone(pod);
+    mutate(unsafe);
+    return { id: `kata:${id}`, pod: unsafe };
+  });
 }
 
 export async function main(
@@ -315,6 +561,7 @@ export async function main(
     write(options.json ? JSON.stringify(report, null, 2) : [
       `${report.passed ? "PASS" : "FAIL"} Kubernetes deployment validation (${report.profile})`,
       `Context: ${report.context}; API identity: ${report.identity?.username ?? "unverified"}`,
+      ...(report.inspectionIdentity ? [`Inspection context: ${options.inspectionContext}; identity: ${report.inspectionIdentity.username}`] : []),
       `Probe metadata: ${report.probeMetadata}`,
       ...report.checks.map(value => `${value.outcome === "passed" ? "PASS" : "FAIL"} ${value.id}: ${value.detail}${value.statusCode ? ` (HTTP ${value.statusCode}${value.reason ? ` ${value.reason}` : ""})` : ""}`),
       "Dry-run evidence only: runtime, CNI, image provenance and production approval are not certified."

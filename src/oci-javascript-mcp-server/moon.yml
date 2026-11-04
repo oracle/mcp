@@ -116,6 +116,7 @@ tasks:
     command: 'node --no-node-snapshot --experimental-strip-types src/kubernetes-deployment-validation.ts'
     inputs:
       - 'src/kubernetes-deployment-validation.ts'
+      - 'src/kubernetes-deployment-checks.ts'
       - 'src/isolation/kubernetes-config.ts'
       - 'src/isolation/kubernetes-pod.ts'
       - 'src/isolation/kubernetes-runtime-policy.ts'

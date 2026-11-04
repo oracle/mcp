@@ -294,8 +294,9 @@ by the normal unit suite or offline kubectl dry-run.
 
 Run the standalone validator after applying the target deployment's namespace,
 RBAC, admission and runtime assets. It checks API identity, execution
-permissions, the Kata RuntimeClass/handler when selected, and acceptance or
-rejection of server-side pod dry-runs. It reuses the same pod builder and reviewed
+permissions, explicit admission policy/binding properties, the Kata RuntimeClass
+and node-pool configuration when selected, and acceptance or rejection of
+server-side pod dry-runs. It reuses the same pod builder and reviewed
 negative variants used to review the execution pod contract, without starting MCP or loading OCI
 credentials or the native isolate.
 
@@ -309,6 +310,15 @@ runner service account and resource settings. The explicit
 `--kubeconfig` and `--context` arguments select the **connection**, even when
 validating an in-cluster target. This does not change the server's credential
 selection rules. No default kubeconfig or in-cluster credential discovery occurs.
+
+In-cluster targets additionally require `--inspection-context NAME` in that same
+kubeconfig. Both contexts must reference the same kubeconfig cluster. The workload
+context performs the effective-host identity check, exact namespace/RuntimeClass
+access reviews, execution permissions and execution-pod probes. The inspection
+context retains its own configured identity for policy/binding reads, and for Kata,
+trusted-host namespace reads, bounded node inventory and trusted-host placement
+dry-runs. Selecting this context never changes or falls back from the workload
+identity. An inspection failure fails validation; no permissions are granted.
 
 For the standard example, set `RUNNER_IMAGE_DIGEST` to the reviewed runner image
 reference, including its 64-character SHA-256 digest, then run from the package
@@ -325,7 +335,8 @@ export OCI_JAVASCRIPT_KUBERNETES_IMAGE="$RUNNER_IMAGE_DIGEST"
 node --no-node-snapshot --experimental-strip-types \
   src/kubernetes-deployment-validation.ts \
   --kubeconfig "$HOME/.kube/config" --context your-context \
-  --host-service-account oci-js-standard-host --impersonate
+  --host-service-account oci-js-standard-host --impersonate \
+  --inspection-context your-context
 ```
 
 For the Kata example, use `kata-in-cluster`, execution namespace
@@ -334,6 +345,42 @@ For the Kata example, use `kata-in-cluster`, execution namespace
 and `OCI_JAVASCRIPT_KUBERNETES_KATA_RUNTIME_HANDLER` to the deployed values;
 the versioned example uses `kata-qemu-runtime-rs` for both. Supply the reviewed
 Kata runner image digest.
+
+The Kata checks default to profile label `kata-qemu-runtime-rs-v1`, execution pool
+`kata-execution`, and trusted-host pool `trusted-host`, matching the example assets.
+Override these expected label values with `--kata-profile`, `--execution-pool` and
+`--trusted-host-pool` for a separately reviewed deployment. The RuntimeClass must
+select exactly that protected profile/pool and Linux `amd64`, with exactly the
+execution-pool `NoSchedule` toleration. Every execution node must carry the matching
+profile, OS/architecture labels and taint and report Linux `amd64` in nodeInfo.
+Both pools need a Ready, uncordoned candidate compatible with their admitted hard-taint
+tolerations; an unrelated `NoSchedule`/`NoExecute` taint disqualifies a candidate.
+This does not establish available scheduler capacity or actual placement.
+The inventory is limited to 1,000 nodes
+and ten API pages; an incomplete, excessive or failed listing fails validation.
+Node labels and nodeInfo are configuration observations, not independent proof of
+the physical cloud pool, CRI/Kata/QEMU mapping or guest boundary. Measured
+RuntimeClass overhead and independent node/runtime evidence remain separate.
+
+For both in-cluster profiles, the named execution policy must explicitly use
+`failurePolicy: Fail` and cover the required core/v1 pod requests. Its binding must
+reference that policy and enforce `Deny` (optional `Audit` is allowed). Namespace
+selectors must match the actual namespace. Conditional matches, object filters,
+resource exclusions/name filters, policy parameters and reported typechecking
+warnings fail validation. Wildcard resource rules are deliberately unsupported;
+use explicit rules like the versioned examples. Kata additionally requires
+CREATE/UPDATE coverage for pods, ephemeral containers and resize, plus the named
+trusted-host placement policy/binding. Standard Kubernetes requires CREATE/pods
+coverage; it does not gain Kata's additional runtime or pool requirements.
+
+Policy/binding names default to the profile's versioned examples. Override them
+with `--admission-policy`/`--admission-binding`; Kata also accepts
+`--host-placement-policy`/`--host-placement-binding`. A binding name defaults to its
+policy name. The validator checks these properties directly, without policy hashes
+or CEL expression-text comparisons. Behavioral probes remain required: a policy
+with valid structure can still have permissive CEL expressions. The report records
+the inspected objects' names, UIDs, generations and resource versions when present,
+but does not certify an exact reviewed revision or prevent later configuration drift.
 
 For `local-development`, use its existing local configuration and omit
 `--host-service-account` and `--impersonate`:
@@ -358,6 +405,13 @@ operations (exec/port-forward for workstation local-development) and, for Kata,
 read the configured RuntimeClass. Missing review
 support or permission fails validation rather than assuming the workload identity.
 
+The inspection identity must read the configured admission policies and bindings.
+For Kata, it must also read the trusted-host namespace, list nodes and have pod
+create permission there for server-side dry-run. Keep these deployment-validator
+privileges separate from runtime-host RBAC. Kata placement probes use a dummy pod
+with the existing host service account, token automount disabled and no OCI Secret;
+they neither start a broker nor inspect credential-bearing host pod contents.
+
 If downward-API host pod name or UID variables are absent, dry-run probes use
 synthetic host metadata and the report says `synthetic-host-identity`. These
 values describe probe metadata; they do not verify an existing host pod or its
@@ -377,7 +431,8 @@ From the repository root, the opt-in Moon task invokes the same source command:
 ```bash
 moon run oci-javascript-mcp-server:validate-deployment -- \
   --kubeconfig "$HOME/.kube/config" --context your-context \
-  --host-service-account oci-js-standard-host --impersonate --json
+  --host-service-account oci-js-standard-host --impersonate \
+  --inspection-context your-context --json
 ```
 
 The task is uncached and does not run in ordinary CI. After compilation, the
@@ -394,7 +449,8 @@ submission has `dryRun=All`; the validator does not persist or execute runner
 pods, establish channels, reconcile resources or delete pods. The conforming pod
 must be accepted before negative probes run. An accepted negative variant fails
 validation even for local development. Server startup does not test admission
-for any profile.
+for any profile. Workstation `local-development` keeps its identity, permission and
+execution dry-run checks and accepts no deployment-inspection options.
 
 A rejected probe records a matching Kubernetes Status response and HTTP status
 and reason. It does not identify which admission policy, RBAC rule, schema

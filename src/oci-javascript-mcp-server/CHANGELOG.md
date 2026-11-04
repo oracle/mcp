@@ -19,6 +19,12 @@
 
 ### Changed
 
+- Require an explicit same-cluster `--inspection-context` for in-cluster deployment
+  validation. Check admission policy/binding properties without hashes, inspect
+  Kata RuntimeClass/profile and node pools, and probe runner/host placement
+  restrictions. Keep inspection privileges separate from the runtime host and
+  report inspected resource identities; independent runtime/VM evidence remains required.
+
 - Start in-cluster and Kata runners normally from an execution-scoped read-only
   TLS Secret and connect directly over pod-network mTLS gRPC. Replace exec and
   port-forward permissions with Secret lifecycle permissions; require narrow

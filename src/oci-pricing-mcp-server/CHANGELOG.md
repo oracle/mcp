@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Changed
+
+- Package and install the server as `oracle.oci-pricing-mcp-server`, with the canonical command of the same name. The old `oci-pricing-mcp` command and standalone script remain compatibility launchers for one release; the script now requires the installed package. Python 3.11 remains supported.
+- Replace `Dockerfile` with `Containerfile`; install locked production dependencies and run the installed command directly as a non-root user.
+- Add Pricing to Moon validation with offline unit tests and enforced branch coverage; move live public API probes to an explicitly enabled integration suite.
+
+### Fixed
+
+- Correct the missing package layout and console entry point so wheel and source distributions include the server implementation and can be installed outside the checkout.
+
 ## 0.1.6
 
 ### Fixed

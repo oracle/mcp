@@ -15,7 +15,6 @@ exclude = [
     "venv",
     "src/dbtools-mcp-server",
     "src/mysql-mcp-server",
-    "src/oci-pricing-mcp-server",
     "src/oracle-db-doc-mcp-server",
     "src/oci-database-mcp-server"
 ]

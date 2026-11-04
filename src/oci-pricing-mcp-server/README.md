@@ -1,4 +1,4 @@
-# OCI Pricing MCP Server (oci-pricing-mcp-server.py)
+# OCI Pricing MCP Server
 
 A Python-based MCP (Model Context Protocol) server that fetches **Oracle Cloud Infrastructure (OCI)** service pricing from Oracle’s public **Price List API (cetools)**.
 This project is a **proof of concept** for MCP integrations. While not production-hardened, it is **stateless, credential-free, and suitable for day-to-day internal use** in MCP clients.
@@ -14,7 +14,7 @@ This project is a **proof of concept** for MCP integrations. While not productio
 
 ## Overview
 
-`oci-pricing-mcp-server.py` (FastMCP-based) exposes tools to:
+`oracle.oci-pricing-mcp-server` (FastMCP-based) exposes tools to:
 
 * Look up pricing by **SKU (part number)**
 * **Fuzzy-search** pricing by **product name or alias**
@@ -72,50 +72,54 @@ If you omit the currency when asking (e.g., “List Object Storage prices”), t
 
 ## Installation
 
-### Option A: pip
+### Install from this checkout
+
+From `src/oci-pricing-mcp-server`:
 
 ```bash
-pip install fastmcp httpx
+# Installs the project and all declared runtime dependencies
+python3 -m pip install .
+
+# Or use the committed dependency lock, including development dependencies
+uv sync --locked --all-extras --dev
 ```
 
-### Option B: uv (recommended, reproducible)
-
-```bash
-# Install uv once (e.g., via Homebrew or the official installer)
-uv sync --frozen     # uses pyproject.toml / uv.lock
-```
+The distribution is now named `oracle.oci-pricing-mcp-server` (previously
+`oci-pricing-mcp-server`). When migrating an environment that has the old
+distribution installed, uninstall that distribution before installing this one.
+Python **3.11+** remains supported. OCI credentials are not required.
 
 ## Usage
 
-Run with stdio transport:
+Run the installed stdio command:
 
 ```bash
-# pip env
-python oci-pricing-mcp-server.py
+oracle.oci-pricing-mcp-server
 
-# or uv env
-uv run python oci-pricing-mcp-server.py
+# From the development checkout
+uv run --locked oracle.oci-pricing-mcp-server
 ```
+
+For one release, `oci-pricing-mcp` remains an alias for the canonical command,
+and `python3 oci-pricing-mcp-server.py` remains a compatibility launcher after
+installing the project. Both launch the same package implementation; the script
+is no longer a self-contained server. Migrate clients to the canonical command.
 
 ## MCP Server Configuration
 
-Exact steps depend on your MCP client. Typical stdio setup (example: **Claude Desktop on Windows**):
+After installing the project into an environment available on your client's
+`PATH`, use this portable stdio configuration:
 
 ```json
 {
   "mcpServers": {
     "oci-pricing": {
-      "command": "C:\\Python\\python.exe",
-      "args": [
-        "C:\\Users\\user1\\oci-pricing-mcp-server\\oci-pricing-mcp-server.py"
-      ]
+      "command": "oracle.oci-pricing-mcp-server",
+      "args": []
     }
   }
 }
 ```
-
-Step-by-step guide (Claude Desktop: add local MCP servers):
-[https://support.anthropic.com/en/articles/9793354-connect-local-mcp-servers-to-claude-desktop](https://support.anthropic.com/en/articles/9793354-connect-local-mcp-servers-to-claude-desktop)
 
 ## Environment Variables
 
@@ -126,23 +130,23 @@ These variables control **runtime defaults and behavior** (they are **optional**
 * `OCI_PRICING_HTTP_TIMEOUT` – HTTP timeout in seconds (default: `25`)
 * `OCI_PRICING_RETRIES` – transient retry count (default: `2`; total tries = `1 + retries`)
 * `OCI_PRICING_BACKOFF` – exponential backoff base in seconds (default: `0.5`)
-* `PROBE_CCY` – **convenience fallback** for default currency (originally for tests; the server checks this as a fallback to `OCI_PRICING_DEFAULT_CCY`)
+* `OCI_PRICING_ALT_CCY` – optional alternate currency for a reference price when the requested price is zero or missing; no conversion is performed
 
 Test-only helpers (used by functional tests; **not needed** for normal use):
 
 * `PROBE_SKU_OK` – known-good SKU (default: `B93113`)
 * `PROBE_SKU_MISSING` – likely missing SKU (default: `B88298`)
+* `PROBE_CCY` – currency used by live probes (default: `JPY`); does not change the server default
+* `PROBE_QUERY` – search term used by live probes (default: `Compute`)
 
-**Example (Claude config) to default to JPY:**
+**Example client configuration to default to JPY:**
 
 ```json
 {
   "mcpServers": {
     "oci-pricing": {
-      "command": "C:\\Python\\python.exe",
-      "args": [
-        "C:\\Users\\user1\\oci-pricing-mcp-server\\oci-pricing-mcp-server.py"
-      ],
+      "command": "oracle.oci-pricing-mcp-server",
+      "args": [],
       "env": {
         "OCI_PRICING_DEFAULT_CCY": "JPY"
       }
@@ -194,29 +198,70 @@ Test-only helpers (used by functional tests; **not needed** for normal use):
 * “**Compute** pricing in **JPY**, **priced items only**.”
 * “**ADB**-related SKUs in **USD**.”
 
-## Testing
+## Development and testing
+
+Implementation lives in `oracle/oci_pricing_mcp_server/server.py`; package
+metadata reads the installed distribution version. Install the project before
+importing it. Default unit tests live alongside the package, mock public HTTP
+and retry delays, and fail if they attempt a real HTTP send. They collect branch
+coverage and enforce the configured **90%** minimum.
+
+From the repository root, use the pinned toolchain and inherited Moon targets:
 
 ```bash
-# pip
-python -m unittest -v
-
-# uv
-uv run -m unittest -v
+proto install moon --immutable-lockfile
+moon setup
+moon run oci-pricing-mcp-server:test
+moon run oci-pricing-mcp-server:lock-check oci-pricing-mcp-server:build oci-pricing-mcp-server:install-check
+moon run root:lint
+moon run root:combine-coverage
 ```
 
-### Docker (optional)
+The test target writes `.coverage.oci-pricing-mcp-server` at the repository root.
+Aggregation combines the reports present from that run; a Pricing-only report
+does not establish coverage for other servers. See the repository validation
+map for full-workspace checks.
+
+From this package directory, the native equivalent for unit tests is:
 
 ```bash
-# Build
-docker build -t oci-pricing-mcp:dev .
+uv run --locked pytest
+uv build --clear
+```
 
-# Run the server (stdio)
-docker run --rm -it --name oci-pricing-mcp oci-pricing-mcp:dev
+### Optional public API probes
 
-# Run tests inside the container (with probe envs)
-docker run --rm -it \
-  -e PROBE_SKU_OK=B93113 \
-  -e PROBE_CCY=JPY \
-  oci-pricing-mcp:dev \
-  uv run python -m unittest discover -s . -p 'test_*.py' -v
+Live probes are outside default discovery in `tests/integration/`. They require
+internet access to Oracle's public Price List API and current public pricing
+data. The dataset can legitimately produce empty or zero-priced results, and
+some probes skip those cases. Enable them explicitly from this package:
+
+```bash
+OCI_PRICING_LIVE_TESTS=1 uv run --locked pytest tests/integration -m integration --no-cov -v
+```
+
+Without `OCI_PRICING_LIVE_TESTS=1`, explicit integration-suite invocation skips
+these probes. They are separate from deterministic unit coverage.
+
+### Container
+
+Build using the committed `Containerfile` (Docker and Podman accept `-f`):
+
+```bash
+docker build -f Containerfile -t oci-pricing-mcp:dev .
+docker run --rm -i --network=none oci-pricing-mcp:dev
+```
+
+The image installs the package non-editably with locked production dependencies
+and runs the canonical command as UID 10001. Initialization, tool discovery and
+`ping` need neither OCI credentials nor pricing API access. Pricing lookups
+require outbound HTTPS, so omit `--network=none` for normal pricing use. Use
+`-i` without allocating a TTY for MCP stdio clients.
+
+The protocol smoke helper runs initialization, discovers all three tools, and
+calls `ping` against a command, without making a pricing lookup:
+
+```bash
+uv run --locked python3 tests/stdio_smoke.py oracle.oci-pricing-mcp-server
+uv run --locked python3 tests/stdio_smoke.py docker run --rm -i --network=none oci-pricing-mcp:dev
 ```

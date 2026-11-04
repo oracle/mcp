@@ -5,6 +5,11 @@ Database Management (DBM), and OCI Monitoring observability workflows. It
 exposes catalog discovery and invocation tools. Use `oci-identity-mcp-server`
 for compartment discovery and pass the resulting OCID to this server.
 
+## Platform compatibility
+
+The locked cryptography dependency no longer supports Intel macOS or 32-bit
+Windows. Use Apple Silicon macOS, 64-bit Windows, or a supported Linux environment.
+
 ## Running
 
 ### STDIO

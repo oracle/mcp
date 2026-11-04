@@ -4,7 +4,9 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
+from importlib.metadata import version as distribution_version
+
 __project__ = "oracle.oci-document-understanding-mcp-server"
-__version__ = "0.1.0"
+__version__ = distribution_version(__project__)
 
 __all__ = ["__project__", "__version__"]

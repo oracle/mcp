@@ -41,3 +41,8 @@ jobs:
             src/*/htmlcov/**/*
             .coverage
           include-hidden-files: true
+
+      # MySQL has a native test command and is excluded from Moon's project graph.
+      - name: Test MySQL with enforced coverage
+        working-directory: src/mysql-mcp-server
+        run: '"$(moon bin uv)" run --locked --python "$(moon bin python)" pytest'

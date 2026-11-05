@@ -53,6 +53,7 @@ public class OracleDatabaseMCPToolkit {
 
 
   static {
+    LoadedConstants.initialize(Utils.loadRuntimeConfig());
     config = Utils.loadConfig();
   }
 

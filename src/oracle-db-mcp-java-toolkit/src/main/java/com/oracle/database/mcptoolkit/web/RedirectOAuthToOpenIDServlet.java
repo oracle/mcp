@@ -40,7 +40,7 @@ public class RedirectOAuthToOpenIDServlet extends HttpServlet {
     final String redirectLink = OAuth2Configuration.getInstance().getAuthServer() +
       "/.well-known/openid-configuration";
 
-    response.addHeader("Access-Control-Allow-Origin", WebUtils.getAllowedHosts());
+    response.addHeader("Access-Control-Allow-Origin", WebUtils.getAllowedOrigin());
     response.sendRedirect(redirectLink);
   }
 }

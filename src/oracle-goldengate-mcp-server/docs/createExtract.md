@@ -53,7 +53,7 @@ Input shape (abridged)
       - getBeforeCols?: "ALL" | string[]
       - keyCols?: string[]
       - sqlExec?: string
-      - sqlPredicate?: string  // emits SQLPREDICATE 'WHERE {clause}'
+      - sqlPredicate?: string  // complete clause such as 'AS OF SCN 168298293', or a bare condition that emits SQLPREDICATE 'WHERE {condition}'
       - tokens?: Record<string, string>
       - trimSpaces?: boolean   // true -> TRIMSPACES; false -> NOTRIMSPACES
       - trimVarSpaces?: boolean // true -> TRIMVARSPACES; false -> NOTRIMVARSPACES
@@ -186,6 +186,10 @@ DDL INCLUDE MAPPED
 DYNAMICRESOLUTION
 TABLE HR.EMPLOYEES;
 
+Default monitoring parameters
+- `create_extract` emits `REPORTCOUNT EVERY 1 MINUTES, RATE` unless `advanced.reportCount` or an advanced raw `REPORTCOUNT` parameter is provided.
+- `create_extract` emits `WARNLONGTRANS 1H, CHECKINTERVAL 10M` unless an advanced raw `WARNLONGTRANS` parameter is provided.
+
 4) With container and PARTITIONOBJID and TARGET
 Request:
 {
@@ -270,6 +274,39 @@ Request:
 }
 Builds:
 TABLE SALES.ORDERS, SQLPREDICATE 'WHERE AMOUNT > 0 AND STATUS = ''OPEN''';
+
+For an Initial Load Extract, a complete flashback query clause is preserved:
+```json
+{
+  "extractName": "INITEXT",
+  "trailName": "IL",
+  "domainName": "OracleGoldenGate",
+  "connectionName": "SRC_CONN",
+  "source": { "schema": "hr", "table": "*" },
+  "options": {
+    "sqlPredicate": "AS OF SCN 168298293"
+  }
+}
+```
+Builds:
+TABLE hr.*, SQLPREDICATE 'AS OF SCN 168298293';
+
+The `create_initial_load_extract` tool also provides the preferred, agent-friendly shortcut:
+```json
+{
+  "extractName": "INITEXT",
+  "trailName": "IL",
+  "domainName": "OracleGoldenGate",
+  "connectionName": "SRC_CONN",
+  "source": { "schema": "hr", "table": "*" },
+  "asOfScn": 168298293
+}
+```
+`asOfScn` emits the same `SQLPREDICATE 'AS OF SCN 168298293'` TABLE option. It selects the Oracle
+flashback snapshot read by the Initial Load Extract; it is not an Extract process start position.
+Do not combine `asOfScn` with `options.sqlPredicate` or a raw `tableStatement` that already contains
+`SQLPREDICATE`. When `asOfScn` accompanies raw TABLE statements, the server adds
+`SQLPREDICATE 'AS OF SCN <scn>'` to each statement.
 
 Validation behavior
 - Mutual exclusivity errors:

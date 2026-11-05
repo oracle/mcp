@@ -669,6 +669,10 @@ In order to configure an OAuth2 server, enable `-Dauth.enabled=true` alongside t
 * `-Dauth.authorizationServer`: The OAuth2 server URL which MUST provide the `/.well-known/oauth-authorization-server`. If it only provides `/.well-known/openid-configuration`, enable `-Dauth.openIdDiscoveryRedirectEnabled=true`.
 * `-Dmcp.oauth.scopes`: Optional space- or comma-separated OAuth scopes advertised to MCP clients for end-user login (default: `openid`).
 * `-Dmcp.oauth.resourceUrl`: Optional externally visible MCP resource URL advertised in OAuth protected-resource metadata. Set this when the server is behind a proxy or public route whose URL differs from the incoming servlet request URL.
+* `-Dmcp.oauth.resourceMetadataUrl`: Optional public protected-resource metadata URL advertised in both the HTTP 401 `WWW-Authenticate` header and JSON body. Absent or blank values retain the request-derived origin plus `/.well-known/oauth-protected-resource`.
+  A nonblank value must be an absolute ASCII HTTPS URI without user-info or a fragment, with a valid port; percent-encode non-ASCII path/query characters. Invalid values are rejected when the HTTP authorization filter initializes. The configured value is preserved exactly and no network reachability check is performed.
+  Configure `mcp.oauth.resourceUrl=https://mcp.example.com/owned/mcp` for the resource identifier and, independently, `mcp.oauth.resourceMetadataUrl=https://mcp.example.com/owned/.well-known/oauth-protected-resource` for the public metadata location. Ensure the proxy actually serves that location; this setting does not create a route. The value is public discovery information and must not contain credentials.
+  When `mcp.oauth.resourceUrl` is set, redirect mode advertises the configured authorization server directly; `auth.authorizationServer` must match that server's metadata issuer.
 * `-Dauth.openIdDiscoveryRedirectEnabled`: (default: `false`) Creates an `/.well-known/oauth-authorization-server` endpoint that redirects to the authorization server's `/.well-known/openid-configuration` endpoint.
   It works by creating an `/.well-known/oauth-authorization-server` endpoint on the MCP Server that redirects to the OAuth server's `/.well-known/openid-configuration` endpoint.
 * `-Dauth.userTokenValidation.mode`: Token validation mode. Use `introspection` (default) to validate bearer tokens by calling the OAuth2 introspection endpoint, or `jwt` to validate JWT access tokens locally with JWKS.
@@ -1090,6 +1094,12 @@ Ultimately, the token must be included in the http request header (e.g. `Authori
       <td>No</td>
       <td>Externally visible MCP endpoint URL advertised in OAuth protected-resource metadata. Useful behind proxies or public routes.</td>
       <td><code>-Dmcp.oauth.resourceUrl=https://example.com/api/mcp</code></td>
+    </tr>
+    <tr>
+      <td><code>mcp.oauth.resourceMetadataUrl</code></td>
+      <td>No</td>
+      <td>Public protected-resource metadata URL for the 401 challenge header and JSON body. An absolute ASCII HTTPS URI without user-info or fragment, with a valid port. Absent/blank retains the request-derived root well-known URL. Invalid explicit values fail HTTP filter initialization; the proxy must serve the configured route.</td>
+      <td><code>-Dmcp.oauth.resourceMetadataUrl=https://example.com/api/.well-known/oauth-protected-resource</code></td>
     </tr>
     <tr>
       <td><code>auth.userTokenValidation.mode</code></td>

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Start the OCI Cloud container from its installed virtual-environment entry point without resolving workspace dependencies at runtime.
+
 ## 2.3.0
 
 ### Added

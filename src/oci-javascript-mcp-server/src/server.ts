@@ -7,7 +7,9 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { PodmanIsolationProvider } from "./isolation/podman.ts";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { createIsolationProvider } from "./isolation/provider-factory.ts";
 import { createOciReflectionManifest, createOciSdkHostRpc } from "./oci-host.ts";
 import { positiveIntegerEnv } from "./sandbox-common.ts";
 import { runJavaScript } from "./sandbox.ts";
@@ -19,17 +21,25 @@ import {
   RUN_JAVASCRIPT_TOOL,
   SERVER_INSTRUCTIONS
 } from "./tool-contracts.ts";
+import type {
+  HostRpcHandler,
+  IsolationProvider,
+  OciReflectionManifest
+} from "./types.ts";
+
+export async function startServer(options: {
+  isolationProvider?: IsolationProvider;
+  hostRpc?: HostRpcHandler;
+  reflectionManifest?: OciReflectionManifest;
+} = {}): Promise<void> {
 
 const MAX_CONCURRENT_TOOL_CALLS = positiveIntegerEnv(
   "OCI_JAVASCRIPT_MAX_CONCURRENT_TOOL_CALLS",
   4
 );
-const isolationProvider = new PodmanIsolationProvider({
-  cliPath: process.env.OCI_JAVASCRIPT_PODMAN_CLI,
-  image: process.env.OCI_JAVASCRIPT_PODMAN_IMAGE
-});
-const hostRpc = createOciSdkHostRpc();
-let reflectionManifest: ReturnType<typeof createOciReflectionManifest> | undefined;
+const isolationProvider = options.isolationProvider ?? await createIsolationProvider();
+const hostRpc = options.hostRpc ?? createOciSdkHostRpc();
+let reflectionManifest = options.reflectionManifest;
 let activeToolCalls = 0;
 
 const server = new McpServer({
@@ -77,4 +87,13 @@ async function limitToolCall<T>(callback: () => Promise<T>): Promise<T> {
   } finally {
     activeToolCalls -= 1;
   }
+}
+
+}
+
+if (
+  process.argv[1]
+  && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])
+) {
+  await startServer();
 }

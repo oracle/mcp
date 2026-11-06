@@ -1,0 +1,22 @@
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: kata-qemu-runtime-rs
+handler: kata-qemu-runtime-rs
+# Example profile identity, not proof of the node's CRI/Kata/QEMU mapping.
+# Admit nodes to this profile only after reviewing that mapping and VM evidence.
+# Enable NodeRestriction; kubelets must not be able to assign these labels.
+# Taint every execution node: oci.oracle.com/workload-pool=kata-execution:NoSchedule.
+# Keep these values synchronized with 06-admission-policy.yaml.
+scheduling:
+  nodeSelector:
+    kubernetes.io/os: linux
+    kubernetes.io/arch: amd64
+    oci.oracle.com.node-restriction.kubernetes.io/workload-pool: kata-execution
+    oci.oracle.com.node-restriction.kubernetes.io/kata-profile: kata-qemu-runtime-rs-v1
+  tolerations:
+    - key: oci.oracle.com/workload-pool
+      operator: Equal
+      value: kata-execution
+      effect: NoSchedule
+# Add overhead from measured, reviewed real-node evidence before rollout.

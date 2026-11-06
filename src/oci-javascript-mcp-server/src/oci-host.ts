@@ -23,8 +23,8 @@ import { DEFAULT_DECODE_LIMITS, DEFAULT_MAX_FRAME_BYTES } from "./protocol.ts";
 import { positiveIntegerEnv, PublicError } from "./sandbox-common.ts";
 
 const require = createRequire(import.meta.url);
-const { CircuitBreaker, NoRetryConfigurationDetails } = require("oci-common");
 const packageJson = require("../package.json") as { name?: unknown; version?: unknown };
+const sdkCommon = require("oci-common") as Record<string, any>;
 
 const ADDITIONAL_USER_AGENT = additionalUserAgent(packageJson);
 const MAX_HOST_RPC_RESPONSE_BYTES = Math.min(
@@ -43,6 +43,12 @@ type SdkBundle = {
 };
 
 export type OciSdkLoader = () => SdkBundle;
+
+type OciClientConfiguration = {
+  retryConfiguration: unknown;
+  circuitBreaker: any;
+  httpOptions?: { signal: AbortSignal };
+};
 
 type FieldDiscovery = {
   name: string;
@@ -203,13 +209,7 @@ async function invoke(
   const client = new ClientClass({
     authenticationDetailsProvider: provider,
     additionalUserAgent: ADDITIONAL_USER_AGENT
-  }, {
-    // OCI's circuit breaker mishandles responses when httpOptions is present.
-    // SDK retry sleeps ignore cancellation and can outlive the execution budget.
-    circuitBreaker: new CircuitBreaker({ disableClientCircuitBreaker: true }),
-    retryConfiguration: NoRetryConfigurationDetails,
-    ...(signal ? { httpOptions: { signal } } : {})
-  });
+  }, createClientConfiguration(signal));
   try {
     const operation = client[payload.operation];
     if (typeof operation !== "function") {
@@ -222,8 +222,6 @@ async function invoke(
     }
 
     const request = decodeRequest(payload.request ?? {});
-    // Request-level SDK settings must not override the host's retry policy.
-    delete request.retryConfiguration;
     const response = await operation.call(client, request);
     const encoded = encodeOciResponse(
       response,
@@ -533,6 +531,7 @@ function exampleForField(
   models: Record<string, ModelDiscovery>,
   depth: number
 ): Json {
+  const array = /\[\]|\bArray</.test(field.type);
   const firstModel = field.modelRefs?.[0];
   if (firstModel && depth < MAX_DISCOVERY_MODEL_DEPTH) {
     const modelFields = models[firstModel]?.fields ?? [];
@@ -540,16 +539,16 @@ function exampleForField(
     for (const modelField of modelFields.filter(modelField => modelField.required)) {
       value[modelField.name] = exampleForField(modelField, models, depth + 1);
     }
-    return value;
+    return array ? [value] : value;
+  }
+  if (array) {
+    return [];
   }
   if (/\bboolean\b/.test(field.type)) {
     return false;
   }
   if (/\bnumber\b/.test(field.type)) {
     return 0;
-  }
-  if (/\[\]|\bArray</.test(field.type)) {
-    return [];
   }
   return `<${field.name}>`;
 }
@@ -580,9 +579,9 @@ function authenticationProvider(loadSdk: OciSdkLoader): any {
     ? resolve(process.env.OCI_CONFIG_FILE)
     : join(homedir(), ".oci", "config");
   const profile = process.env.OCI_CONFIG_PROFILE ?? "DEFAULT";
-  const profileConfig = readProfile(configFile, profile);
+  const securityTokenFile = profileSecurityTokenFile(configFile, profile);
 
-  if (profileConfig.security_token_file && typeof common.SessionAuthDetailProvider === "function") {
+  if (securityTokenFile && typeof common.SessionAuthDetailProvider === "function") {
     return new common.SessionAuthDetailProvider(configFile, profile);
   }
 
@@ -594,42 +593,28 @@ function authenticationProvider(loadSdk: OciSdkLoader): any {
   return new Provider(configFile, profile);
 }
 
-function readProfile(configFile: string, profile: string): Record<string, string> {
+function profileSecurityTokenFile(configFile: string, profile: string): string | undefined {
   if (!existsSync(configFile)) {
-    return {};
+    return undefined;
   }
-  const wanted = profile.toUpperCase();
-  const result: Record<string, string> = {};
-  let active = false;
-
-  for (const rawLine of readFileSync(configFile, "utf8").split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#") || line.startsWith(";")) {
-      continue;
+  let source = readFileSync(configFile, "utf8");
+  // An empty default preserves named-profile lookup without the SDK's stdout diagnostic.
+  if (!source.split(/\r?\n/).some(line => /^\[\s*DEFAULT\s*\]$/.test(line.trim()))) {
+    if (profile === "DEFAULT") {
+      throw new PublicError("OCI configuration has no DEFAULT profile");
     }
-    const section = line.match(/^\[(.+)]$/);
-    if (section) {
-      active = section[1].toUpperCase() === wanted;
-      continue;
-    }
-    if (!active) {
-      continue;
-    }
-    const equalsIndex = line.indexOf("=");
-    if (equalsIndex === -1) {
-      continue;
-    }
-    const key = line.slice(0, equalsIndex).trim();
-    const value = line.slice(equalsIndex + 1).trim();
-    result[key] = value;
+    source += "\n[DEFAULT]\n";
   }
-  return result;
+  return sdkCommon.ConfigFileReader.parse(source, profile).get("security_token_file");
 }
 
 function decodeRequest(request: JsonObject): Record<string, any> {
   const decoded = fromJson(request);
   if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
     throw new PublicError("OCI request must decode to an object");
+  }
+  if (Object.hasOwn(decoded, "retryConfiguration")) {
+    throw new PublicError("OCI request retryConfiguration is not supported");
   }
   return decoded as Record<string, any>;
 }
@@ -697,6 +682,16 @@ function applyClientOptions(provider: any, options: OciInvokePayload["client"]["
     throw new PublicError("OCI authentication provider does not support per-client region selection");
   }
   provider.setRegion(options.region);
+}
+
+// OCI's circuit breaker mishandles responses when httpOptions is present.
+// SDK retry sleeps ignore cancellation and can outlive the execution budget.
+function createClientConfiguration(signal?: AbortSignal): OciClientConfiguration {
+  return {
+    retryConfiguration: sdkCommon.NoRetryConfigurationDetails,
+    circuitBreaker: new sdkCommon.CircuitBreaker({ disableClientCircuitBreaker: true }),
+    ...(signal ? { httpOptions: { signal } } : {})
+  };
 }
 
 function validateIdentifier(value: unknown, name: string): asserts value is string {

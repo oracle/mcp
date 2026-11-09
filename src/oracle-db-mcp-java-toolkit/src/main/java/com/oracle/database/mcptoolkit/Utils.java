@@ -332,10 +332,13 @@ public class Utils {
    * Loads runtime settings from the YAML file specified by {@code runtimeConfigFile}.
    * The legacy {@code configFile} remains dedicated to datasources and custom tools.
    *
-   * @return parsed runtime configuration, or {@code null} when none was supplied or it cannot be read
+   * @return parsed runtime configuration, or {@code null} when none was supplied
    */
   static RuntimeConfigRoot loadRuntimeConfig() {
-    String runtimeConfigFilePath = LoadedConstants.RUNTIME_CONFIG_FILE;
+    return loadRuntimeConfig(LoadedConstants.RUNTIME_CONFIG_FILE);
+  }
+
+  static RuntimeConfigRoot loadRuntimeConfig(String runtimeConfigFilePath) {
     if (runtimeConfigFilePath == null || runtimeConfigFilePath.isBlank()) {
       LOG.info("Runtime config file is not specified. Using values from system properties.");
       return null;
@@ -350,7 +353,7 @@ public class Utils {
       return runtimeConfig;
     } catch (Exception e) {
       LOG.log(Level.SEVERE, "Unable to load runtime config file: " + runtimeConfigFilePath, e);
-      return null;
+      throw new IllegalStateException("Unable to load runtime config file: " + runtimeConfigFilePath, e);
     }
   }
 

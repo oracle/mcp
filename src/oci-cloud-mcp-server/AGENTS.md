@@ -8,6 +8,7 @@ This Python server discovers and invokes OCI SDK operations dynamically; it owns
 
 - [server.py](oracle/oci_cloud_mcp_server/server.py): SDK class/method validation, signatures, coercion helpers, operation execution and auth/transport wiring.
 - [Package metadata](oracle/oci_cloud_mcp_server/__init__.py): project/version used for user-agent derivation.
+- [SDK catalog resolver](oracle/oci_cloud_mcp_server/sdk_catalog.py) and [maintainer generator](scripts/generate_sdk_catalog.py): exact membership, version checks and committed resource generation.
 - [Tests](oracle/oci_cloud_mcp_server/tests): concern-specific discovery, coercion, invocation, shaping, serialization and bootstrap definitions.
 - [Manifest](pyproject.toml): Common workspace dependency, package entry point and coverage configuration; [README](README.md): native usage.
 
@@ -23,7 +24,9 @@ Start with [model coercion](oracle/oci_cloud_mcp_server/tests/test_model_coercio
 
 ## Architecture and dependencies
 
-Trace signature normalization, `_coerce_params_to_oci_models()`, invocation and serialization together when changing input/output behavior. Class/method validation constrains the dynamic surface; service-specific assumptions must be checked against actual SDK signatures and tests.
+Trace signature normalization, `prepare_params()`, `materialize_params()`, invocation and serialization together when changing input/output behavior. Catalog client/operation lookup and recursive model-resolution preflight precede constructors and authentication; service-specific assumptions must be checked against actual SDK signatures and tests.
+
+When changing the OCI SDK pin, follow [Updating the pinned SDK and catalog](README.md#updating-the-pinned-sdk-and-catalog). `pyproject.toml` owns the exact SDK version; regenerate `oracle/oci_cloud_mcp_server/sdk_catalog.json` with the locked SDK and review `scripts/sdk_schema_exceptions.json` against that version. Do not hand-edit the resource, copy old exception approvals without checking the SDK, add import fallbacks or regenerate during startup/build/install. Run generation `--check`, the package tests and installed-distribution smoke checks; test definitions alone are not evidence those checks passed.
 
 Configured auth delegates to Common's `build_auth_context()`; HTTP requests use initialized provider policy and `context_for()` with an explicit request token. `_import_client()` combines config, signer, derived user agent and client-specific kwargs. Common's [contract](../common/README.md) and [guide](../common/AGENTS.md) retain credential ownership; the server retains clients and transport. Do not turn current host/port transport selection into a new credential-resolution pattern.
 
@@ -46,6 +49,7 @@ Discovery, accepted parameters, coercion, response shaping, authentication and t
 | Read when | Context | Depends on | Evidence |
 | --- | --- | --- | --- |
 | **Know:** Changing discovery or accepted arguments | [server.py](oracle/oci_cloud_mcp_server/server.py), native SDK signatures | Root quality guidance and existing class/method validation | [Discovery tests](oracle/oci_cloud_mcp_server/tests/test_discovery_and_shaping.py), [coercion tests](oracle/oci_cloud_mcp_server/tests/test_model_coercion.py) |
+| **Do:** Changing the OCI SDK pin or regenerating its catalog | [SDK upgrade procedure](README.md#updating-the-pinned-sdk-and-catalog), [generator](scripts/generate_sdk_catalog.py) | This guide, exact manifest pin, synchronized lock/SDK and reviewed schema exceptions | [Catalog tests](oracle/oci_cloud_mcp_server/tests/test_sdk_catalog.py), generation `--check`, [installed smoke script](scripts/check_installed_catalog.py) and actual run results |
 | **Know:** Changing auth or client boundaries | [Server auth/client helpers](oracle/oci_cloud_mcp_server/server.py), [Common contract](../common/README.md) | [Common guide](../common/AGENTS.md), caller-specific HTTP context | [Bootstrap tests](oracle/oci_cloud_mcp_server/tests/test_bootstrap_and_introspection.py), owning auth tests |
 | **Know:** Changing operation results or traversal | Invocation/serialization helpers in [server.py](oracle/oci_cloud_mcp_server/server.py) | Dynamic operation signatures and shared quality/compatibility guidance | [Invocation tests](oracle/oci_cloud_mcp_server/tests/test_pagination_and_invocation.py), [serialization tests](oracle/oci_cloud_mcp_server/tests/test_models_and_serialization.py) |
 | **Do:** Preparing or validating a change | [Validation map](../../docs/agent-development.md#validation-map), [manifest](pyproject.toml) | Package environment, Common workspace and actual change scope | Current run reports; [evidence routes](../../docs/agent-development.md#evidence-and-context-routes) |

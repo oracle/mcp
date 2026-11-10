@@ -1,8 +1,13 @@
 from types import SimpleNamespace
 
+import oci
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
+
+from oracle.oci_cloud_mcp_server import server
+from oracle.oci_cloud_mcp_server.sdk_catalog import SdkResolutionError
+from oracle.oci_cloud_mcp_server.tests.sdk_fixtures import install_catalog
 from oracle.oci_cloud_mcp_server.server import (
     _call_with_pagination_if_applicable,
     _coerce_params_to_oci_models,
@@ -15,317 +20,152 @@ from oracle.oci_cloud_mcp_server.server import (
 )
 
 
+def fixture_model(name, fields, *, fails=False):
+    def init(self, **kwargs):
+        if fails:
+            raise RuntimeError("ctor fail")
+        self.kw = self._data = dict(kwargs)
+    return type(name, (), {"__init__": init, "swagger_types": fields})
+
+
+async def invoke_fixture(monkeypatch, client_class, operation, params=None):
+    identity = f"oci.fake.{client_class.__name__}"
+    install_catalog(monkeypatch, clients={identity: client_class})
+    monkeypatch.setattr(server, "_get_config_and_signer", lambda: ({}, object()))
+    async with Client(mcp) as client:
+        payload = {"client_fqn": identity, "operation": operation}
+        if params is not None:
+            payload["params"] = params
+        return (await client.call_tool("invoke_oci_api", payload)).data
+
+
 class TestCandidateSwaggerFilter:
-    def test_candidate_ctor_with_swagger_filter_on_from_dict_failure(self, monkeypatch):
-        # candidate class with swagger_types to filter unknown keys
-        class MyDetails:
-            swagger_types = {"a": "int"}
-
-            def __init__(self, **kwargs):
-                self._data = dict(kwargs)
-
-        fake_models = SimpleNamespace(MyDetails=MyDetails)
-
-        # force from_dict to raise so ctor path is used with swagger filtering
-        from oracle.oci_cloud_mcp_server.server import oci as _oci
-
-        def raising_from_dict(cls, data):  # noqa: ARG001
-            raise Exception("from_dict fail")
-
-        monkeypatch.setattr(_oci.util, "from_dict", raising_from_dict, raising=False)
-
-        inst = _construct_model_from_mapping({"a": 1, "b": 2}, fake_models, ["MyDetails"])
+    def test_candidate_ctor_receives_only_declared_fields(self, monkeypatch):
+        MyDetails = fixture_model("MyDetails", {"a": "int"})
+        install_catalog(monkeypatch, models={"oci.core.models.MyDetails": MyDetails})
+        inst = _construct_model_from_mapping({"a": 1, "b": 2}, "oci.core", ["MyDetails"])
         assert isinstance(inst, MyDetails)
-        assert inst._data == {"a": 1}
-
+        assert inst.kw == {"a": 1}
 
 class TestCoerceTopLevelConfigSuffix:
     def test_top_level_config_suffix_constructs_model(self, monkeypatch):
-        class ShapeConfig:
-            def __init__(self, **kwargs):
-                self.kw = dict(kwargs)
-
-        fake_models = SimpleNamespace(ShapeConfig=ShapeConfig)
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
-            lambda fqn: fake_models,
-        )
-
-        out = _coerce_params_to_oci_models(
-            "oci.fake.Client",
-            "op",
-            {"shape_config": {"x": 1}},
-        )
+        ShapeConfig = fixture_model("ShapeConfig", {"x": "int"})
+        install_catalog(monkeypatch, models={"oci.core.models.ShapeConfig": ShapeConfig})
+        out = _coerce_params_to_oci_models("oci.core.ComputeClient", "op", {"shape_config": {"x": 1}})
         assert isinstance(out["shape_config"], ShapeConfig)
         assert out["shape_config"].kw == {"x": 1}
-
 
 class TestInvokePreNormalize:
     @pytest.mark.asyncio
     async def test_invoke_pre_normalizes_create_details_before_coerce(self, monkeypatch):
-        class FakeResponse:
-            def __init__(self, data):
-                self.data = data
-                self.headers = {"opc-request-id": "pre-norm-1"}
-
         class FakeClient:
-            def __init__(self, config, signer):  # noqa: ARG002
+            def __init__(self, config, signer):
                 pass
+            def create_vcn(self, create_vcn_details):
+                return SimpleNamespace(data={"ok": True, "k": create_vcn_details["k"]},
+                                       headers={"opc-request-id": "pre-norm-1"})
+        result = await invoke_fixture(monkeypatch, FakeClient, "create_vcn", {"vcn_details": {"k": 42}})
+        assert result["opc_request_id"] == "pre-norm-1"
+        assert result["data"] == {"ok": True, "k": 42}
 
-            def create_vcn(self, create_vcn_details):  # noqa: ARG001
-                return FakeResponse({"ok": True, "k": create_vcn_details.get("k")})
-
-        # patch import_module to provide FakeClient
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
-        # avoid models module
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
-            lambda fqn: None,
-        )
-        # basic config/signer
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
-            lambda: ({}, object()),
-        )
-
-        from oracle.oci_cloud_mcp_server.server import mcp
-
-        async with Client(mcp) as client:
-            res = (
-                await client.call_tool(
-                    "invoke_oci_api",
-                    {
-                        "client_fqn": "oci.fake.FakeClient",
-                        "operation": "create_vcn",
-                        "params": {"vcn_details": {"k": 42}},
-                    },
-                )
-            ).data
-
-        assert res["opc_request_id"] == "pre-norm-1"
-        assert res["data"]["ok"] is True
-        assert res["data"]["k"] == 42
-
-
-class TestListClientOperationsImportErrorTool:
+class TestListClientOperationsLoadErrorTool:
     @pytest.mark.asyncio
-    async def test_list_client_operations_import_error(self, monkeypatch):
-        # import_module throws ImportError to exercise tool error path
-        def boom(name):
-            raise ImportError("fail")
-
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", boom)
-
+    async def test_approved_class_load_failure_is_a_tool_error(self, monkeypatch):
+        def fail(entry):
+            raise SdkResolutionError("cataloged class unavailable")
+        monkeypatch.setattr(server._catalog, "load_client", fail)
         async with Client(mcp) as client:
-            with pytest.raises(ToolError):
-                await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.KlassClient"})
-
+            with pytest.raises(ToolError, match="cataloged class unavailable"):
+                await client.call_tool("list_client_operations", {"client_fqn": "oci.core.ComputeClient"})
 
 class TestInvokePlainListReturn:
     @pytest.mark.asyncio
     async def test_invoke_returns_plain_list_not_response(self, monkeypatch):
         class FakeClient:
-            def __init__(self, config, signer):  # noqa: ARG002
+            def __init__(self, config, signer):
                 pass
-
             def get_list(self):
-                # return a plain list, not an oci.response.Response
                 return [10, 20, 30]
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
-            lambda: ({}, object()),
-        )
-
-        async with Client(mcp) as client:
-            res = (
-                await client.call_tool(
-                    "invoke_oci_api",
-                    {"client_fqn": "oci.fake.FakeClient", "operation": "get_list"},
-                )
-            ).data
-
-        assert res["opc_request_id"] is None
-        assert res["data"] == [10, 20, 30]
-
+        result = await invoke_fixture(monkeypatch, FakeClient, "get_list")
+        assert result["opc_request_id"] is None
+        assert result["data"] == [10, 20, 30]
 
 class TestConstructFqnValidation:
     def test_construct_model_from_fqn_rejects_non_oci_namespace(self):
-        with pytest.raises(ValueError, match="under the 'oci\\.\\*\\.models' namespace"):
+        with pytest.raises(SdkResolutionError, match="cataloged"):
             _construct_model_from_mapping({"__class_fqn": "mymod9.Kiwi", "a": 7}, None, [])
 
-
 class TestConstructModelFqnAttrNotClass:
-    def test_fqn_points_to_non_oci_class_is_rejected(self):
-        mapping = {"__model_fqn": "mymod8.Const", "a": 1}
-        with pytest.raises(ValueError, match="under the 'oci\\.\\*\\.models' namespace"):
-            _construct_model_from_mapping(mapping, None, [])
-
+    def test_non_model_export_is_rejected(self):
+        with pytest.raises(SdkResolutionError, match="cataloged"):
+            _construct_model_from_mapping({"__model_fqn": "oci.core.ComputeClient", "a": 1}, None, [])
 
 class TestConstructModelSimpleNameNotClass:
-    def test_simple_name_resolves_to_non_class_returns_mapping(self):
-        class models:
-            Foo = 123  # not a class
-
-        mapping = {"__model": "Foo", "a": 1}
-        out = _construct_model_from_mapping(mapping, models, [])
-        assert out is mapping
-
+    def test_explicit_unknown_short_name_is_rejected(self):
+        with pytest.raises(SdkResolutionError, match="cataloged"):
+            _construct_model_from_mapping({"__model": "NotAModel", "a": 1}, "oci.core", [])
 
 class TestListClientOperationsGetdocRaises:
     @pytest.mark.asyncio
     async def test_getdoc_raises_summary_empty(self, monkeypatch):
         class KlassClient:
-            def foo(self, a):  # noqa: ARG002
+            def foo(self, a):
                 """Doc first line."""
                 return 1
-
-        fake_module = SimpleNamespace(KlassClient=KlassClient)
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
-
-        # force inspect.getdoc to raise to hit exception path for summary extraction
-        import inspect as _inspect
-
-        orig_getdoc = _inspect.getdoc
-
-        def boom_getdoc(obj):
+        install_catalog(monkeypatch, clients={"oci.fake.KlassClient": KlassClient})
+        original = server.inspect.getdoc
+        def getdoc(obj):
             if obj is KlassClient.foo:
-                raise Exception("doc boom")
-            return orig_getdoc(obj)
-
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.inspect.getdoc", boom_getdoc)
-
+                raise RuntimeError("doc boom")
+            return original(obj)
+        monkeypatch.setattr(server.inspect, "getdoc", getdoc)
         async with Client(mcp) as client:
-            res = (await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.KlassClient"})).data
-
-        ops = res["operations"]
-        entry = next(o for o in ops if o["name"] == "foo")
-        assert entry["summary"] == ""
-
+            result = (await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.KlassClient"})).data
+        assert result["operations"][0]["name"] == "foo"
+        assert result["operations"][0]["summary"] == ""
 
 class TestConstructExplicitClassKey:
-    def test_construct_model_with___class_key_uses_from_dict_then_ctor(self, monkeypatch):
-        class Foo:
-            def __init__(self, **kwargs):
-                self._data = dict(kwargs)
-
-        fake_models = SimpleNamespace(Foo=Foo)
-
-        from oracle.oci_cloud_mcp_server.server import oci as _oci
-
-        # first let from_dict succeed
-        monkeypatch.setattr(_oci.util, "from_dict", lambda cls, data: cls(**data), raising=False)
-
-        inst1 = _construct_model_from_mapping({"__class": "Foo", "a": 1}, fake_models, [])
-        assert isinstance(inst1, Foo)
-        assert inst1._data == {"a": 1}
-
-        # then force from_dict to fail and check ctor fallback
-        def raising_from_dict(cls, data):  # noqa: ARG001
-            raise Exception("nope")
-
-        monkeypatch.setattr(_oci.util, "from_dict", raising_from_dict, raising=False)
-        inst2 = _construct_model_from_mapping({"__class": "Foo", "a": 2}, fake_models, [])
-        assert isinstance(inst2, Foo)
-        assert inst2._data == {"a": 2}
-
+    def test_construct_model_with_class_key_uses_approved_constructor(self, monkeypatch):
+        Foo = fixture_model("Foo", {"a": "int"})
+        install_catalog(monkeypatch, models={"oci.core.models.Foo": Foo})
+        first = _construct_model_from_mapping({"__class": "Foo", "a": 1}, "oci.core", [])
+        second = _construct_model_from_mapping({"__class": "Foo", "a": 2}, "oci.core", [])
+        assert isinstance(first, Foo) and isinstance(second, Foo)
+        assert first.kw == {"a": 1}
+        assert second.kw == {"a": 2}
 
 class TestCreateUpdateCandidateClasses:
-    def test_create_candidate_class_used_and_key_renamed(self, monkeypatch):
-        class CreateVcnDetails:
-            def __init__(self, **kwargs):
-                self.kw = dict(kwargs)
-
-        fake_models = SimpleNamespace(CreateVcnDetails=CreateVcnDetails)
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
-            lambda fqn: fake_models,
-        )
-        out = _coerce_params_to_oci_models(
-            "oci.fake.Client",
-            "create_vcn",
-            {"vcn_details": {"a": 1}},
-        )
-        assert "create_vcn_details" in out and "vcn_details" not in out
-        assert isinstance(out["create_vcn_details"], CreateVcnDetails)
-        assert out["create_vcn_details"].kw == {"a": 1}
-
-    def test_update_candidate_class_used_and_key_renamed(self, monkeypatch):
-        class UpdateVcnDetails:
-            def __init__(self, **kwargs):
-                self.kw = dict(kwargs)
-
-        fake_models = SimpleNamespace(UpdateVcnDetails=UpdateVcnDetails)
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
-            lambda fqn: fake_models,
-        )
-        out = _coerce_params_to_oci_models(
-            "oci.fake.Client",
-            "update_vcn",
-            {"vcn_details": {"a": 2}},
-        )
-        assert "update_vcn_details" in out and "vcn_details" not in out
-        assert isinstance(out["update_vcn_details"], UpdateVcnDetails)
-        assert out["update_vcn_details"].kw == {"a": 2}
-
+    @pytest.mark.parametrize("operation,name,value", [
+        ("create_vcn", "CreateVcnDetails", 1), ("update_vcn", "UpdateVcnDetails", 2),
+    ])
+    def test_candidate_class_used_and_key_renamed(self, monkeypatch, operation, name, value):
+        model = fixture_model(name, {"a": "int"})
+        install_catalog(monkeypatch, models={f"oci.core.models.{name}": model})
+        out = _coerce_params_to_oci_models("oci.core.ComputeClient", operation, {"vcn_details": {"a": value}})
+        key = f"{operation}_details"
+        assert key in out and "vcn_details" not in out
+        assert isinstance(out[key], model)
+        assert out[key].kw == {"a": value}
 
 class TestListElementClassFqn:
-    def test_list_item_with_non_oci_class_fqn_is_rejected(self, monkeypatch):
-        # models module not needed for FQN-based construction
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
-            lambda fqn: None,
-        )
-
-        with pytest.raises(ValueError, match="under the 'oci\\.\\*\\.models' namespace"):
-            _coerce_params_to_oci_models(
-                "oci.fake.Client",
-                "op",
-                {"items": [{"__class_fqn": "mymod4.Bar", "z": 9}, {"plain": True}]},
-            )
-
+    def test_list_item_with_non_oci_class_fqn_is_rejected(self):
+        with pytest.raises(SdkResolutionError, match="cataloged"):
+            _coerce_params_to_oci_models("oci.core.ComputeClient", "op", {
+                "items": [{"__class_fqn": "mymod4.Bar", "z": 9}, {"plain": True}],
+            })
 
 class TestListPassThroughNonDict:
     def test_list_of_scalars_passthrough(self):
-        out = _coerce_params_to_oci_models("oci.fake.Client", "op", {"items": [1, 2, 3]})
+        out = _coerce_params_to_oci_models("oci.core.ComputeClient", "op", {"items": [1, 2, 3]})
         assert out["items"] == [1, 2, 3]
 
-
-class TestFqnCtorFallback:
-    def test_construct_model_from_fqn_from_dict_failure_uses_ctor(self, monkeypatch):
-        class Apple:
-            swagger_types = {"a": "int"}
-            attribute_map = {"a": "a"}
-
-            def __init__(self, **kwargs):
-                self.kw = dict(kwargs)
-
-        Apple.__module__ = "oci.fake.models"
-
-        # force from_dict to fail so ctor is used
-        from oracle.oci_cloud_mcp_server.server import oci as _oci
-
-        def raising_from_dict(cls, data):  # noqa: ARG001
-            raise Exception("from_dict fail")
-
-        monkeypatch.setattr(_oci.util, "from_dict", raising_from_dict, raising=False)
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(Apple=Apple),
-        )
-
-        inst = _construct_model_from_mapping({"__model_fqn": "oci.fake.models.Apple", "a": 10}, None, [])
+class TestFqnConstructor:
+    def test_construct_model_from_fqn_uses_approved_constructor(self, monkeypatch):
+        Apple = fixture_model("Apple", {"a": "int"})
+        install_catalog(monkeypatch, models={"oci.core.models.Apple": Apple})
+        inst = _construct_model_from_mapping({"__model_fqn": "oci.core.models.Apple", "a": 10}, None, [])
         assert isinstance(inst, Apple)
         assert inst.kw == {"a": 10}
-
 
 class TestPreAliasCreatePath:
     def test_pre_alias_in_call_with_pagination_succeeds_without_fallback(self):
@@ -348,64 +188,38 @@ class TestPreAliasCreatePath:
         assert opc is None
         assert has_more is False
 
-
 class TestListClientOpsHiddenOnly:
     @pytest.mark.asyncio
     async def test_class_with_only_hidden_methods_returns_empty(self, monkeypatch):
         class KlassClient:
             def _private(self):
                 return 1
-
-        fake_module = SimpleNamespace(KlassClient=KlassClient)
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
+        install_catalog(monkeypatch, clients={"oci.fake.KlassClient": KlassClient})
         async with Client(mcp) as client:
-            res = (await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.KlassClient"})).data
-        assert res == {
-            "client": "oci.fake.KlassClient",
-            "operations": [],
-        }
-
+            result = (await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.KlassClient"})).data
+        assert result == {"client": "oci.fake.KlassClient", "operations": []}
 
 class TestResolveModelClassSuccess:
-    def test_resolve_model_class_returns_class(self):
-        class MM:
-            pass
+    def test_resolve_model_class_returns_approved_class(self, monkeypatch):
+        ModelX = fixture_model("ModelX", {})
+        install_catalog(monkeypatch, models={"oci.core.models.ModelX": ModelX})
+        assert _resolve_model_class("oci.core", "ModelX") is ModelX
 
-        MM.ModelX = type("ModelX", (), {})
-        cls = _resolve_model_class(MM, "ModelX")
-        assert cls.__name__ == "ModelX"
-
-
-class TestParentPrefixAlt:
-    def test_parent_prefix_prefers_non_details_variant_when_available(self, monkeypatch):
-        # ensure when only 'InstanceShapeConfig' exists (no '...Details'),
-        # nested coercion picks it using the parent prefix hint path.
-        class InstanceDetails:
-            def __init__(self, **kwargs):
-                self._data = dict(kwargs)
-
-        class InstanceShapeConfig:
-            def __init__(self, **kwargs):
-                self._data = dict(kwargs)
-
-        fake_models = SimpleNamespace(
-            InstanceDetails=InstanceDetails,
-            InstanceShapeConfig=InstanceShapeConfig,
-        )
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
-            lambda fqn: fake_models,
-        )
-        out = _coerce_params_to_oci_models(
-            "oci.fake.Fake",
-            "launch_instance",
-            {"instance_details": {"shape_config": {"ocpus": 1}}},
-        )
+class TestDeclaredNestedType:
+    def test_nested_schema_selects_the_approved_model(self, monkeypatch):
+        InstanceDetails = fixture_model("InstanceDetails", {"shape_config": "InstanceShapeConfig"})
+        InstanceShapeConfig = fixture_model("InstanceShapeConfig", {"ocpus": "int"})
+        install_catalog(monkeypatch, models={
+            "oci.core.models.InstanceDetails": InstanceDetails,
+            "oci.core.models.InstanceShapeConfig": InstanceShapeConfig,
+        })
+        out = _coerce_params_to_oci_models("oci.core.ComputeClient", "launch_instance", {
+            "instance_details": {"shape_config": {"ocpus": 1}},
+        })
         inst = out["instance_details"]
         assert isinstance(inst, InstanceDetails)
-        assert isinstance(inst._data["shape_config"], InstanceShapeConfig)
-        assert inst._data["shape_config"]._data["ocpus"] == 1
-
+        assert isinstance(inst.kw["shape_config"], InstanceShapeConfig)
+        assert inst.kw["shape_config"].kw["ocpus"] == 1
 
 class TestDunderMainExecution:
     def test_running_module_as_main_calls_mcp_run(self, monkeypatch):
@@ -433,142 +247,55 @@ class TestDunderMainExecution:
         assert called["args"] == ()
         assert called["kwargs"] == {}
 
+class TestExplicitModelConstructorFailure:
+    def test_explicit_model_constructor_failure_propagates(self, monkeypatch):
+        BoomModel = fixture_model("BoomModel", {"a": "int"}, fails=True)
+        install_catalog(monkeypatch, models={"oci.core.models.BoomModel": BoomModel})
+        with pytest.raises(RuntimeError, match="ctor fail"):
+            _construct_model_from_mapping({"__model": "BoomModel", "a": 1}, "oci.core", [])
 
-class TestExplicitModelCtorRaisesFallsBack:
-    def test_explicit_model_ctor_and_from_dict_fail_returns_mapping(self, monkeypatch):
-        # fake models module with a class whose ctor raises
-        class BoomModel:
-            swagger_types = {"a": "int"}
-
-            def __init__(self, **kwargs):
-                raise Exception("ctor boom")
-
-        fake_models = SimpleNamespace(BoomModel=BoomModel)
-
-        # force from_dict to raise as well to hit nested except path
-        from oracle.oci_cloud_mcp_server.server import oci as _oci
-
-        def raising_from_dict(cls, data):  # noqa: ARG001
-            raise Exception("from_dict boom")
-
-        monkeypatch.setattr(_oci.util, "from_dict", raising_from_dict, raising=False)
-
-        mapping = {"__model": "BoomModel", "a": 1}
-        out = _construct_model_from_mapping(mapping, fake_models, [])
-        # should fall back to original mapping when both from_dict and ctor fail
-        assert out is mapping
-
-
-class TestCandidateCtorRaisesContinueAndFallback:
-    def test_candidate_ctor_and_from_dict_fail_continue_and_return_mapping(self, monkeypatch):
-        class Candidate:
-            def __init__(self, **kwargs):
-                raise Exception("ctor fail")
-
-        fake_models = SimpleNamespace(Candidate=Candidate)
-
-        from oracle.oci_cloud_mcp_server.server import oci as _oci
-
-        def raising_from_dict(cls, data):  # noqa: ARG001
-            raise Exception("from_dict fail")
-
-        monkeypatch.setattr(_oci.util, "from_dict", raising_from_dict, raising=False)
-
-        mapping = {"x": 1}
-        out = _construct_model_from_mapping(mapping, fake_models, ["Candidate"])
-        assert out is mapping
-
+class TestCandidateConstructorFailure:
+    def test_candidate_constructor_failure_does_not_become_raw_success(self, monkeypatch):
+        Candidate = fixture_model("Candidate", {"x": "int"}, fails=True)
+        install_catalog(monkeypatch, models={"oci.core.models.Candidate": Candidate})
+        with pytest.raises(RuntimeError, match="ctor fail"):
+            _construct_model_from_mapping({"x": 1}, "oci.core", ["Candidate"])
 
 class TestSourceDetailsSuffixCoercion:
     def test_source_details_suffix_constructs(self, monkeypatch):
-        class SourceDetails:
-            def __init__(self, **kwargs):
-                self.kw = dict(kwargs)
-
-        fake_models = SimpleNamespace(SourceDetails=SourceDetails)
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
-            lambda fqn: fake_models,
-        )
-        out = _coerce_params_to_oci_models("oci.fake.Client", "op", {"source_details": {"a": 1}})
+        SourceDetails = fixture_model("SourceDetails", {"a": "int"})
+        install_catalog(monkeypatch, models={"oci.core.models.SourceDetails": SourceDetails})
+        out = _coerce_params_to_oci_models("oci.core.ComputeClient", "op", {"source_details": {"a": 1}})
         assert isinstance(out["source_details"], SourceDetails)
         assert out["source_details"].kw == {"a": 1}
 
-
 class TestListItemWithModelNameHint:
     def test_list_items_with_model_hint_constructs(self, monkeypatch):
-        class Foo:
-            def __init__(self, **kwargs):
-                self.kw = dict(kwargs)
-
-        fake_models = SimpleNamespace(Foo=Foo)
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
-            lambda fqn: fake_models,
-        )
-
-        out = _coerce_params_to_oci_models(
-            "oci.fake.Client",
-            "op",
-            {"items": [{"__model": "Foo", "a": 5}, {"b": 6}]},
-        )
+        Foo = fixture_model("Foo", {"a": "int"})
+        install_catalog(monkeypatch, models={"oci.core.models.Foo": Foo})
+        out = _coerce_params_to_oci_models("oci.core.ComputeClient", "op", {
+            "items": [{"__model": "Foo", "a": 5}, {"b": 6}],
+        })
         assert isinstance(out["items"][0], Foo)
         assert out["items"][0].kw == {"a": 5}
-        # second element without a hint should pass through unchanged
         assert out["items"][1] == {"b": 6}
 
-
 class TestFinalAliasingNonDict:
-    def test_final_alias_block_renames_non_dict_value(self, monkeypatch):
-        # ensure the final aliasing block in _coerce_params_to_oci_models triggers
-        # when value is non-dict (loop won't rename, so tail alias should).
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._import_models_module_from_client_fqn",
-            lambda fqn: None,
-        )
-        out = _coerce_params_to_oci_models("oci.fake.Client", "create_vcn", {"vcn_details": [1, 2]})
+    def test_alias_renames_non_dict_value(self):
+        out = _coerce_params_to_oci_models("oci.core.ComputeClient", "create_vcn", {"vcn_details": [1, 2]})
         assert "create_vcn_details" in out and "vcn_details" not in out
         assert out["create_vcn_details"] == [1, 2]
-
 
 class TestInvokeTupleSerialization:
     @pytest.mark.asyncio
     async def test_invoke_serializes_tuple_data_to_list(self, monkeypatch):
-        class FakeResponse:
-            def __init__(self, data):
-                self.data = data
-                self.headers = {}
-
         class FakeClient:
-            def __init__(self, config, signer):  # noqa: ARG002
+            def __init__(self, config, signer):
                 pass
-
-            def get_tuple(self):  # noqa: ARG002
-                return FakeResponse((1, 2, 3))
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
-            lambda: ({}, object()),
-        )
-
-        async with Client(mcp) as client:
-            res = (
-                await client.call_tool(
-                    "invoke_oci_api",
-                    {
-                        "client_fqn": "oci.fake.FakeClient",
-                        "operation": "get_tuple",
-                        "params": {},
-                    },
-                )
-            ).data
-
-        assert res["data"] == [1, 2, 3]
-
+            def get_tuple(self):
+                return SimpleNamespace(data=(1, 2, 3), headers={})
+        result = await invoke_fixture(monkeypatch, FakeClient, "get_tuple", {})
+        assert result["data"] == [1, 2, 3]
 
 class TestSerializeToDictReturnsNonJsonable:
     def test_serialize_when_to_dict_returns_non_jsonable_object(self, monkeypatch):
@@ -588,41 +315,16 @@ class TestSerializeToDictReturnsNonJsonable:
         assert isinstance(out, str)
         assert "P" in out
 
-
 class TestInvokeGenericException:
     @pytest.mark.asyncio
     async def test_invoke_oci_api_handles_generic_exception(self, monkeypatch):
         class FakeClient:
-            def __init__(self, config, signer):  # noqa: ARG002
+            def __init__(self, config, signer):
                 pass
-
             def get_crash(self):
                 raise RuntimeError("boom")
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
-            lambda: ({}, object()),
-        )
-
-        async with Client(mcp) as client:
-            res = (
-                await client.call_tool(
-                    "invoke_oci_api",
-                    {
-                        "client_fqn": "oci.fake.FakeClient",
-                        "operation": "get_crash",
-                        "params": {},
-                    },
-                )
-            ).data
-
-        assert "error" in res
-        assert "boom" in res["error"]
-
+        result = await invoke_fixture(monkeypatch, FakeClient, "get_crash", {})
+        assert "boom" in result["error"]
 
 class TestListPaginatorHeadersMissing:
     def test_list_headers_object_without_get(self):
@@ -640,162 +342,65 @@ class TestListPaginatorHeadersMissing:
         assert opc is None
         assert has_more is False
 
-
 class TestImportClientBadCtor:
-    def test_import_client_ctor_invalid_signature_raises(self, monkeypatch):
-        # __init__ without 'signer' kw should cause TypeError in _import_client
+    def test_approved_client_constructor_invalid_signature_raises(self, monkeypatch):
         class BadClient:
-            def __init__(self):  # no signer kw
+            def __init__(self):
                 pass
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(BadClient=BadClient),
-        )
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
-            lambda: ({}, object()),
-        )
-
+        monkeypatch.setattr(server, "_get_config_and_signer", lambda: ({}, object()))
         with pytest.raises(TypeError):
-            _import_client("oci.fake.BadClient")
-
+            _import_client(BadClient)
 
 class TestInvokeDefaultParams:
     @pytest.mark.asyncio
     async def test_invoke_with_params_omitted_defaults_to_empty(self, monkeypatch):
         class FakeClient:
-            def __init__(self, config, signer):  # noqa: ARG002
+            def __init__(self, config, signer):
                 pass
-
             def get_plain(self):
                 return {"ok": True}
+        result = await invoke_fixture(monkeypatch, FakeClient, "get_plain")
+        assert result["data"] == {"ok": True}
+        assert result["params"] == {}
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
-            lambda: ({}, object()),
-        )
-
-        async with Client(mcp) as client:
-            res = (
-                await client.call_tool(
-                    "invoke_oci_api",
-                    {"client_fqn": "oci.fake.FakeClient", "operation": "get_plain"},
-                )
-            ).data
-
-        assert res["data"] == {"ok": True}
-        # ensure the tool defaulted params to {} and echoed that shape
-        assert res["params"] == {}
-
-
-class TestConstructModelFilteredFromDictSuccess:
-    def test_from_dict_success_after_swagger_filter(self, monkeypatch):
-        class MyModel2:
-            swagger_types = {"a": "int"}
-
-            def __init__(self, **kwargs):
-                self.kw = dict(kwargs)
-
-        fake_models = SimpleNamespace(MyModel2=MyModel2)
-
-        from oracle.oci_cloud_mcp_server.server import oci as _oci
-
-        # from_dict should receive filtered data (without 'b')
-        monkeypatch.setattr(_oci.util, "from_dict", lambda cls, data: cls(**data), raising=False)
-
-        inst = _construct_model_from_mapping({"__model": "MyModel2", "a": 1, "b": 2}, fake_models, [])
+class TestConstructModelFieldFilter:
+    def test_short_hint_constructor_receives_declared_fields(self, monkeypatch):
+        MyModel2 = fixture_model("MyModel2", {"a": "int"})
+        install_catalog(monkeypatch, models={"oci.core.models.MyModel2": MyModel2})
+        inst = _construct_model_from_mapping({"__model": "MyModel2", "a": 1, "b": 2}, "oci.core", [])
         assert isinstance(inst, MyModel2)
         assert inst.kw == {"a": 1}
-
 
 class TestInvokeNonListHeadersNoGet:
     @pytest.mark.asyncio
     async def test_non_list_response_headers_missing_get(self, monkeypatch):
-        class FakeResp:
-            def __init__(self, data):
-                self.data = data
-                self.headers = object()  # lacks .get
-
         class FakeClient:
-            def __init__(self, config, signer):  # noqa: ARG002
+            def __init__(self, config, signer):
                 pass
-
             def get(self):
-                return FakeResp({"ok": True})
+                return SimpleNamespace(data={"ok": True}, headers=object())
+        result = await invoke_fixture(monkeypatch, FakeClient, "get")
+        assert result["opc_request_id"] is None
+        assert result["data"] == {"ok": True}
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
-            lambda: ({}, object()),
-        )
+class TestFqnConstructorFailure:
+    def test_fqn_constructor_failure_propagates(self, monkeypatch):
+        Boom = fixture_model("Boom", {"a": "int"}, fails=True)
+        install_catalog(monkeypatch, models={"oci.core.models.Boom": Boom})
+        with pytest.raises(RuntimeError, match="ctor fail"):
+            _construct_model_from_mapping({"__model_fqn": "oci.core.models.Boom", "a": 1}, None, [])
 
-        async with Client(mcp) as client:
-            res = (
-                await client.call_tool(
-                    "invoke_oci_api",
-                    {"client_fqn": "oci.fake.FakeClient", "operation": "get"},
-                )
-            ).data
-
-        assert res["opc_request_id"] is None
-        assert res["data"] == {"ok": True}
-
-
-class TestFqnCtorBothFail:
-    def test_fqn_from_dict_and_ctor_fail_returns_mapping(self, monkeypatch):
-        class Boom:
-            swagger_types = {"a": "int"}
-            attribute_map = {"a": "a"}
-
-            def __init__(self, **kwargs):
-                raise Exception("ctor fail")
-
-        Boom.__module__ = "oci.fake.models"
-
-        from oracle.oci_cloud_mcp_server.server import oci as _oci
-
-        def raising_from_dict(cls, data):  # noqa: ARG001
-            raise Exception("from_dict fail")
-
-        monkeypatch.setattr(_oci.util, "from_dict", raising_from_dict, raising=False)
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(Boom=Boom),
-        )
-
-        mapping = {"__model_fqn": "oci.fake.models.Boom", "a": 1}
-        out = _construct_model_from_mapping(mapping, None, [])
-        assert out is mapping
-
-
-class TestListClientOperationsScanError:
+class TestListClientOperationsIgnoreNewHelpers:
     @pytest.mark.asyncio
-    async def test_member_scan_error_raises_tool_error(self, monkeypatch):
-        # force inspect.getmembers to raise inside list_client_operations try block.
+    async def test_runtime_helper_cannot_expand_catalog_operations(self, monkeypatch):
         class KlassClient:
             def foo(self):
                 return 1
-
-        fake_module = SimpleNamespace(KlassClient=KlassClient)
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_module)
-
-        def boom(*args, **kwargs):
-            raise Exception("scan boom")
-
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.inspect.getmembers", boom)
-
+        install_catalog(monkeypatch, clients={"oci.fake.KlassClient": KlassClient})
+        monkeypatch.setattr(KlassClient, "extra_helper", lambda self: 2, raising=False)
         async with Client(mcp) as client:
-            with pytest.raises(ToolError):
-                await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.KlassClient"})
-
+            result = (await client.call_tool("list_client_operations", {"client_fqn": "oci.fake.KlassClient"})).data
+        assert [operation["name"] for operation in result["operations"]] == ["foo"]
 
 class TestSupportsPaginationHeuristics:
     def test_supports_pagination_list_prefix_without_contract_false(self):

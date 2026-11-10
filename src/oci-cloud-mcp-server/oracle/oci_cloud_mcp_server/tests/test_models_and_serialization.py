@@ -1,4 +1,7 @@
-from types import SimpleNamespace
+import oci
+import pytest
+
+from oracle.oci_cloud_mcp_server.sdk_catalog import SdkResolutionError
 
 from oracle.oci_cloud_mcp_server.server import (
     _import_models_module_from_client_fqn,
@@ -20,30 +23,21 @@ class TestSnakeToCamel:
 
 
 class TestImportModelsModuleFromClientFqn:
-    def test_success_returns_module(self, monkeypatch):
-        # only return a module-like object for the specific ".models" path
-        def fake_import(name):
-            if name == "oci.fake.models":
-                return SimpleNamespace()
-            raise ImportError("nope")
+    def test_supported_aliases_return_the_same_catalog_service(self):
+        assert _import_models_module_from_client_fqn("oci.core.ComputeClient") == "oci.core"
+        assert _import_models_module_from_client_fqn("oci.core.compute_client.ComputeClient") == "oci.core"
 
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", fake_import)
-        mod = _import_models_module_from_client_fqn("oci.fake.ClientClass")
-        assert mod is not None
-
-    def test_failure_returns_none(self, monkeypatch):
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: (_ for _ in ()).throw(ImportError("boom")),
-        )
-        mod = _import_models_module_from_client_fqn("oci.fake.ClientClass")
-        assert mod is None
+    def test_unknown_client_does_not_select_a_models_namespace(self):
+        with pytest.raises(SdkResolutionError):
+            _import_models_module_from_client_fqn("oci.fake.ClientClass")
 
 
 class TestResolveModelClass:
-    def test_not_found_returns_none(self):
-        mm = SimpleNamespace()
-        assert _resolve_model_class(mm, "Missing") is None
+    def test_optional_inference_miss_returns_none(self):
+        assert _resolve_model_class("oci.core", "Missing") is None
+
+    def test_approved_model_uses_service_scope(self):
+        assert _resolve_model_class("oci.core", "LaunchInstanceDetails") is oci.core.models.LaunchInstanceDetails
 
 
 class TestSerializeOciData:

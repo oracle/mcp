@@ -1,10 +1,11 @@
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 
 import oci
 import pytest
 from fastmcp import Client
 
 import oracle.oci_cloud_mcp_server.server as server_mod
+from oracle.oci_cloud_mcp_server.tests.sdk_fixtures import install_catalog
 from oracle.oci_cloud_mcp_server.server import (
     _build_param_error_hints,
     _candidate_model_class_names,
@@ -29,14 +30,9 @@ from oracle.oci_cloud_mcp_server.server import (
 
 class TestValidationAndFormattingHelpers:
     def test_validate_client_fqn_rejects_invalid_values(self):
-        with pytest.raises(ValueError, match="non-empty"):
-            _validate_client_fqn("")
-        with pytest.raises(ValueError, match="oci."):
-            _validate_client_fqn("oci")
-        with pytest.raises(ValueError, match="oci."):
-            _validate_client_fqn("fake.module.Client")
-        with pytest.raises(ValueError, match="ending in 'Client'"):
-            _validate_client_fqn("oci.core.models.Instance", require_client_class=True)
+        for value in ("", "oci", "fake.module.Client", "oci.core.models.Instance"):
+            with pytest.raises(ValueError, match="catalog"):
+                _validate_client_fqn(value, require_client_class=True)
 
     def test_candidate_model_class_names_covers_update_and_config_suffixes(self):
         assert _candidate_model_class_names("update_vcn", "vcn_details") == [
@@ -99,106 +95,42 @@ class TestValidationAndFormattingHelpers:
         assert compute_score > rover_score
 
 class TestDiscoveryAndImportHelpers:
-    def test_discover_client_classes_covers_skip_paths(self, monkeypatch):
-        class GoodClient:
-            __module__ = "oci.good.compute_client"
-
-        class WrongModuleClient:
-            __module__ = "oci.somewhere_else"
-
-        good_module = ModuleType("oci.good.compute_client")
-        good_module.GoodClient = GoodClient
-        good_module.WrongModuleClient = WrongModuleClient
-        good_parent = ModuleType("oci.good")
-        good_parent.GoodClient = GoodClient
-
-        class ModuleInfo:
-            def __init__(self, name):
-                self.name = name
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.pkgutil.walk_packages",
-            lambda path, prefix="oci.": [
-                ModuleInfo("oci._private.secret_client"),
-                ModuleInfo("oci.not_a_client"),
-                ModuleInfo("oci.bad_client"),
-                ModuleInfo("oci.good.compute_client"),
-            ],
-        )
-
-        def fake_import(name):
-            if name == "oci.bad_client":
-                raise ImportError("boom")
-            if name == "oci.good.compute_client":
-                return good_module
-            if name == "oci.good":
-                return good_parent
-            raise ImportError(name)
-
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", fake_import)
-
+    def test_discover_client_classes_covers_skip_paths(self):
         _discover_client_classes.cache_clear()
-        try:
-            discovered = _discover_client_classes()
-        finally:
-            _discover_client_classes.cache_clear()
-
-        assert discovered == [("oci.good.GoodClient", GoodClient)]
+        discovered = dict(_discover_client_classes())
+        assert len(discovered) == 322
+        assert discovered["oci.core.ComputeClient"] is oci.core.ComputeClient
+        assert "oci.BaseClient" not in discovered
+        assert not any("_vendor" in name or "CompositeOperations" in name for name in discovered)
+        _discover_client_classes.cache_clear()
 
     def test_import_client_falls_back_when_signature_introspection_fails(self, monkeypatch):
         class FakeClient:
             def __init__(self, config, **kwargs):
                 self.config = config
                 self.kwargs = kwargs
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
-            lambda: ({"region": "us-phoenix-1"}, object()),
-        )
-
+        monkeypatch.setattr(server_mod, "_get_config_and_signer", lambda: ({"region": "us-phoenix-1"}, object()))
         real_signature = server_mod.inspect.signature
-
         def fake_signature(obj):
             if obj is FakeClient.__init__:
                 raise TypeError("no signature")
             return real_signature(obj)
-
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.inspect.signature", fake_signature)
-
-        client = _import_client("oci.fake.FakeClient")
-
+        monkeypatch.setattr(server_mod.inspect, "signature", fake_signature)
+        client = _import_client(FakeClient)
         assert client.config == {"region": "us-phoenix-1"}
         assert "signer" in client.kwargs
 
 
 class TestTypeAndModelHelpers:
-    def test_resolve_polymorphic_model_class_covers_success_and_error(self):
-        class ChildModel:
-            pass
-
-        class BaseModel:
-            attribute_map = {"resource_type": "resourceType"}
-
-            @staticmethod
-            def get_subtype(payload):
-                return "ChildModel" if payload.get("resourceType") == "child" else "BaseModel"
-
-        class FailingModel:
-            @staticmethod
-            def get_subtype(payload):  # noqa: ARG004
-                raise RuntimeError("bad subtype")
-
-        models_module = SimpleNamespace(ChildModel=ChildModel)
-
-        assert (
-            _resolve_polymorphic_model_class(BaseModel, {"resource_type": "child"}, models_module)
-            is ChildModel
-        )
-        assert _resolve_polymorphic_model_class(FailingModel, {"x": 1}, models_module) is FailingModel
+    def test_resolve_polymorphic_model_class_covers_success_and_error(self, monkeypatch):
+        base = oci.core.models.InstanceSourceDetails
+        assert _resolve_polymorphic_model_class(base, {"source_type": "image"}, "oci.core") is oci.core.models.InstanceSourceViaImageDetails
+        assert _resolve_polymorphic_model_class(base, {}, "oci.core") is base
+        def broken(payload):
+            raise RuntimeError("bad subtype")
+        monkeypatch.setattr(base, "get_subtype", staticmethod(broken))
+        with pytest.raises(RuntimeError, match="bad subtype"):
+            _resolve_polymorphic_model_class(base, {"source_type": "image"}, "oci.core")
 
     def test_coerce_primitive_value_covers_false_invalid_float_and_integral_float(self):
         assert _coerce_primitive_value(3.0, "int") == 3
@@ -206,36 +138,17 @@ class TestTypeAndModelHelpers:
         assert _coerce_primitive_value("no", "bool") is False
 
     def test_resolve_model_class_from_type_name_covers_fqn_and_failure(self):
-        assert _resolve_model_class_from_type_name("datetime.datetime", None).__name__ == "datetime"
+        assert _resolve_model_class_from_type_name("oci.core.models.LaunchInstanceDetails", None) is oci.core.models.LaunchInstanceDetails
+        assert _resolve_model_class_from_type_name("datetime.datetime", None) is None
         assert _resolve_model_class_from_type_name("missing.module.Type", None) is None
         assert _resolve_model_class_from_type_name("", None) is None
 
-    def test_coerce_value_to_type_covers_dict_and_model_paths(self, monkeypatch):
-        class FakeModel:
-            pass
-
-        models_module = SimpleNamespace(FakeModel=FakeModel)
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._construct_model_from_mapping",
-            lambda value, models_module, candidates: {
-                "value": value,
-                "candidates": candidates,
-                "models_module": models_module,
-            },
-        )
-
+    def test_coerce_value_to_type_covers_dict_and_model_paths(self):
         assert _coerce_value_to_type({"a": "1"}, "dict(str, int)", None) == {"a": 1}
         assert _coerce_value_to_type(["true", "false"], "list[bool]", None) == [True, False]
-        assert _coerce_value_to_type(
-            {"x": 1},
-            "FakeModel",
-            models_module,
-        ) == {
-            "value": {"x": 1},
-            "candidates": ["FakeModel"],
-            "models_module": models_module,
-        }
+        model = _coerce_value_to_type({"ocpus": "2"}, "LaunchInstanceShapeConfigDetails", "oci.core")
+        assert isinstance(model, oci.core.models.LaunchInstanceShapeConfigDetails)
+        assert model.ocpus == 2
 
     def test_extract_expected_kwargs_from_source_returns_none_on_regex_error(self, monkeypatch):
         def method():
@@ -250,23 +163,15 @@ class TestDescriptionAndSerializationHelpers:
     def test_describe_operation_covers_missing_operation_non_callable_and_doc_failure(self, monkeypatch):
         class FakeClient:
             thing = 123
-
-            def list_things(self, compartment_id, opc_retry_token=None):  # noqa: ARG002
+            def list_things(self, compartment_id, opc_retry_token=None):
                 """List things."""
                 return None
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
-
-        with pytest.raises(AttributeError, match="Similar operations"):
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
+        with pytest.raises(ValueError, match="catalog"):
             _describe_operation("oci.fake.FakeClient", "list_thingz")
-
-        with pytest.raises(AttributeError, match="not callable"):
+        with pytest.raises(ValueError, match="catalog"):
             _describe_operation("oci.fake.FakeClient", "thing")
-
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.inspect.getdoc", lambda obj: (_ for _ in ()).throw(RuntimeError("doc fail")))
+        monkeypatch.setattr(server_mod.inspect, "getdoc", lambda obj: (_ for _ in ()).throw(RuntimeError("doc fail")))
         desc = _describe_operation("oci.fake.FakeClient", "list_things")
         assert desc["summary"] == ""
         assert desc["request_models"] == []
@@ -434,31 +339,17 @@ class TestToolValidationBranches:
     @pytest.mark.asyncio
     async def test_find_oci_api_client_filter_path_and_include_params(self, monkeypatch):
         class FakeClient:
-            def list_instances(self, compartment_id):  # noqa: ARG002
+            def list_instances(self, compartment_id):
                 """List instances."""
                 return None
-
-            def get_instance(self, instance_id):  # noqa: ARG002
+            def get_instance(self, instance_id):
                 """Get instance."""
                 return None
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
-
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
         async with Client(mcp) as client:
-            res = (
-                await client.call_tool(
-                    "find_oci_api",
-                    {
-                        "query": "list instances",
-                        "client_fqn": "oci.fake.FakeClient",
-                        "include_params": True,
-                    },
-                )
-            ).data
-
+            res = (await client.call_tool("find_oci_api", {
+                "query": "list instances", "client_fqn": "oci.fake.FakeClient", "include_params": True,
+            })).data
         assert res["client_filter"] == "oci.fake.FakeClient"
         assert res["matches"][0]["operation"] == "list_instances"
         assert "params" in res["matches"][0]

@@ -1,10 +1,11 @@
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 
 import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 import oracle.oci_cloud_mcp_server.server as server_mod
 from oracle.oci_cloud_mcp_server.server import mcp
+from oracle.oci_cloud_mcp_server.tests.sdk_fixtures import install_catalog
 
 
 def _fake_tool_response(data, request_id):
@@ -12,10 +13,7 @@ def _fake_tool_response(data, request_id):
 
 
 def _patch_fake_invoke_client(monkeypatch, client_cls, *, pager_response=None):
-    monkeypatch.setattr(
-        "oracle.oci_cloud_mcp_server.server.import_module",
-        lambda name: SimpleNamespace(FakeClient=client_cls),
-    )
+    install_catalog(monkeypatch, clients={"oci.fake.FakeClient": client_cls})
     monkeypatch.setattr(
         "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
         lambda: ({}, object()),
@@ -28,62 +26,17 @@ def _patch_fake_invoke_client(monkeypatch, client_cls, *, pager_response=None):
 
 
 class TestDiscoveryTools:
-    def test_discover_client_classes_skips_internal_and_base_clients(self, monkeypatch):
-        class ComputeClient:
-            __module__ = "oci.core.compute_client"
-
-        class BaseClient:
-            __module__ = "oci.base_client"
-
-        class PyJWKClient:
-            __module__ = "oci._vendor.jwt.foo_client"
-
-        compute_client_module = ModuleType("oci.core.compute_client")
-        compute_client_module.ComputeClient = ComputeClient
-        core_module = ModuleType("oci.core")
-        core_module.ComputeClient = ComputeClient
-        base_client_module = ModuleType("oci.base_client")
-        base_client_module.BaseClient = BaseClient
-        oci_module = ModuleType("oci")
-        oci_module.BaseClient = BaseClient
-        vendor_client_module = ModuleType("oci._vendor.jwt.foo_client")
-        vendor_client_module.PyJWKClient = PyJWKClient
-        vendor_parent_module = ModuleType("oci._vendor.jwt")
-        vendor_parent_module.PyJWKClient = PyJWKClient
-
-        fake_modules = {
-            "oci.core.compute_client": compute_client_module,
-            "oci.core": core_module,
-            "oci.base_client": base_client_module,
-            "oci": oci_module,
-            "oci._vendor.jwt.foo_client": vendor_client_module,
-            "oci._vendor.jwt": vendor_parent_module,
-        }
-
-        class ModuleInfo:
-            def __init__(self, name):
-                self.name = name
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.pkgutil.walk_packages",
-            lambda path, prefix="oci.": [
-                ModuleInfo("oci.base_client"),
-                ModuleInfo("oci._vendor.jwt.foo_client"),
-                ModuleInfo("oci.core.compute_client"),
-            ],
-        )
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: fake_modules[name],
-        )
-
+    def test_discover_client_classes_skips_internal_and_base_clients(self):
         server_mod._discover_client_classes.cache_clear()
         try:
             discovered = server_mod._discover_client_classes()
         finally:
             server_mod._discover_client_classes.cache_clear()
-
-        assert discovered == [("oci.core.ComputeClient", ComputeClient)]
+        names = {name for name, _ in discovered}
+        assert "oci.core.ComputeClient" in names
+        assert "oci.BaseClient" not in names
+        assert not any("_vendor" in name or "CompositeOperations" in name for name in names)
+        assert names == set(server_mod._catalog.clients)
 
     @pytest.mark.asyncio
     async def test_find_oci_api_returns_ranked_matches(self, monkeypatch):
@@ -97,13 +50,12 @@ class TestDiscoveryTools:
                 """List virtual cloud networks."""
                 return None
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._discover_client_classes",
-            lambda: [
-                ("oci.core.ComputeClient", ComputeClient),
-                ("oci.core.VirtualNetworkClient", NetworkClient),
-            ],
-        )
+        install_catalog(monkeypatch, clients={
+            "oci.core.ComputeClient": ComputeClient, "oci.core.VirtualNetworkClient": NetworkClient,
+        })
+        monkeypatch.setattr(server_mod, "_discover_client_classes", lambda: [
+            ("oci.core.ComputeClient", ComputeClient), ("oci.core.VirtualNetworkClient", NetworkClient),
+        ])
 
         async with Client(mcp) as client:
             res = (
@@ -129,13 +81,12 @@ class TestDiscoveryTools:
                 """Returns a list of Shapes."""
                 return None
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._discover_client_classes",
-            lambda: [
-                ("oci.rover.ShapeClient", ShapeClient),
-                ("oci.core.ComputeClient", ComputeClient),
-            ],
-        )
+        install_catalog(monkeypatch, clients={
+            "oci.rover.ShapeClient": ShapeClient, "oci.core.ComputeClient": ComputeClient,
+        })
+        monkeypatch.setattr(server_mod, "_discover_client_classes", lambda: [
+            ("oci.rover.ShapeClient", ShapeClient), ("oci.core.ComputeClient", ComputeClient),
+        ])
 
         async with Client(mcp) as client:
             res = (
@@ -163,14 +114,11 @@ class TestDiscoveryTools:
                 """Create a VCN."""
                 return None
 
-        def fake_import(name):
-            if name == "oci.fake":
-                return SimpleNamespace(VirtualNetworkClient=VirtualNetworkClient)
-            if name == "oci.fake.models":
-                return SimpleNamespace(CreateVcnDetails=CreateVcnDetails)
-            raise ImportError(name)
-
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", fake_import)
+        install_catalog(
+            monkeypatch,
+            clients={"oci.fake.VirtualNetworkClient": VirtualNetworkClient},
+            models={"oci.fake.models.CreateVcnDetails": CreateVcnDetails},
+        )
 
         async with Client(mcp) as client:
             res = (
@@ -201,10 +149,7 @@ class TestDiscoveryTools:
                 """Get a thing."""
                 return None
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
 
         async with Client(mcp) as client:
             res = (
@@ -224,44 +169,18 @@ class TestDiscoveryTools:
         assert "params" not in res["operations"][0]
 
     @pytest.mark.asyncio
-    async def test_list_oci_clients_returns_discovered_clients(self, monkeypatch):
-        class ComputeClient:
-            pass
-
-        class IdentityClient:
-            pass
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server._discover_client_classes",
-            lambda: [
-                ("oci.core.ComputeClient", ComputeClient),
-                ("oci.identity.IdentityClient", IdentityClient),
-            ],
-        )
-
+    async def test_list_oci_clients_returns_discovered_clients(self):
         async with Client(mcp) as client:
             res = (await client.call_tool("list_oci_clients", {})).data
-
-        assert res == {
-            "count": 2,
-            "clients": [
-                {
-                    "client_fqn": "oci.core.ComputeClient",
-                    "module": "oci.core",
-                    "class": "ComputeClient",
-                },
-                {
-                    "client_fqn": "oci.identity.IdentityClient",
-                    "module": "oci.identity",
-                    "class": "IdentityClient",
-                },
-            ],
-        }
+        assert res["count"] == 322
+        assert {entry["client_fqn"] for entry in res["clients"]} == set(server_mod._catalog.clients)
+        assert {"client_fqn": "oci.core.ComputeClient", "module": "oci.core", "class": "ComputeClient"} in res["clients"]
+        assert {"client_fqn": "oci.identity.IdentityClient", "module": "oci.identity", "class": "IdentityClient"} in res["clients"]
 
     @pytest.mark.asyncio
     async def test_tool_rejects_non_oci_client_fqn(self):
         async with Client(mcp) as client:
-            with pytest.raises(ToolError, match="OCI SDK client under the 'oci\\.' namespace"):
+            with pytest.raises(ToolError, match="cataloged OCI SDK service client"):
                 await client.call_tool(
                     "list_client_operations",
                     {"client_fqn": "fake.module.ComputeClient"},
@@ -299,10 +218,7 @@ class TestInvokeShaping:
             captured["retry_calls"].append(dict(kwargs))
             return method(**kwargs)
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
             lambda: ({}, object()),
@@ -375,10 +291,7 @@ class TestInvokeShaping:
             captured["retry_calls"].append(dict(kwargs))
             return method(**kwargs)
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
             lambda: ({}, object()),
@@ -443,10 +356,7 @@ class TestInvokeShaping:
                     }
                 )
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
             lambda: ({}, object()),
@@ -694,10 +604,7 @@ class TestInvokeShaping:
                 """Get a thing."""
                 return {"ok": True}
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
             lambda: ({}, object()),
@@ -778,10 +685,7 @@ class TestInvokeShaping:
                 """
                 return FakeResponse({"retry_count": retry_count})
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
             lambda: ({}, object()),
@@ -815,23 +719,17 @@ class TestModelTypeCoercion:
                 self._data = dict(kwargs)
 
         MyModel.__module__ = "oci.fake.models"
-        fake_models = SimpleNamespace(MyModel=MyModel)
 
         from oracle.oci_cloud_mcp_server.server import _construct_model_from_mapping
-        from oracle.oci_cloud_mcp_server.server import oci as _oci
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(MyModel=MyModel) if name == "oci.fake.models" else fake_models,
-        )
-        monkeypatch.setattr(_oci.util, "from_dict", lambda cls, data: cls(**data), raising=False)
+        install_catalog(monkeypatch, models={"oci.fake.models.MyModel": MyModel})
 
         inst = _construct_model_from_mapping(
             {
                 "__model_fqn": "oci.fake.models.MyModel",
                 "name": 123,
             },
-            fake_models,
+            "oci.fake",
             [],
         )
 
@@ -842,7 +740,7 @@ class TestModelTypeCoercion:
                 "__class_fqn": "oci.fake.models.MyModel",
                 "name": 456,
             },
-            fake_models,
+            "oci.fake",
             [],
         )
 
@@ -851,7 +749,7 @@ class TestModelTypeCoercion:
     def test_construct_model_rejects_non_oci_model_fqn(self):
         from oracle.oci_cloud_mcp_server.server import _construct_model_from_mapping
 
-        with pytest.raises(ValueError, match="under the 'oci\\.\\*\\.models' namespace"):
+        with pytest.raises(ValueError, match="cataloged OCI SDK model class"):
             _construct_model_from_mapping(
                 {
                     "__model_fqn": "subprocess.Popen",
@@ -861,25 +759,13 @@ class TestModelTypeCoercion:
                 [],
             )
 
-    def test_construct_model_rejects_oci_fqn_that_is_not_model_class(self, monkeypatch):
-        class NotModel:
-            pass
-
-        NotModel.__module__ = "oci.fake.models"
-
+    def test_construct_model_rejects_client_class_as_model(self):
         from oracle.oci_cloud_mcp_server.server import _construct_model_from_mapping
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(NotModel=NotModel),
-        )
-
-        with pytest.raises(ValueError, match="OCI SDK model class"):
+        with pytest.raises(ValueError, match="cataloged OCI SDK model class"):
             _construct_model_from_mapping(
-                {
-                    "__model_fqn": "oci.fake.models.NotModel",
-                },
-                SimpleNamespace(),
+                {"__model_fqn": "oci.core.ComputeClient"},
+                "oci.core",
                 [],
             )
 
@@ -894,12 +780,9 @@ class TestModelTypeCoercion:
             def __init__(self, **kwargs):
                 self._data = dict(kwargs)
 
-        fake_models = SimpleNamespace(MyModel=MyModel)
-
         from oracle.oci_cloud_mcp_server.server import _construct_model_from_mapping
-        from oracle.oci_cloud_mcp_server.server import oci as _oci
 
-        monkeypatch.setattr(_oci.util, "from_dict", lambda cls, data: cls(**data), raising=False)
+        install_catalog(monkeypatch, models={"oci.fake.models.MyModel": MyModel})
 
         inst = _construct_model_from_mapping(
             {
@@ -908,7 +791,7 @@ class TestModelTypeCoercion:
                 "is_enabled": "true",
                 "tags": [1, "blue"],
             },
-            fake_models,
+            "oci.fake",
             [],
         )
 

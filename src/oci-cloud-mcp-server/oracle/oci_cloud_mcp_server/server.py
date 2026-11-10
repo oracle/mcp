@@ -8,11 +8,10 @@ import difflib
 import inspect
 import json
 import os
-import pkgutil
 import re
 from copy import copy
+from dataclasses import dataclass
 from functools import lru_cache
-from importlib import import_module
 from itertools import islice
 from logging import Logger
 from typing import Annotated, Any, Callable, Dict, List, Literal, Optional, Tuple, get_args, get_origin
@@ -24,6 +23,7 @@ from fastmcp.server.dependencies import get_access_token
 from fastmcp.utilities.auth import parse_scopes
 
 from . import __project__, __version__
+from .sdk_catalog import ClientEntry, ModelEntry, SdkResolutionError, load_catalog
 from .utils import initAuditLogger
 
 logger = Logger(__name__, level="INFO")
@@ -43,6 +43,8 @@ _SERVER_INSTRUCTIONS = inspect.cleandoc(
     Use result_mode="full" only when needed, and prefer fields=[...] for a few exact top-level fields.
     """
 )
+
+_catalog = load_catalog()
 
 mcp = FastMCP(
     name=__project__,
@@ -90,12 +92,7 @@ _FALLBACK_CLIENT_PREFERENCES = {
 
 
 def _validate_client_fqn(client_fqn: str, *, require_client_class: bool = False) -> None:
-    if not isinstance(client_fqn, str) or not client_fqn:
-        raise ValueError("client_fqn must be a non-empty string")
-    if not client_fqn.startswith("oci."):
-        raise ValueError("client_fqn must reference an OCI SDK client under the 'oci.' namespace")
-    if require_client_class and not client_fqn.rsplit(".", 1)[-1].endswith("Client"):
-        raise ValueError("client_fqn must reference an OCI SDK client class ending in 'Client'")
+    _catalog.client(client_fqn)
 
 
 def _get_oci_client_kwargs(signer=None):
@@ -176,21 +173,12 @@ def _candidate_model_class_names(operation_name: str, param_name: str) -> List[s
 
 
 def _get_client_class(client_fqn: str) -> Any:
-    _validate_client_fqn(client_fqn)
-    module_name, class_name = client_fqn.rsplit(".", 1)
-    module = import_module(module_name)
-    cls = getattr(module, class_name)
-    if not inspect.isclass(cls):
-        raise ValueError(f"{client_fqn} is not a class")
-    return cls
+    return _catalog.load_client(_catalog.client(client_fqn))
 
 
 def _get_public_client_methods(cls: Any) -> List[Tuple[str, Callable[..., Any]]]:
-    return [
-        (name, member)
-        for name, member in inspect.getmembers(cls, predicate=inspect.isfunction)
-        if not name.startswith("_")
-    ]
+    entry = _catalog.client(f"{cls.__module__}.{cls.__name__}")
+    return [(name, getattr(cls, name)) for name in entry.operations]
 
 
 def _public_client_operation_names(cls: Any) -> List[str]:
@@ -198,26 +186,11 @@ def _public_client_operation_names(cls: Any) -> List[str]:
 
 
 def _resolve_public_client_method(target: Any, client_fqn: str, operation_name: str) -> Callable[..., Any]:
-    cls = target if inspect.isclass(target) else target.__class__
-    public_operation_names = _public_client_operation_names(cls)
-    if operation_name not in public_operation_names:
-        existing_attr = getattr(target, operation_name, None)
-        if not operation_name.startswith("_") and existing_attr is not None and not callable(existing_attr):
-            raise AttributeError(f"Attribute '{operation_name}' on client '{client_fqn}' is not callable")
-        suggestions = difflib.get_close_matches(
-            operation_name,
-            public_operation_names,
-            n=5,
-            cutoff=0.4,
-        )
-        raise AttributeError(
-            f"Operation '{operation_name}' not found or is not public on client '{client_fqn}'"
-            + (f". Similar operations: {', '.join(suggestions)}" if suggestions else "")
-        )
-
+    entry = _catalog.client(client_fqn)
+    _catalog.operation(entry, operation_name)
     method = getattr(target, operation_name)
     if not callable(method):
-        raise AttributeError(f"Attribute '{operation_name}' on client '{client_fqn}' is not callable")
+        raise SdkResolutionError(f"Cataloged operation {operation_name!r} is not callable")
     return method
 
 
@@ -232,92 +205,60 @@ def _signature_to_display(operation_name: str, signature) -> str:
 
 
 def _import_models_module_from_client_fqn(client_fqn: str):
-    module_name = client_fqn.rsplit(".", 1)[0]
-    candidates: List[str] = [f"{module_name}.models"]
-    if module_name.count(".") >= 2:
-        parent_module = module_name.rsplit(".", 1)[0]
-        candidates.append(f"{parent_module}.models")
-
-    for candidate in _dedupe_preserve_order(candidates):
-        try:
-            return import_module(candidate)
-        except Exception:
-            continue
-    return None
+    # This is a catalog service context, not a module path selected by the request.
+    return _catalog.client(client_fqn).service
 
 
-def _resolve_model_class(models_module: Any, class_name: str):
+def _resolve_model_class(models_module: str, class_name: str):
     try:
-        return getattr(models_module, class_name)
-    except Exception:
-        return None
+        entry = _catalog.model(class_name, models_module)
+    except SdkResolutionError:
+        return None  # Optional heuristic lookup; explicit hints never use this path.
+    return _catalog.load_model(entry)
 
 
 def _get_model_schema_maps(model_class: Any) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
-    swagger_types = getattr(model_class, "swagger_types", None)
-    attribute_map = getattr(model_class, "attribute_map", None)
-    if isinstance(swagger_types, dict) and isinstance(attribute_map, dict):
-        return swagger_types, attribute_map
-
-    try:
-        model_instance = model_class()
-    except Exception:
-        model_instance = None
-
-    if model_instance is not None:
-        if not isinstance(swagger_types, dict):
-            swagger_types = getattr(model_instance, "swagger_types", None)
-        if not isinstance(attribute_map, dict):
-            attribute_map = getattr(model_instance, "attribute_map", None)
-
-    return (
-        swagger_types if isinstance(swagger_types, dict) else None,
-        attribute_map if isinstance(attribute_map, dict) else None,
-    )
+    entry = _catalog.model_for_class(model_class)
+    return dict(entry.swagger_types), dict(entry.attribute_map)
 
 
 def _is_oci_sdk_model_class(model_class: Any) -> bool:
     if not inspect.isclass(model_class):
         return False
-    if not getattr(model_class, "__module__", "").startswith("oci."):
+    try:
+        _catalog.model_for_class(model_class)
+    except SdkResolutionError:
         return False
-    swagger_types, attribute_map = _get_model_schema_maps(model_class)
-    return isinstance(swagger_types, dict) and isinstance(attribute_map, dict)
+    return True
 
 
 def _resolve_model_class_from_fqn(fqn: str) -> Any:
     if not isinstance(fqn, str) or "." not in fqn:
-        raise ValueError("__model_fqn must be a fully-qualified OCI SDK model class name")
-    mod_name, cls_name = fqn.rsplit(".", 1)
-    is_models_module = mod_name.endswith(".models") or ".models." in mod_name
-    if not mod_name.startswith("oci.") or mod_name.startswith("oci._") or not is_models_module:
-        raise ValueError("__model_fqn must reference an OCI SDK model class under the 'oci.*.models' namespace")
-    mod = import_module(mod_name)
-    cls = getattr(mod, cls_name)
-    if not _is_oci_sdk_model_class(cls):
-        raise ValueError("__model_fqn must resolve to an OCI SDK model class")
-    return cls
+        raise SdkResolutionError("Model FQN must reference a cataloged OCI SDK model class")
+    return _catalog.load_model(_catalog.model(fqn))
+
+
+def _polymorphic_entry(entry: ModelEntry, mapping: Dict[str, Any]) -> ModelEntry:
+    model_class = _catalog.load_model(entry)
+    subtype_resolver = getattr(model_class, "get_subtype", None)
+    if not callable(subtype_resolver):
+        return entry
+    payload = dict(mapping)
+    for snake_name, api_name in entry.attribute_map.items():
+        if snake_name in mapping and api_name not in payload:
+            payload[api_name] = mapping[snake_name]
+    try:
+        name = subtype_resolver(payload)
+    except (KeyError, TypeError, ValueError):
+        return entry  # Preserve the SDK base for an absent/unusable discriminator.
+    subtype = _catalog.model(name, entry.service)
+    if not _catalog.is_subtype(entry, subtype):
+        raise SdkResolutionError("Polymorphic subtype is outside the cataloged base hierarchy")
+    return subtype
 
 
 def _resolve_polymorphic_model_class(model_class: Any, mapping: Dict[str, Any], models_module: Any) -> Any:
-    subtype_resolver = getattr(model_class, "get_subtype", None)
-    if not callable(subtype_resolver):
-        return model_class
-
-    _, attribute_map = _get_model_schema_maps(model_class)
-    discriminator_payload = dict(mapping)
-    if isinstance(attribute_map, dict):
-        for snake_name, api_name in attribute_map.items():
-            if snake_name in mapping and api_name not in discriminator_payload:
-                discriminator_payload[api_name] = mapping[snake_name]
-
-    try:
-        subtype_name = subtype_resolver(discriminator_payload)
-    except Exception:
-        return model_class
-
-    subtype_class = _resolve_model_class(models_module, subtype_name) if models_module else None
-    return subtype_class if inspect.isclass(subtype_class) else model_class
+    return _catalog.load_model(_polymorphic_entry(_catalog.model_for_class(model_class), mapping))
 
 
 def _extract_expected_kwargs_from_source(method: Callable[..., Any]) -> Optional[set]:
@@ -430,38 +371,7 @@ def _score_discovery_match(
 
 @lru_cache(maxsize=1)
 def _discover_client_classes() -> List[Tuple[str, Any]]:
-    discovered: List[Tuple[str, Any]] = []
-    seen: set[str] = set()
-    for module_info in pkgutil.walk_packages(oci.__path__, prefix="oci."):
-        module_name = module_info.name
-        if module_name.startswith("oci._"):
-            continue
-        if not module_name.endswith("_client") or module_name.endswith(".composite_operations"):
-            continue
-        try:
-            module = import_module(module_name)
-        except Exception:
-            continue
-        parent_module_name = module_name.rsplit(".", 1)[0]
-        if parent_module_name == "oci" or parent_module_name.startswith("oci._"):
-            continue
-        try:
-            parent_module = import_module(parent_module_name)
-        except Exception:
-            parent_module = None
-        for class_name, cls in inspect.getmembers(module, predicate=inspect.isclass):
-            if not class_name.endswith("Client"):
-                continue
-            if getattr(cls, "__module__", "") != module.__name__:
-                continue
-            client_fqn = f"{module_name}.{class_name}"
-            if parent_module is not None and getattr(parent_module, class_name, None) is cls:
-                client_fqn = f"{parent_module_name}.{class_name}"
-            if client_fqn in seen:
-                continue
-            seen.add(client_fqn)
-            discovered.append((client_fqn, cls))
-    return sorted(discovered, key=lambda item: item[0])
+    return [(entry.identity, _catalog.load_client(entry)) for entry in _catalog.clients.values()]
 
 
 def _get_http_config_and_signer() -> Tuple[Dict[str, Any], Any]:
@@ -484,8 +394,7 @@ def _get_config_and_signer() -> Tuple[Dict[str, Any], Any]:
     return config, auth_context.signer
 
 
-def _import_client(client_fqn: str):
-    cls = _get_client_class(client_fqn)
+def _import_client(cls: type):
     config, signer = _get_config_and_signer()
     client_kwargs = _get_oci_client_kwargs(signer)
     try:
@@ -548,200 +457,187 @@ def _coerce_primitive_value(value: Any, type_name: str) -> Any:
     return value
 
 
+@dataclass(frozen=True)
+class _PreparedModel:
+    entry: ModelEntry
+    values: Dict[str, Any]
+
+
+@dataclass(frozen=True)
+class PreparedParams:
+    values: Dict[str, Any]
+
+
+def _explicit_model(mapping: Dict[str, Any], service: str | None) -> ModelEntry | None:
+    entries = []
+    for key in ("__model_fqn", "__class_fqn"):
+        if key in mapping:
+            value = mapping[key]
+            if not isinstance(value, str) or "." not in value:
+                raise SdkResolutionError("Explicit model FQN must reference a cataloged SDK model")
+            entries.append(_catalog.model(value))
+    context = entries[0].service if entries else service
+    for key in ("__model", "__class"):
+        if key in mapping:
+            value = mapping[key]
+            if not isinstance(value, str) or not value or "." in value:
+                raise SdkResolutionError("Short model hint must reference a cataloged service model")
+            entries.append(_catalog.model(value, context))
+    if entries and any(entry.identity != entries[0].identity for entry in entries):
+        raise SdkResolutionError("Conflicting cataloged model hints")
+    return entries[0] if entries else None
+
+
+def _validate_model_hints(value: Any, service: str | None) -> None:
+    if isinstance(value, dict):
+        selected = _explicit_model(value, service)
+        context = selected.service if selected else service
+        for key, child in value.items():
+            if not key.startswith("__"):
+                _validate_model_hints(child, context)
+    elif isinstance(value, list):
+        for child in value:
+            _validate_model_hints(child, service)
+
+
 def _resolve_model_class_from_type_name(type_name: str, models_module: Any) -> Any:
     if not type_name:
         return None
-    model_class = _resolve_model_class(models_module, type_name) if models_module else None
-    if inspect.isclass(model_class):
-        return model_class
-    if "." in type_name:
-        try:
-            module_name, class_name = type_name.rsplit(".", 1)
-            module = import_module(module_name)
-            model_class = getattr(module, class_name)
-            if inspect.isclass(model_class):
-                return model_class
-        except Exception:
-            return None
-    return None
+    try:
+        entry = _catalog.model(type_name, models_module)
+    except SdkResolutionError:
+        return None
+    return _catalog.load_model(entry)
 
 
-def _coerce_value_to_type(value: Any, type_name: Optional[str], models_module: Any) -> Any:
-    if value is None or not type_name:
+def _prepare_value(value: Any, type_name: Optional[str], service: str | None, candidates=()) -> Any:
+    if value is None or isinstance(value, _PreparedModel):
         return value
+    if type_name:
+        primitive = _coerce_primitive_value(value, type_name)
+        if primitive is not value:
+            return primitive
+        compact = type_name.replace(" ", "")
+        list_match = re.fullmatch(r"list\[(.+)\]", compact)
+        if list_match and isinstance(value, list):
+            return [_prepare_value(item, list_match.group(1), service) for item in value]
+        dict_match = re.fullmatch(r"dict\(([^,]+),(.+)\)", compact)
+        if dict_match and isinstance(value, dict):
+            return {key: _prepare_value(item, dict_match.group(2), service) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_prepare_value(item, None, service) for item in value]
+    if not isinstance(value, dict):
+        return value
+    selected = _explicit_model(value, service)
+    if selected is None:
+        for candidate in ([type_name] if type_name else []) + list(candidates):
+            try:
+                selected = _catalog.model(candidate, service)
+                break
+            except SdkResolutionError:
+                continue
+    if selected is None:
+        return {key: _prepare_value(child, None, service) for key, child in value.items()}
+    selected = _polymorphic_entry(selected, value)
+    explicit_fqn = any(key in value for key in ("__model_fqn", "__class_fqn"))
+    clean = {key: child for key, child in value.items() if not key.startswith("__")}
+    if not explicit_fqn:
+        clean = {key: child for key, child in clean.items() if key in selected.swagger_types}
+    values = {}
+    for key, child in clean.items():
+        field_type = selected.swagger_types.get(key)
+        nested_candidates = []
+        if field_type is None:
+            nested_candidates = _candidate_model_class_names("", key)
+        # Schema gaps never infer a class; explicit approved hints still work.
+        values[key] = _prepare_value(
+            child, None if key in selected.opaque_fields else field_type,
+            selected.service, nested_candidates,
+        )
+    return _PreparedModel(selected, values)
 
-    coerced_primitive = _coerce_primitive_value(value, type_name)
-    if coerced_primitive is not value:
-        return coerced_primitive
 
-    compact_type = type_name.replace(" ", "")
-    list_match = re.fullmatch(r"list\[(.+)\]", compact_type)
-    if list_match and isinstance(value, list):
-        inner_type = list_match.group(1)
-        return [_coerce_value_to_type(item, inner_type, models_module) for item in value]
-
-    dict_match = re.fullmatch(r"dict\(([^,]+),(.+)\)", compact_type)
-    if dict_match and isinstance(value, dict):
-        value_type = dict_match.group(2)
-        return {key: _coerce_value_to_type(item, value_type, models_module) for key, item in value.items()}
-
+def _materialize(value: Any) -> Any:
+    if isinstance(value, _PreparedModel):
+        model_class = _catalog.load_model(value.entry)
+        return model_class(**{key: _materialize(child) for key, child in value.values.items()})
     if isinstance(value, dict):
-        model_class = _resolve_model_class_from_type_name(type_name, models_module)
-        if inspect.isclass(model_class):
-            return _construct_model_from_mapping(
-                value,
-                models_module,
-                [getattr(model_class, "__name__", type_name)],
-            )
-
+        return {key: _materialize(child) for key, child in value.items()}
+    if isinstance(value, list):
+        return [_materialize(child) for child in value]
     return value
 
 
+def _coerce_value_to_type(value: Any, type_name: Optional[str], models_module: Any) -> Any:
+    _validate_model_hints(value, models_module)
+    return _materialize(_prepare_value(value, type_name, models_module))
+
+
 def _coerce_mapping_for_model_class(mapping: Dict[str, Any], models_module: Any, model_class: Any) -> Dict[str, Any]:
-    swagger_types, _ = _get_model_schema_maps(model_class)
-    if not isinstance(swagger_types, dict):
-        return mapping
-    return {
-        key: _coerce_value_to_type(value, swagger_types.get(key), models_module)
+    entry = _catalog.model_for_class(model_class)
+    _validate_model_hints(mapping, entry.service)
+    return _materialize({
+        key: _prepare_value(value, entry.swagger_types.get(key), entry.service)
         for key, value in mapping.items()
-    }
+    })
+
+
+def _method_param_types(method: Callable[..., Any]) -> Dict[str, str]:
+    signature, doc = _inspect_method(method)
+    types = {name: type_name for type_name, name in re.findall(
+        r":param\s+([^\s:]+)\s+([A-Za-z0-9_]+)\s*:", doc,
+    )}
+    if signature:
+        for name, param in signature.parameters.items():
+            annotation = _annotation_to_type_name(param.annotation)
+            if annotation and annotation != "Any":
+                types[name] = annotation
+    return types
 
 
 def _coerce_params_to_method_types(client_fqn: str, method: Callable[..., Any], params: Dict[str, Any]) -> Dict[str, Any]:
-    if not params:
-        return {}
-    models_module = _import_models_module_from_client_fqn(client_fqn)
-    signature, doc = _inspect_method(method)
-    doc_param_types = {
-        name: type_name
-        for type_name, name in re.findall(r":param\s+([^\s:]+)\s+([A-Za-z0-9_]+)\s*:", doc)
-    }
-    coerced: Dict[str, Any] = {}
-    for key, value in params.items():
-        type_name = doc_param_types.get(key)
-        if signature and key in signature.parameters:
-            annotation_type = _annotation_to_type_name(signature.parameters[key].annotation)
-            if annotation_type and annotation_type != "Any":
-                type_name = annotation_type
-        coerced[key] = _coerce_value_to_type(value, type_name, models_module)
-    return coerced
+    service = _catalog.client(client_fqn).service
+    _validate_model_hints(params, service)
+    types = _method_param_types(method)
+    return _materialize({key: _prepare_value(value, types.get(key), service) for key, value in params.items()})
 
 
-def _coerce_mapping_values(
-    mapping: Dict[str, Any], models_module: Any, parent_prefix: Optional[str] = None
-) -> Dict[str, Any]:
-    out: Dict[str, Any] = {}
-    for key, val in mapping.items():
-        if isinstance(val, dict):
-            candidates: List[str] = []
-            for suffix in _MODEL_SUFFIXES:
-                if key.endswith(suffix):
-                    base_camel = _snake_to_camel(key)
-                    candidates.append(base_camel)
-                    if parent_prefix:
-                        candidates.append(f"{parent_prefix}{base_camel}Details")
-                        candidates.append(f"{parent_prefix}{base_camel}")
-                    break
-            out[key] = _construct_model_from_mapping(val, models_module, candidates)
-        elif isinstance(val, list):
-            new_list = []
-            for item in val:
-                if isinstance(item, dict):
-                    new_list.append(_construct_model_from_mapping(item, models_module, []))
-                else:
-                    new_list.append(item)
-            out[key] = new_list
-        else:
-            out[key] = val
-    return out
+def _coerce_mapping_values(mapping: Dict[str, Any], models_module: Any, parent_prefix: Optional[str] = None) -> Dict[str, Any]:
+    _validate_model_hints(mapping, models_module)
+    return _materialize({
+        key: _prepare_value(value, None, models_module, _candidate_model_class_names("", key))
+        for key, value in mapping.items()
+    })
 
 
-def _construct_model_from_mapping(
-    mapping: Dict[str, Any], models_module: Any, candidate_classnames: List[str]
-):
-    fqn = mapping.get("__model_fqn") or mapping.get("__class_fqn")
-    class_name = mapping.get("__model") or mapping.get("__class")
-    clean = {k: v for k, v in mapping.items() if not k.startswith("__")}
-    parent_prefix_hint: Optional[str] = None
-    for cand in candidate_classnames:
-        if isinstance(cand, str) and cand:
-            if cand.endswith("Details"):
-                parent_prefix_hint = cand[: -len("Details")]
-                break
-            if parent_prefix_hint is None:
-                parent_prefix_hint = cand
-    clean = _coerce_mapping_values(clean, models_module, parent_prefix_hint)
-    if isinstance(fqn, str):
-        cls = _resolve_model_class_from_fqn(fqn)
-        cls = _resolve_polymorphic_model_class(cls, clean, models_module)
-        coerced_clean = _coerce_mapping_for_model_class(clean, models_module, cls)
-        try:
-            return oci.util.from_dict(cls, coerced_clean)
-        except Exception:
-            try:
-                return cls(**coerced_clean)
-            except Exception:
-                return mapping
-    if models_module and isinstance(class_name, str):
-        cls = _resolve_model_class(models_module, class_name)
-        if inspect.isclass(cls):
-            cls = _resolve_polymorphic_model_class(cls, clean, models_module)
-            filtered_clean = clean
-            swagger_types, _ = _get_model_schema_maps(cls)
-            if isinstance(swagger_types, dict):
-                filtered_clean = {k: v for k, v in clean.items() if k in swagger_types}
-            filtered_clean = _coerce_mapping_for_model_class(filtered_clean, models_module, cls)
-            try:
-                return oci.util.from_dict(cls, filtered_clean)
-            except Exception:
-                try:
-                    return cls(**filtered_clean)
-                except Exception:
-                    pass
-    if models_module:
-        for candidate in candidate_classnames:
-            cls = _resolve_model_class(models_module, candidate)
-            if inspect.isclass(cls):
-                cls = _resolve_polymorphic_model_class(cls, clean, models_module)
-                filtered_clean = clean
-                swagger_types, _ = _get_model_schema_maps(cls)
-                if isinstance(swagger_types, dict):
-                    filtered_clean = {k: v for k, v in clean.items() if k in swagger_types}
-                filtered_clean = _coerce_mapping_for_model_class(filtered_clean, models_module, cls)
-                try:
-                    return oci.util.from_dict(cls, filtered_clean)
-                except Exception:
-                    try:
-                        return cls(**filtered_clean)
-                    except Exception:
-                        continue
-    return mapping
+def _construct_model_from_mapping(mapping: Dict[str, Any], models_module: Any, candidate_classnames: List[str]):
+    _validate_model_hints(mapping, models_module)
+    return _materialize(_prepare_value(mapping, None, models_module, candidate_classnames))
 
 
 def _coerce_params_to_oci_models(client_fqn: str, operation: str, params: Dict[str, Any]) -> Dict[str, Any]:
-    if not params:
-        return {}
-    models_module = _import_models_module_from_client_fqn(client_fqn)
-    normalized_params = _normalize_details_param_alias(params, operation)
-    out: Dict[str, Any] = {}
-    for key, val in normalized_params.items():
-        if isinstance(val, dict):
-            candidates = _candidate_model_class_names(operation, key)
-            out[key] = _construct_model_from_mapping(val, models_module, candidates)
-        elif isinstance(val, list):
-            new_list = []
-            for item in val:
-                if isinstance(item, dict):
-                    if any(hint in item for hint in ("__model_fqn", "__model", "__class_fqn", "__class")):
-                        new_list.append(_construct_model_from_mapping(item, models_module, []))
-                    else:
-                        new_list.append(item)
-                else:
-                    new_list.append(item)
-            out[key] = new_list
-        else:
-            out[key] = val
-    return out
+    service = _catalog.client(client_fqn).service
+    _validate_model_hints(params, service)
+    normalized = _normalize_details_param_alias(params, operation)
+    return _materialize({
+        key: _prepare_value(value, None, service, _candidate_model_class_names(operation, key))
+        for key, value in normalized.items()
+    })
+
+
+def prepare_params(client: ClientEntry, method: Callable[..., Any], operation: str, params: Dict[str, Any]) -> PreparedParams:
+    _validate_model_hints(params, client.service)
+    normalized = _normalize_details_param_alias(params, operation)
+    types = _method_param_types(method)
+    values = {
+        key: _prepare_value(value, types.get(key), client.service, _candidate_model_class_names(operation, key))
+        for key, value in normalized.items()
+    }
+    return PreparedParams(_align_params_to_signature(method, operation, values))
+
+
+def materialize_params(prepared: PreparedParams) -> Dict[str, Any]:
+    return _materialize(prepared.values)
 
 
 def _describe_model_class(model_class: Any, max_fields: int = _DEFAULT_MODEL_FIELDS) -> Dict[str, Any]:
@@ -759,6 +655,7 @@ def _describe_model_class(model_class: Any, max_fields: int = _DEFAULT_MODEL_FIE
 def _describe_operation(
     client_fqn: str, operation_name: str, *, max_model_fields: int = _DEFAULT_MODEL_FIELDS
 ) -> Dict[str, Any]:
+    _catalog.operation(_catalog.client(client_fqn), operation_name)
     cls = _get_client_class(client_fqn)
     method = _resolve_public_client_method(cls, client_fqn, operation_name)
 
@@ -1319,6 +1216,8 @@ def invoke_oci_api(
         "Use 'auto' for compact defaults, 'summary' for a compact structural summary, or 'full' for the full payload.",
     ] = "auto",
 ) -> dict:
+    validated_client = None
+    validated_method = None
     try:
         if max_results is not None and max_results < 1:
             raise ValueError("max_results must be >= 1")
@@ -1330,18 +1229,16 @@ def invoke_oci_api(
                 raise ValueError("fields must contain at least one non-empty string")
         else:
             normalized_fields = None
-        _validate_client_fqn(client_fqn, require_client_class=True)
-        client = _import_client(client_fqn)
-        method = _resolve_public_client_method(client, client_fqn, operation)
-
+        validated_client = _catalog.client(client_fqn)
+        _catalog.operation(validated_client, operation)
+        cls = _get_client_class(client_fqn)
+        validated_method = _resolve_public_client_method(cls, client_fqn, operation)
         input_params = params or {}
+        prepared = prepare_params(validated_client, validated_method, operation, input_params)
+        final_params = materialize_params(prepared)
+        client = _import_client(cls)
+        method = _resolve_public_client_method(client, client_fqn, operation)
         uses_pagination = _supports_pagination(method, operation)
-        typed_params = _coerce_params_to_method_types(client_fqn, method, input_params)
-        final_params = _align_params_to_signature(
-            method,
-            operation,
-            _coerce_params_to_oci_models(client_fqn, operation, typed_params),
-        )
         logger.debug(f"invoke_oci_api final_params keys: {list(final_params.keys())}")
         logger.debug(f"op: {operation}")
         pagination_metadata: Dict[str, Any] = {}
@@ -1423,24 +1320,14 @@ def invoke_oci_api(
             error_result["available_fields"] = exc.available_fields
         error_text = str(exc)
         needs_param_hints = any(clue in error_text for clue in ("unexpected keyword argument", "required positional argument"))
-        try:
-            cls = _get_client_class(client_fqn)
-            try:
-                method = _resolve_public_client_method(cls, client_fqn, operation)
-            except AttributeError:
-                suggestions = difflib.get_close_matches(
-                    operation,
-                    _public_client_operation_names(cls),
-                    n=5,
-                    cutoff=0.4,
-                )
-                if suggestions:
-                    error_result["suggested_operations"] = suggestions
-            else:
-                if needs_param_hints and callable(method):
-                    error_result.update(_build_param_error_hints(method, operation, params or {}, error_text))
-        except Exception:
-            pass
+        if validated_client is not None:
+            suggestions = difflib.get_close_matches(
+                operation, list(validated_client.operations), n=5, cutoff=0.4,
+            )
+            if validated_method is None and suggestions:
+                error_result["suggested_operations"] = suggestions
+            elif needs_param_hints and validated_method is not None:
+                error_result.update(_build_param_error_hints(validated_method, operation, params or {}, error_text))
         return error_result
 
 
@@ -1499,19 +1386,15 @@ def list_client_operations(
 
 @mcp.tool(
     description=(
-        "List OCI Python SDK client classes discoverable in the current environment. "
+        "List OCI Python SDK service clients supported by the packaged SDK catalog. "
         "Prefer direct SDK-shaped calls or find_oci_api for task-oriented requests; use this for capability "
         "discovery or debugging."
     )
 )
 def list_oci_clients() -> dict:
     clients = [
-        {
-            "client_fqn": client_fqn,
-            "module": client_fqn.rsplit(".", 1)[0],
-            "class": getattr(cls, "__name__", client_fqn.rsplit(".", 1)[-1]),
-        }
-        for client_fqn, cls in _discover_client_classes()
+        {"client_fqn": entry.identity, "module": entry.service, "class": entry.name}
+        for entry in _catalog.clients.values()
     ]
     return {"count": len(clients), "clients": clients}
 

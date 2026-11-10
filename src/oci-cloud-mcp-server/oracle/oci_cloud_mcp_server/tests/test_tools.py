@@ -5,13 +5,13 @@ https://oss.oracle.com/licenses/upl.
 """
 
 import importlib.metadata
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 from fastmcp import Client
 from oracle.oci_cloud_mcp_server import __project__
 from oracle.oci_cloud_mcp_server.server import mcp
+from oracle.oci_cloud_mcp_server.tests.sdk_fixtures import install_catalog
 
 __version__ = importlib.metadata.version(__project__)
 user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
@@ -20,7 +20,7 @@ USER_AGENT = f"{user_agent_name}/{__version__}"
 
 class TestCloudSdkTools:
     @pytest.mark.asyncio
-    async def test_list_client_operations_with_fake_client(self):
+    async def test_list_client_operations_with_fake_client(self, monkeypatch):
         # build a fake client class with a couple of methods
         class FakeClient:
             def __init__(self, config, signer):
@@ -33,27 +33,24 @@ class TestCloudSdkTools:
             def _hidden(self):
                 return None
 
-        fake_module = SimpleNamespace(FakeClient=FakeClient)
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
 
-        with patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import:
-            mock_import.return_value = fake_module
+        async with Client(mcp) as client:
+            result = (
+                await client.call_tool(
+                    "list_client_operations",
+                    {"client_fqn": "oci.fake.FakeClient"},
+                )
+            ).data
+            ops = result["operations"]
 
-            async with Client(mcp) as client:
-                result = (
-                    await client.call_tool(
-                        "list_client_operations",
-                        {"client_fqn": "oci.fake.FakeClient"},
-                    )
-                ).data
-                ops = result["operations"]
-
-                # only public callable functions should be listed
-                names = [op["name"] for op in ops]
-                assert "get_thing" in names
-                assert "_hidden" not in names
+            # only public callable functions should be listed
+            names = [op["name"] for op in ops]
+            assert "get_thing" in names
+            assert "_hidden" not in names
 
     @pytest.mark.asyncio
-    async def test_invoke_oci_api_non_list_success(self):
+    async def test_invoke_oci_api_non_list_success(self, monkeypatch):
         # fake OCI-like response
         class FakeResponse:
             def __init__(self, data):
@@ -68,13 +65,11 @@ class TestCloudSdkTools:
             def get_thing(self, id):
                 return FakeResponse({"id": id, "value": "ok"})
 
-        fake_module = SimpleNamespace(FakeClient=FakeClient)
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
 
         with (
-            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
         ):
-            mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
 
             async with Client(mcp) as client:
@@ -96,7 +91,7 @@ class TestCloudSdkTools:
                 assert result["data"] == {"id": "abc", "value": "ok"}
 
     @pytest.mark.asyncio
-    async def test_invoke_oci_api_list_uses_direct_pagination(self):
+    async def test_invoke_oci_api_list_uses_direct_pagination(self, monkeypatch):
         class FakeResponse:
             def __init__(self, data):
                 self.data = data
@@ -111,13 +106,11 @@ class TestCloudSdkTools:
             def list_things(self, compartment_id):
                 return FakeResponse([{"name": "a"}, {"name": "b"}, {"name": "c"}])
 
-        fake_module = SimpleNamespace(FakeClient=FakeClient)
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
 
         with (
-            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
         ):
-            mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
 
             async with Client(mcp) as client:
@@ -139,7 +132,7 @@ class TestCloudSdkTools:
                 assert result["data"]["item_count"] == 3
 
     @pytest.mark.asyncio
-    async def test_invoke_oci_api_dns_get_zone_records_uses_direct_pagination(self):
+    async def test_invoke_oci_api_dns_get_zone_records_uses_direct_pagination(self, monkeypatch):
         class FakeResponse:
             def __init__(self, data):
                 self.data = data
@@ -154,13 +147,11 @@ class TestCloudSdkTools:
             def get_zone_records(self, zone_name, page=None, limit=None):
                 return FakeResponse([{"name": "a"}, {"name": "b"}, {"name": "c"}, {"name": "d"}])
 
-        fake_module = SimpleNamespace(FakeClient=FakeClient)
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
 
         with (
-            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
         ):
-            mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
 
             async with Client(mcp) as client:
@@ -182,7 +173,7 @@ class TestCloudSdkTools:
                 assert len(result["data"]) == 4
 
     @pytest.mark.asyncio
-    async def test_invoke_oci_api_summarize_prefix_uses_direct_pagination(self):
+    async def test_invoke_oci_api_summarize_prefix_uses_direct_pagination(self, monkeypatch):
         class FakeResponse:
             def __init__(self, data):
                 self.data = data
@@ -197,13 +188,11 @@ class TestCloudSdkTools:
             def summarize_metrics(self, compartment_id):
                 return FakeResponse([{"sum": 10}, {"sum": 20}])
 
-        fake_module = SimpleNamespace(FakeClient=FakeClient)
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
 
         with (
-            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
         ):
-            mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
 
             async with Client(mcp) as client:
@@ -225,7 +214,7 @@ class TestCloudSdkTools:
                 assert len(result["data"]) == 2
 
     @pytest.mark.asyncio
-    async def test_invoke_oci_api_dns_get_rr_set_allowlist_uses_direct_pagination(self):
+    async def test_invoke_oci_api_dns_get_rr_set_allowlist_uses_direct_pagination(self, monkeypatch):
         class FakeResponse:
             def __init__(self, data):
                 self.data = data
@@ -240,13 +229,11 @@ class TestCloudSdkTools:
             def get_rr_set(self, zone_name_or_id, domain, rtype, page=None, limit=None):
                 return FakeResponse([{"rr": 1}, {"rr": 2}, {"rr": 3}])
 
-        fake_module = SimpleNamespace(FakeClient=FakeClient)
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
 
         with (
-            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
         ):
-            mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
 
             async with Client(mcp) as client:
@@ -272,7 +259,7 @@ class TestCloudSdkTools:
                 assert len(result["data"]) == 3
 
     @pytest.mark.asyncio
-    async def test_invoke_oci_api_non_paginated_does_not_use_paginator(self):
+    async def test_invoke_oci_api_non_paginated_does_not_use_paginator(self, monkeypatch):
         class FakeResponse:
             def __init__(self, data):
                 self.data = data
@@ -287,16 +274,14 @@ class TestCloudSdkTools:
             def get_config(self, id):
                 return FakeResponse({"ok": True, "id": id})
 
-        fake_module = SimpleNamespace(FakeClient=FakeClient)
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
 
         with (
-            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
             patch(
                 "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
             ) as mock_pager,
         ):
-            mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
 
             async with Client(mcp) as client:
@@ -318,12 +303,12 @@ class TestCloudSdkTools:
                 assert result["data"] == {"ok": True, "id": "abc"}
 
     @pytest.mark.asyncio
-    async def test_invoke_oci_api_dns_kwargs_records_uses_paginator(self):
+    async def test_invoke_oci_api_dns_kwargs_records_uses_paginator(self, monkeypatch):
         # Removed: server no longer treats '**kwargs + records' name pattern as implicitly paginated.
         pass
 
     @pytest.mark.asyncio
-    async def test_invoke_oci_api_var_kw_non_dns_does_not_use_paginator(self):
+    async def test_invoke_oci_api_var_kw_non_dns_does_not_use_paginator(self, monkeypatch):
         class FakeResponse:
             def __init__(self, data):
                 self.data = data
@@ -338,16 +323,14 @@ class TestCloudSdkTools:
             def get_widget(self, widget_id, **kwargs):  # noqa: ARG002
                 return FakeResponse({"id": widget_id, "ok": True})
 
-        fake_module = SimpleNamespace(FakeClient=FakeClient)
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
 
         with (
-            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
             patch(
                 "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
             ) as mock_pager,
         ):
-            mock_import.return_value = fake_module
             mock_cfg.return_value = ({}, object())
 
             async with Client(mcp) as client:

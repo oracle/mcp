@@ -1,6 +1,5 @@
-from types import SimpleNamespace
-
 import pytest
+from oracle.oci_cloud_mcp_server.tests.sdk_fixtures import install_catalog
 from fastmcp import Client
 from oracle.oci_cloud_mcp_server.server import (
     _call_with_pagination_if_applicable,
@@ -40,10 +39,7 @@ class TestInvokeErrorPaths:
                 pass
 
         # patch module import and config/signer bootstrap
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
             lambda: ({}, object()),
@@ -62,18 +58,18 @@ class TestInvokeErrorPaths:
             ).data
 
         assert "error" in res
-        assert "not found" in res["error"].lower()
+        assert "not public or cataloged" in res["error"].lower()
 
     @pytest.mark.asyncio
     async def test_attribute_present_but_not_callable_returns_error(self, monkeypatch):
         class FakeClient:
             def __init__(self, config, signer):  # noqa: ARG002
-                self.get_thing = 123  # not callable
+                self.get_thing = 123  # An instance can shadow an approved class operation.
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
+            def get_thing(self):
+                return None
+
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
             lambda: ({}, object()),
@@ -105,16 +101,13 @@ class TestImportClientHappyPath:
                 constructed["args"] = (config,)
                 constructed["kwargs"] = {"signer": signer, **kwargs}
 
-        # module with GoodClient
-        fake_mod = SimpleNamespace(GoodClient=GoodClient)
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_mod)
         # basic config/signer
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
             lambda: ({"x": 1}, object()),
         )
 
-        inst = _import_client("oci.fake.GoodClient")
+        inst = _import_client(GoodClient)
         assert isinstance(inst, GoodClient)
         assert constructed["called"] is True
         assert constructed["args"][0] == {"x": 1}
@@ -194,10 +187,7 @@ class TestLoggingSearchPagination:
                     return Response([{"id": "result-1"}, {"id": "result-2"}], "req-1", next_page)
                 return Response([{"id": "result-3"}, {"id": "result-4"}], "req-2")
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(LogSearchClient=LogSearchClient),
-        )
+        install_catalog(monkeypatch, clients={"oci.loggingsearch.LogSearchClient": LogSearchClient})
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
             lambda: ({}, object()),
@@ -341,10 +331,7 @@ class TestInvokeTypeErrorPropagation:
             def create_vcn(self, foo):  # noqa: ARG002
                 return {"ok": True}
 
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
-        )
+        install_catalog(monkeypatch, clients={"oci.fake.FakeClient": FakeClient})
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
             lambda: ({}, object()),

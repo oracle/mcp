@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 2.3.1
+
+### Security
+
+- Resolve service clients, operations and request models through a packaged catalog for OCI SDK 2.185.1. Reject unlisted identities before importing them, validate model resolution before credentials or construction, and prevent error hints from re-resolving rejected input. Preserve supported SDK aliases, nested coercion and caller-specific authentication; exclude infrastructure/helper/vendor classes and composite wrappers.
+- Fail startup when the catalog is missing, malformed or does not exactly match the installed SDK version. Catalog generation is a controlled maintainer step; installation and startup never regenerate it. Deploy with nonroot execution and immutable application/SDK import locations.
+
 ## 2.3.0
 
 ### Added

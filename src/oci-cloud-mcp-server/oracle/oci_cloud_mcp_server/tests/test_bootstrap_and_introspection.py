@@ -8,6 +8,7 @@ from oracle.oci_cloud_mcp_server.server import (
     _align_params_to_signature,
     _extract_expected_kwargs_from_source,
     _get_config_and_signer,
+    _get_client_class,
     _import_client,
     main,
 )
@@ -263,14 +264,13 @@ class TestMainHttpRun:
 
 class TestImportClientValidation:
     def test_client_fqn_without_dot_raises(self):
-        with pytest.raises(ValueError):
-            _import_client("ComputeClient")
+        with pytest.raises(ValueError, match="catalog"):
+            _get_client_class("ComputeClient")
 
     def test_attribute_not_a_class_raises(self, monkeypatch):
-        fake_mod = SimpleNamespace(NotClass=42)
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_mod)
-        with pytest.raises(ValueError):
-            _import_client("oci.fake.NotClass")
+        monkeypatch.setattr(cloud_server, "_get_config_and_signer", lambda: pytest.fail("unapproved client reached auth"))
+        with pytest.raises(ValueError, match="catalog"):
+            _get_client_class("oci.fake.NotClass")
 
 
 class TestExtractExpectedKwargs:

@@ -1,0 +1,4 @@
+tasks:
+  test:
+    inputs:
+      - 'scripts/**/*'

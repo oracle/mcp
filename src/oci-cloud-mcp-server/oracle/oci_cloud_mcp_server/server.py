@@ -8,13 +8,12 @@ import difflib
 import inspect
 import json
 import os
-import pkgutil
 import re
 from copy import copy
 from functools import lru_cache
-from importlib import import_module
 from itertools import islice
 from logging import Logger
+from types import ModuleType
 from typing import Annotated, Any, Callable, Dict, List, Literal, Optional, Tuple, get_args, get_origin
 
 import oci
@@ -175,13 +174,30 @@ def _candidate_model_class_names(operation_name: str, param_name: str) -> List[s
     return _dedupe_preserve_order(candidates)
 
 
+def _get_service_module(service_name: str) -> ModuleType:
+    # Only the SDK's own exports may select a service import.
+    if service_name.startswith("_") or service_name not in getattr(oci, "__all__", ()):
+        raise ValueError("Unknown OCI SDK service")
+    service = getattr(oci, service_name)
+    if not isinstance(service, ModuleType) or "models" not in vars(service).get("__all__", ()):
+        raise ValueError("Expected an OCI SDK service with exported models")
+    return service
+
+
 def _get_client_class(client_fqn: str) -> Any:
-    _validate_client_fqn(client_fqn)
-    module_name, class_name = client_fqn.rsplit(".", 1)
-    module = import_module(module_name)
-    cls = getattr(module, class_name)
-    if not inspect.isclass(cls):
-        raise ValueError(f"{client_fqn} is not a class")
+    _validate_client_fqn(client_fqn, require_client_class=True)
+    parts = client_fqn.split(".")
+    if len(parts) not in (3, 4):
+        raise ValueError("client_fqn must reference an exported OCI SDK service client")
+    service = _get_service_module(parts[1])
+    class_name = parts[-1]
+    cls = vars(service).get(class_name)
+    if class_name not in service.__all__ or not inspect.isclass(cls):
+        raise ValueError("client_fqn must reference an exported OCI SDK service client class")
+    if not cls.__module__.startswith(f"{service.__name__}.") or client_fqn not in {
+        f"{service.__name__}.{class_name}", f"{cls.__module__}.{cls.__name__}",
+    }:
+        raise ValueError("client_fqn does not match the exported OCI SDK client identity")
     return cls
 
 
@@ -232,25 +248,18 @@ def _signature_to_display(operation_name: str, signature) -> str:
 
 
 def _import_models_module_from_client_fqn(client_fqn: str):
-    module_name = client_fqn.rsplit(".", 1)[0]
-    candidates: List[str] = [f"{module_name}.models"]
-    if module_name.count(".") >= 2:
-        parent_module = module_name.rsplit(".", 1)[0]
-        candidates.append(f"{parent_module}.models")
-
-    for candidate in _dedupe_preserve_order(candidates):
-        try:
-            return import_module(candidate)
-        except Exception:
-            continue
-    return None
+    cls = _get_client_class(client_fqn)
+    return _get_service_module(cls.__module__.split(".")[1]).models
 
 
 def _resolve_model_class(models_module: Any, class_name: str):
-    try:
-        return getattr(models_module, class_name)
-    except Exception:
+    if models_module is None or not isinstance(class_name, str):
         return None
+    namespace = vars(models_module).get("__name__", "").split(".")
+    if len(namespace) != 3 or namespace[0] != "oci" or namespace[2] != "models":
+        return None
+    cls = vars(models_module).get(f"{namespace[1]}_type_mapping", {}).get(class_name)
+    return cls if inspect.isclass(cls) else None
 
 
 def _get_model_schema_maps(model_class: Any) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
@@ -276,27 +285,43 @@ def _get_model_schema_maps(model_class: Any) -> Tuple[Optional[Dict[str, Any]], 
     )
 
 
-def _is_oci_sdk_model_class(model_class: Any) -> bool:
-    if not inspect.isclass(model_class):
-        return False
-    if not getattr(model_class, "__module__", "").startswith("oci."):
-        return False
-    swagger_types, attribute_map = _get_model_schema_maps(model_class)
-    return isinstance(swagger_types, dict) and isinstance(attribute_map, dict)
-
-
 def _resolve_model_class_from_fqn(fqn: str) -> Any:
-    if not isinstance(fqn, str) or "." not in fqn:
+    if not isinstance(fqn, str):
         raise ValueError("__model_fqn must be a fully-qualified OCI SDK model class name")
-    mod_name, cls_name = fqn.rsplit(".", 1)
-    is_models_module = mod_name.endswith(".models") or ".models." in mod_name
-    if not mod_name.startswith("oci.") or mod_name.startswith("oci._") or not is_models_module:
-        raise ValueError("__model_fqn must reference an OCI SDK model class under the 'oci.*.models' namespace")
-    mod = import_module(mod_name)
-    cls = getattr(mod, cls_name)
-    if not _is_oci_sdk_model_class(cls):
-        raise ValueError("__model_fqn must resolve to an OCI SDK model class")
+    parts = fqn.split(".")
+    if len(parts) not in (4, 5) or parts[0] != "oci" or parts[2] != "models":
+        raise ValueError("__model_fqn must reference an exported OCI SDK model class")
+    models = _get_service_module(parts[1]).models
+    cls = _resolve_model_class(models, parts[-1])
+    if cls is None or fqn not in {f"{models.__name__}.{parts[-1]}", f"{cls.__module__}.{cls.__name__}"}:
+        raise ValueError("__model_fqn must reference an exported OCI SDK model class")
     return cls
+
+
+def _validate_model_hints(value: Any, models_module: Any) -> Any:
+    """Resolve all explicit hints before any request model is constructed."""
+    selected = None
+    if isinstance(value, dict):
+        for hint in ("__model_fqn", "__class_fqn", "__model", "__class"):
+            if hint not in value:
+                continue
+            name = value[hint]
+            if not isinstance(name, str) or not name:
+                raise ValueError("Model hints must be non-empty strings")
+            cls = (_resolve_model_class_from_fqn(name) if hint.endswith("_fqn")
+                   else _resolve_model_class(models_module, name))
+            if cls is None or (selected is not None and selected is not cls):
+                raise ValueError("Unknown or conflicting OCI SDK model hints")
+            selected = cls
+            if hint.endswith("_fqn"):
+                models_module = _get_service_module(cls.__module__.split(".")[1]).models
+        for key, child in value.items():
+            if key not in ("__model_fqn", "__class_fqn", "__model", "__class"):
+                _validate_model_hints(child, models_module)
+    elif isinstance(value, list):
+        for child in value:
+            _validate_model_hints(child, models_module)
+    return selected
 
 
 def _resolve_polymorphic_model_class(model_class: Any, mapping: Dict[str, Any], models_module: Any) -> Any:
@@ -317,7 +342,7 @@ def _resolve_polymorphic_model_class(model_class: Any, mapping: Dict[str, Any], 
         return model_class
 
     subtype_class = _resolve_model_class(models_module, subtype_name) if models_module else None
-    return subtype_class if inspect.isclass(subtype_class) else model_class
+    return subtype_class if inspect.isclass(subtype_class) and issubclass(subtype_class, model_class) else model_class
 
 
 def _extract_expected_kwargs_from_source(method: Callable[..., Any]) -> Optional[set]:
@@ -431,36 +456,15 @@ def _score_discovery_match(
 @lru_cache(maxsize=1)
 def _discover_client_classes() -> List[Tuple[str, Any]]:
     discovered: List[Tuple[str, Any]] = []
-    seen: set[str] = set()
-    for module_info in pkgutil.walk_packages(oci.__path__, prefix="oci."):
-        module_name = module_info.name
-        if module_name.startswith("oci._"):
-            continue
-        if not module_name.endswith("_client") or module_name.endswith(".composite_operations"):
-            continue
+    for service_name in getattr(oci, "__all__", ()):
         try:
-            module = import_module(module_name)
-        except Exception:
+            service = _get_service_module(service_name)
+        except ValueError:
             continue
-        parent_module_name = module_name.rsplit(".", 1)[0]
-        if parent_module_name == "oci" or parent_module_name.startswith("oci._"):
-            continue
-        try:
-            parent_module = import_module(parent_module_name)
-        except Exception:
-            parent_module = None
-        for class_name, cls in inspect.getmembers(module, predicate=inspect.isclass):
-            if not class_name.endswith("Client"):
-                continue
-            if getattr(cls, "__module__", "") != module.__name__:
-                continue
-            client_fqn = f"{module_name}.{class_name}"
-            if parent_module is not None and getattr(parent_module, class_name, None) is cls:
-                client_fqn = f"{parent_module_name}.{class_name}"
-            if client_fqn in seen:
-                continue
-            seen.add(client_fqn)
-            discovered.append((client_fqn, cls))
+        for class_name, cls in vars(service).items():
+            if class_name in service.__all__ and class_name.endswith("Client") and inspect.isclass(cls):
+                client_fqn = f"{service.__name__}.{class_name}"
+                discovered.append((client_fqn, _get_client_class(client_fqn)))
     return sorted(discovered, key=lambda item: item[0])
 
 
@@ -556,12 +560,8 @@ def _resolve_model_class_from_type_name(type_name: str, models_module: Any) -> A
         return model_class
     if "." in type_name:
         try:
-            module_name, class_name = type_name.rsplit(".", 1)
-            module = import_module(module_name)
-            model_class = getattr(module, class_name)
-            if inspect.isclass(model_class):
-                return model_class
-        except Exception:
+            return _resolve_model_class_from_fqn(type_name)
+        except ValueError:
             return None
     return None
 
@@ -659,8 +659,9 @@ def _coerce_mapping_values(
 def _construct_model_from_mapping(
     mapping: Dict[str, Any], models_module: Any, candidate_classnames: List[str]
 ):
-    fqn = mapping.get("__model_fqn") or mapping.get("__class_fqn")
-    class_name = mapping.get("__model") or mapping.get("__class")
+    hinted_cls = _validate_model_hints(mapping, models_module)
+    if hinted_cls is not None and any(hint in mapping for hint in ("__model_fqn", "__class_fqn")):
+        models_module = _get_service_module(hinted_cls.__module__.split(".")[1]).models
     clean = {k: v for k, v in mapping.items() if not k.startswith("__")}
     parent_prefix_hint: Optional[str] = None
     for cand in candidate_classnames:
@@ -671,9 +672,13 @@ def _construct_model_from_mapping(
             if parent_prefix_hint is None:
                 parent_prefix_hint = cand
     clean = _coerce_mapping_values(clean, models_module, parent_prefix_hint)
-    if isinstance(fqn, str):
-        cls = _resolve_model_class_from_fqn(fqn)
+    if hinted_cls is not None:
+        cls = hinted_cls
         cls = _resolve_polymorphic_model_class(cls, clean, models_module)
+        if not any(hint in mapping for hint in ("__model_fqn", "__class_fqn")):
+            swagger_types, _ = _get_model_schema_maps(cls)
+            if isinstance(swagger_types, dict):
+                clean = {key: value for key, value in clean.items() if key in swagger_types}
         coerced_clean = _coerce_mapping_for_model_class(clean, models_module, cls)
         try:
             return oci.util.from_dict(cls, coerced_clean)
@@ -682,22 +687,6 @@ def _construct_model_from_mapping(
                 return cls(**coerced_clean)
             except Exception:
                 return mapping
-    if models_module and isinstance(class_name, str):
-        cls = _resolve_model_class(models_module, class_name)
-        if inspect.isclass(cls):
-            cls = _resolve_polymorphic_model_class(cls, clean, models_module)
-            filtered_clean = clean
-            swagger_types, _ = _get_model_schema_maps(cls)
-            if isinstance(swagger_types, dict):
-                filtered_clean = {k: v for k, v in clean.items() if k in swagger_types}
-            filtered_clean = _coerce_mapping_for_model_class(filtered_clean, models_module, cls)
-            try:
-                return oci.util.from_dict(cls, filtered_clean)
-            except Exception:
-                try:
-                    return cls(**filtered_clean)
-                except Exception:
-                    pass
     if models_module:
         for candidate in candidate_classnames:
             cls = _resolve_model_class(models_module, candidate)
@@ -1319,6 +1308,8 @@ def invoke_oci_api(
         "Use 'auto' for compact defaults, 'summary' for a compact structural summary, or 'full' for the full payload.",
     ] = "auto",
 ) -> dict:
+    validated_class = None
+    validated_method = None
     try:
         if max_results is not None and max_results < 1:
             raise ValueError("max_results must be >= 1")
@@ -1331,17 +1322,20 @@ def invoke_oci_api(
         else:
             normalized_fields = None
         _validate_client_fqn(client_fqn, require_client_class=True)
-        client = _import_client(client_fqn)
-        method = _resolve_public_client_method(client, client_fqn, operation)
+        validated_class = _get_client_class(client_fqn)
+        validated_method = _resolve_public_client_method(validated_class, client_fqn, operation)
 
         input_params = params or {}
-        uses_pagination = _supports_pagination(method, operation)
-        typed_params = _coerce_params_to_method_types(client_fqn, method, input_params)
+        _validate_model_hints(input_params, _import_models_module_from_client_fqn(client_fqn))
+        typed_params = _coerce_params_to_method_types(client_fqn, validated_method, input_params)
         final_params = _align_params_to_signature(
-            method,
+            validated_method,
             operation,
             _coerce_params_to_oci_models(client_fqn, operation, typed_params),
         )
+        client = _import_client(client_fqn)
+        method = _resolve_public_client_method(client, client_fqn, operation)
+        uses_pagination = _supports_pagination(method, operation)
         logger.debug(f"invoke_oci_api final_params keys: {list(final_params.keys())}")
         logger.debug(f"op: {operation}")
         pagination_metadata: Dict[str, Any] = {}
@@ -1423,24 +1417,18 @@ def invoke_oci_api(
             error_result["available_fields"] = exc.available_fields
         error_text = str(exc)
         needs_param_hints = any(clue in error_text for clue in ("unexpected keyword argument", "required positional argument"))
-        try:
-            cls = _get_client_class(client_fqn)
-            try:
-                method = _resolve_public_client_method(cls, client_fqn, operation)
-            except AttributeError:
+        if validated_class is not None:
+            if validated_method is None:
                 suggestions = difflib.get_close_matches(
                     operation,
-                    _public_client_operation_names(cls),
+                    _public_client_operation_names(validated_class),
                     n=5,
                     cutoff=0.4,
                 )
                 if suggestions:
                     error_result["suggested_operations"] = suggestions
-            else:
-                if needs_param_hints and callable(method):
-                    error_result.update(_build_param_error_hints(method, operation, params or {}, error_text))
-        except Exception:
-            pass
+            elif needs_param_hints:
+                error_result.update(_build_param_error_hints(validated_method, operation, params or {}, error_text))
         return error_result
 
 

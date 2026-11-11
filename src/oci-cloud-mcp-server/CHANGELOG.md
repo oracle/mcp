@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 2.3.1
+
+### Security
+
+- Resolve client and model names through the installed OCI SDK's service exports and model mappings. Validate operation and explicit model identities before constructors, and reuse validated objects for error hints instead of resolving rejected input again.
 
 ## 2.3.0
 

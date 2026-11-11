@@ -12,23 +12,27 @@ jobs:
   ci:
     name: CI
     runs-on: ubuntu-latest
+    env:
+      MOON_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+      MOON_HEAD: ${{ github.sha }}
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
+      - name: Setup Moon
+        uses: ./.github/actions/setup-moon
+
       - name: Run Moon CI
         run: |
-          moon_version=$(sed -n 's/^moon = "=\([0-9][0-9.]*\)"$/\1/p' .prototools)
-          test -n "$moon_version"
-          npx --yes --ignore-scripts --package="@moonrepo/cli@$moon_version" -- \
-            moon run root:lint :lock-check :install-check \
-              oci-javascript-mcp-server:ci
-          npx --yes --ignore-scripts --package="@moonrepo/cli@$moon_version" -- \
+          moon ci --include-relations :lint :lock-check :install-check :test :check :build
+          if compgen -G '.coverage.*' > /dev/null; then
             moon run root:combine-coverage
+          fi
 
       - name: Upload combined coverage report
+        if: ${{ hashFiles('.coverage') != '' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: all-in-one-coverage-report
@@ -37,3 +41,8 @@ jobs:
             src/*/htmlcov/**/*
             .coverage
           include-hidden-files: true
+
+      # MySQL has a native test command and is excluded from Moon's project graph.
+      - name: Test MySQL with enforced coverage
+        working-directory: src/mysql-mcp-server
+        run: '"$(moon bin uv)" run --locked --python "$(moon bin python)" pytest'

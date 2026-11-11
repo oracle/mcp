@@ -1,0 +1,27 @@
+version = 1
+revision = 3
+requires-python = "==3.13.*"
+
+[[package]]
+name = "cedarpy"
+version = "4.12.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/67/3f/049213baa33f87d85e7f47ee1cd4b697fcbb4958f80593e89432a62ed70e/cedarpy-4.12.1.tar.gz", hash = "sha256:357002b436d06ad00cd24c1dc27287933af9c45af0541b0cd9d52036cccfe8c2", size = 3312816, upload-time = "2026-09-24T00:41:23.637Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/da/5f/441952fb854834260d9b0b84bde1c2270320726a0a60b8d08ccf2aa3d482/cedarpy-4.12.1-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:3010ab38bd691387944d57d925aab6b743694a89a1cd3de4295421161bad1609", size = 4476177, upload-time = "2026-09-24T00:41:20.264Z" },
+    { url = "https://files.pythonhosted.org/packages/91/38/771e9fce6ca65c37cfc555ed3308703bfa2279703c525c6bbca039e90ed0/cedarpy-4.12.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:1c765643cc3c1472d85324f42147f3732b1c8dd47f71ff066386e7c8afe109b7", size = 4338337, upload-time = "2026-09-24T00:41:13.87Z" },
+    { url = "https://files.pythonhosted.org/packages/d8/1e/0ff153cacd5b69c7e760b42d434ced0e987b5e3445a779e309dd44072b79/cedarpy-4.12.1-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:35e7446894bf8889e5c04118391b8720afee7dcd2e9d4ebecfa646674301fb96", size = 4911156, upload-time = "2026-09-24T00:40:47.803Z" },
+    { url = "https://files.pythonhosted.org/packages/03/9b/8d2bdbc51125f7176d60eb49930804f4de6759032591986e8f7156dda38e/cedarpy-4.12.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:3c216ce8e4e9f8edb03154424dd99611e99533c3fb2f552147f61b0fcde5ac22", size = 4895089, upload-time = "2026-09-24T00:41:00.233Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/2b/461a485ddaccf322ce1baf8855bf47f5edc2fa67a423286d18015b580990/cedarpy-4.12.1-cp313-cp313-win_amd64.whl", hash = "sha256:80dca63da4cea16969d023daff31a15665ba54a769f633fb26ac5594b7ffd291", size = 4276334, upload-time = "2026-09-24T00:41:30.18Z" },
+]
+
+[[package]]
+name = "repository-policy"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "cedarpy" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "cedarpy", specifier = "==4.12.1" }]

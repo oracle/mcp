@@ -108,6 +108,7 @@ class InstanceSourceDetails(BaseModel):
 
     source_type: Optional[str] = Field(None, description="Type of source (e.g., image, bootVolume).")
     image_id: Optional[str] = Field(None, description="Image OCID.")
+    boot_volume_id: Optional[str] = Field(None, description="Existing boot volume OCID.")
     boot_volume_size_in_gbs: Optional[int] = Field(None, description="Boot volume size in GB.")
 
 
@@ -329,6 +330,7 @@ def map_source_details(sd) -> InstanceSourceDetails | None:
     return InstanceSourceDetails(
         source_type=getattr(sd, "source_type", None),
         image_id=getattr(sd, "image_id", None),
+        boot_volume_id=getattr(sd, "boot_volume_id", None),
         boot_volume_size_in_gbs=getattr(sd, "boot_volume_size_in_gbs", None),
     )
 

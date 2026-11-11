@@ -133,10 +133,11 @@ def list_instances(
         next_page: str = None
 
         while has_next_page and (limit is None or len(instances) < limit):
+            remaining = None if limit is None else limit - len(instances)
             kwargs = {
                 "compartment_id": compartment_id,
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             if lifecycle_state:
@@ -149,8 +150,10 @@ def list_instances(
             data: list[oci.core.models.Instance] = response.data
             for d in data:
                 instance = map_instance(d)
-                instances.append(instance)
-
+                if limit is None or len(instances) < limit:
+                    instances.append(instance)
+                else:
+                    break
         logger.info(f"Found {len(instances)} Instances")
         return instances
 
@@ -221,6 +224,13 @@ def launch_instance(
         "in order to map the image name to image ocid or display a "
         "list of images for the user to choose from.",
     ),
+    boot_volume_id: Optional[str] = Field(
+        None,
+        description=(
+            "The non-empty OCID of an existing boot volume to use as the instance source. "
+            "When provided, this takes precedence over image_id."
+        ),
+    ),
     shape: Optional[str] = Field(
         E5_FLEX,
         description="This is the name of the shape for the instance",
@@ -235,16 +245,22 @@ def launch_instance(
     ),
 ) -> Instance:
     try:
+        if boot_volume_id is not None and not boot_volume_id.strip():
+            raise ValueError("boot_volume_id must not be empty when provided.")
+
         client = get_compute_client()
 
+        source_details = (
+            oci.core.models.InstanceSourceViaBootVolumeDetails(boot_volume_id=boot_volume_id)
+            if boot_volume_id
+            else oci.core.models.InstanceSourceViaImageDetails(image_id=image_id)
+        )
         launch_details = oci.core.models.LaunchInstanceDetails(
             compartment_id=compartment_id,
             display_name=display_name,
             availability_domain=availability_domain,
             shape=shape,
-            source_details=oci.core.models.InstanceSourceViaImageDetails(
-                image_id=image_id,
-            ),
+            source_details=source_details,
             create_vnic_details=oci.core.models.CreateVnicDetails(subnet_id=subnet_id),
             shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(
                 ocpus=ocpus, memory_in_gbs=memory_in_gbs
@@ -328,10 +344,11 @@ def list_images(
         next_page: str = None
 
         while has_next_page and (limit is None or len(images) < limit):
+            remaining = None if limit is None else limit - len(images)
             kwargs = {
                 "compartment_id": compartment_id,
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             response = client.list_images(**kwargs)
@@ -344,7 +361,10 @@ def list_images(
 
             for d in data:
                 image = map_image(d)
-                images.append(image)
+                if limit is None or len(images) < limit:
+                    images.append(image)
+                else:
+                    break
 
         logger.info(f"Found {len(images)} Images")
         return images
@@ -421,10 +441,11 @@ def list_vnic_attachments(
         next_page: str = None
 
         while has_next_page and (limit is None or len(vnic_attachments) < limit):
+            remaining = None if limit is None else limit - len(vnic_attachments)
             kwargs = {
                 "compartment_id": compartment_id,
                 "page": next_page,
-                "limit": limit,
+                "limit": remaining,
             }
 
             if instance_id:
@@ -437,8 +458,10 @@ def list_vnic_attachments(
             data: list[oci.core.models.VnicAttachment] = response.data
 
             for d in data:
-                vnic_attachments.append(map_vnic_attachment(d))
-
+                if limit is None or len(vnic_attachments) < limit:
+                    vnic_attachments.append(map_vnic_attachment(d))
+                else:
+                    break
         logger.info(f"Found {len(vnic_attachments)} Vnic Attachments")
         return vnic_attachments
 

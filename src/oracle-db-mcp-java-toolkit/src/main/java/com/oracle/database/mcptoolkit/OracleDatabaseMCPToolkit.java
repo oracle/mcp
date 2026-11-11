@@ -7,7 +7,7 @@
 
 package com.oracle.database.mcptoolkit;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.modelcontextprotocol.json.McpJsonDefaults;
 import com.oracle.database.mcptoolkit.oauth.OAuth2Configuration;
 import com.oracle.database.mcptoolkit.web.AuthorizationFilter;
 import com.oracle.database.mcptoolkit.web.RedirectOAuthToOpenIDServlet;
@@ -65,7 +65,7 @@ public class OracleDatabaseMCPToolkit {
       }
       case "stdio" -> {
         serverInstance = McpServer
-          .sync(new StdioServerTransportProvider(new ObjectMapper()))
+          .sync(new StdioServerTransportProvider(McpJsonDefaults.getMapper()))
           .serverInfo("oracle-db-mcp-toolkit", "1.0.0")
           .capabilities(McpSchema.ServerCapabilities.builder()
              .tools(true)
@@ -97,9 +97,10 @@ public class OracleDatabaseMCPToolkit {
    */
   private static McpSyncServer startHttpServer() {
     try {
+      validateHttpSecurityConfiguration();
       HttpServletStreamableServerTransportProvider transport =
         HttpServletStreamableServerTransportProvider.builder()
-          .objectMapper(new ObjectMapper())
+          .jsonMapper(McpJsonDefaults.getMapper())
           .keepAliveInterval(Duration.ofSeconds(60))
           .mcpEndpoint("/mcp")
           .build();
@@ -127,7 +128,8 @@ public class OracleDatabaseMCPToolkit {
       ctx.addServletMappingDecoded(
               "/.well-known/oauth-protected-resource", "wellKnownServlet");
 
-      if (OAuth2Configuration.getInstance().isOAuth2Configured() && WebUtils.isRedirectOpenIDToOAuthEnabled()) {
+      if (OAuth2Configuration.getInstance().isAuthorizationServerConfigured()
+              && WebUtils.isRedirectOpenIDToOAuthEnabled()) {
         Tomcat.addServlet(ctx, "redirectOAuthToOpenIDServlet", new RedirectOAuthToOpenIDServlet());
         ctx.addServletMappingDecoded("/.well-known/oauth-authorization-server", "redirectOAuthToOpenIDServlet");
       }
@@ -197,6 +199,18 @@ public class OracleDatabaseMCPToolkit {
     } catch (Exception e) {
       throw new RuntimeException("Failed to enable HTTPS on Tomcat", e);
     }
+  }
+
+  private static void validateHttpSecurityConfiguration() {
+    if (!OAuth2Configuration.getInstance().isAuthenticationEnabled()) {
+      if (!LoadedConstants.HTTP_ALLOW_UNAUTHENTICATED_FOR_DEVELOPMENT) {
+        throw new IllegalStateException(
+                "HTTP transport requires authentication. Set -Dauth.enabled=true or, for local "
+                        + "development only, -Dhttp.allowUnauthenticatedForDevelopment=true");
+      }
+      LOG.warning("[oracle-db-mcp-toolkit] Starting unauthenticated HTTP transport for development only");
+    }
+
   }
 
   public static ServerConfig getConfig() {

@@ -70,14 +70,14 @@ public class WebUtils {
 
   /**
    * Checks if redirection from OpenID to OAuth is enabled by examining the
-   * system property {@code redirectOpenIDToOAuth}. If the property is set to
+   * system property {@code auth.openIdDiscoveryRedirectEnabled}. If the property is set to
    * "true" (case-insensitive), the method returns {@code true}; otherwise,
    * it returns {@code false}. If the property is not set, it defaults to {@code false}.
    *
    * @return {@code true} if redirection from OpenID to OAuth is enabled, {@code false} otherwise
    */
   public static boolean isRedirectOpenIDToOAuthEnabled() {
-    return Boolean.parseBoolean(LoadedConstants.REDIRECT_OPENID_TO_OAUTH);
+    return Boolean.parseBoolean(LoadedConstants.AUTH_OPENID_DISCOVERY_REDIRECT_ENABLED);
   }
 
 }

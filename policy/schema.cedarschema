@@ -1,0 +1,12 @@
+// Copyright (c) 2026, Oracle and/or its affiliates.
+// Licensed under the Universal Permissive License v1.0: https://oss.oracle.com/licenses/upl.
+namespace Repository {
+    entity Check;
+    entity Manifest;
+
+    action "acceptManifest" appliesTo {
+        principal: Check,
+        resource: Manifest,
+        context: { coverageFloor: Long }
+    };
+}

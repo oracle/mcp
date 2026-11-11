@@ -27,6 +27,7 @@ import java.util.regex.Pattern;
 
 import static com.oracle.database.mcptoolkit.Utils.openConnection;
 import static com.oracle.database.mcptoolkit.Utils.getOrDefault;
+import static com.oracle.database.mcptoolkit.Utils.jsonSchema;
 import static com.oracle.database.mcptoolkit.Utils.tryCall;
 
 /**
@@ -76,7 +77,7 @@ public class ObjectStorageRagTools {
          .title("OCI Storage")
          .description("OCI Object Storage utilities. "
                  + "action=list-objects (lists bucket contents; provide bucketUrl, or region+namespace+bucketName).")
-         .inputSchema(ToolSchemas.OCI_STORAGE)
+         .inputSchema(jsonSchema(ToolSchemas.OCI_STORAGE))
          .build())
       .callHandler((exchange, callReq) -> {
         String action = String.valueOf(callReq.arguments().getOrDefault("action", ""));

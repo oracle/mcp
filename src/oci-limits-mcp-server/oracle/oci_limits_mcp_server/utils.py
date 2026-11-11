@@ -14,18 +14,19 @@ def list_services_with_pagination(
     limit: Optional[int] = 100,
     page: Optional[str] = None,
     subscription_id: Optional[str] = None,
-) -> List[oci.limits.models.ServiceSummary]:
+) -> tuple[List[oci.limits.models.ServiceSummary], Optional[str]]:
+    """Collect up to limit items (one page when resuming) and the next OCI token."""
     try:
         items: List[oci.limits.models.ServiceSummary] = []
         next_page = page
         has_next_page = True
 
-        while has_next_page:
+        while has_next_page and (limit is None or len(items) < limit):
             response = client.list_services(
                 compartment_id=compartment_id,
                 sort_by=sort_by,
                 sort_order=sort_order,
-                limit=limit,
+                limit=None if limit is None else limit - len(items),
                 page=next_page,
                 subscription_id=subscription_id,
             )
@@ -37,7 +38,7 @@ def list_services_with_pagination(
             if page is not None:
                 break
 
-        return items
+        return items, next_page
     except Exception as e:
         logger.error(f"Error in list_services: {e}")
         raise
@@ -53,20 +54,21 @@ def list_limit_definitions_with_pagination(
     limit: Optional[int] = 100,
     page: Optional[str] = None,
     subscription_id: Optional[str] = None,
-) -> List[oci.limits.models.LimitDefinitionSummary]:
+) -> tuple[List[oci.limits.models.LimitDefinitionSummary], Optional[str]]:
+    """Collect up to limit items (one page when resuming) and the next OCI token."""
     try:
         items: List[oci.limits.models.LimitDefinitionSummary] = []
         next_page = page
         has_next_page = True
 
-        while has_next_page:
+        while has_next_page and (limit is None or len(items) < limit):
             response = client.list_limit_definitions(
                 compartment_id=compartment_id,
                 service_name=service_name,
                 name=name,
                 sort_by=sort_by,
                 sort_order=sort_order,
-                limit=limit,
+                limit=None if limit is None else limit - len(items),
                 page=next_page,
                 subscription_id=subscription_id,
             )
@@ -78,7 +80,7 @@ def list_limit_definitions_with_pagination(
             if page is not None:
                 break
 
-        return items
+        return items, next_page
     except Exception as e:
         logger.error(f"Error in list_limit_definitions: {e}")
         raise
@@ -96,13 +98,14 @@ def list_limit_values_with_pagination(
     limit: Optional[int] = 100,
     page: Optional[str] = None,
     subscription_id: Optional[str] = None,
-) -> List[oci.limits.models.LimitValueSummary]:
+) -> tuple[List[oci.limits.models.LimitValueSummary], Optional[str]]:
+    """Collect up to limit items (one page when resuming) and the next OCI token."""
     try:
         items: List[oci.limits.models.LimitValueSummary] = []
         next_page = page
         has_next_page = True
 
-        while has_next_page:
+        while has_next_page and (limit is None or len(items) < limit):
             response = client.list_limit_values(
                 compartment_id=compartment_id,
                 service_name=service_name,
@@ -111,7 +114,7 @@ def list_limit_values_with_pagination(
                 name=name,
                 sort_by=sort_by,
                 sort_order=sort_order,
-                limit=limit,
+                limit=None if limit is None else limit - len(items),
                 page=next_page,
                 subscription_id=subscription_id,
             )
@@ -123,7 +126,7 @@ def list_limit_values_with_pagination(
             if page is not None:
                 break
 
-        return items
+        return items, next_page
     except Exception as e:
         logger.error(f"Error in list_limit_values: {e}")
         raise

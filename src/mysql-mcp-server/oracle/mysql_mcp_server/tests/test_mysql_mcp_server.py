@@ -4,66 +4,40 @@ Licensed under the Universal Permissive License v1.0 as shown at http://oss.orac
 """
 
 import contextlib
-import importlib.util
+import importlib
 import json
 import os
-import sys
 import types
 import unittest
 import uuid
 from unittest import mock
 
+import pytest
+
+from oracle.mysql_mcp_server import utils
 from oracle.mysql_mcp_server.utils import get_ssh_command, fill_config_defaults, Mode
-import oracle.mysql_mcp_server.server as m
-SKIP_ESTABLISHED = False
 
+# Never inspect the developer's database or OCI configuration during collection.
+with mock.patch.object(utils, "load_mysql_config", return_value={"server_infos": {}}), \
+        mock.patch.object(utils, "OciInfo", side_effect=RuntimeError("Offline test")):
+    m = importlib.import_module("oracle.mysql_mcp_server.server")
 
-def get_server_module():
-    # Dynamically load the server module but shim fastmcp so @mcp.tool() returns the original function
-    # This avoids FunctionTool non-callable wrappers when importing FastMCP from 'fastmcp'.
+LIVE_TESTS = os.environ.get("MYSQL_MCP_RUN_LIVE_TESTS") == "1"
+LIVE_SKIP_MSG = "Set MYSQL_MCP_RUN_LIVE_TESTS=1 and MYSQL_MCP_CONFIG for disposable live tests"
 
-    server_path = os.path.join(os.path.dirname(__file__), "../server.py")
-    if not os.path.exists(server_path):
-        raise FileNotFoundError(f"Server file not found at {server_path}")
-
-    class _ShimFastMCP:
-        def __init__(self, name):
-            self.name = name
-
-        def tool(self, *args, **kwargs):
-            def _decorator(fn):
-                return fn  # keep functions directly callable in tests
-
-            return _decorator
-
-        def run(self, transport="stdio"):
-            # no-op for tests
-            pass
-
-    prev_fastmcp = sys.modules.get("fastmcp")
-    fastmcp_mod = types.ModuleType("fastmcp")
-    fastmcp_mod.FastMCP = _ShimFastMCP
-    sys.modules["fastmcp"] = fastmcp_mod
-
-    try:
-        spec = importlib.util.spec_from_file_location(
-            "mysql_mcp_server_under_test", server_path
-        )
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-    finally:
-        if prev_fastmcp is not None:
-            sys.modules["fastmcp"] = prev_fastmcp
-        else:
-            del sys.modules["fastmcp"]
-
-    return module
-
-
-src_module = get_server_module()
+# FastMCP 3 preserves callable tool functions, so the unit suite uses the real
+# registered server rather than replacing FastMCP with a second module shim.
+m.load_mysql_config = utils.load_mysql_config
+m.OciInfo = utils.OciInfo
+src_module = m
 
 
 def get_first_valid_connection_id(desired_mode=None, db_key=None):
+    if not LIVE_TESTS or not os.environ.get("MYSQL_MCP_CONFIG"):
+        raise unittest.SkipTest(LIVE_SKIP_MSG)
+    # Live setup is lazy and requires an explicit configuration path.
+    src_module.config = utils.load_mysql_config()
+    src_module.config_error_msg = None
     payload = json.loads(src_module.list_all_connections())
     valid = payload.get("valid keys", [])
     if db_key is not None:
@@ -94,20 +68,10 @@ def get_first_valid_connection_id(desired_mode=None, db_key=None):
     raise Exception(f"No valid connections for mode {desired_mode}")
 
 
-try:
-    get_first_valid_connection_id(Mode.MYSQL_AI)
-    SKIP_MYSQL_AI = False
-except:
-    SKIP_MYSQL_AI = True
-
-try:
-    get_first_valid_connection_id(Mode.OCI)
-    SKIP_OCI = False
-except:
-    SKIP_OCI = True
-
-MYSQL_AI_SKIP_MSG = "Skip MySQL AI Dependent Test"
-OCI_SKIP_MSG = "Skip OCI Dependent Test"
+SKIP_MYSQL_AI = not LIVE_TESTS
+SKIP_OCI = not LIVE_TESTS
+MYSQL_AI_SKIP_MSG = LIVE_SKIP_MSG
+OCI_SKIP_MSG = LIVE_SKIP_MSG
 
 
 class TestMysqlMcpUtilities(unittest.TestCase):
@@ -320,7 +284,8 @@ class TestDbConnectionUtilities(unittest.TestCase):
         ):
             with self.assertRaises(m.DatabaseConnectionError) as ctx:
                 m._get_db_connection("good")
-        self.assertIn("Connection failed with error: driver down", str(ctx.exception))
+        self.assertIn("Connection failed", str(ctx.exception))
+        self.assertNotIn("driver down", str(ctx.exception))
 
     def test_get_db_connection_config_error_msg_not_none_raises(self):
         error_msg = json.dumps({"error": "Config failed"})
@@ -442,7 +407,10 @@ class TestListAllConnections(unittest.TestCase):
         self.assertEqual(payload["valid keys"], [])
         self.assertEqual(payload["invalid keys"], [])
 
+    @unittest.skipUnless(LIVE_TESTS, LIVE_SKIP_MSG)
+    @pytest.mark.live
     def test_list_all_connections_real_json_and_at_least_one_valid(self):
+        get_first_valid_connection_id()
         out = src_module.list_all_connections()
         self.assertIsInstance(out, str)
         payload = json.loads(out)
@@ -461,7 +429,7 @@ class TestExecuteSqlTool(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.conn_id = get_first_valid_connection_id()
+        cls.conn_id = get_first_valid_connection_id() if LIVE_TESTS else "offline"
 
     # ---- Minimal mocking for exception/error branches ----
     def test_execute_sql_tool_connection_id_connect_failure_returns_error_json(self):
@@ -556,12 +524,16 @@ class TestExecuteSqlTool(unittest.TestCase):
         self.assertEqual(out, "[]")
         inner.assert_called_once_with("cid", "SELECT 1", params=[42])
 
+    @unittest.skipUnless(LIVE_TESTS, LIVE_SKIP_MSG)
+    @pytest.mark.live
     def test_real_valid_select_no_error(self):
         out = src_module.execute_sql_tool_by_connection_id(self.conn_id, "SELECT 1")
         self.assertFalse(src_module.check_error(out))
         data = json.loads(out)
         self.assertIsInstance(data, list)
 
+    @unittest.skipUnless(LIVE_TESTS, LIVE_SKIP_MSG)
+    @pytest.mark.live
     def test_real_semantically_invalid_no_error(self):
         # MySQL typically returns NULL (with warning) for division by zero rather than an error
         out = src_module.execute_sql_tool_by_connection_id(self.conn_id, "SELECT 1/0")
@@ -569,6 +541,8 @@ class TestExecuteSqlTool(unittest.TestCase):
         data = json.loads(out)
         self.assertIsInstance(data, list)
 
+    @unittest.skipUnless(LIVE_TESTS, LIVE_SKIP_MSG)
+    @pytest.mark.live
     def test_real_valid_multi_select_error(self):
         # Multiple selects are not supported currently
         out = src_module.execute_sql_tool_by_connection_id(self.conn_id, "SELECT 1; SELECT 2;")
@@ -581,7 +555,7 @@ class TestMlGenerate(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.conn_id = get_first_valid_connection_id()
+        cls.conn_id = get_first_valid_connection_id() if LIVE_TESTS else "offline"
 
     def test_ml_generate_returns_plain_text_on_success(self):
         # Simulate SELECT sys.ML_GENERATE returning a single-row JSON string with {"text": "..."}
@@ -642,6 +616,8 @@ class TestMlGenerate(unittest.TestCase):
         self.assertTrue(src_module.check_error(out))
         self.assertIn("Unexpected response format", json.loads(out)["error"])
 
+    @unittest.skipUnless(LIVE_TESTS, LIVE_SKIP_MSG)
+    @pytest.mark.live
     def test_ml_generate_real(self):
         out = src_module.ml_generate(self.conn_id, "Hello from test")
         self.assertFalse(src_module.check_error(out))
@@ -652,7 +628,7 @@ class TestRagifyColumn(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.conn_id = get_first_valid_connection_id()
+        cls.conn_id = get_first_valid_connection_id() if LIVE_TESTS else "offline"
 
     def test_ragify_column_success_mocked(self):
         class FakeConn:
@@ -728,6 +704,8 @@ class TestRagifyColumn(unittest.TestCase):
             out = src_module.ragify_column("any", "t", "c", "e")
         self.assertFalse(src_module.check_error(out))
 
+    @unittest.skipUnless(LIVE_TESTS, LIVE_SKIP_MSG)
+    @pytest.mark.live
     def test_ragify_column_real(self):
         table = f"gc_docs_{uuid.uuid4().hex[:8]}"
         text_col = "body"
@@ -824,6 +802,7 @@ class TestListVectorStoreFilesLocal(unittest.TestCase):
         self.assertIn("Error with LIST_FILES", json.loads(out)["error"])
 
     @unittest.skipIf(SKIP_MYSQL_AI, MYSQL_AI_SKIP_MSG)
+    @pytest.mark.live
     def test_list_vector_store_files_local_real(self):
         conn_id = get_first_valid_connection_id(m.Mode.MYSQL_AI)
         out = src_module.list_vector_store_files_local(conn_id)
@@ -993,6 +972,7 @@ class TestAskMlRagHelper(unittest.TestCase):
 class TestAskMlRagVectorStore(unittest.TestCase):
 
     @unittest.skipIf(SKIP_MYSQL_AI, MYSQL_AI_SKIP_MSG)
+    @pytest.mark.live
     def test_ask_ml_rag_vector_store_mysql_ai(self):
         conn_id = get_first_valid_connection_id(m.Mode.MYSQL_AI)
 
@@ -1055,7 +1035,7 @@ class TestAskMlRagInnoDB(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.conn_id = get_first_valid_connection_id()
+        cls.conn_id = get_first_valid_connection_id() if LIVE_TESTS else "offline"
 
     def test_validation_error_for_bad_names(self):
         with mock.patch.object(
@@ -1099,6 +1079,8 @@ class TestAskMlRagInnoDB(unittest.TestCase):
         self.assertTrue(src_module.check_error(out))
         self.assertIn("ml_rag err", json.loads(out)["error"])
 
+    @unittest.skipUnless(LIVE_TESTS, LIVE_SKIP_MSG)
+    @pytest.mark.live
     def test_real_nonexistent_columns_error(self):
         # Choose a table name that likely doesn't exist or columns that don't exist
         # We call ask_ml_rag_innodb; it should return an error JSON via helper path when server rejects it.
@@ -1113,6 +1095,8 @@ class TestAskMlRagInnoDB(unittest.TestCase):
             f"Expected error when referencing nonexistent columns, got: {out}",
         )
 
+    @unittest.skipUnless(LIVE_TESTS, LIVE_SKIP_MSG)
+    @pytest.mark.live
     def test_real_success_on_populated_table(self):
         # Create a temp table, insert rows, ragify to create embeddings, then run ask_ml_rag_innodb.
         table = f"gc_innodb_{uuid.uuid4().hex[:8]}"
@@ -1679,6 +1663,7 @@ class TestHeatwaveAskHelp(unittest.TestCase):
         self.assertIn("Error with NL2ML", json.loads(out)["error"])
 
     @unittest.skipIf(SKIP_OCI, OCI_SKIP_MSG)
+    @pytest.mark.live
     def test_heatwave_ask_help_real_query(self):
         # Issues a real NL2ML query against an OCI-mode connection
         conn_id = get_first_valid_connection_id(m.Mode.OCI)
@@ -1742,6 +1727,7 @@ class TestAskNlSql(unittest.TestCase):
         self.assertIn("Unexpected response format", json.loads(out)["error"])
 
     @unittest.skipIf(SKIP_OCI, OCI_SKIP_MSG)
+    @pytest.mark.live
     def test_ask_nl_sql_real_query(self):
         conn_id = get_first_valid_connection_id()
         out = src_module.ask_nl_sql(conn_id, "List the total numbers of rowns in any table")
@@ -1812,6 +1798,7 @@ class TestRetrieveRelevantSchemaInformation(unittest.TestCase):
         self.assertIn("Unexpected response format", json.loads(out)["error"])
 
     @unittest.skipIf(SKIP_OCI, OCI_SKIP_MSG)
+    @pytest.mark.live
     def test_retrieve_relevant_schema_information_real_query(self):
         conn_id = get_first_valid_connection_id(db_key="local_db")
         out = src_module.retrieve_relevant_schema_information(conn_id, "How many users in the database ?")
@@ -1819,6 +1806,131 @@ class TestRetrieveRelevantSchemaInformation(unittest.TestCase):
         data = json.loads(out)
         self.assertIn("create_statements", data)
             
+
+class TestOfflineRuntimeCoverage(unittest.TestCase):
+    def test_json_encoder_preserves_mysql_scalar_values(self):
+        from datetime import date, datetime
+        from decimal import Decimal
+
+        values = [Decimal("12.50"), date(2026, 1, 2), datetime(2026, 1, 2, 3, 4, 5)]
+        self.assertEqual(
+            json.loads(json.dumps(values, cls=src_module.CustomJSONEncoder)),
+            ["12.50", "2026-01-02", "2026-01-02T03:04:05"],
+        )
+        with self.assertRaises(TypeError):
+            json.dumps(object(), cls=src_module.CustomJSONEncoder)
+
+    def test_sql_collects_multiple_result_sets_and_closes_connection(self):
+        connection = mock.MagicMock()
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.with_rows = True
+        cursor.fetchall.side_effect = [[(1,)], [(2,)]]
+        cursor.nextset.side_effect = [True, None]
+        with mock.patch.object(src_module, "_get_db_connection", return_value=connection):
+            result = src_module._execute_sql_tool("offline", "SELECT %s; SELECT %s", [1, 2])
+        self.assertEqual(json.loads(result), [[1], [2]])
+        cursor.execute.assert_called_once_with("SELECT %s; SELECT %s", [1, 2])
+        connection.commit.assert_called_once_with()
+        connection.close.assert_called_once_with()
+
+    def test_sql_failure_closes_owned_connection_without_commit(self):
+        connection = mock.MagicMock()
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.execute.side_effect = RuntimeError("synthetic SQL error")
+        with mock.patch.object(src_module, "_get_db_connection", return_value=connection):
+            result = json.loads(src_module._execute_sql_tool("offline", "SELECT %s", [1]))
+        self.assertIn("synthetic SQL error", result["error"])
+        self.assertEqual(result["params"], [1])
+        connection.commit.assert_not_called()
+        connection.close.assert_called_once_with()
+
+    def test_vector_store_oci_binds_object_uri(self):
+        with mock.patch.object(src_module, "_get_mode", return_value=Mode.OCI), \
+                mock.patch.object(src_module, "_execute_sql_tool", return_value="null") as execute:
+            result = src_module.load_vector_store_oci("offline", "namespace", "bucket", "docs/")
+        self.assertEqual(result, "null")
+        execute.assert_called_once_with(
+            "offline", "CALL sys.vector_store_load(%s, NULL);", params=["oci://bucket@namespace/docs/"]
+        )
+
+    def test_rag_context_size_boundaries(self):
+        with mock.patch.object(src_module, "_ask_ml_rag_helper", return_value="response") as helper:
+            for size in (9, 101):
+                with self.subTest(size=size):
+                    self.assertIn("context_size", json.loads(
+                        src_module.ask_ml_rag_vector_store("offline", "question", size)
+                    )["error"])
+                    self.assertIn("context_size", json.loads(
+                        src_module.ask_ml_rag_innodb("offline", "question", "body", "embedding", size)
+                    )["error"])
+            helper.assert_not_called()
+            for size in (10, 100):
+                self.assertEqual(src_module.ask_ml_rag_vector_store("offline", "question", size), "response")
+                self.assertIn(f"'n_citations', {size}", helper.call_args.args[2])
+                self.assertEqual(
+                    src_module.ask_ml_rag_innodb("offline", "question", "body", "embedding", size), "response"
+                )
+                self.assertIn(f"'n_citations', {size}", helper.call_args.args[2])
+
+    def test_nl_sql_without_default_schema(self):
+        connection = mock.Mock(database=None)
+        response = {"sql_query": "SELECT 1", "is_sql_valid": 1}
+        with mock.patch.object(src_module, "_get_database_connection_cm",
+                               return_value=contextlib.nullcontext(connection)), \
+                mock.patch.object(src_module, "_execute_sql_tool", side_effect=[
+                    "null", json.dumps([[json.dumps(response)]])
+                ]) as execute:
+            result = src_module.ask_nl_sql("offline", "question")
+        self.assertEqual(json.loads(result), response)
+        self.assertNotIn("schemas", execute.call_args_list[0].args[1])
+        self.assertEqual(execute.call_args_list[0].kwargs["params"], ["question"])
+
+    def test_schema_retrieval_short_circuits_each_backend_failure(self):
+        for stage in range(3):
+            with self.subTest(stage=stage):
+                responses = ["null"] * stage + ['{"error": "synthetic backend error"}']
+                with mock.patch.object(src_module, "_get_database_connection_cm",
+                                       return_value=contextlib.nullcontext(mock.Mock())), \
+                        mock.patch.object(src_module, "_execute_sql_tool", side_effect=responses) as execute:
+                    result = src_module.retrieve_relevant_schema_information("offline", "question")
+                self.assertIn("synthetic backend error", json.loads(result)["error"])
+                self.assertEqual(execute.call_count, stage + 1)
+
+    def test_get_compartment_by_name_includes_root_and_handles_no_match(self):
+        root = types.SimpleNamespace(id="example-root", name="Root")
+        child = types.SimpleNamespace(id="example-child", name="Child")
+        identity = mock.Mock()
+        identity.list_compartments.return_value.data = [child]
+        identity.get_compartment.return_value.data = root
+        info = types.SimpleNamespace(identity_client=identity, tenancy_id="example-root")
+        with mock.patch.object(src_module, "oci_info", info), \
+                mock.patch.object(src_module, "oci_error_msg", None):
+            self.assertIs(src_module._get_compartment_by_name("root"), root)
+            identity.list_compartments.return_value.data = [child]
+            self.assertIsNone(src_module._get_compartment_by_name("absent"))
+        identity.get_compartment.assert_called_with(compartment_id="example-root")
+
+    def test_main_uses_stdio(self):
+        with mock.patch.object(src_module.mcp, "run") as run:
+            src_module.main()
+        run.assert_called_once_with(transport="stdio")
+
+
+class TestOfflineOciConfiguration(unittest.TestCase):
+    def test_optional_oci_setup_uses_profile_and_tenancy_override(self):
+        oci_config = {"tenancy": "example-config-tenancy"}
+        with mock.patch.dict(os.environ, {"PROFILE_NAME": "example", "TENANCY_ID_OVERRIDE": "example-override"}), \
+                mock.patch.object(utils.oci.config, "from_file", return_value=oci_config) as load, \
+                mock.patch.object(utils.oci.identity, "IdentityClient") as identity, \
+                mock.patch.object(utils.oci.object_storage, "ObjectStorageClient") as storage:
+            info = utils.OciInfo()
+        load.assert_called_once_with(profile_name="example")
+        identity.assert_called_once_with(oci_config)
+        storage.assert_called_once_with(oci_config)
+        self.assertEqual(info.tenancy_id, "example-override")
+        self.assertIs(info.identity_client, identity.return_value)
+        self.assertIs(info.object_storage_client, storage.return_value)
+
 
 if __name__ == "__main__":
     unittest.main()

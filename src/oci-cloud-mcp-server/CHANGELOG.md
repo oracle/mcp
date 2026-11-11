@@ -2,9 +2,28 @@
 
 ## Unreleased
 
+## 2.3.0
+
+### Added
+
+- Support `resource_principal_v212` authentication through the shared Common library.
+
+### Fixed
+
+- Report explicit boolean result truncation consistently in `invoke_oci_api` auto, summary, and full modes, including complete collection envelopes; keep summary-sample truncation separate from source completeness.
+- Continue traversal across unset SDK record arrays, preserving Logging Search, DNS, and Object Storage collection shapes and metadata even on empty or prefix-only pages.
+- Check SDK support before using SCIM offset keywords; preserve search pages requiring request-body continuation. Include locally capped non-paginated lists in completeness metadata.
+
+- Select `invoke_oci_api` pagination from SDK continuation arguments instead of operation-name prefixes, and serialize scalar summaries and aggregate responses without iterable conversion.
+- Support declared native collection envelopes, including Identity Domains `resources` with token or SCIM continuation, while retaining per-page metadata and reporting incomplete capped results in full and summary modes. Non-collection paged aggregates retain their native payload and expose continuation for manual traversal.
+
 ### Security
 
-- Updated `cryptography` to 50.0.1 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).
+- Updated locked AnyIO to 4.15.1; updated locked multidict to 6.9.1; updated PyJWT to 2.15.1 and urllib3 to 2.8.0; updated `cryptography` to 50.0.2 to prevent PKCS#7 EnvelopedData decryption from exposing a Bleichenbacher oracle through distinguishable errors and timing (CVE-2026-69247).
+
+### Changed
+
+- Require `oracle-mcp-common>=0.2.0,<0.3.0` for the coordinated Common authentication release.
 
 ## 2.2.3
 

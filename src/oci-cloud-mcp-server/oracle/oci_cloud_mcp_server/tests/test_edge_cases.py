@@ -798,17 +798,17 @@ class TestListClientOperationsScanError:
 
 
 class TestSupportsPaginationHeuristics:
-    def test_supports_pagination_list_prefix_true(self):
+    def test_supports_pagination_list_prefix_without_contract_false(self):
         def list_things():
             pass
 
-        assert _supports_pagination(list_things, "list_things") is True
+        assert _supports_pagination(list_things, "list_things") is False
 
-    def test_supports_pagination_summarize_prefix_true(self):
+    def test_supports_pagination_summarize_prefix_without_contract_false(self):
         def summarize_metrics():
             pass
 
-        assert _supports_pagination(summarize_metrics, "summarize_metrics") is True
+        assert _supports_pagination(summarize_metrics, "summarize_metrics") is False
 
     def test_supports_pagination_signature_page_limit_true(self):
         def get_zone_records(zone_name, page=None, limit=None):  # noqa: ARG001

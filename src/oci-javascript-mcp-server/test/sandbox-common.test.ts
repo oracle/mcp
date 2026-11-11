@@ -39,8 +39,18 @@ test("sandbox common helpers enforce deadlines and numeric limits", async () => 
 });
 
 test("sandbox common helpers cap UTF-8 output", () => {
-  assert.equal(appendCapped("ab", "cd", 4), "abcd");
-  assert.equal(Buffer.byteLength(appendCapped("ab", "cdef", 4), "utf8"), 4);
+  assert.deepEqual(appendCapped("ab", "c", 4), { text: "abc", limitReached: false });
+  assert.deepEqual(appendCapped("ab", "cd", 4), { text: "abcd", limitReached: true });
+  assert.deepEqual(appendCapped("ab", "cdef", 4), { text: "abcd", limitReached: true });
+  assert.deepEqual(appendCapped("", "é", 0), { text: "", limitReached: true });
+  for (const character of ["é", "€", "😀"]) {
+    for (let bytes = 0; bytes <= Buffer.byteLength(character); bytes += 1) {
+      assert.deepEqual(appendCapped("a", character + "z", 1 + bytes), {
+        text: bytes < Buffer.byteLength(character) ? "a" : "a" + character,
+        limitReached: true
+      });
+    }
+  }
 });
 
 test("sandbox common helpers keep only allowlisted public OCI error details", () => {

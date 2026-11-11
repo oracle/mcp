@@ -1,0 +1,443 @@
+{
+  "skills": [
+    {
+      "name": "advanced-diagnostics-addm-session-control-bulk-retrieve",
+      "description": "Read-only ADDM task inventory for managed databases.",
+      "tools": [
+        "addm_tasks"
+      ]
+    },
+    {
+      "name": "async-work-requests-long-running-operations",
+      "description": "Read-only tracking of asynchronous OCI work requests, including status, logs, and errors.",
+      "tools": [
+        "get_work_request",
+        "list_work_request_errors",
+        "list_work_request_logs",
+        "list_work_requests"
+      ]
+    },
+    {
+      "name": "awr-discovery-primitives",
+      "description": "DB Management discovery primitives for AWR database IDs and snapshot inventories. For managed-database AWR analysis, use list_managed_databases, then list_awr_dbs, then the matching DB Management AWR analysis tool. Do not use Operations Insights warehouse, configuration, or database-insight tools for this workflow. These tools do not discover an Operations Insights AWR Hub OCID; do not reuse their managed database IDs or awr_db_id values as awr_hub_id.",
+      "tools": [
+        "list_awr_db_snapshots",
+        "list_awr_dbs"
+      ]
+    },
+    {
+      "name": "awr-historical-performance-analysis",
+      "description": "AWR historical summarization across CPU, waits, metrics, parameters, and system statistics. Before querying a fleet, classify the requested quantity as a direct metric, configuration value, status count, or derived metric. When a rate or percentage is not directly exposed, prefer AWR counter tools or reports over fixed health summaries: discover AWR identifiers, retrieve one completed interval, verify the required counters, and only then expand to the fleet. Calculate derived values only when the inputs, interval, and formula are documented; if unavailable, report the limitation and do not fan out. Do not use fixed health-summary tools as generic metric lookups.",
+      "tools": [
+        "summarize_awr_db_cpu_usages",
+        "summarize_awr_db_metrics",
+        "summarize_awr_db_parameter_changes",
+        "summarize_awr_db_parameters",
+        "summarize_awr_db_snapshot_ranges",
+        "summarize_awr_db_sysstats",
+        "summarize_awr_db_top_wait_events",
+        "summarize_awr_db_wait_event_buckets",
+        "summarize_awr_db_wait_events"
+      ]
+    },
+    {
+      "name": "cloud-asm-core",
+      "description": "Cloud ASM inventory, configuration, users, disk groups, and metrics.",
+      "tools": [
+        "get_cloud_asm",
+        "get_cloud_asm_configuration",
+        "get_cloud_asm_instance",
+        "list_cloud_asm_disk_groups",
+        "list_cloud_asm_instances",
+        "list_cloud_asm_users",
+        "list_cloud_asms",
+        "summarize_cloud_asm_metrics"
+      ]
+    },
+    {
+      "name": "cloud-db-runtime-topology",
+      "description": "Read-only runtime topology and health checks for Cloud DB clusters, nodes, listeners, DB homes, and connectors.",
+      "tools": [
+        "get_cloud_cluster",
+        "get_cloud_cluster_instance",
+        "get_cloud_db_home",
+        "get_cloud_db_node",
+        "get_cloud_db_system_connector",
+        "get_cloud_listener",
+        "list_cloud_cluster_instances",
+        "list_cloud_clusters",
+        "list_cloud_db_homes",
+        "list_cloud_db_nodes",
+        "list_cloud_db_system_connectors",
+        "list_cloud_listener_services",
+        "list_cloud_listeners",
+        "summarize_cloud_cluster_metrics",
+        "summarize_cloud_db_node_metrics",
+        "summarize_cloud_listener_metrics"
+      ]
+    },
+    {
+      "name": "cloud-exadata-storage",
+      "description": "Read-only inventory and inspection of Cloud Exadata storage connectors, servers, grids, IORM plans, and open alerts.",
+      "tools": [
+        "get_cloud_exadata_storage_connector",
+        "get_cloud_exadata_storage_grid",
+        "get_cloud_exadata_storage_server",
+        "get_cloud_iorm_plan",
+        "get_cloud_open_alert_history",
+        "list_cloud_exadata_storage_connectors",
+        "list_cloud_exadata_storage_servers"
+      ]
+    },
+    {
+      "name": "cloud-inventory-discovery-connectivity",
+      "description": "Read-only Cloud DB system inventory and discovery, including connector metadata and availability metrics.",
+      "tools": [
+        "get_cloud_db_system",
+        "get_cloud_db_system_discovery",
+        "get_cloud_exadata_infrastructure",
+        "list_cloud_databases",
+        "list_cloud_db_system_discoveries",
+        "list_cloud_db_systems",
+        "list_cloud_exadata_infrastructures",
+        "summarize_cloud_db_system_availability_metrics"
+      ]
+    },
+    {
+      "name": "credentials-and-authentication-preferred-named",
+      "description": "Read-only named credential and preferred credential inventory and mapping inspection in OCI DBM.",
+      "tools": [
+        "get_named_credential",
+        "get_preferred_credential",
+        "list_named_credentials",
+        "list_preferred_credentials"
+      ]
+    },
+    {
+      "name": "database-addm-analysis",
+      "description": "Diagnose likely root causes using ADDM findings, recommendations, categories, and time-series patterns across one database or a fleet.",
+      "tools": [
+        "list_addm_db_finding_categories",
+        "list_addm_db_findings_time_series",
+        "list_addm_db_parameter_categories",
+        "list_addm_db_recommendation_categories",
+        "list_addm_db_recommendations_time_series",
+        "list_addm_dbs",
+        "summarize_addm_db_findings",
+        "summarize_addm_db_parameter_changes",
+        "summarize_addm_db_parameters",
+        "summarize_addm_db_recommendations",
+        "summarize_addm_db_schema_objects",
+        "summarize_addm_db_sql_statements"
+      ]
+    },
+    {
+      "name": "database-capacity-usage-and-forecasting",
+      "description": "Use this skill for fleet and per-database capacity planning, utilization analysis, usage trending, and growth forecasting.",
+      "tools": [
+        "summarize_database_insight_resource_capacity_trend",
+        "summarize_database_insight_resource_forecast_trend",
+        "summarize_database_insight_resource_statistics",
+        "summarize_database_insight_resource_usage",
+        "summarize_database_insight_resource_usage_trend",
+        "summarize_database_insight_resource_utilization_insight",
+        "summarize_database_insight_tablespace_usage_trend"
+      ]
+    },
+    {
+      "name": "database-configuration-and-parameters",
+      "description": "Read-only database parameter inventory and configuration baseline checks in OCI DBM.",
+      "tools": [
+        "list_database_parameters"
+      ]
+    },
+    {
+      "name": "database-health-and-core-metrics",
+      "description": "Read-only health and core runtime metric checks for managed databases in OCI DBM. Before querying a fleet, classify the requested quantity as a direct metric, configuration value, status count, or derived metric. Select a tool whose schema or documented response explicitly supports that quantity; inspect target type and subtype before invoking a specialized tool such as get_cluster_cache_metric. Do not use a tool without a metric selector as a generic metric lookup. If the selected tool lacks the requested field, inspect related skills for documented raw counters or status data before concluding that the MCP lacks the capability. Validate metric and time constraints and test the chosen path on one target before any fleet fan-out; if parameter validation fails, correct the request once and do not repeat the same invalid request across the fleet.",
+      "tools": [
+        "get_cluster_cache_metric",
+        "get_database_home_metrics",
+        "get_pdb_metrics",
+        "summarize_managed_database_availability_metrics"
+      ]
+    },
+    {
+      "name": "database-inventory",
+      "description": "Discover managed databases and Operations Insights database-insight resources, then retrieve details for verified targets. Database Insight inventory does not provide DB Management AWR identifiers or an Operations Insights AWR Hub OCID; do not use it for managed-database AWR discovery.",
+      "tools": [
+        "get_database_insight",
+        "get_managed_database",
+        "list_database_configurations",
+        "list_database_insights",
+        "list_managed_databases"
+      ]
+    },
+    {
+      "name": "database-and-infra-observability-metric-catalog",
+      "description": "Custom OCI Monitoring metric discovery, live metric retrieval, and read-only alarm investigation for matching OCI resources.",
+      "tools": [
+        "search_database_and_infra_observability_metrics",
+        "get_database_and_infra_observability_metrics",
+        "list_database_and_infra_observability_metrics",
+        "read_database_and_infra_observability_metrics",
+        "list_database_and_infra_observability_alarms",
+        "get_database_and_infra_observability_alarm",
+        "list_database_and_infra_observability_alarm_states"
+      ]
+    },
+    {
+      "name": "database-performance-analysis",
+      "description": "Use this skill for workload regression and bottleneck diagnosis using AWR evidence, wait analysis, CPU profiles, metric trends, and SQL/plan context. When starting from a managed database OCID, prefer the DB Management AWR route: list_managed_databases, list_awr_dbs, then the matching summarize_awr_db_* tool. Use Operations Insights AWR tools only when an Operations Insights AWR Hub OCID is independently known; its source identifier must come from list_awr_databases for that same hub.",
+      "tools": [
+        "get_awr_database_report",
+        "get_awr_database_sql_report",
+        "get_awr_db_report",
+        "list_awr_database_snapshots",
+        "list_awr_databases",
+        "list_sql_plans",
+        "list_sql_texts",
+        "summarize_awr_database_cpu_usages",
+        "summarize_awr_database_metrics",
+        "summarize_awr_database_parameter_changes",
+        "summarize_awr_database_parameters",
+        "summarize_awr_database_snapshot_ranges",
+        "summarize_awr_database_sysstats",
+        "summarize_awr_database_top_wait_events",
+        "summarize_awr_database_wait_event_buckets",
+        "summarize_awr_database_wait_events"
+      ]
+    },
+    {
+      "name": "exadata-fleet-health-analytics",
+      "description": "Read-only Exadata infrastructure fleet health analytics in OCI DBM.",
+      "tools": [
+        "get_exadata_infrastructure_fleet_health_metrics"
+      ]
+    },
+    {
+      "name": "exadatainsights",
+      "description": "Read-only Exadata usage, capacity, forecast, utilization, and member-inventory analysis in OCI Operations Insights.",
+      "tools": [
+        "get_exadata_insight",
+        "list_exadata_configurations",
+        "list_exadata_insights",
+        "summarize_exadata_insight_resource_capacity_trend",
+        "summarize_exadata_insight_resource_capacity_trend_aggregated",
+        "summarize_exadata_insight_resource_forecast_trend",
+        "summarize_exadata_insight_resource_forecast_trend_aggregated",
+        "summarize_exadata_insight_resource_statistics",
+        "summarize_exadata_insight_resource_usage",
+        "summarize_exadata_insight_resource_usage_aggregated",
+        "summarize_exadata_insight_resource_utilization_insight",
+        "summarize_exadata_members"
+      ]
+    },
+    {
+      "name": "external-asm-core",
+      "description": "Read-only monitoring workflows for external ASM resources in OCI Database Management.",
+      "tools": [
+        "get_external_asm",
+        "get_external_asm_configuration",
+        "get_external_asm_instance",
+        "list_external_asm_disk_groups",
+        "list_external_asm_instances",
+        "list_external_asm_users",
+        "list_external_asms",
+        "summarize_external_asm_metrics"
+      ]
+    },
+    {
+      "name": "external-db-runtime-topology",
+      "description": "Read-only runtime topology workflows for external clusters, listeners, and DB nodes in OCI Database Management.",
+      "tools": [
+        "get_external_cluster",
+        "get_external_cluster_instance",
+        "get_external_db_node",
+        "get_external_listener",
+        "list_external_cluster_instances",
+        "list_external_clusters",
+        "list_external_db_nodes",
+        "list_external_listener_services",
+        "list_external_listeners",
+        "summarize_external_cluster_metrics",
+        "summarize_external_db_node_metrics",
+        "summarize_external_listener_metrics"
+      ]
+    },
+    {
+      "name": "external-exadata-storage",
+      "description": "Read-only inventory and inspection of external Exadata storage connectors, servers, grids, IORM plans, alerts, and top SQL CPU activity.",
+      "tools": [
+        "get_external_exadata_storage_connector",
+        "get_external_exadata_storage_grid",
+        "get_external_exadata_storage_server",
+        "get_iorm_plan",
+        "get_open_alert_history",
+        "get_top_sql_cpu_activity",
+        "list_external_exadata_storage_connectors",
+        "list_external_exadata_storage_servers"
+      ]
+    },
+    {
+      "name": "external-inventory-discovery-connectivity",
+      "description": "Read-only discovery, inventory, and connector inspection for external DB systems in OCI Database Management.",
+      "tools": [
+        "get_external_db_home",
+        "get_external_db_system",
+        "get_external_db_system_connector",
+        "get_external_db_system_discovery",
+        "get_external_exadata_infrastructure",
+        "list_external_databases",
+        "list_external_db_homes",
+        "list_external_db_system_connectors",
+        "list_external_db_system_discoveries",
+        "list_external_db_systems",
+        "list_external_exadata_infrastructures",
+        "summarize_external_db_system_availability_metrics"
+      ]
+    },
+    {
+      "name": "fleet-health-analytics-across-many-databases",
+      "description": "Fleet-level health analytics across many managed databases in OCI Database Management. Use get_database_fleet_health_metrics only when its filter_by_metric_names enum contains the requested direct resource metric; do not use this skill for job, job-run, or execution-status counts. Route those questions to job-orchestration-and-execution-tracking. For transaction, rate, percentage, or other derived metrics, use a counter-analysis skill when documented counters and a valid formula exist. Absence from the fleet enum does not establish that a metric is unavailable through AWR tools.",
+      "tools": [
+        "get_database_fleet_health_metrics"
+      ]
+    },
+    {
+      "name": "high-availability-data-guard-and-backups-fleet-single-db",
+      "description": "Data Guard, backup, and HA analytics for fleet and single-database workflows in OCI Database Management.",
+      "tools": [
+        "get_database_fleet_backup_metrics",
+        "get_database_fleet_dataguard_metrics",
+        "get_database_fleet_ha_overview_metrics",
+        "get_database_ha_backup_details",
+        "get_dataguard_performance_metrics",
+        "get_peer_database_metrics"
+      ]
+    },
+    {
+      "name": "hostinsights",
+      "description": "Read-only host capacity, usage, forecast, and recommendation analysis in OCI Operations Insights.",
+      "tools": [
+        "get_host_insight",
+        "list_host_configurations",
+        "list_host_insights",
+        "list_hosted_entities",
+        "summarize_host_insight_disk_statistics",
+        "summarize_host_insight_host_recommendation",
+        "summarize_host_insight_io_usage_trend",
+        "summarize_host_insight_network_usage_trend",
+        "summarize_host_insight_resource_capacity_trend",
+        "summarize_host_insight_resource_forecast_trend",
+        "summarize_host_insight_resource_statistics",
+        "summarize_host_insight_resource_usage",
+        "summarize_host_insight_resource_usage_trend",
+        "summarize_host_insight_resource_utilization_insight",
+        "summarize_host_insight_storage_usage_trend",
+        "summarize_host_insight_top_processes_usage",
+        "summarize_host_insight_top_processes_usage_trend"
+      ]
+    },
+    {
+      "name": "job-orchestration-and-execution-tracking",
+      "description": "Read-only job, run, and execution inventory with status summaries in OCI Database Management. Use this skill for questions about job counts, broken or failed executions, execution status, or job health. For aggregate counts by status across a compartment or time range, prefer summarize_job_executions_statuses; use list_job_executions or list_job_runs for per-item details. These are job-status workflows, not CPU, storage, or fleet-health resource-metric workflows. Before calling a status summary, provide exactly one supported target selector (id for a job, managed_database_id, or managed_database_group_id), use a time window no longer than one week, and set end_time before the current UTC time. Treat returned status names as backend values; do not assume that a user term such as broken maps to FAILED unless the response establishes that mapping.",
+      "tools": [
+        "get_job",
+        "get_job_execution",
+        "get_job_run",
+        "list_job_executions",
+        "list_job_runs",
+        "list_jobs",
+        "summarize_job_executions_statuses"
+      ]
+    },
+    {
+      "name": "logs-and-alerts-attention-alert-logs",
+      "description": "Alert and attention log retrieval and count-summary workflows for managed databases in OCI Database Management.",
+      "tools": [
+        "list_alert_logs",
+        "list_attention_logs",
+        "summarize_alert_log_counts",
+        "summarize_attention_log_counts"
+      ]
+    },
+    {
+      "name": "managed-database-groups-organize-and-target-sets-of-databases",
+      "description": "Read-only managed database group inventory and detail inspection in OCI Database Management.",
+      "tools": [
+        "get_managed_database_group",
+        "list_managed_database_groups"
+      ]
+    },
+    {
+      "name": "news-reports-and-advisories",
+      "description": "Tools related to news-reports-and-advisories functionality.",
+      "tools": [
+        "get_news_report",
+        "list_news_reports"
+      ]
+    },
+    {
+      "name": "oci-common",
+      "description": "Read-only discovery workflows for OCI Identity (20160918) tenancy, compartment, and region topology.",
+      "tools": [
+        "list_region_subscriptions",
+        "list_regions"
+      ]
+    },
+    {
+      "name": "operations-insights-warehouse-admin",
+      "description": "Read-only Operations Insights warehouse administration and capacity tools. These tools do not discover AWR Hubs and are not required for DB Management AWR analysis.",
+      "tools": [
+        "get_operations_insights_warehouse",
+        "get_operations_insights_warehouse_user",
+        "list_operations_insights_warehouse_users",
+        "list_operations_insights_warehouses",
+        "summarize_operations_insights_warehouse_resource_usage"
+      ]
+    },
+    {
+      "name": "opsi-configurations-and-datastores",
+      "description": "Read-only Operations Insights configuration inventory and detail inspection. These tools do not provide DB Management AWR identifiers or AWR Hub discovery for managed-database analysis.",
+      "tools": [
+        "get_opsi_configuration",
+        "list_opsi_configurations"
+      ]
+    },
+    {
+      "name": "private-endpoints-and-connectivity",
+      "description": "Database Management private endpoint discovery, inspection, and associated database mapping.",
+      "tools": [
+        "get_db_management_private_endpoint",
+        "get_operations_insights_private_endpoint",
+        "list_associated_databases",
+        "list_db_management_private_endpoints",
+        "list_operations_insights_private_endpoints"
+      ]
+    },
+    {
+      "name": "storage-and-space-tablespaces-asm",
+      "description": "Tablespace and ASM property retrieval for managed database storage and space checks.",
+      "tools": [
+        "get_tablespace",
+        "list_asm_properties",
+        "list_tablespaces"
+      ]
+    },
+    {
+      "name": "users-and-privileges-rbac-audit",
+      "description": "Database users, roles, and privilege audit surfaces including proxy and data access container visibility. For fleet workflows, call list_managed_databases once per compartment and filter scope and treat its returned IDs as the authoritative target set. Call each downstream inventory tool at most once per unique target and parameter set; do not call downstream tools with IDs that were not returned by the inventory call. Reuse completed results, follow pagination tokens to completion, and retry only failed or transient requests or explicitly requested new pages.",
+      "tools": [
+        "get_user",
+        "list_consumer_group_privileges",
+        "list_data_access_containers",
+        "list_object_privileges",
+        "list_proxied_for_users",
+        "list_proxy_users",
+        "list_roles",
+        "list_system_privileges",
+        "list_users"
+      ]
+    }
+  ]
+}

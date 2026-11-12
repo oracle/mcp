@@ -6,6 +6,10 @@
 
 - Resolve client and model names through the installed OCI SDK's service exports and model mappings. Validate operation and explicit model identities before constructors, and reuse validated objects for error hints instead of resolving rejected input again.
 
+### Fixed
+
+- Start the OCI Cloud container from its installed virtual-environment entry point without resolving workspace dependencies at runtime.
+
 ## 2.3.0
 
 ### Added

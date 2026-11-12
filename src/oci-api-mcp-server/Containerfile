@@ -25,6 +25,6 @@ USER oracle
 ENV ORACLE_MCP_HOST=""
 ENV ORACLE_MCP_PORT=""
 
-# Start the MCP server
-ENTRYPOINT ["uv", "run", "oracle.oci-api-mcp-server"]
+# Run the installed application without resolving the source workspace at startup.
+ENTRYPOINT ["/app/.venv/bin/oracle.oci-api-mcp-server"]
 

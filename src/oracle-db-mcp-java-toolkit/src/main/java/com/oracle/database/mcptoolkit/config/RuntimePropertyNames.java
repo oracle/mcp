@@ -13,7 +13,6 @@ import java.util.Map;
 public final class RuntimePropertyNames {
   private static final Map<String, String> CANONICAL_NAMES = Map.ofEntries(
       Map.entry("transport", "network.transport"),
-      Map.entry("http.port", "network.http.port"),
       Map.entry("http.allowedOriginalHosts", "network.http.allowedOriginalHosts"),
       Map.entry("http.allowUnauthenticatedForDevelopment", "network.http.allowUnauthenticatedForDevelopment"),
       Map.entry("https.port", "network.https.port"),

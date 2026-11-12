@@ -108,7 +108,6 @@ would otherwise be JVM system properties in a separate runtime file selected wit
 network:
   transport: "http"
   http:
-    port: "8080"
     allowedOriginalHosts: "mcp.example.com"
   https:
     port: "45451"
@@ -133,8 +132,8 @@ java \
 
 `runtimeConfigFile` and `configFile` are bootstrap properties and remain on the command line. A
 non-blank `-D` property overrides the matching YAML value. Use the same canonical names in both
-places: for example, `database.url` and `network.http.port`. Existing property names such as
-`db.url` and `http.port` remain supported as compatibility aliases. When both forms are supplied,
+places: for example, `database.url` and `network.https.port`. Existing property names such as
+`db.url` and `https.port` remain supported as compatibility aliases. When both forms are supplied,
 the canonical property wins. Runtime YAML is resolved by the toolkit and is not written into JVM
 system properties. See [`runtime-config.example.yaml`](runtime-config.example.yaml) for all
 supported runtime settings.

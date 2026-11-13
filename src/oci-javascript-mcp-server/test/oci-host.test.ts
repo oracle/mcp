@@ -12,6 +12,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { createOciReflectionManifest, createOciSdkHostRpc } from "../src/oci-host.ts";
+import { PublicError } from "../src/sandbox-common.ts";
+import type { JsonObject } from "../src/types.ts";
 
 const require = createRequire(import.meta.url);
 const common = require("oci-common") as Record<string, any>;
@@ -151,6 +153,162 @@ test("host RPC config derives only principal id from session token", async () =>
   assert.equal(JSON.stringify(result).includes("do-not-return"), false);
 });
 
+test("host RPC config tolerates unavailable provider fields and malformed session tokens", async () => {
+  class PartialProvider {
+    getUserId() {
+      throw new Error("internal provider failure");
+    }
+
+    getUser() {
+      return "ocid1.instance.oc1..example";
+    }
+
+    getRegion() {
+      return null;
+    }
+
+    getRegionId() {
+      return "us-phoenix-1";
+    }
+  }
+  const partial = await withTemporaryOciConfig("[DEFAULT]\n", async () => {
+    const hostRpc = createOciSdkHostRpc(() => ({
+      sdk: { ConfigFileAuthenticationDetailsProvider: PartialProvider },
+      common: {}
+    }));
+    return hostRpc({
+      binding: "oracle",
+      namespace: "oci",
+      operation: "config",
+      payload: {}
+    });
+  });
+  assert.deepEqual(partial, {
+    tenancyId: null,
+    userId: "ocid1.instance.oc1..example",
+    fingerprint: null,
+    region: "us-phoenix-1",
+    principal: { type: "unknown", id: "ocid1.instance.oc1..example" }
+  });
+
+  class MalformedSessionProvider {
+    sessionToken = "not-a-jwt";
+  }
+  const malformed = await withTemporaryOciConfig(
+    "[DEFAULT]\nsecurity_token_file=/not/read/by/mock\n",
+    async () => {
+      const hostRpc = createOciSdkHostRpc(() => ({
+        sdk: {},
+        common: { SessionAuthDetailProvider: MalformedSessionProvider }
+      }));
+      return hostRpc({
+        binding: "oracle",
+        namespace: "oci",
+        operation: "config",
+        payload: {}
+      });
+    }
+  );
+  assert.deepEqual(malformed, {
+    tenancyId: null,
+    userId: null,
+    fingerprint: null,
+    region: null,
+    principal: null
+  });
+
+  await withTemporaryOciConfig("[DEFAULT]\n", async () => {
+    const hostRpc = createOciSdkHostRpc(() => ({ sdk: {}, common: {} }));
+    await assert.rejects(
+      hostRpc({ binding: "oracle", namespace: "oci", operation: "config", payload: {} }),
+      /authentication provider is unavailable/
+    );
+  });
+});
+
+test("host authentication follows named profile inheritance and overrides", async t => {
+  const fixtures = [
+    { name: "default API key", contents: "[DEFAULT]\n", profile: "DEFAULT", token: undefined },
+    { name: "default session", contents: "[DEFAULT]\nsecurity_token_file=/synthetic/default\n", profile: "DEFAULT", token: "/synthetic/default" },
+    { name: "padded default section", contents: "[ DEFAULT ]\nsecurity_token_file=/synthetic/default\n", profile: "DEFAULT", token: "/synthetic/default" },
+    { name: "named API key", contents: "[DEFAULT]\n[WORK]\nregion=us-phoenix-1\n", profile: "WORK", token: undefined },
+    { name: "named session", contents: "[DEFAULT]\n[WORK]\nsecurity_token_file=/synthetic/work\n", profile: "WORK", token: "/synthetic/work" },
+    { name: "inherited session", contents: "[DEFAULT]\nsecurity_token_file=/synthetic/default\n[WORK]\nregion=us-phoenix-1\n", profile: "WORK", token: "/synthetic/default" },
+    { name: "overridden session", contents: "[DEFAULT]\nsecurity_token_file=/synthetic/default\n[WORK]\nsecurity_token_file=/synthetic/work\n", profile: "WORK", token: "/synthetic/work" },
+    { name: "empty override", contents: "[DEFAULT]\nsecurity_token_file=/synthetic/default\n[WORK]\nsecurity_token_file=\n", profile: "WORK", token: "" }
+  ];
+  for (const fixture of fixtures) {
+    await t.test(fixture.name, async () => {
+      assert.equal(common.ConfigFileReader.parse(fixture.contents, fixture.profile)
+        .get("security_token_file"), fixture.token);
+      await withTemporaryOciConfig(fixture.contents, async () => {
+        const constructors: unknown[] = [];
+        class ApiKeyProvider {
+          constructor(file: string, profile: string) {
+            constructors.push({ kind: "api-key", file, profile });
+          }
+        }
+        class SessionProvider {
+          constructor(file: string, profile: string) {
+            constructors.push({ kind: "session", file, profile });
+          }
+        }
+        class ComputeClient {
+          constructor(options: { authenticationDetailsProvider: unknown; additionalUserAgent: string }, configuration: any) {
+            assert(options.authenticationDetailsProvider instanceof (fixture.token ? SessionProvider : ApiKeyProvider));
+            const metadata = require("../package.json") as { version: string };
+            assert.equal(options.additionalUserAgent, `oci-javascript-mcp/${metadata.version}`);
+            assert.equal(configuration.retryConfiguration, common.NoRetryConfigurationDetails);
+            assert.equal(configuration.circuitBreaker.circuit, null);
+            assert.equal(configuration.circuitBreaker.noCircuit, true);
+          }
+          async listInstances() { return { items: [] }; }
+        }
+        const hostRpc = createOciSdkHostRpc(() => ({
+          sdk: { ConfigFileAuthenticationDetailsProvider: ApiKeyProvider, core: { ComputeClient } },
+          common: { SessionAuthDetailProvider: SessionProvider }
+        }));
+        await hostRpc({ binding: "oracle", namespace: "oci", operation: "config", payload: {} });
+        assert.deepEqual(await hostRpc({
+          binding: "oracle", namespace: "oci", operation: "invoke",
+          payload: { service: "core", client: { name: "ComputeClient" }, operation: "listInstances", request: {} }
+        }), { items: [] });
+        assert.deepEqual(constructors, Array.from({ length: 2 }, () => ({
+          kind: fixture.token ? "session" : "api-key",
+          file: process.env.OCI_CONFIG_FILE,
+          profile: fixture.profile
+        })));
+      }, fixture.profile);
+    });
+  }
+});
+
+test("host authentication rejects a missing named profile without selecting a provider", async () => {
+  await withTemporaryOciConfig("[DEFAULT]\n", async () => {
+    let constructed = false;
+    const hostRpc = createOciSdkHostRpc(() => ({
+      sdk: { ConfigFileAuthenticationDetailsProvider: class {
+        constructor() { constructed = true; }
+      } }, common: {}
+    }));
+    await assert.rejects(hostRpc({
+      binding: "oracle", namespace: "oci", operation: "config", payload: {}
+    }), /profile/i);
+    assert.equal(constructed, false);
+  }, "MISSING");
+});
+
+test("host authentication selection does not add SDK diagnostics for named-only config", async t => {
+  const info = t.mock.method(console, "info", () => {});
+  await withTemporaryOciConfig("[WORK]\nsecurity_token_file=/synthetic/token\n", async () => {
+    const hostRpc = createOciSdkHostRpc(() => ({
+      sdk: {}, common: { SessionAuthDetailProvider: class {} }
+    }));
+    await hostRpc({ binding: "oracle", namespace: "oci", operation: "config", payload: {} });
+    assert.equal(info.mock.callCount(), 0);
+  }, "WORK");
+});
+
 test("host RPC invokes OCI JavaScript SDK clients", async () => {
   const calls: unknown[] = [];
   class ComputeClient {
@@ -186,6 +344,7 @@ test("host RPC invokes OCI JavaScript SDK clients", async () => {
       operation: "listInstances",
       request: {
         compartmentId: "ocid1.compartment.oc1..example",
+        businessData: { retryConfiguration: { label: "ordinary nested data" } },
         when: { __oci_wire_type: "datetime", value: "2026-06-03T00:00:00.000Z" }
       }
     }
@@ -202,6 +361,7 @@ test("host RPC invokes OCI JavaScript SDK clients", async () => {
   assert.deepEqual(calls[1], {
       listInstances: {
         compartmentId: "ocid1.compartment.oc1..example",
+        businessData: { retryConfiguration: { label: "ordinary nested data" } },
         when: new Date("2026-06-03T00:00:00.000Z")
       }
   });
@@ -258,6 +418,7 @@ test("host RPC applies per-client region to a fresh provider", async () => {
 });
 
 test("host RPC applies the trusted cancellation signal to OCI clients", async () => {
+  const common = require("oci-common") as Record<string, any>;
   const calls: unknown[] = [];
   class ComputeClient {
     constructor(options: unknown, clientConfiguration: unknown) {
@@ -292,14 +453,249 @@ test("host RPC applies the trusted cancellation signal to OCI clients", async ()
 
   const constructorCall = calls[0] as {
     constructor: {
-      clientConfiguration: { httpOptions?: unknown };
+      clientConfiguration: {
+        retryConfiguration?: unknown;
+        circuitBreaker?: { circuit?: unknown; noCircuit?: boolean };
+        httpOptions?: unknown;
+      };
     };
   };
-  assert.deepEqual(constructorCall.constructor.clientConfiguration, {
-    circuitBreaker: new common.CircuitBreaker({ disableClientCircuitBreaker: true }),
-    retryConfiguration: common.NoRetryConfigurationDetails,
-    httpOptions: { signal: abortController.signal }
+  const configuration = constructorCall.constructor.clientConfiguration;
+  assert.equal(configuration.retryConfiguration, common.NoRetryConfigurationDetails);
+  assert.equal(configuration.circuitBreaker?.circuit, null);
+  assert.equal(configuration.circuitBreaker?.noCircuit, true);
+  assert.deepEqual(configuration.httpOptions, { signal: abortController.signal });
+});
+
+test("host rejects request retry controls before a generated Secrets operation sends HTTP", async t => {
+  const { SecretsClient } = require("oci-secrets") as Record<string, any>;
+  const common = require("oci-common") as Record<string, any>;
+  const abortController = new AbortController();
+  class SyntheticProvider {
+    getPassphrase() { return null; }
+    getAuthType() { return "synthetic"; }
+    getDelegationToken() { return ""; }
+  }
+
+  await withTemporaryOciConfig("[DEFAULT]\n", async () => {
+    let sends = 0;
+    let failFirstSend = true;
+    // Inject only the transport; reflection and invocation use the installed prototype.
+    function OfflineSecretsClient(options: any, configuration: any) {
+      assert.equal(configuration.retryConfiguration, common.NoRetryConfigurationDetails);
+      assert.equal(configuration.circuitBreaker.noCircuit, true);
+      assert.equal(configuration.circuitBreaker.circuit, null);
+      assert.equal(configuration.httpOptions.signal, abortController.signal);
+      const client = new SecretsClient({
+        ...options,
+        httpClient: {
+          async send(request: { uri: string; method: string; headers: Headers }) {
+            sends += 1;
+            const url = new URL(request.uri);
+            assert.equal(url.origin, "https://secrets.example.invalid");
+            assert.equal(url.pathname, "/20190301/secretbundles/ocid1.vaultsecret.oc1..synthetic");
+            assert.equal(url.searchParams.get("versionNumber"), "7");
+            assert.equal(url.searchParams.get("stage"), "CURRENT");
+            assert.equal(request.method, "GET");
+            assert.equal(request.headers.get("opc-request-id"), "synthetic-request");
+            if (failFirstSend && sends === 1) {
+              return new Response(JSON.stringify({ code: "ServiceUnavailable", message: "synthetic failure" }), {
+                status: 503,
+                headers: { "content-type": "application/json" }
+              });
+            }
+            return new Response(JSON.stringify({ secretId: "ocid1.vaultsecret.oc1..synthetic", versionNumber: 7 }), {
+              status: 200,
+              headers: { "content-type": "application/json" }
+            });
+          }
+        }
+      }, configuration);
+      client.endpoint = "https://secrets.example.invalid";
+      return client;
+    }
+    OfflineSecretsClient.prototype = SecretsClient.prototype;
+    const hostRpc = createOciSdkHostRpc(() => ({
+      sdk: {
+        ConfigFileAuthenticationDetailsProvider: SyntheticProvider,
+        secrets: { SecretsClient: OfflineSecretsClient }
+      },
+      common: {}
+    }));
+    const request: JsonObject = {
+      secretId: "ocid1.vaultsecret.oc1..synthetic",
+      versionNumber: 7,
+      stage: "CURRENT",
+      opcRequestId: "synthetic-request"
+    };
+    const invoke = (decodedRequest: JsonObject) => hostRpc({
+      binding: "oracle",
+      namespace: "oci",
+      operation: "invoke",
+      payload: {
+        service: "secrets",
+        client: { name: "SecretsClient" },
+        operation: "getSecretBundle",
+        request: decodedRequest
+      }
+    }, abortController.signal);
+
+    await t.test("absent retry control permits one attempt despite a retryable failure", async () => {
+      sends = 0;
+      await assert.rejects(invoke(request), error => (
+        (error as { statusCode?: number }).statusCode === 503
+      ));
+      assert.equal(sends, 1);
+    });
+    for (const [label, retryConfiguration] of [
+      ["empty object", {}],
+      ["partial configuration", { backupBinaryBody: true }],
+      ["null", null],
+      ["scalar", "guest-control"]
+    ] as const) {
+      await t.test(`rejects root retryConfiguration with ${label}`, async () => {
+        sends = 0;
+        await assert.rejects(invoke({ ...request, retryConfiguration }), error => (
+          error instanceof PublicError
+          && error.message === "OCI request retryConfiguration is not supported"
+        ));
+        assert.equal(sends, 0);
+      });
+    }
+    await t.test("rejects a retry control materialized by request decoding", async () => {
+      sends = 0;
+      await assert.rejects(invoke({ __oci_wire_type: "repr", value: { ...request, retryConfiguration: {} } }), error => (
+        error instanceof PublicError
+        && error.message === "OCI request retryConfiguration is not supported"
+      ));
+      assert.equal(sends, 0);
+    });
+    await t.test("ordinary request fields reach the generated operation", async () => {
+      sends = 0;
+      failFirstSend = false;
+      const result = await invoke(request) as JsonObject;
+      assert.deepEqual(result.secretBundle, {
+        secretId: "ocid1.vaultsecret.oc1..synthetic",
+        versionNumber: 7,
+        secretBundleContent: null
+      });
+      assert.equal(sends, 1);
+    });
   });
+});
+
+test("host cancellation uses one SDK attempt, no default breaker, and closes the client", async () => {
+  const common = require("oci-common") as Record<string, any>;
+  const abortController = new AbortController();
+  let attempts = 0;
+  let closeCalls = 0;
+  class ComputeClient {
+    readonly configuration: any;
+
+    constructor(_options: unknown, configuration: any) {
+      this.configuration = configuration;
+    }
+
+    async listInstances() {
+      assert.equal(this.configuration.circuitBreaker.noCircuit, true);
+      assert.equal(this.configuration.circuitBreaker.circuit, null);
+      const retrier = common.GenericRetrier.createPreferredRetrier(
+        this.configuration.retryConfiguration,
+        undefined,
+        common.OciSdkDefaultRetryConfiguration
+      );
+      return retrier.makeServiceCall({
+        async send() {
+          attempts += 1;
+          await new Promise<void>(resolve => {
+            abortController.signal.addEventListener("abort", () => resolve(), { once: true });
+          });
+          throw Object.assign(new Error("raw aborted transport detail"), {
+            shouldBeRetried: true
+          });
+        }
+      }, {
+        method: "GET",
+        headers: new Headers(),
+        uri: "https://example.invalid/instances"
+      }, "Compute", "listInstances", "https://example.invalid/api");
+    }
+
+    close() {
+      closeCalls += 1;
+    }
+  }
+  const hostRpc = createOciSdkHostRpc(() => ({
+    sdk: {
+      ConfigFileAuthenticationDetailsProvider: class Provider {},
+      core: { ComputeClient }
+    },
+    common: {}
+  }));
+
+  const operation = hostRpc({
+    binding: "oracle",
+    namespace: "oci",
+    operation: "invoke",
+    payload: {
+      service: "core",
+      client: { name: "ComputeClient" },
+      operation: "listInstances",
+      request: {}
+    }
+  }, abortController.signal);
+  await new Promise(resolve => setImmediate(resolve));
+  abortController.abort();
+
+  await assert.rejects(operation, error => (
+    (error as { message?: unknown }).message === "raw aborted transport detail"
+  ));
+  assert.equal(attempts, 1);
+  assert.equal(closeCalls, 1);
+});
+
+test("host cancellation configuration works with the real OCI HTTP client", async () => {
+  const common = require("oci-common") as Record<string, any>;
+  class ComputeClient {
+    readonly httpClient: any;
+
+    constructor(_options: unknown, configuration: { httpOptions?: unknown }) {
+      this.httpClient = new common.FetchHttpClient(null, undefined, configuration.httpOptions);
+    }
+
+    async listInstances() {
+      const response = await this.httpClient.send({
+        method: "GET",
+        headers: new Headers(),
+        uri: "data:application/json,%7B%7D"
+      });
+      return { status: response.status };
+    }
+
+    close() {}
+  }
+
+  const hostRpc = createOciSdkHostRpc(() => ({
+    sdk: {
+      ConfigFileAuthenticationDetailsProvider: class Provider {},
+      core: { ComputeClient }
+    },
+    common
+  }));
+  const abortController = new AbortController();
+  const result = await hostRpc({
+    binding: "oracle",
+    namespace: "oci",
+    operation: "invoke",
+    payload: {
+      service: "core",
+      client: { name: "ComputeClient" },
+      operation: "listInstances",
+      request: {}
+    }
+  }, abortController.signal);
+
+  assert.deepEqual(result, { status: 200 });
 });
 
 test("host cancellation and retry policy work with real OCI SDK clients", async t => {
@@ -346,7 +742,7 @@ test("host cancellation and retry policy work with real OCI SDK clients", async 
         binding: "oracle", namespace: "oci", operation: "invoke",
         payload: {
           service: fixture.service, client: { name: fixture.client }, operation: fixture.operation,
-          request: { compartmentId: "ocid1.compartment.oc1..example", retryConfiguration: {} }
+          request: { compartmentId: "ocid1.compartment.oc1..example" }
         }
       } as const;
       for (const withSignal of [false, true]) {
@@ -407,23 +803,25 @@ test("host cancellation and retry policy work with real OCI SDK clients", async 
 test("host RPC rejects unsupported client options", async () => {
   const hostRpc = createOciSdkHostRpc(() => ({ sdk: {}, common: {} }));
 
-  await assert.rejects(
-    hostRpc({
-      binding: "oracle",
-      namespace: "oci",
-      operation: "invoke",
-      payload: {
-        service: "core",
-        client: {
-          name: "ComputeClient",
-          options: { endpoint: "https://example.invalid" } as never
-        },
-        operation: "listInstances",
-        request: {}
-      }
-    }),
-    /Unsupported OCI client option 'endpoint'.*Client options only support region/
-  );
+  for (const option of ["endpoint", "retryConfiguration", "circuitBreaker"] as const) {
+    await assert.rejects(
+      hostRpc({
+        binding: "oracle",
+        namespace: "oci",
+        operation: "invoke",
+        payload: {
+          service: "core",
+          client: {
+            name: "ComputeClient",
+            options: { [option]: {} } as never
+          },
+          operation: "listInstances",
+          request: {}
+        }
+      }),
+      new RegExp(`Unsupported OCI client option '${option}'.*Client options only support region`)
+    );
+  }
 });
 
 test("host RPC rejects malformed client regions", async () => {
@@ -445,6 +843,50 @@ test("host RPC rejects malformed client regions", async () => {
       }
     }),
     /Invalid OCI client option region 'example.com'/
+  );
+});
+
+test("host RPC rejects malformed client envelopes and decoded requests", async () => {
+  class ComputeClient {
+    async listInstances() {
+      return {};
+    }
+  }
+  const hostRpc = createOciSdkHostRpc(() => ({
+    sdk: {
+      ConfigFileAuthenticationDetailsProvider: class Provider {},
+      core: { ComputeClient }
+    },
+    common: {}
+  }));
+  const invoke = (client: unknown, request: unknown = {}) => hostRpc({
+    binding: "oracle",
+    namespace: "oci",
+    operation: "invoke",
+    payload: {
+      service: "core",
+      client,
+      operation: "listInstances",
+      request
+    } as never
+  });
+
+  await assert.rejects(invoke(null), /Invalid OCI client payload/);
+  await assert.rejects(
+    invoke({ name: "ComputeClient", unexpected: true }),
+    /Unsupported OCI client field 'unexpected'/
+  );
+  await assert.rejects(
+    invoke({ name: "ComputeClient", options: [] }),
+    /client options must be an object/
+  );
+  await assert.rejects(
+    invoke({ name: "ComputeClient", options: { region: "us-ashburn-1" } }),
+    /does not support per-client region selection/
+  );
+  await assert.rejects(
+    invoke({ name: "ComputeClient" }, []),
+    /OCI request must decode to an object/
   );
 });
 
@@ -569,7 +1011,8 @@ test("host RPC points SDK pagination helpers to direct list page tokens", async 
 
 async function withTemporaryOciConfig<T>(
   contents: string,
-  callback: () => Promise<T>
+  callback: () => Promise<T>,
+  profile = "DEFAULT"
 ): Promise<T> {
   const directory = mkdtempSync(join(tmpdir(), "oci-javascript-mcp-server-"));
   const configPath = join(directory, "config");
@@ -578,7 +1021,7 @@ async function withTemporaryOciConfig<T>(
   try {
     writeFileSync(configPath, contents, "utf8");
     process.env.OCI_CONFIG_FILE = configPath;
-    process.env.OCI_CONFIG_PROFILE = "DEFAULT";
+    process.env.OCI_CONFIG_PROFILE = profile;
     return await callback();
   } finally {
     if (previousConfigFile === undefined) {
@@ -719,6 +1162,28 @@ test("host RPC discovers JavaScript SDK request and response shapes", async () =
       compartmentId: "<compartmentId>"
     }
   });
+});
+
+test("host discovery examples preserve required model and primitive arrays", async t => {
+  const hostRpc = createOciSdkHostRpc();
+  const fixtures = [
+    { service: "core", client: "VirtualNetworkClient", operation: "createServiceGateway", body: "createServiceGatewayDetails", field: "services", expected: [{ serviceId: "<serviceId>" }] },
+    { service: "core", client: "VirtualNetworkClient", operation: "createDhcpOptions", body: "createDhcpDetails", field: "options", expected: [{ type: "<type>" }] },
+    { service: "core", client: "ComputeClient", operation: "createComputeCapacityReport", body: "createComputeCapacityReportDetails", field: "shapeAvailabilities", expected: [{ instanceShape: "<instanceShape>" }] },
+    { service: "identity", client: "IdentityClient", operation: "createPolicy", body: "createPolicyDetails", field: "statements", expected: [] },
+    { service: "core", client: "VirtualNetworkClient", operation: "addDrgRouteDistributionStatements", body: "addDrgRouteDistributionStatementsDetails", field: "statements", expected: [{ matchCriteria: [], action: "<action>", priority: 0 }] }
+  ];
+  for (const { service, client, operation, body, field, expected } of fixtures) {
+    await t.test(operation, async () => {
+      const result = await hostRpc({
+        binding: "oracle", namespace: "oci", operation: "discover",
+        payload: { service, client, operation }
+      }) as Record<string, any>;
+      assert(Array.isArray(result.exampleRequest[body][field]));
+      assert.deepEqual(result.exampleRequest[body][field], expected);
+      assert.deepEqual(result, JSON.parse(JSON.stringify(result)));
+    });
+  }
 });
 
 test("host builds reflection manifest from installed SDK shape", () => {
@@ -969,6 +1434,102 @@ test("host RPC rejects OCI responses that exceed structural and framing budgets"
     invoke(limitedHostRpc),
     /response limit 2031616 bytes before serialization/
   );
+});
+
+test("host RPC encodes supported response values and rejects unsafe values", async () => {
+  let response: unknown;
+  class ComputeClient {
+    async getInstance() {
+      return response;
+    }
+  }
+  const hostRpc = createOciSdkHostRpc(() => ({
+    sdk: {
+      ConfigFileAuthenticationDetailsProvider: class Provider {},
+      core: { ComputeClient }
+    },
+    common: {}
+  }));
+  const invoke = () => hostRpc({
+    binding: "oracle",
+    namespace: "oci",
+    operation: "invoke",
+    payload: {
+      service: "core",
+      client: { name: "ComputeClient" },
+      operation: "getInstance",
+      request: {}
+    }
+  });
+
+  response = {
+    created: new Date("2026-09-03T12:00:00.000Z"),
+    bytes: new Uint8Array([0, 1, 2, 255])
+  };
+  assert.deepEqual(await invoke(), {
+    created: { __oci_wire_type: "datetime", value: "2026-09-03T12:00:00.000Z" },
+    bytes: { __oci_wire_type: "bytes", encoding: "base64", value: "AAEC/w==" }
+  });
+
+  for (const [label, value, pattern] of [
+    ["not-a-number", Number.NaN, /non-finite number/],
+    ["positive infinity", Number.POSITIVE_INFINITY, /non-finite number/],
+    ["negative infinity", Number.NEGATIVE_INFINITY, /non-finite number/],
+    ["function", () => undefined, /unsupported function value/],
+    ["symbol", Symbol("unsafe"), /unsupported symbol value/],
+    ["map", new Map(), /unsupported Map value/],
+    ["set", new Set(), /unsupported Set value/],
+    ["error", new Error("internal details"), /unsupported Error value/]
+  ] as const) {
+    response = { value };
+    await assert.rejects(invoke(), pattern, label);
+  }
+
+  const deep: Record<string, unknown> = {};
+  let cursor = deep;
+  for (let depth = 0; depth < 100; depth += 1) {
+    const child: Record<string, unknown> = {};
+    cursor.child = child;
+    cursor = child;
+  }
+  response = deep;
+  await assert.rejects(invoke(), /response exceeded depth limit/);
+});
+
+test("host RPC distinguishes list and non-list post-serialization size guidance", async () => {
+  const response = Object.fromEntries(
+    Array.from({ length: 40_000 }, (_, index) => [`k${index}`, "x".repeat(18)])
+  );
+  class ComputeClient {
+    async listInstances() {
+      return response;
+    }
+
+    async getInstance() {
+      return response;
+    }
+  }
+  const hostRpc = createOciSdkHostRpc(() => ({
+    sdk: {
+      ConfigFileAuthenticationDetailsProvider: class Provider {},
+      core: { ComputeClient }
+    },
+    common: {}
+  }));
+  const invoke = (operation: "listInstances" | "getInstance") => hostRpc({
+    binding: "oracle",
+    namespace: "oci",
+    operation: "invoke",
+    payload: {
+      service: "core",
+      client: { name: "ComputeClient" },
+      operation,
+      request: {}
+    }
+  });
+
+  await assert.rejects(invoke("listInstances"), /smaller limit.*page token/);
+  await assert.rejects(invoke("getInstance"), /Narrow the request or return only the fields needed/);
 });
 
 test("host RPC handles an SDK operation disappearing from a client instance", async () => {

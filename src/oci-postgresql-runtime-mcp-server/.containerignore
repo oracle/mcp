@@ -1,0 +1,10 @@
+.venv
+venv
+bldvenv
+
+.pytest_cache
+dist
+**/__pycache__
+
+htmlcov
+.coverage

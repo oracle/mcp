@@ -453,12 +453,13 @@ muse mcp login oracle-oci-cloud-mcp-server
 
 The first command stores `{"type": "streamable-http", "url": "http://127.0.0.1:8888/mcp"}`; the second completes the OAuth flow against the OCI IAM confidential application you registered for the server. Use `--project` instead of `--user` to keep the entry in the current repository's settings.
 
-3. Check the entry with `muse mcp list` (or `muse mcp get oracle-oci-cloud-mcp-server --json`), then start Muse Code in a trusted workspace and run `/mcp` to confirm the server is connected and its tools are listed.
+3. Check the entry with `muse mcp list` (or `muse mcp get oracle-oci-cloud-mcp-server --json`), then start Muse Code in a trusted workspace and run `/mcp` to confirm the server is connected and its tools are listed. Muse Code starts MCP servers at session start even with its credential-free `--provider echo`, so `muse exec --provider echo --trust-workspace "ping"` is enough to confirm the wiring before you log in; the session trace under the Muse data directory (`local-tracing/bootstrap/`) records `mcp.handshake` and `mcp.capability.discovery ... tool_count=5` for this server. The tools appear to the model as `mcp__oracle_oci_cloud_mcp_server__<tool>` (for example `mcp__oracle_oci_cloud_mcp_server__invoke_oci_api`), which is the name to use in a `run.toolset` selection.
 
 Notes:
 
 - Muse Code also accepts the snake_case spelling from Meta's docs (`mcp_servers`, `transport`, `streamable_http`); `muse mcp add` writes the camelCase form shown above, which matches the other clients in this README except for the `streamable-http` type value.
 - Servers are optional by default: an unavailable server is skipped with a warning. Add `"mode": "required"` to the entry if the run should abort instead.
+- First start of the `uvx` form takes ~15 s while `uvx` resolves the package; later starts are fast.
 - Unknown fields such as Cline's `autoApprove` are ignored with a startup warning rather than rejected.
 - Muse Code does not sandbox MCP tools. Only connect servers you trust, and prefer a least-privilege OCI profile as described under [Authentication](#authentication).
 

@@ -29,7 +29,7 @@ The [workflow/context plan](plans/agent-workflows-and-engineering-context/implem
 
 ## Selected component context
 
-The user-approved expansion covers every MCP server component under `src/`: 34 server guides, including the Java toolkit, plus the existing Common library guide and root guidance. Each guide supplies the nine-area engineering profile through local answers, specific shared/native references or explicit gaps. A guide’s existence does not establish server quality or passing behavior evaluation. The [adoption summary](plans/adopt-monorepo-agent-context/adoption-summary.md) separates the original ten-case evaluation from the expanded documentation review.
+Component guidance covers all 35 MCP server components under `src/`, including the Java toolkit, plus the Common library guide and root guidance. Each guide supplies the nine-area engineering profile through local answers, specific shared/native references or explicit gaps. A guide’s existence does not establish server quality or passing behavior evaluation. The [adoption summary](plans/adopt-monorepo-agent-context/adoption-summary.md) separates the original ten-case evaluation from the expanded documentation review.
 
 | Scope | Native entry | Local guide |
 | --- | --- | --- |
@@ -58,6 +58,7 @@ The user-approved expansion covers every MCP server component under `src/`: 34 s
 | `oci-networking-mcp-server` | [README](../src/oci-networking-mcp-server/README.md), [entry point](../src/oci-networking-mcp-server/oracle/oci_networking_mcp_server/server.py) | [Guide](../src/oci-networking-mcp-server/AGENTS.md) |
 | `oci-object-storage-mcp-server` | [README](../src/oci-object-storage-mcp-server/README.md), [entry point](../src/oci-object-storage-mcp-server/oracle/oci_object_storage_mcp_server/server.py) | [Guide](../src/oci-object-storage-mcp-server/AGENTS.md) |
 | `oci-opensearch-mcp-server` | [README](../src/oci-opensearch-mcp-server/README.md), [entry point](../src/oci-opensearch-mcp-server/oracle/oci_opensearch_mcp_server/server.py) | [Guide](../src/oci-opensearch-mcp-server/AGENTS.md) |
+| `oci-postgresql-runtime-mcp-server` | [README](../src/oci-postgresql-runtime-mcp-server/README.md), [entry point](../src/oci-postgresql-runtime-mcp-server/oracle/oci_postgresql_runtime_mcp_server/server.py) | [Guide](../src/oci-postgresql-runtime-mcp-server/AGENTS.md) |
 | `oci-pricing-mcp-server` | [README](../src/oci-pricing-mcp-server/README.md), [entry point](../src/oci-pricing-mcp-server/oci-pricing-mcp-server.py) | [Guide](../src/oci-pricing-mcp-server/AGENTS.md) |
 | `oci-recovery-mcp-server` | [README](../src/oci-recovery-mcp-server/README.md), [entry point](../src/oci-recovery-mcp-server/oracle/oci_recovery_mcp_server/server.py) | [Guide](../src/oci-recovery-mcp-server/AGENTS.md) |
 | `oci-registry-mcp-server` | [README](../src/oci-registry-mcp-server/README.md), [entry point](../src/oci-registry-mcp-server/oracle/oci_registry_mcp_server/server.py) | [Guide](../src/oci-registry-mcp-server/AGENTS.md) |

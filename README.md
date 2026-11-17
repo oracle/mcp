@@ -390,6 +390,92 @@ For Windows - **TODO**
 
 </details>
 
+### Muse Code
+
+<details>
+<summary>Setup</summary>
+
+Before continuing, make sure you have already followed the steps above in the [Quick start](#quick-start) section.
+
+[Muse Code](https://dev.meta.ai/docs/muse-code) is Meta's coding agent for the terminal and CI. It reads MCP servers from the `mcp_servers` block of its settings file, `~/.config/muse/settings.json` (see [Configuration](https://dev.meta.ai/docs/muse-code/configuration) and [Extending: MCP](https://dev.meta.ai/docs/muse-code/extending#mcp)). The file must include `"schema_version": 1`.
+
+1. Install Muse Code and confirm it is on your `PATH`:
+
+```sh
+curl -fsSL https://dev.meta.ai/install.sh | bash
+muse --version
+```
+
+2. Add the server to `~/.config/muse/settings.json`. Muse Code uses `transport` (not `type`) and snake_case keys. `<profile_name>` is the profile that you set up during the [authentication](#authentication) steps.
+
+For macOS/Linux:
+```json
+{
+  "schema_version": 1,
+  "mcp_servers": {
+    "oracle-oci-cloud-mcp-server": {
+      "transport": "stdio",
+      "command": "uvx",
+      "args": [
+        "oracle.oci-cloud-mcp-server@latest"
+      ],
+      "env": {
+        "OCI_CONFIG_PROFILE": "<profile_name>",
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    }
+  }
+}
+```
+
+Alternatively, to run using podman:
+
+```json
+{
+  "schema_version": 1,
+  "mcp_servers": {
+    "oracle-oci-cloud-mcp-server": {
+      "transport": "stdio",
+      "command": "podman",
+      "args": ["run", "-i", "--rm", "-v", "/path/to/your/.oci:/app/.oci", "oracle.oci-cloud-mcp-server:latest"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
+```
+
+Replace `"/path/to/your/.oci"` with the actual path to your OCI configuration directory. For servers not requiring OCI credentials, omit the `-v` volume mount.
+
+To connect to an OCI MCP server running in HTTP streaming mode (started as shown in the [Quick start](#quick-start)), use the `streamable_http` transport instead:
+
+```json
+{
+  "schema_version": 1,
+  "mcp_servers": {
+    "oracle-oci-cloud-mcp-server": {
+      "transport": "streamable_http",
+      "url": "http://127.0.0.1:8888/mcp"
+    }
+  }
+}
+```
+
+Then sign in to the server with `muse mcp login oracle-oci-cloud-mcp-server`. Muse Code completes the OAuth flow against the OCI IAM confidential application you registered for the server.
+
+For Windows, the settings file lives in the location given in the Muse Code [configuration docs](https://dev.meta.ai/docs/muse-code/configuration); the `mcp_servers` block is the same.
+
+3. Start Muse Code in a trusted workspace and run `/mcp` to confirm the server is connected and its tools are listed.
+
+Notes:
+
+- Set `"mode": "optional"` on a server entry if Muse Code should start even when that server is unavailable. The default, `required`, aborts the run if the server fails to start.
+- Values support `${VAR}` interpolation, so `"OCI_CONFIG_PROFILE": "${OCI_CLI_PROFILE}"` picks the profile up from your shell.
+- Muse Code does not sandbox MCP tools. Only connect servers you trust, and prefer a least-privilege OCI profile as described under [Authentication](#authentication).
+
+</details>
+
 ## Local development
 
 On macOS, install proto with [Homebrew](https://formulae.brew.sh/formula/proto)

@@ -9,9 +9,9 @@ from behave import then
 
 @then("the response should contain a list of cloud guard tools available")
 def step_impl_cloud_guard_tools_available(context):
-    response_json = context.response.json()
-    assert "content" in response_json["message"], "Response does not contain a content key."
-    content = response_json["message"]["content"].lower()
+    response_json = context.result
+    assert response_json.text, "Response is empty."
+    content = response_json.text.lower()
     # Tools from Cloud Guard server
     assert any(tool in content for tool in ["list_problems", "get_problem_details"]), (
         "Cloud Guard tools could not be queried."
@@ -20,18 +20,18 @@ def step_impl_cloud_guard_tools_available(context):
 
 @then("the response should contain a list of cloud guard problems")
 def step_impl_list_problems(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
+    result = context.result
+    assert result.text, "Response is empty."
     # Look for a known OCID prefix for Cloud Guard Problem
-    assert "ocid1.cloudguardproblem" in result["message"]["content"].lower(), (
+    assert "ocid1.cloudguardproblem" in result.text.lower(), (
         "List of Cloud Guard problems not found."
     )
 
 
 @then("the response should contain the details of a cloud guard problem")
 def step_impl_get_problem_details(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    assert "ocid1.cloudguardproblem" in result["message"]["content"].lower(), (
+    result = context.result
+    assert result.text, "Response is empty."
+    assert "ocid1.cloudguardproblem" in result.text.lower(), (
         "Cloud Guard problem details not found."
     )

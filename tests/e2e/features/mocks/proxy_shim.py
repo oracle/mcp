@@ -108,7 +108,7 @@ def handle_client(client_sock):
 
                 # Connect to the local Plain HTTP Flask Mock
                 target_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                target_sock.connect(("127.0.0.1", 5001))
+                target_sock.connect(("127.0.0.1", int(os.environ.get("MOCK_OCI_PORT", 5001))))
 
                 # Create threads for bidirectional traffic
                 t1 = threading.Thread(target=pipe, args=(ssock, target_sock), daemon=True)
@@ -145,7 +145,7 @@ def main():
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
     try:
-        server.bind(("127.0.0.1", 5000))
+        server.bind(("127.0.0.1", int(os.environ.get("MOCK_PROXY_PORT", 5000))))
         server.listen(20)
         print("Listening on 127.0.0.1:5000 (Terminating SSL, piping to 5001)")
 

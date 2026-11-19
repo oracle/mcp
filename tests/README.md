@@ -1,41 +1,93 @@
 # End-to-End Tests for OCI MCP Servers
 
-## Introduction
+These optional [Behave](https://behave.readthedocs.io/en/latest/) scenarios run real MCP server processes against mock OCI services. Codex CLI supplies the model interaction and MCP client loop. They require inference access, but do not require an OCI tenancy, Ollama, `ollama-mcp-bridge`, or the Python Codex SDK.
 
-This directory contains end-to-end tests for the OCI MCP Servers using the [Behave framework](https://behave.readthedocs.io/en/latest/).
+This is the CLI alternative for [oracle/mcp#570](https://github.com/oracle/mcp/issues/570). The SDK alternative will be evaluated independently from the same base; this implementation has no backend selector.
 
-## Prerequisites
+## Setup
 
-1. Ensure that you have `uv` installed from the [Quick Start](https://github.com/oracle/mcp#quick-start) section of the main README.
-2. Install [proto](https://moonrepo.dev/docs/proto/install) and run `proto install` from the repository root.
-3. Ensure that you have downloaded `ollama`, started the `ollama` server, and fetched a large language model (e.g. gpt-oss:20b) from the [Client configuration - MCPHost](https://github.com/oracle/mcp#mcphost) section of the main README.
-   1. When following the instructions in the step above, there is no need to start `mcphost` for these E2E tests. You only need to install and start `ollama` for running these tests.
+1. Install `uv` and [proto](https://moonrepo.dev/docs/proto/install), then run `proto install` from the repository root.
+2. Install [Codex CLI](https://developers.openai.com/codex/cli/) and authenticate with `codex login`, or supply `CODEX_API_KEY` securely in your environment. This runner was tested with **codex-cli 0.170.0** and **gpt-6.1-sol**. It requires that version's `--json`, `--ephemeral`, `--strict-config`, `--no-daemon`, MCP approval settings, and feature controls. An incompatible executable fails setup or configuration validation.
+3. Run `uv sync --project tests --locked`. Each enabled `uv` server in the host inventory is also synchronized with `uv sync --project <project> --locked --no-dev` at suite startup, using the driver's normal network settings before mock proxy injection. No server code or lockfile is upgraded.
+
+The runner supports macOS and Linux/POSIX process groups and `/usr/bin/env`. A headless OCI machine needs Python 3.13+, the repository tools, the Codex executable, and an existing supported OpenAI authentication/inference path with network access. It does not provision OCI infrastructure or use OCI Generative AI inference.
+
+Authentication comes from `CODEX_API_KEY` or a private, temporary copy of `$CODEX_HOME/auth.json` (default source: `~/.codex/auth.json`). Keyring-only login is not copied; use file-backed `codex login` or `CODEX_API_KEY`. Personal Codex configuration, MCP servers, plugins, skills, and sessions are not copied. Temporary authentication and session directories are deleted after each scenario. The runner does not change global Codex configuration.
+
+## Run scenarios
+
+From the repository root:
+
+```bash
+moon run root:e2e-tests
+moon run root:e2e-tests -- -n "List the compute instances"
+```
+
+Run the three representative smoke scenarios:
+
+```bash
+moon run root:e2e-tests -- -n '^(List the compute instances|Get compute instance details|Get the namespace)$' --no-capture
+```
+
+The equivalent direct invocation is:
+
+```bash
+uv run --project tests --locked --no-dev behave tests/e2e/features
+```
+
+Keep execution serial. Mock state is shared within a suite run. The trusted driver assigns temporary loopback ports, generates dummy OCI credentials and a proxy certificate, and owns their cleanup. No local service needs to be stopped to free port 5000.
 
 ## Configuration
 
-1. In the `tests/e2e/features` directory, copy `.env.template` to `.env`.
-2. Fill in the required environment variables in `.env`:
-   - MCP_HOST_FILE: The .json configuration file holding your MCP server configurations. Defaults to the absolute path of the existing tests/e2e/features/mcphost.json file.
-   - URL: The URL to send the LLM prompts to. Defaults to http://localhost:8000/api/chat (Ollama's chat endpoint).
-   - MODEL: LLM model that you are running. This should be the model that you fetched in the prerequisites section. Defaults to gpt-oss:20b.
+Optionally copy `tests/e2e/features/.env.template` to `.env` in the same directory. Existing environment variables take precedence. Keep authentication secrets outside that file.
 
-   You can copy the following into a `.env` file
-   ```bash
-   MCP_HOST_FILE=
-   URL=
-   MODEL=
-   ```
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MCP_HOST_FILE` | Adjacent `mcphost.json` | Existing MCP server inventory; relative overrides resolve from the invocation directory. |
+| `CODEX_E2E_EXECUTABLE` | `codex` on `PATH` | CLI executable. |
+| `CODEX_E2E_MODEL` | `gpt-6.1-sol` | Model supported by your Codex account. |
+| `CODEX_E2E_TIMEOUT` | `180` | Positive, finite deadline in seconds per Codex invocation. |
 
-## Running the Tests
+The old bridge `URL` and Ollama `MODEL` settings are no longer used. Model reasoning settings use the CLI's defaults.
 
-1. From the repository root, run `moon run root:e2e-tests`. `uv` syncs the locked test harness in `tests/.venv`; the bridge launches each configured server from its own locked project environment.
-2. To run a specific scenario, pass its name through Moon: `moon run root:e2e-tests -- -n "Name of your scenario"`.
+`mcphost.json` remains the single server inventory. The runner translates enabled stdio entries into disposable Codex TOML. It supports `command`, string-array `args`, string-valued `env`, `cwd`, `type="stdio"`, `disabled`, and positive finite `timeout` (default 60 seconds for startup and each tool call). Unknown settings, transports, and environment substitutions are rejected. Disabled entries never launch. Server working directories, relative arguments and relative `PYTHONPATH` entries resolve from the host file's directory, or its explicit `cwd`.
 
-## Notes
+Only `${env:OCI_CONFIG_FILE}` and `${env:MOCK_OCI_PROXY}` are substituted, with values supplied by the trusted test driver. Put proxy and certificate overrides in each MCP entry's `env`; they apply to the server processes. MCP children receive an empty inherited environment plus explicitly configured test values, isolated `HOME`, `PATH`, and dependency-cache/runtime settings. They do not inherit provider keys or real OCI credential variables. Custom launcher commands must already have their dependencies installed; automatic preparation recognizes the inventory's `uv run --project <path> --locked --no-dev <entrypoint>` form.
 
-- The tests use the configuration from the `.env` file.
-- The `mcphost.json` file is used to configure the MCP server.
-- The default `mcphost.json` launches each server with `uv run --project <server-project> --locked`; custom host files should likewise point each server to its own project.
+Every scenario exposes all enabled inventory entries, preserving cross-service requests such as listing Compute instances before querying instance-agent executions.
+
+## Execution and evidence
+
+Each independent scenario uses a fresh `codex exec --json` session in an empty temporary directory. Prompts travel through stdin and launch commands use argument arrays. The agent has a read-only sandbox with shell, web search, image-file inspection, browser/computer use, JavaScript/code execution, apps, plugins, memories and subagents disabled. It cannot read repository fixtures through a shell. MCP servers retain the mock endpoint patches in `mocks/sitecustomize.py`.
+
+Only the disposable test MCP entries receive `default_tools_approval_mode="approve"`, allowing the suite's mock operations to run without interactive prompts. The configured global policy remains `on-request`; enterprise requirements still apply. No sandbox or approval bypass flags are used. CLI 0.170.0 internally defaults exec approvals to `never`; a managed policy can replace that with `on-request` and emit a startup warning. Those pre-turn warnings are reported separately. A required MCP initialization failure, failed turn, or cancelled/failed tool call fails the scenario.
+
+The runner records native final text, completed MCP calls with arguments/results, thread ID, token usage and invocation duration. It does not synthesize bridge HTTP responses. Operation scenarios must include successful calls to configured MCP servers; Compute listing explicitly requires `list_instances`, its chained lookup must use an exact ID returned by that listing and include it in the final answer, and namespace lookup explicitly requires `get_namespace`. Existing response-content assertions remain in place.
+
+Inventory scenarios validate the required live startup/catalog and the existing tool-name assertions; the general inventory also checks all enabled server names. They do not require executing an operation merely to list capabilities.
+
+## Offline checks and diagnostics
+
+Normal offline tests need neither Codex nor inference authentication:
+
+```bash
+uv run --project tests --locked pytest tests/unit -q \
+  --cov=codex_runner --cov-branch --cov-report=term-missing --cov-fail-under=90
+uv lock --project tests --check
+uv sync --project tests --locked --all-groups
+moon run root:lint
+```
+
+`--no-capture --format pretty` shows per-scenario runtime/model identity, duration, usage, startup warnings, MCP operation names, and assertion failures. On failure:
+
+- **Executable or authentication setup:** check `codex --version`, `codex login status`, and the documented authentication source. Do not paste credentials into logs.
+- **Dependency preparation or required MCP startup:** check the enabled host entry, its project lock, executable, relative paths and mock environment. All selected servers are required; an unavailable one cannot silently disappear from the catalog.
+- **Nonzero exit:** check CLI compatibility, account/model access and MCP startup. Raw process stderr is withheld because it may contain provider credentials.
+- **Failed call or missing evidence:** inspect the named MCP operation and mock route/fixture. A plausible answer or successful exit alone cannot pass an operation scenario.
+- **Invalid/truncated events or missing final text:** the scenario fails instead of accepting partial output. Shell/file/web/collaboration execution events and calls to foreign servers are rejected.
+- **Timeout or excessive output:** the invocation fails after its deadline or 8 MiB of combined stdout/stderr. Owned Codex/MCP process groups are terminated and killed if necessary, including descendants of an exited leader. Ctrl-C and SIGTERM also unwind the driver and run cleanup. Mock processes and temporary certificates/credentials are removed on normal completion and setup failures.
+
+Authenticated local results and OCI execution results are separate evidence. Local mock-backed success does not establish a live OCI integration or an OCI-hosted run.
 
 ----
-<small>Copyright (c) 2025, Oracle and/or its affiliates. Licensed under the [Universal Permissive License v1.0](https://oss.oracle.com/licenses/upl).</small>
+<small>Copyright (c) 2025, 2026, Oracle and/or its affiliates. Licensed under the [Universal Permissive License v1.0](https://oss.oracle.com/licenses/upl).</small>

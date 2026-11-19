@@ -9,11 +9,9 @@ from behave import then
 
 @then("the response should contain a list of load balancer tools available")
 def step_impl_lb_tools_available(context):
-    response_json = context.response.json()
-    assert (
-        "content" in response_json["message"]
-    ), "Response does not contain a content key."
-    content = response_json["message"]["content"].lower()
+    response_json = context.result
+    assert response_json.text, "Response is empty."
+    content = response_json.text.lower()
     # Check for representative tool names from the LB server
     expected = [
         "list_load_balancers",
@@ -73,9 +71,9 @@ def step_impl_lb_tools_available(context):
 
 @then("the response should contain a list of load balancers")
 def step_impl_list_lbs(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    content = result["message"]["content"].lower()
+    result = context.result
+    assert result.text, "Response is empty."
+    content = result.text.lower()
     # Accept OCID or known display name from mocks, or a clear list mention
     assert (
         "ocid1.loadbalancer" in content
@@ -86,9 +84,9 @@ def step_impl_list_lbs(context):
 
 @then("the response should contain the details of a load balancer")
 def step_impl_get_lb(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    content = result["message"]["content"].lower()
+    result = context.result
+    assert result.text, "Response is empty."
+    content = result.text.lower()
     assert (
         "ocid1.loadbalancer" in content
         or "mock-lb" in content
@@ -102,9 +100,9 @@ def step_impl_get_lb(context):
 
 @then("the response should confirm creation of a load balancer")
 def step_impl_create_lb(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    content = result["message"]["content"].lower()
+    result = context.result
+    assert result.text, "Response is empty."
+    content = result.text.lower()
     # Look for create confirmation, work request OCID, or known status
     assert (
         "created" in content
@@ -117,9 +115,9 @@ def step_impl_create_lb(context):
 
 @then("the response should confirm deletion of a load balancer")
 def step_impl_delete_lb(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    content = result["message"]["content"].lower()
+    result = context.result
+    assert result.text, "Response is empty."
+    content = result.text.lower()
     # Look for delete confirmation, work request OCID, or expected terms
     assert (
         "deleted" in content
@@ -137,9 +135,9 @@ def step_impl_delete_lb(context):
 
 @then("the response should contain a list of load balancer listeners")
 def step_impl_list_listeners(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    content = result["message"]["content"].lower()
+    result = context.result
+    assert result.text, "Response is empty."
+    content = result.text.lower()
     assert any(
         k in content for k in ["listener", "listeners", "port", "protocol"]
     ), "Listeners list not found."
@@ -147,9 +145,9 @@ def step_impl_list_listeners(context):
 
 @then("the response should contain a list of backend sets and backends")
 def step_impl_backend_sets_backends(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    content = result["message"]["content"].lower()
+    result = context.result
+    assert result.text, "Response is empty."
+    content = result.text.lower()
     assert any(
         k in content for k in ["backendset", "backend set", "policy"]
     ), "Backend sets not found."
@@ -158,9 +156,9 @@ def step_impl_backend_sets_backends(context):
 
 @then("the response should contain a list of certificates and cipher suites")
 def step_impl_certs_and_suites(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    content = result["message"]["content"].lower()
+    result = context.result
+    assert result.text, "Response is empty."
+    content = result.text.lower()
     assert any(k in content for k in ["certificate", "cert"]), "Certificates not found."
     assert any(
         k in content for k in ["cipher", "cipher suite", "tls"]
@@ -169,9 +167,9 @@ def step_impl_certs_and_suites(context):
 
 @then("the response should contain hostnames, rule sets, and routing policies")
 def step_impl_hostnames_rules_routing(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    content = result["message"]["content"].lower()
+    result = context.result
+    assert result.text, "Response is empty."
+    content = result.text.lower()
     assert any(k in content for k in ["hostname", "host"]), "Hostnames not found."
     assert any(
         k in content for k in ["rule set", "ruleset", "rule"]
@@ -183,9 +181,9 @@ def step_impl_hostnames_rules_routing(context):
 
 @then("the response should contain health summaries and work requests")
 def step_impl_health_and_work_requests(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    content = result["message"]["content"].lower()
+    result = context.result
+    assert result.text, "Response is empty."
+    content = result.text.lower()
     assert "health" in content, "Health information not found."
     assert any(
         k in content for k in ["work request", "work requests", "work id", "wr"]
@@ -194,7 +192,7 @@ def step_impl_health_and_work_requests(context):
 
 @then("the response should confirm listener operations")
 def step_impl_listener_ops(context):
-    content = context.response.json()["message"]["content"].lower()
+    content = context.result.text.lower()
     assert "listener" in content, "Listener keyword missing."
     assert (
         "create" in content
@@ -218,7 +216,7 @@ def step_impl_listener_ops(context):
 
 @then("the response should confirm backend set operations")
 def step_impl_backend_set_ops(context):
-    content = context.response.json()["message"]["content"].lower()
+    content = context.result.text.lower()
     assert (
         "backend set" in content or "backendset" in content
     ), "Backend set keyword missing."
@@ -244,7 +242,7 @@ def step_impl_backend_set_ops(context):
 
 @then("the response should confirm backend operations")
 def step_impl_backend_ops(context):
-    content = context.response.json()["message"]["content"].lower()
+    content = context.result.text.lower()
     assert "backend" in content, "Backend keyword missing."
     assert (
         "create" in content
@@ -269,7 +267,7 @@ def step_impl_backend_ops(context):
 
 @then("the response should confirm certificate operations")
 def step_impl_certificate_ops(context):
-    content = context.response.json()["message"]["content"].lower()
+    content = context.result.text.lower()
     assert "certificate" in content, "Certificate keyword missing."
     assert (
         "create" in content
@@ -288,7 +286,7 @@ def step_impl_certificate_ops(context):
 
 @then("the response should confirm ssl cipher suite operations")
 def step_impl_cipher_suite_ops(context):
-    content = context.response.json()["message"]["content"].lower()
+    content = context.result.text.lower()
     assert "cipher" in content, "Cipher suite keyword missing."
     assert (
         "create" in content
@@ -315,7 +313,7 @@ def step_impl_cipher_suite_ops(context):
 
 @then("the response should confirm hostname operations")
 def step_impl_hostname_ops(context):
-    content = context.response.json()["message"]["content"].lower()
+    content = context.result.text.lower()
     assert "hostname" in content, "Hostname keyword missing."
     assert (
         "create" in content
@@ -342,7 +340,7 @@ def step_impl_hostname_ops(context):
 
 @then("the response should confirm rule set operations")
 def step_impl_rule_set_ops(context):
-    content = context.response.json()["message"]["content"].lower()
+    content = context.result.text.lower()
     assert "rule set" in content or "ruleset" in content, "Rule set keyword missing."
     assert (
         "create" in content
@@ -369,7 +367,7 @@ def step_impl_rule_set_ops(context):
 
 @then("the response should confirm routing policy operations")
 def step_impl_routing_policy_ops(context):
-    content = context.response.json()["message"]["content"].lower()
+    content = context.result.text.lower()
     assert (
         "routing policy" in content or "routing policies" in content
     ), "Routing policy keyword missing."
@@ -398,25 +396,25 @@ def step_impl_routing_policy_ops(context):
 
 @then("the response should contain load balancer health")
 def step_impl_lb_health(context):
-    content = context.response.json()["message"]["content"].lower()
+    content = context.result.text.lower()
     assert "health" in content and ("load balancer" in content or "overall" in content)
 
 
 @then("the response should contain backend set health")
 def step_impl_bs_health(context):
-    content = context.response.json()["message"]["content"].lower()
+    content = context.result.text.lower()
     assert "health" in content and ("backend set" in content or "backendset" in content)
 
 
 @then("the response should contain backend health")
 def step_impl_backend_health(context):
-    content = context.response.json()["message"]["content"].lower()
+    content = context.result.text.lower()
     assert "health" in content and "backend" in content
 
 
 @then("the response should contain work request details")
 def step_impl_work_request_details(context):
-    content = context.response.json()["message"]["content"].lower()
+    content = context.result.text.lower()
     assert (
         "work request" in content
         or "ocid1.loadbalancerworkrequest" in content

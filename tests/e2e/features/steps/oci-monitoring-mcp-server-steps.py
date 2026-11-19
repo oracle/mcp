@@ -9,11 +9,9 @@ from behave import then
 
 @then("the response should contain a list of monitoring tools available")
 def step_impl_monitoring_tools_available(context):
-    response_json = context.response.json()
-    assert (
-        "content" in response_json["message"]
-    ), "Response does not contain a content key."
-    content = response_json["message"]["content"].lower()
+    response_json = context.result
+    assert response_json.text, "Response is empty."
+    content = response_json.text.lower()
     assert any(
         tool in content
         for tool in [
@@ -26,9 +24,9 @@ def step_impl_monitoring_tools_available(context):
 
 @then("the response should contain a list of alarms")
 def step_impl_list_alarms(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    content = result["message"]["content"].lower()
+    result = context.result
+    assert result.text, "Response is empty."
+    content = result.text.lower()
     assert (
         "ocid1.alarm" in content or "high cpu alarm" in content
     ), "List of alarms not found."
@@ -36,9 +34,9 @@ def step_impl_list_alarms(context):
 
 @then("the response should contain a list of metric definitions")
 def step_impl_list_metric_definitions(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    content = result["message"]["content"].lower()
+    result = context.result
+    assert result.text, "Response is empty."
+    content = result.text.lower()
     assert (
         "cpuutilization" in content or "oci_computeagent" in content
     ), "List of metric definitions not found."
@@ -46,9 +44,9 @@ def step_impl_list_metric_definitions(context):
 
 @then("the response should contain aggregated metric data")
 def step_impl_get_metrics_data(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    content = result["message"]["content"].lower()
+    result = context.result
+    assert result.text, "Response is empty."
+    content = result.text.lower()
     assert (
         "cpuutilization" in content
         or "aggregateddatapoints" in content

@@ -9,9 +9,9 @@ from behave import then
 
 @then("the response should contain a list of identity tools available")
 def step_impl_identity_tools_available(context):
-    response_json = context.response.json()
-    assert "content" in response_json["message"], "Response does not contain a content key."
-    content = response_json["message"]["content"].lower()
+    response_json = context.result
+    assert response_json.text, "Response is empty."
+    content = response_json.text.lower()
     # Tools from Identity server we expect the model to list
     assert any(
         tool in content
@@ -27,41 +27,41 @@ def step_impl_identity_tools_available(context):
 
 @then("the response should contain a list of compartments")
 def step_impl_list_compartments(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    assert "ocid1.compartment" in result["message"]["content"], "Compartments not found."
+    result = context.result
+    assert result.text, "Response is empty."
+    assert "ocid1.compartment" in result.text, "Compartments not found."
 
 
 @then("the response should contain the details of a tenancy")
 def step_impl_get_tenancy(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    assert "ocid1.tenancy" in result["message"]["content"], "Tenancy details not found."
+    result = context.result
+    assert result.text, "Response is empty."
+    assert "ocid1.tenancy" in result.text, "Tenancy details not found."
 
 
 @then("the response should contain a list of availability domains")
 def step_impl_list_ads(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
+    result = context.result
+    assert result.text, "Response is empty."
     assert (
-        "us-ashburn-ad" in result["message"]["content"].lower()
-        or "availabilitydomain" in result["message"]["content"].lower()
-        or "ad-" in result["message"]["content"].lower()
+        "us-ashburn-ad" in result.text.lower()
+        or "availabilitydomain" in result.text.lower()
+        or "ad-" in result.text.lower()
     ), "Availability domains not found."
 
 
 @then("the response should contain the details of a user")
 def step_impl_get_user(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    assert "ocid1.user" in result["message"]["content"], "User details not found."
+    result = context.result
+    assert result.text, "Response is empty."
+    assert "ocid1.user" in result.text, "User details not found."
 
 
 @then("the response should contain a list of regions")
 def step_impl_list_regions(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    content = result["message"]["content"].lower()
+    result = context.result
+    assert result.text, "Response is empty."
+    content = result.text.lower()
     assert any(kw in content for kw in ["region", "us-mock-1", "home region", "phx", "iad"]), (
         "Subscribed regions not found."
     )

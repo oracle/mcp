@@ -19,13 +19,13 @@ From the repository root, install the pinned tools with `proto install`, then us
 
 Use `moon run common:test` for package tests and `moon run root:lint` after Python changes. Shared auth changes require the broader root checks and affected consumer review, including `moon run :test` and `moon run root:combine-coverage`; Common-only tests do not validate every caller.
 
-Use `bash scripts/check-common-fastmcp.sh` from the repository root for clean wheel installs and full-suite branch coverage at exact FastMCP 4.0.0 and 4.1.6, each with the minimum OCI SDK 2.185.0 and current resolvable OCI SDK; see the [delivery record](../../docs/plans/fastmcp-v4-common/implementation.md) for consumer coordination and actual results. The manifest configures 90% coverage. Recorded results apply only to the snapshot and checks identified in the delivery record.
+Use the uncached `moon run common:compatibility-test` task from the repository root for clean wheel installs and full-suite branch coverage at exact FastMCP 4.0.0 and 4.1.6, each with the minimum OCI SDK 2.185.0 and current resolvable OCI SDK; see the [delivery record](../../docs/plans/fastmcp-v4-common/implementation.md) for consumer coordination and actual results. The manifest configures 90% coverage. Recorded results apply only to the snapshot and checks identified in the delivery record.
 
 ## Architecture and dependencies
 
 `build_auth_context()` returns config/signer ingredients; servers retain client type, lifecycle, user-agent derivation and retry/circuit-breaker choices. `build_idcs_http_auth()` creates provider policy and `context_for()` derives explicit caller-token auth; listener startup, request-context retrieval and OCI client construction stay with the server. The README defines input precedence, explicit principal modes and profile-backed `auto`; do not infer automatic principal probing.
 
-Declared consumers at this baseline are [API](../oci-api-mcp-server/pyproject.toml), [Cloud](../oci-cloud-mcp-server/pyproject.toml), [Database](../oci-database-mcp-server/pyproject.toml), [DB Observability](../oci-db-observability-mcp-server/pyproject.toml), [Document Understanding](../oci-document-understanding-mcp-server/pyproject.toml) and [Recovery](../oci-recovery-mcp-server/pyproject.toml). All six declare Common as a local uv workspace source in their manifests; Moon infers the project dependency edges from those declarations. Inspect manifests, graph edges and the [ledger's call-site evidence](../../docs/authentication.md#adoption-ledger) separately; declarations alone do not establish runtime use, and other servers, including Compute, are not assumed migrated.
+Declared consumers at this baseline are [API](../oci-api-mcp-server/pyproject.toml), [Cloud](../oci-cloud-mcp-server/pyproject.toml), [Database](../oci-database-mcp-server/pyproject.toml), [DB Observability](../oci-db-observability-mcp-server/pyproject.toml), [Document Understanding](../oci-document-understanding-mcp-server/pyproject.toml) and [Recovery](../oci-recovery-mcp-server/pyproject.toml). All six resolve published Common within their manifest bounds and locks; they have no permanent local Common workspace source. Use the [opt-in wheel integration check](README.md#testing-common-with-a-consumer) for changes in a compatible local Common checkout. Inspect manifests, graph edges and the [ledger's call-site evidence](../../docs/authentication.md#adoption-ledger) separately; declarations alone do not establish runtime use, and other servers, including Compute, are not assumed migrated.
 
 ## Security and secrets handling
 
@@ -38,7 +38,7 @@ Public exports, configuration precedence, supported modes and aliases affect dec
 ## Known gaps
 
 - Not every Python server has migrated; consumer declarations must be inspected for each shared change.
-- [README requirements](README.md#package-requirements) and the [manifest](pyproject.toml) agree on OCI SDK 2.185.0+ and FastMCP `>=4.0.0,<5.0.0`. Common 0.3.0 needs coordinated consumer Common/FastMCP bounds and lock updates; see the [delivery record](../../docs/plans/fastmcp-v4-common/implementation.md).
+- [README requirements](README.md#package-requirements) and the [manifest](pyproject.toml) agree on OCI SDK 2.185.0+ and FastMCP `>=4.0.0,<5.0.0`. A consumer adopting Common 0.3.0 needs compatible Common/FastMCP bounds and a refreshed lock; existing consumers can remain on published 0.2.x independently; see the [delivery record](../../docs/plans/fastmcp-v4-common/implementation.md).
 - Configured test thresholds and source-reviewed contracts are not executed validation results. See [shared gaps](../../docs/agent-development.md#known-gaps).
 
 ## Workflow and context routing

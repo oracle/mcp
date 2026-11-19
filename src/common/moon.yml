@@ -1,0 +1,15 @@
+tasks:
+  compatibility-test:
+    description: 'Tests the Common wheel across the FastMCP and OCI SDK compatibility matrix'
+    type: 'test'
+    command:
+      - 'bash'
+      - '$workspaceRoot/scripts/check-common-fastmcp.sh'
+    inputs:
+      - '@group(sources)'
+      - '@group(tests)'
+      - 'pyproject.toml'
+      - 'README.md'
+      - '/scripts/check-common-fastmcp.sh'
+    options:
+      cache: false

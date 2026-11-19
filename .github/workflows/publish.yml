@@ -73,14 +73,6 @@ jobs:
           path: src/${{ inputs.project }}/dist/
           if-no-files-found: error
 
-      - name: Save common distributions
-        if: inputs.registry != 'npm' && inputs.project != 'common' && inputs.project != 'all-python'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: release-common-dist
-          path: src/common/dist/
-          if-no-files-found: error
-
       - name: Bundle all Python distributions
         if: inputs.project == 'all-python'
         run: tar -czf release-python-dists.tar.gz src/*/dist/*.whl src/*/dist/*.tar.gz
@@ -116,13 +108,6 @@ jobs:
           name: release-project-dist
           path: src/${{ inputs.project }}/dist/
 
-      - name: Download common distributions
-        if: inputs.registry != 'npm' && inputs.project != 'common' && inputs.project != 'all-python'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: release-common-dist
-          path: src/common/dist/
-
       - name: Download all Python distributions
         if: inputs.project == 'all-python'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -135,7 +120,7 @@ jobs:
         run: tar -xzf release-python-dists.tar.gz
 
       - name: Publish common with Moon
-        if: inputs.registry != 'npm' && inputs.project != 'common'
+        if: inputs.project == 'all-python'
         env:
           RELEASE_PUBLISH: '1'
           UV_PUBLISH_TOKEN: ${{ inputs.registry == 'testpypi' && secrets.TEST_PYPI_TOKEN || secrets.PYPI_TOKEN }}
@@ -144,7 +129,7 @@ jobs:
           moon exec --no-actions --ignore-ci-checks --upstream=none common:publish
 
       - name: Wait for common on the package index
-        if: inputs.registry != 'npm' && inputs.project != 'common'
+        if: inputs.project == 'all-python'
         run: |
           common_version=$("$(moon bin python)" -c 'import tomllib; print(tomllib.load(open("src/common/pyproject.toml", "rb"))["project"]["version"])')
           index_url=${UV_PUBLISH_CHECK_URL%/}

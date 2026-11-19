@@ -23,6 +23,8 @@ From the repository root, use `proto install` for pinned tools and `moon run oci
 
 ## Tests and validation
 
+Ordinary installs use the published Common version allowed by this package. For opt-in local Common validation, run `python3 scripts/check-common-consumer.py oci-document-understanding-mcp-server` from the repository root; see [Common development](../common/README.md#development). The helper preserves declared bounds and reports incompatible local versions.
+
 Use `moon run oci-document-understanding-mcp-server:test` from the repository root for the inherited Python test task, and `moon run root:lint` after Python source changes. The manifest configures `90%` coverage. Inspect the relevant tool/model or helper tests for the requested change; shared changes also require [shared validation](../../docs/agent-development.md#validation-map). These definitions are source evidence; this documentation expansion ran no server tests or coverage.
 
 ## Architecture and dependencies

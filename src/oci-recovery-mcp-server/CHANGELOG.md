@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+
+- Resolve Common from published packages by default in development and CI; local Common integration now requires an explicit override.
+
 ## 3.1.0
 
 ### Added

@@ -22,10 +22,11 @@ dependencies = [
 ]
 ```
 
-Common 0.3.0 requires FastMCP 4.x. Consumers must update their Common and
-FastMCP bounds and regenerate locks together; see the
+Common 0.3.0 requires FastMCP 4.x. Existing consumers continue to resolve
+published Common 0.2.x and FastMCP 3.x within their own bounds. Adopting 0.3.0
+requires an explicit consumer dependency update and validation; see the
 [delivery record](../../docs/plans/fastmcp-v4-common/implementation.md).
-Publish Common 0.3.0 before releasing dependent servers.
+Publish Common 0.3.0 before releasing consumers that require it.
 
 ## Authentication module
 
@@ -316,13 +317,59 @@ FastMCP 4.0.0 and 4.1.6, each with OCI SDK 2.185.0 and the current resolvable
 OCI SDK, run from the repository root:
 
 ```bash
-bash scripts/check-common-fastmcp.sh
+moon run common:compatibility-test
 ```
 
-This runs the complete suite with branch coverage and the 90% threshold in each
+This explicit task runs `scripts/check-common-fastmcp.sh` without Moon caching,
+because the current resolvable OCI SDK can change without a source change. It
+stays separate from the standard locked `common:test` task and ordinary CI.
+It runs the complete suite with branch coverage and the 90% threshold in each
 environment, checks installed dependencies and wheel metadata, and prints the
 resolved FastMCP, MCP SDK and OCI SDK versions. It uses the manifest's dev
 dependency group without workspace source overrides. Environments, copied tests
 and build/coverage outputs are removed on exit; manifests and locks are unchanged.
 The shipped range stays `>=4.0.0,<5.0.0`. These endpoint checks do not guarantee
 compatibility with every future 4.x release or validate live OCI authentication.
+
+### Testing Common with a consumer
+
+Ordinary consumer development and CI install the published Common release
+selected by each consumer's manifest and lock. Local Common integration is
+explicit and does not change those files or the consumer's normal environment.
+From the repository root, run:
+
+```bash
+python3 scripts/check-common-consumer.py oci-cloud-mcp-server
+```
+
+The checker supports the six declared Common consumers. It builds Common and
+the consumer as wheels, installs them together through uv's resolver, checks
+installed dependencies and package locations, and runs the original consumer
+suite against the installed artifacts with branch coverage and its native
+coverage threshold. Builds, environment and coverage are temporary. Recovery
+log/state paths are redirected into that temporary directory. The helper is
+not a filesystem sandbox: API and Cloud retain their existing audit logging to
+`/tmp/audit.log`. Their runtime logging behavior is unchanged.
+The helper's own tests run in CI through `moon run root:test`.
+
+Both wheels must satisfy the consumer's declared dependency bounds. Current
+consumers require Common `>=0.2.0,<0.3.0`, so the default check against this
+checkout's Common 0.3.0 intentionally fails resolution. To test changes on a
+compatible Common release line, point to a separate checkout:
+
+```bash
+python3 scripts/check-common-consumer.py oci-cloud-mcp-server \
+  --common-source ../compatible-checkout/src/common
+```
+
+For a quick editable experiment, run from a consumer directory:
+
+```bash
+uv run --locked --with-editable ../common pytest
+```
+
+uv layers the editable package over the normal project environment. Overlays
+can conflict with declared project dependencies, so this command is useful for
+exploration and does not prove release compatibility. Use the wheel checker for
+that validation. A permanent editable path source would retain the coupling
+that this explicit workflow removes.

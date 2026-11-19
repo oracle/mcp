@@ -556,12 +556,9 @@ def _fake_oci_provider(captured):
     class FakeOCIProvider:
         """A stand-in for FastMCP's OCIProvider, recording what the server hands it."""
 
-        # _cimd_manager mirrors the real provider: the server clears it so client
-        # registration never depends on an outbound metadata fetch.
-        _cimd_manager = object()
-
-        def __init__(self, **kwargs):
-            """Seed required_scopes from the verifier's copy, as the real provider does."""
+        def __init__(self, *, enable_cimd=True, **kwargs):
+            """Record the public CIMD policy and required scopes."""
+            captured["enable_cimd"] = enable_cimd
             # The real provider seeds required_scopes from the verifier's copy, and
             # FastMCP hands this same list to RequireAuthMiddleware, so it has to
             # stay bare.
@@ -1097,9 +1094,9 @@ class TestHttpTransportAuth:
         captured = {}
 
         with patch("oracle_mcp_common.auth.OCIProvider", _fake_oci_provider(captured)):
-            http_auth = auth._build_http_auth()
+            auth._build_http_auth()
 
-        assert http_auth.provider._cimd_manager is None
+        assert captured["enable_cimd"] is False
 
 
 class TestCachePartitioning:
@@ -2275,9 +2272,9 @@ class TestToolContract:
         for tool in tools:
             annotations = tool.annotations
             assert annotations is not None, f"{tool.name} declares no annotations"
-            assert annotations.readOnlyHint is True, tool.name
-            assert annotations.destructiveHint is False, tool.name
-            assert annotations.idempotentHint is True, tool.name
+            assert annotations.read_only_hint is True, tool.name
+            assert annotations.destructive_hint is False, tool.name
+            assert annotations.idempotent_hint is True, tool.name
 
         # The guidance tools return static text and never reach the network.
         local = {
@@ -2287,7 +2284,7 @@ class TestToolContract:
         }
         for tool in tools:
             expected = tool.name not in local
-            assert tool.annotations.openWorldHint is expected, tool.name
+            assert tool.annotations.open_world_hint is expected, tool.name
 
     @pytest.mark.asyncio
     async def test_summary_tools_advertise_the_shape_they_return(self, monkeypatch):
@@ -2315,7 +2312,7 @@ class TestToolContract:
                 "summarize_protected_database_health",
                 "summarize_protected_database_redo_status",
             ):
-                declared = set(tools[name].outputSchema["properties"])
+                declared = set(tools[name].output_schema["properties"])
                 result = await client.call_tool(
                     name, {"compartment_id": "ocid1.compartment.oc1..c"}
                 )

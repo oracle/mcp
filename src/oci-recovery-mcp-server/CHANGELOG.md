@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Breaking Changes
+
+- Require FastMCP 4.2.2 and `oracle-mcp-common>=0.3.0,<0.4.0`, adopting the MCP Python SDK 2.x dependency line. Publish Common 0.3.0 before releasing this server.
+
 ### Changed
+
+- Update locked dnspython to 2.9.2.
 
 - Resolve Common from published packages by default in development and CI; local Common integration now requires an explicit override.
 

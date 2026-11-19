@@ -274,6 +274,7 @@ class CodexResult:
     usage: dict
     thread_id: str
     warnings: list[str]
+    resource_calls: list[dict]
 
     def require_call(self, tool):
         calls = [call for call in self.calls if call["tool"] == tool]
@@ -315,6 +316,7 @@ def parse_events(output, servers):
     started = False
     pending = set()
     warnings = []
+    resource_calls = []
     try:
         for line in output.splitlines():
             event = json.loads(line)
@@ -343,8 +345,25 @@ def parse_events(output, servers):
                 if item_type not in {"agent_message", "reasoning", "mcp_tool_call", "todo_list"}:
                     raise CodexError(f"Unexpected agent capability or error: {item_type}")
                 if item_type == "mcp_tool_call":
-                    if item["server"] not in servers:
-                        raise CodexError("MCP call used an unconfigured server")
+                    resource_tool = item["tool"] in {
+                        "list_mcp_resources",
+                        "list_mcp_resource_templates",
+                        "read_mcp_resource",
+                    }
+                    # Codex labels aggregate resource discovery with its own synthetic server ID.
+                    aggregate = item["server"] == "codex" and item["tool"] in {
+                        "list_mcp_resources",
+                        "list_mcp_resource_templates",
+                    }
+                    if item["server"] not in servers and not aggregate:
+                        raise CodexError(f"MCP call used an unconfigured server: {item['server']}")
+                    arguments = item.get("arguments")
+                    if resource_tool and isinstance(arguments, dict):
+                        target = arguments.get("server")
+                        if target is not None and (
+                            not isinstance(target, str) or (target.strip() and target.strip() not in servers)
+                        ):
+                            raise CodexError("MCP resource request targeted an unconfigured server")
                     if kind == "item.started":
                         pending.add(item["id"])
                     if kind == "item.completed":
@@ -356,10 +375,10 @@ def parse_events(output, servers):
                             or not isinstance(result, dict)
                             or result.get("isError")
                             or not isinstance(result.get("content"), list)
-                            or not isinstance(item.get("arguments"), dict)
+                            or not (isinstance(arguments, dict) or (aggregate and arguments is None))
                         ):
                             raise CodexError(f"Unsuccessful MCP call: {item.get('tool')}")
-                        calls.append(item)
+                        (resource_calls if resource_tool else calls).append(item)
                 elif item_type == "agent_message" and kind == "item.completed":
                     text = item["text"]
                     if not isinstance(text, str):
@@ -373,7 +392,7 @@ def parse_events(output, servers):
         raise CodexError("Missing completed turn or final agent output")
     if pending:
         raise CodexError("Codex completed with incomplete MCP calls")
-    return CodexResult(texts[-1], calls, usage, thread_id, warnings)
+    return CodexResult(texts[-1], calls, usage, thread_id, warnings, resource_calls)
 
 
 def prepare_environments(host_file):

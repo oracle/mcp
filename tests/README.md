@@ -66,6 +66,8 @@ The runner records native final text, completed MCP calls with arguments/results
 
 Inventory scenarios validate the required live startup/catalog and the existing tool-name assertions; the general inventory also checks all enabled server names. They do not require executing an operation merely to list capabilities.
 
+Codex's built-in MCP resource discovery and reads are recorded separately, including the synthetic `codex` server used for aggregate discovery. They can access only the configured catalog and cannot satisfy operation-call assertions. This supports server-provided guidance such as Monitoring's required MQL resource.
+
 ## Offline checks and diagnostics
 
 Normal offline tests need neither Codex nor inference authentication:

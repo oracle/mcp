@@ -244,6 +244,53 @@ def test_plausible_answer_does_not_prove_a_call():
         result.require_call("list_instances")
 
 
+def test_codex_resource_discovery_is_separate_from_operation_evidence():
+    discovery = call("list_mcp_resources", server="codex")
+    guide = call("read_mcp_resource", {"server": "compute", "uri": "guide://mql"})
+    result = parse_events(events(discovery, guide, call("get_metrics_data"), MESSAGE), {"compute"})
+    assert [item["tool"] for item in result.calls] == ["get_metrics_data"]
+    assert [item["tool"] for item in result.resource_calls] == ["list_mcp_resources", "read_mcp_resource"]
+    inventory = parse_events(events(discovery, MESSAGE), {"compute"})
+    assert not inventory.calls
+    with pytest.raises(AssertionError, match="get_metrics_data"):
+        inventory.require_call("get_metrics_data")
+
+
+@pytest.mark.parametrize("tool", ["list_mcp_resources", "list_mcp_resource_templates"])
+def test_native_null_arguments_are_valid_only_for_aggregate_discovery(tool):
+    item = call(tool, server="codex")
+    item["arguments"] = None  # Native CLI resource helpers serialize absent arguments as JSON null.
+    result = parse_events(events(item, MESSAGE), {"compute"})
+    assert result.resource_calls[0]["arguments"] is None
+    assert not result.calls
+    item = call("get_metrics_data")
+    item["arguments"] = None
+    with pytest.raises(CodexError):
+        parse_events(events(item, MESSAGE), {"compute"})
+
+
+@pytest.mark.parametrize("target,server", [("", "codex"), ("  ", "codex"), (" compute ", "compute")])
+def test_resource_discovery_matches_cli_target_normalization(target, server):
+    item = call("list_mcp_resources", {"server": target}, server=server)
+    result = parse_events(events(item, MESSAGE), {"compute"})
+    assert result.resource_calls[0]["arguments"] == {"server": target}
+    assert not result.calls
+
+
+@pytest.mark.parametrize(
+    "item",
+    [
+        call("get_metrics_data", server="codex"),
+        call("read_mcp_resource", server="personal"),
+        call("list_mcp_resources", {"server": "personal"}, server="codex"),
+    call("list_mcp_resources", {"server": 7}, server="codex"),
+    ],
+)
+def test_resource_helpers_cannot_authorize_foreign_servers_or_operations(item):
+    with pytest.raises(CodexError):
+        parse_events(events(item, MESSAGE), {"compute"})
+
+
 def test_chained_lookup_requires_an_id_from_the_preceding_result():
     good = call("get_instance", {"instance_id": "ocid1.instance.mock"})
     result = parse_events(events(call(), good, MESSAGE), {"compute"})

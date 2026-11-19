@@ -23,6 +23,7 @@ def step_impl_registry_tools_available(context):
 
 @then("the response should contain a list of container repositories")
 def step_impl_list_container_repositories(context):
+    context.result.require_call("list_container_repositories")
     result = context.result
     assert result.text, "Response is empty."
     assert (
@@ -32,6 +33,7 @@ def step_impl_list_container_repositories(context):
 
 @then("the response should contain the details of a container repository")
 def step_impl_get_container_repository(context):
+    context.result.require_call("get_container_repository")
     result = context.result
     assert result.text, "Response is empty."
     assert (

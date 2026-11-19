@@ -20,6 +20,7 @@ def step_impl_namespace(context):
 
 @then("the response should contain a list of buckets available")
 def step_impl_list_buckets(context):
+    context.result.require_call("list_buckets")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()
@@ -30,6 +31,7 @@ def step_impl_list_buckets(context):
 
 @then("the response should contain the details of a bucket")
 def step_impl_bucket_details(context):
+    context.result.require_call("get_bucket_details")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()
@@ -40,6 +42,7 @@ def step_impl_bucket_details(context):
 
 @then("the response should contain a list of objects")
 def step_impl_list_objects(context):
+    context.result.require_call("list_objects")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()
@@ -50,6 +53,7 @@ def step_impl_list_objects(context):
 
 @then("the response should contain a list of object versions")
 def step_impl_list_object_versions(context):
+    context.result.require_call("list_object_versions")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()

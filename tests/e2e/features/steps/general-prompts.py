@@ -40,6 +40,11 @@ def step_impl_prompt(context, prompt):
     print("MCP calls:", ", ".join(f"{call['server']}.{call['tool']}" for call in context.result.calls))
     if context.result.resource_calls:
         print("MCP resource calls:", ", ".join(call["tool"] for call in context.result.resource_calls))
+    if context.result.failed_calls:
+        print(
+            "Failed MCP attempts (diagnostic):",
+            ", ".join(f"{call['server']}.{call['tool']}" for call in context.result.failed_calls),
+        )
     if not context.inventory_only:
         assert context.result.calls, "Operation scenario completed without a successful MCP call"
 

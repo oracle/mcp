@@ -22,6 +22,7 @@ def step_impl_usage_tools_available(context):
 
 @then("the response should contain a list of usage summaries")
 def step_impl_get_summarized_usage(context):
+    context.result.require_call("get_summarized_usage")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text

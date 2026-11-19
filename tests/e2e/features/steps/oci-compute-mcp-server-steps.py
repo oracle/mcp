@@ -42,6 +42,7 @@ def step_impl_get_instance(context):
 
 @then("the response should contain a list of images")
 def step_impl_list_images(context):
+    context.result.require_call("list_images")
     result = context.result
     assert result.text, "Response is empty."
     assert "ocid1.image" in result.text, "List of instances not found."
@@ -49,6 +50,7 @@ def step_impl_list_images(context):
 
 @then("the response should contain the details of an image")
 def step_impl_get_image(context):
+    context.result.require_call("get_image")
     result = context.result
     assert result.text, "Response is empty."
     assert "ocid1.image" in result.text, "Image details not found."
@@ -56,6 +58,7 @@ def step_impl_get_image(context):
 
 @then("the response should contain a list of vnic attachments")
 def step_impl_list_vnic_attachments(context):
+    context.result.require_call("list_vnic_attachments")
     result = context.result
     assert result.text, "Response is empty."
     assert "ocid1.vnicattachment" in result.text, "List of vnic attachments not found."
@@ -63,6 +66,7 @@ def step_impl_list_vnic_attachments(context):
 
 @then("the response should contain the details of a vnic attachment")
 def step_impl_get_vnic_attachment(context):
+    context.result.require_call("get_vnic_attachment")
     result = context.result
     assert result.text, "Response is empty."
     assert "ocid1.vnicattachment" in result.text, "Vnic attachment details not found."

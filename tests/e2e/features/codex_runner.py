@@ -275,10 +275,12 @@ class CodexResult:
     thread_id: str
     warnings: list[str]
     resource_calls: list[dict]
+    failed_calls: list[dict]
 
-    def require_call(self, tool):
-        calls = [call for call in self.calls if call["tool"] == tool]
-        assert calls, f"No successful MCP call to {tool}"
+    def require_call(self, tool, *equivalent_tools):
+        tools = (tool, *equivalent_tools)
+        calls = [call for call in self.calls if call["tool"] in tools]
+        assert calls, f"No successful MCP call to {' or '.join(tools)}"
         return calls[-1]
 
     def require_chain(self, listing, lookup, argument):
@@ -317,6 +319,7 @@ def parse_events(output, servers):
     pending = set()
     warnings = []
     resource_calls = []
+    failed_calls = []
     try:
         for line in output.splitlines():
             event = json.loads(line)
@@ -369,16 +372,33 @@ def parse_events(output, servers):
                     if kind == "item.completed":
                         pending.discard(item["id"])
                         result = item.get("result")
+                        error = item.get("error")
                         if (
-                            item.get("status") != "completed"
-                            or item.get("error")
-                            or not isinstance(result, dict)
-                            or result.get("isError")
-                            or not isinstance(result.get("content"), list)
+                            item.get("status") not in {"completed", "failed"}
+                            or (
+                                result is not None
+                                and (
+                                    not isinstance(result, dict)
+                                    or not isinstance(result.get("content"), list)
+                                )
+                            )
+                            or (
+                                error is not None
+                                and (not isinstance(error, dict) or not isinstance(error.get("message"), str))
+                            )
                             or not (isinstance(arguments, dict) or (aggregate and arguments is None))
                         ):
-                            raise CodexError(f"Unsuccessful MCP call: {item.get('tool')}")
-                        (resource_calls if resource_tool else calls).append(item)
+                            raise CodexError(f"Invalid completed MCP call: {item.get('tool')}")
+                        if (
+                            item["status"] == "failed"
+                            or error is not None
+                            or (result and result.get("isError"))
+                        ):
+                            failed_calls.append(item)
+                        elif result is None:
+                            raise CodexError(f"Missing successful MCP result: {item.get('tool')}")
+                        else:
+                            (resource_calls if resource_tool else calls).append(item)
                 elif item_type == "agent_message" and kind == "item.completed":
                     text = item["text"]
                     if not isinstance(text, str):
@@ -392,7 +412,7 @@ def parse_events(output, servers):
         raise CodexError("Missing completed turn or final agent output")
     if pending:
         raise CodexError("Codex completed with incomplete MCP calls")
-    return CodexResult(texts[-1], calls, usage, thread_id, warnings, resource_calls)
+    return CodexResult(texts[-1], calls, usage, thread_id, warnings, resource_calls, failed_calls)
 
 
 def prepare_environments(host_file):

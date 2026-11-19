@@ -29,6 +29,7 @@ def step_impl_nlb_tools_available(context):
 
 @then("the response should contain a list of network load balancers")
 def step_impl_list_nlbs(context):
+    context.result.require_call("list_network_load_balancers")
     result = context.result
     assert result.text, "Response is empty."
     assert (
@@ -38,6 +39,7 @@ def step_impl_list_nlbs(context):
 
 @then("the response should contain the details of a network load balancer")
 def step_impl_get_nlb(context):
+    context.result.require_call("get_network_load_balancer")
     result = context.result
     assert result.text, "Response is empty."
     assert (
@@ -47,6 +49,7 @@ def step_impl_get_nlb(context):
 
 @then("the response should contain a list of network load balancer listeners")
 def step_impl_list_listeners(context):
+    context.result.require_call("list_network_load_balancer_listeners")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()
@@ -57,6 +60,7 @@ def step_impl_list_listeners(context):
 
 @then("the response should contain the details of a listener")
 def step_impl_get_listener(context):
+    context.result.require_call("get_network_load_balancer_listener")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()
@@ -67,6 +71,7 @@ def step_impl_get_listener(context):
 
 @then("the response should contain a list of backend sets")
 def step_impl_list_backend_sets(context):
+    context.result.require_call("list_network_load_balancer_backend_sets")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()
@@ -77,6 +82,7 @@ def step_impl_list_backend_sets(context):
 
 @then("the response should contain the details of a backend set")
 def step_impl_get_backend_set(context):
+    context.result.require_call("get_network_load_balancer_backend_set")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()
@@ -87,6 +93,7 @@ def step_impl_get_backend_set(context):
 
 @then("the response should contain a list of backends")
 def step_impl_list_backends(context):
+    context.result.require_call("list_network_load_balancer_backends")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()

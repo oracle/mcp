@@ -24,6 +24,7 @@ def step_impl_monitoring_tools_available(context):
 
 @then("the response should contain a list of alarms")
 def step_impl_list_alarms(context):
+    context.result.require_call("list_alarms")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()
@@ -34,6 +35,7 @@ def step_impl_list_alarms(context):
 
 @then("the response should contain a list of metric definitions")
 def step_impl_list_metric_definitions(context):
+    context.result.require_call("list_metric_definitions")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()
@@ -44,6 +46,7 @@ def step_impl_list_metric_definitions(context):
 
 @then("the response should contain aggregated metric data")
 def step_impl_get_metrics_data(context):
+    context.result.require_call("get_metrics_data")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()

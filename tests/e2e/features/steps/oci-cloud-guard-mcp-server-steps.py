@@ -20,6 +20,7 @@ def step_impl_cloud_guard_tools_available(context):
 
 @then("the response should contain a list of cloud guard problems")
 def step_impl_list_problems(context):
+    context.result.require_call("list_problems")
     result = context.result
     assert result.text, "Response is empty."
     # Look for a known OCID prefix for Cloud Guard Problem
@@ -30,6 +31,7 @@ def step_impl_list_problems(context):
 
 @then("the response should contain the details of a cloud guard problem")
 def step_impl_get_problem_details(context):
+    context.result.require_call("get_problem_details")
     result = context.result
     assert result.text, "Response is empty."
     assert "ocid1.cloudguardproblem" in result.text.lower(), (

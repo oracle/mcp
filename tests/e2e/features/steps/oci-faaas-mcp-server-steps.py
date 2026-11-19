@@ -25,6 +25,7 @@ def step_impl_faaas_tools_available(context):
 
 @then("the response should contain a list of fusion environment families")
 def step_impl_list_families(context):
+    context.result.require_call("list_fusion_environment_families")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()
@@ -34,6 +35,7 @@ def step_impl_list_families(context):
 
 @then("the response should contain a list of fusion environments")
 def step_impl_list_environments(context):
+    context.result.require_call("list_fusion_environments")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()
@@ -42,6 +44,7 @@ def step_impl_list_environments(context):
 
 @then("the response should contain the details of a fusion environment")
 def step_impl_get_environment(context):
+    context.result.require_call("get_fusion_environment")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()
@@ -50,6 +53,7 @@ def step_impl_get_environment(context):
 
 @then("the response should contain the status of a fusion environment")
 def step_impl_get_environment_status(context):
+    context.result.require_call("get_fusion_environment_status")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()

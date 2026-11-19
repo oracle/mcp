@@ -25,6 +25,7 @@ def step_impl_logging_tools_available(context):
 
 @then("the response should contain a list of log groups")
 def step_impl_list_log_groups(context):
+    context.result.require_call("list_log_groups")
     result = context.result
     assert result.text, "Response is empty."
     assert "ocid1.loggroup" in result.text.lower(), "List of log groups not found."
@@ -32,6 +33,7 @@ def step_impl_list_log_groups(context):
 
 @then("the response should contain the details of a log group")
 def step_impl_get_log_group(context):
+    context.result.require_call("get_log_group")
     result = context.result
     assert result.text, "Response is empty."
     assert "ocid1.loggroup" in result.text.lower(), "Log group details not found."
@@ -39,6 +41,7 @@ def step_impl_get_log_group(context):
 
 @then("the response should contain a list of logs")
 def step_impl_list_logs(context):
+    context.result.require_call("list_logs")
     result = context.result
     assert result.text, "Response is empty."
     assert "ocid1.log" in result.text.lower(), "List of logs not found."
@@ -46,6 +49,7 @@ def step_impl_list_logs(context):
 
 @then("the response should contain the details of a log")
 def step_impl_get_log(context):
+    context.result.require_call("get_log")
     result = context.result
     assert result.text, "Response is empty."
     assert "ocid1.log" in result.text.lower(), "Log details not found."

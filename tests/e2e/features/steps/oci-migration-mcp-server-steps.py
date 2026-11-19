@@ -19,6 +19,7 @@ def step_impl_migration_tools_available(context):
 
 @then("the response should contain a list of migrations")
 def step_impl_list_migrations(context):
+    context.result.require_call("list_migrations")
     result = context.result
     assert result.text, "Response is empty."
     assert "ocid1.migration" in result.text.lower(), "List of migrations not found."
@@ -26,6 +27,7 @@ def step_impl_list_migrations(context):
 
 @then("the response should contain the details of a migration")
 def step_impl_get_migration(context):
+    context.result.require_call("get_migration")
     result = context.result
     assert result.text, "Response is empty."
     assert "ocid1.migration" in result.text.lower(), "Migration details not found."

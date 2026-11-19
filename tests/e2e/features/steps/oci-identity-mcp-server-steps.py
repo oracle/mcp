@@ -27,6 +27,7 @@ def step_impl_identity_tools_available(context):
 
 @then("the response should contain a list of compartments")
 def step_impl_list_compartments(context):
+    context.result.require_call("list_compartments")
     result = context.result
     assert result.text, "Response is empty."
     assert "ocid1.compartment" in result.text, "Compartments not found."
@@ -34,6 +35,7 @@ def step_impl_list_compartments(context):
 
 @then("the response should contain the details of a tenancy")
 def step_impl_get_tenancy(context):
+    context.result.require_call("get_tenancy", "get_current_tenancy")
     result = context.result
     assert result.text, "Response is empty."
     assert "ocid1.tenancy" in result.text, "Tenancy details not found."
@@ -41,6 +43,7 @@ def step_impl_get_tenancy(context):
 
 @then("the response should contain a list of availability domains")
 def step_impl_list_ads(context):
+    context.result.require_call("list_availability_domains")
     result = context.result
     assert result.text, "Response is empty."
     assert (
@@ -52,6 +55,7 @@ def step_impl_list_ads(context):
 
 @then("the response should contain the details of a user")
 def step_impl_get_user(context):
+    context.result.require_call("get_current_user")
     result = context.result
     assert result.text, "Response is empty."
     assert "ocid1.user" in result.text, "User details not found."
@@ -59,6 +63,7 @@ def step_impl_get_user(context):
 
 @then("the response should contain a list of regions")
 def step_impl_list_regions(context):
+    context.result.require_call("list_subscribed_regions")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()

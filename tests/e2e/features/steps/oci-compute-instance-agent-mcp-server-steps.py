@@ -9,6 +9,7 @@ from behave import then
 
 @then("the response should contain a list of instance agent command executions")
 def step_impl_list_agent_command_executions(context):
+    context.result.require_call("list_instance_agent_command_executions")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()
@@ -21,6 +22,7 @@ def step_impl_list_agent_command_executions(context):
 
 @then("the response should contain instance agent command execution details")
 def step_impl_get_agent_command_execution_details(context):
+    context.result.require_call("run_instance_agent_command")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()

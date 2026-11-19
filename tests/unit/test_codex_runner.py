@@ -5,6 +5,8 @@ https://oss.oracle.com/licenses/upl.
 """
 
 import json
+import runpy
+from types import SimpleNamespace
 import os
 from pathlib import Path
 import signal
@@ -222,8 +224,8 @@ def test_cli_startup_warning_is_retained_but_does_not_replace_mcp_evidence():
         events(MESSAGE).replace('"turn.completed"', '"turn.failed"'),
         events(MESSAGE).replace('"turn.completed"', '"error"'),
         events(),
-        events(call(status="failed"), MESSAGE),
-        events(call(error={"message": "failure"}), MESSAGE),
+        events(call(status="in_progress"), MESSAGE),
+        events(call(error={"message": 7}), MESSAGE),
         events({"type": "command_execution", "status": "completed"}, MESSAGE),
         events({"type": "web_search"}, MESSAGE),
         events(call(server="personal"), MESSAGE),
@@ -283,7 +285,7 @@ def test_resource_discovery_matches_cli_target_normalization(target, server):
         call("get_metrics_data", server="codex"),
         call("read_mcp_resource", server="personal"),
         call("list_mcp_resources", {"server": "personal"}, server="codex"),
-    call("list_mcp_resources", {"server": 7}, server="codex"),
+        call("list_mcp_resources", {"server": 7}, server="codex"),
     ],
 )
 def test_resource_helpers_cannot_authorize_foreign_servers_or_operations(item):
@@ -321,7 +323,7 @@ def test_empty_mcp_result_cannot_prove_success():
     output = events(call(), MESSAGE).replace(
         '"content": [{"type": "text", "text": "{\\"id\\":\\"ocid1.instance.mock\\"}"}]', '"unexpected": true'
     )
-    with pytest.raises(CodexError, match="Unsuccessful"):
+    with pytest.raises(CodexError, match="Invalid completed"):
         parse_events(output, {"compute"})
 
 
@@ -516,3 +518,169 @@ def test_timeout_and_cancellation_kill_owned_descendants(tmp_path, cancel):
         assert os.read(reader, 1) == b""
     finally:
         os.close(reader)
+
+
+# Literal outcome contracts: a successful unrelated lookup must not mask a failed operation.
+OPERATION_CHECKS = [
+    ("cloud-guard", "step_impl_list_problems", "list_problems"),
+    ("cloud-guard", "step_impl_get_problem_details", "get_problem_details"),
+    (
+        "compute-instance-agent",
+        "step_impl_list_agent_command_executions",
+        "list_instance_agent_command_executions",
+    ),
+    ("compute-instance-agent", "step_impl_get_agent_command_execution_details", "run_instance_agent_command"),
+    ("compute", "step_impl_list_instances", "list_instances"),
+    ("compute", "step_impl_get_instance", "get_instance"),
+    ("compute", "step_impl_list_images", "list_images"),
+    ("compute", "step_impl_get_image", "get_image"),
+    ("compute", "step_impl_list_vnic_attachments", "list_vnic_attachments"),
+    ("compute", "step_impl_get_vnic_attachment", "get_vnic_attachment"),
+    ("faaas", "step_impl_list_families", "list_fusion_environment_families"),
+    ("faaas", "step_impl_list_environments", "list_fusion_environments"),
+    ("faaas", "step_impl_get_environment", "get_fusion_environment"),
+    ("faaas", "step_impl_get_environment_status", "get_fusion_environment_status"),
+    ("identity", "step_impl_list_compartments", "list_compartments"),
+    ("identity", "step_impl_get_tenancy", "get_tenancy"),
+    ("identity", "step_impl_list_ads", "list_availability_domains"),
+    ("identity", "step_impl_get_user", "get_current_user"),
+    ("identity", "step_impl_list_regions", "list_subscribed_regions"),
+    ("logging", "step_impl_list_log_groups", "list_log_groups"),
+    ("logging", "step_impl_get_log_group", "get_log_group"),
+    ("logging", "step_impl_list_logs", "list_logs"),
+    ("logging", "step_impl_get_log", "get_log"),
+    ("migration", "step_impl_list_migrations", "list_migrations"),
+    ("migration", "step_impl_get_migration", "get_migration"),
+    ("monitoring", "step_impl_list_alarms", "list_alarms"),
+    ("monitoring", "step_impl_list_metric_definitions", "list_metric_definitions"),
+    ("monitoring", "step_impl_get_metrics_data", "get_metrics_data"),
+    ("network-load-balancer", "step_impl_list_nlbs", "list_network_load_balancers"),
+    ("network-load-balancer", "step_impl_get_nlb", "get_network_load_balancer"),
+    ("network-load-balancer", "step_impl_list_listeners", "list_network_load_balancer_listeners"),
+    ("network-load-balancer", "step_impl_get_listener", "get_network_load_balancer_listener"),
+    ("network-load-balancer", "step_impl_list_backend_sets", "list_network_load_balancer_backend_sets"),
+    ("network-load-balancer", "step_impl_get_backend_set", "get_network_load_balancer_backend_set"),
+    ("network-load-balancer", "step_impl_list_backends", "list_network_load_balancer_backends"),
+    ("networking", "step_impl_list_vcns", "list_vcns"),
+    ("networking", "step_impl_get_vcn", "get_vcn"),
+    ("networking", "step_impl_list_subnets", "list_subnets"),
+    ("networking", "step_impl_get_subnet", "get_subnet"),
+    ("networking", "step_impl_list_security_lists", "list_security_lists"),
+    ("networking", "step_impl_get_security_list", "get_security_list"),
+    ("networking", "step_impl_list_nsgs", "list_network_security_groups"),
+    ("networking", "step_impl_get_nsg", "get_network_security_group"),
+    ("networking", "step_impl_get_vnic", "get_vnic"),
+    ("object-storage", "step_impl_namespace", "get_namespace"),
+    ("object-storage", "step_impl_list_buckets", "list_buckets"),
+    ("object-storage", "step_impl_bucket_details", "get_bucket_details"),
+    ("object-storage", "step_impl_list_objects", "list_objects"),
+    ("object-storage", "step_impl_list_object_versions", "list_object_versions"),
+    ("registry", "step_impl_list_container_repositories", "list_container_repositories"),
+    ("registry", "step_impl_get_container_repository", "get_container_repository"),
+    ("resource-search", "step_impl_list_resource_types", "list_resource_types"),
+    ("resource-search", "step_impl_list_resources", "list_all_resources"),
+    ("resource-search", "step_impl_search_by_display_name", "search_resources"),
+    ("resource-search", "step_impl_search_free_text", "search_resources_free_form"),
+    ("resource-search", "step_impl_search_by_type", "search_resources_by_type"),
+    ("usage", "step_impl_get_summarized_usage", "get_summarized_usage"),
+]
+
+
+@pytest.fixture(scope="module")
+def operation_steps():
+    directory = Path(__file__).resolve().parents[1] / "e2e/features/steps"
+    return {
+        server: runpy.run_path(str(directory / f"oci-{server}-mcp-server-steps.py"))
+        for server in {row[0] for row in OPERATION_CHECKS}
+    }
+
+
+@pytest.mark.parametrize("server,function,tool", OPERATION_CHECKS)
+def test_operation_outcomes_reject_unrelated_success(operation_steps, server, function, tool):
+    result = parse_events(events(call("unrelated_lookup"), MESSAGE), {"compute"})
+    with pytest.raises(AssertionError, match=tool):
+        operation_steps[server][function](SimpleNamespace(result=result))
+
+
+@pytest.mark.parametrize(
+    "status,error",
+    [("failed", {"message": "transient service failure"}), ("completed", {"message": "tool error"})],
+)
+def test_failed_attempt_is_retained_and_successful_retry_can_satisfy_operation(status, error):
+    attempt = call(status=status, error=error)
+    attempt["result"] = None
+    result = parse_events(events(attempt, call(), MESSAGE), {"compute"})
+    assert result.failed_calls == [{"id": "0", **attempt}]
+    assert len(result.calls) == 1
+    result.require_call("list_instances")
+
+
+def test_failed_discovery_does_not_override_successful_requested_operation(operation_steps):
+    failure = call("list_metric_definitions", status="failed", error={"message": "Endpoint not mocked"})
+    failure["result"] = None
+    output = events(
+        failure, call("get_metrics_data"), {"type": "agent_message", "text": "CpuUtilization: 45.5"}
+    )
+    result = parse_events(output, {"compute"})
+    operation_steps["monitoring"]["step_impl_get_metrics_data"](SimpleNamespace(result=result))
+    assert result.failed_calls[0]["tool"] == "list_metric_definitions"
+
+
+def test_failed_requested_operation_cannot_be_replaced_by_unrelated_success(operation_steps):
+    failure = call("get_metrics_data", status="failed", error={"message": "service failure"})
+    failure["result"] = None
+    output = events(call("list_alarms"), failure, {"type": "agent_message", "text": "CpuUtilization: 45.5"})
+    result = parse_events(output, {"compute"})
+    with pytest.raises(AssertionError, match="get_metrics_data"):
+        operation_steps["monitoring"]["step_impl_get_metrics_data"](SimpleNamespace(result=result))
+
+
+@pytest.mark.parametrize("tool", ["get_tenancy", "get_current_tenancy"])
+def test_tenancy_outcome_accepts_equivalent_successful_operations(operation_steps, tool):
+    server = "oracle-oci-identity-mcp-server"
+    response = {"content": [{"type": "text", "text": '{"id":"ocid1.tenancy.mock"}'}]}
+    result = parse_events(
+        events(
+            call(tool, server=server, result=response),
+            {"type": "agent_message", "text": "ocid1.tenancy.mock"},
+        ),
+        {server},
+    )
+    operation_steps["identity"]["step_impl_get_tenancy"](SimpleNamespace(result=result))
+
+
+@pytest.mark.parametrize("kind", ["failed", "isError"])
+def test_failed_only_response_has_no_successful_operation_evidence(kind):
+    item = call()
+    if kind == "failed":
+        item["status"] = "failed"
+        item["result"] = None
+        item["error"] = {"message": "mock failure"}
+    else:
+        item["result"]["isError"] = True
+    result = parse_events(events(item, MESSAGE), {"compute"})
+    assert len(result.failed_calls) == 1
+    assert not result.calls
+    with pytest.raises(AssertionError, match="list_instances"):
+        result.require_call("list_instances")
+
+
+@pytest.mark.parametrize("field,value", [("error", []), ("result", []), ("arguments", None)])
+def test_recovery_does_not_accept_malformed_failed_calls(field, value):
+    item = call(status="failed", error={"message": "failure"})
+    item[field] = value
+    with pytest.raises(CodexError, match="Invalid completed"):
+        parse_events(events(item, call(), MESSAGE), {"compute"})
+
+
+def test_success_requires_a_result_and_chain_requires_a_successful_listing():
+    item = call()
+    item["result"] = None
+    with pytest.raises(CodexError, match="Missing successful"):
+        parse_events(events(item, MESSAGE), {"compute"})
+    result = parse_events(
+        events(call(status="failed"), call("get_instance", {"instance_id": "ocid1.instance.mock"}), MESSAGE),
+        {"compute"},
+    )
+    with pytest.raises(AssertionError, match="returned by list_instances"):
+        result.require_chain("list_instances", "get_instance", "instance_id")

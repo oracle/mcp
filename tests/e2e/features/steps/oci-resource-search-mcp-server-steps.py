@@ -26,6 +26,7 @@ def step_impl_resource_search_tools_available(context):
 
 @then("the response should contain a list of resource types")
 def step_impl_list_resource_types(context):
+    context.result.require_call("list_resource_types")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()
@@ -37,6 +38,7 @@ def step_impl_list_resource_types(context):
 
 @then("the response should contain a list of resources")
 def step_impl_list_resources(context):
+    context.result.require_call("list_all_resources")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text
@@ -48,6 +50,7 @@ def step_impl_list_resources(context):
 
 @then("the response should contain resources matching the display name search")
 def step_impl_search_by_display_name(context):
+    context.result.require_call("search_resources")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()
@@ -56,6 +59,7 @@ def step_impl_search_by_display_name(context):
 
 @then("the response should contain resources matching the free-text search")
 def step_impl_search_free_text(context):
+    context.result.require_call("search_resources_free_form")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()
@@ -67,6 +71,7 @@ def step_impl_search_free_text(context):
 
 @then("the response should contain resources of the specified type")
 def step_impl_search_by_type(context):
+    context.result.require_call("search_resources_by_type")
     result = context.result
     assert result.text, "Response is empty."
     content = result.text.lower()

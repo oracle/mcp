@@ -28,6 +28,8 @@ uvx oracle.oci-identity-mcp-server
 
 Register `${ORACLE_MCP_BASE_URL}/auth/callback` in the OCI IAM confidential application. If `IDCS_REQUIRED_SCOPES` is unset, the default is `openid profile email oci_mcp.identity.invoke`.
 
+FastMCP 4.2.2 dynamically registers MCP OAuth clients as public clients. Clients that declare `application_type: web` must register a non-loopback HTTPS redirect URI. Native MCP clients can register a loopback HTTP redirect URI.
+
 ## Environment Variables
 
 The server supports the following environment variables:

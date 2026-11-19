@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- Updated the stdio and Streamable HTTP server to FastMCP 4.2.2.
+- Updated locked `dnspython` to 2.9.2.
+
 ## 3.0.3
 
 ### Fixed

@@ -18,8 +18,8 @@ from oracle.oci_networking_mcp_server import server
 async def test_null_defaults_are_accepted_by_advertised_schemas():
     async with Client(server.mcp) as client:
         for tool in await client.list_tools():
-            validator = Draft202012Validator(tool.inputSchema)
-            for name, schema in tool.inputSchema["properties"].items():
+            validator = Draft202012Validator(tool.input_schema)
+            for name, schema in tool.input_schema["properties"].items():
                 if "default" in schema and schema["default"] is None:
                     assert validator.evolve(schema=schema).is_valid(None), f"{tool.name}.{name}"
 
@@ -46,6 +46,7 @@ async def test_optional_network_filters(monkeypatch, tool_name, filters, value):
         if isinstance(value, int):
             with pytest.raises(ToolError, match="valid string"):
                 await client.call_tool(tool_name, arguments)
+            getattr(sdk, tool_name).assert_called_once()
         else:
             result = await client.call_tool(tool_name, arguments)
             assert result.structured_content["result"] == []

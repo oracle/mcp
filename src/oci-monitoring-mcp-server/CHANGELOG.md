@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Changed
+
+- Upgraded the MCP runtime to FastMCP 4.2.2 for stdio and Streamable HTTP.
 ## 2.0.4
 
 ### Security

@@ -35,6 +35,8 @@ from pydantic import Field
 
 from . import __project__, __version__
 
+_ADDITIONAL_UA = f"{__project__.removeprefix('oracle.').removesuffix('-server')}/{__version__}"
+
 logger = Logger(__name__, level="INFO")
 
 mcp = FastMCP(name=__project__)
@@ -56,9 +58,7 @@ def _get_http_config_and_signer():
     region = os.getenv("OCI_REGION")
     if not region:
         raise RuntimeError("HTTP requests require OCI_REGION.")
-    config = {"region": region}
-    user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
-    config["additional_user_agent"] = f"{user_agent_name}/{__version__}"
+    config = {"region": region, "additional_user_agent": _ADDITIONAL_UA}
     return config, oci.auth.signers.TokenExchangeSigner(
         token.token,
         f"https://{domain}",
@@ -91,6 +91,7 @@ def get_logging_client():
         file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
         profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
+    config["additional_user_agent"] = _ADDITIONAL_UA
 
     private_key = oci.signer.load_private_key_from_file(config["key_file"])
     token_file = os.path.expanduser(config["security_token_file"])
@@ -110,6 +111,7 @@ def get_logging_search_client():
         file_location=os.getenv("OCI_CONFIG_FILE", oci.config.DEFAULT_LOCATION),
         profile_name=os.getenv("OCI_CONFIG_PROFILE", oci.config.DEFAULT_PROFILE),
     )
+    config["additional_user_agent"] = _ADDITIONAL_UA
 
     private_key = oci.signer.load_private_key_from_file(config["key_file"])
     token_file = os.path.expanduser(config["security_token_file"])

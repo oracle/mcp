@@ -21,13 +21,15 @@ From the repository root, use `proto install` for pinned tools and `moon run oci
 
 ## Tests and validation
 
+Ordinary installs use the published Common version allowed by this package. For opt-in local Common validation, run `python3 scripts/check-common-consumer.py oci-db-observability-mcp-server` from the repository root; see [Common development](../common/README.md#development). The helper preserves declared bounds and reports incompatible local versions.
+
 Use `moon run oci-db-observability-mcp-server:test` from the repository root for the inherited Python test task, and `moon run root:lint` after Python source changes. The manifest configures `90%` coverage. Inspect the relevant tool/model or helper tests for the requested change; shared changes also require [shared validation](../../docs/agent-development.md#validation-map). These definitions are source evidence; this documentation expansion ran no server tests or coverage.
 
 ## Architecture and dependencies
 
 server.py starts the stdio process; mcp.py owns the MCP discovery/invocation surface. registry.py reads packaged metadata, sdk_schema.py derives operation schemas, and runtime.py validates/coerces inputs and dispatches allowlisted SDK operations. Metric catalog lookup is local; metric/alarm reads use OCI Monitoring. Use Identity for compartment discovery; catalog skills are discovery metadata, not installed agent workflow skills.
 
-The package declares Common as a local uv workspace source, from which Moon infers its dependency edge, and pins OCI 2.185.1 to satisfy Common's SDK requirement; read [its contract](../common/README.md) and [guide](../common/AGENTS.md) for auth ownership and shared-change impact. A declared dependency alone does not establish every supported path’s coverage.
+The package resolves published Common 0.2.x for ordinary development and CI, without a permanent local uv workspace source, and pins OCI 2.185.1 to satisfy Common's SDK requirement; read [its contract](../common/README.md) and [guide](../common/AGENTS.md) for auth ownership and shared-change impact. A declared dependency alone does not establish every supported path’s coverage.
 
 ## Security and secrets handling
 

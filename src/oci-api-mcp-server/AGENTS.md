@@ -9,7 +9,7 @@ This package owns OCI CLI command discovery, help and execution. Apply [root ins
 - [Server](oracle/oci_api_mcp_server/server.py): MCP registration, tool handlers and runtime entry point.
 - [Denylist](oracle/oci_api_mcp_server/denylist.py): command-path filtering and ambiguous-input handling
 - [Audit logger](oracle/oci_api_mcp_server/utils.py): rotating audit-log configuration
-- [Package Moon task](moon.yml): Common dependency edge and denylist-generator test input
+- [Package Moon task](moon.yml): denylist-generator test input
 - [Package metadata](oracle/oci_api_mcp_server/__init__.py) and [manifest](pyproject.toml): version, dependencies and executable definitions.
 - [Tests](oracle/oci_api_mcp_server/tests): local behavior definitions; start with [test_oci_api_tools.py](oracle/oci_api_mcp_server/tests/test_oci_api_tools.py).
 

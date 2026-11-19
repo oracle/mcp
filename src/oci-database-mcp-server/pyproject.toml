@@ -59,14 +59,6 @@ exclude = [
   "/.containerignore",
 ]
 
-[tool.uv.sources]
-oracle-mcp-common = { workspace = true }
-
-[tool.uv.workspace]
-members = [
-    "../common",
-]
-
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",

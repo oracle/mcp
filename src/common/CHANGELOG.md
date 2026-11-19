@@ -4,6 +4,18 @@ All notable changes to `oracle-mcp-common` are documented in this file.
 
 ## Unreleased
 
+## 0.3.0
+
+### Breaking Changes
+
+- Require FastMCP `>=4.0.0,<5.0.0`. Consumers restricted to FastMCP 3.x must
+  coordinate their Common and FastMCP dependency updates before adopting this release.
+
+### Changed
+
+- Configure CIMD registration through FastMCP's public `enable_cimd` parameter.
+  The authentication builder interfaces and caller-specific signer behavior are unchanged.
+
 ## 0.2.0
 
 ### Added

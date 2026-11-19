@@ -81,9 +81,3 @@ omit = [
 ]
 precision = 2
 fail_under = 90
-
-[tool.uv.sources]
-oracle-mcp-common = { workspace = true }
-
-[tool.uv.workspace]
-members = ["../common"]

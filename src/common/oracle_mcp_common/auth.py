@@ -229,14 +229,13 @@ def build_idcs_http_auth(
             audience=inputs.audience,
             required_scopes=scopes,
             base_url=inputs.base_url,
+            enable_cimd=(options or IDCSHttpAuthOptions()).enable_cimd,
         )
     except Exception as error:
         raise ValueError(
             "Unable to construct the HTTP IDCS authentication provider"
         ) from error
     _qualify_upstream_scopes(provider, audience=inputs.audience, scopes=scopes)
-    if not (options or IDCSHttpAuthOptions()).enable_cimd:
-        _disable_cimd(provider)
     return IDCSHttpAuth(
         provider=provider,
         _identity_domain_url=inputs.domain_url,
@@ -311,24 +310,6 @@ def _qualify_upstream_scopes(provider: Any, *, audience: str, scopes: list[str])
 
     provider._build_upstream_authorize_url = _qualified_authorize_url
     provider._prepare_scopes_for_upstream_refresh = lambda stored: _qualify(audience, list(stored) or qualified)
-
-
-def _disable_cimd(provider: Any) -> None:
-    """Turn off CIMD client registration on the OAuth provider.
-
-    OCIProvider does not forward `enable_cimd` to the underlying OAuthProxy, so the
-    private `_cimd_manager` is cleared instead. That both stops the outbound metadata
-    fetch and stops advertising `client_id_metadata_document_supported`. The
-    attribute is checked, so an upstream rename fails at startup instead of silently
-    restoring the fetch.
-    """
-    if not hasattr(provider, "_cimd_manager"):
-        raise RuntimeError(
-            "This FastMCP release does not expose '_cimd_manager', so CIMD client "
-            "registration cannot be disabled. Check whether OCIProvider now accepts "
-            "enable_cimd=False and use that instead."
-        )
-    provider._cimd_manager = None
 
 
 def resolve_auth_type(options: AuthOptions | None = None) -> AuthType:

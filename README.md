@@ -488,6 +488,26 @@ ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8888 \
   uv --directory src/oci-api-mcp-server run --locked oracle.oci-api-mcp-server
 ```
 
+### Testing Local Common Changes
+
+Common consumers use published `oracle-mcp-common` releases within their own
+manifest bounds for normal development and CI. Editing `src/common` does not
+replace those installed dependencies.
+
+To validate a consumer against a local Common checkout, run the opt-in
+[wheel integration check](src/common/README.md#testing-common-with-a-consumer):
+
+```bash
+python3 scripts/check-common-consumer.py oci-cloud-mcp-server
+```
+
+The checker builds and installs both wheels in a disposable environment and
+runs the consumer's tests. Dependency bounds still apply: Common 0.3.0 is
+expected to fail resolution with consumers that require Common 0.2.x. Use a
+compatible Common checkout or explicitly migrate the consumer first. The
+[Common development guide](src/common/README.md#development) also describes
+quick editable testing and its evidence limits.
+
 ### Inspector
 
 The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction)
@@ -569,9 +589,12 @@ Use the manually dispatched [Publish package](.github/workflows/publish.yml)
 workflow from `main`. Select `pypi` or `testpypi` with a Python Moon project ID
 or `all-python` to release every Moon-managed Python package. Select `npm` with
 `oci-javascript-mcp-server` for the JavaScript package. Moon runs checks and
-build before the workflow passes the distributions to its publish job. Releasing
-a Python server publishes `oracle-mcp-common` first and waits for it to appear
-on the selected index. Ordinary CI never invokes the publish tasks.
+build before the workflow passes the distributions to its publish job. An
+individual release publishes only the selected package; choose `common` to
+publish Common explicitly. Publish a required Common release before adopting
+consumer releases. Bulk `all-python` releases publish Common first and wait for
+index visibility before publishing the servers. Ordinary CI never invokes the
+publish tasks.
 
 Configure the `pypi`, `testpypi`, and `npm` GitHub environments with release
 approval rules and their respective `PYPI_TOKEN`, `TEST_PYPI_TOKEN`, and

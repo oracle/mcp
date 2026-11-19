@@ -10,6 +10,8 @@ authors = [
     {name = "Oracle Data Studio", email = "essbase_grp_ww@oracle.com"},
 ]
 dependencies = [
+    "dnspython>=2.9.2",
+    "opentelemetry-api>=1.45.2",
     "fastmcp==3.4.10",
     "oracle-data-studio>=1.0.26",
     "pydantic==2.12.3",

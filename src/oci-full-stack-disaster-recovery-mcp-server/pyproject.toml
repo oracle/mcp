@@ -8,6 +8,8 @@ license = { text = "Universal Permissive License v 1.0" }
 license-files = ["LICENSE.txt"]
 keywords = ["oci", "oracle", "disaster-recovery", "mcp", "fsdr"]
 dependencies = [
+    "dnspython>=2.9.2",
+    "opentelemetry-api>=1.45.2",
     "fastmcp==3.4.10",
     "oci==2.185.1",
     "pydantic>=2.0.0",

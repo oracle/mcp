@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Security
+
+- Require `dnspython>=2.9.2` and `opentelemetry-api>=1.45.2` to address CVE-2026-128089 and CVE-2026-126360, respectively.
+
 ### Changed
 
 - Resolve Common from the published package within the existing dependency bounds

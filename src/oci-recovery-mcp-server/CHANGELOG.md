@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Security
+
+- Require `dnspython>=2.9.2` and `opentelemetry-api>=1.45.2` to address CVE-2026-128089 and CVE-2026-126360, respectively.
+
 ### Changed
 
 - Resolve Common from published packages by default in development and CI; local Common integration now requires an explicit override.

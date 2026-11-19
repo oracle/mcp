@@ -11,16 +11,21 @@ server-agnostic approach and expose a focused, documented public API.
 ## Package requirements
 
 - Python 3.13 or later
-- OCI Python SDK 2.179.0 or later
-- FastMCP 3.4.5 or later in the 3.x series for the optional HTTP IDCS authentication API
+- OCI Python SDK 2.185.0 or later
+- FastMCP 4.0.0 or later in the 4.x series for the optional HTTP IDCS authentication API
 
 An adopting server normally declares a bounded dependency on this package:
 
 ```toml
 dependencies = [
-  "oracle-mcp-common>=0.2.0,<0.3.0",
+  "oracle-mcp-common>=0.3.0,<0.4.0",
 ]
 ```
+
+Common 0.3.0 requires FastMCP 4.x. Consumers must update their Common and
+FastMCP bounds and regenerate locks together; see the
+[delivery record](../../docs/plans/fastmcp-v4-common/implementation.md).
+Publish Common 0.3.0 before releasing dependent servers.
 
 ## Authentication module
 
@@ -305,3 +310,19 @@ Run the repository Python lint check after source changes:
 ```bash
 moon run root:lint
 ```
+
+To build Common and clean-install its wheel in disposable environments for exact
+FastMCP 4.0.0 and 4.1.6, each with OCI SDK 2.185.0 and the current resolvable
+OCI SDK, run from the repository root:
+
+```bash
+bash scripts/check-common-fastmcp.sh
+```
+
+This runs the complete suite with branch coverage and the 90% threshold in each
+environment, checks installed dependencies and wheel metadata, and prints the
+resolved FastMCP, MCP SDK and OCI SDK versions. It uses the manifest's dev
+dependency group without workspace source overrides. Environments, copied tests
+and build/coverage outputs are removed on exit; manifests and locks are unchanged.
+The shipped range stays `>=4.0.0,<5.0.0`. These endpoint checks do not guarantee
+compatibility with every future 4.x release or validate live OCI authentication.

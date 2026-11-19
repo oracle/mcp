@@ -1107,6 +1107,7 @@ def test_idcs_http_auth_builds_provider_and_creates_request_context(monkeypatch)
         "audience": "mcp-audience",
         "required_scopes": ["openid", "oci_mcp.example.invoke"],
         "base_url": "https://mcp.example.com",
+        "enable_cimd": True,
     }
     assert signer_constructor.call_args.args == (
         "request-token",
@@ -1230,7 +1231,7 @@ class _FakeProvider:
 
     def __init__(self, **kwargs):
         self.required_scopes = list(kwargs["required_scopes"])
-        self._cimd_manager = object()
+        self._cimd_manager = object() if kwargs["enable_cimd"] else None
         self.authorize_scopes = None
 
     def update_default_scopes(self, scopes):
@@ -1285,11 +1286,111 @@ def test_idcs_http_auth_fails_startup_when_fastmcp_drops_a_hook(monkeypatch):
     with pytest.raises(RuntimeError, match="update_default_scopes"):
         auth.build_idcs_http_auth(["openid"])
 
-    class _NoCimd(_FakeProvider):
-        def __init__(self, **kwargs):
-            super().__init__(**kwargs)
-            del self._cimd_manager
 
-    monkeypatch.setattr(auth, "OCIProvider", _NoCimd)
-    with pytest.raises(RuntimeError, match="_cimd_manager"):
-        auth.build_idcs_http_auth(["openid"], auth.IDCSHttpAuthOptions(enable_cimd=False))
+@pytest.fixture
+def real_idcs_provider(monkeypatch, tmp_path):
+    """Use FastMCP's provider with only OIDC discovery replaced by a response."""
+    import fastmcp
+    from fastmcp.server.auth import oidc_proxy
+
+    monkeypatch.setattr(fastmcp.settings, "home", tmp_path)
+    # Discovery caching was added after 4.0.0; restore process state on teardown.
+    if hasattr(oidc_proxy, "_oidc_configuration_cache"):
+        from collections import OrderedDict
+
+        monkeypatch.setattr(oidc_proxy, "_oidc_configuration_cache", OrderedDict())
+    set_idcs_http_environment(monkeypatch)
+    discovery = {
+        "issuer": "https://idcs.example.com",
+        "authorization_endpoint": "https://idcs.example.com/authorize",
+        "token_endpoint": "https://idcs.example.com/token",
+        "jwks_uri": "https://idcs.example.com/keys",
+        "response_types_supported": ["code"],
+        "subject_types_supported": ["public"],
+        "id_token_signing_alg_values_supported": ["RS256"],
+    }
+    response = MagicMock()
+    response.json.return_value = discovery
+    get = MagicMock(return_value=response)
+    monkeypatch.setattr(oidc_proxy.httpx2, "get", get)
+    yield
+    assert get.call_count == 1
+    assert get.call_args.args == (
+        "https://idcs.example.com/.well-known/openid-configuration",
+    )
+
+
+@pytest.mark.parametrize("enable_cimd", [True, False])
+@pytest.mark.parametrize("audience", ["https://mcp.example.com/", "mcp-audience"])
+def test_real_idcs_provider_scopes_and_registration(real_idcs_provider, monkeypatch, enable_cimd, audience):
+    from urllib.parse import parse_qs, urlsplit
+
+    from fastmcp.server.auth.oauth_proxy import proxy
+    from starlette.applications import Starlette
+    from starlette.testclient import TestClient
+
+    manager = MagicMock(wraps=proxy.CIMDClientManager)
+    monkeypatch.setattr(proxy, "CIMDClientManager", manager)
+    monkeypatch.setenv("IDCS_AUDIENCE", audience)
+    scopes = ["openid", "profile", "offline_access", "oci_mcp.x.invoke"]
+    qualified = ["openid", "profile", "offline_access", f"{audience}oci_mcp.x.invoke"]
+    provider = auth.build_idcs_http_auth(
+        scopes, auth.IDCSHttpAuthOptions(enable_cimd=enable_cimd)
+    ).provider
+
+    # Disabling CIMD must prevent constructing its manager, not just discard it.
+    assert manager.call_count == int(enable_cimd)
+    assert provider.required_scopes == scopes
+    assert provider._token_validator.required_scopes == scopes
+    assert provider.client_registration_options.default_scopes == qualified
+    assert provider.client_registration_options.valid_scopes == qualified
+    for requested in (scopes, qualified, [], None):
+        transaction = {} if requested is None else {"scopes": requested}
+        transaction["proxy_code_verifier"] = "synthetic-pkce-verifier"
+        url = provider._build_upstream_authorize_url("transaction-id", transaction)
+        query = parse_qs(urlsplit(url).query)
+        assert urlsplit(url).netloc == "idcs.example.com"
+        assert query["scope"] == [" ".join(qualified)]
+        assert query["state"] == ["transaction-id"]
+        assert query["redirect_uri"] == ["https://mcp.example.com/auth/callback"]
+        assert query["code_challenge_method"] == ["S256"]
+        assert query["code_challenge"]
+    assert provider._prepare_scopes_for_upstream_refresh(scopes) == qualified
+    assert provider._prepare_scopes_for_upstream_refresh(qualified) == qualified
+    assert provider._prepare_scopes_for_upstream_refresh([]) == qualified
+
+    with TestClient(Starlette(routes=provider.get_routes())) as client:
+        response = client.get("/.well-known/oauth-authorization-server")
+        assert response.status_code == 200
+        metadata = response.json()
+        assert bool(metadata.get("client_id_metadata_document_supported")) is enable_cimd
+        assert metadata["scopes_supported"] == qualified
+        assert metadata["registration_endpoint"] == "https://mcp.example.com/register"
+
+
+def test_real_idcs_provider_keeps_callers_separate(real_idcs_provider, monkeypatch):
+    first_signer, second_signer = object(), object()
+    constructor = MagicMock(side_effect=[first_signer, second_signer])
+    monkeypatch.setattr(auth.oci.auth.signers, "TokenExchangeSigner", constructor)
+    http_auth = auth.build_idcs_http_auth(["openid"])
+    first = http_auth.context_for("first-caller-token")
+    second = http_auth.context_for("second-caller-token", region="eu-frankfurt-1")
+    assert first is not second
+    assert first.signer is first_signer
+    assert second.signer is second_signer
+    assert first.config == {"region": "us-phoenix-1"}
+    assert second.config == {"region": "eu-frankfurt-1"}
+    assert first.config is not second.config
+    assert [call.args[0] for call in constructor.call_args_list] == [
+        "first-caller-token", "second-caller-token",
+    ]
+    assert "first-caller-token" not in repr(first)
+    assert "second-caller-token" not in repr(second)
+
+
+def test_idcs_http_auth_sanitizes_provider_failure(monkeypatch):
+    set_idcs_http_environment(monkeypatch)
+    monkeypatch.setattr(auth, "OCIProvider", MagicMock(side_effect=RuntimeError("client-secret")))
+    with pytest.raises(ValueError, match="Unable to construct") as error:
+        auth.build_idcs_http_auth(["openid"])
+    assert "client-secret" not in str(error.value)

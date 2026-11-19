@@ -17,7 +17,9 @@ From the repository root, install the pinned tools with `proto install`, then us
 
 ## Tests and validation
 
-Use `moon run common:test` for package tests and `moon run root:lint` after Python changes. Shared auth changes require the broader root checks and affected consumer review, including `moon run :test` and `moon run root:combine-coverage`; Common-only tests do not validate every caller. The manifest configures 90% coverage; no tests/coverage have been executed by this guide adoption.
+Use `moon run common:test` for package tests and `moon run root:lint` after Python changes. Shared auth changes require the broader root checks and affected consumer review, including `moon run :test` and `moon run root:combine-coverage`; Common-only tests do not validate every caller.
+
+Use `bash scripts/check-common-fastmcp.sh` from the repository root for clean wheel installs and full-suite branch coverage at exact FastMCP 4.0.0 and 4.1.6, each with the minimum OCI SDK 2.185.0 and current resolvable OCI SDK; see the [delivery record](../../docs/plans/fastmcp-v4-common/implementation.md) for consumer coordination and actual results. The manifest configures 90% coverage. Recorded results apply only to the snapshot and checks identified in the delivery record.
 
 ## Architecture and dependencies
 
@@ -36,7 +38,7 @@ Public exports, configuration precedence, supported modes and aliases affect dec
 ## Known gaps
 
 - Not every Python server has migrated; consumer declarations must be inspected for each shared change.
-- [README requirements](README.md#package-requirements) list OCI SDK 2.179.0+ while the [manifest](pyproject.toml) requires 2.185.0+. FastMCP requirements agree on 3.4.5+ in the 3.x series. Use the manifest for install definitions and report the remaining OCI discrepancy without inventing a new version policy.
+- [README requirements](README.md#package-requirements) and the [manifest](pyproject.toml) agree on OCI SDK 2.185.0+ and FastMCP `>=4.0.0,<5.0.0`. Common 0.3.0 needs coordinated consumer Common/FastMCP bounds and lock updates; see the [delivery record](../../docs/plans/fastmcp-v4-common/implementation.md).
 - Configured test thresholds and source-reviewed contracts are not executed validation results. See [shared gaps](../../docs/agent-development.md#known-gaps).
 
 ## Workflow and context routing

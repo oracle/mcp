@@ -6,8 +6,30 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "beautifulsoup4>=4.9.0",
-    "fastmcp==3.4.10",
+    "dnspython>=2.9.2",
+    "fastmcp==4.2.2",
     "markdownify>=1.2.0",
     "pocketsearch>=0.40.0",
-    "pydantic>=2.12.3"
+    "pydantic>=2.12.3",
+    "soupsieve>=4.0"
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9",
+    "pytest-asyncio>=1.3",
+    "pytest-cov>=7"
+]
+
+[tool.pytest.ini_options]
+addopts = "--cov --cov-report=term-missing"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+include = ["oracle-db-doc-mcp-server.py"]
+patch = ["subprocess"]
+
+[tool.coverage.report]
+fail_under = 90

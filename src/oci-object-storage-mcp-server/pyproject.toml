@@ -10,6 +10,8 @@ license = "UPL-1.0"
 license-files = ["LICENSE.txt"]
 requires-python = ">=3.13"
 dependencies = [
+    "dnspython>=2.9.2",
+    "opentelemetry-api>=1.45.2",
     "fastmcp==3.4.10",
     "oci==2.185.1",
 ]

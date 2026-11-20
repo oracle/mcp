@@ -10,6 +10,8 @@ authors = [
     {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
 ]
 dependencies = [
+    "dnspython>=2.9.2",
+    "opentelemetry-api>=1.45.2",
     "cachetools==7.1.8",
     "cryptography==50.0.1",
     "fastmcp==3.4.10",

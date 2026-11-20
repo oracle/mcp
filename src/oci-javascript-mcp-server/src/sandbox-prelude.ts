@@ -268,8 +268,9 @@ function __ociExecutionScript(code) {
 }
 
 function __ociInferFinalReturn(code) {
-  const trimmed = code.replace(/[\\s;]*$/g, "");
-  for (const start of __ociFinalExpressionStarts(trimmed)) {
+  const { starts, end } = __ociFinalExpressionStarts(code);
+  const trimmed = code.slice(0, end);
+  for (const start of starts) {
     const expression = trimmed.slice(start).trim();
     if (expression && __ociIsExpression(expression)) {
       return trimmed.slice(0, start) + "\\nreturn (" + expression + ");";
@@ -285,15 +286,20 @@ function __ociFinalExpressionStarts(code) {
   let escaped = false;
   let lineComment = false;
   let blockComment = false;
+  let regexClass = false;
+  let regexAllowed = true;
+  let end = 0;
 
   for (let index = 0; index < code.length; index += 1) {
     const char = code[index];
     const next = code[index + 1];
+    const lineBreak = char === "\\n" || char === "\\r"
+      || char === "\\u2028" || char === "\\u2029";
 
     if (lineComment) {
-      if (char === "\\n") {
+      if (lineBreak) {
         lineComment = false;
-        starts.push(index + 1);
+        if (depth === 0) starts.push(index + 1);
       }
       continue;
     }
@@ -305,12 +311,18 @@ function __ociFinalExpressionStarts(code) {
       continue;
     }
     if (quote) {
+      end = index + 1;
       if (escaped) {
         escaped = false;
       } else if (char === "\\\\") {
         escaped = true;
-      } else if (char === quote) {
+      } else if (quote === "/" && char === "[") {
+        regexClass = true;
+      } else if (quote === "/" && char === "]") {
+        regexClass = false;
+      } else if (char === quote && !regexClass) {
         quote = null;
+        regexAllowed = false;
       }
       continue;
     }
@@ -324,6 +336,17 @@ function __ociFinalExpressionStarts(code) {
       index += 1;
       continue;
     }
+    if (char.trim() && !(char === ";" && depth === 0)) end = index + 1;
+    if ((char === "+" || char === "-") && next === char) {
+      end = index + 2;
+      index += 1;
+      continue;
+    }
+    if (char === "/" && regexAllowed) {
+      quote = "/";
+      regexClass = false;
+      continue;
+    }
     if (char === "\\"" || char === "'" || char === "\`") {
       quote = char;
       continue;
@@ -332,12 +355,16 @@ function __ociFinalExpressionStarts(code) {
       depth += 1;
     } else if (char === ")" || char === "]" || char === "}") {
       depth = Math.max(0, depth - 1);
-    } else if (depth === 0 && (char === ";" || char === "\\n")) {
+    } else if (depth === 0 && (char === ";" || lineBreak)) {
       starts.push(index + 1);
+    }
+    if (char.trim()) {
+      regexAllowed = "(,[{=!:;?&|+-*%^~<>".includes(char);
     }
   }
 
-  return starts.reverse();
+  // Never turn an unfinished string/comment into successful executable source.
+  return { starts: quote || blockComment ? [] : starts.reverse(), end };
 }
 
 function __ociIsExpression(source) {

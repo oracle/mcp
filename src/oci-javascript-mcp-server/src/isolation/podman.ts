@@ -7,8 +7,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:net";
-import { credentials } from "@grpc/grpc-js";
-import { generate } from "selfsigned";
+import { createGrpcTlsBootstrap } from "../grpc-tls-host.ts";
 import { MAX_RESULT_BYTES, positiveIntegerEnv } from "../sandbox-common.ts";
 import type { IsolationExecution, IsolationProvider } from "../types.ts";
 import { startGrpcExecution } from "./grpc-execution.ts";
@@ -37,7 +36,7 @@ export class PodmanIsolationProvider implements IsolationProvider {
     const id = randomUUID();
     const name = `oci-javascript-${id}`;
     const network = `oci-javascript-${id}`;
-    const tls = createTlsBootstrap();
+    const tls = createGrpcTlsBootstrap();
     let active: IsolationExecution | undefined;
     let child: ChildProcess | undefined;
     let close = Promise.resolve();
@@ -178,40 +177,6 @@ function waitForClose(close: Promise<void>, timeoutMs: number): Promise<void> {
       resolve();
     });
   });
-}
-
-function createTlsBootstrap() {
-  const certificate = (commonName: string) => generate(
-    [{ name: "commonName", value: commonName }],
-    {
-      algorithm: "sha256",
-      days: 1,
-      keySize: 2048,
-      extensions: [
-        { name: "basicConstraints", cA: true },
-        { name: "keyUsage", keyCertSign: true, digitalSignature: true, keyEncipherment: true },
-        { name: "extKeyUsage", serverAuth: true, clientAuth: true },
-        {
-          name: "subjectAltName",
-          altNames: [{ type: 2, value: commonName }]
-        }
-      ]
-    }
-  );
-  const server = certificate("oci-javascript-runner");
-  const client = certificate("oci-javascript-host");
-  return {
-    credentials: credentials.createSsl(
-      Buffer.from(server.cert),
-      Buffer.from(client.private),
-      Buffer.from(client.cert)
-    ),
-    runner: {
-      serverKey: server.private,
-      serverCert: server.cert,
-      clientCert: client.cert
-    }
-  };
 }
 
 function runPodman(command: string, args: string[]): Promise<void> {

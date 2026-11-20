@@ -25,7 +25,8 @@ import type {
 } from "./types.ts";
 
 const MAX_HOST_RPC_IN_FLIGHT = positiveIntegerEnv("OCI_JAVASCRIPT_MAX_HOST_RPC_IN_FLIGHT", 4);
-const PROVIDER_TERMINATION_TIMEOUT_MS = 6000;
+const DEFAULT_PROVIDER_TERMINATION_TIMEOUT_MS = 6000;
+const MAX_PROVIDER_TERMINATION_TIMEOUT_MS = 60_000;
 
 type RpcRunState = {
   accepting: boolean;
@@ -92,22 +93,24 @@ export async function runJavaScript(
     const completedWithPendingCalls = outcome?.exitCode === 0
       && rpcState.pendingCalls.size > 0;
     rpcState.accepting = false;
+    const pendingCalls = [...rpcState.pendingCalls];
     abortController.abort();
-    if (execution) {
-      const cleanupError = await terminateExecution(execution);
-      if (cleanupError) {
-        outcome = workerFailure("isolation provider cleanup failed");
-      }
-    }
-    if (rpcState.pendingCalls.size > 0) {
-      try {
-        await withDeadline(
-          Promise.allSettled([...rpcState.pendingCalls]),
-          PROVIDER_TERMINATION_TIMEOUT_MS
-        );
-      } catch {
-        outcome = workerFailure("OCI cleanup did not complete");
-      }
+    const requestedCleanupMs = execution?.terminationTimeoutMs;
+    const cleanupAllowanceMs = Number.isSafeInteger(requestedCleanupMs)
+      && (requestedCleanupMs ?? 0) > 0
+      ? Math.min(requestedCleanupMs!, MAX_PROVIDER_TERMINATION_TIMEOUT_MS)
+      : DEFAULT_PROVIDER_TERMINATION_TIMEOUT_MS;
+    const cleanupDeadlineMs = Date.now() + cleanupAllowanceMs;
+    const [cleanupError, pendingCallsDrained] = await Promise.all([
+      execution
+        ? terminateExecution(execution, cleanupDeadlineMs)
+        : Promise.resolve(undefined),
+      drainPendingCalls(pendingCalls, cleanupDeadlineMs)
+    ]);
+    if (cleanupError) {
+      outcome = workerFailure("isolation provider cleanup failed");
+    } else if (!pendingCallsDrained) {
+      outcome = workerFailure("OCI cleanup did not complete");
     }
     if (completedWithPendingCalls && outcome?.exitCode === 0) {
       outcome = workerFailure("JavaScript completed with unawaited OCI calls");
@@ -117,11 +120,14 @@ export async function runJavaScript(
   return outcome ?? workerFailure("isolation provider returned no result");
 }
 
-async function terminateExecution(execution: IsolationExecution): Promise<unknown | undefined> {
+async function terminateExecution(
+  execution: IsolationExecution,
+  cleanupDeadlineMs: number
+): Promise<unknown | undefined> {
   try {
     await withDeadline(
-      Promise.resolve().then(() => execution.terminate()),
-      PROVIDER_TERMINATION_TIMEOUT_MS
+      Promise.resolve().then(() => execution.terminate(cleanupDeadlineMs)),
+      remainingMs(cleanupDeadlineMs)
     );
     return undefined;
   } catch (error) {
@@ -129,12 +135,32 @@ async function terminateExecution(execution: IsolationExecution): Promise<unknow
   }
 }
 
+async function drainPendingCalls(
+  pendingCalls: Promise<Json>[],
+  cleanupDeadlineMs: number
+): Promise<boolean> {
+  if (pendingCalls.length === 0) {
+    return true;
+  }
+  try {
+    await withDeadline(Promise.allSettled(pendingCalls), remainingMs(cleanupDeadlineMs));
+    return true;
+  } catch {
+    // The individual promises retain rejection observers after the shared tail expires.
+    return false;
+  }
+}
+
 function remainingDeadlineMs(deadlineMs: number): number {
-  const remainingMs = Math.ceil(deadlineMs - Date.now());
-  if (remainingMs <= 0) {
+  const value = remainingMs(deadlineMs);
+  if (value <= 0) {
     throw new Error("sandbox run deadline exceeded");
   }
-  return remainingMs;
+  return value;
+}
+
+function remainingMs(deadlineMs: number): number {
+  return Math.ceil(deadlineMs - Date.now());
 }
 
 async function invokeHostRpc(

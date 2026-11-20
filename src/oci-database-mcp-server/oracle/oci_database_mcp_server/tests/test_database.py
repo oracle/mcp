@@ -2544,8 +2544,18 @@ async def test_get_console_history_content(mock_get_client):
             {"db_node_id": "sampleValue", "console_history_id": "sampleValue"},
         )
 
-        result = response.structured_content
-        assert isinstance(result, dict)
+        tool = next(
+            tool for tool in await client.list_tools() if tool.name == "get_console_history_content"
+        )
+        assert tool.output_schema == {
+            "properties": {"result": {"items": {}, "type": "array"}},
+            "required": ["result"],
+            "type": "object",
+            "x-fastmcp-wrap-result": True,
+        }
+        assert response.structured_content == {"result": ["id"]}
+        assert response.content[0].text == '["id"]'
+        assert response.meta["fastmcp"] == {"wrap_result": True}
         mock_client.get_console_history_content.assert_called_once()
 
 

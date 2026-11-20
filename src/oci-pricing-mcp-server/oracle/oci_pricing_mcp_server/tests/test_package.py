@@ -35,9 +35,9 @@ def test_protocol_exposes_existing_tools_and_ping():
         async with Client(server.mcp) as client:
             tools = {tool.name: tool for tool in await client.list_tools()}
             assert set(tools) == {"pricing_get_sku", "pricing_search_name", "ping"}
-            assert tools["pricing_get_sku"].inputSchema["required"] == ["part_number"]
-            assert tools["pricing_search_name"].inputSchema["required"] == ["query"]
-            assert tools["pricing_search_name"].inputSchema["properties"]["limit"]["default"] == 12
+            assert tools["pricing_get_sku"].input_schema["required"] == ["part_number"]
+            assert tools["pricing_search_name"].input_schema["required"] == ["query"]
+            assert tools["pricing_search_name"].input_schema["properties"]["limit"]["default"] == 12
             result = await client.call_tool("ping", {})
             assert result.is_error is False
             assert result.data == "ok"

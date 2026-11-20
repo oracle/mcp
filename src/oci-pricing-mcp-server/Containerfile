@@ -26,4 +26,4 @@ ENV ORACLE_MCP_HOST=""
 ENV ORACLE_MCP_PORT=""
 
 # Start the MCP server
-ENTRYPOINT ["uv", "run", "oracle.oci-pricing-mcp-server"]
+ENTRYPOINT ["uv", "run", "--no-sync", "oracle.oci-pricing-mcp-server"]

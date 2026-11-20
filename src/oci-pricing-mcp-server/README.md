@@ -252,8 +252,12 @@ docker build -f Containerfile -t oci-pricing-mcp:dev .
 docker run --rm -i --network=none oci-pricing-mcp:dev
 ```
 
-The image installs the package non-editably with locked production dependencies
-and runs the canonical command as UID 10001. Initialization, tool discovery and
+The image follows the Compute and Identity container pattern: Oracle Linux 9,
+Python 3.13, and `uv sync --locked --all-extras`. This installs the package in
+editable mode and includes development dependencies. It runs
+`uv run --no-sync oracle.oci-pricing-mcp-server` as the non-root `oracle` user
+without synchronizing dependencies at startup. Its numeric UID is assigned when
+the image is built. Initialization, tool discovery and
 `ping` need neither OCI credentials nor pricing API access. Pricing lookups
 require outbound HTTPS, so omit `--network=none` for normal pricing use. Use
 `-i` without allocating a TTY for MCP stdio clients.

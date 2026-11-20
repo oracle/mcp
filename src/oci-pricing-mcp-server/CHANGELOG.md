@@ -5,7 +5,7 @@
 ### Changed
 
 - Package and install the server as `oracle.oci-pricing-mcp-server`, with the canonical command of the same name. The old `oci-pricing-mcp` command and standalone script remain compatibility launchers for one release; the script now requires the installed package. Python 3.11 remains supported.
-- Replace `Dockerfile` with `Containerfile`; install locked production dependencies and run the installed command directly as a non-root user.
+- Replace `Dockerfile` with an Oracle Linux 9 / Python 3.13 `Containerfile` following the Compute and Identity pattern: install the package in editable mode with locked runtime and development dependencies, then launch the canonical command through `uv run --no-sync` as the non-root `oracle` user without synchronizing dependencies at startup.
 - Add Pricing to Moon validation with offline unit tests and enforced branch coverage; move live public API probes to an explicitly enabled integration suite.
 
 ### Fixed

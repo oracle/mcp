@@ -4,15 +4,25 @@
 
 """Reusable assertions for service tool connection and response contracts."""
 
+import asyncio
 import inspect
 import json
 from types import SimpleNamespace
 
-from .test_unit import _walk
+
+def registered_tools(server):
+    return {tool.name: tool for tool in asyncio.run(server.list_tools())}
+
+
+def _walk(obj, path):
+    '''Walk a dotted attr path on a mock and return the final attr.'''
+    for part in path.split('.'):
+        obj = getattr(obj, part)
+    return obj
 
 
 def assert_tools_require_connection(tools):
-    ctx = SimpleNamespace(request_context=SimpleNamespace(lifespan_context={}))
+    ctx = SimpleNamespace(lifespan_context={})
     for name, tool in tools.items():
         kwargs = {key: "example" for key, parameter in inspect.signature(tool.fn).parameters.items()
                   if parameter.default is inspect.Parameter.empty and key != "ctx"}

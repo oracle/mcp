@@ -11,6 +11,7 @@ import importlib.util
 import warnings
 from pathlib import Path
 
+@unittest.skipUnless(os.getenv("DBTOOLS_RUN_LIVE_TESTS") == "1", "Live OCI and database tests require opt-in")
 class TestDbtoolsMcpServer(unittest.TestCase):
     """
     Functional tests for dbtools-mcp-server.py

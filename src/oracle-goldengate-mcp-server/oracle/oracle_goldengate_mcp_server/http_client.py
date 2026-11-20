@@ -9,7 +9,7 @@ HTTP and request-signing utilities for GoldenGate and OCI calls.
 import base64
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.utils import format_datetime
 from typing import Any
 
@@ -20,6 +20,10 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
 from .consts import DEFAULT_TIMEOUT_SECONDS
+
+
+class GoldenGateHttpError(RuntimeError):
+    """A GoldenGate REST request failed at the transport or HTTP layer."""
 
 
 def _classify_request_error(exc: requests.exceptions.RequestException) -> str:
@@ -51,7 +55,7 @@ def sign_oci_request(cfg: dict, method: str, path_with_query: str, host: str, bo
     if not cfg.get("tenancyOCID") or not cfg.get("userOCID") or not cfg.get("keyFingerprint") or not cfg.get("privateKeyPEM"):
         raise ValueError("OCI signer is not fully configured")
 
-    date = format_datetime(datetime.now(timezone.utc), usegmt=True)
+    date = format_datetime(datetime.now(UTC), usegmt=True)
     headers_to_sign = ["(request-target)", "host", "date"]
     signing = f"(request-target): {method.lower()} {path_with_query}\nhost: {host}\ndate: {date}"
     headers: dict[str, str] = {"date": date}
@@ -122,9 +126,9 @@ class HttpClient:
             )
         except requests.exceptions.RequestException as exc:
             reason = _classify_request_error(exc)
-            raise RuntimeError(f"{method.upper()} {path} failed: {reason}") from exc
+            raise GoldenGateHttpError(f"{method.upper()} {path} failed: {reason}") from exc
         if not (200 <= resp.status_code < 300):
-            raise RuntimeError(f"{method.upper()} {path} failed: {resp.status_code} {resp.text}")
+            raise GoldenGateHttpError(f"{method.upper()} {path} failed: {resp.status_code} {resp.text}")
         if response_text:
             return resp.text
         try:

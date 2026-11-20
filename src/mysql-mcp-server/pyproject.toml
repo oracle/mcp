@@ -8,7 +8,9 @@ license = "UPL-1.0"
 license-files = ["LICENSE.txt"]
 
 dependencies = [
-    "fastmcp==3.4.10",
+    # Enforce the DNS fix in wheel installs (GHSA-vvf4-9x63-8xvv).
+    "dnspython>=2.9.2",
+    "fastmcp==4.2.2",
     "keyring==25.7.0",
     "mysql-connector-python==9.5.0",
     "oci==2.185.1"

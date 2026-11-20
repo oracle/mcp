@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Changed
+
+- Run Data Studio on FastMCP 4.2.2 with the existing stdio and streamable HTTP interfaces.
+
+### Fixed
+
+- Initialize and shut down the MCP session manager when streamable HTTP bearer authentication is enabled.
+- Preserve client compatibility for extra tool arguments and JSON-encoded nulls.
+- Close all acquired ADP HTTP sessions at shutdown, including sessions replaced after token expiry.
+
+### Security
+
+- Require dnspython 2.9.2 or later and update locked opentelemetry-api to 1.45.2.
+
 ## 2.0.0
 
 ### Breaking Changes

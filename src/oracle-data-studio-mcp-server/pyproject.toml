@@ -10,7 +10,9 @@ authors = [
     {name = "Oracle Data Studio", email = "essbase_grp_ww@oracle.com"},
 ]
 dependencies = [
-    "fastmcp==3.4.10",
+    "fastmcp==4.2.2",
+    # Keep the patched resolver floor when installing without uv.lock.
+    "dnspython>=2.9.2",
     "oracle-data-studio>=1.0.26",
     "pydantic==2.12.3",
     "keyring>=25.0.0",

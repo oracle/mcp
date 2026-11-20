@@ -18,21 +18,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-FROM alpine:3.22@sha256:310c62b5e7ca5b08167e4384c68db0fd2905dd9c7493756d356e893909057601
+FROM docker.io/library/python:3.13.18-alpine3.24@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e
 
 ARG DBDOC_SHA256=383e228d3507d394366e204a058ae948ed1b308de1ea76aa4210f72e20074e31
 ENV HOME=/app
 WORKDIR /app
 
-COPY oracle-db-doc-mcp-server.py fastmcp.json requirements.txt ./
+COPY --from=ghcr.io/astral-sh/uv:0.12.1@sha256:cf4eedcaa81655197f625739489effcbe71b61ceb1506f332c3facae5deceded /uv /usr/local/bin/uv
+COPY oracle-db-doc-mcp-server.py fastmcp.json pyproject.toml uv.lock ./
 
-RUN apk --update --no-cache add python3 py3-pip curl && \
-    pip install -r requirements.txt --break-system-packages && \
-    rm requirements.txt && \
+RUN apk --no-cache add curl && \
+    uv sync --locked --no-dev --no-cache --no-python-downloads && \
     mkdir /input && \
     curl -fsSL -o /input/dbdoc.zip https://docs.oracle.com/en/database/oracle/oracle-database/26/zip/oracle-database_26.zip && \
     echo "${DBDOC_SHA256}  /input/dbdoc.zip" | sha256sum -c - && \
-    python3 oracle-db-doc-mcp-server.py -log-level DEBUG idx -path /input/dbdoc.zip && \
+    /app/.venv/bin/python3 oracle-db-doc-mcp-server.py -log-level DEBUG idx -path /input/dbdoc.zip && \
     rm -r /input && \
     apk del curl && \
     rm -rf /var/cache/apk/* /tmp/*
@@ -47,4 +47,4 @@ LABEL org.opencontainers.image.licenses=Apache-2.0
 
 USER appuser
 
-ENTRYPOINT [ "python3", "oracle-db-doc-mcp-server.py", "mcp" ]
+ENTRYPOINT [ "/app/.venv/bin/python3", "oracle-db-doc-mcp-server.py", "mcp" ]

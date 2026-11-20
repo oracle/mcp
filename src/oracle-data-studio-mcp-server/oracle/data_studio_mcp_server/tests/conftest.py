@@ -8,16 +8,17 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
-from .test_unit import ESS_DISPATCH_CASES, _walk
+from .test_unit import ESS_DISPATCH_CASES
+from .tool_assertions import _walk, registered_tools
 
 
 @pytest.fixture(scope="module")
 def tools(request):
     server = FastMCP("tool-tests")
     request.module.TOOL_MODULE.register_tools(server)
-    return server._tool_manager._tools
+    return registered_tools(server)
 
 
 @pytest.fixture
@@ -42,5 +43,5 @@ def clients(request):
         sdk.check_if_df_exists.return_value = (False, None)
         sdk.check_if_schedule_exists.return_value = (False, None)
     connection = {"client": sdk, "workbench": workbench} if service == "datatransforms" else sdk
-    ctx = SimpleNamespace(request_context=SimpleNamespace(lifespan_context={service: connection}))
+    ctx = SimpleNamespace(lifespan_context={service: connection})
     return ctx, sdk, workbench

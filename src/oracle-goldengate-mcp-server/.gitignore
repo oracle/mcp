@@ -4,16 +4,24 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+.uv-cache/
 *.egg-info/
 .github/
+build/
+dist/
+htmlcov/
+coverage/
+.coverage*
 
 logs/
-oracle-goldengate-mcp-server.env
-oracle-goldengate-mcp-server-bigdata.env
-oracle-goldengate-mcp-server-oracle.env
+oracle-goldengate-mcp-server*.env
 
 # Local launcher scripts
 run_goldengate_mcp_server_*
+
+# Local PR preparation notes
+PR_DESCRIPTION_*.md
+PR_INITIAL_LOAD_EXTRACT_SUMMARY.md
 
 # Keep dependency lockfile for reproducible installs
 !uv.lock

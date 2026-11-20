@@ -4,11 +4,14 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .consts import TRAIL_NAME_PATTERN
+
 AuthMode = Literal["basic"]
+PrepareCsnMode = Literal["nowait", "wait", "lock", "none"]
 Primitive = str | int | bool
 
 
@@ -60,7 +63,14 @@ class CreateExtractOptions(CamelModel):
     get_before_cols: Literal["ALL"] | list[str] | None = Field(None, alias="getBeforeCols", description="GETBEFORECOLS option")
     key_cols: list[str] | None = Field(None, alias="keyCols", description="KEYCOLS option")
     sql_exec: str | None = Field(None, alias="sqlExec", description="SQLEXEC option")
-    sql_predicate: str | None = Field(None, alias="sqlPredicate", description="SQLPREDICATE option")
+    sql_predicate: str | None = Field(
+        None,
+        alias="sqlPredicate",
+        description=(
+            "SQLPREDICATE selection clause. For an Initial Load Extract, use 'AS OF SCN <scn>' to read an Oracle "
+            "flashback snapshot; this is not an Extract start position. A bare condition is emitted as a WHERE clause."
+        ),
+    )
     tokens: dict[str, str] | None = Field(None, description="TOKENS option key/value pairs")
     trim_spaces: bool | None = Field(None, alias="trimSpaces", description="TRIMSPACES option")
     trim_var_spaces: bool | None = Field(None, alias="trimVarSpaces", description="TRIMVARSPACES option")
@@ -127,8 +137,13 @@ class StructuredTranlogOptions(CamelModel):
     additional: list[str] | None = Field(None, description="Additional TRANLOGOPTIONS tokens")
 
 
+class ReportCountInterval(CamelModel):
+    value: int = Field(..., ge=1, description="Positive REPORTCOUNT time interval")
+    unit: Literal["SECONDS", "MINUTES", "HOURS"] = Field(..., description="REPORTCOUNT time unit")
+
+
 class ReportCountSpec(CamelModel):
-    every: str | dict[str, Any] | None = Field(None, description="REPORTCOUNT frequency expression")
+    every: str | ReportCountInterval | None = Field(None, description="REPORTCOUNT frequency expression")
     records: int | None = Field(None, ge=1, description="REPORTCOUNT record interval")
     rate: bool | None = Field(None, description="Whether to include RATE in REPORTCOUNT")
     additional: list[str] | None = Field(None, description="Additional REPORTCOUNT tokens")
@@ -146,7 +161,7 @@ class ExtractAdvancedParameters(CamelModel):
     report_count: ReportCountSpec | None = Field(None, alias="reportCount", description="REPORTCOUNT specification")
     bounded_recovery: BoundedRecoverySpec | None = Field(None, alias="boundedRecovery", description="Bounded recovery specification")
     db_options: str | list[str] | dict[str, list[str]] | None = Field(None, alias="dbOptions", description="DBOPTIONS specification")
-    ext_trail: str | None = Field(None, alias="extTrail", min_length=2, max_length=2, description="Optional EXTTRAIL override")
+    ext_trail: str | None = Field(None, alias="extTrail", min_length=2, max_length=2, pattern=TRAIL_NAME_PATTERN, description="Optional EXTTRAIL override")
     source_catalog: str | None = Field(None, alias="sourceCatalog", description="SOURCECATALOG value")
     ddl: str | list[str] | None = Field(None, description="DDL directives")
     additional_parameters: list[str] | None = Field(None, alias="additionalParameters", description="Additional raw Extract parameter lines")

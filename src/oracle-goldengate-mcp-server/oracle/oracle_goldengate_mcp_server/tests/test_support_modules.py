@@ -20,6 +20,7 @@ from oracle.oracle_goldengate_mcp_server import (
     http_client,
     map_statement,
     replicat_config,
+    security,
     table_statement,
 )
 
@@ -163,6 +164,28 @@ def test_table_statement_normalize_and_build() -> None:
     assert "SQLPREDICATE 'WHERE ID = 1'" in built
     assert "NOTRIMSPACES" in built
     assert "TRIMVARSPACES" in built
+
+    as_of_scn = table_statement.build_table_statement(
+        {
+            "source": {"schema": "hr", "table": "*"},
+            "options": {"sqlPredicate": "AS OF SCN 168298293"},
+        }
+    )
+    assert as_of_scn == "TABLE hr.*, SQLPREDICATE 'AS OF SCN 168298293';"
+
+    raw_statements = table_statement.add_as_of_scn_to_table_statements(
+        "TABLE hr.employees; TABLE hr.departments, FILTER (@PRESENT(id));",
+        168298293,
+    )
+    assert raw_statements == (
+        "TABLE hr.employees, SQLPREDICATE 'AS OF SCN 168298293';\n"
+        "TABLE hr.departments, FILTER (@PRESENT(id)), SQLPREDICATE 'AS OF SCN 168298293';"
+    )
+    with pytest.raises(ValueError, match="already contains SQLPREDICATE"):
+        table_statement.add_as_of_scn_to_table_statements(
+            "TABLE hr.*, SQLPREDICATE 'WHERE ID > 0';",
+            168298293,
+        )
 
     alternatives = table_statement.build_table_statement(
         {
@@ -322,6 +345,81 @@ def test_config_read_from_password_env_and_file(tmp_path: Path, monkeypatch: pyt
     assert cfg2["password"] == "filepass"
 
 
+@pytest.mark.parametrize("quote_char", ["'", '"'])
+def test_config_env_file_preserves_quoted_special_characters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, quote_char: str
+) -> None:
+    env_file = tmp_path / "goldengate.env"
+    special_password = "p@ss!$%&()[]{}# value\\tail"
+    env_file.write_text(
+        "OGG_BASE_URL=https://example.com\n"
+        "OGG_USERNAME='quoted-user'\n"
+        f"OGG_PASSWORD={quote_char}{special_password}{quote_char}\n",
+        encoding="utf-8",
+    )
+    for name in ("OGG_BASE_URL", "OGG_USERNAME", "OGG_PASSWORD", "OGG_PASSWORD_FILE", "OGG_PASSWORD_SECRET_OCID"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("OGG_ENV_FILE", str(env_file))
+
+    cfg = config.read_config()
+
+    assert cfg["username"] == "quoted-user"
+    assert cfg["password"] == special_password
+
+
+def test_config_env_file_does_not_override_process_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    env_file = tmp_path / "goldengate.env"
+    env_file.write_text(
+        "OGG_BASE_URL=https://file.example.com\nOGG_USERNAME=file-user\nOGG_PASSWORD='file!password'\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OGG_ENV_FILE", str(env_file))
+    monkeypatch.setenv("OGG_BASE_URL", "https://process.example.com")
+    monkeypatch.setenv("OGG_USERNAME", "process-user")
+    monkeypatch.setenv("OGG_PASSWORD", "process!password")
+    monkeypatch.delenv("OGG_PASSWORD_FILE", raising=False)
+    monkeypatch.delenv("OGG_PASSWORD_SECRET_OCID", raising=False)
+
+    cfg = config.read_config()
+
+    assert cfg["baseUrl"] == "https://process.example.com"
+    assert cfg["username"] == "process-user"
+    assert cfg["password"] == "process!password"
+
+
+@pytest.mark.parametrize("literal_quote", ["'", '"'])
+@pytest.mark.parametrize("process_password", [None, '"process!password"', "", "'\"process!password\"'"])
+def test_config_env_file_credentials_are_decoded_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, literal_quote: str, process_password: str | None
+) -> None:
+    env_file = tmp_path / "goldengate.env"
+    file_quote = '"' if literal_quote == "'" else "'"
+    literal_password = f"{literal_quote}example-password{literal_quote}"
+    literal_username = f"{literal_quote}example-user{literal_quote}"
+    env_file.write_text(
+        "OGG_BASE_URL=https://example.invalid\n"
+        f"OGG_USERNAME={file_quote}{literal_username}{file_quote}\n"
+        f"OGG_PASSWORD={file_quote}{literal_password}{file_quote}\n",
+        encoding="utf-8",
+    )
+    for name in ("OGG_USERNAME", "OGG_PASSWORD", "OGG_PASSWORD_FILE", "OGG_PASSWORD_SECRET_OCID", "OCI_PRIVATE_KEY_FILE"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("OGG_ENV_FILE", str(env_file))
+    if process_password is not None:
+        monkeypatch.setenv("OGG_PASSWORD", process_password)
+
+    cfg = config.read_config()
+
+    expected_password = {
+        None: literal_password,
+        '"process!password"': "process!password",
+        "": "",
+        "'\"process!password\"'": '"process!password"',
+    }[process_password]
+    assert cfg["password"] == expected_password
+    assert cfg["username"] == literal_username
+
+
 def test_config_read_from_secret_ocid(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     key_file = tmp_path / "oci.pem"
     key_file.write_text("-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----", encoding="utf-8")
@@ -373,9 +471,11 @@ def test_signed_get_success_and_http_error(monkeypatch: pytest.MonkeyPatch) -> N
     class _Connection:
         next_response = _Response(200, '{"ok": true}')
         requests = []
+        timeouts = []
 
-        def __init__(self, hostname: str):
+        def __init__(self, hostname: str, timeout: int | None = None):
             self.hostname = hostname
+            self.timeouts.append(timeout)
 
         def request(self, method: str, path: str, headers: dict):
             self.requests.append((self.hostname, method, path, headers))
@@ -389,6 +489,7 @@ def test_signed_get_success_and_http_error(monkeypatch: pytest.MonkeyPatch) -> N
     assert _Connection.requests == [
         ("secrets.example.com", "GET", "/secret", {"authorization": "sig"})
     ]
+    assert _Connection.timeouts == [config.DEFAULT_TIMEOUT_SECONDS]
 
     _Connection.next_response = _Response(404, "missing")
     with pytest.raises(RuntimeError, match="HTTP 404: missing"):
@@ -517,6 +618,12 @@ def test_http_client_helpers_and_request_paths(monkeypatch: pytest.MonkeyPatch) 
     with pytest.raises(RuntimeError, match="500"):
         client.get("/fail")
 
+    fake.next = _Resp(500, '{"password": "super-secret"}', None)
+    with pytest.raises(RuntimeError) as exc:
+        client.get("/fail-secret")
+    assert "super-secret" not in str(exc.value)
+    assert "[REDACTED]" in str(exc.value)
+
     fake.next = requests.exceptions.ConnectionError("name or service not known")
     with pytest.raises(RuntimeError, match="DNS resolution failed"):
         client.get("/conn")
@@ -539,9 +646,23 @@ def test_http_client_helpers_and_request_paths(monkeypatch: pytest.MonkeyPatch) 
     assert client.post("/post", {"x": 1}) == {"ok": True}
     assert captured[-1]["method"] == "POST"
     assert captured[-1]["data"] == '{"x": 1}'
+    assert captured[-1]["headers"]["Content-Type"] == "application/json"
 
     assert client.patch("/patch", {"y": 2}) == {"ok": True}
     assert captured[-1]["method"] == "PATCH"
 
     assert client.delete("/delete") == {"ok": True}
     assert captured[-1]["method"] == "DELETE"
+
+
+def test_security_sanitizes_nested_data_and_text() -> None:
+    sanitized = security.sanitize_data(
+        {
+            "password": "top-secret",
+            "nested": ["USERID app, PASSWORD report-secret"],
+            "safe": "value",
+        }
+    )
+    assert sanitized["password"] == "[REDACTED]"
+    assert "report-secret" not in sanitized["nested"][0]
+    assert sanitized["safe"] == "value"

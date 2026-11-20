@@ -86,6 +86,7 @@ Builds parameter lines:
 REPLICAT MYREP
 EXTTRAIL ./dirdat/lt
 USERIDALIAS TARGET_CONN DOMAIN OracleGoldenGate
+REPORTCOUNT EVERY 1 MINUTES, RATE
 DBOPTIONS FETCHBATCHSIZE 5000, EMPTYLOBSTRING 'N/A'
 BATCHSQL BATCHERRORMODE
 BATCHSQL BATCHESPERQUEUE 100
@@ -179,6 +180,7 @@ Request:
 
 Notes
 - When `advanced.extTrail` is omitted, the tool uses `trailName` for the EXTTRAIL entry (legacy behavior).
+- `create_replicat` emits `REPORTCOUNT EVERY 1 MINUTES, RATE` unless a raw `REPORTCOUNT` parameter is provided through advanced parameters.
 - If `advanced.credential` is provided, its lines replace the default `USERIDALIAS` declaration (allowing USERID/PASSWORD syntax).
 - The `source` object must include `targetTable` when using structured MAP; otherwise provide a raw `mapStatement`.
 - `advanced.applyParallelism` cannot be combined with `advanced.minApplyParallelism` or `advanced.maxApplyParallelism`. Supplying both will result in an error prior to issuing the request.

@@ -5,6 +5,7 @@ https://oss.oracle.com/licenses/upl.
 """
 
 SERVER_NAME = "oracle-goldengate-mcp-server"
-SERVER_VERSION = "1.0.0"
+PROCESS_NAME_PATTERN = r"^[A-Z_$][A-Z0-9_$]{0,7}$"
+TRAIL_NAME_PATTERN = r"^[A-Za-z0-9]{2}$"
 DEFAULT_DOMAIN = "OracleGoldenGate"
 DEFAULT_TIMEOUT_SECONDS = 60

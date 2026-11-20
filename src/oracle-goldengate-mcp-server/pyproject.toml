@@ -10,6 +10,7 @@ authors = [
 ]
 requires-python = ">=3.10"
 dependencies = [
+  "anyio>=4.5,<5",
   "mcp>=1.29.0,<2.0.0",
   "pydantic>=2.13.4",
   "requests>=2.34.2",

@@ -7,6 +7,8 @@
 
 package com.oracle.database.mcptoolkit.web;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.oracle.database.mcptoolkit.LoadedConstants;
 import com.oracle.database.mcptoolkit.oauth.OAuth2Configuration;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
@@ -14,6 +16,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Map;
 
 /**
  * The WellKnownServlet class handles HTTP GET requests to the well-known endpoint,
@@ -48,15 +52,16 @@ public class WellKnownServlet extends HttpServlet {
     response.addHeader("Access-Control-Allow-Origin", WebUtils.getAllowedHosts());
     response.setStatus(HttpServletResponse.SC_OK);
 
-    final String serverURL = WebUtils.buildURLFromRequest(request);
-    final String mcpEndpoint = serverURL + "/mcp";
-    String authServer = WebUtils.isRedirectOpenIDToOAuthEnabled() ? serverURL : OAUTH2_CONFIG.getAuthServer();
+    final String configuredResourceUrl = LoadedConstants.MCP_OAUTH_RESOURCE_URL;
+    final String mcpEndpoint = WebUtils.resolveMcpResourceUrl(request, configuredResourceUrl);
+    final String authServer = WebUtils.isRedirectOpenIDToOAuthEnabled()
+        && (configuredResourceUrl == null || configuredResourceUrl.isBlank())
+      ? WebUtils.buildURLFromRequest(request)
+      : OAUTH2_CONFIG.getAuthServer();
 
-    final String json = """
-          {
-            "resource":"%s",
-            "authorization_servers":["%s"]
-          }""".formatted(mcpEndpoint, authServer);
+    final String json = new ObjectMapper().writeValueAsString(Map.of(
+      "resource", mcpEndpoint,
+      "authorization_servers", List.of(authServer)));
     response.getWriter()
       .write(json);
   }

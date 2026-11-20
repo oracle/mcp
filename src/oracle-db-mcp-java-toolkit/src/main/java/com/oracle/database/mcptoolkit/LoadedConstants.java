@@ -78,6 +78,8 @@ public final class LoadedConstants {
   /** MCP OAuth discovery config */
   public static final String MCP_OAUTH_SCOPES = System.getProperty("mcp.oauth.scopes", "openid");
   public static final String MCP_OAUTH_RESOURCE_URL = System.getProperty("mcp.oauth.resourceUrl");
+  public static final String MCP_OAUTH_RESOURCE_METADATA_URL =
+    System.getProperty("mcp.oauth.resourceMetadataUrl");
 
   /** Deep Data Security config */
   public static final boolean DEEPSEC_ENABLED = Boolean.parseBoolean(System.getProperty("deepsec.enabled", "false"));

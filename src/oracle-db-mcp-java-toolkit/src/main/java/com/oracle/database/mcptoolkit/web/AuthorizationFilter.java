@@ -45,6 +45,8 @@ public class AuthorizationFilter implements Filter {
   private static final OAuth2TokenValidator VALIDATOR = new OAuth2TokenValidator();
   private static final RequestTargetValidator REQUEST_TARGET_VALIDATOR =
     new RequestTargetValidator(LoadedConstants.HTTP_ALLOWED_ORIGINAL_HOSTS);
+  private static final String CONFIGURED_RESOURCE_METADATA_URL =
+    WebUtils.validateMcpResourceMetadataUrl(LoadedConstants.MCP_OAUTH_RESOURCE_METADATA_URL);
 
   /**
    * Intercepts incoming requests to authenticate them based on the presence and validity of an OAuth2 access token.
@@ -128,8 +130,9 @@ public class AuthorizationFilter implements Filter {
    * @throws IOException if an I/O error occurs while writing the response
    */
   private void handleError(HttpServletResponse httpResponse, HttpServletRequest httpRequest) throws IOException {
-    final String serverURL = WebUtils.buildURLFromRequest(httpRequest);
-    final String resourceMetadataURL = serverURL + "/.well-known/oauth-protected-resource";
+    final String resourceMetadataURL = CONFIGURED_RESOURCE_METADATA_URL != null
+      ? CONFIGURED_RESOURCE_METADATA_URL
+      : WebUtils.buildURLFromRequest(httpRequest) + "/.well-known/oauth-protected-resource";
     final String scopes = LoadedConstants.MCP_OAUTH_SCOPES == null || LoadedConstants.MCP_OAUTH_SCOPES.isBlank()
       ? "openid"
       : LoadedConstants.MCP_OAUTH_SCOPES;

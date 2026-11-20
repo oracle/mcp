@@ -120,7 +120,6 @@ security_token_file={token_path}
         translate_hosts(config["MCP_HOST_FILE"], config_path, context.temp_dir.name, context.proxy_url)
         prepare_environments(config["MCP_HOST_FILE"])
 
-        # Start Mock Server (Port 5001)
         print(f"Starting Mock OCI Server on http://127.0.0.1:{mock_port}...")
         context.mock_proc = subprocess.Popen(
             [sys.executable, mock_server_path],
@@ -135,7 +134,6 @@ security_token_file={token_path}
         shim_env["MOCK_REGION"] = mock_region
         shim_env["OCI_CONFIG_FILE"] = config_path
 
-        # Start Proxy Shim (Port 5000)
         print(f"Starting Proxy Shim on {context.proxy_url}...")
         context.shim_proc = subprocess.Popen(
             [sys.executable, proxy_shim_path], env=shim_env, start_new_session=True

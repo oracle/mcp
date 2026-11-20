@@ -12,7 +12,7 @@ This package owns credential-free public OCI Price List API lookup, fuzzy name s
 
 ## Setup / build / run
 
-This package uses inherited Moon Python tasks. [README](README.md#development-and-testing) owns setup and validation commands; [pyproject.toml](pyproject.toml) requires Python >=3.11 and configures Hatchling. Install with `uv sync --locked --all-extras --dev` from this directory, then run `uv run --locked oracle.oci-pricing-mcp-server`. Package metadata requires installation before import. The old command and standalone script remain thin launchers for one release; see the README migration notes.
+This package uses inherited Moon Python tasks. [README](README.md#development-and-testing) owns setup and validation commands; [pyproject.toml](pyproject.toml) requires Python >=3.11 and configures Hatchling. Install with `uv sync --locked --all-extras --dev` from this directory, then run `uv run --locked oracle.oci-pricing-mcp-server`. Package metadata requires installation before import. See the [README migration notes](README.md#usage) for clients that launch the old script by path.
 
 ## Tests and validation
 

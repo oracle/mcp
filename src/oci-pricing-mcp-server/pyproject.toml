@@ -95,7 +95,6 @@ branch = true
 omit = [
     "**/__init__.py",
     "**/tests/**",
-    "oci-pricing-mcp-server.py",
     "dist/*",
     ".venv/*",
 ]

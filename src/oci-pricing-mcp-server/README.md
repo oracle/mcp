@@ -100,10 +100,9 @@ oracle.oci-pricing-mcp-server
 uv run --locked oracle.oci-pricing-mcp-server
 ```
 
-For one release, `oci-pricing-mcp` remains an alias for the canonical command,
-and `python3 oci-pricing-mcp-server.py` remains a compatibility launcher after
-installing the project. Both launch the same package implementation; the script
-is no longer a self-contained server. Migrate clients to the canonical command.
+For one release, `oci-pricing-mcp` remains an alias for the canonical command.
+If your MCP client launches the old Python script by path, update it to use
+the installed command shown below.
 
 ## MCP Server Configuration
 
@@ -256,7 +255,8 @@ The Oracle Linux 9 image uses Python 3.13. At build time,
 `uv sync --locked --all-extras --no-editable` installs the Pricing package into
 the virtual environment along with its locked runtime and development dependencies.
 The image starts the server with `uv run --no-sync oracle.oci-pricing-mcp-server`
-as the non-root `oracle` user. The build assigns its numeric UID.
+as the non-root `oracle` user with UID `10001`, the same UID as the previous
+image.
 
 Initialization, tool discovery and `ping` work offline. Pricing lookups
 require outbound HTTPS, so omit `--network=none` for normal pricing use. Use
@@ -268,4 +268,5 @@ calls `ping` against a command, without making a pricing lookup:
 ```bash
 uv run --locked python3 tests/stdio_smoke.py oracle.oci-pricing-mcp-server
 uv run --locked python3 tests/stdio_smoke.py docker run --rm -i --network=none oci-pricing-mcp:dev
+uv run --locked python3 tests/stdio_smoke.py docker run --rm -i --network=none --user 10001 oci-pricing-mcp:dev
 ```

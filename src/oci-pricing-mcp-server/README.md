@@ -43,6 +43,7 @@ If you omit the currency when asking (e.g., “List Object Storage prices”), t
 * **Structured Responses**
   Responses include `currencyCode` (falls back to the requested/default currency) and a `kind` field: `"sku"`, `"search"`, or `"error"`.
   Items that appear **free-tier-only / zero-priced** may include `note: "zero-price-or-free-tier-only"`.
+  For **tiered** SKUs (for example a free allowance followed by a paid range), `value` is the first positive range and `tiers` lists every range with `rangeMin`/`rangeMax`.
 
   **Example prompts**
 
@@ -171,6 +172,7 @@ Test-only helpers (used by functional tests; **not needed** for normal use):
    * `limit` **clamped to ≤20**; `max_pages` **clamped to 1–10**
    * `require_priced=True` → keep only items with `model` + `value`
    * Items with `value == 0` may include `note: "zero-price-or-free-tier-only"` if detected.
+   * Tiered SKUs report the first positive range as `value` and list all ranges in `tiers`.
 
 3. **`ping()`**
    Health check; returns `"ok"`.

@@ -92,6 +92,8 @@ class SimplifiedItem(TypedDict, total=False):
     currencyCode: str | None
     model: str | None
     value: float | None
+    # All price ranges when the SKU has tiered pricing
+    tiers: list[dict[str, Any]] | None
     note: str | None
     # Optional reference price in alternate currency
     altCurrencyCode: str | None
@@ -144,33 +146,76 @@ def _iter_price_blocks(x: dict[str, Any]) -> list[dict[str, Any]]:
     return blocks
 
 
-def _pick_price(
+def _is_positive(value: Any) -> bool:
+    try:
+        return float(value) > 0.0
+    except (TypeError, ValueError):
+        return False
+
+
+def _pick_from_block(
+    block: dict[str, Any],
+) -> tuple[str | None, float | None, list[dict[str, Any]]]:
+    """
+    Return (model, value, tiers) for one currency block.
+
+    Tiered SKUs list one entry per usage range, and the first range is often a
+    free allowance (e.g. Object Storage: 0 for 0-10 GB, 0.0255 above). Use the
+    first positive price as the unit price and fall back to the first entry only
+    when no range is priced. `tiers` holds all ranges when there is more than one.
+    """
+    entries = [
+        pv
+        for pv in (block or {}).get("prices") or []
+        if pv.get("model") is not None and pv.get("value") is not None
+    ]
+    if not entries:
+        return None, None, []
+    chosen = next((pv for pv in entries if _is_positive(pv.get("value"))), entries[0])
+    tiers = (
+        [
+            {k: pv.get(k) for k in ("model", "value", "rangeMin", "rangeMax") if k in pv}
+            for pv in entries
+        ]
+        if len(entries) > 1
+        else []
+    )
+    return chosen.get("model"), chosen.get("value"), tiers
+
+
+def _pick_price_and_tiers(
     x: dict[str, Any], prefer_currency: str | None = None
-) -> tuple[str | None, float | None, str | None]:
-    """
-    Return (model, value, currencyCode) selecting from both `prices` and
-    `currencyCodeLocalizations`. If `prefer_currency` is given, pick from that
-    currency first; otherwise return the first available.
-    """
+) -> tuple[str | None, float | None, str | None, list[dict[str, Any]]]:
     blocks = _iter_price_blocks(x)
 
     # Prefer a specific currency if requested
     if prefer_currency:
         for b in blocks:
             if (b or {}).get("currencyCode") == prefer_currency:
-                for pv in b.get("prices") or []:
-                    model, value = pv.get("model"), pv.get("value")
-                    if model is not None and value is not None:
-                        return model, value, b.get("currencyCode")
+                model, value, tiers = _pick_from_block(b)
+                if model is not None:
+                    return model, value, b.get("currencyCode"), tiers
 
     # Otherwise return the first model/value found
     for b in blocks:
-        for pv in b.get("prices") or []:
-            model, value = pv.get("model"), pv.get("value")
-            if model is not None and value is not None:
-                return model, value, b.get("currencyCode")
+        model, value, tiers = _pick_from_block(b)
+        if model is not None:
+            return model, value, (b or {}).get("currencyCode"), tiers
 
-    return None, None, None
+    return None, None, None, []
+
+
+def _pick_price(
+    x: dict[str, Any], prefer_currency: str | None = None
+) -> tuple[str | None, float | None, str | None]:
+    """
+    Return (model, value, currencyCode) selecting from both `prices` and
+    `currencyCodeLocalizations`. If `prefer_currency` is given, pick from that
+    currency first; otherwise return the first available. For tiered prices the
+    first positive range is used (see `_pick_from_block`).
+    """
+    model, value, ccy, _ = _pick_price_and_tiers(x, prefer_currency)
+    return model, value, ccy
 
 
 def simplify(x: dict[str, Any], prefer_currency: str | None = None) -> dict[str, Any]:
@@ -178,9 +223,11 @@ def simplify(x: dict[str, Any], prefer_currency: str | None = None) -> dict[str,
     Shape an API item for clients:
       - Choose price/model based on prefer_currency when possible.
       - Ensure currencyCode is always set (fallback to prefer_currency).
+      - For tiered prices, report the first positive range as `value` and list all
+        ranges in `tiers`.
       - Add notes for missing or zero unit prices.
     """
-    model, value, ccy = _pick_price(x, prefer_currency)
+    model, value, ccy, tiers = _pick_price_and_tiers(x, prefer_currency)
     if ccy is None and prefer_currency:
         ccy = prefer_currency
 
@@ -193,6 +240,8 @@ def simplify(x: dict[str, Any], prefer_currency: str | None = None) -> dict[str,
         "model": model,
         "value": value,
     }
+    if tiers:
+        out["tiers"] = tiers
 
     # annotate missing or zero price
     if model is None or value is None:

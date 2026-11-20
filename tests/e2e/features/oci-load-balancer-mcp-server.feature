@@ -5,8 +5,8 @@
 # Feature: OCI Load Balancer MCP Server
 #
 #   Background:
-#     Given the MCP server is running with OCI tools
-#     And the ollama model with the tools is properly working
+#     Given the mock OCI services are running
+#     And the Codex CLI is configured with OCI tools
 #
 #   Scenario: List the load balancer tools available in the agent
 #     When I send a request with the prompt "What load balancer mcp tools do you have"

@@ -2,7 +2,14 @@
 
 ## Unreleased
 
+### Breaking Changes
+
+- Require FastMCP 4.2.2 and `oracle-mcp-common>=0.3.0,<0.4.0` for the
+  FastMCP 4 runtime and shared authentication integration.
+
 ### Changed
+
+- Update locked dnspython to 2.9.2.
 
 - Resolve Common from the published package within the existing dependency bounds
   for development and CI. Local Common source testing now requires explicit opt-in.

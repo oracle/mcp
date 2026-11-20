@@ -22,9 +22,9 @@ dependencies = [
 ]
 ```
 
-Common 0.3.0 requires FastMCP 4.x. Existing consumers continue to resolve
-published Common 0.2.x and FastMCP 3.x within their own bounds. Adopting 0.3.0
-requires an explicit consumer dependency update and validation; see the
+Common 0.3.0 requires FastMCP 4.x. Each consumer resolves its published Common
+release within its own manifest bounds and lock. Adopting 0.3.0 requires an
+explicit Common/FastMCP dependency update and validation; see the
 [delivery record](../../docs/plans/fastmcp-v4-common/implementation.md).
 Publish Common 0.3.0 before releasing consumers that require it.
 
@@ -352,10 +352,10 @@ not a filesystem sandbox: API and Cloud retain their existing audit logging to
 `/tmp/audit.log`. Their runtime logging behavior is unchanged.
 The helper's own tests run in CI through `moon run root:test`.
 
-Both wheels must satisfy the consumer's declared dependency bounds. Current
-consumers require Common `>=0.2.0,<0.3.0`, so the default check against this
-checkout's Common 0.3.0 intentionally fails resolution. To test changes on a
-compatible Common release line, point to a separate checkout:
+Both wheels must satisfy the selected consumer's declared dependency bounds. A
+consumer that still requires Common `>=0.2.0,<0.3.0` rejects this checkout's
+Common 0.3.0; a migrated consumer can accept it. To test changes on a compatible
+Common release line, point to a separate checkout:
 
 ```bash
 python3 scripts/check-common-consumer.py oci-cloud-mcp-server \

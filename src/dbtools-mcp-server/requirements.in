@@ -1,0 +1,3 @@
+oci==2.185.1
+requests==2.33.1
+fastmcp==4.2.2

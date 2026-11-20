@@ -18,7 +18,7 @@ three strategies in order:
 
 import sys
 import logging
-from mcp.server.fastmcp import Context
+from fastmcp import Context
 
 logger = logging.getLogger('oracle-data-studio-mcp')
 
@@ -125,7 +125,7 @@ def _try_simple_connect(cfg):
 
 def get_dt(ctx: Context):
     '''Return the DT connection dict, attempting lazy connect if needed.'''
-    lc = ctx.request_context.lifespan_context
+    lc = ctx.lifespan_context
 
     # Already connected
     dt = lc.get('datatransforms')

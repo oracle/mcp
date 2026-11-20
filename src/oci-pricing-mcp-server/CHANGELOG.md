@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Tiered SKUs whose first range is a free allowance (Object Storage, Load Balancer, A1 Compute, outbound data transfer and others) were reported with `value: 0` and `note: "zero-price-or-free-tier-only"`. `value` is now the first positive range, and all ranges are returned in `tiers`.
+
 ## 0.1.6
 
 ### Fixed

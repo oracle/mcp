@@ -701,6 +701,85 @@ class TestOciPricingMcpServer(unittest.TestCase):
             nonnumeric["note"], "no-unit-price-in-public-subset-or-currency"
         )
 
+    def test_tiered_price_uses_first_positive_range(self):
+        # Shape of B91628 (Object Storage - Storage) in the public price list:
+        # 0-10 GB free, 0.0255 USD per GB above that.
+        item = {
+            "partNumber": "B91628",
+            "displayName": "Object Storage - Storage",
+            "currencyCodeLocalizations": [
+                {
+                    "currencyCode": "USD",
+                    "prices": [
+                        {"model": "PAY_AS_YOU_GO", "value": 0, "rangeMin": 0, "rangeMax": 10},
+                        {
+                            "model": "PAY_AS_YOU_GO",
+                            "value": 0.0255,
+                            "rangeMin": 10,
+                            "rangeMax": 999999999,
+                        },
+                    ],
+                }
+            ],
+        }
+
+        self.assertEqual(
+            self.module._pick_price(item, "USD"), ("PAY_AS_YOU_GO", 0.0255, "USD")
+        )
+        out = self.module.simplify(item, "USD")
+        self.assertEqual(out["value"], 0.0255)
+        self.assertNotIn("note", out)
+        self.assertEqual(
+            out["tiers"],
+            [
+                {"model": "PAY_AS_YOU_GO", "value": 0, "rangeMin": 0, "rangeMax": 10},
+                {
+                    "model": "PAY_AS_YOU_GO",
+                    "value": 0.0255,
+                    "rangeMin": 10,
+                    "rangeMax": 999999999,
+                },
+            ],
+        )
+
+        # Volume discount: the first range is already priced and stays the unit price.
+        discount = {
+            "prices": [
+                {
+                    "currencyCode": "USD",
+                    "prices": [
+                        {"model": "PAYG", "value": 2.0, "rangeMin": 0, "rangeMax": 100},
+                        {"model": "PAYG", "value": 1.5, "rangeMin": 100, "rangeMax": 999},
+                    ],
+                }
+            ]
+        }
+        self.assertEqual(self.module._pick_price(discount, "USD"), ("PAYG", 2.0, "USD"))
+
+        # All ranges zero: still reported as zero-priced.
+        all_zero = {
+            "prices": [
+                {
+                    "currencyCode": "USD",
+                    "prices": [
+                        {"model": "PAYG", "value": 0, "rangeMin": 0, "rangeMax": 10},
+                        {"model": "PAYG", "value": 0, "rangeMin": 10, "rangeMax": 999},
+                    ],
+                }
+            ]
+        }
+        zero = self.module.simplify(all_zero, "USD")
+        self.assertEqual(zero["value"], 0)
+        self.assertEqual(zero["note"], "zero-price-or-free-tier-only")
+        self.assertEqual(len(zero["tiers"]), 2)
+
+        # Single-range items carry no tiers field.
+        single = self.module.simplify(
+            {"prices": [{"currencyCode": "USD", "prices": [{"model": "PAYG", "value": 1.0}]}]},
+            "USD",
+        )
+        self.assertNotIn("tiers", single)
+
     def test_fetch_retries_transient_errors_and_handles_bad_json(self):
         module = self.module
 

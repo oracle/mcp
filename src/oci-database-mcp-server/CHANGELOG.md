@@ -4,6 +4,10 @@ All notable changes to OCI Database MCP Server are documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- Resolve Common from published packages by default in development and CI; local Common integration now requires an explicit override.
+
 ## 1.4.0
 
 ### Added

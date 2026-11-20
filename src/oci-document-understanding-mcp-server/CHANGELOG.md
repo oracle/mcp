@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Resolve published Common 0.2.x during ordinary development and CI; local Common testing is opt-in so unreleased shared-library changes do not force server runtime upgrades.
+
 ## 0.2.0
 
 ### Breaking Changes

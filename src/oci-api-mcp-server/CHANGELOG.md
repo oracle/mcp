@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- Resolve Common from the published package within the existing dependency bounds
+  for development and CI. Local Common source testing now requires explicit opt-in.
+
 ## 2.2.0
 
 ### Security

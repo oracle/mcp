@@ -7,6 +7,9 @@ from unittest.mock import patch
 from fastmcp import Client
 from oracle.oci_cloud_mcp_server.server import mcp
 
+from oracle.oci_cloud_mcp_server.tests.sdk_fixtures import mock_sdk_services
+from oracle.oci_cloud_mcp_server.tests.sdk_fixtures import sdk_models
+
 
 class TestModelCoercion:
     def test_create_operation_coerces_model_and_renames_key(self):
@@ -40,7 +43,7 @@ class TestModelCoercion:
                 )
 
         fake_client_module = SimpleNamespace(FakeClient=FakeClient)
-        fake_models_module = SimpleNamespace(CreateVcnDetails=CreateVcnDetails)
+        fake_models_module = sdk_models(CreateVcnDetails=CreateVcnDetails)
 
         def import_side_effect(name):
             # return appropriate fake module depending on requested import
@@ -51,8 +54,7 @@ class TestModelCoercion:
             raise ImportError(name)
 
         with (
-            patch(
-                "oracle.oci_cloud_mcp_server.server.import_module",
+            mock_sdk_services(
                 side_effect=import_side_effect,
             ),
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,

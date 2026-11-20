@@ -12,6 +12,8 @@ from oracle.oci_cloud_mcp_server.server import (
     main,
 )
 
+from oracle.oci_cloud_mcp_server.tests.sdk_fixtures import sdk_service_loader
+
 
 class TestGetConfigAndSigner:
     @staticmethod
@@ -268,7 +270,7 @@ class TestImportClientValidation:
 
     def test_attribute_not_a_class_raises(self, monkeypatch):
         fake_mod = SimpleNamespace(NotClass=42)
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_mod)
+        monkeypatch.setattr('oracle.oci_cloud_mcp_server.server._get_service_module', sdk_service_loader(lambda name: fake_mod, monkeypatch))
         with pytest.raises(ValueError):
             _import_client("oci.fake.NotClass")
 

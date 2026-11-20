@@ -1,11 +1,11 @@
-from types import SimpleNamespace
-
 from oracle.oci_cloud_mcp_server.server import (
     _import_models_module_from_client_fqn,
     _resolve_model_class,
     _serialize_oci_data,
     _snake_to_camel,
 )
+
+from oracle.oci_cloud_mcp_server.tests.sdk_fixtures import sdk_models
 
 
 class TestSnakeToCamel:
@@ -20,29 +20,21 @@ class TestSnakeToCamel:
 
 
 class TestImportModelsModuleFromClientFqn:
-    def test_success_returns_module(self, monkeypatch):
-        # only return a module-like object for the specific ".models" path
-        def fake_import(name):
-            if name == "oci.fake.models":
-                return SimpleNamespace()
-            raise ImportError("nope")
+    def test_success_returns_module(self):
+        import oci
 
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", fake_import)
-        mod = _import_models_module_from_client_fqn("oci.fake.ClientClass")
-        assert mod is not None
+        assert _import_models_module_from_client_fqn("oci.core.compute_client.ComputeClient") is oci.core.models
 
-    def test_failure_returns_none(self, monkeypatch):
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: (_ for _ in ()).throw(ImportError("boom")),
-        )
-        mod = _import_models_module_from_client_fqn("oci.fake.ClientClass")
-        assert mod is None
+    def test_invalid_client_is_rejected(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="Unknown OCI SDK service"):
+            _import_models_module_from_client_fqn("oci.not_a_service.MissingClient")
 
 
 class TestResolveModelClass:
     def test_not_found_returns_none(self):
-        mm = SimpleNamespace()
+        mm = sdk_models()
         assert _resolve_model_class(mm, "Missing") is None
 
 

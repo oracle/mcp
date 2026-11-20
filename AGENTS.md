@@ -53,7 +53,7 @@ The Know / Do / Now / Proof / Done labels describe a source's purpose; see the [
 | **Now:** Reviewing this context adoption | [Design and scope](docs/plans/adopt-monorepo-agent-context/design.md), [plan](docs/plans/adopt-monorepo-agent-context/implementation-plan.md) | [Main-based reuse assessment](docs/plans/adopt-monorepo-agent-context/reuse-assessment.md) | [Adoption summary](docs/plans/adopt-monorepo-agent-context/adoption-summary.md) |
 | **Proof:** Checking coverage or a completion claim | [Evidence routes](docs/agent-development.md#evidence-and-context-routes) | Source/guidance identity and actual check scope | [Recorded adoption checks and limits](docs/plans/adopt-monorepo-agent-context/adoption-summary.md) or the owning change's native reports |
 
-Broad engineering guides now cover all 34 MCP server components under `src/`, including the Java toolkit, plus Common. Find each local guide and native entry point in the [shared context map](docs/agent-development.md#selected-component-context). Documentation coverage and recorded behavior-evaluation coverage are separate; see the [adoption summary](docs/plans/adopt-monorepo-agent-context/adoption-summary.md).
+Broad engineering guides now cover all 35 MCP server components under `src/`, including the Java toolkit, plus Common. Find each local guide and native entry point in the [shared context map](docs/agent-development.md#selected-component-context). Documentation coverage and recorded behavior-evaluation coverage are separate; see the [adoption summary](docs/plans/adopt-monorepo-agent-context/adoption-summary.md).
 
 ## Known Gaps
 

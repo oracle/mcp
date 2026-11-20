@@ -36,14 +36,6 @@ Changelog = "https://github.com/oracle/mcp/blob/main/src/oci-document-understand
 packages = ["oracle"]
 exclude = ["/oracle/**/tests/**"]
 
-[tool.uv.sources]
-oracle-mcp-common = { workspace = true }
-
-[tool.uv.workspace]
-members = [
-    "../common"
-]
-
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",

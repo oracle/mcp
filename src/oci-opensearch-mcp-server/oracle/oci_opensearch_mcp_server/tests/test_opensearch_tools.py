@@ -72,6 +72,16 @@ class TestOpenSearchTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_opensearch_mcp_server.server.get_opensearch_cluster_client")
+    async def test_list_opensearch_clusters_rejects_missing_compartment(self, mock_get_client):
+        async with Client(mcp) as client:
+            result = await client.call_tool("list_opensearch_clusters", {}, raise_on_error=False)
+
+        assert result.is_error
+        assert "compartment_id" in result.content[0].text
+        mock_get_client.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_opensearch_mcp_server.server.get_opensearch_cluster_client")
     async def test_list_opensearch_clusters_with_explicit_optional_parameters(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client

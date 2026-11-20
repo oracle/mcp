@@ -1,10 +1,12 @@
 import builtins
 import io
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import httpx
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 from oci.exceptions import ConfigFileNotFound, InvalidConfig
 from oci.iot.models import (
     DigitalTwinAdapterInboundEnvelope,
@@ -12,7 +14,10 @@ from oci.iot.models import (
     DigitalTwinAdapterJsonPayload,
 )
 
-from oracle.oci_iot_mcp_server import server
+from oracle.oci_iot_mcp_server import __version__, server
+
+
+EXPECTED_ADDITIONAL_USER_AGENT = f"oci-iot-mcp/{__version__}"
 
 
 def _detail_factory(kind: str):
@@ -131,7 +136,7 @@ def test_get_identity_client_for_profile_builds_security_token_client(monkeypatc
 
     assert tenancy_id == "ocid1.tenancy.oc1..aaaa"
     assert client["signer"] == {"token": "token-123", "private_key": "key:/tmp/key.pem"}
-    assert client["config"]["additional_user_agent"].endswith(f"/{server.__version__}")
+    assert client["config"]["additional_user_agent"] == EXPECTED_ADDITIONAL_USER_AGENT
 
 
 def test_get_identity_client_uses_api_key_fallback_when_security_token_missing(monkeypatch):
@@ -164,7 +169,7 @@ def test_get_identity_client_uses_api_key_fallback_when_security_token_missing(m
 
     assert tenancy_id == "ocid1.tenancy.oc1..bbbb"
     assert client["signer"]["kind"] == "api_key"
-    assert client["config"]["additional_user_agent"].endswith(f"/{server.__version__}")
+    assert client["config"]["additional_user_agent"] == EXPECTED_ADDITIONAL_USER_AGENT
 
 
 def test_get_identity_client_uses_instance_principal_tenancy(monkeypatch):
@@ -192,6 +197,7 @@ def test_get_identity_client_uses_instance_principal_tenancy(monkeypatch):
     assert tenancy_id == "ocid1.tenancy.oc1..cccc"
     assert client["signer"] is signer
     assert client["config"]["region"] == "us-phoenix-1"
+    assert client["config"]["additional_user_agent"] == EXPECTED_ADDITIONAL_USER_AGENT
 
 
 def test_get_identity_client_uses_resource_principal_tenancy(monkeypatch):
@@ -219,6 +225,7 @@ def test_get_identity_client_uses_resource_principal_tenancy(monkeypatch):
     assert tenancy_id == "ocid1.tenancy.oc1..dddd"
     assert client["signer"] is signer
     assert client["config"]["region"] == "us-chicago-1"
+    assert client["config"]["additional_user_agent"] == EXPECTED_ADDITIONAL_USER_AGENT
 
 
 def test_create_digital_twin_adapter_serializes_nested_adapter(monkeypatch):
@@ -268,6 +275,7 @@ def test_get_identity_client_uses_instance_principal_delegation_tenancy(monkeypa
     assert tenancy_id == "ocid1.tenancy.oc1..delegated1"
     assert client["signer"] is signer
     assert client["config"]["region"] == "us-ashburn-1"
+    assert client["config"]["additional_user_agent"] == EXPECTED_ADDITIONAL_USER_AGENT
 
 
 def test_get_identity_client_uses_resource_principal_delegation_tenancy(monkeypatch):
@@ -296,6 +304,7 @@ def test_get_identity_client_uses_resource_principal_delegation_tenancy(monkeypa
     assert tenancy_id == "ocid1.tenancy.oc1..delegated2"
     assert client["signer"] is signer
     assert client["config"]["region"] == "us-sanjose-1"
+    assert client["config"]["additional_user_agent"] == EXPECTED_ADDITIONAL_USER_AGENT
 
 
 def test_get_identity_client_uses_oke_workload_identity_tenancy_override(monkeypatch):
@@ -323,6 +332,7 @@ def test_get_identity_client_uses_oke_workload_identity_tenancy_override(monkeyp
     assert tenancy_id == "ocid1.tenancy.oc1..override"
     assert client["signer"] is signer
     assert client["config"]["region"] == "us-phoenix-1"
+    assert client["config"]["additional_user_agent"] == EXPECTED_ADDITIONAL_USER_AGENT
 
 
 def test_get_identity_client_rejects_oke_workload_identity_without_tenancy_override(monkeypatch):
@@ -439,6 +449,36 @@ def test_build_iot_data_api_url_uses_oke_region_default(monkeypatch):
     assert server._build_iot_data_api_url("group-short", "domain-short", "/rawData") == (
         "https://group-short.data.iot.us-sanjose-1.oci.oraclecloud.com/ords/domain-short/rawData"
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [200, 503])
+async def test_list_raw_data_over_mcp_preserves_data_api_result(monkeypatch, status_code):
+    payload = {"items": [{"id": "record1"}]} if status_code == 200 else {"message": "Service unavailable"}
+    request = httpx.Request(
+        "GET", "https://group.data.iot.us-phoenix-1.oci.oraclecloud.com/ords/domain/rawData"
+    )
+    get = Mock(return_value=httpx.Response(status_code, json=payload, request=request))
+    monkeypatch.setattr(server.httpx, "get", get)
+
+    async with Client(server.mcp) as client:
+        result = await client.call_tool(
+            "list_raw_data",
+            {
+                "iot_domain_group_short_id": "group",
+                "iot_domain_short_id": "domain",
+                "region": "us-phoenix-1",
+                "access_token": "example-token",
+            },
+        )
+
+    assert get.call_args.args == (str(request.url),)
+    if status_code == 200:
+        assert result.structured_content == payload
+    else:
+        assert result.structured_content["ok"] is False
+        assert result.structured_content["error"]["code"] == "data_plane_http_error"
+        assert result.structured_content["error"]["details"]["status_code"] == 503
 
 
 def test_call_iot_data_api_handles_json_text_and_structured_errors(monkeypatch):
@@ -1539,9 +1579,13 @@ async def test_list_all_digital_twin_relationships_rejects_out_of_bounds_fastmcp
     field,
     value,
     message,
+    monkeypatch,
 ):
+    list_records = Mock()
+    monkeypatch.setattr(server, "list_all_digital_twin_relationships_records", list_records)
+
     async with Client(server.mcp) as client:
-        with pytest.raises(Exception, match=message):
+        with pytest.raises(ToolError, match=message):
             await client.call_tool(
                 "list_all_digital_twin_relationships",
                 {
@@ -1549,6 +1593,8 @@ async def test_list_all_digital_twin_relationships_rejects_out_of_bounds_fastmcp
                     field: value,
                 },
             )
+
+    list_records.assert_not_called()
 
 
 def test_get_digital_twin_instance_full_returns_raw_sdk_payload(monkeypatch):

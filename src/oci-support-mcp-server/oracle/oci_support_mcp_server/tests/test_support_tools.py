@@ -11,6 +11,7 @@ import oci
 import oracle.oci_support_mcp_server.server as server
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 from oracle.oci_support_mcp_server import __project__, __version__
 from oracle.oci_support_mcp_server.models import (
     CreateIncident,
@@ -36,6 +37,31 @@ def _raise(error):
 
 
 class TestSupportTools:
+    @pytest.mark.asyncio
+    async def test_get_incident_requires_key_before_sdk_access(self, monkeypatch):
+        get_client = MagicMock()
+        monkeypatch.setattr(server, "get_cims_client", get_client)
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="incident_key"):
+                await client.call_tool("get_incident", {"compartment_id": "compartment"})
+
+        get_client.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_incident_returns_sdk_failure_as_tool_error(self, monkeypatch):
+        incident_client = MagicMock()
+        incident_client.get_incident.side_effect = oci.exceptions.ServiceError(
+            404, "NotAuthorizedOrNotFound", {}, "Incident unavailable"
+        )
+        monkeypatch.setattr(server, "get_cims_client", lambda: incident_client)
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="NotAuthorizedOrNotFound"):
+                await client.call_tool(
+                    "get_incident", {"incident_key": "INC1", "compartment_id": "compartment"}
+                )
+
     @pytest.mark.asyncio
     @patch("oracle.oci_support_mcp_server.server.get_cims_client")
     async def test_list_incidents(self, mock_get_client):
@@ -200,14 +226,22 @@ def test_http_config_and_cims_client_auth_paths(monkeypatch):
 
     incident_client = MagicMock(return_value="incident-client")
     monkeypatch.setattr(server.oci.cims, "IncidentClient", incident_client)
-    monkeypatch.setattr(
-        server, "_get_http_config_and_signer", lambda: (config, signer)
-    )
-    assert server.get_cims_client() == "incident-client"
-    incident_client.assert_called_once_with(config, signer=signer)
+    callers = ("caller-a", "caller-b", "caller-a")
+    access_tokens = [SimpleNamespace(token=token) for token in callers]
+    monkeypatch.setattr(server, "get_access_token", MagicMock(side_effect=access_tokens))
+    token_exchange_signer.reset_mock()
+    token_exchange_signer.side_effect = lambda token, *args, **kwargs: token
+    incident_client.side_effect = lambda config, **kwargs: object()
 
-    incident_client.reset_mock()
-    monkeypatch.setattr(server, "_get_http_config_and_signer", lambda: (None, None))
+    clients = [server.get_cims_client() for _ in callers]
+
+    assert len(set(clients)) == len(callers)
+    assert [call.args[0] for call in token_exchange_signer.call_args_list] == list(callers)
+    assert [call.kwargs["signer"] for call in incident_client.call_args_list] == list(callers)
+    assert all(call.args[0] == config for call in incident_client.call_args_list)
+
+    incident_client.reset_mock(side_effect=True)
+    monkeypatch.delenv("ORACLE_MCP_HOST")
     monkeypatch.setenv("OCI_CONFIG_PROFILE", "PROFILE")
     monkeypatch.setattr(
         server.oci.config, "from_file", MagicMock(return_value={"region": "home"})

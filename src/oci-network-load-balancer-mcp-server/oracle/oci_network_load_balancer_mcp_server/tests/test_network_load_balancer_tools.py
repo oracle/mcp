@@ -253,10 +253,12 @@ class TestNlbTools:
     async def test_list_nlbs_error(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
-        mock_client.list_network_load_balancers.side_effect = Exception("boom")
+        mock_client.list_network_load_balancers.side_effect = oci.exceptions.ServiceError(
+            404, "NotAuthorizedOrNotFound", {}, "Resource not found"
+        )
 
         async with Client(mcp) as client:
-            with pytest.raises(ToolError):
+            with pytest.raises(ToolError, match="NotAuthorizedOrNotFound"):
                 await client.call_tool("list_network_load_balancers", {"compartment_id": "c1"})
 
     @pytest.mark.asyncio
@@ -966,6 +968,18 @@ class TestNlbTools:
                 )
 
 
+@pytest.mark.asyncio
+@patch.object(server, "get_nlb_client")
+async def test_list_network_load_balancers_rejects_invalid_limit(mock_get_client):
+    async with Client(mcp) as client:
+        with pytest.raises(ToolError, match="greater than or equal to 1"):
+            await client.call_tool(
+                "list_network_load_balancers",
+                {"compartment_id": "c1", "limit": 0},
+            )
+    mock_get_client.assert_not_called()
+
+
 class TestServer:
     @patch("oracle.oci_network_load_balancer_mcp_server.server.oci.auth.signers.TokenExchangeSigner", return_value="signer")
     @patch("oracle.oci_network_load_balancer_mcp_server.server.get_access_token")
@@ -980,9 +994,14 @@ class TestServer:
 
         config, signer = server._get_http_config_and_signer()
 
-        assert config["region"] == "us-phoenix-1"
+        assert config == {
+            "region": "us-phoenix-1",
+            "additional_user_agent": f"oci-network-load-balancer-mcp/{server.__version__}",
+        }
         assert signer == "signer"
-        mock_signer.assert_called_once()
+        mock_signer.assert_called_once_with(
+            "token", "https://idcs.example.com", "client-id", "client-secret", region="us-phoenix-1"
+        )
 
     @patch("oracle.oci_network_load_balancer_mcp_server.server.get_access_token", return_value=None)
     def test_http_signer_requires_authenticated_token(self, _mock_get_access_token, monkeypatch):
@@ -1006,7 +1025,8 @@ class TestServer:
     @patch("oracle.oci_network_load_balancer_mcp_server.server.OCIProvider")
     @patch("oracle.oci_network_load_balancer_mcp_server.server.mcp.run")
     @patch("os.getenv")
-    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run, mock_provider):
+    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run, mock_provider, monkeypatch):
+        monkeypatch.setattr(server.mcp, "auth", None)
         mock_env = {
             "ORACLE_MCP_HOST": "1.2.3.4",
             "ORACLE_MCP_PORT": "8888",
@@ -1140,10 +1160,7 @@ class TestGetClient:
         args, _ = mock_client.call_args
         passed_config = args[0]
         assert passed_config is config
-        expected_user_agent = (
-            f"{server.__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{server.__version__}"  # noqa
-        )
-        assert passed_config.get("additional_user_agent") == expected_user_agent
+        assert passed_config["additional_user_agent"] == f"oci-network-load-balancer-mcp/{server.__version__}"
         # And we returned the client instance
         assert result == mock_client.return_value
 

@@ -1191,7 +1191,7 @@ class TestTools:
     async def test_execute_query_schema_advertises_max_rows_bounds(self):
         async with Client(mcp) as client:
             tools = {tool.name: tool for tool in await client.list_tools()}
-        max_rows_schema = tools["execute_query"].inputSchema["properties"]["max_rows"]
+        max_rows_schema = tools["execute_query"].input_schema["properties"]["max_rows"]
 
         assert max_rows_schema["minimum"] == 1
         assert server_module._MAX_RESULT_ROWS == 10_000
@@ -2232,7 +2232,7 @@ async def test_runtime_tool_contract():
         "list_tables",
         "execute_query",
     }
-    properties = tools["list_tables"].inputSchema["properties"]
+    properties = tools["list_tables"].input_schema["properties"]
     assert "schema" not in properties
     assert "schemas" in properties
     assert "table_refs" in properties

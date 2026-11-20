@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, create_autospec, mock_open, patch
 import oci
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 import oracle.oci_limits_mcp_server.server as server
 from oracle.oci_limits_mcp_server.server import mcp
 from oracle.oci_limits_mcp_server import utils
@@ -43,6 +44,28 @@ class TestLimitsTools:
             assert result["next_page"] is None
             assert len(result["items"]) == 1
             assert result["items"][0]["name"] == "service1"
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_limits_mcp_server.server.get_limits_client")
+    async def test_list_services_rejects_zero_limit_before_calling_oci(self, mock_get_client):
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="greater than or equal to 1"):
+                await client.call_tool(
+                    "list_services", {"compartment_id": "ocid1.compartment.oc1..xxxx", "limit": 0}
+                )
+
+        mock_get_client.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_limits_mcp_server.server.get_limits_client")
+    async def test_list_services_propagates_service_error(self, mock_get_client):
+        mock_get_client.return_value.list_services.side_effect = oci.exceptions.ServiceError(
+            503, "ServiceUnavailable", {}, "Limits temporarily unavailable"
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="Limits temporarily unavailable"):
+                await client.call_tool("list_services", {"compartment_id": "ocid1.compartment.oc1..xxxx"})
 
     @pytest.mark.asyncio
     @patch("oracle.oci_limits_mcp_server.server.get_limits_client")
@@ -215,6 +238,7 @@ class TestGetClient:
         mock_security_token_signer.assert_called_once_with("SECURITY_TOKEN", private_key_obj)
         args, kwargs = mock_client.call_args
         assert args[0] is config
+        assert config["additional_user_agent"] == f"oci-limits-mcp/{server.__version__}"
         assert kwargs["signer"] is mock_security_token_signer.return_value
         assert isinstance(kwargs["circuit_breaker_strategy"], oci.circuit_breaker.CircuitBreakerStrategy)
         assert callable(kwargs["circuit_breaker_callback"])

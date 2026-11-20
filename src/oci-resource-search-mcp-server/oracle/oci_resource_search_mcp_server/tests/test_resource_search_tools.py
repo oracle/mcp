@@ -749,13 +749,16 @@ class TestResourceSearchTools:
                 )
 
     @pytest.mark.asyncio
-    async def test_list_all_resources_rejects_invalid_compartment_id(self):
+    @patch("oracle.oci_resource_search_mcp_server.server.get_search_client")
+    async def test_list_all_resources_rejects_invalid_compartment_id(self, mock_get_client):
         async with Client(mcp) as client:
-            with pytest.raises(ToolError):
+            with pytest.raises(ToolError, match="compartment_id"):
                 await client.call_tool(
                     "list_all_resources",
                     {"tenant_id": TENANT_ID, "compartment_id": "compartment1"},
                 )
+
+        mock_get_client.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("oracle.oci_resource_search_mcp_server.server.get_search_client")
@@ -796,16 +799,22 @@ class TestResourceSearchTools:
     async def test_list_resource_types_error_path(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
-        mock_client.list_resource_types.side_effect = RuntimeError("oops")
+        mock_client.list_resource_types.side_effect = oci.exceptions.ServiceError(
+            503, "ServiceUnavailable", {}, "Resource Search temporarily unavailable"
+        )
         async with Client(mcp) as client:
-            with pytest.raises(ToolError):
+            with pytest.raises(ToolError, match="Resource Search temporarily unavailable"):
                 await client.call_tool("list_resource_types", {})
 
 
 class TestServer:
+    @patch("oracle.oci_resource_search_mcp_server.server.oci.resource_search.ResourceSearchClient")
+    @patch("oracle.oci_resource_search_mcp_server.server.oci.config.from_file", side_effect=AssertionError("local config used in HTTP mode"))
     @patch("oracle.oci_resource_search_mcp_server.server.oci.auth.signers.TokenExchangeSigner", return_value="signer")
     @patch("oracle.oci_resource_search_mcp_server.server.get_access_token")
-    def test_http_signer_uses_region_without_loading_config(self, mock_get_access_token, mock_signer, monkeypatch):
+    def test_http_client_uses_request_signer_without_loading_config(
+        self, mock_get_access_token, mock_signer, mock_config, mock_client, monkeypatch
+    ):
         mock_get_access_token.return_value = AccessToken(token="token", client_id="client", scopes=[], claims={})
         monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
@@ -814,11 +823,19 @@ class TestServer:
         monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
         monkeypatch.setenv("OCI_REGION", "us-phoenix-1")
 
-        config, signer = server._get_http_config_and_signer()
+        result = server.get_search_client()
 
-        assert config["region"] == "us-phoenix-1"
-        assert signer == "signer"
-        mock_signer.assert_called_once()
+        mock_config.assert_not_called()
+        mock_signer.assert_called_once_with(
+            "token", "https://idcs.example.com", "client-id", "client-secret", region="us-phoenix-1"
+        )
+        mock_client.assert_called_once()
+        assert mock_client.call_args.args[0] == {
+            "region": "us-phoenix-1",
+            "additional_user_agent": f"oci-resource-search-mcp/{server.__version__}",
+        }
+        assert mock_client.call_args.kwargs["signer"] == "signer"
+        assert result is mock_client.return_value
 
     @patch("oracle.oci_resource_search_mcp_server.server.get_access_token", return_value=None)
     def test_http_signer_requires_authenticated_token(self, _mock_get_access_token, monkeypatch):

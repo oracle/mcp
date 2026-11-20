@@ -10,8 +10,12 @@ from __future__ import annotations
 
 import inspect
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
+from fastmcp import Client
+from fastmcp.exceptions import ToolError
+from oci.exceptions import ServiceError
 from pydantic.fields import FieldInfo
 
 from oracle.oci_fsdr_mcp_server import server
@@ -153,6 +157,55 @@ class FakeFsdrClient:
             headers={"opc-work-request-id": "work-request-1"},
             status=202,
         )
+
+
+@pytest.mark.asyncio
+async def test_mcp_get_dr_protection_group_response(monkeypatch):
+    dr_client = Mock()
+    dr_client.get_dr_protection_group.return_value = FakeResponse(
+        data={"id": "drpg1"}, headers={"opc-request-id": "request1"}
+    )
+    get_dr_client = Mock(return_value=dr_client)
+    monkeypatch.setattr(server, "get_dr_client", get_dr_client)
+
+    async with Client(server.mcp) as client:
+        result = await client.call_tool(
+            "get_dr_protection_group",
+            {"dr_protection_group_id": "drpg1", "profile": "STANDBY"},
+        )
+
+    assert result.structured_content == {
+        "data": {"id": "drpg1"},
+        "headers": {"opc-request-id": "request1"},
+        "status": 200,
+    }
+    get_dr_client.assert_called_once_with("STANDBY")
+    dr_client.get_dr_protection_group.assert_called_once_with("drpg1")
+
+
+@pytest.mark.asyncio
+async def test_mcp_rejects_missing_dr_protection_group_id_before_client_creation(monkeypatch):
+    get_dr_client = Mock()
+    monkeypatch.setattr(server, "get_dr_client", get_dr_client)
+
+    async with Client(server.mcp) as client:
+        with pytest.raises(ToolError, match="dr_protection_group_id"):
+            await client.call_tool("get_dr_protection_group", {})
+
+    get_dr_client.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_mcp_get_dr_protection_group_reports_service_error(monkeypatch):
+    dr_client = Mock()
+    dr_client.get_dr_protection_group.side_effect = ServiceError(
+        404, "NotAuthorizedOrNotFound", {}, "Protection group unavailable"
+    )
+    monkeypatch.setattr(server, "get_dr_client", lambda profile: dr_client)
+
+    async with Client(server.mcp) as client:
+        with pytest.raises(ToolError, match="NotAuthorizedOrNotFound"):
+            await client.call_tool("get_dr_protection_group", {"dr_protection_group_id": "drpg1"})
 
 
 def test_read_tools_call_expected_client_methods(monkeypatch):

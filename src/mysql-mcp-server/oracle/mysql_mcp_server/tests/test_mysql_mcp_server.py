@@ -13,6 +13,7 @@ import uuid
 from unittest import mock
 
 import pytest
+from fastmcp import Client
 
 from oracle.mysql_mcp_server import utils
 from oracle.mysql_mcp_server.utils import get_ssh_command, fill_config_defaults, Mode
@@ -25,7 +26,7 @@ with mock.patch.object(utils, "load_mysql_config", return_value={"server_infos":
 LIVE_TESTS = os.environ.get("MYSQL_MCP_RUN_LIVE_TESTS") == "1"
 LIVE_SKIP_MSG = "Set MYSQL_MCP_RUN_LIVE_TESTS=1 and MYSQL_MCP_CONFIG for disposable live tests"
 
-# FastMCP 3 preserves callable tool functions, so the unit suite uses the real
+# FastMCP preserves callable tool functions, so the unit suite uses the real
 # registered server rather than replacing FastMCP with a second module shim.
 m.load_mysql_config = utils.load_mysql_config
 m.OciInfo = utils.OciInfo
@@ -1930,6 +1931,15 @@ class TestOfflineOciConfiguration(unittest.TestCase):
         self.assertEqual(info.tenancy_id, "example-override")
         self.assertIs(info.identity_client, identity.return_value)
         self.assertIs(info.object_storage_client, storage.return_value)
+
+
+class TestMcpToolMetadata(unittest.IsolatedAsyncioTestCase):
+    async def test_parameterless_tools_describe_their_response_fields(self):
+        async with Client(src_module.mcp) as client:
+            tools = {tool.name: tool for tool in await client.list_tools()}
+
+        self.assertIn('"invalid keys"', tools["list_all_connections"].description)
+        self.assertIn('"object_storage"', tools["list_all_compartments"].description)
 
 
 if __name__ == "__main__":

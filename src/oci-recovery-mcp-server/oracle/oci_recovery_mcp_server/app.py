@@ -13,6 +13,7 @@ loop. Everything here is imported by the families, never the reverse.
 
 import os
 import time
+import warnings
 from typing import Optional
 
 from fastmcp import FastMCP
@@ -34,6 +35,29 @@ _READ_ONLY_TOOL = {
 
 # The guidance tools return static text and never reach the network.
 _LOCAL_GUIDANCE_TOOL = {**_READ_ONLY_TOOL, "openWorldHint": False}
+
+
+# FastMCP 4 serializes each result through the tool's declared return model. These
+# models' tools deliberately return an enriched dict, a superset of the model (e.g.
+# db_unique_name, metrics), so pydantic warns on every call and echoes part of the
+# OCI record to stderr. The serialized output is unchanged; silence only these.
+_ENRICHED_RESULT_MODELS = "ProtectedDatabase|ProtectedDatabaseSummary|Backup|BackupSummary"
+
+
+def _ignore_enriched_result_warnings() -> None:
+    """Install the narrow filter for the enriched-result serializer warnings."""
+    warnings.filterwarnings(
+        "ignore",
+        message=(
+            r"Pydantic serializer warnings:\s+PydanticSerializationUnexpectedValue\("
+            rf"Expected `({_ENRICHED_RESULT_MODELS})` "
+        ),
+        category=UserWarning,
+        module=r"fastmcp\.tools\.base",
+    )
+
+
+_ignore_enriched_result_warnings()
 
 
 # Create the FastMCP app that exposes the functions decorated with @mcp.tool.

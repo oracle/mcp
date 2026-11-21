@@ -68,7 +68,10 @@ def _first_not_none(*values):
 class OCIBaseModel(BaseModel):
     """Base model that supports conversion from OCI SDK models."""
 
-    model_config = {"arbitrary_types_allowed": True}
+    # FastMCP 4 serializes tool results and output schemas by field name unless
+    # the model opts in; keep the established alias-based keys (compartmentId,
+    # database-size-in-gbs, ...) that existing clients read.
+    model_config = {"arbitrary_types_allowed": True, "serialize_by_alias": True}
 
 
 class ProtectedDatabaseHealthCounts(OCIBaseModel):

@@ -13,8 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Update locked dnspython to 2.9.2.
-
+- Tool results and output schemas keep their existing keys under FastMCP 4, including `compartmentIdsScanned`, `compartmentId` and the hyphenated backup fields such as `database-size-in-gbs`.
+- `tools/list` now gives every tool a display `title` generated from its name (for example, "List Backups").
+- The `initialize` response no longer advertises the `experimental` or `io.modelcontextprotocol/ui` extension capabilities, and reports `listChanged: true` for prompts and resources.
 - Resolve Common from published packages by default in development and CI; local Common integration now requires an explicit override.
 
 ## 3.1.0

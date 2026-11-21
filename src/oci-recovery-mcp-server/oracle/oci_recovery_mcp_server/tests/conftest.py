@@ -23,6 +23,18 @@ def fastmcp_home(tmp_path_factory, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def enriched_result_warning_filter():
+    """Apply the server's import-time warning filter inside each test.
+
+    pytest resets the warning filters around every test, discarding the one app.py
+    installs at import, so without this the suite would not run as the server does.
+    """
+    from oracle.oci_recovery_mcp_server import app
+
+    app._ignore_enriched_result_warnings()
+
+
+@pytest.fixture(autouse=True)
 def empty_compartment_cache():
     """Start every test with an empty compartment cache.
 

@@ -155,7 +155,7 @@ def test_missing_project_prevents_further_sdk_calls(tools, clients, tool, kwargs
 ])
 def test_operation_requiring_workbench_reports_missing_connection(tools, clients, monkeypatch, tool, kwargs):
     ctx, _, _ = clients
-    ctx.request_context.lifespan_context["datatransforms"]["workbench"] = None
+    ctx.lifespan_context["datatransforms"]["workbench"] = None
     monkeypatch.setitem(sys.modules, "datatransforms.connection", MagicMock())
     result = json.loads(tools[tool].fn(ctx=ctx, **kwargs))
     assert "workbench" in result["error"].lower()

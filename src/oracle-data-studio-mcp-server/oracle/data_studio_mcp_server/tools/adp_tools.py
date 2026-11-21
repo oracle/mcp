@@ -11,15 +11,16 @@ operation that returns an LLM-friendly result.  See TOOLS_DESIGN.md.
 import json
 import logging
 
-from mcp.server.fastmcp import FastMCP, Context
+from fastmcp import FastMCP, Context
 
 from ._adp_connect import get_adp, run_adp, _err, _NO_CONN_MSG
-from ._helpers import safe_call, build_response, err, fmt
+from ._helpers import safe_call, build_response, err, fmt, tool_registrar
 
 logger = logging.getLogger('oracle-data-studio-mcp')
 
 
-def register_tools(mcp: FastMCP):
+def register_tools(mcp: FastMCP, *, profile: str = 'admin'):
+    tool = tool_registrar(mcp, profile)
 
     # NOTE: Pure SQL tools (execute_sql, discover_schema, explain_table,
     # modify_data) are intentionally omitted — use Oracle SQLcl MCP
@@ -28,7 +29,7 @@ def register_tools(mcp: FastMCP):
     # cloud loading, catalogs, and data sharing.
 
     # ── adp_build_analytic_view ─────────────────────────────────────
-    @mcp.tool()
+    @tool
     def adp_build_analytic_view(fact_table: str,
                                  av_name: str | None = None,
                                  ctx: Context = None) -> str:
@@ -104,7 +105,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 18. adp_query_analytic_view ───────────────────────────────────
-    @mcp.tool()
+    @tool
     def adp_query_analytic_view(av_name: str,
                                  show_sql: bool = False,
                                  owner: str | None = None,
@@ -156,7 +157,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 19. adp_analyze_analytic_view ─────────────────────────────────
-    @mcp.tool()
+    @tool
     def adp_analyze_analytic_view(av_name: str, owner: str | None = None,
                                    ctx: Context = None) -> str:
         """Get a full health report for an Analytic View: metadata, measures, dimensions, quality issues, errors.
@@ -216,7 +217,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 20. adp_generate_insights ─────────────────────────────────────
-    @mcp.tool()
+    @tool
     def adp_generate_insights(object_name: str, measure: str,
                                ctx: Context = None) -> str:
         """Generate AI-powered insights for an Analytic View or table.
@@ -253,7 +254,7 @@ def register_tools(mcp: FastMCP):
     # generator from the client side.
 
     # ── 22. adp_search ────────────────────────────────────────────────
-    @mcp.tool()
+    @tool
     def adp_search(search_term: str, include_ddl: bool = False,
                     ctx: Context = None) -> str:
         """Search for database objects by name and optionally return their DDL.
@@ -298,7 +299,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 23. adp_load_from_cloud ───────────────────────────────────────
-    @mcp.tool()
+    @tool
     def adp_load_from_cloud(storage_link: str | None = None,
                              object_name: str | None = None,
                              target_table: str | None = None,
@@ -384,7 +385,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 24. adp_browse_catalog ──────────────────────────────────────────
-    @mcp.tool()
+    @tool
     def adp_browse_catalog(action: str, catalog_name: str | None = None,
                             ctx: Context = None) -> str:
         """Browse data catalogs (read-only): list catalogs, get entities, preview data, list database links, list databases, or check a database link.
@@ -438,7 +439,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 24b. adp_manage_catalog ──────────────────────────────────────
-    @mcp.tool()
+    @tool
     def adp_manage_catalog(action: str, catalog_name: str | None = None,
                             confirm: str | None = None,
                             ctx: Context = None) -> str:
@@ -478,7 +479,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 25. adp_manage_sharing ────────────────────────────────────────
-    @mcp.tool()
+    @tool
     def adp_manage_sharing(action: str, share_name: str | None = None,
                             tables: str | None = None,
                             recipient_name: str | None = None,
@@ -638,7 +639,7 @@ def register_tools(mcp: FastMCP):
 
 
     # ── 26. adp_manage_analytic_views ────────────────────────────────
-    @mcp.tool()
+    @tool
     def adp_manage_analytic_views(action: str,
                                     av_name: str | None = None,
                                     owner: str | None = None,
@@ -681,7 +682,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 27. adp_manage_credentials ───────────────────────────────────
-    @mcp.tool()
+    @tool
     def adp_manage_credentials(action: str,
                                  credential_name: str | None = None,
                                  username: str | None = None,
@@ -790,7 +791,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 28. adp_ai_chat ──────────────────────────────────────────────
-    @mcp.tool()
+    @tool
     def adp_ai_chat(question: str,
                       mode: str = 'chat',
                       tables: str | None = None,
@@ -826,7 +827,7 @@ def register_tools(mcp: FastMCP):
 
         # Table-policy gate. Pulled from the lifespan context which is
         # populated from env at startup.
-        lc = (ctx.request_context.lifespan_context
+        lc = (ctx.lifespan_context
               if ctx is not None else {})
         policy_err = check_ai_chat_tables(
             tables,
@@ -870,7 +871,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 29. adp_manage_insights ──────────────────────────────────────
-    @mcp.tool()
+    @tool
     def adp_manage_insights(action: str,
                               request_name: str | None = None,
                               insight_name: str | None = None,
@@ -932,7 +933,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 30. adp_manage_db_links ────────────────────────────────────────
-    @mcp.tool()
+    @tool
     def adp_manage_db_links(action: str,
                               db_link_name: str | None = None,
                               tables: str | None = None,
@@ -1011,7 +1012,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── adp_get_annotations ─────────────────────────────────────────
-    @mcp.tool()
+    @tool
     def adp_get_annotations(object_name: str,
                               object_type: str = 'TABLE',
                               annotation_owner: str | None = None,

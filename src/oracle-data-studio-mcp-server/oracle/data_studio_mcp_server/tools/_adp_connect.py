@@ -25,7 +25,7 @@ import threading
 import time
 from datetime import datetime
 
-from mcp.server.fastmcp import Context
+from fastmcp import Context
 
 logger = logging.getLogger('oracle-data-studio-mcp')
 
@@ -43,19 +43,13 @@ _COOLDOWN_SECONDS = 30
 # In streamable-http transport, multiple tool calls run concurrently.
 # A reconnect that swaps lc['adp'] must hold a per-context lock so
 # we don't return a client while another thread is replacing it.
-_locks: dict[int, threading.Lock] = {}
-_locks_lock = threading.Lock()
+_lock_creation = threading.Lock()
 
 
 def _ctx_lock(lc) -> threading.Lock:
     '''Per-lifespan-context reconnect lock.'''
-    key = id(lc)
-    with _locks_lock:
-        lk = _locks.get(key)
-        if lk is None:
-            lk = threading.Lock()
-            _locks[key] = lk
-        return lk
+    with _lock_creation:
+        return lc.setdefault('_adp_reconnect_lock', threading.Lock())
 
 
 # ------------------------------------------------------------------ #
@@ -141,6 +135,10 @@ def _reconnect(lc):
         try:
             import adp
             adp_client = adp.login(cfg.url, cfg.user, cfg.password)
+            register_session = lc.get('_register_session')
+            if register_session is not None:
+                # The previous client may still be in use. Close both at shutdown.
+                register_session(adp_client.rest.session)
             lc['adp'] = adp_client
             logger.info('ADP reconnected to %s as %s', cfg.url, cfg.user)
             return adp_client
@@ -157,7 +155,7 @@ def get_adp(ctx: Context):
     under a per-context lock, so worst case is that a caller uses a
     just-replaced-but-still-valid client.
     '''
-    lc = ctx.request_context.lifespan_context
+    lc = ctx.lifespan_context
     client = lc.get('adp')
 
     if client:
@@ -195,7 +193,7 @@ def run_adp(ctx: Context, fn, format_fn=None):
         JSON-encoded result or error.
     '''
     fmt = format_fn or _default_format
-    lc = ctx.request_context.lifespan_context
+    lc = ctx.lifespan_context
     client = get_adp(ctx)
 
     if not client:

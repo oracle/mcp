@@ -12,19 +12,14 @@ Usage:
     python -m pytest oracle/data_studio_mcp_server/tests/ -v
 '''
 
+import asyncio
 import json
 import os
 import pytest
 from unittest.mock import MagicMock, patch, PropertyMock
 from dataclasses import asdict
 
-try:
-    import mcp  # noqa: F401
-    HAS_MCP = True
-except ImportError:
-    HAS_MCP = False
-
-mcp_required = pytest.mark.skipif(not HAS_MCP, reason='mcp package not installed')
+from .tool_assertions import _walk, registered_tools
 
 
 # ------------------------------------------------------------------ #
@@ -588,8 +583,7 @@ class TestProfiles:
         from oracle.data_studio_mcp_server.profiles import _get_verb_suffix
         assert _get_verb_suffix('unknown_tool') == 'unknown_tool'
 
-    @mcp_required
-    @mcp_required
+
     def test_default_profile_removes_high_risk_tools(self):
         '''Reviewer-blocking guarantee: with NO --profile flag, the
         server must default to a low-privilege profile that does NOT
@@ -599,22 +593,8 @@ class TestProfiles:
         default profile (whatever ServerConfig() sets) and asserts
         the high-risk tool surface is not exposed.'''
         from oracle.data_studio_mcp_server.config import ServerConfig
-        from oracle.data_studio_mcp_server.profiles import apply_profile
-        from mcp.server.fastmcp import FastMCP
-        from oracle.data_studio_mcp_server.tools import (
-            adp_tools, dt_tools, essbase_tools)
-
-        default_profile = ServerConfig().profile
-        # Sanity — the default must not be admin
-        assert default_profile != 'admin', \
-            'default profile must not be admin per BEST_PRACTICES'
-
-        mcp_server = FastMCP('test')
-        for mod in (essbase_tools, adp_tools, dt_tools):
-            mod.register_tools(mcp_server)
-
-        apply_profile(mcp_server, default_profile)
-        names = set(mcp_server._tool_manager._tools.keys())
+        from oracle.data_studio_mcp_server.server import create_server
+        names = set(registered_tools(create_server(ServerConfig())))
 
         # None of the following tools may be visible under the default:
         BANNED_UNDER_DEFAULT = {
@@ -693,24 +673,22 @@ class TestProfiles:
 
     def test_viewer_profile_filtering(self):
         '''Viewer profile: only read-only tools.'''
-        from oracle.data_studio_mcp_server.profiles import apply_profile
-        mock_mcp = MagicMock()
-        mock_mcp._tool_manager._tools = {
-            'essbase_explore': MagicMock(),
-            'essbase_describe_database': MagicMock(),
-            'essbase_query': MagicMock(),
-            'essbase_run_calculation': MagicMock(),
-            'essbase_manage_variables': MagicMock(),
-            'essbase_server_health': MagicMock(),
-            'adp_build_analytic_view': MagicMock(),
-            'adp_search': MagicMock(),
-            'adp_analyze_analytic_view': MagicMock(),
-            'dt_explore': MagicMock(),
-            'dt_create_pipeline': MagicMock(),
-            'dt_browse_data': MagicMock(),
+        from oracle.data_studio_mcp_server.profiles import allows_tool
+        samples = {
+            'essbase_explore',
+            'essbase_describe_database',
+            'essbase_query',
+            'essbase_run_calculation',
+            'essbase_manage_variables',
+            'essbase_server_health',
+            'adp_build_analytic_view',
+            'adp_search',
+            'adp_analyze_analytic_view',
+            'dt_explore',
+            'dt_create_pipeline',
+            'dt_browse_data',
         }
-        apply_profile(mock_mcp, 'viewer')
-        tools = mock_mcp._tool_manager._tools
+        tools = {name for name in samples if allows_tool('viewer', name)}
         # Viewer should keep: explore, describe_, server_health,
         # browse_, search_, analyze_
         assert 'essbase_explore' in tools
@@ -726,24 +704,21 @@ class TestProfiles:
         assert 'adp_build_analytic_view' not in tools
         assert 'dt_create_pipeline' not in tools
 
-    @mcp_required
     def test_analyst_profile_filtering(self):
         '''Analyst profile: read + query/execute, no modify.'''
-        from oracle.data_studio_mcp_server.profiles import apply_profile
-        mock_mcp = MagicMock()
-        mock_mcp._tool_manager._tools = {
-            'essbase_explore': MagicMock(),
-            'essbase_query': MagicMock(),
-            'essbase_run_calculation': MagicMock(),
-            'essbase_manage_variables': MagicMock(),
-            'adp_generate_insights': MagicMock(),
-            'adp_ai_chat': MagicMock(),
-            'adp_load_from_cloud': MagicMock(),
-            'dt_explore': MagicMock(),
-            'dt_manage_schedule': MagicMock(),
+        from oracle.data_studio_mcp_server.profiles import allows_tool
+        samples = {
+            'essbase_explore',
+            'essbase_query',
+            'essbase_run_calculation',
+            'essbase_manage_variables',
+            'adp_generate_insights',
+            'adp_ai_chat',
+            'adp_load_from_cloud',
+            'dt_explore',
+            'dt_manage_schedule',
         }
-        apply_profile(mock_mcp, 'analyst')
-        tools = mock_mcp._tool_manager._tools
+        tools = {name for name in samples if allows_tool('analyst', name)}
         # Analyst should keep: explore, query, run_, generate_
         assert 'essbase_explore' in tools
         assert 'essbase_run_calculation' in tools
@@ -758,7 +733,6 @@ class TestProfiles:
         assert 'dt_manage_schedule' not in tools
         assert 'adp_ai_chat' not in tools
 
-    @mcp_required
     def test_viewer_cannot_run_mdx(self):
         '''Security: viewer must not be able to invoke any tool that
         runs MDX. Specifically:
@@ -770,19 +744,17 @@ class TestProfiles:
         This test locks both guarantees in. Removing `export_` from the
         viewer allowed_verbs (or adding `essbase_export_data` to
         explicit_deny) must keep this test passing.'''
-        from oracle.data_studio_mcp_server.profiles import apply_profile
-        mock_mcp = MagicMock()
-        mock_mcp._tool_manager._tools = {
-            'essbase_query':       MagicMock(),
-            'essbase_export_data': MagicMock(),
+        from oracle.data_studio_mcp_server.profiles import allows_tool
+        samples = {
+            'essbase_query',
+            'essbase_export_data',
             # Sanity controls — should still be visible to viewer
-            'essbase_explore':     MagicMock(),
-            'essbase_describe_database': MagicMock(),
-            'essbase_browse_outline': MagicMock(),
-            'essbase_search_members': MagicMock(),
+            'essbase_explore',
+            'essbase_describe_database',
+            'essbase_browse_outline',
+            'essbase_search_members',
         }
-        apply_profile(mock_mcp, 'viewer')
-        tools = mock_mcp._tool_manager._tools
+        tools = {name for name in samples if allows_tool('viewer', name)}
         # Both MDX-running tools must be removed for viewer
         assert 'essbase_query' not in tools, \
             'viewer must not have essbase_query (runs MDX)'
@@ -794,22 +766,19 @@ class TestProfiles:
         assert 'essbase_browse_outline' in tools
         assert 'essbase_search_members' in tools
 
-    @mcp_required
     def test_viewer_cannot_read_calc_script_or_logs(self):
         '''S2: essbase_get_script and essbase_get_logs leak content
         (script source code, logs with PII / SQL). Both are denied
         for viewer.'''
-        from oracle.data_studio_mcp_server.profiles import apply_profile
-        mock_mcp = MagicMock()
-        mock_mcp._tool_manager._tools = {
-            'essbase_get_script': MagicMock(),
-            'essbase_get_logs':   MagicMock(),
+        from oracle.data_studio_mcp_server.profiles import allows_tool
+        samples = {
+            'essbase_get_script',
+            'essbase_get_logs',
             # sanity controls
-            'essbase_explore':    MagicMock(),
-            'adp_get_annotations': MagicMock(),  # other get_ stays
+            'essbase_explore',
+            'adp_get_annotations',  # other get_ stays
         }
-        apply_profile(mock_mcp, 'viewer')
-        tools = mock_mcp._tool_manager._tools
+        tools = {name for name in samples if allows_tool('viewer', name)}
         assert 'essbase_get_script' not in tools, \
             'viewer must not see calc-script source'
         assert 'essbase_get_logs' not in tools, \
@@ -818,185 +787,161 @@ class TestProfiles:
         assert 'essbase_explore' in tools
         assert 'adp_get_annotations' in tools
 
-    @mcp_required
     def test_analyst_can_read_script_but_not_logs(self):
         '''S2: analyst keeps essbase_get_script (they may run it via
         essbase_run_calculation) but loses essbase_get_logs (admin
         only).'''
-        from oracle.data_studio_mcp_server.profiles import apply_profile
-        mock_mcp = MagicMock()
-        mock_mcp._tool_manager._tools = {
-            'essbase_get_script': MagicMock(),
-            'essbase_get_logs':   MagicMock(),
+        from oracle.data_studio_mcp_server.profiles import allows_tool
+        samples = {
+            'essbase_get_script',
+            'essbase_get_logs',
         }
-        apply_profile(mock_mcp, 'analyst')
-        tools = mock_mcp._tool_manager._tools
+        tools = {name for name in samples if allows_tool('analyst', name)}
         assert 'essbase_get_script' in tools, \
             'analyst should be able to read scripts they may run'
         assert 'essbase_get_logs' not in tools, \
             'logs are admin-only'
 
-    @mcp_required
     def test_analyst_cannot_run_pipeline(self):
         '''S3: dt_run_pipeline mutates target tables — analyst is
         "read + execute, no modify" and pipelines write, so deny.'''
-        from oracle.data_studio_mcp_server.profiles import apply_profile
-        mock_mcp = MagicMock()
-        mock_mcp._tool_manager._tools = {
-            'dt_run_pipeline':     MagicMock(),
+        from oracle.data_studio_mcp_server.profiles import allows_tool
+        samples = {
+            'dt_run_pipeline',
             # sanity — other run_ verbs (e.g. essbase_run_calculation)
             # are still allowed for analyst
-            'essbase_run_calculation': MagicMock(),
+            'essbase_run_calculation',
         }
-        apply_profile(mock_mcp, 'analyst')
-        tools = mock_mcp._tool_manager._tools
+        tools = {name for name in samples if allows_tool('analyst', name)}
         assert 'dt_run_pipeline' not in tools, \
             'analyst must not run pipelines (mutates targets)'
         assert 'essbase_run_calculation' in tools, \
             'analyst should still run calc scripts'
 
-    @mcp_required
     def test_analyst_keeps_export_data(self):
         '''Analyst is allowed to run MDX (read+execute). After we
         removed `export_` from viewer, make sure analyst still has
         access — analyst inherits viewer verbs PLUS execute/run/query.'''
-        from oracle.data_studio_mcp_server.profiles import apply_profile
-        mock_mcp = MagicMock()
-        mock_mcp._tool_manager._tools = {
-            'essbase_export_data': MagicMock(),
-            'essbase_query':       MagicMock(),
+        from oracle.data_studio_mcp_server.profiles import allows_tool
+        samples = {
+            'essbase_export_data',
+            'essbase_query',
         }
-        apply_profile(mock_mcp, 'analyst')
-        tools = mock_mcp._tool_manager._tools
+        tools = {name for name in samples if allows_tool('analyst', name)}
         assert 'essbase_export_data' in tools, \
             'analyst should have essbase_export_data'
         assert 'essbase_query' in tools, \
             'analyst should have essbase_query'
 
-    @mcp_required
     def test_viewer_profile_blocks_manage_catalog_allows_browse(self):
         '''Viewer: adp_browse_catalog allowed, adp_manage_catalog blocked.'''
-        from oracle.data_studio_mcp_server.profiles import apply_profile
-        mock_mcp = MagicMock()
-        mock_mcp._tool_manager._tools = {
-            'adp_browse_catalog': MagicMock(),
-            'adp_manage_catalog': MagicMock(),
+        from oracle.data_studio_mcp_server.profiles import allows_tool
+        samples = {
+            'adp_browse_catalog',
+            'adp_manage_catalog',
         }
-        apply_profile(mock_mcp, 'viewer')
-        tools = mock_mcp._tool_manager._tools
+        tools = {name for name in samples if allows_tool('viewer', name)}
         assert 'adp_browse_catalog' in tools, \
             'browse_catalog should be visible to viewer'
         assert 'adp_manage_catalog' not in tools, \
             'manage_catalog must not be visible to viewer'
 
-    @mcp_required
     def test_viewer_profile_blocks_manage_project(self):
         '''Viewer: dt_describe_project allowed, dt_manage_project blocked.'''
-        from oracle.data_studio_mcp_server.profiles import apply_profile
-        mock_mcp = MagicMock()
-        mock_mcp._tool_manager._tools = {
-            'dt_describe_project': MagicMock(),
-            'dt_manage_project': MagicMock(),
+        from oracle.data_studio_mcp_server.profiles import allows_tool
+        samples = {
+            'dt_describe_project',
+            'dt_manage_project',
         }
-        apply_profile(mock_mcp, 'viewer')
-        tools = mock_mcp._tool_manager._tools
+        tools = {name for name in samples if allows_tool('viewer', name)}
         assert 'dt_describe_project' in tools, \
             'describe_project should be visible to viewer'
         assert 'dt_manage_project' not in tools, \
             'manage_project (delete) must not be visible to viewer'
 
-    @mcp_required
     def test_analyst_profile_blocks_manage_catalog(self):
         '''Analyst: adp_browse_catalog allowed, adp_manage_catalog blocked.'''
-        from oracle.data_studio_mcp_server.profiles import apply_profile
-        mock_mcp = MagicMock()
-        mock_mcp._tool_manager._tools = {
-            'adp_browse_catalog': MagicMock(),
-            'adp_manage_catalog': MagicMock(),
-            'dt_describe_project': MagicMock(),
-            'dt_manage_project': MagicMock(),
+        from oracle.data_studio_mcp_server.profiles import allows_tool
+        samples = {
+            'adp_browse_catalog',
+            'adp_manage_catalog',
+            'dt_describe_project',
+            'dt_manage_project',
         }
-        apply_profile(mock_mcp, 'analyst')
-        tools = mock_mcp._tool_manager._tools
+        tools = {name for name in samples if allows_tool('analyst', name)}
         assert 'adp_browse_catalog' in tools
         assert 'adp_manage_catalog' not in tools
         assert 'dt_describe_project' in tools
         assert 'dt_manage_project' not in tools
 
-    @mcp_required
     def test_admin_profile_no_filtering(self):
-        from oracle.data_studio_mcp_server.profiles import apply_profile
-        mock_mcp = MagicMock()
-        mock_mcp._tool_manager._tools = {
-            'essbase_explore': MagicMock(),
-            'essbase_manage_variables': MagicMock(),
-            'adp_manage_sharing': MagicMock(),
+        from oracle.data_studio_mcp_server.profiles import allows_tool
+        samples = {
+            'essbase_explore',
+            'essbase_manage_variables',
+            'adp_manage_sharing',
         }
-        apply_profile(mock_mcp, 'admin')
-        assert len(mock_mcp._tool_manager._tools) == 3
+        tools = {name for name in samples if allows_tool('admin', name)}
+        assert len(tools) == 3
 
-    @mcp_required
     def test_invalid_profile_raises(self):
-        from oracle.data_studio_mcp_server.profiles import apply_profile
-        mock_mcp = MagicMock()
-        mock_mcp._tool_manager._tools = {}
+        from oracle.data_studio_mcp_server.profiles import allows_tool
         with pytest.raises(ValueError, match='Unknown profile'):
-            apply_profile(mock_mcp, 'superadmin')
+            allows_tool('superadmin', 'essbase_explore')
 
 
 # ------------------------------------------------------------------ #
 #  Tool registration tests                                             #
 # ------------------------------------------------------------------ #
 
-@mcp_required
 class TestToolRegistration:
 
     def test_essbase_tools_register(self):
         '''essbase_tools registers exactly 30 tools.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         mcp_server = FastMCP('test')
         from oracle.data_studio_mcp_server.tools import essbase_tools
         essbase_tools.register_tools(mcp_server)
-        tools = mcp_server._tool_manager._tools
+        tools = registered_tools(mcp_server)
         assert len(tools) == 30
 
     def test_adp_tools_register(self):
         '''adp_tools registers exactly 15 tools.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         mcp_server = FastMCP('test')
         from oracle.data_studio_mcp_server.tools import adp_tools
         adp_tools.register_tools(mcp_server)
-        tools = mcp_server._tool_manager._tools
+        tools = registered_tools(mcp_server)
         assert len(tools) == 15
 
     def test_dt_tools_register(self):
         '''dt_tools registers exactly 15 tools.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         mcp_server = FastMCP('test')
         from oracle.data_studio_mcp_server.tools import dt_tools
         dt_tools.register_tools(mcp_server)
-        tools = mcp_server._tool_manager._tools
+        tools = registered_tools(mcp_server)
         assert len(tools) == 15
 
     def test_all_tools_register(self):
         '''All tool modules together register exactly 60 tools.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         mcp_server = FastMCP('test')
         from oracle.data_studio_mcp_server.tools import (
             essbase_tools, adp_tools, dt_tools)
         essbase_tools.register_tools(mcp_server)
         adp_tools.register_tools(mcp_server)
         dt_tools.register_tools(mcp_server)
-        tools = mcp_server._tool_manager._tools
+        tools = registered_tools(mcp_server)
         assert len(tools) == 60
 
     def test_essbase_tool_names(self):
         '''Verify expected Essbase tool names.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         mcp_server = FastMCP('test')
         from oracle.data_studio_mcp_server.tools import essbase_tools
         essbase_tools.register_tools(mcp_server)
-        names = set(mcp_server._tool_manager._tools.keys())
+        names = set(registered_tools(mcp_server).keys())
         expected = {
             'essbase_explore', 'essbase_describe_database',
             'essbase_query', 'essbase_browse_outline',
@@ -1020,11 +965,11 @@ class TestToolRegistration:
 
     def test_adp_tool_names(self):
         '''Verify expected ADP tool names.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         mcp_server = FastMCP('test')
         from oracle.data_studio_mcp_server.tools import adp_tools
         adp_tools.register_tools(mcp_server)
-        names = set(mcp_server._tool_manager._tools.keys())
+        names = set(registered_tools(mcp_server).keys())
         expected = {
             'adp_build_analytic_view',
             'adp_query_analytic_view', 'adp_analyze_analytic_view',
@@ -1041,11 +986,11 @@ class TestToolRegistration:
 
     def test_dt_tool_names(self):
         '''Verify expected Data Transforms tool names.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         mcp_server = FastMCP('test')
         from oracle.data_studio_mcp_server.tools import dt_tools
         dt_tools.register_tools(mcp_server)
-        names = set(mcp_server._tool_manager._tools.keys())
+        names = set(registered_tools(mcp_server).keys())
         expected = {
             'dt_explore', 'dt_describe_project',
             'dt_describe_connection', 'dt_create_pipeline',
@@ -1060,14 +1005,14 @@ class TestToolRegistration:
 
     def test_all_tools_have_docstrings(self):
         '''Every registered tool should have a docstring.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         mcp_server = FastMCP('test')
         from oracle.data_studio_mcp_server.tools import (
             essbase_tools, adp_tools, dt_tools)
         essbase_tools.register_tools(mcp_server)
         adp_tools.register_tools(mcp_server)
         dt_tools.register_tools(mcp_server)
-        for name, tool in mcp_server._tool_manager._tools.items():
+        for name, tool in registered_tools(mcp_server).items():
             desc = getattr(tool, 'description', None)
             fn = getattr(tool, 'fn', None)
             has_doc = (desc and len(desc) > 0) or (
@@ -1076,14 +1021,14 @@ class TestToolRegistration:
 
     def test_all_tool_names_have_service_prefix(self):
         '''All tools should start with essbase_, adp_, or dt_.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         mcp_server = FastMCP('test')
         from oracle.data_studio_mcp_server.tools import (
             essbase_tools, adp_tools, dt_tools)
         essbase_tools.register_tools(mcp_server)
         adp_tools.register_tools(mcp_server)
         dt_tools.register_tools(mcp_server)
-        for name in mcp_server._tool_manager._tools:
+        for name in registered_tools(mcp_server):
             assert (name.startswith('essbase_') or
                     name.startswith('adp_') or
                     name.startswith('dt_')), \
@@ -1100,13 +1045,13 @@ class TestEssbaseConnect:
         from oracle.data_studio_mcp_server.tools._essbase_connect import get_essbase
         mock_ctx = MagicMock()
         mock_ess = MagicMock()
-        mock_ctx.request_context.lifespan_context = {'essbase': mock_ess}
+        mock_ctx.lifespan_context = {'essbase': mock_ess}
         assert get_essbase(mock_ctx) is mock_ess
 
     def test_get_essbase_returns_none(self):
         from oracle.data_studio_mcp_server.tools._essbase_connect import get_essbase
         mock_ctx = MagicMock()
-        mock_ctx.request_context.lifespan_context = {}
+        mock_ctx.lifespan_context = {}
         assert get_essbase(mock_ctx) is None
 
 
@@ -1121,13 +1066,13 @@ class TestAdpConnect:
         mock_ctx = MagicMock()
         mock_adp = MagicMock()
         mock_adp.rest.expired = None
-        mock_ctx.request_context.lifespan_context = {'adp': mock_adp}
+        mock_ctx.lifespan_context = {'adp': mock_adp}
         assert get_adp(mock_ctx) is mock_adp
 
     def test_get_adp_returns_none_no_client(self):
         from oracle.data_studio_mcp_server.tools._adp_connect import get_adp
         mock_ctx = MagicMock()
-        mock_ctx.request_context.lifespan_context = {}
+        mock_ctx.lifespan_context = {}
         assert get_adp(mock_ctx) is None
 
     def test_is_expired_401(self):
@@ -1146,8 +1091,7 @@ class TestAdpConnect:
             lc = {'_adp_config': MagicMock(
                 url='https://x', user='u', password='p')}
             # Make adp.login fail every time
-            with patch.object(ac, '_locks', {}), \
-                 patch('builtins.__import__') as _imp:
+            with patch('builtins.__import__') as _imp:
                 fake_adp = MagicMock()
                 fake_adp.login.side_effect = RuntimeError('boom')
                 _imp.side_effect = lambda name, *a, **kw: (
@@ -1167,15 +1111,14 @@ class TestAdpConnect:
         per-context lock so concurrent callers don't see a torn
         state. Verify the lock exists and is reused for the same lc.'''
         from oracle.data_studio_mcp_server.tools import _adp_connect as ac
-        with patch.object(ac, '_locks', {}):
-            lc = {}
-            lock1 = ac._ctx_lock(lc)
-            lock2 = ac._ctx_lock(lc)
-            # Same context → same lock
-            assert lock1 is lock2
-            # Different context → different lock
-            other = {}
-            assert ac._ctx_lock(other) is not lock1
+        lc = {}
+        lock1 = ac._ctx_lock(lc)
+        lock2 = ac._ctx_lock(lc)
+        # Same context → same lock
+        assert lock1 is lock2
+        # Different context → different lock
+        other = {}
+        assert ac._ctx_lock(other) is not lock1
 
     def test_run_adp_success(self):
         '''run_adp returns the formatted result on success.'''
@@ -1184,7 +1127,7 @@ class TestAdpConnect:
         ctx = MagicMock()
         adp = MagicMock()
         adp.rest.expired = None
-        ctx.request_context.lifespan_context = {'adp': adp}
+        ctx.lifespan_context = {'adp': adp}
         result = run_adp(ctx, lambda c: {'rows': [1, 2]})
         assert json.loads(result)['rows'] == [1, 2]
 
@@ -1192,7 +1135,7 @@ class TestAdpConnect:
         from oracle.data_studio_mcp_server.tools._adp_connect import (
             run_adp)
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {}
+        ctx.lifespan_context = {}
         result = json.loads(run_adp(ctx, lambda c: 'should not run'))
         assert 'error' in result
 
@@ -1203,7 +1146,7 @@ class TestAdpConnect:
         ctx = MagicMock()
         adp = MagicMock()
         adp.rest.expired = None
-        ctx.request_context.lifespan_context = {'adp': adp}
+        ctx.lifespan_context = {'adp': adp}
         result = run_adp(ctx, lambda c: 'plain string')
         assert result == 'plain string'
 
@@ -1214,7 +1157,7 @@ class TestAdpConnect:
         cfg = MagicMock(url='https://x', user='u', password='p')
         adp_old = MagicMock()
         adp_old.rest.expired = None
-        ctx.request_context.lifespan_context = {
+        ctx.lifespan_context = {
             'adp': adp_old, '_adp_config': cfg}
 
         # First call raises 'expired', second call returns success.
@@ -1225,8 +1168,7 @@ class TestAdpConnect:
                 raise RuntimeError('session expired')
             return 'recovered'
 
-        with patch.object(ac, '_locks', {}), \
-             patch('builtins.__import__') as imp:
+        with patch('builtins.__import__') as imp:
             fake_adp = MagicMock()
             fresh = MagicMock()
             fresh.rest.expired = None
@@ -1246,7 +1188,7 @@ class TestAdpConnect:
         ctx = MagicMock()
         adp = MagicMock()
         adp.rest.expired = None
-        ctx.request_context.lifespan_context = {'adp': adp}
+        ctx.lifespan_context = {'adp': adp}
         def fn(c):
             raise RuntimeError('ORA-00942: table or view does not exist')
         result = json.loads(run_adp(ctx, fn))
@@ -1263,10 +1205,9 @@ class TestAdpConnect:
         cfg = MagicMock(url='x', user='u', password='p')
         lc = {'adp': old, '_adp_config': cfg}
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = lc
+        ctx.lifespan_context = lc
 
-        with patch.object(ac, '_locks', {}), \
-             patch('builtins.__import__') as imp:
+        with patch('builtins.__import__') as imp:
             fake_adp = MagicMock()
             fresh = MagicMock()
             fresh.rest.expired = None
@@ -1292,8 +1233,7 @@ class TestAdpConnect:
             '_adp_config': MagicMock(url='x', user='u', password='p'),
             'adp': fresh,
         }
-        with patch.object(ac, '_locks', {}), \
-             patch('builtins.__import__') as _imp:
+        with patch('builtins.__import__') as _imp:
             fake_adp = MagicMock()
             _imp.side_effect = lambda name, *a, **kw: (
                 fake_adp if name == 'adp'
@@ -1314,14 +1254,14 @@ class TestDtConnect:
         from oracle.data_studio_mcp_server.tools._dt_connect import get_dt
         mock_ctx = MagicMock()
         mock_dt = {'client': MagicMock()}
-        mock_ctx.request_context.lifespan_context = {
+        mock_ctx.lifespan_context = {
             'datatransforms': mock_dt}
         assert get_dt(mock_ctx) is mock_dt
 
     def test_get_dt_returns_none_no_config(self):
         from oracle.data_studio_mcp_server.tools._dt_connect import get_dt
         mock_ctx = MagicMock()
-        mock_ctx.request_context.lifespan_context = {}
+        mock_ctx.lifespan_context = {}
         assert get_dt(mock_ctx) is None
 
     def test_get_dt_strategy1_from_adp_thread(self):
@@ -1336,7 +1276,7 @@ class TestDtConnect:
         adp_client.wait_for_datatransforms.return_value = None
         cfg = MagicMock(url='https://x', user='u', password='p')
         lc = {'_dt_config': cfg, 'adp': adp_client}
-        mock_ctx.request_context.lifespan_context = lc
+        mock_ctx.lifespan_context = lc
 
         result = get_dt(mock_ctx)
         assert result is not None
@@ -1361,7 +1301,7 @@ class TestDtConnect:
         }]
         cfg = MagicMock(url='https://x', user='u', password='p')
         lc = {'_dt_config': cfg, 'adp': adp_client}
-        mock_ctx.request_context.lifespan_context = lc
+        mock_ctx.lifespan_context = lc
 
         fake_module = MagicMock()
         fake_wb = MagicMock()
@@ -1387,7 +1327,7 @@ class TestDtConnect:
         # No adp_client at all → strategies 1 + 2 fail
         cfg = MagicMock(url='https://x', user='u', password='p')
         lc = {'_dt_config': cfg, 'adp': None}
-        mock_ctx.request_context.lifespan_context = lc
+        mock_ctx.lifespan_context = lc
 
         fake_module = MagicMock()
         fake_wb = MagicMock()
@@ -1409,7 +1349,7 @@ class TestDtConnect:
         mock_ctx = MagicMock()
         cfg = MagicMock(url='https://x', user='u', password='p')
         lc = {'_dt_config': cfg, 'adp': None}
-        mock_ctx.request_context.lifespan_context = lc
+        mock_ctx.lifespan_context = lc
 
         fake_module = MagicMock()
         fake_wb = MagicMock()
@@ -1435,31 +1375,30 @@ class TestDtConnect:
 #  Essbase tool dispatch tests (mocked SDK)                            #
 # ------------------------------------------------------------------ #
 
-@mcp_required
 class TestEssbaseToolDispatch:
 
     def _make_ctx(self, ess_mock):
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {'essbase': ess_mock}
+        ctx.lifespan_context = {'essbase': ess_mock}
         return ctx
 
     def test_essbase_explore_no_connection(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_explore'].fn
+        fn = registered_tools(mcp_server)['essbase_explore'].fn
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {}
+        ctx.lifespan_context = {}
         result = json.loads(fn(ctx=ctx))
         assert 'error' in result
 
     def test_essbase_explore_success(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_explore'].fn
+        fn = registered_tools(mcp_server)['essbase_explore'].fn
 
         ess = MagicMock()
         ess.applications.list_applications.return_value = {
@@ -1475,11 +1414,11 @@ class TestEssbaseToolDispatch:
         assert result['applications'][0]['databases'] == [{'name': 'Basic'}]
 
     def test_essbase_query_success(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_query'].fn
+        fn = registered_tools(mcp_server)['essbase_query'].fn
 
         ess = MagicMock()
         ess.grid.execute_mdx.return_value = {'data': [[1, 2]]}
@@ -1489,11 +1428,11 @@ class TestEssbaseToolDispatch:
         assert result['data'] == [[1, 2]]
 
     def test_essbase_server_health(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_server_health'].fn
+        fn = registered_tools(mcp_server)['essbase_server_health'].fn
 
         ess = MagicMock()
         ess.about.get.return_value = {'version': '21.5'}
@@ -1505,11 +1444,11 @@ class TestEssbaseToolDispatch:
         assert result['active_sessions'] == 1
 
     def test_essbase_manage_variables_list(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_variables'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_variables'].fn
 
         ess = MagicMock()
         ess.variables.list_server_variables.return_value = {
@@ -1519,11 +1458,11 @@ class TestEssbaseToolDispatch:
         assert 'items' in result
 
     def test_essbase_manage_variables_set_creates(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_variables'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_variables'].fn
 
         ess = MagicMock()
         ess.variables.update_server_variable.side_effect = Exception('not found')
@@ -1536,11 +1475,11 @@ class TestEssbaseToolDispatch:
         assert result['name'] == 'NewVar'
 
     def test_essbase_get_script(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_get_script'].fn
+        fn = registered_tools(mcp_server)['essbase_get_script'].fn
 
         ess = MagicMock()
         ess.scripts.get_script_content.return_value = 'CALC ALL;'
@@ -1552,11 +1491,11 @@ class TestEssbaseToolDispatch:
         assert result['validation']['valid'] is True
 
     def test_essbase_browse_outline_top_level(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_browse_outline'].fn
+        fn = registered_tools(mcp_server)['essbase_browse_outline'].fn
 
         ess = MagicMock()
         ess.dimensions.get_outline.return_value = {
@@ -1566,11 +1505,11 @@ class TestEssbaseToolDispatch:
         assert 'items' in result
 
     def test_essbase_describe_database(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_describe_database'].fn
+        fn = registered_tools(mcp_server)['essbase_describe_database'].fn
 
         ess = MagicMock()
         ess.applications.get_database.return_value = {'name': 'Basic'}
@@ -1587,11 +1526,11 @@ class TestEssbaseToolDispatch:
         assert len(result['dimensions']) == 1
 
     def test_essbase_run_calculation_success(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_run_calculation'].fn
+        fn = registered_tools(mcp_server)['essbase_run_calculation'].fn
 
         ess = MagicMock()
         ess.jobs.execute.return_value = {'id': 42}
@@ -1603,11 +1542,11 @@ class TestEssbaseToolDispatch:
         assert result['statusCode'] == 200
 
     def test_essbase_run_calculation_no_script(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_run_calculation'].fn
+        fn = registered_tools(mcp_server)['essbase_run_calculation'].fn
 
         ess = MagicMock()
         ctx = self._make_ctx(ess)
@@ -1616,11 +1555,11 @@ class TestEssbaseToolDispatch:
 
     def test_essbase_run_calculation_full_flow_with_calc_script(self):
         '''Inline calc_script path: jobs.execute → wait_for_completion.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_run_calculation'].fn
+        fn = registered_tools(mcp_server)['essbase_run_calculation'].fn
 
         ess = MagicMock()
         ess.jobs.execute.return_value = {'id': 42}
@@ -1635,11 +1574,11 @@ class TestEssbaseToolDispatch:
         ess.jobs.wait_for_completion.assert_called_once_with(42)
 
     def test_essbase_load_data_full_flow(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_load_data'].fn
+        fn = registered_tools(mcp_server)['essbase_load_data'].fn
 
         ess = MagicMock()
         ess.jobs.execute.return_value = {'id': 7}
@@ -1654,11 +1593,11 @@ class TestEssbaseToolDispatch:
         assert payload['parameters']['file'] == 'd.txt'
 
     def test_essbase_deploy_workbook_uploads_and_runs_job(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_deploy_workbook'].fn
+        fn = registered_tools(mcp_server)['essbase_deploy_workbook'].fn
 
         ess = MagicMock()
         ess.jobs.execute.return_value = {'id': 9}
@@ -1681,11 +1620,11 @@ class TestEssbaseToolDispatch:
     def test_essbase_describe_database_full_flow(self):
         '''Walks the multi-call composite — verifies all SDK probes
         were issued.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_describe_database'].fn
+        fn = registered_tools(mcp_server)['essbase_describe_database'].fn
 
         ess = MagicMock()
         ctx = self._make_ctx(ess)
@@ -1695,11 +1634,11 @@ class TestEssbaseToolDispatch:
         assert ess.dimensions.list_dimensions.called
 
     def test_essbase_manage_security_username(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_security'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_security'].fn
 
         ess = MagicMock()
         ess.users.get_user.return_value = {'id': 'alice'}
@@ -1709,11 +1648,11 @@ class TestEssbaseToolDispatch:
         ess.users.get_user.assert_called_once_with('alice')
 
     def test_essbase_manage_security_groupname(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_security'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_security'].fn
 
         ess = MagicMock()
         ctx = self._make_ctx(ess)
@@ -1721,11 +1660,11 @@ class TestEssbaseToolDispatch:
         ess.groups.get_group.assert_called_once_with('developers')
 
     def test_essbase_manage_filters_create(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_filters'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_filters'].fn
 
         ess = MagicMock()
         ess.filters.create_filter.return_value = {'name': 'F'}
@@ -1740,11 +1679,11 @@ class TestEssbaseToolDispatch:
         ess.filters.validate_filter.assert_called_once()
 
     def test_essbase_manage_drill_through_create(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_drill_through'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_drill_through'].fn
 
         ess = MagicMock()
         ess.drill_through.create_report.return_value = {'name': 'R'}
@@ -1759,11 +1698,11 @@ class TestEssbaseToolDispatch:
 
     def test_essbase_manage_db_settings_reads_categories(self):
         '''category='all' fans out across multiple settings probes.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_db_settings'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_db_settings'].fn
 
         ess = MagicMock()
         ctx = self._make_ctx(ess)
@@ -1774,11 +1713,11 @@ class TestEssbaseToolDispatch:
                 or ess.database_settings.get_startup_settings.called)
 
     def test_essbase_manage_db_settings_specific_categories(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_db_settings'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_db_settings'].fn
 
         ess = MagicMock()
         # Make every settings method return a dict so the tool's
@@ -1799,11 +1738,11 @@ class TestEssbaseToolDispatch:
 
     def test_essbase_outline_metadata_all_category(self):
         '''category='all' walks dimensions, generations, levels, settings.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_outline_metadata'].fn
+        fn = registered_tools(mcp_server)['essbase_outline_metadata'].fn
 
         ess = MagicMock()
         ess.dimensions.list_dimensions.return_value = {
@@ -1815,11 +1754,11 @@ class TestEssbaseToolDispatch:
 
     def test_essbase_browse_outline_with_parent_recursive(self):
         '''Specifying a parent triggers recursive get_children walk.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_browse_outline'].fn
+        fn = registered_tools(mcp_server)['essbase_browse_outline'].fn
 
         ess = MagicMock()
         # Return an empty children list to terminate recursion fast
@@ -1830,11 +1769,11 @@ class TestEssbaseToolDispatch:
         ess.dimensions.get_children.assert_called()
 
     def test_essbase_search_members_enriches_with_ancestors(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_search_members'].fn
+        fn = registered_tools(mcp_server)['essbase_search_members'].fn
 
         ess = MagicMock()
         ess.dimensions.search_members.return_value = {
@@ -1849,11 +1788,11 @@ class TestEssbaseToolDispatch:
         assert result['count'] == 1
 
     def test_essbase_manage_filters_update_with_validate(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_filters'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_filters'].fn
 
         ess = MagicMock()
         ess.filters.update_filter.return_value = {'name': 'F'}
@@ -1867,11 +1806,11 @@ class TestEssbaseToolDispatch:
         ess.filters.validate_filter.assert_called_once()
 
     def test_essbase_manage_users_provision_app_role(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_users'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_users'].fn
 
         ess = MagicMock()
         ess.users.provision_app_role.return_value = {'status': 'ok'}
@@ -1882,11 +1821,11 @@ class TestEssbaseToolDispatch:
         assert ess.users.provision_app_role.called
 
     def test_essbase_manage_users_provision_service_role(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_users'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_users'].fn
 
         ess = MagicMock()
         ess.users.provision_service_role.return_value = {'status': 'ok'}
@@ -1898,11 +1837,11 @@ class TestEssbaseToolDispatch:
 
     def test_essbase_edit_outline_builds_payload(self):
         '''Verify the BOE payload shape for an `add` action.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_edit_outline'].fn
+        fn = registered_tools(mcp_server)['essbase_edit_outline'].fn
 
         ess = MagicMock()
         ess.dimensions.batch_outline_edit.return_value = {'status': 'ok'}
@@ -1917,11 +1856,11 @@ class TestEssbaseToolDispatch:
         assert payload['editActions'][0]['actionType'].lower().startswith('add')
 
     def test_essbase_manage_drill_through_update(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_drill_through'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_drill_through'].fn
 
         ess = MagicMock()
         ess.drill_through.update_report.return_value = {'name': 'R'}
@@ -1935,11 +1874,11 @@ class TestEssbaseToolDispatch:
         ess.drill_through.update_report.assert_called_once()
 
     def test_essbase_manage_drill_through_execute(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_drill_through'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_drill_through'].fn
 
         ess = MagicMock()
         ess.drill_through.execute_report.return_value = {'rows': []}
@@ -1949,11 +1888,11 @@ class TestEssbaseToolDispatch:
         ess.drill_through.execute_report.assert_called_once()
 
     def test_essbase_manage_database_update(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_database'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_database'].fn
 
         ess = MagicMock()
         ess.applications.update_database.return_value = {'name': 'D'}
@@ -1963,11 +1902,11 @@ class TestEssbaseToolDispatch:
         ess.applications.update_database.assert_called_once()
 
     def test_essbase_manage_database_copy(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_database'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_database'].fn
 
         ess = MagicMock()
         ess.applications.copy_database.return_value = {'status': 'copied'}
@@ -1977,11 +1916,11 @@ class TestEssbaseToolDispatch:
         ess.applications.copy_database.assert_called_once()
 
     def test_essbase_manage_groups_add_users(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_groups'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_groups'].fn
 
         ess = MagicMock()
         ess.groups.add_users.return_value = {'status': 'ok'}
@@ -1995,11 +1934,11 @@ class TestEssbaseToolDispatch:
         assert users_arg[0]['id'] == 'alice'
 
     def test_essbase_manage_groups_remove_users(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_groups'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_groups'].fn
 
         ess = MagicMock()
         ess.groups.remove_users.return_value = {'status': 'ok'}
@@ -2009,11 +1948,11 @@ class TestEssbaseToolDispatch:
         ess.groups.remove_users.assert_called_once_with('G')
 
     def test_essbase_manage_groups_add_subgroups(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_groups'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_groups'].fn
 
         ess = MagicMock()
         ess.groups.add_subgroups.return_value = {'status': 'ok'}
@@ -2023,11 +1962,11 @@ class TestEssbaseToolDispatch:
         ess.groups.add_subgroups.assert_called_once()
 
     def test_essbase_manage_users_deprovision_app(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_users'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_users'].fn
 
         ess = MagicMock()
         ess.users.deprovision_app_role.return_value = {'status': 'ok'}
@@ -2037,11 +1976,11 @@ class TestEssbaseToolDispatch:
         ess.users.deprovision_app_role.assert_called()
 
     def test_essbase_manage_users_update(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_users'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_users'].fn
 
         ess = MagicMock()
         ess.users.update_user.return_value = {'status': 'ok'}
@@ -2050,11 +1989,11 @@ class TestEssbaseToolDispatch:
         ess.users.update_user.assert_called_once()
 
     def test_essbase_manage_users_create(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_users'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_users'].fn
 
         ess = MagicMock()
         ess.users.create_user.return_value = {'id': 'alice'}
@@ -2064,11 +2003,11 @@ class TestEssbaseToolDispatch:
 
     def test_essbase_manage_jobs_rerun_full_flow(self):
         '''rerun also calls wait_for_completion on the new job.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_jobs'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_jobs'].fn
 
         ess = MagicMock()
         ess.jobs.rerun.return_value = {'id': 99}
@@ -2080,11 +2019,11 @@ class TestEssbaseToolDispatch:
         ess.jobs.wait_for_completion.assert_called_once_with(99)
 
     def test_essbase_manage_filters_update_full_flow(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_filters'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_filters'].fn
 
         ess = MagicMock()
         ess.filters.update_filter.return_value = {'name': 'F'}
@@ -2099,11 +2038,11 @@ class TestEssbaseToolDispatch:
         ess.filters.validate_filter.assert_called_once()
 
     def test_essbase_manage_locks_unlock(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_locks'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_locks'].fn
 
         ess = MagicMock()
         ess.locks.unlock_object.return_value = {'status': 'unlocked'}
@@ -2113,11 +2052,11 @@ class TestEssbaseToolDispatch:
         ess.locks.unlock_object.assert_called_once()
 
     def test_essbase_manage_sessions_kill_specific(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_sessions'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_sessions'].fn
 
         ess = MagicMock()
         ess.sessions.delete_session.return_value = {'status': 'killed'}
@@ -2128,11 +2067,11 @@ class TestEssbaseToolDispatch:
         ess.sessions.delete_session.assert_called_once_with('123')
 
     def test_essbase_manage_application_update(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_application'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_application'].fn
 
         ess = MagicMock()
         ess.applications.update_application.return_value = {'status': 'started'}
@@ -2143,11 +2082,11 @@ class TestEssbaseToolDispatch:
         assert call_args[0][1] == {'status': 1}
 
     def test_essbase_manage_application_stop(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_application'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_application'].fn
 
         ess = MagicMock()
         ctx = self._make_ctx(ess)
@@ -2157,11 +2096,11 @@ class TestEssbaseToolDispatch:
 
     def test_essbase_outline_metadata_export_xml_returns_blob(self):
         '''export_xml returns a string blob, body wraps it.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_outline_metadata'].fn
+        fn = registered_tools(mcp_server)['essbase_outline_metadata'].fn
 
         ess = MagicMock()
         ess.dimensions.export_outline_xml.return_value = '<outline />'
@@ -2173,11 +2112,11 @@ class TestEssbaseToolDispatch:
         assert '<outline' in str(result)
 
     def test_essbase_outline_metadata_member_returns_member(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_outline_metadata'].fn
+        fn = registered_tools(mcp_server)['essbase_outline_metadata'].fn
 
         ess = MagicMock()
         ess.dimensions.get_member.return_value = {'name': 'East'}
@@ -2188,11 +2127,11 @@ class TestEssbaseToolDispatch:
         ess.dimensions.get_member.assert_called_once()
 
     def test_essbase_manage_datasources_update(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_datasources'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_datasources'].fn
 
         ess = MagicMock()
         ess.datasources.update_datasource.return_value = {'name': 'DS'}
@@ -2203,11 +2142,11 @@ class TestEssbaseToolDispatch:
         ess.datasources.update_datasource.assert_called_once()
 
     def test_essbase_manage_connections_update(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_connections'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_connections'].fn
 
         ess = MagicMock()
         ess.connections.update_connection.return_value = {'name': 'C'}
@@ -2218,11 +2157,11 @@ class TestEssbaseToolDispatch:
         ess.connections.update_connection.assert_called_once()
 
     def test_essbase_manage_files_copy(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_files'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_files'].fn
 
         ess = MagicMock()
         ess.files.copy.return_value = {'status': 'copied'}
@@ -2232,11 +2171,11 @@ class TestEssbaseToolDispatch:
         ess.files.copy.assert_called_once()
 
     def test_essbase_manage_files_move(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_files'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_files'].fn
 
         ess = MagicMock()
         ess.files.move.return_value = {'status': 'moved'}
@@ -2246,11 +2185,11 @@ class TestEssbaseToolDispatch:
         ess.files.move.assert_called_once()
 
     def test_essbase_manage_files_upload(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_files'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_files'].fn
 
         ess = MagicMock()
         ess.files.upload.return_value = None
@@ -2260,11 +2199,11 @@ class TestEssbaseToolDispatch:
         ess.files.upload.assert_called_once()
 
     def test_essbase_manage_files_download_bytes(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_files'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_files'].fn
 
         ess = MagicMock()
         ess.files.download.return_value = b'hello bytes content'
@@ -2274,11 +2213,11 @@ class TestEssbaseToolDispatch:
         assert result['size_bytes'] == len(b'hello bytes content')
 
     def test_essbase_manage_users_get_with_provisioning_report(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_users'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_users'].fn
 
         ess = MagicMock()
         ess.users.get_user.return_value = {'id': 'u'}
@@ -2288,11 +2227,11 @@ class TestEssbaseToolDispatch:
         ess.users.get_user.assert_called_once_with('alice')
 
     def test_essbase_manage_groups_get_full_body(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_groups'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_groups'].fn
 
         ess = MagicMock()
         ess.groups.get_group.return_value = {'id': 'G'}
@@ -2304,11 +2243,11 @@ class TestEssbaseToolDispatch:
 
     def test_essbase_manage_drill_through_create_full_payload(self):
         '''Create with all optional fields — exercises payload assembly.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_drill_through'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_drill_through'].fn
 
         ess = MagicMock()
         ess.drill_through.create_report.return_value = {'name': 'R'}
@@ -2327,11 +2266,11 @@ class TestEssbaseToolDispatch:
 
     def test_essbase_manage_filters_create_with_default_access(self):
         '''Create with no filter_rows uses default access on @ALL.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_filters'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_filters'].fn
 
         ess = MagicMock()
         ess.filters.create_filter.return_value = {'name': 'F'}
@@ -2346,11 +2285,11 @@ class TestEssbaseToolDispatch:
 
     def test_essbase_manage_jobs_status_returns_status(self):
         '''status path: jobs.get_status(job_id).'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_jobs'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_jobs'].fn
 
         ess = MagicMock()
         ess.jobs.get_status.return_value = {'status': 200, 'jobID': 5}
@@ -2359,11 +2298,11 @@ class TestEssbaseToolDispatch:
         ess.jobs.get_status.assert_called_once_with(5)
 
     def test_essbase_manage_jobs_status_no_id_errors(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_jobs'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_jobs'].fn
 
         ess = MagicMock()
         ctx = self._make_ctx(ess)
@@ -2446,11 +2385,11 @@ class TestEssbaseToolDispatch:
         '''Bulk validation-error coverage. Each missing-required-arg
         path returns an error JSON. Lifts coverage across all manage_*
         tools' error branches.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools[tool].fn
+        fn = registered_tools(mcp_server)[tool].fn
         ess = MagicMock()
         ctx = self._make_ctx(ess)
         result = json.loads(fn(ctx=ctx, **kwargs))
@@ -2458,11 +2397,11 @@ class TestEssbaseToolDispatch:
 
     def test_essbase_get_logs_all_logs(self):
         '''latest_only=False fetches the full log set.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_get_logs'].fn
+        fn = registered_tools(mcp_server)['essbase_get_logs'].fn
 
         ess = MagicMock()
         ess.applications.get_logs.return_value = '...lots of log lines...'
@@ -2471,11 +2410,11 @@ class TestEssbaseToolDispatch:
         ess.applications.get_logs.assert_called_once()
 
     def test_essbase_outline_metadata_generations_levels_with_dim(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_outline_metadata'].fn
+        fn = registered_tools(mcp_server)['essbase_outline_metadata'].fn
 
         ess = MagicMock()
         ess.dimensions.list_generations.return_value = []
@@ -2486,11 +2425,11 @@ class TestEssbaseToolDispatch:
                 dimension_name='Time', ctx=ctx)
 
     def test_essbase_outline_metadata_generations_no_dim_errors(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_outline_metadata'].fn
+        fn = registered_tools(mcp_server)['essbase_outline_metadata'].fn
 
         ess = MagicMock()
         ctx = self._make_ctx(ess)
@@ -2499,11 +2438,11 @@ class TestEssbaseToolDispatch:
         assert 'error' in result
 
     def test_essbase_outline_metadata_unknown_category(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_outline_metadata'].fn
+        fn = registered_tools(mcp_server)['essbase_outline_metadata'].fn
 
         ess = MagicMock()
         ctx = self._make_ctx(ess)
@@ -2512,11 +2451,11 @@ class TestEssbaseToolDispatch:
         assert 'error' in result
 
     def test_essbase_manage_users_list_roles_variants(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_users'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_users'].fn
 
         ess = MagicMock()
         ess.users.list_service_roles.return_value = []
@@ -2531,11 +2470,11 @@ class TestEssbaseToolDispatch:
 
     def test_essbase_manage_drill_through_validate_paths(self):
         '''Get + execute paths for drill-through.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_drill_through'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_drill_through'].fn
 
         ess = MagicMock()
         ess.drill_through.get_report.return_value = {'name': 'R'}
@@ -2550,11 +2489,11 @@ class TestEssbaseToolDispatch:
         assert 'error' in result
 
     def test_essbase_edit_outline_remove_action(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_edit_outline'].fn
+        fn = registered_tools(mcp_server)['essbase_edit_outline'].fn
 
         ess = MagicMock()
         ess.dimensions.batch_outline_edit.return_value = {'status': 'ok'}
@@ -2569,11 +2508,11 @@ class TestEssbaseToolDispatch:
         assert 'remove' in payload['editActions'][0]['actionType'].lower()
 
     def test_essbase_edit_outline_move_with_parent(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_edit_outline'].fn
+        fn = registered_tools(mcp_server)['essbase_edit_outline'].fn
 
         ess = MagicMock()
         ess.dimensions.batch_outline_edit.return_value = {'status': 'ok'}
@@ -2584,11 +2523,11 @@ class TestEssbaseToolDispatch:
         ess.dimensions.batch_outline_edit.assert_called_once()
 
     def test_essbase_manage_filters_get_with_rows(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_filters'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_filters'].fn
 
         ess = MagicMock()
         ess.filters.get_filter.return_value = {'name': 'F'}
@@ -2601,11 +2540,11 @@ class TestEssbaseToolDispatch:
 
     def test_essbase_export_data_default_grid(self):
         '''When no MDX or report given, export uses get_default_grid.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_export_data'].fn
+        fn = registered_tools(mcp_server)['essbase_export_data'].fn
 
         ess = MagicMock()
         ess.grid.get_default_grid.return_value = {'data': []}
@@ -2618,21 +2557,20 @@ class TestEssbaseToolDispatch:
 #  ADP tool dispatch tests (mocked SDK)                                #
 # ------------------------------------------------------------------ #
 
-@mcp_required
 class TestAdpToolDispatch:
 
     def _make_ctx(self, adp_mock):
         ctx = MagicMock()
         adp_mock.rest.expired = None
-        ctx.request_context.lifespan_context = {'adp': adp_mock}
+        ctx.lifespan_context = {'adp': adp_mock}
         return ctx
 
     def test_adp_search_success(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['adp_search'].fn
+        fn = registered_tools(mcp_server)['adp_search'].fn
 
         adp = MagicMock()
         adp.rest.expired = None
@@ -2643,11 +2581,11 @@ class TestAdpToolDispatch:
         assert result['search_term'] == 'EMP'
 
     def test_adp_browse_catalog_list(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['adp_browse_catalog'].fn
+        fn = registered_tools(mcp_server)['adp_browse_catalog'].fn
 
         adp = MagicMock()
         adp.rest.expired = None
@@ -2658,11 +2596,11 @@ class TestAdpToolDispatch:
         assert result[0]['name'] == 'cat1'
 
     def test_adp_analyze_analytic_view(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['adp_analyze_analytic_view'].fn
+        fn = registered_tools(mcp_server)['adp_analyze_analytic_view'].fn
 
         adp = MagicMock()
         adp.rest.expired = None
@@ -2678,11 +2616,11 @@ class TestAdpToolDispatch:
 
     def test_adp_manage_db_links_copy_tables_passes_dblink(self):
         '''Verify copy_tables builds table descriptors with dbLink key.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['adp_manage_db_links'].fn
+        fn = registered_tools(mcp_server)['adp_manage_db_links'].fn
 
         adp = MagicMock()
         adp.rest.expired = None
@@ -2701,11 +2639,11 @@ class TestAdpToolDispatch:
 
     def test_adp_manage_db_links_link_tables_passes_dblink(self):
         '''Verify link_tables builds table descriptors with dbLink key.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['adp_manage_db_links'].fn
+        fn = registered_tools(mcp_server)['adp_manage_db_links'].fn
 
         adp = MagicMock()
         adp.rest.expired = None
@@ -2726,11 +2664,11 @@ class TestAdpToolDispatch:
         the second positional, silently coercing it to skip_dimensions=
         True and dropping the user's name. Verify create_auto is now
         called with ONLY the fact_table positional arg.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['adp_build_analytic_view'].fn
+        fn = registered_tools(mcp_server)['adp_build_analytic_view'].fn
 
         adp = MagicMock()
         adp.rest.expired = None
@@ -2756,11 +2694,11 @@ class TestAdpToolDispatch:
         accept a recipient. Earlier code passed recipient_name as
         owner, silently misrouting it. Verify publish is called with
         share_name only.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['adp_manage_sharing'].fn
+        fn = registered_tools(mcp_server)['adp_manage_sharing'].fn
 
         adp = MagicMock()
         adp.rest.expired = None
@@ -2776,11 +2714,11 @@ class TestAdpToolDispatch:
     def test_adp_manage_sharing_grant_recipient_uses_correct_sdk(self):
         '''The new grant_recipient action threads recipient_name +
         tables through to update_recipient_shares.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['adp_manage_sharing'].fn
+        fn = registered_tools(mcp_server)['adp_manage_sharing'].fn
 
         adp = MagicMock()
         adp.rest.expired = None
@@ -2798,20 +2736,20 @@ class TestAdpToolDispatch:
         '''adp_ai_query was intentionally removed from the composite
         MCP — Select AI doesn't reliably honor 23ai annotations and
         executing LLM-generated SQL belongs to SQLcl, not here.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        names = mcp_server._tool_manager._tools.keys()
+        names = registered_tools(mcp_server).keys()
         assert 'adp_ai_query' not in names
 
     def test_adp_search_with_include_ddl_walks_top_hits(self):
         '''include_ddl=True triggers a per-hit DDL fetch.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['adp_search'].fn
+        fn = registered_tools(mcp_server)['adp_search'].fn
 
         adp = MagicMock()
         adp.rest.expired = None
@@ -2826,11 +2764,11 @@ class TestAdpToolDispatch:
 
     def test_adp_load_from_cloud_full_flow(self):
         '''Full flow: validates credential + storage link, then loads.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['adp_load_from_cloud'].fn
+        fn = registered_tools(mcp_server)['adp_load_from_cloud'].fn
 
         adp = MagicMock()
         adp.rest.expired = None
@@ -2849,11 +2787,11 @@ class TestAdpToolDispatch:
 
     def test_adp_load_from_cloud_progress_only(self):
         '''When request_id is given, just polls progress.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['adp_load_from_cloud'].fn
+        fn = registered_tools(mcp_server)['adp_load_from_cloud'].fn
 
         adp = MagicMock()
         adp.rest.expired = None
@@ -2865,11 +2803,11 @@ class TestAdpToolDispatch:
 
     def test_adp_build_analytic_view_full_flow(self):
         '''Walks create_auto → compile → metadata → preview.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['adp_build_analytic_view'].fn
+        fn = registered_tools(mcp_server)['adp_build_analytic_view'].fn
 
         adp = MagicMock()
         adp.rest.expired = None
@@ -2888,11 +2826,11 @@ class TestAdpToolDispatch:
         adp.Analytics.get_data_preview.assert_called()
 
     def test_adp_analyze_analytic_view_walks_quality(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['adp_analyze_analytic_view'].fn
+        fn = registered_tools(mcp_server)['adp_analyze_analytic_view'].fn
 
         adp = MagicMock()
         adp.rest.expired = None
@@ -2909,11 +2847,11 @@ class TestAdpToolDispatch:
 
     def test_adp_generate_insights_polls_status(self):
         '''generate_insights kicks off the job + polls + collects graph.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['adp_generate_insights'].fn
+        fn = registered_tools(mcp_server)['adp_generate_insights'].fn
 
         adp = MagicMock()
         adp.rest.expired = None
@@ -2975,11 +2913,11 @@ class TestAdpToolDispatch:
     ])
     def test_adp_validation_error_branches(self, tool, kwargs):
         '''Validation-error coverage for ADP composite tools.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools[tool].fn
+        fn = registered_tools(mcp_server)[tool].fn
         adp = MagicMock()
         adp.rest.expired = None
         adp.rest.username = 'ADMIN'
@@ -2991,11 +2929,11 @@ class TestAdpToolDispatch:
         '''Verify adp_get_annotations groups rows into table vs column
         annotations and counts them correctly. Also verifies we do NOT
         query the non-existent OWNER column on ALL_ANNOTATIONS_USAGE.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['adp_get_annotations'].fn
+        fn = registered_tools(mcp_server)['adp_get_annotations'].fn
 
         adp = MagicMock()
         adp.rest.expired = None
@@ -3033,11 +2971,11 @@ class TestAdpToolDispatch:
 
     def test_adp_get_annotations_empty_returns_note(self):
         '''No annotations → result includes a diagnostic note.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['adp_get_annotations'].fn
+        fn = registered_tools(mcp_server)['adp_get_annotations'].fn
 
         adp = MagicMock()
         adp.rest.expired = None
@@ -3049,11 +2987,11 @@ class TestAdpToolDispatch:
 
     def test_adp_sql_with_annotations_prompt_registered(self):
         '''Prompt is registered and renders with the expected guidance.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        prompts = mcp_server._prompt_manager._prompts
+        prompts = {prompt.name: prompt for prompt in asyncio.run(mcp_server.list_prompts())}
         assert 'adp_sql_with_annotations' in prompts
         prompt = prompts['adp_sql_with_annotations']
         # Render it via the underlying function
@@ -3069,33 +3007,32 @@ class TestAdpToolDispatch:
 #  DT tool dispatch tests (mocked SDK)                                 #
 # ------------------------------------------------------------------ #
 
-@mcp_required
 class TestDtToolDispatch:
 
     def _make_ctx(self, client_mock):
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {
+        ctx.lifespan_context = {
             'datatransforms': {'client': client_mock, 'workbench': MagicMock()},
         }
         return ctx
 
     def test_dt_explore_no_connection(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_explore'].fn
+        fn = registered_tools(mcp_server)['dt_explore'].fn
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {}
+        ctx.lifespan_context = {}
         result = json.loads(fn(ctx=ctx))
         assert 'error' in result
 
     def test_dt_explore_success(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_explore'].fn
+        fn = registered_tools(mcp_server)['dt_explore'].fn
 
         client = MagicMock()
         client.get_about.return_value = {'version': '1.0'}
@@ -3108,11 +3045,11 @@ class TestDtToolDispatch:
         assert len(result['connections']) == 1
 
     def test_dt_describe_project_success(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_describe_project'].fn
+        fn = registered_tools(mcp_server)['dt_describe_project'].fn
 
         client = MagicMock()
         client.check_if_project_exists.return_value = 'proj-123'
@@ -3125,11 +3062,11 @@ class TestDtToolDispatch:
         assert len(result['dataflows']) == 1
 
     def test_dt_describe_project_not_found(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_describe_project'].fn
+        fn = registered_tools(mcp_server)['dt_describe_project'].fn
 
         client = MagicMock()
         client.check_if_project_exists.return_value = None
@@ -3138,11 +3075,11 @@ class TestDtToolDispatch:
         assert 'error' in result
 
     def test_dt_manage_variables_list(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_variables'].fn
+        fn = registered_tools(mcp_server)['dt_manage_variables'].fn
 
         client = MagicMock()
         client.list_variables.return_value = [{'name': 'V1', 'value': 'X'}]
@@ -3154,11 +3091,11 @@ class TestDtToolDispatch:
            create=True)
     def test_dt_manage_dataload_create_uses_all_inputs(self, MockDataLoad):
         '''Verify create passes name, project, connection.schema to DataLoad.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_dataload'].fn
+        fn = registered_tools(mcp_server)['dt_manage_dataload'].fn
 
         client = MagicMock()
         client.check_if_project_exists.return_value = 'proj-123'
@@ -3195,11 +3132,11 @@ class TestDtToolDispatch:
         assert result['dataload'] == 'my_load'
 
     def test_dt_manage_schedule_unknown_action(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_schedule'].fn
+        fn = registered_tools(mcp_server)['dt_manage_schedule'].fn
 
         client = MagicMock()
         ctx = self._make_ctx(client)
@@ -3207,11 +3144,11 @@ class TestDtToolDispatch:
         assert 'error' in result
 
     def test_dt_browse_data_schemas(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_browse_data'].fn
+        fn = registered_tools(mcp_server)['dt_browse_data'].fn
 
         client = MagicMock()
         client.get_live_schemas.return_value = ['schema1', 'schema2']
@@ -3222,11 +3159,11 @@ class TestDtToolDispatch:
     def test_dt_browse_data_with_schema_filter(self):
         '''When schema is specified, dt_browse_data calls
         get_live_tables for that schema.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_browse_data'].fn
+        fn = registered_tools(mcp_server)['dt_browse_data'].fn
 
         client = MagicMock()
         client.get_live_tables.return_value = ['T1', 'T2']
@@ -3238,18 +3175,18 @@ class TestDtToolDispatch:
     def test_dt_create_pipeline_creates_project_when_missing(self):
         '''If the project doesn't exist, dt_create_pipeline creates it
         first, then proceeds with the dataflow build.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_create_pipeline'].fn
+        fn = registered_tools(mcp_server)['dt_create_pipeline'].fn
 
         client = MagicMock()
         # First call: project doesn't exist; second call after create: exists
         client.check_if_project_exists.side_effect = [None, 'proj-1']
         wb = MagicMock()
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {
+        ctx.lifespan_context = {
             'datatransforms': {'client': client, 'workbench': wb}}
         # The body falls back to client.create_dataflow_from_json_payload
         # if the SDK builders aren't importable; with our MagicMock
@@ -3276,11 +3213,11 @@ class TestDtToolDispatch:
         return fake_module, fake_sched
 
     def test_dt_manage_schedule_create_immediate(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_schedule'].fn
+        fn = registered_tools(mcp_server)['dt_manage_schedule'].fn
 
         client = MagicMock()
         client.check_if_schedule_exists.return_value = (False, None)
@@ -3294,11 +3231,11 @@ class TestDtToolDispatch:
         sched.immediate.assert_called_once()
 
     def test_dt_manage_schedule_create_hourly(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_schedule'].fn
+        fn = registered_tools(mcp_server)['dt_manage_schedule'].fn
 
         client = MagicMock()
         client.check_if_schedule_exists.return_value = (False, None)
@@ -3312,11 +3249,11 @@ class TestDtToolDispatch:
         sched.hourly.assert_called_once_with(15, 30)
 
     def test_dt_manage_schedule_create_daily_full_path(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_schedule'].fn
+        fn = registered_tools(mcp_server)['dt_manage_schedule'].fn
 
         client = MagicMock()
         client.check_if_schedule_exists.return_value = (False, None)
@@ -3332,11 +3269,11 @@ class TestDtToolDispatch:
         sched.daily.assert_called_once_with(9, 30, 0)
 
     def test_dt_manage_schedule_create_weekly(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_schedule'].fn
+        fn = registered_tools(mcp_server)['dt_manage_schedule'].fn
 
         client = MagicMock()
         client.check_if_schedule_exists.return_value = (False, None)
@@ -3352,11 +3289,11 @@ class TestDtToolDispatch:
         sched.weekly.assert_called_once_with(['MONDAY', 'FRIDAY'], '09:00')
 
     def test_dt_manage_schedule_create_monthly(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_schedule'].fn
+        fn = registered_tools(mcp_server)['dt_manage_schedule'].fn
 
         client = MagicMock()
         client.check_if_schedule_exists.return_value = (False, None)
@@ -3371,11 +3308,11 @@ class TestDtToolDispatch:
         sched.monthly.assert_called_once_with('15', '09:00:00')
 
     def test_dt_manage_schedule_create_unknown_frequency(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_schedule'].fn
+        fn = registered_tools(mcp_server)['dt_manage_schedule'].fn
 
         client = MagicMock()
         client.check_if_schedule_exists.return_value = (False, None)
@@ -3389,11 +3326,11 @@ class TestDtToolDispatch:
         assert 'error' in result
 
     def test_dt_manage_schedule_create_weekly_no_days_errors(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_schedule'].fn
+        fn = registered_tools(mcp_server)['dt_manage_schedule'].fn
 
         client = MagicMock()
         client.check_if_schedule_exists.return_value = (False, None)
@@ -3410,11 +3347,11 @@ class TestDtToolDispatch:
         '''dt_manage_schedule create with daily frequency triggers
         the Schedule builder. We can't import the real builder but can
         verify the existence-probe + branch dispatch happen.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_schedule'].fn
+        fn = registered_tools(mcp_server)['dt_manage_schedule'].fn
 
         client = MagicMock()
         client.check_if_schedule_exists.return_value = (False, None)
@@ -3431,17 +3368,17 @@ class TestDtToolDispatch:
     def test_dt_create_pipeline_full_flow(self):
         '''Full dt_create_pipeline flow with all required SDK builders
         mocked.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_create_pipeline'].fn
+        fn = registered_tools(mcp_server)['dt_create_pipeline'].fn
 
         client = MagicMock()
         client.check_if_project_exists.return_value = 'proj-1'
         wb = MagicMock()
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {
+        ctx.lifespan_context = {
             'datatransforms': {'client': client, 'workbench': wb}}
 
         # Mock the Project / SourceDataStore / TargetDataStore /
@@ -3473,18 +3410,18 @@ class TestDtToolDispatch:
     def test_dt_create_pipeline_with_workbench_builder(self):
         '''Walk dt_create_pipeline through the workbench-builder branch
         deep enough to cover the body's main flow.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_create_pipeline'].fn
+        fn = registered_tools(mcp_server)['dt_create_pipeline'].fn
 
         client = MagicMock()
         client.check_if_project_exists.return_value = 'proj-1'
         client.check_if_df_exists.return_value = (False, None)
         wb = MagicMock()
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {
+        ctx.lifespan_context = {
             'datatransforms': {'client': client, 'workbench': wb}}
 
         fake_df_module = MagicMock()
@@ -3515,11 +3452,11 @@ class TestDtToolDispatch:
 
     def test_dt_describe_connection_no_schemas_branch(self):
         '''Connection details fetched but live_schemas returns empty.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_describe_connection'].fn
+        fn = registered_tools(mcp_server)['dt_describe_connection'].fn
 
         client = MagicMock()
         client.get_connection_details.return_value = {'name': 'C'}
@@ -3531,11 +3468,11 @@ class TestDtToolDispatch:
 
     def test_dt_browse_data_lists_all_schemas(self):
         '''No schema specified → returns all schemas with their tables.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_browse_data'].fn
+        fn = registered_tools(mcp_server)['dt_browse_data'].fn
 
         client = MagicMock()
         client.get_live_schemas.return_value = ['S1', 'S2']
@@ -3546,11 +3483,11 @@ class TestDtToolDispatch:
         assert result.get('schemas') == ['S1', 'S2']
 
     def test_dt_manage_dataload_get_with_existing(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_dataload'].fn
+        fn = registered_tools(mcp_server)['dt_manage_dataload'].fn
 
         client = MagicMock()
         client.check_if_project_exists.return_value = 'proj-1'
@@ -3564,11 +3501,11 @@ class TestDtToolDispatch:
 
     def test_dt_manage_workflow_check_exists_true(self):
         '''check_exists returns global_id when present.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_workflow'].fn
+        fn = registered_tools(mcp_server)['dt_manage_workflow'].fn
 
         client = MagicMock()
         client.check_if_project_exists.return_value = 'proj-1'
@@ -3582,11 +3519,11 @@ class TestDtToolDispatch:
     def test_dt_manage_dataload_create_full_body(self):
         '''dt_manage_dataload create body — exercises project check,
         DataLoad builder import, and the full table-load loop.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_dataload'].fn
+        fn = registered_tools(mcp_server)['dt_manage_dataload'].fn
 
         client = MagicMock()
         client.check_if_project_exists.return_value = 'proj-1'
@@ -3610,11 +3547,11 @@ class TestDtToolDispatch:
         fake_dl.create_dataload.assert_called_once()
 
     def test_dt_manage_dataload_create_recreate_path(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_dataload'].fn
+        fn = registered_tools(mcp_server)['dt_manage_dataload'].fn
 
         client = MagicMock()
         client.check_if_project_exists.return_value = 'proj-1'
@@ -3634,11 +3571,11 @@ class TestDtToolDispatch:
 
     def test_dt_manage_workflow_get(self):
         '''get action looks up workflow by name + ID.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_workflow'].fn
+        fn = registered_tools(mcp_server)['dt_manage_workflow'].fn
 
         client = MagicMock()
         client.check_if_project_exists.return_value = 'proj-1'
@@ -3687,11 +3624,11 @@ class TestDtToolDispatch:
     ])
     def test_dt_validation_error_branches(self, tool, kwargs):
         '''Validation-error coverage for DT composite tools.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools[tool].fn
+        fn = registered_tools(mcp_server)[tool].fn
         client = MagicMock()
         client.check_if_project_exists.return_value = 'proj-1'
         client.check_if_dataload_exists.return_value = (False, None)
@@ -3703,11 +3640,11 @@ class TestDtToolDispatch:
     def test_dt_describe_project_full_body(self):
         '''Walks the full dt_describe_project flow: existence check
         + 3 list_*_in_project calls + per-entity get_*_by_id walks.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_describe_project'].fn
+        fn = registered_tools(mcp_server)['dt_describe_project'].fn
 
         client = MagicMock()
         client.check_if_project_exists.return_value = 'proj-1'
@@ -3727,11 +3664,11 @@ class TestDtToolDispatch:
         client.list_dataloads_in_project.assert_called_once_with('proj-1')
 
     def test_dt_describe_project_not_found(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_describe_project'].fn
+        fn = registered_tools(mcp_server)['dt_describe_project'].fn
 
         client = MagicMock()
         client.check_if_project_exists.return_value = None
@@ -3741,11 +3678,11 @@ class TestDtToolDispatch:
         assert result.get('exists') is False or 'error' in result
 
     def test_dt_describe_connection_full_body(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_describe_connection'].fn
+        fn = registered_tools(mcp_server)['dt_describe_connection'].fn
 
         client = MagicMock()
         client.get_connection_details.return_value = {'name': 'C',
@@ -3760,11 +3697,11 @@ class TestDtToolDispatch:
         client.test_connection_by_name.assert_called_once_with('C')
 
     def test_dt_check_health_walks_all_connections(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_check_health'].fn
+        fn = registered_tools(mcp_server)['dt_check_health'].fn
 
         client = MagicMock()
         client.list_connections.return_value = [
@@ -3780,11 +3717,11 @@ class TestDtToolDispatch:
     def test_dt_run_pipeline_dataflow(self):
         '''dt_run_pipeline gets a runtime client from the workbench
         and calls run_dataflow.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_run_pipeline'].fn
+        fn = registered_tools(mcp_server)['dt_run_pipeline'].fn
 
         client = MagicMock()
         workbench = MagicMock()
@@ -3792,7 +3729,7 @@ class TestDtToolDispatch:
         runtime.run_dataflow.return_value = {'session_id': 'S1'}
         workbench.get_runtime_client.return_value = runtime
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {
+        ctx.lifespan_context = {
             'datatransforms': {'client': client, 'workbench': workbench}}
         result = json.loads(fn(project_name='P', resource_name='DF',
                                 resource_type='dataflow', ctx=ctx))
@@ -3803,17 +3740,17 @@ class TestDtToolDispatch:
         assert 'job_result' in result
 
     def test_dt_manage_data_entities_import(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_data_entities'].fn
+        fn = registered_tools(mcp_server)['dt_manage_data_entities'].fn
 
         client = MagicMock()
         wb = MagicMock()
         wb.import_data_entities.return_value = {'imported': 5}
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {
+        ctx.lifespan_context = {
             'datatransforms': {'client': client, 'workbench': wb}}
         result = json.loads(fn(action='import_entities',
                                 connection_name='C',
@@ -3821,11 +3758,11 @@ class TestDtToolDispatch:
         wb.import_data_entities.assert_called_once_with('C', 'S')
 
     def test_dt_manage_dataflow_check_exists(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_dataflow'].fn
+        fn = registered_tools(mcp_server)['dt_manage_dataflow'].fn
 
         client = MagicMock()
         client.check_if_project_exists.return_value = 'proj-1'
@@ -3956,20 +3893,13 @@ class TestCliConfig:
 # of bug (B1, B2, M7 in the audit) and lift line coverage by
 # touching every action branch.
 
-def _walk(obj, path):
-    '''Walk a dotted attr path on a mock and return the final attr.'''
-    for part in path.split('.'):
-        obj = getattr(obj, part)
-    return obj
-
-
 def _adp_dispatch(tool_name, kwargs, sdk_path, sdk_return=None):
     '''Run an ADP tool with a mocked SDK; return (result, mock_adp).'''
-    from mcp.server.fastmcp import FastMCP
+    from fastmcp import FastMCP
     from oracle.data_studio_mcp_server.tools import adp_tools
     mcp_server = FastMCP('test')
     adp_tools.register_tools(mcp_server)
-    fn = mcp_server._tool_manager._tools[tool_name].fn
+    fn = registered_tools(mcp_server)[tool_name].fn
     adp = MagicMock()
     adp.rest.expired = None
     adp.rest.username = 'ADMIN'
@@ -3977,7 +3907,7 @@ def _adp_dispatch(tool_name, kwargs, sdk_path, sdk_return=None):
     method.return_value = json.dumps(sdk_return if sdk_return is not None
                                       else {'status': 'ok'})
     ctx = MagicMock()
-    ctx.request_context.lifespan_context = {'adp': adp}
+    ctx.lifespan_context = {'adp': adp}
     result = fn(ctx=ctx, **kwargs)
     return result, adp
 
@@ -3990,11 +3920,11 @@ def _dt_dispatch(tool_name, kwargs, sdk_path, sdk_return=None,
     and check_if_project_exists to return a project ID — so action
     handlers that probe existence first don't crash on tuple unpacking.
     '''
-    from mcp.server.fastmcp import FastMCP
+    from fastmcp import FastMCP
     from oracle.data_studio_mcp_server.tools import dt_tools
     mcp_server = FastMCP('test')
     dt_tools.register_tools(mcp_server)
-    fn = mcp_server._tool_manager._tools[tool_name].fn
+    fn = registered_tools(mcp_server)[tool_name].fn
     client = MagicMock()
     workbench = MagicMock()
     # Common existence-probe methods return (exists, global_id)
@@ -4013,7 +3943,7 @@ def _dt_dispatch(tool_name, kwargs, sdk_path, sdk_return=None,
     if 'check_if_' in sdk_path:
         method.return_value = (False, None)
     ctx = MagicMock()
-    ctx.request_context.lifespan_context = {
+    ctx.lifespan_context = {
         'datatransforms': {'client': client, 'workbench': workbench},
     }
     result = fn(ctx=ctx, **kwargs)
@@ -4022,17 +3952,17 @@ def _dt_dispatch(tool_name, kwargs, sdk_path, sdk_return=None,
 
 def _ess_dispatch(tool_name, kwargs, sdk_path, sdk_return=None):
     '''Run an Essbase tool with a mocked SDK; return (result, mock_ess).'''
-    from mcp.server.fastmcp import FastMCP
+    from fastmcp import FastMCP
     from oracle.data_studio_mcp_server.tools import essbase_tools
     mcp_server = FastMCP('test')
     essbase_tools.register_tools(mcp_server)
-    fn = mcp_server._tool_manager._tools[tool_name].fn
+    fn = registered_tools(mcp_server)[tool_name].fn
     ess = MagicMock()
     method = _walk(ess, sdk_path)
     method.return_value = (sdk_return if sdk_return is not None
                             else {'status': 'ok'})
     ctx = MagicMock()
-    ctx.request_context.lifespan_context = {'essbase': ess}
+    ctx.lifespan_context = {'essbase': ess}
     result = fn(ctx=ctx, **kwargs)
     return result, ess
 
@@ -4209,8 +4139,6 @@ ADP_DISPATCH_CASES = [
      'Share.update_recipient_shares'),
 ]
 
-
-@mcp_required
 @pytest.mark.parametrize('tool,kwargs,sdk_path', ADP_DISPATCH_CASES)
 def test_adp_action_dispatch(tool, kwargs, sdk_path):
     '''Each ADP composite action routes to its expected SDK method.'''
@@ -4293,8 +4221,6 @@ DT_DISPATCH_CASES = [
      'check_if_project_exists', False),
 ]
 
-
-@mcp_required
 @pytest.mark.parametrize('tool,kwargs,sdk_path,on_wb', DT_DISPATCH_CASES)
 def test_dt_action_dispatch(tool, kwargs, sdk_path, on_wb):
     '''Each DT composite action routes to its expected SDK method.'''
@@ -4637,8 +4563,6 @@ ESS_DISPATCH_CASES = [
      'users.get_user'),
 ]
 
-
-@mcp_required
 @pytest.mark.parametrize('tool,kwargs,sdk_path', ESS_DISPATCH_CASES)
 def test_essbase_action_dispatch(tool, kwargs, sdk_path):
     '''Each Essbase composite action routes to its expected SDK method.'''
@@ -4650,204 +4574,85 @@ def test_essbase_action_dispatch(tool, kwargs, sdk_path):
 #  Server module tests                                                 #
 # ------------------------------------------------------------------ #
 
-@mcp_required
 class TestServer:
 
     def test_mcp_instance_exists(self):
-        from oracle.data_studio_mcp_server.server import mcp
+        from oracle.data_studio_mcp_server.config import ServerConfig
+        from oracle.data_studio_mcp_server.server import create_server
+        mcp = create_server(ServerConfig(profile='admin'))
         assert mcp is not None
         assert mcp.name == 'oracle-data-studio'
 
-    def test_lifespan_no_config_yields_empty_context(self):
-        '''When no service is configured, lifespan yields {} and only
-        warning/info logs happen — no SDK imports.'''
-        import asyncio
+    @pytest.mark.parametrize('token', [None, 'fake-token'])
+    def test_lifespan_essbase_login_methods(self, token):
         from oracle.data_studio_mcp_server import server as srv
-
-        async def _run():
-            async with srv.app_lifespan(MagicMock()) as ctx:
-                return ctx
-
-        with patch.object(srv, '_config',
-                           MagicMock(essbase=None, adp=None,
-                                      datatransforms=None)):
-            ctx = asyncio.run(_run())
-        assert 'essbase' not in ctx
-        assert 'adp' not in ctx
-
-    def test_lifespan_essbase_login_token(self):
-        '''Lifespan uses login_token() when EssbaseConfig.token is set.'''
-        import asyncio
-        from oracle.data_studio_mcp_server import server as srv
-
-        async def _run():
-            async with srv.app_lifespan(MagicMock()) as ctx:
-                return ctx
+        from oracle.data_studio_mcp_server.config import EssbaseConfig, ServerConfig
 
         fake_essbase = MagicMock()
-        fake_essbase.login_token.return_value = 'ess-client'
-        ess_cfg = MagicMock(token='tok', url='https://e')
-        with patch.object(srv, '_config',
-                           MagicMock(essbase=ess_cfg, adp=None,
-                                      datatransforms=None)), \
-             patch.dict('sys.modules', {'essbase': fake_essbase}):
-            ctx = asyncio.run(_run())
-        fake_essbase.login_token.assert_called_once_with('https://e', 'tok')
-        assert ctx.get('essbase') == 'ess-client'
+        config = ServerConfig(essbase=EssbaseConfig('https://ess.invalid', 'user', 'password', token))
 
-    def test_lifespan_essbase_login_user_password(self):
-        '''No token → login(url, user, password) flow.'''
-        import asyncio
+        async def run():
+            async with srv.app_lifespan(MagicMock(), config=config) as ctx:
+                if token:
+                    fake_essbase.login_token.assert_called_once_with('https://ess.invalid', token)
+                    assert ctx['essbase'] is fake_essbase.login_token.return_value
+                else:
+                    fake_essbase.login.assert_called_once_with('https://ess.invalid', 'user', 'password')
+                    assert ctx['essbase'] is fake_essbase.login.return_value
+
+        with patch.dict('sys.modules', {'essbase': fake_essbase}):
+            asyncio.run(run())
+
+    def test_lifespan_logs_initial_login_failure_and_keeps_lazy_config(self, caplog):
         from oracle.data_studio_mcp_server import server as srv
+        from oracle.data_studio_mcp_server.config import AdpConfig, DataTransformsConfig, EssbaseConfig, ServerConfig
 
-        async def _run():
-            async with srv.app_lifespan(MagicMock()) as ctx:
-                return ctx
-
-        fake_essbase = MagicMock()
-        fake_essbase.login.return_value = 'ess-client'
-        ess_cfg = MagicMock(token=None, url='https://e',
-                             user='admin', password='p')
-        with patch.object(srv, '_config',
-                           MagicMock(essbase=ess_cfg, adp=None,
-                                      datatransforms=None)), \
-             patch.dict('sys.modules', {'essbase': fake_essbase}):
-            ctx = asyncio.run(_run())
-        fake_essbase.login.assert_called_once()
-        assert ctx.get('essbase') == 'ess-client'
-
-    def test_lifespan_adp_caches_config_and_logs_in(self):
-        '''ADP path stores _adp_config + tries adp.login.'''
-        import asyncio
-        from oracle.data_studio_mcp_server import server as srv
-
-        async def _run():
-            async with srv.app_lifespan(MagicMock()) as ctx:
-                return ctx
-
-        fake_adp = MagicMock()
-        fake_adp.login.return_value = 'adp-client'
-        adp_cfg = MagicMock(url='https://a', user='ADMIN', password='p')
-        with patch.object(srv, '_config',
-                           MagicMock(essbase=None, adp=adp_cfg,
-                                      datatransforms=None)), \
-             patch.dict('sys.modules', {'adp': fake_adp}):
-            ctx = asyncio.run(_run())
-        assert ctx.get('_adp_config') is adp_cfg
-        assert ctx.get('adp') == 'adp-client'
-
-    def test_lifespan_essbase_login_failure_is_caught(self):
-        '''Essbase login that throws is logged but doesn't break startup.'''
-        import asyncio
-        from oracle.data_studio_mcp_server import server as srv
-
-        async def _run():
-            async with srv.app_lifespan(MagicMock()) as ctx:
-                return ctx
-
-        fake_essbase = MagicMock()
+        fake_essbase, fake_adp = MagicMock(), MagicMock()
         fake_essbase.login.side_effect = RuntimeError('connection refused')
-        ess_cfg = MagicMock(token=None, url='https://e',
-                             user='admin', password='p')
-        with patch.object(srv, '_config',
-                           MagicMock(essbase=ess_cfg, adp=None,
-                                      datatransforms=None)), \
-             patch.dict('sys.modules', {'essbase': fake_essbase}):
-            ctx = asyncio.run(_run())
-        # Lifespan still yielded a context — startup didn't break
-        assert 'essbase' not in ctx
+        fake_adp.login.side_effect = RuntimeError('connection refused')
+        config = ServerConfig(
+            essbase=EssbaseConfig('https://ess.invalid', 'user', 'password'),
+            adp=AdpConfig('https://adp.invalid', 'user', 'password'),
+            datatransforms=DataTransformsConfig('https://dt.invalid', 'user', 'password'),
+        )
 
-    def test_main_streamable_http_sets_host_port_via_settings(self):
-        '''Regression: FastMCP.run() takes only `transport` and
-        `mount_path`. host/port must be set via mcp.settings before
-        calling run(). Previous code passed host=... as a kwarg to
-        run() which raises TypeError on real FastMCP.'''
-        import oracle.data_studio_mcp_server.server as srv
+        async def run():
+            async with srv.app_lifespan(MagicMock(), config=config) as ctx:
+                assert 'essbase' not in ctx
+                assert 'adp' not in ctx
+                assert ctx['_adp_config'] is config.adp
+                assert ctx['_dt_config'] is config.datatransforms
 
-        # Build a config that selects streamable-http and a specific
-        # host/port. We patch apply_profile + mcp.run so main() doesn't
-        # actually start a server.
-        # Non-loopback host requires opting past the fail-closed gate.
-        # Pass allow_insecure_bind=True so the gate allows the bind, and
-        # auth_token=None so we exercise the FastMCP.run() path (rather
-        # than the uvicorn-wrap path used when a token is configured).
-        fake_cfg = MagicMock(transport='streamable-http',
-                              host='0.0.0.0', port=9001,
-                              profile='admin',
-                              auth_token=None,
+        with patch.dict('sys.modules', {'essbase': fake_essbase, 'adp': fake_adp}):
+            asyncio.run(run())
+        assert 'Essbase connection failed' in caplog.text
+        assert 'ADP initial connection failed' in caplog.text
+
+    def test_main_streamable_http_passes_explicit_host_and_port(self):
+        from oracle.data_studio_mcp_server import server as srv
+        from oracle.data_studio_mcp_server.config import ServerConfig
+
+        config = ServerConfig(transport='streamable-http', host='0.0.0.0', port=9001,
                               allow_insecure_bind=True)
-        with patch.object(srv, 'load_config', return_value=fake_cfg), \
-             patch.object(srv, 'apply_profile'), \
-             patch.object(srv.mcp, 'run') as run_mock:
+        with patch.object(srv, 'load_config', return_value=config), patch.object(srv.FastMCP, 'run') as run:
             srv.main()
-        # run() called with ONLY transport — no host/port kwargs
-        call = run_mock.call_args
-        assert call.kwargs.get('host') is None, \
-            'run() must NOT be called with host=... — host goes on mcp.settings'
-        assert call.kwargs.get('port') is None
-        # transport is the only positional/kwarg
-        assert call.kwargs.get('transport') == 'streamable-http' \
-            or (call.args and call.args[0] == 'streamable-http')
-        # The settings were updated before the call
-        assert srv.mcp.settings.host == '0.0.0.0'
-        assert srv.mcp.settings.port == 9001
+        run.assert_called_once_with(transport='streamable-http', host='0.0.0.0', port=9001,
+                                    path='/mcp', middleware=None, show_banner=False)
 
-    def test_main_stdio_default_does_not_touch_settings_host(self):
-        import oracle.data_studio_mcp_server.server as srv
+    def test_main_stdio_starts_the_stdio_transport(self):
+        from oracle.data_studio_mcp_server import server as srv
+        from oracle.data_studio_mcp_server.config import ServerConfig
 
-        fake_cfg = MagicMock(transport='stdio', host='127.0.0.1',
-                              port=8000, profile='admin')
-        with patch.object(srv, 'load_config', return_value=fake_cfg), \
-             patch.object(srv, 'apply_profile'), \
-             patch.object(srv.mcp, 'run') as run_mock:
+        with patch.object(srv, 'load_config', return_value=ServerConfig()), patch.object(srv.FastMCP, 'run') as run:
             srv.main()
-        # stdio transport — run() called with stdio only
-        call = run_mock.call_args
-        assert (call.kwargs.get('transport') == 'stdio'
-                or (call.args and call.args[0] == 'stdio'))
-
-    def test_lifespan_dt_configured(self):
-        '''DT path: stores _dt_config for later lazy-connect.'''
-        import asyncio
-        from oracle.data_studio_mcp_server import server as srv
-
-        async def _run():
-            async with srv.app_lifespan(MagicMock()) as ctx:
-                return ctx
-
-        dt_cfg = MagicMock(url='https://dt')
-        with patch.object(srv, '_config',
-                           MagicMock(essbase=None, adp=None,
-                                      datatransforms=dt_cfg)):
-            ctx = asyncio.run(_run())
-        assert ctx.get('_dt_config') is dt_cfg
-
-    def test_lifespan_adp_login_failure_is_caught(self):
-        '''ADP login that throws is logged but doesn't break startup.'''
-        import asyncio
-        from oracle.data_studio_mcp_server import server as srv
-
-        async def _run():
-            async with srv.app_lifespan(MagicMock()) as ctx:
-                return ctx
-
-        fake_adp = MagicMock()
-        fake_adp.login.side_effect = RuntimeError('boom')
-        adp_cfg = MagicMock(url='https://a', user='ADMIN', password='p')
-        with patch.object(srv, '_config',
-                           MagicMock(essbase=None, adp=adp_cfg,
-                                      datatransforms=None)), \
-             patch.dict('sys.modules', {'adp': fake_adp}):
-            ctx = asyncio.run(_run())
-        # Config still cached for later retry
-        assert ctx.get('_adp_config') is adp_cfg
-        # No client because login failed
-        assert 'adp' not in ctx
+        run.assert_called_once_with(transport='stdio', show_banner=False)
 
     def test_server_instructions_mention_annotations(self):
         '''Server instructions should nudge the LLM toward the
         annotation-first SQL flow.'''
-        from oracle.data_studio_mcp_server.server import mcp
+        from oracle.data_studio_mcp_server.config import ServerConfig
+        from oracle.data_studio_mcp_server.server import create_server
+        mcp = create_server(ServerConfig(profile='admin'))
         instructions = mcp.instructions or ''
         assert 'adp_get_annotations' in instructions
         assert 'UNIT' in instructions
@@ -4856,7 +4661,9 @@ class TestServer:
     def test_server_instructions_mention_cube_av_routing(self):
         '''Server instructions should describe the annotation-driven
         cube/AV/table routing convention for aggregate questions.'''
-        from oracle.data_studio_mcp_server.server import mcp
+        from oracle.data_studio_mcp_server.config import ServerConfig
+        from oracle.data_studio_mcp_server.server import create_server
+        mcp = create_server(ServerConfig(profile='admin'))
         instructions = mcp.instructions or ''
         # Mentions all three routing sources
         assert 'analytic view' in instructions.lower() or 'adp_query_analytic_view' in instructions
@@ -4870,8 +4677,10 @@ class TestServer:
 
     def test_tool_count(self):
         '''Server should register exactly 60 tools.'''
-        from oracle.data_studio_mcp_server.server import mcp
-        tools = mcp._tool_manager._tools
+        from oracle.data_studio_mcp_server.config import ServerConfig
+        from oracle.data_studio_mcp_server.server import create_server
+        mcp = create_server(ServerConfig(profile='admin'))
+        tools = registered_tools(mcp)
         assert len(tools) == 60, \
             f'Expected 60 tools, got {len(tools)}: {sorted(tools.keys())}'
 
@@ -4880,12 +4689,11 @@ class TestServer:
 #  Integration: full pipeline test                                     #
 # ------------------------------------------------------------------ #
 
-@mcp_required
 class TestIntegration:
 
     def test_explore_then_describe(self):
         '''Simulate: explore apps → describe first database.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
@@ -4907,17 +4715,17 @@ class TestIntegration:
         ess.variables.list_db_variables.return_value = {'items': []}
 
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {'essbase': ess}
+        ctx.lifespan_context = {'essbase': ess}
 
         # Step 1: explore
-        explore_fn = mcp_server._tool_manager._tools['essbase_explore'].fn
+        explore_fn = registered_tools(mcp_server)['essbase_explore'].fn
         explore_result = json.loads(explore_fn(ctx=ctx))
         assert explore_result['count'] == 1
         app_name = explore_result['applications'][0]['application']['name']
         db_name = explore_result['applications'][0]['databases'][0]['name']
 
         # Step 2: describe
-        describe_fn = mcp_server._tool_manager._tools[
+        describe_fn = registered_tools(mcp_server)[
             'essbase_describe_database'].fn
         describe_result = json.loads(
             describe_fn(app_name=app_name, db_name=db_name, ctx=ctx))
@@ -4937,18 +4745,6 @@ class TestIntegration:
 # `oracle-data-studio-mcp.audit`.
 
 class TestAuditLogging:
-
-    def _wrap(self, tool_modules, profile=None):
-        '''Register tools and apply the audit wrapper. Returns the
-        configured FastMCP server.'''
-        from mcp.server.fastmcp import FastMCP
-        from oracle.data_studio_mcp_server.tools._helpers import (
-            wrap_mutating_tools_with_audit)
-        mcp_server = FastMCP('test')
-        for mod in tool_modules:
-            mod.register_tools(mcp_server)
-        n = wrap_mutating_tools_with_audit(mcp_server, profile=profile)
-        return mcp_server, n
 
     def test_audit_emits_single_info_line(self, caplog):
         '''The bare `audit()` helper emits one structured line on the
@@ -5025,91 +4821,6 @@ class TestAuditLogging:
             'dt_explore', 'dt_describe_project',
         ]:
             assert not is_mutating_tool(name), name
-
-    def test_wrap_marks_only_mutating_tools(self):
-        '''The wrapper picks up only mutating tools from the registered
-        catalog. We count wrappers by name and compare against the
-        is_mutating_tool() oracle.'''
-        from oracle.data_studio_mcp_server.tools import (
-            adp_tools, dt_tools, essbase_tools)
-        from oracle.data_studio_mcp_server.tools._helpers import (
-            is_mutating_tool)
-        mcp_server, n = self._wrap(
-            [essbase_tools, adp_tools, dt_tools], profile='admin')
-        tools = mcp_server._tool_manager._tools
-        expected = sum(1 for name in tools if is_mutating_tool(name))
-        assert n == expected
-        # Spot-check: a few specific mutating tools carry the marker
-        for name in ('essbase_manage_application', 'adp_load_from_cloud',
-                      'dt_run_pipeline', 'essbase_query'):
-            assert tools[name].fn.__audited__ is True
-        # And a few read-only ones do not
-        for name in ('essbase_explore', 'adp_search', 'dt_explore'):
-            assert not getattr(tools[name].fn, '__audited__', False)
-
-    def test_wrap_is_idempotent(self):
-        '''Re-wrapping doesn't double-wrap.'''
-        from oracle.data_studio_mcp_server.tools import (
-            adp_tools, dt_tools, essbase_tools)
-        from oracle.data_studio_mcp_server.tools._helpers import (
-            wrap_mutating_tools_with_audit)
-        mcp_server, n1 = self._wrap(
-            [essbase_tools, adp_tools, dt_tools], profile='admin')
-        n2 = wrap_mutating_tools_with_audit(mcp_server, profile='admin')
-        assert n1 > 0
-        assert n2 == 0
-
-    def test_call_emits_audit_on_success(self, caplog):
-        '''Invoking a wrapped mutating tool emits an audit line.'''
-        import logging
-        from oracle.data_studio_mcp_server.tools import essbase_tools
-        caplog.set_level(logging.INFO,
-                         logger='oracle-data-studio-mcp.audit')
-        mcp_server, _ = self._wrap([essbase_tools], profile='analyst')
-
-        # Set up a mocked Essbase client and call essbase_query (which
-        # is in our audited set because it executes MDX).
-        ess = MagicMock()
-        ess.grid.execute_mdx.return_value = {'cells': [], 'axes': []}
-        ctx = MagicMock()
-        ctx.request_context.lifespan_context = {'essbase': ess}
-
-        fn = mcp_server._tool_manager._tools['essbase_query'].fn
-        result = fn(app_name='Sample', db_name='Basic',
-                     mdx='SELECT 1 ON 0 FROM Basic', ctx=ctx)
-        assert json.loads(result)  # well-formed JSON
-        lines = [r.getMessage() for r in caplog.records
-                 if r.name == 'oracle-data-studio-mcp.audit']
-        assert len(lines) == 1
-        assert 'tool=essbase_query' in lines[0]
-        assert 'profile=analyst' in lines[0]
-        assert 'outcome=ok' in lines[0]
-        assert 'target=Sample' in lines[0]
-
-    def test_call_emits_audit_on_error(self, caplog):
-        '''An exception path still emits an audit line with outcome=error.'''
-        import logging
-        from oracle.data_studio_mcp_server.tools import essbase_tools
-        caplog.set_level(logging.INFO,
-                         logger='oracle-data-studio-mcp.audit')
-        mcp_server, _ = self._wrap([essbase_tools], profile='admin')
-
-        # No essbase in ctx → the tool returns an {"error": ...} JSON,
-        # not an exception. That path must still audit outcome=error.
-        ctx = MagicMock()
-        ctx.request_context.lifespan_context = {}
-
-        fn = mcp_server._tool_manager._tools['essbase_query'].fn
-        result = fn(app_name='Sample', db_name='Basic',
-                     mdx='SELECT 1 ON 0 FROM Basic', ctx=ctx)
-        body = json.loads(result)
-        assert 'error' in body
-
-        lines = [r.getMessage() for r in caplog.records
-                 if r.name == 'oracle-data-studio-mcp.audit']
-        assert len(lines) == 1
-        assert 'outcome=error' in lines[0]
-
 
 # ====================================================================== #
 #  R4 — Output bounding for query / export tools                          #
@@ -5237,12 +4948,12 @@ class TestQueryToolsRespectMaxRows:
 
     def _ess_query(self, mcp_server, ess, **kwargs):
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {'essbase': ess}
-        fn = mcp_server._tool_manager._tools['essbase_query'].fn
+        ctx.lifespan_context = {'essbase': ess}
+        fn = registered_tools(mcp_server)['essbase_query'].fn
         return fn(ctx=ctx, **kwargs)
 
     def test_essbase_query_truncates_at_max_rows(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
@@ -5267,7 +4978,7 @@ class TestQueryToolsRespectMaxRows:
 
     def test_essbase_query_default_cap_is_1000(self):
         '''No max_rows arg → DEFAULT_MAX_ROWS applies.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
@@ -5288,7 +4999,7 @@ class TestQueryToolsRespectMaxRows:
         assert len(result['axes'][1]['tuples']) == 1000
 
     def test_essbase_export_data_truncates(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
@@ -5303,8 +5014,8 @@ class TestQueryToolsRespectMaxRows:
             'cells': [{'value': i} for i in range(20)],
         }
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {'essbase': ess}
-        fn = mcp_server._tool_manager._tools['essbase_export_data'].fn
+        ctx.lifespan_context = {'essbase': ess}
+        fn = registered_tools(mcp_server)['essbase_export_data'].fn
         result = json.loads(fn(app_name='S', db_name='B',
                                 mdx='X', max_rows=5, ctx=ctx))
         assert result['truncated'] is True
@@ -5312,7 +5023,7 @@ class TestQueryToolsRespectMaxRows:
         assert result['max_rows'] == 5
 
     def test_adp_query_analytic_view_truncates(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
@@ -5322,15 +5033,15 @@ class TestQueryToolsRespectMaxRows:
         adp.Analytics.get_data_simple.return_value = [
             {'i': i} for i in range(50)]
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {'adp': adp}
-        fn = mcp_server._tool_manager._tools['adp_query_analytic_view'].fn
+        ctx.lifespan_context = {'adp': adp}
+        fn = registered_tools(mcp_server)['adp_query_analytic_view'].fn
         result = json.loads(fn(av_name='SALES_AV', max_rows=10, ctx=ctx))
         assert result['truncated'] is True
         assert result['original_row_count'] == 50
         assert len(result['rows']) == 10
 
     def test_adp_query_analytic_view_under_cap_no_truncation(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
@@ -5340,43 +5051,11 @@ class TestQueryToolsRespectMaxRows:
         adp.Analytics.get_data_simple.return_value = [
             {'i': i} for i in range(3)]
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {'adp': adp}
-        fn = mcp_server._tool_manager._tools['adp_query_analytic_view'].fn
+        ctx.lifespan_context = {'adp': adp}
+        fn = registered_tools(mcp_server)['adp_query_analytic_view'].fn
         result = json.loads(fn(av_name='SALES_AV', max_rows=10, ctx=ctx))
         assert result['truncated'] is False
         assert len(result['rows']) == 3
-
-
-# ====================================================================== #
-#  R5 — Server wiring: audit + profile applied at startup                 #
-# ====================================================================== #
-
-class TestServerStartupWiring:
-    '''Smoke tests proving main()'s startup sequence wires both
-    apply_profile() and wrap_mutating_tools_with_audit() before the
-    server runs.'''
-
-    def test_main_wires_audit_after_register(self, monkeypatch):
-        '''main() should call wrap_mutating_tools_with_audit(); we patch
-        it and assert it ran with the configured profile.'''
-        from oracle.data_studio_mcp_server import server as srv
-        from oracle.data_studio_mcp_server.config import ServerConfig
-
-        # Stub config: viewer profile, stdio, no service configs
-        monkeypatch.setattr(srv, 'load_config',
-                            lambda: ServerConfig(profile='viewer',
-                                                  transport='stdio'))
-        # Capture call to wrap_mutating_tools_with_audit
-        seen = {}
-        def _fake_wrap(server, profile=None):
-            seen['profile'] = profile
-            return 0
-        monkeypatch.setattr(srv, 'wrap_mutating_tools_with_audit',
-                            _fake_wrap)
-        # Prevent the real server from running
-        monkeypatch.setattr(srv.mcp, 'run', lambda **_: None)
-        srv.main()
-        assert seen.get('profile') == 'viewer'
 
 
 # ====================================================================== #
@@ -5587,15 +5266,12 @@ class TestAiChatPolicy:
     '''Finding 3: adp_ai_chat profile + table allow/deny enforcement.'''
 
     def test_analyst_profile_blocks_adp_ai_chat(self):
-        from oracle.data_studio_mcp_server.profiles import (
-            apply_profile, PROFILES)
-        mock_mcp = MagicMock()
-        mock_mcp._tool_manager._tools = {
-            'adp_ai_chat': MagicMock(),
-            'adp_search': MagicMock(),
+        from oracle.data_studio_mcp_server.profiles import allows_tool
+        samples = {
+            'adp_ai_chat',
+            'adp_search',
         }
-        apply_profile(mock_mcp, 'analyst')
-        tools = mock_mcp._tool_manager._tools
+        tools = {name for name in samples if allows_tool('analyst', name)}
         assert 'adp_ai_chat' not in tools
         assert 'adp_search' in tools
 
@@ -5701,15 +5377,15 @@ class TestRequireConfirm:
 
     def test_essbase_manage_application_delete_requires_confirm(self):
         '''End-to-end: missing confirm => no SDK call, error returned.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_application'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_application'].fn
 
         ess = MagicMock()
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {'essbase': ess}
+        ctx.lifespan_context = {'essbase': ess}
 
         # Missing confirm → blocked
         result = json.loads(fn(action='delete', app_name='Sample', ctx=ctx))
@@ -5730,15 +5406,15 @@ class TestRequireConfirm:
 
     def test_essbase_manage_sessions_kill_all_requires_confirm_all(self):
         '''kill_all uses the literal token 'all'.'''
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import essbase_tools
         mcp_server = FastMCP('test')
         essbase_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['essbase_manage_sessions'].fn
+        fn = registered_tools(mcp_server)['essbase_manage_sessions'].fn
 
         ess = MagicMock()
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {'essbase': ess}
+        ctx.lifespan_context = {'essbase': ess}
 
         # Missing confirm → blocked
         result = json.loads(fn(action='kill_all', ctx=ctx))
@@ -5751,16 +5427,16 @@ class TestRequireConfirm:
         ess.sessions.delete_all_sessions.assert_called_once()
 
     def test_dt_manage_project_delete_requires_confirm(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import dt_tools
         mcp_server = FastMCP('test')
         dt_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['dt_manage_project'].fn
+        fn = registered_tools(mcp_server)['dt_manage_project'].fn
 
         client = MagicMock()
         client.check_if_project_exists.return_value = 'pid-1'
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {
+        ctx.lifespan_context = {
             'datatransforms': {'client': client, 'workbench': None}}
 
         # Missing confirm → blocked, no SDK call
@@ -5776,16 +5452,16 @@ class TestRequireConfirm:
         client.delete_project.assert_called_once_with('Marketing')
 
     def test_adp_manage_analytic_views_drop_requires_confirm(self):
-        from mcp.server.fastmcp import FastMCP
+        from fastmcp import FastMCP
         from oracle.data_studio_mcp_server.tools import adp_tools
         mcp_server = FastMCP('test')
         adp_tools.register_tools(mcp_server)
-        fn = mcp_server._tool_manager._tools['adp_manage_analytic_views'].fn
+        fn = registered_tools(mcp_server)['adp_manage_analytic_views'].fn
 
         client = MagicMock()
         client.rest.expired = None
         ctx = MagicMock()
-        ctx.request_context.lifespan_context = {'adp': client}
+        ctx.lifespan_context = {'adp': client}
 
         # Missing confirm → blocked
         result = json.loads(fn(action='drop', av_name='SALES_AV', ctx=ctx))

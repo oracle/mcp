@@ -30,8 +30,8 @@ class TestNullInputs(unittest.IsolatedAsyncioTestCase):
     async def test_null_defaults_are_accepted_by_advertised_schemas(self):
         async with Client(self.server.mcp) as client:
             for tool in await client.list_tools():
-                validator = Draft202012Validator(tool.inputSchema)
-                for name, schema in tool.inputSchema["properties"].items():
+                validator = Draft202012Validator(tool.input_schema)
+                for name, schema in tool.input_schema["properties"].items():
                     if "default" in schema and schema["default"] is None:
                         self.assertTrue(validator.evolve(schema=schema).is_valid(None), f"{tool.name}.{name}")
 

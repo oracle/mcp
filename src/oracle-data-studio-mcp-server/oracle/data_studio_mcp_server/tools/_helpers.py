@@ -7,7 +7,13 @@
 import json
 import logging
 import re
-from typing import Optional
+from functools import wraps
+from typing import Any, Optional
+
+from fastmcp import FastMCP
+from fastmcp.tools import FunctionTool, ToolResult
+
+from ..profiles import allows_tool
 
 logger = logging.getLogger('oracle-data-studio-mcp')
 
@@ -187,10 +193,8 @@ def audit(tool: str, *, action: str = None, target: str = None,
     _audit_logger.info(' '.join(parts))
 
 
-# Tool-name prefixes that indicate a mutating / executing tool. Used by
-# `wrap_mutating_tools_with_audit` to wire `audit()` calls in a single
-# pass rather than touching ~40 individual tool function bodies. Add
-# new mutating tool prefixes here; the wrapper picks them up.
+# Tool-name prefixes that indicate a mutating / executing tool.
+# The registrar wraps these tools before sending them to FastMCP.
 _MUTATING_PREFIXES = (
     'essbase_manage_',
     'essbase_run_calculation',
@@ -229,64 +233,67 @@ def is_mutating_tool(tool_name: str) -> bool:
     return any(tool_name.startswith(p) for p in _MUTATING_PREFIXES)
 
 
-def wrap_mutating_tools_with_audit(mcp_server, profile: str = None) -> int:
-    '''Wrap mutating/executing tools so they emit an `audit` log line.
-
-    Idempotent: re-running on an already-wrapped server is a no-op
-    (we set `__audited__ = True` on the wrapper).
-
-    Order rule: call this AFTER `register_tools()` and EITHER before
-    or after `apply_profile()` (profile filtering only deletes
-    entries; wrapping survives).
-
-    @param mcp_server: FastMCP server instance.
-    @param profile: The active profile name; included in every emitted
-        audit line. Pass `None` if unknown.
-    @return: number of tools wrapped.
-    '''
-    tools = mcp_server._tool_manager._tools
-    wrapped = 0
-    for name, tool in list(tools.items()):
-        if not is_mutating_tool(name):
-            continue
-        orig = tool.fn
-        if getattr(orig, '__audited__', False):
-            continue
-
-        def _make_wrapper(orig_fn, tool_name):
-            def _wrapped(*args, **kwargs):
-                action = kwargs.get('action')
-                target = None
-                for key in _TARGET_KEYS:
-                    val = kwargs.get(key)
-                    if isinstance(val, str) and val:
-                        target = val
-                        break
+class _DataStudioTool(FunctionTool):
+    async def run(self, arguments: dict[str, Any]) -> ToolResult:
+        '''Normalize arguments as the bundled MCP SDK did before validation.'''
+        properties = self.parameters['properties']
+        normalized = {}
+        for name, value in arguments.items():
+            if name not in properties:
+                continue
+            if isinstance(value, str) and properties[name].get('type') != 'string':
                 try:
-                    result = orig_fn(*args, **kwargs)
-                except Exception:
-                    audit(tool_name, action=action, target=target,
-                          profile=profile, outcome='error')
-                    raise
-                # Tools return JSON strings; treat {'error': ...} as failure
-                outcome = 'ok'
-                if isinstance(result, str):
-                    try:
-                        parsed = json.loads(result)
-                        if isinstance(parsed, dict) and 'error' in parsed:
-                            outcome = 'error'
-                    except ValueError:
-                        pass
-                audit(tool_name, action=action, target=target,
-                      profile=profile, outcome=outcome)
-                return result
-            _wrapped.__audited__ = True
-            _wrapped.__wrapped__ = orig_fn
-            _wrapped.__name__ = getattr(orig_fn, '__name__', tool_name)
-            return _wrapped
+                    decoded = json.loads(value)
+                except json.JSONDecodeError:
+                    pass
+                else:
+                    if decoded is None or isinstance(decoded, (dict, list)):
+                        value = decoded
+            normalized[name] = value
+        return await super().run(normalized)
 
-        tool.fn = _make_wrapper(orig, name)
-        wrapped += 1
+
+def tool_registrar(server: FastMCP, profile: str):
+    '''Register permitted tools and add auditing before FastMCP inspects signatures.'''
+    def register(fn):
+        if not allows_tool(profile, fn.__name__):
+            return fn
+        if is_mutating_tool(fn.__name__):
+            fn = _audit_tool_call(fn, profile)
+        # The service SDKs share clients and caches across calls.
+        tool = _DataStudioTool.from_function(fn, run_in_thread=False)
+        # The bundled SDK accepted and ignored unknown top-level arguments.
+        tool.parameters.pop('additionalProperties', None)
+        return server.add_tool(tool)
+
+    return register
+
+
+def _audit_tool_call(fn, profile: str):
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        action = kwargs.get('action')
+        target = next(
+            (value for key in _TARGET_KEYS
+             if isinstance(value := kwargs.get(key), str) and value),
+            None,
+        )
+        outcome = 'error'
+        try:
+            result = fn(*args, **kwargs)
+            outcome = 'ok'
+            if isinstance(result, str):
+                try:
+                    parsed = json.loads(result)
+                    if isinstance(parsed, dict) and 'error' in parsed:
+                        outcome = 'error'
+                except ValueError:
+                    pass
+            return result
+        finally:
+            audit(fn.__name__, action=action, target=target,
+                  profile=profile, outcome=outcome)
+
     return wrapped
 
 
@@ -492,7 +499,7 @@ def get_profile(ctx) -> str:
     'viewer' (least privilege) when missing — fail closed.
     '''
     try:
-        return ctx.request_context.lifespan_context.get(
+        return ctx.lifespan_context.get(
             '_profile', 'viewer')
     except AttributeError:
         return 'viewer'

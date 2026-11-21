@@ -8,19 +8,20 @@ This package owns local Oracle Database documentation indexing, maintenance and 
 
 - [Server](oracle-db-doc-mcp-server.py): MCP registration, tool handlers and runtime entry point.
 - [Manifest](pyproject.toml): dependencies, Python requirement and available packaging/check configuration.
-- No tracked test module was found in this package; validation gaps are recorded below.
+- [FastMCP configuration](fastmcp.json): launcher that uses the package environment.
+- [Tests](tests/test_server.py): fixture-based indexing and MCP protocol checks.
 
 ## Setup / build / run
 
-This package is excluded from Moon. From its directory, the [README](README.md) documents `python3 oracle-db-doc-mcp-server.py idx -path <documentation-input>` followed by `python3 oracle-db-doc-mcp-server.py mcp`; idx writes local state and mcp requires an existing index. [pyproject.toml](pyproject.toml) requires Python >=3.13 and defines dependencies. Check the stale installation guidance below before environment setup.
+This package is excluded from Moon. From its directory, follow the [README](README.md#installation) to install the locked dependencies. The `idx` subcommand writes local state. The `mcp` subcommand and the FastMCP configuration both require an existing index. The [Dockerfile](Dockerfile) uses the same lockfile and verifies the downloaded archive before indexing it.
 
 ## Tests and validation
 
-No tracked test module or test/coverage procedure is established in the native README/manifest. Root quality requirements still apply. Documentation checks use source/path review; index construction, listener startup and downloaded documentation are separate runtime checks with their own prerequisites.
+Follow the [native test command](README.md#tests) for fixture-based indexing, stdio and loopback HTTP. The [manifest](pyproject.toml) enforces 90% branch-aware coverage. Building the container and indexing the published archive require separate checks.
 
 ## Architecture and dependencies
 
-The standalone script uses PocketSearch/PocketWriter for an inverted index. `idx` ingests a downloaded ZIP/extracted directory, converts accepted HTML/HTM files into Markdown chunks and maintains checksum/version state; `mcp` opens the existing index and serves search. Building the index is a separate operation from starting the MCP listener. The `mcp` subcommand supports stdio (default) and HTTP through its mode/host/port arguments.
+The standalone script uses PocketSearch/PocketWriter for an inverted index. `idx` ingests a downloaded ZIP or extracted directory, converts accepted HTML/HTM files into Markdown chunks and maintains checksum/version state. Each search opens and closes its own SQLite connection on the FastMCP worker thread. The `mcp` subcommand supports stdio (default) and HTTP through its mode, host and port arguments.
 
 ## Security and secrets handling
 
@@ -32,15 +33,13 @@ Preprocessing, chunking, checksums, index version and search result formatting a
 
 ## Known gaps
 
-- The README installation command references requirements.txt, which is absent from the tracked package; dependency definitions are in pyproject.toml.
-- No configured unit-test coverage enforcement or native test command is available.
-- Source definitions and available tests do not establish passing validation or live security/transport behavior. Record actual checks separately through the [shared evidence routes](../../docs/agent-development.md#evidence-and-context-routes).
+- The package tests use temporary fixtures and loopback HTTP. Record checks against the published documentation archive and the built image separately through the [shared evidence routes](../../docs/agent-development.md#evidence-and-context-routes).
 
 ## Workflow and context routing
 
 | Read when | Context | Depends on | Evidence |
 | --- | --- | --- | --- |
-| **Know:** Investigating a tool or response change | [Server](oracle-db-doc-mcp-server.py), local model/helper entry points above | Root quality requirements and the relevant service inputs/contract | Explicit test/coverage gap below; actual run results recorded separately |
+| **Know:** Investigating a tool or response change | [Server](oracle-db-doc-mcp-server.py), local model/helper entry points above | Root quality requirements and the search contract | [Protocol tests](tests/test_server.py) and scoped run results |
 | **Know:** Investigating configuration, credentials or service boundaries | Local README and architecture/security entry points above | [Root instructions](../../AGENTS.md), applicable shared contracts and explicit local gaps | Current client/configuration sources and relevant tests |
 | **Do:** Preparing or validating a change | [Validation map](../../docs/agent-development.md#validation-map) and local command sources above | Native toolchain, working directory, change scope and live prerequisites | Actual scoped reports; [evidence routes](../../docs/agent-development.md#evidence-and-context-routes) |
 

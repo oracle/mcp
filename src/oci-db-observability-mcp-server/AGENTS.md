@@ -29,7 +29,7 @@ Use `moon run oci-db-observability-mcp-server:test` from the repository root for
 
 server.py starts the stdio process; mcp.py owns the MCP discovery/invocation surface. registry.py reads packaged metadata, sdk_schema.py derives operation schemas, and runtime.py validates/coerces inputs and dispatches allowlisted SDK operations. Metric catalog lookup is local; metric/alarm reads use OCI Monitoring. Use Identity for compartment discovery; catalog skills are discovery metadata, not installed agent workflow skills.
 
-The package resolves published Common 0.2.x for ordinary development and CI, without a permanent local uv workspace source, and pins OCI 2.185.1 to satisfy Common's SDK requirement; read [its contract](../common/README.md) and [guide](../common/AGENTS.md) for auth ownership and shared-change impact. A declared dependency alone does not establish every supported path’s coverage.
+The package resolves published Common 0.3.x for ordinary development and CI, without a permanent local uv workspace source, and pins OCI 2.185.1 to satisfy Common's SDK requirement; read [its contract](../common/README.md) and [guide](../common/AGENTS.md) for auth ownership and shared-change impact. A declared dependency alone does not establish every supported path’s coverage.
 
 ## Security and secrets handling
 

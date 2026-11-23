@@ -4,7 +4,13 @@ All notable changes to OCI Database MCP Server are documented in this file.
 
 ## Unreleased
 
+### Breaking Changes
+
+- Require FastMCP 4.2.2 and `oracle-mcp-common>=0.3.0,<0.4.0`; FastMCP 3 and Common 0.2.x are no longer supported.
+
 ### Changed
+
+- Update locked dnspython to 2.9.2.
 
 - Resolve Common from published packages by default in development and CI; local Common integration now requires an explicit override.
 

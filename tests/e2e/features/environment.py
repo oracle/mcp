@@ -4,12 +4,22 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
-import json
 import os
 import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
+import socket
+
+from codex_runner import (
+    isolated_session,
+    prepare_environments,
+    run_process,
+    stop_process_group,
+    termination_cleanup,
+    translate_hosts,
+)
 
 import requests
 from cryptography.hazmat.primitives import serialization
@@ -18,63 +28,40 @@ from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
 
-try:
-    config = {}
-
-    config["MCP_HOST_FILE"] = os.environ.get(
-        "MCP_HOST_FILE", os.path.join(os.path.dirname(__file__), "mcphost.json")
-    )
-    config["URL"] = os.environ.get("URL", "http://localhost:8000/api/chat")
-    config["MODEL"] = os.environ.get("MODEL", "gpt-oss:20b")
-
-except FileNotFoundError:
-    raise EnvironmentError(
-        print(f"{config['MCP_HOST_FILE']} could not be found. Provide one to configure the MCP servers")
-    )
+config = {
+    "MCP_HOST_FILE": os.environ.get("MCP_HOST_FILE") or str(Path(__file__).with_name("mcphost.json")),
+    "MODEL": os.environ.get("CODEX_E2E_MODEL") or "gpt-6.1-sol",
+    "TIMEOUT": float(os.environ.get("CODEX_E2E_TIMEOUT") or 180),
+}
 
 _system_prompt = f"""You are an Oracle Cloud Infrastructure expert generative chat assistant. You are working out of this tenancy (also know as the root compartment): ocid1.tenancy.oc1..mock. For any compartment IDs, just pass in the tenancy ID. Limit your answers to OCI. OCID is synonymous with ID. If the user makes a request that relies on a tool that requires a compartment id, and the user doesn't specify one, don't ask the user for the compartment id and use the active (current) compartment instead. If I ask you for a list of things, prefer either a tabular or text-based approach over dumping them in a code block. When formatting your response, don't use bullets or lists within tables. When a user makes a request, you must first attempt to fulfill it by using the available MCP tools. These tools are connected to our live data sources and provide the most accurate and real-time information. Only after exhausting the capabilities of the MCP tools should you resort to other methods, such as using a general web search, if the MCP tools cannot provide the necessary information. If there is an error in calling the run_oci_command tool, then try to use the get_oci_command_help tool to get more information on the command and retry with the updated information. Don't send back emojis in the responses."""  # noqa ES501
 
 
-def set_mcp_servers(context):
-    try:
-        context.mcp_servers = []
-        with open(config["MCP_HOST_FILE"], "r") as f:
-            mcp_hosts = json.load(f)
-            for key in mcp_hosts["mcpServers"]:
-                context.mcp_servers.append(key.replace("-", "_"))
-
-        print("Configured servers: ", ", ".join(sorted(context.mcp_servers)))
-    except FileNotFoundError:
-        raise EnvironmentError(
-            f"{config['MCP_HOST_FILE']} could not be found. Provide one to configure the MCP servers"
-        )
-
-
-def wait_for_health_check(context, url, service_name, max_retries=30):
-    print(f"Waiting for {service_name} to become healthy...")
-    ready = False
-    for i in range(max_retries):
-        try:
-            response = requests.get(f"{url}/health", timeout=1)
-            if response.status_code == 200:
-                print(f"{service_name} is ready after {i} seconds.")
-                ready = True
-                break
-        except requests.exceptions.ConnectionError:
-            pass
-        time.sleep(1)
-
-    if not ready:
-        cleanup_all_processes(context)
-        raise RuntimeError(f"{service_name} failed to become healthy within {max_retries} seconds.")
+def wait_for_health_check(proc, url, service_name):
+    # Local mock health must never use a personal inference/corporate proxy.
+    with requests.Session() as client:
+        client.trust_env = False
+        for _ in range(30):
+            if proc.poll() is not None:
+                raise RuntimeError(f"{service_name} exited during startup")
+            try:
+                if client.get(f"{url}/health", timeout=1).status_code == 200:
+                    return
+            except requests.exceptions.RequestException:
+                pass
+            time.sleep(0.1)
+    raise RuntimeError(f"{service_name} did not become healthy")
 
 
 def before_all(context):
-    """Start Mock OCI Server, Proxy Shim, and MCP bridge with explicit variables"""
+    """Start the mock OCI services; each scenario owns its fresh Codex session."""
     # Initialize attributes to None so cleanup doesn't fail if setup crashes early
     context.mock_proc = None
     context.shim_proc = None
-    context.bridge_proc = None
+    context.temp_dir = None
+    termination = termination_cleanup()
+    termination.__enter__()
+    context.add_cleanup(termination.__exit__, None, None, None)
 
     try:
         base_dir = os.path.dirname(__file__)
@@ -83,6 +70,18 @@ def before_all(context):
 
         # Set up directory for mock OCI config
         context.temp_dir = tempfile.TemporaryDirectory()
+
+        # Select local ports without taking over existing services (e.g. macOS AirPlay).
+        ports = []
+        for _ in range(2):
+            with socket.socket() as probe:
+                probe.bind(("127.0.0.1", 0))
+                ports.append(probe.getsockname()[1])
+        mock_port, proxy_port = ports
+        context.proxy_url = f"http://127.0.0.1:{proxy_port}"
+        mock_env = {key: os.environ[key] for key in ("PATH", "LANG") if key in os.environ}
+        mock_env.update(HOME=context.temp_dir.name, TMPDIR=context.temp_dir.name)
+        mock_env.update(MOCK_OCI_PORT=str(mock_port), MOCK_PROXY_PORT=str(proxy_port))
 
         # Create a dummy private key
         private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -118,86 +117,66 @@ security_token_file={token_path}
 """
             )
 
-        # Start Mock Server (Port 5001)
-        print("Starting Mock OCI Server on http://127.0.0.1:5001...")
+        translate_hosts(config["MCP_HOST_FILE"], config_path, context.temp_dir.name, context.proxy_url)
+        prepare_environments(config["MCP_HOST_FILE"])
+
+        print(f"Starting Mock OCI Server on http://127.0.0.1:{mock_port}...")
         context.mock_proc = subprocess.Popen(
             [sys.executable, mock_server_path],
+            env=mock_env,
+            start_new_session=True,
         )
 
-        wait_for_health_check(context, "http://127.0.0.1:5001", "Mock OCI Server")
+        wait_for_health_check(context.mock_proc, f"http://127.0.0.1:{mock_port}", "Mock OCI Server")
 
         # Prepare Proxy Shim's env
-        shim_env = os.environ.copy()
+        shim_env = mock_env.copy()
         shim_env["MOCK_REGION"] = mock_region
         shim_env["OCI_CONFIG_FILE"] = config_path
 
-        # Start Proxy Shim (Port 5000)
-        print("Starting Proxy Shim on http://127.0.0.1:5000...")
-        context.shim_proc = subprocess.Popen([sys.executable, proxy_shim_path], env=shim_env)
-
-        wait_for_health_check(context, "http://127.0.0.1:5000", "Proxy Shim")
-
-        # Configure MCP servers
-        set_mcp_servers(context)
-
-        # Prepare MCP Bridge's env
-        bridge_env = os.environ.copy()
-        bridge_env["OCI_CONFIG_FILE"] = config_path
-
-        # Start MCP Bridge
-        print(f"Starting MCP Bridge with {len(context.mcp_servers)} servers...")
-        host_file = os.path.abspath(config["MCP_HOST_FILE"])
-        tests_project = os.path.abspath(os.path.join(base_dir, "..", ".."))
-        context.bridge_proc = subprocess.Popen(
-            [
-                "uv",
-                "run",
-                "--project",
-                tests_project,
-                "--locked",
-                "--no-dev",
-                "ollama-mcp-bridge",
-                "--config",
-                host_file,
-            ],
-            cwd=os.path.dirname(host_file),
-            env=bridge_env,
-            preexec_fn=os.setpgrp,
+        print(f"Starting Proxy Shim on {context.proxy_url}...")
+        context.shim_proc = subprocess.Popen(
+            [sys.executable, proxy_shim_path], env=shim_env, start_new_session=True
         )
 
-        wait_for_health_check(context, "http://localhost:8000", "MCP Bridge")
+        wait_for_health_check(context.shim_proc, context.proxy_url, "Proxy Shim")
+        context.mock_config = Path(config_path)
 
-        # Immediate health check
-        if context.bridge_proc.poll() is not None:
-            raise RuntimeError("MCP Bridge failed to start.")
-
-        # Final Context setup
-        context.system_message = {"role": "system", "content": _system_prompt}
-        context.url = config["URL"]
-        context.model = config["MODEL"]
-
-    except Exception as e:
+    except BaseException as e:
         print(f"CRITICAL SETUP ERROR: {e}")
         cleanup_all_processes(context)
-        raise e
+        raise
+
+
+def before_scenario(context, scenario):
+    manager = isolated_session(
+        config["MCP_HOST_FILE"],
+        context.mock_config,
+        config["MODEL"],
+        context.proxy_url,
+    )
+    session = manager.__enter__()
+    context.add_cleanup(manager.__exit__, None, None, None)
+    context.codex = session
+    context.mcp_servers = list(session.servers)
+    context.inventory_only = "tools available" in scenario.name.lower()
+    version = run_process([session.command[0], "--version"], "", session.env, session.cwd, timeout=10)
+    print(f"Runtime: {version.strip()}; model: {config['MODEL']}")
+    context.codex_timeout = config["TIMEOUT"]
+    context.system_prompt = _system_prompt + (
+        " Use only the configured MCP tools and mock OCI data. Do not use shell, web, or fixture files."
+        " For tool inventories, include exact server and tool names."
+    )
 
 
 def cleanup_all_processes(context):
-    """Clean up the specific named processes"""
-    procs_to_kill = [
-        ("Bridge", getattr(context, "bridge_proc", None)),
-        ("Shim", getattr(context, "shim_proc", None)),
-        ("Mock", getattr(context, "mock_proc", None)),
-    ]
-
-    for name, proc in procs_to_kill:
-        if proc and proc.poll() is None:
-            print(f"Shutting down {name} (PID: {proc.pid})...")
-            try:
-                proc.terminate()
-                proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                proc.kill()
+    for attribute in ("shim_proc", "mock_proc"):
+        proc = getattr(context, attribute, None)
+        if proc is not None:
+            stop_process_group(proc)
+    directory = getattr(context, "temp_dir", None)
+    if directory is not None:
+        directory.cleanup()
 
 
 def after_all(context):

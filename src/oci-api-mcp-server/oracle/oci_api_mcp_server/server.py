@@ -13,6 +13,7 @@ import subprocess
 from logging import Logger
 import shlex
 import sys
+from textwrap import dedent
 from typing import Annotated
 
 from fastmcp import FastMCP
@@ -190,9 +191,8 @@ def get_oci_commands() -> str:
         return f"Error: {e.stderr}"
 
 
-@mcp.tool
-def get_oci_command_help(command: str) -> str:
-    """Returns helpful instructions for running an OCI CLI command.
+_OCI_COMMAND_HELP_DESCRIPTION = dedent("""
+    Returns helpful instructions for running an OCI CLI command.
 
     IMPORTANT:
       - Only provide the command _after_ 'oci' — do not include the string
@@ -231,7 +231,11 @@ def get_oci_command_help(command: str) -> str:
           recovery protected-database-collection list-protected-databases OR
           psql db-system-collection list-db-systems.
 
-    """
+    """).strip()
+
+
+@mcp.tool(description=_OCI_COMMAND_HELP_DESCRIPTION)
+def get_oci_command_help(command: str) -> str:
     logger.info(f"get_oci_command_help called with command: {command}")
     command_tokens = _parse_oci_help_command(command)
     env_copy = os.environ.copy()

@@ -16,6 +16,11 @@
 - Resolve Common from the published package within the existing dependency bounds
   for development and CI. Local Common source testing now requires explicit opt-in.
 
+### Fixed
+
+- Preserve the complete `get_oci_command_help` usage guidance in MCP tool discovery
+  with FastMCP 4.
+
 ## 2.2.0
 
 ### Security

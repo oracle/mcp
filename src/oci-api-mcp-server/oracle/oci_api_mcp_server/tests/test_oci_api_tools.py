@@ -51,6 +51,18 @@ class TestOCITools:
         monkeypatch.setenv("OCI_MCP_AUTH_TYPE", "api_key")
 
     @pytest.mark.asyncio
+    async def test_get_oci_command_help_advertises_usage_guidance(self):
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+
+        tool = next(tool for tool in tools if tool.name == "get_oci_command_help")
+        assert tool.description is not None
+        assert "Only provide the command _after_ 'oci'" in tool.description
+        assert "Options and option values are not accepted" in tool.description
+        assert "remove the final token and try again" in tool.description
+        assert "psql db-system-collection list-db-systems" in tool.description
+
+    @pytest.mark.asyncio
     @patch("oracle.oci_api_mcp_server.server.subprocess.run")
     async def test_get_oci_command_help_success(self, mock_run):
         mock_result = MagicMock()

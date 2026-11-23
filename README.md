@@ -390,6 +390,81 @@ For Windows - **TODO**
 
 </details>
 
+### Muse Code
+
+<details>
+<summary>Setup</summary>
+
+Before continuing, make sure you have already followed the steps above in the [Quick start](#quick-start) section.
+
+[Muse Code](https://dev.meta.ai/docs/muse-code) is Meta's coding agent for the terminal and CI. It keeps MCP servers in `~/.config/muse/settings.json` and ships a `muse mcp` command that writes the entries for you. Verified with Muse Code 1.4.23.
+
+1. Install Muse Code and confirm it is on your `PATH`:
+
+```sh
+curl -fsSL https://dev.meta.ai/install.sh | bash
+muse --version
+```
+
+2. Register the server. `<profile_name>` is the profile that you set up during the [authentication](#authentication) steps.
+
+For macOS/Linux, over stdio with `uvx`:
+```sh
+muse mcp add oracle-oci-cloud-mcp-server --user \
+  -e OCI_CONFIG_PROFILE=<profile_name> -e FASTMCP_LOG_LEVEL=ERROR \
+  -- uvx oracle.oci-cloud-mcp-server@latest
+```
+
+This writes the following to `~/.config/muse/settings.json`; you can also paste it by hand (the file must carry `"schema_version": 1`):
+```json
+{
+  "schema_version": 1,
+  "mcpServers": {
+    "oracle-oci-cloud-mcp-server": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "oracle.oci-cloud-mcp-server@latest"
+      ],
+      "env": {
+        "OCI_CONFIG_PROFILE": "<profile_name>",
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    }
+  }
+}
+```
+
+Alternatively, to run using podman:
+
+```sh
+muse mcp add oracle-oci-cloud-mcp-server --user -e FASTMCP_LOG_LEVEL=INFO \
+  -- podman run -i --rm -v /path/to/your/.oci:/app/.oci oracle.oci-cloud-mcp-server:latest
+```
+
+Replace `/path/to/your/.oci` with the actual path to your OCI configuration directory. For servers not requiring OCI credentials, omit the `-v` volume mount.
+
+To connect to an OCI MCP server running in HTTP streaming mode (started as shown in the [Quick start](#quick-start)):
+
+```sh
+muse mcp add oracle-oci-cloud-mcp-server --user --url http://127.0.0.1:8888/mcp
+muse mcp login oracle-oci-cloud-mcp-server
+```
+
+The first command stores `{"type": "streamable-http", "url": "http://127.0.0.1:8888/mcp"}`; the second completes the OAuth flow against the OCI IAM confidential application you registered for the server. Use `--project` instead of `--user` to keep the entry in the current repository's settings.
+
+3. Check the entry with `muse mcp list` (or `muse mcp get oracle-oci-cloud-mcp-server --json`), then start Muse Code in a trusted workspace and run `/mcp` to confirm the server is connected and its tools are listed. Muse Code starts MCP servers at session start even with its credential-free `--provider echo`, so `muse exec --provider echo --trust-workspace "ping"` is enough to confirm the wiring before you log in; the session trace under the Muse data directory (`local-tracing/bootstrap/`) records `mcp.handshake` and `mcp.capability.discovery ... tool_count=5` for this server. The tools appear to the model as `mcp__oracle_oci_cloud_mcp_server__<tool>` (for example `mcp__oracle_oci_cloud_mcp_server__invoke_oci_api`), which is the name to use in a `run.toolset` selection.
+
+Notes:
+
+- Muse Code also accepts the snake_case spelling from Meta's docs (`mcp_servers`, `transport`, `streamable_http`); `muse mcp add` writes the camelCase form shown above, which matches the other clients in this README except for the `streamable-http` type value.
+- Servers are optional by default: an unavailable server is skipped with a warning. Add `"mode": "required"` to the entry if the run should abort instead.
+- First start of the `uvx` form takes ~15 s while `uvx` resolves the package; later starts are fast.
+- Unknown fields such as Cline's `autoApprove` are ignored with a startup warning rather than rejected.
+- Muse Code does not sandbox MCP tools. Only connect servers you trust, and prefer a least-privilege OCI profile as described under [Authentication](#authentication).
+
+</details>
+
 ## Local development
 
 On macOS, install proto with [Homebrew](https://formulae.brew.sh/formula/proto)

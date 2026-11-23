@@ -20,7 +20,7 @@ This package owns GoldenGate Administration REST operations, process lifecycle, 
 
 ## Setup / build / run
 
-From the repository root, use `proto install` for pinned tools and `moon run oracle-goldengate-mcp-server:build` for packaging. The [manifest](pyproject.toml) requires Python `>=3.10`. Read the local [README](README.md) and server `main()` for runtime transport/configuration; startup can access real services. See the [shared validation map](../../docs/agent-development.md#validation-map) for command definitions and check scope.
+From the repository root, use `proto install` for pinned tools and `moon run oracle-goldengate-mcp-server:build` for packaging. The [manifest](pyproject.toml) requires Python 3.11 or later. Read the local [README](README.md) and server `main()` for runtime transport/configuration; startup can access real services. See the [shared validation map](../../docs/agent-development.md#validation-map) for command definitions and check scope.
 
 ## Tests and validation
 

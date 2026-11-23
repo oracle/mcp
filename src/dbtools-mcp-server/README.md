@@ -43,7 +43,7 @@ dbtools-mcp-server.py is a FastMCP-based server that provides various tools for 
 
 ## Prerequisites
 
-- Python 3.x
+- Python 3.11 or newer
 - fastmcp (installed automatically via requirements.txt)
 - OCI SDK (installed via requirements.txt)
 - Valid OCI configuration file with credentials
@@ -51,12 +51,35 @@ dbtools-mcp-server.py is a FastMCP-based server that provides various tools for 
 ## Installation
 
 1. Clone this repository.
-2. Install required dependencies using pip:
+2. From this directory, install the pinned dependencies in your Python environment.
+   ```sh
+   python3 -m pip install -r requirements.txt
    ```
-   pip install -r requirements.txt
-   ```
-   This will install `oci`, `requests`, `fastmcp`, and all other dependencies.
 3. Set up your OCI config file at ~/.oci/config
+
+## Development checks
+
+Run the offline tests from this directory after installing `requirements.txt`.
+
+```sh
+python3 -m pip install coverage==7.17.3
+python3 -m coverage run -m unittest -v test_null_inputs test_dbtools_offline
+python3 -m coverage report
+```
+
+The tests use synthetic OCI credentials and stub OCI and database requests. They exercise tool discovery and calls through FastMCP, including a subprocess that runs the script over stdio. The coverage report enforces 90% statement coverage for `dbtools-mcp-server.py`.
+
+The separate live tests require a working OCI profile and Oracle and MySQL Database Tools connections. Set `PROFILE_NAME`, `ORACLE_CONNECTION_NAME`, and `MYSQL_CONNECTION_NAME` for your test resources, then opt in explicitly.
+
+```sh
+DBTOOLS_RUN_LIVE_TESTS=1 python3 -m unittest -v test_dbtools_mcp_server
+```
+
+When updating dependencies, edit `requirements.in` and regenerate `requirements.txt`.
+
+```sh
+uv pip compile --universal --python-version 3.11 --no-annotate requirements.in -o requirements.txt
+```
 
 ## OCI Configuration
 

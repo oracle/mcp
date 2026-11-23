@@ -4,13 +4,11 @@
 
 '''Streamable-HTTP transport hardening.
 
-The FastMCP `streamable-http` transport is a bare HTTP endpoint with
-no built-in auth: anyone who reaches the port gets the configured
-profile under the configured Oracle credentials. This module:
+Data Studio's streamable HTTP endpoint uses the configured Oracle
+credentials and access profile. This module:
 
   - Decides whether a bind is allowed at startup (fail-closed gate).
-  - When a bearer token is configured, wraps the Starlette HTTP app
-    with a middleware that enforces `Authorization: Bearer <token>`
+  - When a bearer token is configured, provides HTTP middleware that enforces `Authorization: Bearer <token>`
     on every request before any tool dispatch happens.
 
 The rules (enforced by `decide_bind`):
@@ -115,12 +113,8 @@ def make_bearer_middleware(token: str):
     time matching. Tool dispatch never sees the request unless the
     Authorization header is present and matches.
 
-    Health check (`GET /`) returns 200 unauthenticated so load
-    balancers / readiness probes work; everything else (POST, the
-    MCP message endpoints, etc.) requires auth.
+    GET / and GET /health pass through to any configured readiness route.
     '''
-    # Import lazily so the module imports without Starlette installed
-    # (relevant for the stdio-only case in tests).
     from starlette.middleware.base import BaseHTTPMiddleware
     from starlette.responses import JSONResponse
 
@@ -146,27 +140,3 @@ def make_bearer_middleware(token: str):
             return await call_next(request)
 
     return BearerAuthMiddleware
-
-
-def wrap_app_with_bearer_auth(app, token: str):
-    '''Wrap `app` (a Starlette ASGI app) with bearer-token enforcement.
-
-    Returns the wrapped app, which still talks ASGI and can be served
-    by uvicorn exactly like the original.
-    '''
-    from starlette.middleware import Middleware
-    from starlette.applications import Starlette
-
-    mw_cls = make_bearer_middleware(token)
-    # Mount the original app under "/" of a thin wrapper Starlette
-    # that carries the middleware. We can't .add_middleware() after
-    # the Starlette app's startup; building a fresh wrapper is the
-    # documented pattern.
-    wrapper = Starlette(
-        debug=False,
-        routes=[],
-        middleware=[Middleware(mw_cls)],
-    )
-    # Forward all routes/lifespan to the inner app via mount.
-    wrapper.mount('/', app)
-    return wrapper

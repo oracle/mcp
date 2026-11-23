@@ -5,17 +5,20 @@ https://oss.oracle.com/licenses/upl.
 
 MCP tool server exposing Oracle GoldenGate operational APIs.
 
-Each @mcp.tool function is a callable tool endpoint used by MCP clients.
+Each @_register_tool function is a callable tool endpoint used by MCP clients.
 """
 
 import json
 import os
 import sys
 import traceback
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, ParamSpec
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
+from fastmcp.tools import FunctionTool, ToolResult
 from pydantic import Field
 from pydantic.fields import FieldInfo
 
@@ -23,7 +26,7 @@ from . import api
 from .config import read_config
 from .consts import DEFAULT_DOMAIN, SERVER_NAME
 from .extract_config import build_advanced_extract_parameters
-from .http_client import HttpClient
+from .http_client import GoldenGateHttpError, HttpClient
 from .map_statement import build_map_statement, normalize_map_statement
 from .models import (
     CreateExtractBegin,
@@ -43,6 +46,45 @@ client = HttpClient(cfg)
 mcp = FastMCP(SERVER_NAME)
 
 DEFAULT_MANAGED_PROCESS_SETTINGS = "ogg:managedProcessSettings:Default"
+
+
+_ToolParams = ParamSpec("_ToolParams")
+
+
+class _GoldenGateTool(FunctionTool):
+    async def run(self, arguments: dict[str, Any]) -> ToolResult:
+        """Preserve argument normalization from the bundled SDK."""
+        properties = self.parameters["properties"]
+        normalized = {}
+        for name, value in arguments.items():
+            if name not in properties:
+                continue
+            if isinstance(value, str) and properties[name].get("type") != "string":
+                try:
+                    decoded = json.loads(value)
+                except json.JSONDecodeError:
+                    pass
+                else:
+                    if decoded is None or isinstance(decoded, (dict, list)):
+                        value = decoded
+            normalized[name] = value
+        try:
+            return await super().run(normalized)
+        except GoldenGateHttpError as exc:
+            # FastMCP logs ToolError without printing the response body or traceback.
+            raise ToolError(f"Error executing tool {self.name}: {exc}") from None
+
+
+def _register_tool(*, description: str) -> Callable[[Callable[_ToolParams, str]], Callable[_ToolParams, str]]:
+    def register(fn: Callable[_ToolParams, str]) -> Callable[_ToolParams, str]:
+        # Inline execution keeps requests to the shared HTTP session serialized.
+        tool = _GoldenGateTool.from_function(fn, description=description, run_in_thread=False)
+        # The bundled SDK accepted and ignored unknown top-level arguments.
+        tool.parameters.pop("additionalProperties", None)
+        mcp.add_tool(tool)
+        return fn
+
+    return register
 
 
 def _ok(data: Any) -> str:
@@ -132,19 +174,19 @@ def _resolve_replicat_checkpoint(
     return top_level or advanced
 
 
-@mcp.tool(description="Return the list of GoldenGate domains available in OCI GoldenGate deployment. Domains group connections in GoldenGate.")
+@_register_tool(description="Return the list of GoldenGate domains available in OCI GoldenGate deployment. Domains group connections in GoldenGate.")
 def list_domains() -> str:
     """Return the list of GoldenGate domains available in OCI GoldenGate deployment. Domains group connections in GoldenGate."""
     return _ok(client.get(api.list_domains()))
 
 
-@mcp.tool(description="Return the list of Connections available in specific GoldenGate domains in OCI GoldenGate deployment. A connection stores the metadata defining connectivity to a source or target.")
+@_register_tool(description="Return the list of Connections available in specific GoldenGate domains in OCI GoldenGate deployment. A connection stores the metadata defining connectivity to a source or target.")
 def list_connections(domain: str = Field(..., description="GoldenGate domain name")) -> str:
     """Return the list of Connections available in specific GoldenGate domains in OCI GoldenGate deployment. A connection stores the metadata defining connectivity to a source or target."""
     return _ok(client.get(api.list_connections(domain)))
 
 
-@mcp.tool(description="Returns the list of checkpoint tables for a given connection or domains/alias pair. Checkpoints are required when creating Replicat processes.")
+@_register_tool(description="Returns the list of checkpoint tables for a given connection or domains/alias pair. Checkpoints are required when creating Replicat processes.")
 def list_checkpoint_tables(
     domainName: str = Field(..., description="GoldenGate domain name"),
     connectionName: str = Field(..., description="GoldenGate connection (alias) name"),
@@ -162,37 +204,37 @@ def list_checkpoint_tables(
     return _ok(data)
 
 
-@mcp.tool(description="Return the list of Extracts (processes that capture data from a source) available in OCI GoldenGate deployment")
+@_register_tool(description="Return the list of Extracts (processes that capture data from a source) available in OCI GoldenGate deployment")
 def list_extracts() -> str:
     """Return the list of Extracts (processes that capture data from a source) available in OCI GoldenGate deployment."""
     return _ok(client.get(api.list_extracts()))
 
 
-@mcp.tool(description="Return the list of Replicats (processes that replicate data into a target) available in OCI GoldenGate deployment")
+@_register_tool(description="Return the list of Replicats (processes that replicate data into a target) available in OCI GoldenGate deployment")
 def list_replicats() -> str:
     """Return the list of Replicats (processes that replicate data into a target) available in OCI GoldenGate deployment."""
     return _ok(client.get(api.list_replicats()))
 
 
-@mcp.tool(description="Return the list of Distribution Paths available in OCI GoldenGate deployment. A Distribution Path is used to send data to another GoldenGate deployment.")
+@_register_tool(description="Return the list of Distribution Paths available in OCI GoldenGate deployment. A Distribution Path is used to send data to another GoldenGate deployment.")
 def list_distribution_paths() -> str:
     """Return the list of Distribution Paths available in OCI GoldenGate deployment. A Distribution Path is used to send data to another GoldenGate deployment."""
     return _ok(client.get(api.list_distribution_paths()))
 
 
-@mcp.tool(description="Return the list of Data Streams available in OCI GoldenGate deployment. A Data Stream exposes GoldenGate data for downstream consumers over AsyncAPI channels.")
+@_register_tool(description="Return the list of Data Streams available in OCI GoldenGate deployment. A Data Stream exposes GoldenGate data for downstream consumers over AsyncAPI channels.")
 def list_data_streams() -> str:
     """Return the list of Data Streams available in OCI GoldenGate deployment. A Data Stream exposes GoldenGate data for downstream consumers over AsyncAPI channels."""
     return _ok(client.get(api.list_data_streams()))
 
 
-@mcp.tool(description="Retrieve a collection of all known trails available in OCI GoldenGate deployment. A trail is a file that stores the captured data. A trail can only have two alphanumeric characters.")
+@_register_tool(description="Retrieve a collection of all known trails available in OCI GoldenGate deployment. A trail is a file that stores the captured data. A trail can only have two alphanumeric characters.")
 def list_trails() -> str:
     """Retrieve a collection of all known trails available in OCI GoldenGate deployment. A trail is a file that stores the captured data. A trail can only have two alphanumeric characters."""
     return _ok(client.get(api.list_trails()))
 
 
-@mcp.tool(description="Return the status of a given Extract in OCI GoldenGate deployment")
+@_register_tool(description="Return the status of a given Extract in OCI GoldenGate deployment")
 def get_extract_status(
     extractName: str = Field(..., description="Extract process name", min_length=1, max_length=8)
 ) -> str:
@@ -200,7 +242,7 @@ def get_extract_status(
     return _ok(client.post(api.get_extract_status(extractName), {"command": "STATUS"}))
 
 
-@mcp.tool(description="Return the status of a given Replicat in OCI GoldenGate deployment")
+@_register_tool(description="Return the status of a given Replicat in OCI GoldenGate deployment")
 def get_replicat_status(
     replicatName: str = Field(..., description="Replicat process name", min_length=1, max_length=8)
 ) -> str:
@@ -208,7 +250,7 @@ def get_replicat_status(
     return _ok(client.post(api.get_replicat_status(replicatName), {"command": "STATUS"}))
 
 
-@mcp.tool(description="Create a new alias or connection in the GoldenGate credential store. If no domain is provided, defaults to OracleGoldenGate.")
+@_register_tool(description="Create a new alias or connection in the GoldenGate credential store. If no domain is provided, defaults to OracleGoldenGate.")
 def create_connection(
     connection: str = Field(..., description="Connection/alias name in GoldenGate credential store"),
     userid: str = Field(..., description="Database user identifier"),
@@ -224,7 +266,7 @@ def create_connection(
     return _ok(data)
 
 
-@mcp.tool(description="Add TRANDATA at schema level for a given connection. Manage Supplemental Logging for Database Schemas.")
+@_register_tool(description="Add TRANDATA at schema level for a given connection. Manage Supplemental Logging for Database Schemas.")
 def add_trandata_schema(
     domain: str = Field(..., description="GoldenGate domain name"),
     connection: str = Field(..., description="GoldenGate connection (alias) name"),
@@ -242,7 +284,7 @@ def add_trandata_schema(
     return _ok(client.post(api.add_trandata_schema(domain, connection), payload))
 
 
-@mcp.tool(description="Add TRANDATA at table level for a given connection. Manage Supplemental Logging for Database tables.")
+@_register_tool(description="Add TRANDATA at table level for a given connection. Manage Supplemental Logging for Database tables.")
 def add_trandata_table(
     domain: str = Field(..., description="GoldenGate domain name"),
     connection: str = Field(..., description="GoldenGate connection (alias) name"),
@@ -261,7 +303,7 @@ def add_trandata_table(
     return _ok(client.post(api.add_trandata_table(domain, connection), payload))
 
 
-@mcp.tool(description="Creates a new Extract in OCI GoldenGate deployment to capture data from schemas and tables. The Extract name can have, at most, 8 alphanumeric characters.")
+@_register_tool(description="Creates a new Extract in OCI GoldenGate deployment to capture data from schemas and tables. The Extract name can have, at most, 8 alphanumeric characters.")
 def create_extract(
     extractName: str = Field(..., description="Extract process name", min_length=1, max_length=8),
     trailName: str = Field(..., description="Two-character trail name", min_length=2, max_length=2),
@@ -313,7 +355,7 @@ def create_extract(
     return _ok(client.post(api.create_extract(extractName), payload))
 
 
-@mcp.tool(description="Updates an existing Extract in OCI GoldenGate deployment. Accepts the same structured payload as create_extract but performs a PATCH instead.")
+@_register_tool(description="Updates an existing Extract in OCI GoldenGate deployment. Accepts the same structured payload as create_extract but performs a PATCH instead.")
 def update_extract(
     extractName: str = Field(..., description="Extract process name", min_length=1, max_length=8),
     trailName: str | None = Field(None, description="Two-character trail name", min_length=2, max_length=2),
@@ -368,7 +410,7 @@ def update_extract(
     return _ok(client.patch(api.update_extract(extractName), payload))
 
 
-@mcp.tool(description="Creates a new Replicat in OCI GoldenGate deployment to replicate data into a target. Supports raw mapStatement or structured source/options. Requires checkpointTable for deployments that use database checkpoints; use list_checkpoint_tables to find a valid table.")
+@_register_tool(description="Creates a new Replicat in OCI GoldenGate deployment to replicate data into a target. Supports raw mapStatement or structured source/options. Requires checkpointTable for deployments that use database checkpoints; use list_checkpoint_tables to find a valid table.")
 def create_replicat(
     replicatName: str = Field(..., description="Replicat process name", min_length=1, max_length=8),
     trailName: str = Field(..., description="Two-character trail name", min_length=2, max_length=2),
@@ -436,7 +478,7 @@ def create_replicat(
     return _ok(client.post(api.create_replicat(replicatName), payload))
 
 
-@mcp.tool(description="Updates an existing Replicat in OCI GoldenGate deployment. Accepts the same structured payload as create_replicat but performs a PATCH instead.")
+@_register_tool(description="Updates an existing Replicat in OCI GoldenGate deployment. Accepts the same structured payload as create_replicat but performs a PATCH instead.")
 def update_replicat(
     replicatName: str = Field(..., description="Replicat process name", min_length=1, max_length=8),
     trailName: str | None = Field(None, description="Two-character trail name", min_length=2, max_length=2),
@@ -513,7 +555,7 @@ def update_replicat(
     return _ok(client.patch(api.update_replicat(replicatName), payload))
 
 
-@mcp.tool(description="Creates a new GoldenGate Distribution Path to distribute or send data from one GoldenGate deployment to another. The sourceURI and targetURI parameters must only contain the source and target deployment hostnames without any protocol, service, or trail name. The support target authentication methods are OAuth and Alias.")
+@_register_tool(description="Creates a new GoldenGate Distribution Path to distribute or send data from one GoldenGate deployment to another. The sourceURI and targetURI parameters must only contain the source and target deployment hostnames without any protocol, service, or trail name. The support target authentication methods are OAuth and Alias.")
 def create_distribution_path(
     distributionPathName: str = Field(..., description="Distribution path name"),
     sourceURI: str = Field(..., description="Source deployment hostname (no protocol)"),
@@ -557,7 +599,7 @@ def create_distribution_path(
     return _ok(client.post(api.create_distribution_path(distributionPathName, sourceURI, sourceTrailName, targetURI, port, auth, targetDomain, targetAlias), payload))
 
 
-@mcp.tool(description="Creates a new Data Stream using the trail provided in OCI GoldenGate deployment to distribute or expose data as AsyncAPI channels")
+@_register_tool(description="Creates a new Data Stream using the trail provided in OCI GoldenGate deployment to distribute or expose data as AsyncAPI channels")
 def create_data_stream(
     dataStreamName: str = Field(..., description="Data stream name"),
     trailName: str = Field(..., description="Two-character trail name", min_length=2, max_length=2),
@@ -580,85 +622,85 @@ def create_data_stream(
     return _ok(client.post(api.create_data_stream(dataStreamName, trailName, qualityOfService, cloudEventsFormat, bufferSize), payload))
 
 
-@mcp.tool(description="Start a process in GoldenGate")
+@_register_tool(description="Start a process in GoldenGate")
 def start(processName: str = Field(..., description="GoldenGate process name")) -> str:
     """Start a process in GoldenGate."""
     return _ok(client.post(api.start(processName), {"name": "start", "processName": processName}))
 
 
-@mcp.tool(description="Stop a process in GoldenGate")
+@_register_tool(description="Stop a process in GoldenGate")
 def stop(processName: str = Field(..., description="GoldenGate process name")) -> str:
     """Stop a process in GoldenGate."""
     return _ok(client.post(api.stop(processName), {"name": "stop", "processName": processName, "force": False}))
 
 
-@mcp.tool(description="Start a distribution path")
+@_register_tool(description="Start a distribution path")
 def start_distribution_path(processName: str = Field(..., description="Distribution path name")) -> str:
     """Start a distribution path."""
     return _ok(client.patch(api.start_distribution_path(processName), {"status": "running"}))
 
 
-@mcp.tool(description="Stop a distribution path")
+@_register_tool(description="Stop a distribution path")
 def stop_distribution_path(processName: str = Field(..., description="Distribution path name")) -> str:
     """Stop a distribution path."""
     return _ok(client.patch(api.stop_distribution_path(processName), {"status": "stopped"}))
 
 
-@mcp.tool(description="Get lag metrics for an Extract")
+@_register_tool(description="Get lag metrics for an Extract")
 def get_extract_lag(extractName: str = Field(..., description="Extract process name", min_length=1, max_length=8)) -> str:
     """Get lag metrics for an Extract."""
     return _ok(client.post(api.get_extract_lag(extractName), {"command": "GETLAG", "isReported": True}))
 
 
-@mcp.tool(description="Get lag metrics for a Replicat")
+@_register_tool(description="Get lag metrics for a Replicat")
 def get_replicat_lag(replicatName: str = Field(..., description="Replicat process name", min_length=1, max_length=8)) -> str:
     """Get lag metrics for a Replicat."""
     return _ok(client.post(api.get_replicat_lag(replicatName), {"command": "GETLAG", "isReported": True}))
 
 
-@mcp.tool(description="Retrieve a report from the Extract process to monitor or troubleshoot it. A report contains all the information about a GoldenGate process")
+@_register_tool(description="Retrieve a report from the Extract process to monitor or troubleshoot it. A report contains all the information about a GoldenGate process")
 def get_extract_report(extractName: str = Field(..., description="Extract process name", min_length=1, max_length=8)) -> str:
     """Retrieve a report from the Extract process to monitor or troubleshoot it. A report contains all the information about a GoldenGate process."""
     return _ok(client.get(api.get_extract_report(extractName)))
 
 
-@mcp.tool(description="Retrieve a report from the Replicat process to monitor or troubleshoot it. A report contains all the information about a GoldenGate process")
+@_register_tool(description="Retrieve a report from the Replicat process to monitor or troubleshoot it. A report contains all the information about a GoldenGate process")
 def get_replicat_report(replicatName: str = Field(..., description="Replicat process name", min_length=1, max_length=8)) -> str:
     """Retrieve a report from the Replicat process to monitor or troubleshoot it. A report contains all the information about a GoldenGate process."""
     return _ok(client.get(api.get_replicat_report(replicatName)))
 
 
-@mcp.tool(description="Retrieve information about an existing GoldenGate Data Stream")
+@_register_tool(description="Retrieve information about an existing GoldenGate Data Stream")
 def get_data_stream_info(dataStreamName: str = Field(..., description="Data stream name")) -> str:
     """Retrieve information about an existing GoldenGate Data Stream."""
     return _ok(client.get(api.get_data_stream_info(dataStreamName)))
 
 
-@mcp.tool(description="Retrieve the AsyncAPI yaml specification / definition of an existing GoldenGate Data Stream")
+@_register_tool(description="Retrieve the AsyncAPI yaml specification / definition of an existing GoldenGate Data Stream")
 def get_data_stream_yaml(dataStreamName: str = Field(..., description="Data stream name")) -> str:
     """Retrieve the AsyncAPI yaml specification / definition of an existing GoldenGate Data Stream."""
     return _ok(client.get(api.get_data_stream_yaml(dataStreamName), headers={"Content-Type": "application/json", "Accept": "application/yaml"}, response_text=True))
 
 
-@mcp.tool(description="Retrieve an Extract statistics: number of inserts, updates, deletes, etc. that were captured by the process")
+@_register_tool(description="Retrieve an Extract statistics: number of inserts, updates, deletes, etc. that were captured by the process")
 def get_extract_stats(extractName: str = Field(..., description="Extract process name", min_length=1, max_length=8)) -> str:
     """Retrieve an Extract statistics: number of inserts, updates, deletes, etc. that were captured by the process."""
     return _ok(client.post(api.get_extract_stats(extractName), {"command": "STATS", "isReported": True}))
 
 
-@mcp.tool(description="Retrieve a Replicat statistics: number of inserts, updates, deletes, etc. that were replicated by the process")
+@_register_tool(description="Retrieve a Replicat statistics: number of inserts, updates, deletes, etc. that were replicated by the process")
 def get_replicat_stats(replicatName: str = Field(..., description="Replicat process name", min_length=1, max_length=8)) -> str:
     """Retrieve a Replicat statistics: number of inserts, updates, deletes, etc. that were replicated by the process."""
     return _ok(client.post(api.get_replicat_stats(replicatName), {"command": "STATS", "isReported": True}))
 
 
-@mcp.tool(description="Retrieve the details of an extract process: parameters, configuration, targets, type, etc.")
+@_register_tool(description="Retrieve the details of an extract process: parameters, configuration, targets, type, etc.")
 def get_extract_details(extractName: str = Field(..., description="Extract process name", min_length=1, max_length=8)) -> str:
     """Retrieve the details of an extract process: parameters, configuration, targets, type, etc."""
     return _ok(client.get(api.get_extract_details(extractName)))
 
 
-@mcp.tool(description="Retrieve the details of a replicat process: parameters, configuration, targets, type, etc.")
+@_register_tool(description="Retrieve the details of a replicat process: parameters, configuration, targets, type, etc.")
 def get_replicat_details(replicatName: str = Field(..., description="Replicat process name", min_length=1, max_length=8)) -> str:
     """Retrieve the details of a replicat process: parameters, configuration, targets, type, etc."""
     return _ok(client.get(api.get_replicat_details(replicatName)))

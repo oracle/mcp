@@ -63,14 +63,13 @@ Install `uv` using Astral's installation guide:
 
 - https://docs.astral.sh/uv/getting-started/installation/
 
-Then install Python and create a virtual environment.
+Install Python 3.11 or later and create a virtual environment.
 
 This repository includes a committed `uv.lock` file for reproducible dependency resolution.
 
 Linux/macOS:
 
 ```sh
-# Install a supported Python version (project requires >=3.10)
 uv python install 3.12
 
 # From the oracle-goldengate-mcp-server directory
@@ -87,7 +86,6 @@ uv sync --frozen
 Windows (PowerShell):
 
 ```powershell
-# Install a supported Python version (project requires >=3.10)
 uv python install 3.12
 
 # From the oracle-goldengate-mcp-server directory
@@ -100,8 +98,6 @@ uv pip install -e .
 # (Optional, recommended) Sync exactly to lockfile versions
 uv sync --frozen
 ```
-
-You can use `3.13` as well, but `3.12` is generally a safer default for compatibility.
 
 ### Dependency lockfile (`uv.lock`)
 

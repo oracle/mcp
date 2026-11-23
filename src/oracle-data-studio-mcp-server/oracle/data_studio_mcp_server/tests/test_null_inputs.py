@@ -6,17 +6,18 @@ https://oss.oracle.com/licenses/upl.
 
 import pytest
 from jsonschema import Draft202012Validator
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
+from fastmcp import Client, FastMCP
+from fastmcp.exceptions import ToolError
 
 from oracle.data_studio_mcp_server.tools import adp_tools, dt_tools, essbase_tools
 
 
-def test_null_defaults_are_accepted_by_advertised_schemas():
+@pytest.mark.asyncio
+async def test_null_defaults_are_accepted_by_advertised_schemas():
     mcp = FastMCP("test")
     for module in (adp_tools, dt_tools, essbase_tools):
         module.register_tools(mcp)
-    for tool in mcp._tool_manager.list_tools():
+    for tool in await mcp.list_tools():
         validator = Draft202012Validator(tool.parameters)
         assert "ctx" not in tool.parameters["properties"]
         for name, schema in tool.parameters["properties"].items():
@@ -36,8 +37,10 @@ async def test_optional_tool_inputs(monkeypatch, module, connection, tool_name, 
     mcp = FastMCP("test")
     module.register_tools(mcp)
     monkeypatch.setattr(module, connection, lambda ctx: None)
-    omitted = await mcp.call_tool(tool_name, required)
-    for value in (None, valid):
-        assert await mcp.call_tool(tool_name, {**required, parameter: value}) == omitted
-    with pytest.raises(ToolError, match="validation error"):
-        await mcp.call_tool(tool_name, {**required, parameter: invalid})
+    async with Client(mcp) as client:
+        omitted = await client.call_tool(tool_name, required)
+        for value in (None, valid):
+            result = await client.call_tool(tool_name, {**required, parameter: value})
+            assert result.content == omitted.content
+        with pytest.raises(ToolError, match="validation error"):
+            await client.call_tool(tool_name, {**required, parameter: invalid})

@@ -12,6 +12,16 @@ fileGroups:
     - '!tests/.venv/**/*'
 
 tasks:
+  test:
+    description: 'Tests the opt-in Common consumer integration checker'
+    type: 'test'
+    command: 'python3 -m unittest discover -s tests/unit -p test_check_common_consumer.py'
+    toolchains:
+      - 'unstable_python'
+    inputs:
+      - 'scripts/check-common-consumer.py'
+      - 'tests/unit/test_check_common_consumer.py'
+
   lint:
     description: 'Checks repository Python source with Ruff'
     command: 'uv tool run ruff check .'

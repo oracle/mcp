@@ -18,7 +18,7 @@ import re
 import unicodedata
 from functools import lru_cache
 from typing import Any, TypedDict
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from fastmcp import FastMCP
@@ -258,23 +258,24 @@ async def iter_all(
         )
         if not nxt:
             break
-        next_url = _safe_next_url(nxt)
+        next_url = _safe_next_url(nxt, url)
         if next_url is None:
             break
         url, params = next_url, None
 
 
-def _safe_next_url(next_href: str) -> str | None:
-    parsed = urlparse(next_href)
-    if parsed.scheme or parsed.netloc:
-        if parsed.scheme == "https" and parsed.netloc == APEX_HOST:
-            return next_href
-        return None
-    path = next_href if next_href.startswith("/") else f"/{next_href}"
-    return f"https://{APEX_HOST}{path}"
+def _safe_next_url(next_href: str, current_url: str) -> str | None:
+    resolved = urljoin(current_url, next_href)
+    parsed = urlparse(resolved)
+    if parsed.scheme == "https" and parsed.netloc == APEX_HOST:
+        return resolved
+    return None
 
 
 # -------------------- fuzzy search --------------------
+
+_MIN_VARIANT_LENGTH = 3
+_MIN_LONG_VARIANT_LENGTH = 5
 
 
 def search_items(
@@ -285,8 +286,8 @@ def search_items(
 ) -> list[SimplifiedItem]:
     """
     Fuzzy name search:
-    - Short queries (3–4 chars): word-boundary matches only (reduce false hits; e.g., 'ADB').
-    - Long queries (>=5): space-insensitive substring OR similarity (≥0.90).
+    - Short variants require whole-word matches to reduce false hits.
+    - Long variants use space-insensitive substring or similarity matching (≥0.90).
     - Expand aliases only when query == alias or query == full name or query contains full name.
     - If query intends 'Autonomous Database', require both 'autonomous' and 'database'.
     - On return, pass each hit through simplify(..., prefer_currency) so items[*].currencyCode is always populated.
@@ -305,8 +306,10 @@ def search_items(
         if qn == sn or qn == fn or fn in qn:
             variants.update({sn, nospace(sn), fn, nospace(fn)})
 
-    # Drop too-short tokens
-    variants = {v for v in variants if len(v) >= 3}
+    short_variants = [
+        v for v in variants if _MIN_VARIANT_LENGTH <= len(v) < _MIN_LONG_VARIANT_LENGTH
+    ]
+    long_variants = [v for v in variants if len(v) >= _MIN_LONG_VARIANT_LENGTH]
 
     res: list[SimplifiedItem] = []
     for it in items:
@@ -323,13 +326,10 @@ def search_items(
             if not (re.search(r"\bautonomous\b", tn) and re.search(r"\bdatabase\b", tn)):
                 continue
 
-        short = [v for v in variants if 3 <= len(v) <= 4]
-        long = [v for v in variants if len(v) >= 5]
-
         hit = (
-            any(re.search(rf"\b{re.escape(v)}\b", tn) for v in short)
-            or any(v in tns for v in long)
-            or any(difflib.SequenceMatcher(a=v, b=tns).ratio() >= 0.90 for v in long)
+            any(re.search(rf"\b{re.escape(v)}\b", tn) for v in short_variants)
+            or any(v in tns for v in long_variants)
+            or any(difflib.SequenceMatcher(a=v, b=tns).ratio() >= 0.90 for v in long_variants)
         )
         if hit:
             sm = simplify(it, prefer_currency)

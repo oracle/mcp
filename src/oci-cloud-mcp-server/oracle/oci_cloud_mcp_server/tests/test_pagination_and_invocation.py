@@ -9,6 +9,8 @@ from oracle.oci_cloud_mcp_server.server import (
     mcp,
 )
 
+from oracle.oci_cloud_mcp_server.tests.sdk_fixtures import sdk_service_loader
+
 
 class TestSupportsPaginationAllowlistIntrospectionFailure:
     def test_allowlist_true_when_signature_introspection_fails(self, monkeypatch):
@@ -41,8 +43,8 @@ class TestInvokeErrorPaths:
 
         # patch module import and config/signer bootstrap
         monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
+            'oracle.oci_cloud_mcp_server.server._get_service_module',
+            sdk_service_loader(lambda name: SimpleNamespace(FakeClient=FakeClient), monkeypatch),
         )
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
@@ -65,14 +67,14 @@ class TestInvokeErrorPaths:
         assert "not found" in res["error"].lower()
 
     @pytest.mark.asyncio
-    async def test_attribute_present_but_not_callable_returns_error(self, monkeypatch):
+    async def test_instance_only_attribute_is_rejected_before_construction(self, monkeypatch):
         class FakeClient:
             def __init__(self, config, signer):  # noqa: ARG002
                 self.get_thing = 123  # not callable
 
         monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
+            'oracle.oci_cloud_mcp_server.server._get_service_module',
+            sdk_service_loader(lambda name: SimpleNamespace(FakeClient=FakeClient), monkeypatch),
         )
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
@@ -92,7 +94,7 @@ class TestInvokeErrorPaths:
             ).data
 
         assert "error" in res
-        assert "not callable" in res["error"].lower()
+        assert "not found or is not public" in res["error"].lower()
 
 
 class TestImportClientHappyPath:
@@ -107,7 +109,7 @@ class TestImportClientHappyPath:
 
         # module with GoodClient
         fake_mod = SimpleNamespace(GoodClient=GoodClient)
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", lambda name: fake_mod)
+        monkeypatch.setattr('oracle.oci_cloud_mcp_server.server._get_service_module', sdk_service_loader(lambda name: fake_mod, monkeypatch))
         # basic config/signer
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
@@ -195,8 +197,8 @@ class TestLoggingSearchPagination:
                 return Response([{"id": "result-3"}, {"id": "result-4"}], "req-2")
 
         monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(LogSearchClient=LogSearchClient),
+            'oracle.oci_cloud_mcp_server.server._get_service_module',
+            sdk_service_loader(lambda name: SimpleNamespace(LogSearchClient=LogSearchClient), monkeypatch),
         )
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
@@ -342,8 +344,8 @@ class TestInvokeTypeErrorPropagation:
                 return {"ok": True}
 
         monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
+            'oracle.oci_cloud_mcp_server.server._get_service_module',
+            sdk_service_loader(lambda name: SimpleNamespace(FakeClient=FakeClient), monkeypatch),
         )
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",

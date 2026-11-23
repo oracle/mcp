@@ -8,13 +8,15 @@ license-files = ["LICENSE.txt"]
 authors = [
     {name = "Oracle MCP", email = "237432095+oracle-mcp@users.noreply.github.com"},
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
   "anyio>=4.5,<5",
-  "mcp>=1.29.0,<2.0.0",
+  "fastmcp==4.2.2",
+  "mcp-types>=2.3.0,<3.0.0",
   "pydantic>=2.13.4",
   "requests>=2.34.2",
   "cryptography>=50.0.0",
+  "dnspython>=2.9.2",  # FastMCP brings in email-validator, which allows older releases.
 ]
 
 classifiers = [
@@ -49,14 +51,14 @@ dev = [
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["E501", "B008"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 strict = false
 warn_unused_configs = true
 warn_redundant_casts = true

@@ -4,11 +4,16 @@
 
 ### Breaking Changes
 
-- Process names now follow the GoldenGate REST naming pattern (one to eight uppercase letters, digits, `_` or `$`, with no leading digit). Two-character trail names accept alphanumeric characters only.
-- Generic `start` checks the backend before issuing a command. Replicat starts require a matching local CDC Extract and a complete Extract collection of at most 128 entries. Initial-load, remote-only, and ambiguous sources are refused.
-- `start_initial_load_replicat` requires a matching EXTFILE/source path, a stopped Extract with identifiable execution history and a successful exit, and a report identifying that execution. Missing evidence, operator stops, failed runs and restarts during inspection are refused.
-- Structured `advanced.reportCount.every` requires a positive `value` and a `unit` of `SECONDS`, `MINUTES` or `HOURS`. String frequency expressions remain supported.
-- TRANDATA `prepareCsnMode` is constrained to `nowait`, `wait`, `lock`, or `none`.
+- Process names now follow the GoldenGate REST naming pattern (one to eight uppercase letters, digits, underscore or dollar sign, with no leading digit). Two-character trail names accept alphanumeric characters only.
+- Generic start checks the backend before issuing a command. Replicat starts require a matching local CDC Extract and a complete Extract collection of at most 128 entries. Initial-load, remote-only, and ambiguous sources are refused.
+- start_initial_load_replicat requires a matching EXTFILE/source path, a stopped Extract with identifiable execution history and a successful exit, and a report identifying that execution. Missing evidence, operator stops, failed runs and restarts during inspection are refused.
+- Structured advanced.reportCount.every requires a positive value and a unit of SECONDS, MINUTES or HOURS. String frequency expressions remain supported.
+- TRANDATA prepareCsnMode is constrained to nowait, wait, lock, or none.
+- Require Python 3.11 or later to install and run the server.
+
+### Changed
+
+- Use standalone FastMCP 4.2.2 for the stdio server. Tool discovery now includes FastMCP-generated display metadata.
 
 ### Fixed
 
@@ -22,3 +27,8 @@
 
 - Explicit read-only, mutation, idempotency and external-system annotations for every tool.
 - In-memory MCP regression tests for discovery, validation, serialization, guarded starts and protocol responsiveness during blocked HTTP calls.
+
+### Security
+
+- Require dnspython 2.9.2 or later when installing the server.
+- Keep GoldenGate HTTP error response bodies out of tool execution logs.

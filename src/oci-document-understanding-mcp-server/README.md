@@ -1,5 +1,10 @@
 # OCI Document Understanding MCP Server
 
+## Platform compatibility
+
+The locked cryptography dependency no longer supports Intel macOS or 32-bit
+Windows. Use Apple Silicon macOS, 64-bit Windows, or a supported Linux environment.
+
 ## Overview
 
 This FastMCP-based server provides MCP tools for OCI Document Understanding
@@ -28,7 +33,7 @@ For local wheel testing:
 uvx \
   --python 3.13 \
   --no-python-downloads \
-  --from ./dist/oracle_oci_document_understanding_mcp_server-0.1.0-py3-none-any.whl \
+  --from ./dist/oracle_oci_document_understanding_mcp_server-0.2.0-py3-none-any.whl \
   oracle.oci-document-understanding-mcp-server
 ```
 

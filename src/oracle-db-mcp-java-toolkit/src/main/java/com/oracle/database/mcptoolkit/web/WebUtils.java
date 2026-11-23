@@ -58,14 +58,9 @@ public class WebUtils {
     return url.toString();
   }
 
-  /**
-   * Retrieves the value of the system property {@code allowedHosts}.
-   * If the property is not set, it defaults to {@code "*"}.
-   *
-   * @return the value of the {@code allowedHosts} system property, or {@code "*"} if not set
-   */
-  static String getAllowedHosts() {
-    return LoadedConstants.ALLOWED_HOSTS;
+  /** Returns the configured CORS response origin for OAuth discovery endpoints. */
+  static String getAllowedOrigin() {
+    return LoadedConstants.CORS_ALLOWED_ORIGIN;
   }
 
   /**

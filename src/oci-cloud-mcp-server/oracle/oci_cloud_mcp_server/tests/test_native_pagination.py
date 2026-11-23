@@ -228,6 +228,75 @@ async def test_real_logging_results_keep_search_metadata(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("empty_position", [0, 1])
+async def test_logging_unset_results_are_empty_pages(monkeypatch, empty_position):
+    sdk_class = oci.loggingsearch.LogSearchClient
+    models = oci.loggingsearch.models
+    pages = [
+        models.SearchResponse(results=[models.SearchResult(data={"id": "record"})]),
+        models.SearchResponse(summary=models.SearchResultSummary(result_count=0)),
+    ]
+    if empty_position == 0:
+        pages.reverse()
+    captured = mock_execution(monkeypatch, sdk_class, "search_logs", [
+        response(pages[0], "second"), response(pages[1]),
+    ])
+    result = await invoke(sdk_class, "search_logs")
+    assert "error" not in result
+    assert result["data"] == [{"data": {"id": "record"}}]
+    assert captured == [{}, {"page": "second"}]
+    assert result["result_meta"]["has_more_results"] is False
+    assert len(result["result_meta"]["page_metadata"]) == 2
+    assert result["result_meta"]["page_metadata"][empty_position]["summary"]["result_count"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("dns", [False, True])
+async def test_unset_items_keep_collection_shape(monkeypatch, dns):
+    if dns:
+        sdk_class = oci.dns.DnsClient
+        operation = "get_zone_records"
+        pages = [oci.dns.models.RecordCollection(), oci.dns.models.RecordCollection(
+            items=[oci.dns.models.Record(domain="example.invalid")],
+        )]
+    else:
+        sdk_class = oci.object_storage.ObjectStorageClient
+        operation = "list_object_versions"
+        pages = [oci.object_storage.models.ObjectVersionCollection(prefixes=["prefix/"]),
+                 oci.object_storage.models.ObjectVersionCollection(items=[
+                     oci.object_storage.models.ObjectVersionSummary(name="record"),
+                 ])]
+    captured = mock_execution(monkeypatch, sdk_class, operation, [
+        response(pages[0], "second"), response(pages[1]),
+    ])
+    result = await invoke(sdk_class, operation)
+    assert "error" not in result
+    records = result["data"]["items"] if dns else result["data"]
+    assert len(records) == 1
+    assert records[0]["domain" if dns else "name"] == ("example.invalid" if dns else "record")
+    assert captured == [{}, {"page": "second"}]
+    assert result["result_meta"]["has_more_results"] is False
+    if not dns:
+        assert result["result_meta"]["page_metadata"][0]["prefixes"] == ["prefix/"]
+
+
+@pytest.mark.asyncio
+async def test_objects_prefix_only_page_still_continues(monkeypatch):
+    sdk_class = oci.object_storage.ObjectStorageClient
+    models = oci.object_storage.models
+    captured = mock_execution(monkeypatch, sdk_class, "list_objects", [
+        response(models.ListObjects(prefixes=["prefix/"], next_start_with="next-object")),
+        response(models.ListObjects(objects=[models.ObjectSummary(name="record")])),
+    ])
+    result = await invoke(sdk_class, "list_objects")
+    assert "error" not in result
+    assert [item["name"] for item in result["data"]["objects"]] == ["record"]
+    assert result["data"]["prefixes"] == ["prefix/"]
+    assert captured == [{}, {"start": "next-object"}]
+    assert result["result_meta"]["has_more_results"] is False
+
+
+@pytest.mark.asyncio
 async def test_real_objects_use_start_and_keep_prefixes(monkeypatch):
     sdk_class = oci.object_storage.ObjectStorageClient
     models = oci.object_storage.models
@@ -327,6 +396,71 @@ async def test_non_paginated_list_cap_reports_completeness(monkeypatch, mode, ca
     assert meta.get("truncated", False) is (cap < 2)
     data = result["data"] if mode == "full" else result["data"]["sample"]
     assert len(data) == min(cap, 2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["auto", "summary", "full"])
+@pytest.mark.parametrize("shape", ["list", "objects"])
+@pytest.mark.parametrize("cap,next_token", [(None, None), (2, None), (1, None), (1, "third"), (2, "third")])
+async def test_native_result_completeness(monkeypatch, mode, shape, cap, next_token):
+    if shape == "list":
+        sdk_class = oci.core.ComputeClient
+        operation = "list_instances"
+        payload = [oci.core.models.Instance(id=name) for name in ("first", "second")]
+        page = response(payload, next_token)
+        fields = ["id"]
+    else:
+        sdk_class = oci.object_storage.ObjectStorageClient
+        operation = "list_objects"
+        payload = oci.object_storage.models.ListObjects(
+            objects=[oci.object_storage.models.ObjectSummary(name=name) for name in ("first", "second")],
+            prefixes=["prefix/"], next_start_with=next_token,
+        )
+        page = response(payload)
+        fields = ["objects", "prefixes", "next_start_with"]
+    captured = mock_execution(monkeypatch, sdk_class, operation, [page])
+    result = await invoke(sdk_class, operation, max_results=cap, result_mode=mode, fields=fields)
+    assert "error" not in result
+    assert captured == [{}]
+    incomplete = cap == 1 or next_token is not None
+    meta = result["result_meta"]
+    assert meta["has_more_results"] is incomplete
+    assert meta["truncated"] is incomplete
+    assert meta["fields"] == fields
+    assert meta["pagination_used"] is True
+    continuation = "page" if shape == "list" else "start"
+    if cap == 2 and next_token:
+        assert meta[continuation] == next_token
+    else:
+        assert continuation not in meta  # A following-page token would skip a cut-page record.
+    data = result["data"]
+    if mode != "full":
+        if shape == "list":
+            assert data["sample_truncated"] is False
+            assert data["item_count"] == min(cap or 2, 2)
+        data = data["sample"]
+    if shape == "list":
+        assert data == [{"id": name} for name in ("first", "second")[:cap]]
+    elif mode == "full":
+        assert [item["name"] for item in data["objects"]] == ["first", "second"][:cap]
+        assert data["prefixes"] == ["prefix/"]
+        assert data["next_start_with"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["auto", "summary"])
+async def test_complete_result_can_have_truncated_summary_sample(monkeypatch, mode):
+    sdk_class = oci.core.ComputeClient
+    mock_execution(monkeypatch, sdk_class, "list_instances", [response([
+        oci.core.models.Instance(id=str(index)) for index in range(6)
+    ])])
+    result = await invoke(sdk_class, "list_instances", result_mode=mode, fields=["id"])
+    assert "error" not in result
+    assert result["result_meta"]["has_more_results"] is False
+    assert result["result_meta"]["truncated"] is False
+    assert result["data"]["item_count"] == 6
+    assert result["data"]["sample_truncated"] is True
+    assert result["data"]["sample"] == [{"id": str(index)} for index in range(5)]
 
 
 @pytest.mark.asyncio

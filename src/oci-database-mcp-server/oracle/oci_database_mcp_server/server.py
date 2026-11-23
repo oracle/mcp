@@ -6459,7 +6459,14 @@ def get_console_history(
 @mcp.tool(
     description=(
         "Retrieves the specified database node console history contents upto a megabyte."
-    )
+    ),
+    # FastMCP 4 does not infer list[Any] schemas; retain the existing result envelope.
+    output_schema={
+        "properties": {"result": {"items": {}, "type": "array"}},
+        "required": ["result"],
+        "type": "object",
+        "x-fastmcp-wrap-result": True,
+    },
 )
 def get_console_history_content(
     db_node_id: Annotated[Optional[Any], ("The database node `OCID`.")],

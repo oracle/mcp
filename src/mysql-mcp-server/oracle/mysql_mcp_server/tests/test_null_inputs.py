@@ -4,7 +4,8 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
-import importlib
+import importlib.util
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -20,13 +21,17 @@ class TestNullInputs(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(utils, "load_mysql_config", side_effect=RuntimeError("Offline test")), \
                 patch.object(utils, "OciInfo", side_effect=RuntimeError("Offline test")):
-            cls.server = importlib.import_module("oracle.mysql_mcp_server.server")
+            spec = importlib.util.spec_from_file_location(
+                "null_input_test_server", Path(utils.__file__).with_name("server.py")
+            )
+            cls.server = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(cls.server)
 
     async def test_null_defaults_are_accepted_by_advertised_schemas(self):
         async with Client(self.server.mcp) as client:
             for tool in await client.list_tools():
-                validator = Draft202012Validator(tool.inputSchema)
-                for name, schema in tool.inputSchema["properties"].items():
+                validator = Draft202012Validator(tool.input_schema)
+                for name, schema in tool.input_schema["properties"].items():
                     if "default" in schema and schema["default"] is None:
                         self.assertTrue(validator.evolve(schema=schema).is_valid(None), f"{tool.name}.{name}")
 

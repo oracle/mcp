@@ -1,5 +1,10 @@
 # Oracle Data Studio MCP Server
 
+## Platform compatibility
+
+The locked cryptography dependency no longer supports Intel macOS or 32-bit
+Windows. Use Apple Silicon macOS, 64-bit Windows, or a supported Linux environment.
+
 ## Overview
 
 This server provides task-oriented MCP tools for three Oracle Data

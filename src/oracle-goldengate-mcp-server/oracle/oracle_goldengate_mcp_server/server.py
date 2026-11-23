@@ -5,7 +5,7 @@ https://oss.oracle.com/licenses/upl.
 
 MCP tool server exposing Oracle GoldenGate operational APIs.
 
-Each @mcp.tool function is a callable tool endpoint used by MCP clients.
+Each registered tool handler is a callable endpoint used by MCP clients.
 """
 
 import json
@@ -18,8 +18,10 @@ from threading import Lock
 from typing import Any
 
 from anyio import to_thread
-from mcp.server.fastmcp import FastMCP
-from mcp.types import ToolAnnotations
+from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
+from fastmcp.tools import FunctionTool, ToolResult
+from mcp_types import ToolAnnotations
 from pydantic import Field
 from pydantic.fields import FieldInfo
 
@@ -27,7 +29,7 @@ from . import api
 from .config import read_config
 from .consts import DEFAULT_DOMAIN, PROCESS_NAME_PATTERN, SERVER_NAME, TRAIL_NAME_PATTERN
 from .extract_config import build_advanced_extract_parameters
-from .http_client import HttpClient
+from .http_client import GoldenGateHttpError, HttpClient
 from .map_statement import build_map_statement, normalize_map_statement
 from .models import (
     CreateExtractBegin,
@@ -85,7 +87,7 @@ _tool_execution_lock = Lock()
 
 
 def _tool(*, description: str, annotations: ToolAnnotations):
-    """Register blocking tools on workers while preserving their public schemas."""
+    """Register a FastMCP 4 tool and keep blocking calls serialized."""
     def register(func):
         @wraps(func)
         async def invoke(*args, **kwargs):
@@ -99,10 +101,42 @@ def _tool(*, description: str, annotations: ToolAnnotations):
             # cancelled MCP response does not mean the backend rolled back.
             return await to_thread.run_sync(execute, abandon_on_cancel=False)
 
-        mcp.tool(description=description, annotations=annotations)(invoke)
+        tool = _GoldenGateTool.from_function(
+            invoke,
+            description=description,
+            annotations=annotations,
+            run_in_thread=False,
+        )
+        # Preserve the previous SDK behavior for unknown top-level arguments.
+        tool.parameters.pop("additionalProperties", None)
+        mcp.add_tool(tool)
         return func
 
     return register
+
+
+class _GoldenGateTool(FunctionTool):
+    async def run(self, arguments: dict[str, Any]) -> ToolResult:
+        """Preserve argument normalization from the bundled SDK."""
+        properties = self.parameters["properties"]
+        normalized = {}
+        for name, value in arguments.items():
+            if name not in properties:
+                continue
+            if isinstance(value, str) and properties[name].get("type") != "string":
+                try:
+                    decoded = json.loads(value)
+                except json.JSONDecodeError:
+                    pass
+                else:
+                    if decoded is None or isinstance(decoded, (dict, list)):
+                        value = decoded
+            normalized[name] = value
+        try:
+            return await super().run(normalized)
+        except GoldenGateHttpError as exc:
+            # FastMCP logs ToolError without printing the response body or traceback.
+            raise ToolError(f"Error executing tool {self.name}: {exc}") from None
 
 
 def _ok(data: Any) -> str:

@@ -55,4 +55,4 @@ else:
 
 if __name__ == "__main__":
     print("Starting OCI mock server...")
-    app.run(host="127.0.0.1", port=5001, debug=False, threaded=True)
+    app.run(host="127.0.0.1", port=int(os.environ.get("MOCK_OCI_PORT", 5001)), debug=False, threaded=True)

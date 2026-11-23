@@ -26,6 +26,9 @@ from oracle.oci_cloud_mcp_server.server import (
     mcp,
 )
 
+from oracle.oci_cloud_mcp_server.tests.sdk_fixtures import sdk_service_loader
+from oracle.oci_cloud_mcp_server.tests.sdk_fixtures import sdk_models
+
 
 class TestValidationAndFormattingHelpers:
     def test_validate_client_fqn_rejects_invalid_values(self):
@@ -99,51 +102,24 @@ class TestValidationAndFormattingHelpers:
         assert compute_score > rover_score
 
 class TestDiscoveryAndImportHelpers:
-    def test_discover_client_classes_covers_skip_paths(self, monkeypatch):
+    def test_discover_client_classes_uses_sdk_exports(self, monkeypatch):
         class GoodClient:
             __module__ = "oci.good.compute_client"
 
-        class WrongModuleClient:
-            __module__ = "oci.somewhere_else"
-
-        good_module = ModuleType("oci.good.compute_client")
-        good_module.GoodClient = GoodClient
-        good_module.WrongModuleClient = WrongModuleClient
-        good_parent = ModuleType("oci.good")
-        good_parent.GoodClient = GoodClient
-
-        class ModuleInfo:
-            def __init__(self, name):
-                self.name = name
-
-        monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.pkgutil.walk_packages",
-            lambda path, prefix="oci.": [
-                ModuleInfo("oci._private.secret_client"),
-                ModuleInfo("oci.not_a_client"),
-                ModuleInfo("oci.bad_client"),
-                ModuleInfo("oci.good.compute_client"),
-            ],
-        )
-
-        def fake_import(name):
-            if name == "oci.bad_client":
-                raise ImportError("boom")
-            if name == "oci.good.compute_client":
-                return good_module
-            if name == "oci.good":
-                return good_parent
-            raise ImportError(name)
-
-        monkeypatch.setattr("oracle.oci_cloud_mcp_server.server.import_module", fake_import)
-
+        service = ModuleType("oci.good")
+        service.__all__ = ["GoodClient", "LazyClient", "models"]
+        service.GoodClient = GoodClient
+        service.models = ModuleType("oci.good.models")
+        sdk = ModuleType("oci")
+        sdk.__all__ = ["good", "BaseClient", "_private"]
+        sdk.good = service
+        sdk.BaseClient = type("BaseClient", (), {})
+        monkeypatch.setattr(server_mod, "oci", sdk)
         _discover_client_classes.cache_clear()
         try:
-            discovered = _discover_client_classes()
+            assert _discover_client_classes() == [("oci.good.GoodClient", GoodClient)]
         finally:
             _discover_client_classes.cache_clear()
-
-        assert discovered == [("oci.good.GoodClient", GoodClient)]
 
     def test_import_client_falls_back_when_signature_introspection_fails(self, monkeypatch):
         class FakeClient:
@@ -152,8 +128,8 @@ class TestDiscoveryAndImportHelpers:
                 self.kwargs = kwargs
 
         monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
+            'oracle.oci_cloud_mcp_server.server._get_service_module',
+            sdk_service_loader(lambda name: SimpleNamespace(FakeClient=FakeClient), monkeypatch),
         )
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._get_config_and_signer",
@@ -177,9 +153,6 @@ class TestDiscoveryAndImportHelpers:
 
 class TestTypeAndModelHelpers:
     def test_resolve_polymorphic_model_class_covers_success_and_error(self):
-        class ChildModel:
-            pass
-
         class BaseModel:
             attribute_map = {"resource_type": "resourceType"}
 
@@ -187,12 +160,15 @@ class TestTypeAndModelHelpers:
             def get_subtype(payload):
                 return "ChildModel" if payload.get("resourceType") == "child" else "BaseModel"
 
+        class ChildModel(BaseModel):
+            pass
+
         class FailingModel:
             @staticmethod
             def get_subtype(payload):  # noqa: ARG004
                 raise RuntimeError("bad subtype")
 
-        models_module = SimpleNamespace(ChildModel=ChildModel)
+        models_module = sdk_models(ChildModel=ChildModel)
 
         assert (
             _resolve_polymorphic_model_class(BaseModel, {"resource_type": "child"}, models_module)
@@ -206,7 +182,8 @@ class TestTypeAndModelHelpers:
         assert _coerce_primitive_value("no", "bool") is False
 
     def test_resolve_model_class_from_type_name_covers_fqn_and_failure(self):
-        assert _resolve_model_class_from_type_name("datetime.datetime", None).__name__ == "datetime"
+        assert _resolve_model_class_from_type_name("oci.core.models.CreateVcnDetails", None).__name__ == "CreateVcnDetails"
+        assert _resolve_model_class_from_type_name("datetime.datetime", None) is None
         assert _resolve_model_class_from_type_name("missing.module.Type", None) is None
         assert _resolve_model_class_from_type_name("", None) is None
 
@@ -214,7 +191,7 @@ class TestTypeAndModelHelpers:
         class FakeModel:
             pass
 
-        models_module = SimpleNamespace(FakeModel=FakeModel)
+        models_module = sdk_models(FakeModel=FakeModel)
 
         monkeypatch.setattr(
             "oracle.oci_cloud_mcp_server.server._construct_model_from_mapping",
@@ -256,8 +233,8 @@ class TestDescriptionAndSerializationHelpers:
                 return None
 
         monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
+            'oracle.oci_cloud_mcp_server.server._get_service_module',
+            sdk_service_loader(lambda name: SimpleNamespace(FakeClient=FakeClient), monkeypatch),
         )
 
         with pytest.raises(AttributeError, match="Similar operations"):
@@ -443,8 +420,8 @@ class TestToolValidationBranches:
                 return None
 
         monkeypatch.setattr(
-            "oracle.oci_cloud_mcp_server.server.import_module",
-            lambda name: SimpleNamespace(FakeClient=FakeClient),
+            'oracle.oci_cloud_mcp_server.server._get_service_module',
+            sdk_service_loader(lambda name: SimpleNamespace(FakeClient=FakeClient), monkeypatch),
         )
 
         async with Client(mcp) as client:

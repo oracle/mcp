@@ -37,16 +37,16 @@ async def test_discovery_exposes_effects_and_schema_constraints(session):
     assert len(tools) == 37
     for name, tool in tools.items():
         assert tool.annotations is not None
-        assert tool.annotations.readOnlyHint == name.startswith(("list_", "get_"))
-        assert tool.annotations.openWorldHint == (name != "get_initial_load_cdc_workflow")
-        if not tool.annotations.readOnlyHint:
-            assert tool.annotations.destructiveHint is True
-            assert tool.annotations.idempotentHint is False
-    schema = tools["create_extract"].inputSchema
+        assert tool.annotations.read_only_hint == name.startswith(("list_", "get_"))
+        assert tool.annotations.open_world_hint == (name != "get_initial_load_cdc_workflow")
+        if not tool.annotations.read_only_hint:
+            assert tool.annotations.destructive_hint is True
+            assert tool.annotations.idempotent_hint is False
+    schema = tools["create_extract"].input_schema
     assert "extractName" in schema["required"]
     assert schema["properties"]["extractName"]["pattern"] == server.PROCESS_NAME_PATTERN
     assert schema["properties"]["trailName"]["pattern"] == server.TRAIL_NAME_PATTERN
-    assert tools["add_trandata_table"].inputSchema["properties"]["prepareCsnMode"]["enum"] == ["nowait", "wait", "lock", "none"]
+    assert tools["add_trandata_table"].input_schema["properties"]["prepareCsnMode"]["enum"] == ["nowait", "wait", "lock", "none"]
 
 
 @pytest.mark.anyio

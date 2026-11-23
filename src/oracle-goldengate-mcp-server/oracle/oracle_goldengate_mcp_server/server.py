@@ -17,8 +17,8 @@ from functools import wraps
 from threading import Lock
 from typing import Any
 
-from anyio import to_thread
 import fastmcp
+from anyio import to_thread
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import FunctionTool, ToolResult

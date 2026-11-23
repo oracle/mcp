@@ -2,9 +2,15 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Pin FastMCP to 4.2.2 and require `oracle-mcp-common>=0.3.0,<0.4.0`; FastMCP 3 and Common 0.2.x are no longer supported.
+
 ### Changed
 
-- Resolve published Common 0.2.x during ordinary development and CI; local Common testing is opt-in so unreleased shared-library changes do not force server runtime upgrades.
+- Update locked dnspython to 2.9.2.
+
+- Resolve published Common during ordinary development and CI; local Common testing is opt-in so unreleased shared-library changes do not force server runtime upgrades.
 
 ## 0.2.0
 

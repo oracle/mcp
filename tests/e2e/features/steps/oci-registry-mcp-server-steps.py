@@ -9,11 +9,9 @@ from behave import then
 
 @then("the response should contain a list of registry tools available")
 def step_impl_registry_tools_available(context):
-    response_json = context.response.json()
-    assert (
-        "content" in response_json["message"]
-    ), "Response does not contain a content key."
-    content = response_json["message"]["content"].lower()
+    response_json = context.result
+    assert response_json.text, "Response is empty."
+    content = response_json.text.lower()
     assert any(
         tool in content
         for tool in [
@@ -25,17 +23,19 @@ def step_impl_registry_tools_available(context):
 
 @then("the response should contain a list of container repositories")
 def step_impl_list_container_repositories(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
+    context.result.require_call("list_container_repositories")
+    result = context.result
+    assert result.text, "Response is empty."
     assert (
-        "ocid1.containerrepo" in result["message"]["content"]
+        "ocid1.containerrepo" in result.text
     ), "List of container repositories not found."
 
 
 @then("the response should contain the details of a container repository")
 def step_impl_get_container_repository(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
+    context.result.require_call("get_container_repository")
+    result = context.result
+    assert result.text, "Response is empty."
     assert (
-        "ocid1.containerrepo" in result["message"]["content"]
+        "ocid1.containerrepo" in result.text
     ), "Container repository details not found."

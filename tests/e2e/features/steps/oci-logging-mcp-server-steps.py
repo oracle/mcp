@@ -9,9 +9,9 @@ from behave import then
 
 @then("the response should contain a list of logging tools available")
 def step_impl_logging_tools_available(context):
-    response_json = context.response.json()
-    assert "content" in response_json["message"], "Response does not contain a content key."
-    content = response_json["message"]["content"].lower()
+    response_json = context.result
+    assert response_json.text, "Response is empty."
+    content = response_json.text.lower()
     assert any(
         tool in content
         for tool in [
@@ -25,27 +25,31 @@ def step_impl_logging_tools_available(context):
 
 @then("the response should contain a list of log groups")
 def step_impl_list_log_groups(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    assert "ocid1.loggroup" in result["message"]["content"].lower(), "List of log groups not found."
+    context.result.require_call("list_log_groups")
+    result = context.result
+    assert result.text, "Response is empty."
+    assert "ocid1.loggroup" in result.text.lower(), "List of log groups not found."
 
 
 @then("the response should contain the details of a log group")
 def step_impl_get_log_group(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    assert "ocid1.loggroup" in result["message"]["content"].lower(), "Log group details not found."
+    context.result.require_call("get_log_group")
+    result = context.result
+    assert result.text, "Response is empty."
+    assert "ocid1.loggroup" in result.text.lower(), "Log group details not found."
 
 
 @then("the response should contain a list of logs")
 def step_impl_list_logs(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    assert "ocid1.log" in result["message"]["content"].lower(), "List of logs not found."
+    context.result.require_call("list_logs")
+    result = context.result
+    assert result.text, "Response is empty."
+    assert "ocid1.log" in result.text.lower(), "List of logs not found."
 
 
 @then("the response should contain the details of a log")
 def step_impl_get_log(context):
-    result = context.response.json()
-    assert "content" in result["message"], "Response does not contain a content key."
-    assert "ocid1.log" in result["message"]["content"].lower(), "Log details not found."
+    context.result.require_call("get_log")
+    result = context.result
+    assert result.text, "Response is empty."
+    assert "ocid1.log" in result.text.lower(), "Log details not found."

@@ -9,9 +9,9 @@ from behave import then
 
 @then("the response should contain terraform configuration")
 def step_impl_terraform_configuration(context):
-    response_json = context.response.json()
-    assert "content" in response_json["message"], "Response does not contain a content key."
-    content = response_json["message"]["content"].lower()
+    response_json = context.result
+    assert response_json.text, "Response is empty."
+    content = response_json.text.lower()
     assert any(
         keyword in content for keyword in ["terraform", "resource", "provider", ".tf", "infrastructure"]
     ), "Terraform configuration could not be generated."
@@ -19,8 +19,8 @@ def step_impl_terraform_configuration(context):
 
 @then("the response should mention GPU instances")
 def step_impl_gpu_instances(context):
-    response_json = context.response.json()
-    content = response_json["message"]["content"].lower()
+    response_json = context.result
+    content = response_json.text.lower()
     assert any(keyword in content for keyword in ["gpu", "bm.gpu", "vm.gpu", "a10", "v100", "graphics"]), (
         "GPU instances were not mentioned in the response."
     )
@@ -28,8 +28,8 @@ def step_impl_gpu_instances(context):
 
 @then("the response should mention OCI Gen AI services")
 def step_impl_oci_gen_ai(context):
-    response_json = context.response.json()
-    content = response_json["message"]["content"].lower()
+    response_json = context.result
+    content = response_json.text.lower()
     assert any(
         keyword in content
         for keyword in [

@@ -11,7 +11,7 @@ import threading
 from unittest.mock import patch
 
 import pytest
-from mcp.shared.memory import create_connected_server_and_client_session
+from fastmcp import Client
 
 from oracle.oracle_goldengate_mcp_server.http_client import GoldenGateHTTPError
 
@@ -26,14 +26,14 @@ def anyio_backend():
 
 @pytest.fixture
 async def session():
-    async with create_connected_server_and_client_session(server.mcp) as connected:
+    async with Client(server.mcp) as connected:
         yield connected
 
 
 @pytest.mark.anyio
 async def test_discovery_exposes_effects_and_schema_constraints(session):
     discovered = await session.list_tools()
-    tools = {tool.name: tool for tool in discovered.tools}
+    tools = {tool.name: tool for tool in discovered}
     assert len(tools) == 37
     for name, tool in tools.items():
         assert tool.annotations is not None
@@ -61,8 +61,8 @@ async def test_invalid_inputs_are_protocol_errors_before_service_calls(session, 
     arguments = {"extractName": "E1", "trailName": "AA", "domainName": "D", "connectionName": "C", "tableStatement": "S.T"}
     arguments[argument] = value
     with patch.object(server.client, "post") as post:
-        result = await session.call_tool("create_extract", arguments)
-    assert result.isError
+        result = await session.call_tool("create_extract", arguments, raise_on_error=False)
+    assert result.is_error
     post.assert_not_called()
 
 
@@ -75,12 +75,12 @@ async def test_json_arguments_coercion_serialization_and_redaction(session):
     }
     with patch.object(server.client, "post", return_value={"password": "example-password", "ok": True}) as post:
         result = await session.call_tool("create_extract", arguments)
-    assert not result.isError
+    assert not result.is_error
     payload = post.call_args.args[1]
     assert "REPORTCOUNT EVERY 2 MINUTES" in payload["config"]
     assert "TABLE HR.EMP;" in payload["config"]
     assert json.loads(result.content[0].text) == {"password": "[REDACTED]", "ok": True}
-    assert json.loads(result.structuredContent["result"])["ok"] is True
+    assert json.loads(result.structured_content["result"])["ok"] is True
 
 
 @pytest.mark.anyio
@@ -97,22 +97,26 @@ async def test_tool_workers_leave_event_loop_responsive(session):
         return {"items": []}
 
     with patch.object(server.client, "get", side_effect=get):
-        task = asyncio.create_task(session.call_tool("list_domains", {}))
+        task = asyncio.create_task(session.call_tool("list_domains", {}, raise_on_error=False))
         try:
             assert await asyncio.to_thread(entered.wait, 5)
             assert worker_threads != [event_loop_thread]
-            await asyncio.wait_for(session.send_ping(), timeout=2)
+            await asyncio.wait_for(session.list_tools(), timeout=2)
         finally:
             release.set()
         result = await task
-    assert not result.isError
+    assert not result.is_error
 
 
 @pytest.mark.anyio
 async def test_guard_refusal_is_an_mcp_error_and_never_starts(session):
     with patch.object(server.client, "get", return_value={"response": {"status": "running"}}), patch.object(server.client, "post") as post:
-        result = await session.call_tool("start_initial_load_replicat", {"replicatName": "R_INIT", "initialLoadExtractName": "E_INIT"})
-    assert result.isError
+        result = await session.call_tool(
+            "start_initial_load_replicat",
+            {"replicatName": "R_INIT", "initialLoadExtractName": "E_INIT"},
+            raise_on_error=False,
+        )
+    assert result.is_error
     assert "not confirmed STOPPED" in result.content[0].text
     post.assert_not_called()
 
@@ -129,8 +133,8 @@ async def test_generic_start_cannot_bypass_guard_over_mcp(session):
         }[path]
 
     with patch.object(server.client, "get", side_effect=get), patch.object(server.client, "post") as post:
-        result = await session.call_tool("start", {"processName": "R1"})
-    assert result.isError
+        result = await session.call_tool("start", {"processName": "R1"}, raise_on_error=False)
+    assert result.is_error
     assert "start_initial_load_replicat" in result.content[0].text
     post.assert_not_called()
 
@@ -140,10 +144,12 @@ async def test_generic_start_cannot_bypass_guard_over_mcp(session):
 async def test_trandata_modes_are_validated_before_side_effects(session, mode):
     arguments = {"domain": "D", "connection": "C", "schemaName": "HR", "tableName": "EMP", "prepareCsnMode": mode}
     with patch.object(server.client, "post", return_value={"ok": True}) as post:
-        result = await session.call_tool("add_trandata_table", arguments)
+        result = await session.call_tool(
+            "add_trandata_table", arguments, raise_on_error=(mode != "invalid")
+        )
     if mode == "invalid":
-        assert result.isError
+        assert result.is_error
         post.assert_not_called()
     else:
-        assert not result.isError
+        assert not result.is_error
         assert post.call_args.args[1]["prepareCsnMode"] == mode

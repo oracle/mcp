@@ -18,6 +18,7 @@ from threading import Lock
 from typing import Any
 
 from anyio import to_thread
+import fastmcp
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import FunctionTool, ToolResult
@@ -49,7 +50,13 @@ from .table_statement import add_as_of_scn_to_table_statements, build_table_stat
 
 cfg = read_config()
 client = HttpClient(cfg)
-_debug_enabled = os.getenv("OGG_MCP_DEBUG", "false").strip().lower() == "true"
+_debug_enabled = os.getenv(
+    "OGG_MCP_DEBUG", os.getenv("FASTMCP_DEBUG", "false")
+).strip().lower() == "true"
+fastmcp.settings.debug = _debug_enabled
+fastmcp.settings.log_level = os.getenv(
+    "FASTMCP_LOG_LEVEL", "DEBUG" if _debug_enabled else "WARNING"
+).strip().upper()
 INITIAL_LOAD_CDC_INSTRUCTIONS = """
 For an Oracle Initial Load followed by ongoing CDC, do not guess the process order:
 1. Create, register, and start the primary CDC Extract first so source changes are captured during the load.
@@ -66,8 +73,6 @@ Call get_initial_load_cdc_workflow for the complete workflow and safety checks.
 mcp = FastMCP(
     SERVER_NAME,
     instructions=INITIAL_LOAD_CDC_INSTRUCTIONS,
-    debug=_debug_enabled,
-    log_level="DEBUG" if _debug_enabled else "WARNING",
 )
 
 DEFAULT_MANAGED_PROCESS_SETTINGS = "ogg:managedProcessSettings:Default"

@@ -2402,3 +2402,40 @@ class TestToolContract:
             assert warnings_seen(model) == 0, model
         assert warnings_seen("ProtectionPolicy") == 1
         assert warnings_seen("Backup", module="oracle.oci_recovery_mcp_server.models") == 1
+
+    @pytest.mark.asyncio
+    async def test_enriched_result_warning_filter_matches_a_real_tool_call(self, monkeypatch):
+        """
+        The filter matches the warning FastMCP actually emits, not a hand-written copy.
+
+        A real get_backup call returns an enriched dict, so FastMCP's serializer warns
+        about it; the call warns once the filter is overridden and is silent under the
+        server's filter. Either failing means FastMCP changed the warning's text or
+        source module, and OCI record excerpts would reach stderr again.
+        """
+        db_client = MagicMock()
+        monkeypatch.setattr(clients, "get_database_client", lambda region=None, request_id=None: db_client)
+        monkeypatch.setattr(
+            oci.util,
+            "to_dict",
+            lambda obj: obj if isinstance(obj, dict) else getattr(obj, "__dict__", obj),
+        )
+        db_client.get_backup.return_value = SimpleNamespace(data={"id": "b1", "databaseId": "db1"})
+        db_client.get_database.return_value = SimpleNamespace(data={"dbUniqueName": "DB1_UNQ"})
+
+        async def serializer_warnings(*, server_filter):
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                if server_filter:
+                    app._ignore_enriched_result_warnings()
+                async with Client(mcp) as client:
+                    result = await client.call_tool("get_backup", {"backup_id": "b1"})
+            assert result.structured_content["db_unique_name"] == "DB1_UNQ"
+            return [
+                str(w.message) for w in caught if "PydanticSerializationUnexpectedValue" in str(w.message)
+            ]
+
+        overridden = await serializer_warnings(server_filter=False)
+        assert len(overridden) == 1
+        assert "Expected `Backup`" in overridden[0]
+        assert await serializer_warnings(server_filter=True) == []

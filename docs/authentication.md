@@ -16,7 +16,7 @@ This Python package does not automatically replace JavaScript/Java SDK providers
 
 ## Integrate configured OCI credentials
 
-1. Declare a bounded dependency compatible with the APIs the server uses. Root guidance states `oracle-mcp-common>=0.1.0,<0.2.0`; the six existing consumers currently declare `>=0.2.0,<0.3.0` and resolve published Common 0.2.x. Common 0.3.0 requires FastMCP 4 and must be adopted explicitly. Inspect the [Common manifest](../src/common/pyproject.toml) and target manifest/lock for actual install constraints. The [gap register](agent-development.md#known-gaps) records remaining source/policy differences; do not infer resolved dependencies from a documentation example.
+1. Declare a bounded dependency compatible with the APIs the server uses. Root guidance states `oracle-mcp-common>=0.1.0,<0.2.0`; each consumer resolves the published Common release selected by its own manifest bounds and lock. Common 0.3.0 requires FastMCP 4 and must be adopted explicitly. Inspect the [Common manifest](../src/common/pyproject.toml) and target manifest/lock for actual install constraints. The [gap register](agent-development.md#known-gaps) records remaining source/policy differences; do not infer resolved dependencies from a documentation example.
 2. Call `build_auth_context()` where the server resolves configured OCI credentials. Pass `AuthOptions` only for intentional server overrides. Merge the returned config with the metadata-derived user agent and pass its signer to each OCI client:
 
 ```python

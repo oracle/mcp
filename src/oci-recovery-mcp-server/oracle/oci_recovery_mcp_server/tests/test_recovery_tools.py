@@ -4,12 +4,14 @@ Licensed under the Universal Permissive License v1.0 as shown at
 https://oss.oracle.com/licenses/upl.
 """
 
+import warnings
 from types import SimpleNamespace
 from unittest.mock import MagicMock, create_autospec, patch
 
 import oci
 import pytest
 from fastmcp import Client
+from oracle.oci_recovery_mcp_server import app
 from oracle.oci_recovery_mcp_server import auth
 from oracle.oci_recovery_mcp_server import recovery_tools
 from oracle.oci_recovery_mcp_server import cache
@@ -556,12 +558,9 @@ def _fake_oci_provider(captured):
     class FakeOCIProvider:
         """A stand-in for FastMCP's OCIProvider, recording what the server hands it."""
 
-        # _cimd_manager mirrors the real provider: the server clears it so client
-        # registration never depends on an outbound metadata fetch.
-        _cimd_manager = object()
-
-        def __init__(self, **kwargs):
-            """Seed required_scopes from the verifier's copy, as the real provider does."""
+        def __init__(self, *, enable_cimd=True, **kwargs):
+            """Record the public CIMD policy and required scopes."""
+            captured["enable_cimd"] = enable_cimd
             # The real provider seeds required_scopes from the verifier's copy, and
             # FastMCP hands this same list to RequireAuthMiddleware, so it has to
             # stay bare.
@@ -1097,9 +1096,9 @@ class TestHttpTransportAuth:
         captured = {}
 
         with patch("oracle_mcp_common.auth.OCIProvider", _fake_oci_provider(captured)):
-            http_auth = auth._build_http_auth()
+            auth._build_http_auth()
 
-        assert http_auth.provider._cimd_manager is None
+        assert captured["enable_cimd"] is False
 
 
 class TestCachePartitioning:
@@ -2275,9 +2274,9 @@ class TestToolContract:
         for tool in tools:
             annotations = tool.annotations
             assert annotations is not None, f"{tool.name} declares no annotations"
-            assert annotations.readOnlyHint is True, tool.name
-            assert annotations.destructiveHint is False, tool.name
-            assert annotations.idempotentHint is True, tool.name
+            assert annotations.read_only_hint is True, tool.name
+            assert annotations.destructive_hint is False, tool.name
+            assert annotations.idempotent_hint is True, tool.name
 
         # The guidance tools return static text and never reach the network.
         local = {
@@ -2287,7 +2286,7 @@ class TestToolContract:
         }
         for tool in tools:
             expected = tool.name not in local
-            assert tool.annotations.openWorldHint is expected, tool.name
+            assert tool.annotations.open_world_hint is expected, tool.name
 
     @pytest.mark.asyncio
     async def test_summary_tools_advertise_the_shape_they_return(self, monkeypatch):
@@ -2315,8 +2314,128 @@ class TestToolContract:
                 "summarize_protected_database_health",
                 "summarize_protected_database_redo_status",
             ):
-                declared = set(tools[name].outputSchema["properties"])
+                declared = set(tools[name].output_schema["properties"])
                 result = await client.call_tool(
                     name, {"compartment_id": "ocid1.compartment.oc1..c"}
                 )
                 assert set(result.structured_content) == declared, name
+
+    @pytest.mark.asyncio
+    async def test_tools_keep_their_established_alias_keys(self, monkeypatch):
+        """
+        Tool results and output schemas use the models' aliases, not field names.
+
+        FastMCP 4 serializes by field name unless a model opts in, which silently
+        renamed compartmentIdsScanned, compartmentId and the hyphenated backup
+        keys that existing clients read.
+        """
+        recovery_client = MagicMock()
+        db_client = MagicMock()
+        monkeypatch.setattr(
+            clients, "get_recovery_client", lambda region=None, request_id=None: recovery_client
+        )
+        monkeypatch.setattr(clients, "get_database_client", lambda region=None, request_id=None: db_client)
+        monkeypatch.setattr(
+            compartments, "_resolve_compartment_id", lambda compartment_id, **_kwargs: compartment_id
+        )
+        monkeypatch.setattr(compartments, "_compartment_ids_for_tool", lambda cid, **_kwargs: [cid])
+        monkeypatch.setattr(
+            oci.util,
+            "to_dict",
+            lambda obj: obj if isinstance(obj, dict) else getattr(obj, "__dict__", obj),
+        )
+        recovery_client.list_protected_databases.return_value = SimpleNamespace(
+            data=SimpleNamespace(items=[SimpleNamespace(id="pd1", health="PROTECTED")]),
+            has_next_page=False,
+            next_page=None,
+        )
+        db_client.get_backup.return_value = SimpleNamespace(
+            data={"id": "b1", "databaseId": "db1", "databaseSizeInGBs": 5}
+        )
+        db_client.get_database.return_value = SimpleNamespace(data={"dbUniqueName": "DB1_UNQ"})
+        backup_keys = {
+            "retention-period-in-days",
+            "retention-period-in-years",
+            "database-size-in-gbs",
+            "backup-destination-type",
+        }
+
+        async with Client(mcp) as client:
+            tools = {tool.name: tool for tool in await client.list_tools()}
+            for name in (
+                "summarize_protected_database_health",
+                "summarize_protected_database_redo_status",
+            ):
+                assert "compartmentIdsScanned" in tools[name].output_schema["properties"], name
+                result = await client.call_tool(name, {"compartment_id": "ocid1.compartment.oc1..c"})
+                content = result.structured_content
+                assert content["compartmentIdsScanned"] == ["ocid1.compartment.oc1..c"], name
+                assert content["aggregated"]["compartmentId"] == "ocid1.compartment.oc1..c", name
+                assert content["per_compartment"][0]["compartmentId"] == "ocid1.compartment.oc1..c", name
+
+            assert backup_keys <= set(tools["get_backup"].output_schema["properties"])
+            result = await client.call_tool("get_backup", {"backup_id": "b1"})
+            assert backup_keys <= set(result.structured_content)
+            assert result.structured_content["database-size-in-gbs"] == 5
+
+    def test_enriched_result_warning_filter_is_narrow(self):
+        """
+        Only FastMCP's serializer warnings for the four enriched-result models are
+        ignored; the same warning for any other model, or from elsewhere, surfaces.
+        """
+
+        def warnings_seen(model, module="fastmcp.tools.base"):
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                app._ignore_enriched_result_warnings()
+                warnings.warn_explicit(
+                    "Pydantic serializer warnings:\n  PydanticSerializationUnexpectedValue("
+                    f"Expected `{model}` - serialized value may not be as expected",
+                    UserWarning,
+                    "base.py",
+                    1,
+                    module=module,
+                )
+            return len(caught)
+
+        for model in ("ProtectedDatabase", "ProtectedDatabaseSummary", "Backup", "BackupSummary"):
+            assert warnings_seen(model) == 0, model
+        assert warnings_seen("ProtectionPolicy") == 1
+        assert warnings_seen("Backup", module="oracle.oci_recovery_mcp_server.models") == 1
+
+    @pytest.mark.asyncio
+    async def test_enriched_result_warning_filter_matches_a_real_tool_call(self, monkeypatch):
+        """
+        The filter matches the warning FastMCP actually emits, not a hand-written copy.
+
+        A real get_backup call returns an enriched dict, so FastMCP's serializer warns
+        about it; the call warns once the filter is overridden and is silent under the
+        server's filter. Either failing means FastMCP changed the warning's text or
+        source module, and OCI record excerpts would reach stderr again.
+        """
+        db_client = MagicMock()
+        monkeypatch.setattr(clients, "get_database_client", lambda region=None, request_id=None: db_client)
+        monkeypatch.setattr(
+            oci.util,
+            "to_dict",
+            lambda obj: obj if isinstance(obj, dict) else getattr(obj, "__dict__", obj),
+        )
+        db_client.get_backup.return_value = SimpleNamespace(data={"id": "b1", "databaseId": "db1"})
+        db_client.get_database.return_value = SimpleNamespace(data={"dbUniqueName": "DB1_UNQ"})
+
+        async def serializer_warnings(*, server_filter):
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                if server_filter:
+                    app._ignore_enriched_result_warnings()
+                async with Client(mcp) as client:
+                    result = await client.call_tool("get_backup", {"backup_id": "b1"})
+            assert result.structured_content["db_unique_name"] == "DB1_UNQ"
+            return [
+                str(w.message) for w in caught if "PydanticSerializationUnexpectedValue" in str(w.message)
+            ]
+
+        overridden = await serializer_warnings(server_filter=False)
+        assert len(overridden) == 1
+        assert "Expected `Backup`" in overridden[0]
+        assert await serializer_warnings(server_filter=True) == []

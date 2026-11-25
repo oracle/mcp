@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 2.1.0 - 2026-08-14
+
+### Added
+
+- Added subscribed-region discovery and an optional `region` parameter to Monitoring tools, allowing queries outside the configured region.
+
 ## 2.0.4
 
 ### Security

@@ -35,8 +35,11 @@ Register `${ORACLE_MCP_BASE_URL}/auth/callback` in the OCI IAM confidential appl
 | list_alarms           | List Alarms in the tenancy                                       |
 | get_metrics_data      | Gets aggregated metric data                                      |
 | get_available_metrics | Lists the available metrics a user can query on in their tenancy |
+| list_subscribed_regions | Lists the OCI regions subscribed to the tenancy |
 
 ⚠️ **NOTE**: `stdio` uses the configured OCI CLI profile. HTTP uses the authenticated OCI IAM user and does not use the local OCI CLI profile for request authentication.
+
+To query a subscribed region other than the configured region, call `list_subscribed_regions` and pass one of its returned identifiers as the optional `region` parameter to `list_alarms`, `get_metrics_data`, or `list_metric_definitions`. For HTTP, provide the tenancy OCID to `list_subscribed_regions`; it is not available from the authenticated request token.
 
 ## Third-Party APIs
 

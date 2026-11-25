@@ -36,8 +36,11 @@ Register `${ORACLE_MCP_BASE_URL}/auth/callback` in the OCI IAM confidential appl
 | list_log_groups | List log groups in a given compartment |
 | list_logs | List logs in a given log group |
 | get_log | Get a log with a given log OCID |
+| list_subscribed_regions | List OCI regions subscribed to the tenancy |
 
 ⚠️ **NOTE**: `stdio` uses the configured OCI CLI profile. HTTP uses the authenticated OCI IAM user and does not use the local OCI CLI profile for request authentication.
+
+To query a subscribed region other than the configured region, call `list_subscribed_regions` and pass a returned value as the optional `region` parameter to a Logging tool. For HTTP, pass the tenancy OCID to `list_subscribed_regions`.
 
 ## Third-Party APIs
 

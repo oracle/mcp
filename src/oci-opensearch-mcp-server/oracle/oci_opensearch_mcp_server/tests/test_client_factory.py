@@ -56,35 +56,36 @@ class TestClientFactory:
         args, kwargs = mock_client.call_args
         passed_config = args[0]
         assert passed_config is config
-        assert passed_config["additional_user_agent"].startswith("oci-opensearch-mcp/")
+        assert passed_config["additional_user_agent"] == f"oci-opensearch-mcp/{client_factory.__version__}"
         assert kwargs["signer"] == mock_security_token_signer.return_value
         assert result == mock_client.return_value
 
+    @patch("oracle.oci_opensearch_mcp_server.client_factory.oci.opensearch.OpensearchClusterClient")
     @patch("oracle.oci_opensearch_mcp_server.client_factory.oci.signer.Signer")
-    @patch("oracle.oci_opensearch_mcp_server.client_factory.os.path.exists")
-    @patch("oracle.oci_opensearch_mcp_server.client_factory.oci.signer.load_private_key_from_file")
-    def test_build_signer_without_token_file_uses_api_key_signer(
-        self, mock_load_private_key, mock_exists, mock_signer
+    @patch("oracle.oci_opensearch_mcp_server.client_factory.oci.config.from_file")
+    def test_get_opensearch_cluster_client_without_token_uses_api_key_signer(
+        self, mock_from_file, mock_signer, mock_client
     ):
-        mock_exists.return_value = False
-        mock_load_private_key.return_value = object()
-        config = {
+        mock_from_file.return_value = {
             "tenancy": "ocid1.tenancy.oc1..tenant1",
             "user": "ocid1.user.oc1..user1",
             "fingerprint": "fingerprint",
-            "key_file": "/abs/path/to/key.pem",
+            "key_file": "synthetic-key.pem",
         }
 
-        signer = client_factory.build_signer(config)
+        client = client_factory.get_opensearch_cluster_client()
 
         mock_signer.assert_called_once_with(
             tenancy="ocid1.tenancy.oc1..tenant1",
             user="ocid1.user.oc1..user1",
             fingerprint="fingerprint",
-            private_key_file_location="/abs/path/to/key.pem",
+            private_key_file_location="synthetic-key.pem",
             pass_phrase=None,
         )
-        assert signer == mock_signer.return_value
+        args, kwargs = mock_client.call_args
+        assert args[0]["additional_user_agent"] == f"oci-opensearch-mcp/{client_factory.__version__}"
+        assert kwargs["signer"] == mock_signer.return_value
+        assert client == mock_client.return_value
 
     @patch("oracle.oci_opensearch_mcp_server.client_factory.oci.signer.Signer")
     @patch("oracle.oci_opensearch_mcp_server.client_factory.oci.auth.signers.SecurityTokenSigner")

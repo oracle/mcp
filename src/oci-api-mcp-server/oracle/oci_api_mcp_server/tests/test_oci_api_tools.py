@@ -51,6 +51,18 @@ class TestOCITools:
         monkeypatch.setenv("OCI_MCP_AUTH_TYPE", "api_key")
 
     @pytest.mark.asyncio
+    async def test_get_oci_command_help_advertises_usage_guidance(self):
+        async with Client(mcp) as client:
+            tools = await client.list_tools()
+
+        tool = next(tool for tool in tools if tool.name == "get_oci_command_help")
+        assert tool.description is not None
+        assert "Only provide the command _after_ 'oci'" in tool.description
+        assert "Options and option values are not accepted" in tool.description
+        assert "remove the final token and try again" in tool.description
+        assert "psql db-system-collection list-db-systems" in tool.description
+
+    @pytest.mark.asyncio
     @patch("oracle.oci_api_mcp_server.server.subprocess.run")
     async def test_get_oci_command_help_success(self, mock_run):
         mock_result = MagicMock()
@@ -724,14 +736,7 @@ class TestOCITools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_api_mcp_server.server.subprocess.run")
-    @patch("oracle.oci_api_mcp_server.server.json.loads")
-    async def test_run_oci_command_denied(self, mock_json_loads, mock_run):
-        mock_result = MagicMock()
-        mock_result.stdout = '{"key": "value"}'
-        mock_result.stderr = ""
-        mock_run.return_value = mock_result
-        mock_json_loads.return_value = {"key": "value"}
-
+    async def test_run_oci_command_denied(self, mock_run):
         async with Client(mcp) as client:
             result = (
                 await client.call_tool("run_oci_command", {"command": "compute instance terminate"})
@@ -739,6 +744,7 @@ class TestOCITools:
 
             assert "error" in result
             assert any("denied by denylist" in value for value in result.values())
+            mock_run.assert_not_called()
 
     @pytest.mark.parametrize(
         ("command", "normalized"),
@@ -876,6 +882,9 @@ class TestDenylist:
             ("generative-ai", "api-key", "delete"),
             ("budgets", "budget", "budget", "update"),
             ("mysql", "db-system", "controlled-update"),
+            ("fn", "function", "update", "archive-function"),
+            ("fn", "function", "update", "container-function"),
+            ("fn", "function", "update", "pbf-function"),
             ("session", "terminate"),
         ],
     )
@@ -891,6 +900,15 @@ class TestDenylist:
     @pytest.mark.parametrize(
         ("command", "expected"),
         [
+            ("fn function update archive-function", True),
+            ("fn function update container-function", True),
+            ("fn function update pbf-function", True),
+            ("fn function get", False),
+            ("fn function list", False),
+            ("fn function updater archive-function", False),
+            ("fn function create container-function", False),
+            ("db patch get-db-home", False),
+            ("fleet-apps-management fleet-apps-management-operations patch get", False),
             ("os object bulk-delete", True),
             ("data-safe alert alerts-update", True),
             ("identity-domains mapped-attribute patch", True),
@@ -909,8 +927,13 @@ class TestDenylist:
     def test_denylist_generator_classifies_compound_actions(self, command, expected):
         assert DENYLIST_GENERATOR["is_denied_command"](command) is expected
 
+    @pytest.mark.parametrize("variant", ["archive-function", "container-function", "pbf-function"])
+    def test_packaged_denylist_blocks_function_update_variants(self, variant):
+        command = f"fn function update {variant} --function-id example-function"
+        assert Denylist(MagicMock()).isCommandInDenyList(command)
+
     def test_denylist_generator_preserves_mandatory_commands(self):
-        assert DENYLIST_GENERATOR["get_denied_commands"]([]) == ["raw-request"]
+        assert DENYLIST_GENERATOR["get_denied_commands"]([]) == ["fn function update", "raw-request"]
 
     def test_denylist_generator_does_not_follow_output_symlinks(self, tmp_path):
         target = tmp_path / "target"
@@ -959,7 +982,7 @@ class TestServer:
     @patch("oracle.oci_api_mcp_server.server.importlib.metadata.version")
     @patch("oracle.oci_api_mcp_server.server.shutil.which", return_value=None)
     def test_resolve_oci_cli_fails_when_executable_is_missing(self, _, mock_version):
-        with pytest.raises(RuntimeError, match="OCI CLI 3.92.0 is required"):
+        with pytest.raises(RuntimeError, match="OCI CLI 3.96.0 is required"):
             server._resolve_oci_cli()
 
         mock_version.assert_not_called()
@@ -967,7 +990,7 @@ class TestServer:
     @patch("oracle.oci_api_mcp_server.server.importlib.metadata.version", return_value="3.89.2")
     @patch("oracle.oci_api_mcp_server.server.shutil.which", return_value="/server/bin/oci")
     def test_resolve_oci_cli_fails_when_version_mismatches(self, *_):
-        with pytest.raises(RuntimeError, match="OCI CLI 3.92.0 is required"):
+        with pytest.raises(RuntimeError, match="OCI CLI 3.96.0 is required"):
             server._resolve_oci_cli()
 
     @patch("oracle.oci_api_mcp_server.server.mcp.run")

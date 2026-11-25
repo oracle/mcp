@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Upgraded the Compute server to FastMCP 4.2.2 for stdio and streaming HTTP.
+
 ## 2.1.0
 
 ### Fixed

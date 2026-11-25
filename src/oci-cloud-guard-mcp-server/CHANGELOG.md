@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- Upgraded the server runtime to FastMCP 4.2.2. Tool listings now include display titles.
+- Updated the locked dnspython version to 2.9.2.
+
 ## 2.0.3
 
 ### Fixed

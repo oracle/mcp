@@ -41,6 +41,37 @@ class TestObjectStorageTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_object_storage_mcp_server.server.get_object_storage_client")
+    async def test_get_namespace_rejects_missing_compartment(self, mock_get_client):
+        async with Client(mcp) as client:
+            result = await client.call_tool("get_namespace", {}, raise_on_error=False)
+
+        assert result.is_error
+        assert "compartment_id" in result.content[0].text
+        mock_get_client.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_object_storage_mcp_server.server.get_object_storage_client")
+    async def test_get_namespace_propagates_service_error(self, mock_get_client):
+        mock_get_client.return_value.get_namespace.side_effect = oci.exceptions.ServiceError(
+            status=404,
+            code="NamespaceNotFound",
+            headers={},
+            message="Namespace lookup failed",
+        )
+
+        async with Client(mcp) as client:
+            result = await client.call_tool(
+                "get_namespace",
+                {"compartment_id": "test_compartment"},
+                raise_on_error=False,
+            )
+
+        assert result.is_error
+        assert "NamespaceNotFound" in result.content[0].text
+        assert "Namespace lookup failed" in result.content[0].text
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_object_storage_mcp_server.server.get_object_storage_client")
     async def test_list_buckets(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -464,16 +495,39 @@ class TestServer:
 
 
 class TestGetClient:
+    @patch("oracle.oci_object_storage_mcp_server.server.oci.config.from_file")
+    @patch("oracle.oci_object_storage_mcp_server.server.oci.auth.signers.TokenExchangeSigner")
     @patch("oracle.oci_object_storage_mcp_server.server.oci.object_storage.ObjectStorageClient")
-    @patch("oracle.oci_object_storage_mcp_server.server._get_http_config_and_signer")
-    def test_get_object_storage_client_http(self, mock_http_config_and_signer, mock_client):
-        mock_http_config_and_signer.return_value = ({"region": "us-phoenix-1"}, "signer")
+    @patch("oracle.oci_object_storage_mcp_server.server.get_access_token")
+    def test_get_object_storage_client_uses_caller_signer_and_metadata(
+        self, mock_get_access_token, mock_client, mock_signer, mock_from_file, monkeypatch
+    ):
+        monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
+        monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
+        monkeypatch.setenv("IDCS_CLIENT_ID", "client-id")
+        monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
+        monkeypatch.setenv("OCI_REGION", "us-phoenix-1")
 
-        result = server.get_object_storage_client()
+        caller_tokens = ("caller-a", "caller-b", "caller-a")
+        mock_get_access_token.side_effect = [
+            AccessToken(token=token, client_id="client", scopes=[], claims={})
+            for token in caller_tokens
+        ]
+        signers = [object() for _ in caller_tokens]
+        clients = [object() for _ in caller_tokens]
+        mock_signer.side_effect = signers
+        mock_client.side_effect = clients
 
-        mock_client.assert_called_once()
-        assert mock_client.call_args.kwargs["signer"] == "signer"
-        assert result == mock_client.return_value
+        assert [server.get_object_storage_client() for _ in caller_tokens] == clients
+        assert [call.args[0] for call in mock_signer.call_args_list] == list(caller_tokens)
+        assert [call.kwargs["signer"] for call in mock_client.call_args_list] == signers
+        for call in mock_client.call_args_list:
+            assert call.args[0] == {
+                "region": "us-phoenix-1",
+                "additional_user_agent": f"oci-object-storage-mcp/{server.__version__}",
+            }
+        mock_from_file.assert_not_called()
 
     @patch("oracle.oci_object_storage_mcp_server.server.oci.object_storage.ObjectStorageClient")
     @patch("oracle.oci_object_storage_mcp_server.server.oci.auth.signers.SecurityTokenSigner")

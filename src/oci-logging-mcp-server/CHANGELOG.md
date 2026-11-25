@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changed
+
+- Upgraded the MCP runtime to FastMCP 4.2.2 for stdio and Streamable HTTP.
+
+### Fixed
+
+- Added the package-derived OCI SDK user agent to Logging Management and Log Search clients in stdio mode.
 ## 2.0.4
 
 ### Fixed

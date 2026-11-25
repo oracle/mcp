@@ -27,7 +27,9 @@ DENIED_ACTIONS = frozenset(
     }
 )
 EXCLUDED_ACTION_PREFIXES = ("cancel-", "create-", "get-", "list-")
-ALWAYS_DENIED_COMMANDS = frozenset({"raw-request"})
+# CLI 3.96 makes `fn function update` a group of implementation-specific leaves.
+# Keep its existing deny boundary even when the leaf no longer names the action.
+ALWAYS_DENIED_COMMANDS = frozenset({"raw-request", "fn function update"})
 OUTPUT_DIR = Path(__file__).resolve().parent
 
 
@@ -46,6 +48,11 @@ def write_file(path: Path, content: str) -> None:
 
 def is_denied_command(command: str) -> bool:
     """Return whether a canonical CLI path is a denylist candidate."""
+    if any(
+        command == prefix or command.startswith(f"{prefix} ")
+        for prefix in ALWAYS_DENIED_COMMANDS
+    ):
+        return True
     action = command.rsplit(" ", 1)[-1]
     if action.startswith(EXCLUDED_ACTION_PREFIXES):
         return False

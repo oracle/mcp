@@ -27,6 +27,9 @@ To generate an updated version of the deny list, follow these steps:
 - Compound action names such as `bulk-delete` are included, while `create-*`, `get-*`,
   `list-*`, and `cancel-*` commands are excluded from automatic classification.
 - The action-name classification produces review candidates; it is not a semantic guarantee.
+- `raw-request` and the `fn function update` prefix are always denied. OCI CLI 3.96
+  splits function updates into implementation-specific leaves; keep the prefix
+  blocked when refreshing the generated list.
 - The generated `denylist` file is used by the AI client to determine which commands to deny execution for.
 
 ----

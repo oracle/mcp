@@ -8,12 +8,10 @@ Tests for OCI FSDR client authentication helpers.
 
 from __future__ import annotations
 
-from oracle.oci_fsdr_mcp_server import __project__, __version__, auth
+from oracle.oci_fsdr_mcp_server import __version__, auth
 
 
-EXPECTED_ADDITIONAL_USER_AGENT = (
-    f"{__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{__version__}"
-)
+EXPECTED_ADDITIONAL_USER_AGENT = f"oci-fsdr-mcp/{__version__}"
 
 
 def test_get_dr_client_caches_per_profile(monkeypatch):

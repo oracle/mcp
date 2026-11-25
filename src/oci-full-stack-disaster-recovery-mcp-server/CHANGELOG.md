@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Changed
+
+- Updated both stdio entry points to FastMCP 4.2.2.
+- Updated locked `dnspython` to 2.9.2.
+
 ## 1.0.2
 
 ### Security

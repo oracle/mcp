@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- Updated the stdio server to FastMCP 4.2.2.
+- Updated locked `dnspython` to 2.9.2.
+
 ## 1.0.8
 
 ### Security

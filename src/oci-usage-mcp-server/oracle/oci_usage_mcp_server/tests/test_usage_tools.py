@@ -9,15 +9,56 @@ from unittest.mock import MagicMock, create_autospec, mock_open, patch
 import oci
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import AccessToken
 from oracle.oci_usage_mcp_server import server
 from oracle.oci_usage_mcp_server.server import mcp
 
 
+@pytest.fixture
+def usage_request():
+    return {
+        "tenant_id": "test_tenant_id",
+        "start_time": "2023-01-01T00:00:00Z",
+        "end_time": "2023-01-02T00:00:00Z",
+        "group_by": ["compartmentId"],
+        "compartment_depth": 1.0,
+    }
+
+
 class TestUsageTools:
     @pytest.mark.asyncio
+    async def test_get_summarized_usage_rejects_invalid_group_by_before_sdk_access(
+        self, monkeypatch, usage_request
+    ):
+        get_client = MagicMock()
+        monkeypatch.setattr(server, "get_usage_client", get_client)
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="group_by"):
+                await client.call_tool(
+                    "get_summarized_usage", {**usage_request, "group_by": 1}
+                )
+
+        get_client.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_summarized_usage_returns_sdk_failure_as_tool_error(
+        self, monkeypatch, usage_request
+    ):
+        usage_client = MagicMock()
+        usage_client.request_summarized_usages.side_effect = oci.exceptions.ServiceError(
+            403, "NotAuthorized", {}, "Access denied to usage"
+        )
+        monkeypatch.setattr(server, "get_usage_client", lambda: usage_client)
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="NotAuthorized"):
+                await client.call_tool("get_summarized_usage", usage_request)
+
+    @pytest.mark.asyncio
     @patch("oracle.oci_usage_mcp_server.server.get_usage_client")
-    async def test_get_summarized_usage(self, mock_get_client):
+    async def test_get_summarized_usage(self, mock_get_client, usage_request):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
 
@@ -40,13 +81,7 @@ class TestUsageTools:
             result = (
                 await client.call_tool(
                     "get_summarized_usage",
-                    {
-                        "tenant_id": "test_tenant_id",
-                        "start_time": "2023-01-01T00:00:00Z",
-                        "end_time": "2023-01-02T00:00:00Z",
-                        "group_by": ["compartment"],
-                        "compartment_depth": 1.0,
-                    },
+                    usage_request,
                 )
             ).structured_content["result"]
 
@@ -57,10 +92,7 @@ class TestUsageTools:
 
 
 class TestServer:
-    @patch("oracle.oci_usage_mcp_server.server.oci.auth.signers.TokenExchangeSigner", return_value="signer")
-    @patch("oracle.oci_usage_mcp_server.server.get_access_token")
-    def test_http_signer_uses_region_without_loading_config(self, mock_get_access_token, mock_signer, monkeypatch):
-        mock_get_access_token.return_value = AccessToken(token="token", client_id="client", scopes=[], claims={})
+    def test_http_client_uses_the_current_caller_and_user_agent(self, monkeypatch):
         monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
         monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
@@ -68,11 +100,30 @@ class TestServer:
         monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
         monkeypatch.setenv("OCI_REGION", "us-phoenix-1")
 
-        config, signer = server._get_http_config_and_signer()
+        monkeypatch.setattr(oci.config, "from_file", MagicMock(side_effect=AssertionError))
+        signer = MagicMock(side_effect=lambda token, *args, **kwargs: token)
+        monkeypatch.setattr(oci.auth.signers, "TokenExchangeSigner", signer)
+        sdk_client = MagicMock(side_effect=lambda config, **kwargs: object())
+        monkeypatch.setattr(oci.usage_api, "UsageapiClient", sdk_client)
+        callers = ("caller-a", "caller-b", "caller-a")
+        access_tokens = [
+            AccessToken(token=token, client_id="synthetic", scopes=[], claims={})
+            for token in callers
+        ]
+        monkeypatch.setattr(server, "get_access_token", MagicMock(side_effect=access_tokens))
 
-        assert config["region"] == "us-phoenix-1"
-        assert signer == "signer"
-        mock_signer.assert_called_once()
+        clients = [server.get_usage_client() for _ in callers]
+
+        assert len(set(clients)) == len(callers)
+        assert [call.args[0] for call in signer.call_args_list] == list(callers)
+        assert [call.kwargs["signer"] for call in sdk_client.call_args_list] == list(callers)
+        assert all(
+            call.args[0] == {
+                "region": "us-phoenix-1",
+                "additional_user_agent": f"oci-usage-mcp/{server.__version__}",
+            }
+            for call in sdk_client.call_args_list
+        )
 
     @patch("oracle.oci_usage_mcp_server.server.get_access_token", return_value=None)
     def test_http_signer_requires_authenticated_token(self, _mock_get_access_token, monkeypatch):

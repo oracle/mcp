@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Security
+
+- Validate Data API short IDs, regions, and request hosts before sending bearer tokens. Restrict ORDS token minting and configuration to Oracle IAM identity-domain hosts, and explicitly disable redirects on these credential-bearing requests.
+
 ### Changed
 
 - Updated the MCP server to FastMCP 4.2.2. The IoT Data API still uses its own HTTP client.

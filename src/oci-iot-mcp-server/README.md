@@ -305,6 +305,9 @@ Count relationship topology across bounded pages:
 - These tools target the **OCI Internet of Things Platform Data API**, not the older Oracle Internet of
   Things Cloud Service product.
 - Direct Data API tools require `iot_domain_group_short_id` and `iot_domain_short_id`.
+- Short IDs must be 1–63 lowercase letters or digits, with optional internal hyphens. Regions must use
+  the OCI region format, such as `us-phoenix-1`. Invalid endpoints return an `invalid_input` error
+  before an HTTP request is sent.
 - Direct list/get raw, snapshot, historized, rejected, and rawCommand helpers also require an
   `access_token` parameter unless the `OCI_IOT_DATA_API_ACCESS_TOKEN` environment variable is set.
 - The Data API also requires a bearer token. Pass it with the `access_token` parameter or set
@@ -312,6 +315,12 @@ Count relationship topology across bounded pages:
 - If `region` is omitted, the tools default to the region in the configured OCI profile.
 - List-style Data API tools accept optional `query_params` as an object or JSON string and pass them
   through to the API query string.
+- ORDS identity hosts must be bare Oracle IAM hostnames, such as
+  `idcs-example.identity.oraclecloud.com` or
+  `idcs-example.identity.us-phoenix-1.oci.oraclecloud.com`, without a scheme, port, or path.
+  This restriction applies when configuring ORDS access and when minting tokens from existing
+  domain configuration. Custom identity hosts are rejected.
+- Direct Data API and ORDS token requests do not follow HTTP redirects.
 - The Data API base URL format is:
 
 ```text
@@ -384,8 +393,8 @@ List raw data from the OCI IoT Data API:
 {
   "tool": "list_raw_data",
   "arguments": {
-    "iot_domain_group_short_id": "exampleDomainGroupShortId",
-    "iot_domain_short_id": "exampleDomainShortId",
+    "iot_domain_group_short_id": "example-group",
+    "iot_domain_short_id": "example-domain",
     "query_params": {
       "limit": 50
     }

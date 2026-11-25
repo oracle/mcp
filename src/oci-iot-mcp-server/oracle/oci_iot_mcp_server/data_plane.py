@@ -5,6 +5,7 @@ from datetime import timedelta
 
 import httpx
 
+from .endpoint_validation import build_identity_token_url
 from .errors import error_result
 from .tool_models import DataApiTokenModel, success_result
 
@@ -95,6 +96,15 @@ def mint_data_api_token(*, domain_context: dict, env: dict, now) -> DataApiToken
             details={"missing": ["db_allowed_identity_domain_host"]},
         )
 
+    try:
+        token_url = build_identity_token_url(identity_domain_host)
+    except ValueError as exc:
+        raise DataApiTokenError(
+            code="invalid_ords_configuration",
+            message="IoT domain has an invalid ORDS identity domain host.",
+            retry_hint="Configure an Oracle IAM identity-domain hostname for ORDS data access and retry.",
+        ) from exc
+
     scope = (
         f"/{domain_context['domain_group_short_id']}/iot/"
         f"{domain_context['domain_short_id']}"
@@ -105,7 +115,7 @@ def mint_data_api_token(*, domain_context: dict, env: dict, now) -> DataApiToken
 
     try:
         response = httpx.post(
-            f"https://{identity_domain_host}/oauth2/v1/token",
+            token_url,
             headers={
                 "Authorization": f"Basic {auth}",
                 "Content-Type": "application/x-www-form-urlencoded",
@@ -117,6 +127,7 @@ def mint_data_api_token(*, domain_context: dict, env: dict, now) -> DataApiToken
                 "scope": scope,
             },
             timeout=30.0,
+            follow_redirects=False,
         )
         raise_for_status = getattr(response, "raise_for_status", None)
         if callable(raise_for_status):

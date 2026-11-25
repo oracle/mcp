@@ -62,6 +62,7 @@ from .data_plane import (
     require_token_credentials,
 )
 from .domain_context import resolve_domain_context_for_tool
+from .endpoint_validation import build_identity_token_url, validate_data_api_url, validate_region, validate_short_id
 from .errors import ambiguity_error, error_result, invalid_input_error, not_found_error
 from .polling import wait_for_raw_command_terminal_state, wait_for_snapshot_update
 from .resolvers import resolve_twin_for_tool
@@ -201,6 +202,8 @@ def _build_iot_data_api_url(
     resource_path: str,
     region: Optional[str] = None,
 ):
+    validate_short_id(iot_domain_group_short_id, "iot_domain_group_short_id")
+    validate_short_id(iot_domain_short_id, "iot_domain_short_id")
     if region is None:
         auth_type = resolved_auth_type()
         if auth_type in PRINCIPAL_AUTH_TYPES:
@@ -209,6 +212,7 @@ def _build_iot_data_api_url(
             config = _get_oci_config()
             region = config.get("region")
 
+    validate_region(region)
     base_url = (
         f"https://{iot_domain_group_short_id}.data.iot.{region}.oci.oraclecloud.com"
         f"/ords/{iot_domain_short_id}"
@@ -234,12 +238,19 @@ def _call_iot_data_api(
             message="IoT Data API access token is required.",
             retry_hint="Pass access_token or set OCI_IOT_DATA_API_ACCESS_TOKEN, then retry.",
         )
-    url = _build_iot_data_api_url(
-        iot_domain_group_short_id=iot_domain_group_short_id,
-        iot_domain_short_id=iot_domain_short_id,
-        resource_path=resource_path,
-        region=region,
-    )
+    try:
+        url = _build_iot_data_api_url(
+            iot_domain_group_short_id=iot_domain_group_short_id,
+            iot_domain_short_id=iot_domain_short_id,
+            resource_path=resource_path,
+            region=region,
+        )
+        validate_data_api_url(url)
+    except ValueError:
+        return error_result(
+            code="invalid_input",
+            message="Invalid IoT Data API endpoint. Supply valid short IDs and an OCI region identifier.",
+        )
 
     normalized_query_params = _normalize_query_params(query_params)
     if normalized_query_params:
@@ -257,6 +268,7 @@ def _call_iot_data_api(
             url,
             headers=headers,
             timeout=IOT_DATA_API_TIMEOUT_SECONDS,
+            follow_redirects=False,
         )
         response.raise_for_status()
         content_type = response.headers.get("Content-Type", "")
@@ -2279,6 +2291,7 @@ def configure_iot_domain_data_access(
                 ),
             )
         elif normalized_type == "ORDS":
+            build_identity_token_url(db_allowed_identity_domain_host)
             configure_iot_domain_data_access_details = oci.iot.models.OrdsDataAccessDetails(
                 db_allowed_identity_domain_host=db_allowed_identity_domain_host,
             )

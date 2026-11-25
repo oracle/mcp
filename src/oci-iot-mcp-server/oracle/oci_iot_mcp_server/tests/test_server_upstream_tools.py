@@ -487,13 +487,14 @@ def test_call_iot_data_api_handles_json_text_and_structured_errors(monkeypatch):
     monkeypatch.setattr(
         server,
         "_build_iot_data_api_url",
-        lambda **kwargs: "https://example.com/ords/domain-short/rawData",
+        lambda **kwargs: "https://group-short.data.iot.us-phoenix-1.oci.oraclecloud.com/ords/domain-short/rawData",
     )
 
-    def fake_get(url, *, headers, timeout):
+    def fake_get(url, *, headers, timeout, follow_redirects):
         captured["url"] = url
         captured["headers"] = {key.lower(): value for key, value in headers.items()}
         captured["timeout"] = timeout
+        captured["follow_redirects"] = follow_redirects
         return httpx.Response(
             200,
             headers={"Content-Type": "application/json"},
@@ -517,11 +518,12 @@ def test_call_iot_data_api_handles_json_text_and_structured_errors(monkeypatch):
     assert captured["headers"]["accept"] == "application/json"
     assert captured["headers"]["opc-request-id"] == "opc-1"
     assert captured["timeout"] == 30.0
+    assert captured["follow_redirects"] is False
 
     monkeypatch.setattr(
         server.httpx,
         "get",
-        lambda url, *, headers, timeout: httpx.Response(
+        lambda url, *, headers, timeout, follow_redirects: httpx.Response(
             200,
             headers={"Content-Type": "text/plain"},
             text="plain text",
@@ -536,7 +538,7 @@ def test_call_iot_data_api_handles_json_text_and_structured_errors(monkeypatch):
 
     logged = []
     monkeypatch.setattr(server.logger, "error", lambda message: logged.append(message))
-    request = httpx.Request("GET", "https://example.com/ords/domain-short/rawData")
+    request = httpx.Request("GET", "https://group-short.data.iot.us-phoenix-1.oci.oraclecloud.com/ords/domain-short/rawData")
     response = httpx.Response(
         500,
         headers={"Content-Type": "application/json"},
@@ -546,7 +548,7 @@ def test_call_iot_data_api_handles_json_text_and_structured_errors(monkeypatch):
     monkeypatch.setattr(
         server.httpx,
         "get",
-        lambda url, *, headers, timeout: (_ for _ in ()).throw(
+        lambda url, *, headers, timeout, follow_redirects: (_ for _ in ()).throw(
             httpx.HTTPStatusError("boom", request=request, response=response)
         ),
     )
@@ -564,7 +566,7 @@ def test_call_iot_data_api_handles_json_text_and_structured_errors(monkeypatch):
     monkeypatch.setattr(
         server.httpx,
         "get",
-        lambda url, *, headers, timeout: (_ for _ in ()).throw(httpx.TimeoutException("slow")),
+        lambda url, *, headers, timeout, follow_redirects: (_ for _ in ()).throw(httpx.TimeoutException("slow")),
     )
     result = server._call_iot_data_api(
         resource_path="/rawData",
@@ -577,7 +579,7 @@ def test_call_iot_data_api_handles_json_text_and_structured_errors(monkeypatch):
     monkeypatch.setattr(
         server.httpx,
         "get",
-        lambda url, *, headers, timeout: (_ for _ in ()).throw(
+        lambda url, *, headers, timeout, follow_redirects: (_ for _ in ()).throw(
             httpx.RequestError("network down", request=httpx.Request("GET", url))
         ),
     )
@@ -1904,12 +1906,12 @@ def test_response_mutation_tools_return_response_metadata(monkeypatch, case):
             {
                 "iot_domain_id": "domain-1",
                 "type": "ORDS",
-                "db_allowed_identity_domain_host": "identity.example.com",
+                "db_allowed_identity_domain_host": "idcs-example.identity.oraclecloud.com",
                 "if_match": "etag-1",
                 "opc_request_id": "req-1",
                 "opc_retry_token": "retry-1",
             },
-            {"db_allowed_identity_domain_host": "identity.example.com"},
+            {"db_allowed_identity_domain_host": "idcs-example.identity.oraclecloud.com"},
         ),
         (
             "APEX",

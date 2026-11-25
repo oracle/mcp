@@ -27,7 +27,11 @@ def test_build_ords_base_url_uses_domain_group_host_and_domain_short_id():
     assert result == "https://xyz987.data.iot.us-phoenix-1.oci.oraclecloud.com/ords/abc123/20250531"
 
 
-def test_mint_data_api_token_uses_password_grant_and_scope(monkeypatch):
+@pytest.mark.parametrize("host", [
+    "idcs-example.identity.oraclecloud.com",
+    "idcs-example.identity.us-phoenix-1.oci.oraclecloud.com",
+])
+def test_mint_data_api_token_uses_password_grant_and_scope(monkeypatch, host):
     observed = {}
 
     class FakeResponse:
@@ -41,6 +45,7 @@ def test_mint_data_api_token_uses_password_grant_and_scope(monkeypatch):
         observed["url"] = args[0]
         observed["headers"] = kwargs["headers"]
         observed["data"] = kwargs["data"]
+        observed["follow_redirects"] = kwargs["follow_redirects"]
         return FakeResponse()
 
     monkeypatch.setattr(data_plane.httpx, "post", fake_post)
@@ -48,7 +53,7 @@ def test_mint_data_api_token_uses_password_grant_and_scope(monkeypatch):
     context = {
         "domain_short_id": "abc123",
         "domain_group_short_id": "xyz987",
-        "db_allowed_identity_domain_host": "id.example.com",
+        "db_allowed_identity_domain_host": host,
     }
 
     result = mint_data_api_token(
@@ -65,7 +70,8 @@ def test_mint_data_api_token_uses_password_grant_and_scope(monkeypatch):
     assert result.access_token == "token-123"
     assert result.expires_at.isoformat() == "2026-03-26T13:00:00+00:00"
     assert observed["raise_for_status_called"] is True
-    assert observed["url"] == "https://id.example.com/oauth2/v1/token"
+    assert observed["url"] == f"https://{host}/oauth2/v1/token"
+    assert observed["follow_redirects"] is False
     assert observed["data"]["scope"] == "/xyz987/iot/abc123"
     assert build_twin_filter("ocid1.digitaltwininstance.oc1..aaaa") == {
         "$and": [{"digital_twin_instance_id": "ocid1.digitaltwininstance.oc1..aaaa"}]
@@ -116,7 +122,7 @@ def test_get_cached_data_api_token_reuses_unexpired_token(monkeypatch):
     context = {
         "domain_short_id": "abc123",
         "domain_group_short_id": "xyz987",
-        "db_allowed_identity_domain_host": "id.example.com",
+        "db_allowed_identity_domain_host": "idcs-example.identity.oraclecloud.com",
     }
     env = {
         "OCI_IOT_ORDS_CLIENT_ID": "client-id",
@@ -165,7 +171,7 @@ def test_get_cached_data_api_token_refreshes_after_expiry(monkeypatch):
     context = {
         "domain_short_id": "abc123",
         "domain_group_short_id": "xyz987",
-        "db_allowed_identity_domain_host": "id.example.com",
+        "db_allowed_identity_domain_host": "idcs-example.identity.oraclecloud.com",
     }
     env = {
         "OCI_IOT_ORDS_CLIENT_ID": "client-id",

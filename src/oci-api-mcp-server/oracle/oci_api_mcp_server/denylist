@@ -253,6 +253,8 @@ ccc infrastructure delete
 ccc infrastructure update
 ccc upgrade-schedule delete
 ccc upgrade-schedule update
+ccd-offers ccd-commitments ccd-commitment delete
+ccd-offers ccd-commitments ccd-commitment update
 ce cluster delete
 ce cluster replace-boot-volume-cluster-node
 ce cluster update
@@ -537,6 +539,8 @@ data-safe audit-profile delete
 data-safe audit-profile update
 data-safe audit-trail delete
 data-safe audit-trail update
+data-safe crypto-assessment delete
+data-safe crypto-assessment update
 data-safe database-security-config update
 data-safe discovery-job delete
 data-safe discovery-job patch-discovery-job-results
@@ -562,6 +566,8 @@ data-safe peer-target-database update-peer-target-database-database-cloud-servic
 data-safe private-endpoint delete
 data-safe private-endpoint update
 data-safe referential-relation delete
+data-safe registration-policy delete
+data-safe registration-policy update
 data-safe report update
 data-safe report-definition delete
 data-safe report-definition remove
@@ -598,6 +604,22 @@ data-safe sql-collection delete
 data-safe sql-collection update
 data-safe sql-firewall-policy delete
 data-safe sql-firewall-policy update
+data-safe subsetting-policy delete
+data-safe subsetting-policy update
+data-safe subsetting-policy update-subsetting-policy-update-schema-source-from-sdm-details
+data-safe subsetting-policy update-subsetting-policy-update-schema-source-from-target-details
+data-safe subsetting-policy-health-report delete
+data-safe subsetting-report delete
+data-safe subsetting-rule delete
+data-safe subsetting-rule patch
+data-safe subsetting-rule update
+data-safe subsetting-rule update-subsetting-rule-condition-subset-rule-entry
+data-safe subsetting-rule update-subsetting-rule-partition-subset-rule-entry
+data-safe subsetting-rule update-subsetting-rule-percent-subset-rule-entry
+data-safe subsetting-rule update-subsetting-rule-subset-scope-for-all-objects
+data-safe subsetting-rule update-subsetting-rule-subset-scope-for-specific-objects
+data-safe subsetting-rule-processing-chain-object-summary update-processing-chain-object
+data-safe subsetting-schema-relation delete
 data-safe target-alert-policy-association delete
 data-safe target-alert-policy-association patch
 data-safe target-alert-policy-association update
@@ -636,6 +658,8 @@ data-science model update
 data-science model update-model-custom-metadatum-artifact
 data-science model update-model-defined-metadatum-artifact
 data-science model update-model-provenance
+data-science model-artifact-signature delete
+data-science model-artifact-signature update
 data-science model-deployment delete
 data-science model-deployment update
 data-science model-deployment update-model-deployment-update-model-group-deployment-configuration-details
@@ -783,10 +807,12 @@ db console-history delete
 db console-history update
 db data-guard-association update
 db database delete
+db database delete-snapshot
 db database patch
 db database run-data-patch
 db database update
 db database update-data-guard
+db database update-snapshot
 db database-software-image delete
 db database-software-image update
 db db-home delete
@@ -812,6 +838,8 @@ db external-non-cdb delete
 db external-non-cdb update
 db external-pdb delete
 db external-pdb update
+db gi-home delete
+db gi-home update
 db key-store delete
 db key-store update-oracle-key-vault-details
 db maintenance-run update
@@ -845,6 +873,8 @@ dbmulticloud oracle-db-aws-identity-connector delete
 dbmulticloud oracle-db-aws-identity-connector update
 dbmulticloud oracle-db-aws-key delete
 dbmulticloud oracle-db-aws-key update
+dbmulticloud oracle-db-aws-key-pool delete
+dbmulticloud oracle-db-aws-key-pool update
 dbmulticloud oracle-db-azure-blob-container delete
 dbmulticloud oracle-db-azure-blob-container update
 dbmulticloud oracle-db-azure-blob-mount delete
@@ -1008,19 +1038,11 @@ distributed-database distributed-autonomous-db-service distributed-autonomous-da
 distributed-database distributed-autonomous-db-service distributed-autonomous-database patch
 distributed-database distributed-autonomous-db-service distributed-autonomous-database update
 distributed-database distributed-db-private-endpoint-service distributed-database-private-endpoint delete
+distributed-database distributed-db-private-endpoint-service distributed-database-private-endpoint patch
 distributed-database distributed-db-private-endpoint-service distributed-database-private-endpoint update
 distributed-database distributed-db-service distributed-database delete
 distributed-database distributed-db-service distributed-database patch
 distributed-database distributed-db-service distributed-database update
-distributed-database-v26 distributed-autonomous-db-service distributed-autonomous-database delete
-distributed-database-v26 distributed-autonomous-db-service distributed-autonomous-database patch
-distributed-database-v26 distributed-autonomous-db-service distributed-autonomous-database update
-distributed-database-v26 distributed-db-private-endpoint-service distributed-database-private-endpoint delete
-distributed-database-v26 distributed-db-private-endpoint-service distributed-database-private-endpoint patch
-distributed-database-v26 distributed-db-private-endpoint-service distributed-database-private-endpoint update
-distributed-database-v26 distributed-db-service distributed-database delete
-distributed-database-v26 distributed-db-service distributed-database patch
-distributed-database-v26 distributed-db-service distributed-database update
 dns record domain delete
 dns record domain patch
 dns record domain update
@@ -1144,8 +1166,13 @@ fleet-software-update fsu-readiness-check delete
 fleet-software-update fsu-readiness-check update
 fn application delete
 fn application update
+fn function create archive-function direct-archive fn-update-runtime-config
+fn function create archive-function object-storage fn-update-runtime-config
 fn function delete
 fn function update
+fn function update archive-function
+fn function update container-function
+fn function update pbf-function
 fs export delete
 fs export remove
 fs export update
@@ -1212,6 +1239,10 @@ generative-ai imported-model delete
 generative-ai imported-model update
 generative-ai model delete
 generative-ai model update
+generative-ai routing-profile delete
+generative-ai routing-profile update
+generative-ai sandbox-warm-pool delete
+generative-ai sandbox-warm-pool update
 generative-ai semantic-store delete
 generative-ai semantic-store update
 generative-ai semantic-store update-semantic-store-custom-semantic-store-model-selection
@@ -1244,16 +1275,21 @@ generative-ai-agent tool update-tool-rag-tool-config
 generative-ai-agent tool update-tool-sql-tool-config
 generative-ai-agent-runtime session delete
 generative-ai-agent-runtime session update
+generative-ai-sandbox sandbox delete
+generative-ai-sandbox sandbox update
+generative-ai-sandbox sandbox-snapshot delete
 goldengate certificate delete
 goldengate connection delete
 goldengate connection remove-lock
 goldengate connection update-ai-model-connection
+goldengate connection update-ai-provider-connection
 goldengate connection update-amazon-kinesis-connection
 goldengate connection update-amazon-redshift-connection
 goldengate connection update-amazon-s3-connection
 goldengate connection update-azure-data-lake-storage-connection
 goldengate connection update-azure-synapse-connection
 goldengate connection update-databricks-connection
+goldengate connection update-databricks-engine-connection
 goldengate connection update-db2-connection
 goldengate connection update-elasticsearch-connection
 goldengate connection update-generic-connection
@@ -1272,11 +1308,13 @@ goldengate connection update-mongo-db-connection
 goldengate connection update-mysql-connection
 goldengate connection update-object-storage-connection
 goldengate connection update-oracle-ai-data-platform-connection
+goldengate connection update-oracle-ai-data-platform-engine-connection
 goldengate connection update-oracle-connection
 goldengate connection update-oracle-nosql-connection
 goldengate connection update-postgresql-connection
 goldengate connection update-redis-connection
 goldengate connection update-snowflake-connection
+goldengate connection update-spark-connection
 goldengate connection-assignment delete
 goldengate database-registration delete
 goldengate database-registration update
@@ -1632,18 +1670,21 @@ marketplace-private-offer offer offer update
 marketplace-private-offer offer-quote offer-quote delete
 marketplace-private-offer offer-quote offer-quote update
 marketplace-private-offer quote-attachment quote-attachment delete
+marketplace-publisher administrator-artifact admin-publisher update-admin-artifact-status
 marketplace-publisher artifact delete
 marketplace-publisher artifact update
 marketplace-publisher artifact update-artifact-update-container-image-artifact-details
 marketplace-publisher artifact update-artifact-update-kubernetes-image-artifact-details
 marketplace-publisher artifact update-artifact-update-machine-image-artifact-details
 marketplace-publisher artifact update-artifact-update-stack-artifact-details
+marketplace-publisher customer-instance-report-export delete
 marketplace-publisher listing cascading-delete
 marketplace-publisher listing delete
 marketplace-publisher listing update
 marketplace-publisher listing-revision cascading-delete
 marketplace-publisher listing-revision delete
 marketplace-publisher listing-revision update
+marketplace-publisher listing-revision update-listing-revision-banner-content
 marketplace-publisher listing-revision update-listing-revision-icon-content
 marketplace-publisher listing-revision update-listing-revision-update-lead-gen-listing-revision-details
 marketplace-publisher listing-revision update-listing-revision-update-oci-listing-revision-details
@@ -1727,8 +1768,13 @@ network dhcp-options update
 network drg delete
 network drg update
 network drg-attachment delete
+network drg-attachment remove-drg-nat-policy
 network drg-attachment remove-export-route-distribution
 network drg-attachment update
+network drg-nat-policy delete
+network drg-nat-policy update
+network drg-nat-rule remove
+network drg-nat-rule update
 network drg-route-distribution delete
 network drg-route-distribution update
 network drg-route-distribution-statement remove
@@ -1843,6 +1889,10 @@ nosql table update
 nosql work-request delete
 oce oce-instance delete
 oce oce-instance update
+oci-product-catalog product-admin product delete-admin
+oci-product-catalog product-admin product update-admin
+oci-product-catalog product-internal product delete-internal
+oci-product-catalog product-internal product update-internal
 ocvs byol delete
 ocvs byol update
 ocvs byol-allocation delete
@@ -2044,6 +2094,8 @@ psql db-system update-db-system-disabled-insight-details
 psql db-system update-db-system-disabled-kerberos-auth-details
 psql db-system update-db-system-enabled-insight-details
 psql db-system update-db-system-enabled-kerberos-auth-details
+pss instance delete
+pss instance update
 queue messages delete-message
 queue messages delete-messages
 queue messages put-messages

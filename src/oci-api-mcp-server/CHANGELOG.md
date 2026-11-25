@@ -2,10 +2,24 @@
 
 ## Unreleased
 
+### Breaking Changes
+
+- Require FastMCP 4.2.2 and `oracle-mcp-common>=0.3.0,<0.4.0`.
+
 ### Changed
 
+- Update locked dnspython to 2.9.2.
+
+- Update the pinned OCI CLI to 3.96.0 (OCI SDK 2.190.0) to satisfy FastMCP 4's
+  certificate dependency. Refresh the command denylist and retain denial of the
+  new Function update subcommands.
 - Resolve Common from the published package within the existing dependency bounds
   for development and CI. Local Common source testing now requires explicit opt-in.
+
+### Fixed
+
+- Preserve the complete `get_oci_command_help` usage guidance in MCP tool discovery
+  with FastMCP 4.
 
 ## 2.2.0
 

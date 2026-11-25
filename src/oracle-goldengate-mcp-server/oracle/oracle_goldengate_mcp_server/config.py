@@ -11,10 +11,15 @@ the configuration dictionary consumed by the HTTP client and tool handlers.
 
 import base64
 import os
+import re
 from codecs import BOM_UTF8, BOM_UTF16_BE, BOM_UTF16_LE
+from pathlib import Path
 from urllib.parse import quote
 
+from .consts import DEFAULT_TIMEOUT_SECONDS
 from .http_client import sign_oci_request
+
+_ENV_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _unquote(value: str | None) -> str | None:
@@ -26,12 +31,43 @@ def _unquote(value: str | None) -> str | None:
     return value
 
 
-def _must_env(name: str) -> str:
-    """Return required environment variable value or raise a clear error."""
-    value = os.getenv(name)
-    if not value:
-        raise ValueError(f"Missing required env var {name}")
-    return value
+def _load_env_file(path: str | os.PathLike[str]) -> dict[str, str]:
+    """Load literal KEY=VALUE entries without evaluating shell metacharacters.
+
+    Matching single or double quotes around values are removed. Characters inside
+    values, including !, $, %, &, #, spaces, and backslashes, are preserved exactly.
+    The returned values are not evaluated or written into the process environment.
+    """
+    env_path = Path(path)
+    try:
+        lines = env_path.read_text(encoding="utf-8-sig").splitlines()
+    except OSError as exc:
+        raise ValueError(f"Unable to read environment file '{env_path}': {exc}") from exc
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"Unable to decode environment file '{env_path}'. Use UTF-8") from exc
+
+    values: dict[str, str] = {}
+    for line_number, raw_line in enumerate(lines, start=1):
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("export "):
+            stripped = stripped[7:].lstrip()
+        if "=" not in stripped:
+            raise ValueError(f"Invalid environment entry at {env_path}:{line_number}; expected KEY=VALUE")
+
+        name, raw_value = stripped.split("=", 1)
+        name = name.strip()
+        if not _ENV_NAME_PATTERN.fullmatch(name):
+            raise ValueError(f"Invalid environment variable name at {env_path}:{line_number}: {name!r}")
+
+        value = raw_value.strip()
+        if value and value[0] in {"'", '"'}:
+            if len(value) < 2 or value[-1] != value[0]:
+                raise ValueError(f"Unmatched quote in environment value at {env_path}:{line_number}")
+            value = value[1:-1]
+        values[name] = value
+    return values
 
 
 def _read_password_from_file(path: str) -> str:
@@ -66,7 +102,7 @@ def _signed_get(cfg: dict, hostname: str, path: str) -> dict:
     import http.client
 
     headers = sign_oci_request(cfg, "GET", path, hostname)
-    conn = http.client.HTTPSConnection(hostname)
+    conn = http.client.HTTPSConnection(hostname, timeout=DEFAULT_TIMEOUT_SECONDS)
     conn.request("GET", path, headers=headers)
     response = conn.getresponse()
     data = response.read().decode("utf-8")
@@ -86,22 +122,36 @@ def read_config() -> dict:
     Raises:
         ValueError: If required variables are missing or invalid.
     """
+    env_file = os.getenv("OGG_ENV_FILE")
+    file_values = _load_env_file(env_file) if env_file else {}
+
+    def env(name: str, *, unquote_process: bool = False) -> str | None:
+        if name in os.environ:
+            value = os.environ[name]
+            return _unquote(value) if unquote_process else value
+        # The file parser already removed its one layer of surrounding quotes.
+        return file_values.get(name)
+
+    base_url = env("OGG_BASE_URL")
+    if not base_url:
+        raise ValueError("Missing required env var OGG_BASE_URL")
+
     cfg = {
-        "baseUrl": _must_env("OGG_BASE_URL"),
+        "baseUrl": base_url,
         "authMode": "basic",
-        "username": _unquote(os.getenv("OGG_USERNAME")),
-        "tenancyOCID": os.getenv("OCI_TENANCY_OCID"),
-        "userOCID": os.getenv("OCI_USER_OCID"),
-        "keyFingerprint": os.getenv("OCI_KEY_FINGERPRINT"),
+        "username": env("OGG_USERNAME", unquote_process=True),
+        "tenancyOCID": env("OCI_TENANCY_OCID"),
+        "userOCID": env("OCI_USER_OCID"),
+        "keyFingerprint": env("OCI_KEY_FINGERPRINT"),
         "privateKeyPEM": None,
-        "passphrase": os.getenv("OCI_PRIVATE_KEY_PASSPHRASE") or "",
-        "ociRegion": os.getenv("OCI_REGION"),
-        "passwordSecretOcid": os.getenv("OGG_PASSWORD_SECRET_OCID"),
-        "passwordFile": os.getenv("OGG_PASSWORD_FILE"),
+        "passphrase": env("OCI_PRIVATE_KEY_PASSPHRASE") or "",
+        "ociRegion": env("OCI_REGION"),
+        "passwordSecretOcid": env("OGG_PASSWORD_SECRET_OCID"),
+        "passwordFile": env("OGG_PASSWORD_FILE"),
         "password": None,
     }
 
-    private_key_file = os.getenv("OCI_PRIVATE_KEY_FILE")
+    private_key_file = env("OCI_PRIVATE_KEY_FILE")
     if private_key_file:
         with open(private_key_file, encoding="utf-8") as f:
             cfg["privateKeyPEM"] = f.read()
@@ -125,7 +175,7 @@ def read_config() -> dict:
             raise ValueError("Missing OGG_PASSWORD_FILE")
         cfg["password"] = _read_password_from_file(password_file)
     else:
-        cfg["password"] = _unquote(os.getenv("OGG_PASSWORD"))
+        cfg["password"] = env("OGG_PASSWORD", unquote_process=True)
 
     if not cfg.get("username") or cfg.get("password") is None:
         raise ValueError(

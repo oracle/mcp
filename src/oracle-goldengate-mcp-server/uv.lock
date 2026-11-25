@@ -961,9 +961,11 @@ name = "oracle-oracle-goldengate-mcp-server"
 version = "1.0.3"
 source = { editable = "." }
 dependencies = [
+    { name = "anyio" },
     { name = "cryptography" },
     { name = "dnspython" },
     { name = "fastmcp" },
+    { name = "mcp-types" },
     { name = "pydantic" },
     { name = "requests" },
 ]
@@ -980,9 +982,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", specifier = ">=4.5,<5" },
     { name = "cryptography", specifier = ">=50.0.0" },
     { name = "dnspython", specifier = ">=2.9.2" },
     { name = "fastmcp", specifier = "==4.2.2" },
+    { name = "mcp-types", specifier = ">=2.3.0,<3.0.0" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "requests", specifier = ">=2.34.2" },
 ]

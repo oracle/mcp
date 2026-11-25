@@ -47,11 +47,15 @@ def list_trails() -> str:
 
 
 def get_extract_status(extract_name: str) -> str:
-    return f"/services/v2/extracts/{_enc(extract_name)}/command"
+    return f"/services/v2/extracts/{_enc(extract_name)}/info/status"
+
+
+def get_extract_history(extract_name: str) -> str:
+    return f"/services/v2/extracts/{_enc(extract_name)}/info/history"
 
 
 def get_replicat_status(replicat_name: str) -> str:
-    return f"/services/v2/replicats/{_enc(replicat_name)}/command"
+    return f"/services/v2/replicats/{_enc(replicat_name)}/info/status"
 
 
 def create_connection(domain: str, connection: str, _userid: str, _connection_password: str) -> str:
@@ -101,6 +105,8 @@ def create_data_stream(
     _quality_of_service: str | None = None,
     _cloud_events_format: bool | None = None,
     _buffer_size: int | None = None,
+    _include_tables: list[str] | None = None,
+    _exclude_tables: list[str] | None = None,
 ) -> str:
     return f"/services/distsrvr/v2/stream/{_enc(data_stream_name)}"
 
@@ -143,6 +149,26 @@ def get_data_stream_info(data_stream_name: str) -> str:
 
 def get_data_stream_yaml(data_stream_name: str) -> str:
     return f"/services/distsrvr/v2/stream/{_enc(data_stream_name)}/yaml"
+
+
+def _data_stream_stats_window_ref(data_stream_name: str) -> str:
+    page = f"/services/adminsrvr/v2/content/index.html#/dataStream/{data_stream_name}/dataStreamStats"
+    return quote(page, safe="")
+
+
+def get_data_stream_overall_stats(data_stream_name: str) -> str:
+    window_ref = _data_stream_stats_window_ref(data_stream_name)
+    return f"/services/pmsrvr/v2/mpoints/DISTSRVR/distsrvrPathStats?WindowRef={window_ref}"
+
+
+def get_data_stream_network_stats(data_stream_name: str) -> str:
+    window_ref = _data_stream_stats_window_ref(data_stream_name)
+    return f"/services/pmsrvr/v2/mpoints/DISTSRVR/distsrvrNetworkStats?WindowRef={window_ref}"
+
+
+def get_data_stream_table_stats(data_stream_name: str) -> str:
+    window_ref = _data_stream_stats_window_ref(data_stream_name)
+    return f"/services/pmsrvr/v2/mpoints/DISTSRVR/distsrvrTableStats?WindowRef={window_ref}"
 
 
 def get_extract_stats(extract_name: str) -> str:

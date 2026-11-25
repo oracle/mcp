@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, create_autospec, mock_open, patch
 import oracle.oci_faaas_mcp_server.server as server
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 from oracle.oci_faaas_mcp_server.server import main, mcp
 
 # Provide a lightweight stub for 'oci' if not installed, so tests can import the server module
@@ -33,6 +34,26 @@ except ModuleNotFoundError:  # pragma: no cover
 
 
 class TestFaaasTools:
+    @pytest.mark.asyncio
+    @patch("oracle.oci_faaas_mcp_server.server.get_faaas_client")
+    async def test_get_fusion_environment_requires_id_before_client_creation(self, mock_get_client):
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="fusion_environment_id"):
+                await client.call_tool("get_fusion_environment", {})
+
+        mock_get_client.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_faaas_mcp_server.server.get_faaas_client")
+    async def test_get_fusion_environment_reports_oci_service_error(self, mock_get_client):
+        mock_get_client.return_value.get_fusion_environment.side_effect = oci.exceptions.ServiceError(
+            404, "NotAuthorizedOrNotFound", {}, "Fusion environment unavailable"
+        )
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="NotAuthorizedOrNotFound"):
+                await client.call_tool("get_fusion_environment", {"fusion_environment_id": "env1"})
+
     @pytest.mark.asyncio
     @patch("oracle.oci_faaas_mcp_server.server.get_faaas_client")
     async def test_list_fusion_environment_families(self, mock_get_client):
@@ -350,10 +371,7 @@ class TestGetClient:
         args, _ = mock_client.call_args
         passed_config = args[0]
         assert passed_config is config
-        expected_user_agent = (
-            f"{server.__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{server.__version__}"  # noqa
-        )
-        assert passed_config.get("additional_user_agent") == expected_user_agent
+        assert passed_config["additional_user_agent"] == f"oci-faaas-mcp/{server.__version__}"
         # And we returned the client instance
         assert result == mock_client.return_value
 
@@ -400,7 +418,6 @@ class TestGetClient:
         # additional_user_agent set on original config and passed through
         cc_args, _ = mock_client.call_args
         assert cc_args[0] is config
-        assert "additional_user_agent" in config
-        assert isinstance(config["additional_user_agent"], str) and "/" in config["additional_user_agent"]
+        assert config["additional_user_agent"] == f"oci-faaas-mcp/{server.__version__}"
         # Returned object is client instance
         assert srv_client is mock_client.return_value

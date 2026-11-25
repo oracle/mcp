@@ -11,6 +11,8 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import oci
 import pytest
+from fastmcp import Client
+from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import AccessToken
 
 # Import the server module where the tools are defined
@@ -124,6 +126,7 @@ class TestGetClient:
         mock_security_token_signer.assert_called_once_with("SECURITY_TOKEN", private_key_obj)
         args, kwargs = mock_client.call_args
         assert args[0] is config
+        assert config["additional_user_agent"] == f"oci-load-balancer-mcp/{server.__version__}"
         assert kwargs["signer"] is mock_security_token_signer.return_value
         assert isinstance(kwargs["circuit_breaker_strategy"], oci.circuit_breaker.CircuitBreakerStrategy)
         assert callable(kwargs["circuit_breaker_callback"])
@@ -144,9 +147,14 @@ class TestServer:
 
         config, signer = server._get_http_config_and_signer()
 
-        assert config["region"] == "us-phoenix-1"
+        assert config == {
+            "region": "us-phoenix-1",
+            "additional_user_agent": f"oci-load-balancer-mcp/{server.__version__}",
+        }
         assert signer == "signer"
-        mock_signer.assert_called_once()
+        mock_signer.assert_called_once_with(
+            "token", "https://idcs.example.com", "client-id", "client-secret", region="us-phoenix-1"
+        )
 
     @patch("oracle.oci_load_balancer_mcp_server.server.get_access_token", return_value=None)
     def test_http_signer_requires_authenticated_token(self, _mock_get_access_token, monkeypatch):
@@ -170,7 +178,8 @@ class TestServer:
     @patch("oracle.oci_load_balancer_mcp_server.server.OCIProvider")
     @patch("oracle.oci_load_balancer_mcp_server.server.mcp.run")
     @patch("os.getenv")
-    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run, mock_provider):
+    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run, mock_provider, monkeypatch):
+        monkeypatch.setattr(server.mcp, "auth", None)
         mock_env = {
             "ORACLE_MCP_HOST": "1.2.3.4",
             "ORACLE_MCP_PORT": "8888",
@@ -260,6 +269,28 @@ async def test_list_load_balancers(mock_client):
     mock_client.list_load_balancers.assert_called_once()
     assert isinstance(result, list)
     assert result[0].id == "lb_ocid"
+
+
+@pytest.mark.asyncio
+async def test_list_load_balancers_over_mcp(mock_client):
+    sdk_call = mock_client.list_load_balancers
+    sdk_call.return_value = MockResponse(data=[oci.load_balancer.models.LoadBalancer(id="lb1")])
+    arguments = {"compartment_id": "c1"}
+
+    async with Client(server.mcp) as client:
+        result = await client.call_tool("list_load_balancers", arguments)
+        assert [item["id"] for item in result.structured_content["result"]] == ["lb1"]
+
+        sdk_call.reset_mock()
+        with pytest.raises(ToolError, match="greater than or equal to 1"):
+            await client.call_tool("list_load_balancers", {**arguments, "limit": 0})
+        sdk_call.assert_not_called()
+
+        sdk_call.side_effect = oci.exceptions.ServiceError(
+            404, "NotAuthorizedOrNotFound", {}, "Load balancer not found"
+        )
+        with pytest.raises(ToolError, match="NotAuthorizedOrNotFound"):
+            await client.call_tool("list_load_balancers", arguments)
 
 
 @pytest.mark.asyncio

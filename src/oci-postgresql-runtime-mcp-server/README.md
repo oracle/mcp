@@ -181,7 +181,7 @@ Execute multiple read statements with separate bind parameters:
 - Result rows are JSON-serializable dictionaries keyed by column name. Duplicate direct-column labels use their PostgreSQL origin, such as `users.id` and `orders.id`; remaining collisions receive `_2`, `_3`, and subsequent suffixes.
 - Responses include `executed_sql`, `param_count`, and `params_redacted` when bind parameters are supplied.
 
-The server uses FastMCP 3.4.5, which runs synchronous tools in worker threads. Clients can submit overlapping requests. Cancelling a client request does not guarantee immediate cancellation of its PostgreSQL query; the worker retains its connection until execution and cleanup finish.
+The server uses FastMCP 4.2.2, which runs synchronous tools in worker threads. Clients can submit overlapping requests. Cancelling a client request does not guarantee immediate cancellation of its PostgreSQL query; the worker retains its connection until execution and cleanup finish.
 
 ## Query Policy
 
@@ -196,6 +196,8 @@ These safeguards apply only to SQL submitted through this MCP server. They do no
 ## Setup
 
 This server requires `uv`, Python 3.13 or later, database credentials, and a network path from the MCP process to PostgreSQL. Configure the profile, choose the local or remote network approach, and verify the configured tools.
+
+The locked `cryptography` release publishes macOS wheels for Apple Silicon and Windows wheels for x86-64.
 
 ### Connection Profiles
 

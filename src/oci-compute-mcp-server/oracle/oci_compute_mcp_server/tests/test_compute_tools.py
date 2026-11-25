@@ -44,7 +44,17 @@ class TestComputeTools:
 
             assert len(result) == 1
             assert result[0]["id"] == "instance1"
-    
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
+    async def test_list_instances_rejects_zero_limit_before_oci_call(self, mock_get_client):
+        async with Client(mcp) as client:
+            with pytest.raises(fastmcp.exceptions.ToolError, match="limit"):
+                await client.call_tool(
+                    "list_instances", {"compartment_id": "test_compartment", "limit": 0}
+                )
+
+        mock_get_client.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("oracle.oci_compute_mcp_server.server.get_compute_client")
@@ -813,6 +823,7 @@ class TestServer:
         config, signer = server._get_http_config_and_signer()
 
         assert config["region"] == "us-phoenix-1"
+        assert config["additional_user_agent"] == f"oci-compute-mcp/{server.__version__}"
         assert signer == "signer"
         mock_token_exchange_signer.assert_called_once()
 

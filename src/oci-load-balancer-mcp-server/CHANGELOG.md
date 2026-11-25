@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- Migrated the MCP runtime to FastMCP 4.2.2 for stdio and streaming HTTP. Tool listings include display titles.
+- Updated the locked dnspython dependency to 2.9.2.
+
 ## 1.0.3
 
 ### Security

@@ -2,8 +2,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from oracle.oci_iot_mcp_server import client
-from oracle.oci_iot_mcp_server import __project__, __version__
+from oracle.oci_iot_mcp_server import __version__, client
+
+
+EXPECTED_ADDITIONAL_USER_AGENT = f"oci-iot-mcp/{__version__}"
 
 
 def test_get_iot_client_caches_per_profile(monkeypatch, tmp_path):
@@ -18,8 +20,6 @@ def test_get_iot_client_caches_per_profile(monkeypatch, tmp_path):
             "key_file": str(key_file),
             "security_token_file": str(token_file),
         }
-
-    expected_user_agent = f"{__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{__version__}"
 
     monkeypatch.setattr(client.oci.config, "from_file", fake_from_file)
     monkeypatch.setattr(
@@ -45,14 +45,12 @@ def test_get_iot_client_caches_per_profile(monkeypatch, tmp_path):
 
     assert default_client["profile"] == "DEFAULT"
     assert alt_client["profile"] == "ALT"
-    assert default_client["user_agent"] == expected_user_agent
-    assert alt_client["user_agent"] == expected_user_agent
+    assert default_client["user_agent"] == EXPECTED_ADDITIONAL_USER_AGENT
+    assert alt_client["user_agent"] == EXPECTED_ADDITIONAL_USER_AGENT
     assert default_client is not alt_client
 
 
 def test_get_iot_client_auto_falls_back_to_api_key_when_no_security_token(monkeypatch):
-    expected_user_agent = f"{__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{__version__}"
-
     monkeypatch.setenv("OCI_IOT_AUTH_TYPE", "auto")
     monkeypatch.setattr(
         client.oci.config,
@@ -82,7 +80,7 @@ def test_get_iot_client_auto_falls_back_to_api_key_when_no_security_token(monkey
     built_client = client.get_iot_client("DEFAULT")
 
     assert built_client["signer"]["kind"] == "api_key"
-    assert built_client["config"]["additional_user_agent"] == expected_user_agent
+    assert built_client["config"]["additional_user_agent"] == EXPECTED_ADDITIONAL_USER_AGENT
 
 
 def test_get_iot_client_security_token_uses_private_key_pass_phrase(monkeypatch, tmp_path):
@@ -121,6 +119,7 @@ def test_get_iot_client_security_token_uses_private_key_pass_phrase(monkeypatch,
 
     assert observed == {"path": "/tmp/encrypted-key.pem", "pass_phrase": "top-secret"}
     assert built_client["signer"] == ("security-token", "pk:/tmp/encrypted-key.pem:top-secret")
+    assert built_client["config"]["additional_user_agent"] == EXPECTED_ADDITIONAL_USER_AGENT
 
 
 def test_get_iot_client_uses_instance_principal_when_configured(monkeypatch):
@@ -148,7 +147,7 @@ def test_get_iot_client_uses_instance_principal_when_configured(monkeypatch):
 
     assert built_client["signer"] is signer
     assert built_client["config"]["region"] == "us-phoenix-1"
-    assert built_client["config"]["additional_user_agent"].endswith(f"/{__version__}")
+    assert built_client["config"]["additional_user_agent"] == EXPECTED_ADDITIONAL_USER_AGENT
 
 
 def test_get_iot_client_uses_resource_principal_when_configured(monkeypatch):
@@ -176,7 +175,7 @@ def test_get_iot_client_uses_resource_principal_when_configured(monkeypatch):
 
     assert built_client["signer"] is signer
     assert built_client["config"]["region"] == "us-chicago-1"
-    assert built_client["config"]["additional_user_agent"].endswith(f"/{__version__}")
+    assert built_client["config"]["additional_user_agent"] == EXPECTED_ADDITIONAL_USER_AGENT
 
 
 def test_get_iot_client_uses_instance_principal_delegation_when_configured(monkeypatch):
@@ -209,6 +208,7 @@ def test_get_iot_client_uses_instance_principal_delegation_when_configured(monke
 
     built_client = client.get_iot_client()
 
+    assert built_client["config"]["additional_user_agent"] == EXPECTED_ADDITIONAL_USER_AGENT
     assert observed == {"delegation_token": "delegation-token-123"}
     assert built_client["signer"] is signer
     assert built_client["config"]["region"] == "us-ashburn-1"
@@ -245,6 +245,7 @@ def test_get_iot_client_uses_resource_principal_delegation_when_configured(monke
 
     built_client = client.get_iot_client()
 
+    assert built_client["config"]["additional_user_agent"] == EXPECTED_ADDITIONAL_USER_AGENT
     assert observed == {"delegation_token": "delegation-token-456", "path_provider": None}
     assert built_client["signer"] is signer
     assert built_client["config"]["region"] == "us-sanjose-1"
@@ -282,6 +283,7 @@ def test_get_iot_client_uses_oke_workload_identity_when_configured(monkeypatch):
 
     built_client = client.get_iot_client()
 
+    assert built_client["config"]["additional_user_agent"] == EXPECTED_ADDITIONAL_USER_AGENT
     assert observed == {
         "service_account_token_path": None,
         "service_account_token": "inline-token",

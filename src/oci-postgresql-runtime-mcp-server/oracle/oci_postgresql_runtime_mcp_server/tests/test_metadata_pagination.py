@@ -373,7 +373,7 @@ async def test_protocol_advertises_bounded_metadata_page_and_auto_threshold():
     async with Client(server.mcp) as client:
         tools = {tool.name: tool for tool in await client.list_tools()}
     for name, width in (("list_schemas", 1), ("list_tables", 2)):
-        properties = tools[name].inputSchema["properties"]
+        properties = tools[name].input_schema["properties"]
         assert properties["limit"]["minimum"] == 1
         assert properties["limit"]["maximum"] == 1000
         assert "cursor" in properties
@@ -384,7 +384,7 @@ async def test_protocol_advertises_bounded_metadata_page_and_auto_threshold():
         assert array_schema["maxItems"] == width
         assert array_schema["items"]["type"] == "string"
         assert {variant["type"] for variant in cursor_variants} == {"array", "null"}
-    threshold = tools["list_tables"].inputSchema["properties"]["auto_full_limit"]
+    threshold = tools["list_tables"].input_schema["properties"]["auto_full_limit"]
     assert threshold["minimum"] == 1 and threshold["maximum"] == 1000
 
 

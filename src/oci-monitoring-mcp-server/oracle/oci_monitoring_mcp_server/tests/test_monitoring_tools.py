@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, mock_open, patch
 import oci
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import AccessToken
 from oracle.oci_monitoring_mcp_server import server
 from oracle.oci_monitoring_mcp_server.scripts import MQL_QUERY_DOC, get_script_content
@@ -27,6 +28,29 @@ def mock_context():
 
 
 class TestMonitoringTools:
+    @pytest.mark.asyncio
+    async def test_list_alarms_requires_compartment_before_sdk_access(self, monkeypatch):
+        get_client = Mock()
+        monkeypatch.setattr(server, "get_monitoring_client", get_client)
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="compartment_id"):
+                await client.call_tool("list_alarms", {})
+
+        get_client.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_list_alarms_returns_sdk_failure_as_tool_error(self, monkeypatch):
+        monitoring_client = Mock()
+        monitoring_client.list_alarms.side_effect = oci.exceptions.ServiceError(
+            403, "NotAuthorized", {}, "Access denied to alarms"
+        )
+        monkeypatch.setattr(server, "get_monitoring_client", lambda: monitoring_client)
+
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="NotAuthorized"):
+                await client.call_tool("list_alarms", {"compartment_id": "compartment"})
+
     @pytest.mark.asyncio
     @patch("oracle.oci_monitoring_mcp_server.server.get_monitoring_client")
     async def test_get_metrics_data(self, mock_get_client):
@@ -238,10 +262,7 @@ class TestInternals:
 
 
 class TestServer:
-    @patch("oracle.oci_monitoring_mcp_server.server.oci.auth.signers.TokenExchangeSigner", return_value="signer")
-    @patch("oracle.oci_monitoring_mcp_server.server.get_access_token")
-    def test_http_signer_uses_region_without_loading_config(self, mock_get_access_token, mock_signer, monkeypatch):
-        mock_get_access_token.return_value = AccessToken(token="token", client_id="client", scopes=[], claims={})
+    def test_http_client_uses_the_current_caller_and_user_agent(self, monkeypatch):
         monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
         monkeypatch.setenv("IDCS_DOMAIN", "idcs.example.com")
@@ -249,11 +270,30 @@ class TestServer:
         monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
         monkeypatch.setenv("OCI_REGION", "us-phoenix-1")
 
-        config, signer = server._get_http_config_and_signer()
+        monkeypatch.setattr(oci.config, "from_file", Mock(side_effect=AssertionError))
+        signer = Mock(side_effect=lambda token, *args, **kwargs: token)
+        monkeypatch.setattr(oci.auth.signers, "TokenExchangeSigner", signer)
+        sdk_client = Mock(side_effect=lambda config, **kwargs: object())
+        monkeypatch.setattr(oci.monitoring, "MonitoringClient", sdk_client)
+        callers = ("caller-a", "caller-b", "caller-a")
+        access_tokens = [
+            AccessToken(token=token, client_id="synthetic", scopes=[], claims={})
+            for token in callers
+        ]
+        monkeypatch.setattr(server, "get_access_token", Mock(side_effect=access_tokens))
 
-        assert config["region"] == "us-phoenix-1"
-        assert signer == "signer"
-        mock_signer.assert_called_once()
+        clients = [server.get_monitoring_client() for _ in callers]
+
+        assert len(set(clients)) == len(callers)
+        assert [call.args[0] for call in signer.call_args_list] == list(callers)
+        assert [call.kwargs["signer"] for call in sdk_client.call_args_list] == list(callers)
+        assert all(
+            call.args[0] == {
+                "region": "us-phoenix-1",
+                "additional_user_agent": f"oci-monitoring-mcp/{server.__version__}",
+            }
+            for call in sdk_client.call_args_list
+        )
 
     @patch("oracle.oci_monitoring_mcp_server.server.get_access_token", return_value=None)
     def test_http_signer_requires_authenticated_token(self, _mock_get_access_token, monkeypatch):

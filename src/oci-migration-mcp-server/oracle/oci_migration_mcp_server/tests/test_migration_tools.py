@@ -18,6 +18,15 @@ from oracle.oci_migration_mcp_server.server import mcp
 class TestMigrationTools:
     @pytest.mark.asyncio
     @patch("oracle.oci_migration_mcp_server.server.get_migration_client")
+    async def test_get_migration_requires_id_before_client_creation(self, mock_get_client):
+        async with Client(mcp) as client:
+            with pytest.raises(ToolError, match="migration_id"):
+                await client.call_tool("get_migration", {})
+
+        mock_get_client.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_migration_mcp_server.server.get_migration_client")
     async def test_get_migration(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -107,8 +116,11 @@ class TestServer:
         with pytest.raises(RuntimeError, match="OCI_REGION"):
             server._get_http_config_and_signer()
 
+    @patch("oracle.oci_migration_mcp_server.server.oci.cloud_migrations.MigrationClient")
     @patch("oracle.oci_migration_mcp_server.server.oci.auth.signers.TokenExchangeSigner")
-    def test_http_signer_returns_config_and_token_exchange_signer(self, mock_signer, monkeypatch):
+    def test_http_client_uses_request_signer_and_user_agent(
+        self, mock_signer, mock_client, monkeypatch
+    ):
         monkeypatch.setattr(server, "get_access_token", lambda: MagicMock(token="token"))
         monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
@@ -117,9 +129,10 @@ class TestServer:
         monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
         monkeypatch.setenv("OCI_REGION", "us-phoenix-1")
 
-        config, signer = server._get_http_config_and_signer()
+        result = server.get_migration_client()
 
-        assert config == {
+        mock_client.assert_called_once()
+        assert mock_client.call_args.args[0] == {
             "region": "us-phoenix-1",
             "additional_user_agent": f"oci-migration-mcp/{server.__version__}",
         }
@@ -130,12 +143,14 @@ class TestServer:
             "client-secret",
             region="us-phoenix-1",
         )
-        assert signer is mock_signer.return_value
+        assert mock_client.call_args.kwargs["signer"] is mock_signer.return_value
+        assert result is mock_client.return_value
 
     @patch("oracle.oci_migration_mcp_server.server.OCIProvider")
     @patch("oracle.oci_migration_mcp_server.server.mcp.run")
     @patch("os.getenv")
-    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run, mock_provider):
+    def test_main_with_host_and_port(self, mock_getenv, mock_mcp_run, mock_provider, monkeypatch):
+        monkeypatch.setattr(server.mcp, "auth", None)
         mock_env = {
             "ORACLE_MCP_HOST": "1.2.3.4",
             "ORACLE_MCP_PORT": "8888",
@@ -328,10 +343,12 @@ async def test_list_migrations_includes_lifecycle_state_filter(mock_get_client):
 async def test_get_migration_exception_propagates(mock_get_client):
     mock_client = MagicMock()
     mock_get_client.return_value = mock_client
-    mock_client.get_migration.side_effect = RuntimeError("boom")
+    mock_client.get_migration.side_effect = oci.exceptions.ServiceError(
+        404, "NotAuthorizedOrNotFound", {}, "Migration unavailable"
+    )
 
     async with Client(mcp) as client:
-        with pytest.raises(ToolError):
+        with pytest.raises(ToolError, match="NotAuthorizedOrNotFound"):
             await client.call_tool("get_migration", {"migration_id": "ocid1.mig"})
 
 
@@ -348,26 +365,6 @@ async def test_list_migrations_exception_propagates(mock_get_client):
 
 
 class TestGetClient:
-    @patch("oracle.oci_migration_mcp_server.server.oci.cloud_migrations.MigrationClient")
-    @patch("oracle.oci_migration_mcp_server.server._get_oci_client_kwargs")
-    @patch("oracle.oci_migration_mcp_server.server._get_http_config_and_signer")
-    def test_get_migration_client_with_http_signer(
-        self,
-        mock_http_config,
-        mock_client_kwargs,
-        mock_client,
-    ):
-        config = {"region": "us-phoenix-1"}
-        signer = object()
-        mock_http_config.return_value = config, signer
-        mock_client_kwargs.return_value = {"signer": signer}
-
-        result = server.get_migration_client()
-
-        mock_client_kwargs.assert_called_once_with(signer)
-        mock_client.assert_called_once_with(config, signer=signer)
-        assert result is mock_client.return_value
-
     @patch("oracle.oci_migration_mcp_server.server.oci.cloud_migrations.MigrationClient")
     @patch("oracle.oci_migration_mcp_server.server.oci.auth.signers.SecurityTokenSigner")
     @patch("oracle.oci_migration_mcp_server.server.oci.signer.load_private_key_from_file")
@@ -413,10 +410,7 @@ class TestGetClient:
         args, _ = mock_client.call_args
         passed_config = args[0]
         assert passed_config is config
-        expected_user_agent = (
-            f"{server.__project__.split('oracle.', 1)[1].split('-server', 1)[0]}/{server.__version__}"  # noqa
-        )
-        assert passed_config.get("additional_user_agent") == expected_user_agent
+        assert passed_config["additional_user_agent"] == f"oci-migration-mcp/{server.__version__}"
         # And we returned the client instance
         assert result == mock_client.return_value
 
@@ -463,7 +457,6 @@ class TestGetClient:
         # additional_user_agent set on original config and passed through
         cc_args, _ = mock_client.call_args
         assert cc_args[0] is config
-        assert "additional_user_agent" in config
-        assert isinstance(config["additional_user_agent"], str) and "/" in config["additional_user_agent"]
+        assert config["additional_user_agent"] == f"oci-migration-mcp/{server.__version__}"
         # Returned object is client instance
         assert srv_client is mock_client.return_value

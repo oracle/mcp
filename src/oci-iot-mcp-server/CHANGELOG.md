@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- Updated the MCP server to FastMCP 4.2.2. The IoT Data API still uses its own HTTP client.
+- Updated locked `dnspython` to 2.9.2.
+
 ## 1.0.3
 
 ### Security

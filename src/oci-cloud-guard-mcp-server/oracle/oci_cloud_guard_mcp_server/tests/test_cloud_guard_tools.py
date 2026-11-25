@@ -12,6 +12,7 @@ import oracle.oci_cloud_guard_mcp_server.server as server
 import pytest
 from fastmcp.server.dependencies import AccessToken
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
 
 class TestResourceSearchTools:
@@ -104,6 +105,17 @@ class TestResourceSearchTools:
 
     @pytest.mark.asyncio
     @patch("oracle.oci_cloud_guard_mcp_server.server.get_cloud_guard_client")
+    async def test_get_problem_details_propagates_service_error(self, mock_get_client):
+        mock_get_client.return_value.get_problem.side_effect = oci.exceptions.ServiceError(
+            503, "ServiceUnavailable", {}, "Cloud Guard temporarily unavailable"
+        )
+
+        async with Client(server.mcp) as client:
+            with pytest.raises(ToolError, match="Cloud Guard temporarily unavailable"):
+                await client.call_tool("get_problem_details", {"problem_id": "ocid.resource1"})
+
+    @pytest.mark.asyncio
+    @patch("oracle.oci_cloud_guard_mcp_server.server.get_cloud_guard_client")
     async def test_update_problem_status(self, mock_get_client):
         problem_id = "ocid.resource1"
         status = "OPEN"
@@ -137,9 +149,13 @@ class TestResourceSearchTools:
 
 
 class TestServer:
+    @patch("oracle.oci_cloud_guard_mcp_server.server.CloudGuardClient")
+    @patch("oracle.oci_cloud_guard_mcp_server.server.oci.config.from_file", side_effect=AssertionError("local config used in HTTP mode"))
     @patch("oracle.oci_cloud_guard_mcp_server.server.oci.auth.signers.TokenExchangeSigner", return_value="signer")
     @patch("oracle.oci_cloud_guard_mcp_server.server.get_access_token")
-    def test_http_signer_uses_region_without_loading_config(self, mock_get_access_token, mock_signer, monkeypatch):
+    def test_http_client_uses_request_signer_without_loading_config(
+        self, mock_get_access_token, mock_signer, mock_config, mock_client, monkeypatch
+    ):
         mock_get_access_token.return_value = AccessToken(token="token", client_id="client", scopes=[], claims={})
         monkeypatch.setenv("ORACLE_MCP_HOST", "127.0.0.1")
         monkeypatch.setenv("ORACLE_MCP_PORT", "8888")
@@ -148,11 +164,19 @@ class TestServer:
         monkeypatch.setenv("IDCS_CLIENT_SECRET", "client-secret")
         monkeypatch.setenv("OCI_REGION", "us-phoenix-1")
 
-        config, signer = server._get_http_config_and_signer()
+        result = server.get_cloud_guard_client()
 
-        assert config["region"] == "us-phoenix-1"
-        assert signer == "signer"
-        mock_signer.assert_called_once()
+        mock_config.assert_not_called()
+        mock_signer.assert_called_once_with(
+            "token", "https://idcs.example.com", "client-id", "client-secret", region="us-phoenix-1"
+        )
+        mock_client.assert_called_once()
+        assert mock_client.call_args.args[0] == {
+            "region": "us-phoenix-1",
+            "additional_user_agent": f"oci-cloud-guard-mcp/{server.__version__}",
+        }
+        assert mock_client.call_args.kwargs["signer"] == "signer"
+        assert result is mock_client.return_value
 
     @patch("oracle.oci_cloud_guard_mcp_server.server.get_access_token", return_value=None)
     def test_http_signer_requires_authenticated_token(self, _mock_get_access_token, monkeypatch):

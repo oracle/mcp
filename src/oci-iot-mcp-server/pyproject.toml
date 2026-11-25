@@ -1,6 +1,6 @@
 [project]
 name = "oracle.oci-iot-mcp-server"
-version = "1.0.2"
+version = "1.0.3"
 description = "OCI IoT Platform MCP server"
 readme = "README.md"
 requires-python = ">=3.13"

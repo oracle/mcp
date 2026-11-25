@@ -53,7 +53,7 @@ The Know / Do / Now / Proof / Done labels describe a source's purpose; see the [
 | **Now:** Reviewing this context adoption | [Design and scope](docs/plans/adopt-monorepo-agent-context/design.md), [plan](docs/plans/adopt-monorepo-agent-context/implementation-plan.md) | [Main-based reuse assessment](docs/plans/adopt-monorepo-agent-context/reuse-assessment.md) | [Adoption summary](docs/plans/adopt-monorepo-agent-context/adoption-summary.md) |
 | **Proof:** Checking coverage or a completion claim | [Evidence routes](docs/agent-development.md#evidence-and-context-routes) | Source/guidance identity and actual check scope | [Recorded adoption checks and limits](docs/plans/adopt-monorepo-agent-context/adoption-summary.md) or the owning change's native reports |
 
-Broad engineering guides now cover all 34 MCP server components under `src/`, including the Java toolkit, plus Common. Find each local guide and native entry point in the [shared context map](docs/agent-development.md#selected-component-context). Documentation coverage and recorded behavior-evaluation coverage are separate; see the [adoption summary](docs/plans/adopt-monorepo-agent-context/adoption-summary.md).
+Broad engineering guides now cover all 35 MCP server components under `src/`, including the Java toolkit, plus Common. Find each local guide and native entry point in the [shared context map](docs/agent-development.md#selected-component-context). Documentation coverage and recorded behavior-evaluation coverage are separate; see the [adoption summary](docs/plans/adopt-monorepo-agent-context/adoption-summary.md).
 
 ## Known Gaps
 
@@ -62,7 +62,7 @@ The [gap register](docs/agent-development.md#known-gaps) and local guides record
 ## Validation
 
 - For Moon-managed Python MCP servers, run `moon run <server-name>:test` to test one server, for example `moon run oci-compute-mcp-server:test`.
-- The Python servers excluded from Moon are `dbtools-mcp-server`, `mysql-mcp-server`, `oci-pricing-mcp-server`, `oracle-db-doc-mcp-server`, and `oracle-db-mcp-java-toolkit`. Follow each excluded server's `README.md` for validation and report a gap if it does not document validation commands.
+- The Python servers excluded from Moon are `dbtools-mcp-server`, `mysql-mcp-server`, `oracle-db-doc-mcp-server`, and `oracle-db-mcp-java-toolkit`. Follow each excluded server's `README.md` for validation and report a gap if it does not document validation commands.
 - Run `moon run root:lint` after Python source changes.
 - Run `moon run :test` and `moon run root:combine-coverage` when a change affects shared behavior across multiple Moon-managed Python servers.
 - For non-Python servers, read the server's `README.md` and run its documented test command.

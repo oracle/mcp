@@ -4,13 +4,13 @@
 
 Feature: OCI Compute Instance Agent MCP Server
   Scenario: List instance agent command executions for an instance
-    Given the MCP server is running with OCI tools
-    And the ollama model with the tools is properly working
+    Given the mock OCI services are running
+    And the Codex CLI is configured with OCI tools
     When I send a request with the prompt "list my instances, then list the instance agent command executions on the first instance in the list and limit to 2"
     Then the response should contain a list of instance agent command executions
 
   Scenario: Run an instance agent command and get execution details
-    Given the MCP server is running with OCI tools
-    And the ollama model with the tools is properly working
+    Given the mock OCI services are running
+    And the Codex CLI is configured with OCI tools
     When I send a request with the prompt "list my instances, then run an instance agent command 'echo Hello from agent' on the first instance in the list"
     Then the response should contain instance agent command execution details

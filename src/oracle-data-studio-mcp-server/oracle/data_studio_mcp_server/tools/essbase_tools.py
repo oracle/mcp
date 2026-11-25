@@ -11,20 +11,21 @@ operation that returns an LLM-friendly result.  See TOOLS_DESIGN.md.
 import json
 import logging
 
-from mcp.server.fastmcp import FastMCP, Context
+from fastmcp import FastMCP, Context
 
 from ._essbase_connect import get_essbase
-from ._helpers import safe_call, build_response, err, fmt
+from ._helpers import safe_call, build_response, err, fmt, tool_registrar
 
 logger = logging.getLogger('oracle-data-studio-mcp')
 
 _NO = 'Essbase not connected. Set ESSBASE_URL + credentials.'
 
 
-def register_tools(mcp: FastMCP):
+def register_tools(mcp: FastMCP, *, profile: str = 'admin'):
+    tool = tool_registrar(mcp, profile)
 
     # ── 1. essbase_explore ────────────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_explore(ctx: Context) -> str:
         """Get a full overview of the Essbase server: applications, their databases, status, sizes, and settings.
 
@@ -73,7 +74,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 2. essbase_describe_database ──────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_describe_database(app_name: str, db_name: str,
                                   ctx: Context) -> str:
         """Get a complete database profile: dimensions with member counts, storage type (BSO/ASO), settings, statistics, and substitution variables.
@@ -142,7 +143,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 3. essbase_query ──────────────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_query(app_name: str, db_name: str, mdx: str,
                       max_rows: int = 1000,
                       ctx: Context = None) -> str:
@@ -172,7 +173,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 4. essbase_browse_outline ─────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_browse_outline(app_name: str, db_name: str,
                                 parent: str | None = None, depth: int = 2,
                                 ctx: Context = None) -> str:
@@ -218,7 +219,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 5. essbase_search_members ─────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_search_members(app_name: str, db_name: str,
                                 pattern: str, ctx: Context) -> str:
         """Search for members in the cube outline and return matches with their properties and ancestors.
@@ -256,7 +257,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 6. essbase_run_calculation ────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_run_calculation(app_name: str, db_name: str,
                                  script_name: str | None = None,
                                  calc_script: str | None = None,
@@ -310,7 +311,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 7. essbase_load_data ──────────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_load_data(app_name: str, db_name: str,
                            rule_file: str | None = None,
                            data_file: str | None = None,
@@ -348,7 +349,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 8. essbase_deploy_workbook ────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_deploy_workbook(app_name: str, file_path: str,
                                  ctx: Context) -> str:
         """Import an Excel workbook to create or update an Essbase cube.
@@ -388,7 +389,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 9. essbase_manage_variables ───────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_manage_variables(action: str, scope: str,
                                   app_name: str | None = None,
                                   db_name: str | None = None,
@@ -475,7 +476,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 10. essbase_get_script ────────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_get_script(app_name: str, db_name: str,
                             script_name: str, ctx: Context) -> str:
         """Get a script's content along with its validation status.
@@ -514,7 +515,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 11. essbase_manage_security ───────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_manage_security(username: str | None = None,
                                  group_name: str | None = None,
                                  ctx: Context = None) -> str:
@@ -579,7 +580,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 12. essbase_server_health ─────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_server_health(ctx: Context) -> str:
         """Quick Essbase server health check: version, instance config, active sessions, locked objects.
         """
@@ -618,7 +619,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 13. essbase_export_data ───────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_export_data(app_name: str, db_name: str,
                              mdx: str | None = None,
                              report_name: str | None = None,
@@ -657,7 +658,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 14. essbase_manage_application ─────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_manage_application(action: str, app_name: str,
                                     db_name: str | None = None,
                                     db_type: str = 'BSO',
@@ -732,7 +733,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 15. essbase_manage_script ──────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_manage_script(action: str, app_name: str,
                                db_name: str,
                                script_name: str,
@@ -826,7 +827,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 16. essbase_manage_files ───────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_manage_files(action: str, path: str | None = None,
                               target_path: str | None = None,
                               content: str | None = None,
@@ -916,7 +917,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 17. essbase_manage_connections ──────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_manage_connections(action: str,
                                     connection_name: str | None = None,
                                     host: str | None = None,
@@ -1028,7 +1029,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 18. essbase_manage_locks ───────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_manage_locks(app_name: str, db_name: str,
                               action: str = 'list',
                               object_name: str | None = None,
@@ -1091,7 +1092,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 19. essbase_manage_filters ─────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_manage_filters(action: str, app_name: str,
                                 db_name: str,
                                 filter_name: str | None = None,
@@ -1260,7 +1261,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 20. essbase_manage_jobs ────────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_manage_jobs(action: str = 'list',
                              job_id: int | None = None,
                              limit: int = 50,
@@ -1319,7 +1320,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── essbase_edit_outline ──────────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_edit_outline(app_name: str, db_name: str,
                               action: str,
                               member_name: str,
@@ -1449,7 +1450,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── essbase_manage_datasources ────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_manage_datasources(action: str,
                                     datasource_name: str | None = None,
                                     connection: str | None = None,
@@ -1530,7 +1531,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── essbase_manage_drill_through ──────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_manage_drill_through(action: str,
                                       app_name: str,
                                       db_name: str,
@@ -1635,7 +1636,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 24. essbase_manage_database ────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_manage_database(action: str, app_name: str,
                                  db_name: str,
                                  new_name: str | None = None,
@@ -1706,7 +1707,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 25. essbase_manage_users ───────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_manage_users(action: str,
                               user_id: str | None = None,
                               password: str | None = None,
@@ -1826,7 +1827,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 26. essbase_manage_groups ──────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_manage_groups(action: str,
                                group_id: str | None = None,
                                user_ids: str | None = None,
@@ -1953,7 +1954,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 27. essbase_manage_sessions ────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_manage_sessions(action: str = 'list',
                                   session_id: str | None = None,
                                   confirm: str | None = None,
@@ -2007,7 +2008,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 28. essbase_manage_db_settings ─────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_manage_db_settings(app_name: str, db_name: str,
                                      category: str = 'all',
                                      settings_json: str | None = None,
@@ -2127,7 +2128,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 29. essbase_get_logs ───────────────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_get_logs(app_name: str,
                           latest_only: bool = True,
                           ctx: Context = None) -> str:
@@ -2157,7 +2158,7 @@ def register_tools(mcp: FastMCP):
             return err(str(exc))
 
     # ── 30. essbase_outline_metadata ──────────────────────────────────
-    @mcp.tool()
+    @tool
     def essbase_outline_metadata(app_name: str, db_name: str,
                                    category: str = 'all',
                                    dimension_name: str | None = None,

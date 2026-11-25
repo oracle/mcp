@@ -390,6 +390,81 @@ For Windows - **TODO**
 
 </details>
 
+### Muse Code
+
+<details>
+<summary>Setup</summary>
+
+Before continuing, make sure you have already followed the steps above in the [Quick start](#quick-start) section.
+
+[Muse Code](https://dev.meta.ai/docs/muse-code) is Meta's coding agent for the terminal and CI. It keeps MCP servers in `~/.config/muse/settings.json` and ships a `muse mcp` command that writes the entries for you. Verified with Muse Code 1.4.23.
+
+1. Install Muse Code and confirm it is on your `PATH`:
+
+```sh
+curl -fsSL https://dev.meta.ai/install.sh | bash
+muse --version
+```
+
+2. Register the server. `<profile_name>` is the profile that you set up during the [authentication](#authentication) steps.
+
+For macOS/Linux, over stdio with `uvx`:
+```sh
+muse mcp add oracle-oci-cloud-mcp-server --user \
+  -e OCI_CONFIG_PROFILE=<profile_name> -e FASTMCP_LOG_LEVEL=ERROR \
+  -- uvx oracle.oci-cloud-mcp-server@latest
+```
+
+This writes the following to `~/.config/muse/settings.json`; you can also paste it by hand (the file must carry `"schema_version": 1`):
+```json
+{
+  "schema_version": 1,
+  "mcpServers": {
+    "oracle-oci-cloud-mcp-server": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "oracle.oci-cloud-mcp-server@latest"
+      ],
+      "env": {
+        "OCI_CONFIG_PROFILE": "<profile_name>",
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
+    }
+  }
+}
+```
+
+Alternatively, to run using podman:
+
+```sh
+muse mcp add oracle-oci-cloud-mcp-server --user -e FASTMCP_LOG_LEVEL=INFO \
+  -- podman run -i --rm -v /path/to/your/.oci:/app/.oci oracle.oci-cloud-mcp-server:latest
+```
+
+Replace `/path/to/your/.oci` with the actual path to your OCI configuration directory. For servers not requiring OCI credentials, omit the `-v` volume mount.
+
+To connect to an OCI MCP server running in HTTP streaming mode (started as shown in the [Quick start](#quick-start)):
+
+```sh
+muse mcp add oracle-oci-cloud-mcp-server --user --url http://127.0.0.1:8888/mcp
+muse mcp login oracle-oci-cloud-mcp-server
+```
+
+The first command stores `{"type": "streamable-http", "url": "http://127.0.0.1:8888/mcp"}`; the second completes the OAuth flow against the OCI IAM confidential application you registered for the server. Use `--project` instead of `--user` to keep the entry in the current repository's settings.
+
+3. Check the entry with `muse mcp list` (or `muse mcp get oracle-oci-cloud-mcp-server --json`), then start Muse Code in a trusted workspace and run `/mcp` to confirm the server is connected and its tools are listed. Muse Code starts MCP servers at session start even with its credential-free `--provider echo`, so `muse exec --provider echo --trust-workspace "ping"` is enough to confirm the wiring before you log in; the session trace under the Muse data directory (`local-tracing/bootstrap/`) records `mcp.handshake` and `mcp.capability.discovery ... tool_count=5` for this server. The tools appear to the model as `mcp__oracle_oci_cloud_mcp_server__<tool>` (for example `mcp__oracle_oci_cloud_mcp_server__invoke_oci_api`), which is the name to use in a `run.toolset` selection.
+
+Notes:
+
+- Muse Code also accepts the snake_case spelling from Meta's docs (`mcp_servers`, `transport`, `streamable_http`); `muse mcp add` writes the camelCase form shown above, which matches the other clients in this README except for the `streamable-http` type value.
+- Servers are optional by default: an unavailable server is skipped with a warning. Add `"mode": "required"` to the entry if the run should abort instead.
+- First start of the `uvx` form takes ~15 s while `uvx` resolves the package; later starts are fast.
+- Unknown fields such as Cline's `autoApprove` are ignored with a startup warning rather than rejected.
+- Muse Code does not sandbox MCP tools. Only connect servers you trust, and prefer a least-privilege OCI profile as described under [Authentication](#authentication).
+
+</details>
+
 ## Local development
 
 On macOS, install proto with [Homebrew](https://formulae.brew.sh/formula/proto)
@@ -488,6 +563,26 @@ ORACLE_MCP_HOST=127.0.0.1 ORACLE_MCP_PORT=8888 \
   uv --directory src/oci-api-mcp-server run --locked oracle.oci-api-mcp-server
 ```
 
+### Testing Local Common Changes
+
+Common consumers use published `oracle-mcp-common` releases within their own
+manifest bounds for normal development and CI. Editing `src/common` does not
+replace those installed dependencies.
+
+To validate a consumer against a local Common checkout, run the opt-in
+[wheel integration check](src/common/README.md#testing-common-with-a-consumer):
+
+```bash
+python3 scripts/check-common-consumer.py oci-cloud-mcp-server
+```
+
+The checker builds and installs both wheels in a disposable environment and
+runs the consumer's tests. Dependency bounds still apply: Common 0.3.0 is
+expected to fail resolution with consumers that require Common 0.2.x. Use a
+compatible Common checkout or explicitly migrate the consumer first. The
+[Common development guide](src/common/README.md#development) also describes
+quick editable testing and its evidence limits.
+
 ### Inspector
 
 The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction)
@@ -569,9 +664,12 @@ Use the manually dispatched [Publish package](.github/workflows/publish.yml)
 workflow from `main`. Select `pypi` or `testpypi` with a Python Moon project ID
 or `all-python` to release every Moon-managed Python package. Select `npm` with
 `oci-javascript-mcp-server` for the JavaScript package. Moon runs checks and
-build before the workflow passes the distributions to its publish job. Releasing
-a Python server publishes `oracle-mcp-common` first and waits for it to appear
-on the selected index. Ordinary CI never invokes the publish tasks.
+build before the workflow passes the distributions to its publish job. An
+individual release publishes only the selected package; choose `common` to
+publish Common explicitly. Publish a required Common release before adopting
+consumer releases. Bulk `all-python` releases publish Common first and wait for
+index visibility before publishing the servers. Ordinary CI never invokes the
+publish tasks.
 
 Configure the `pypi`, `testpypi`, and `npm` GitHub environments with release
 approval rules and their respective `PYPI_TOKEN`, `TEST_PYPI_TOKEN`, and

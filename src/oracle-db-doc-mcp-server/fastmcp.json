@@ -1,11 +1,9 @@
 {
-  "entrypoint": "oracle-db-doc-mcp-server.py",
+  "source": {
+    "path": "oracle-db-doc-mcp-server.py",
+    "entrypoint": "load_server"
+  },
   "environment": {
-    "dependencies": [
-        "beautifulsoup4 >= 4.9.0",
-        "markdownify >= 1.2.0",
-        "fastmcp == 3.4.2",
-        "pocketsearch >= 0.40.0"
-    ]
+    "project": "."
   }
 }

@@ -11,16 +11,22 @@ server-agnostic approach and expose a focused, documented public API.
 ## Package requirements
 
 - Python 3.13 or later
-- OCI Python SDK 2.179.0 or later
-- FastMCP 3.4.5 or later in the 3.x series for the optional HTTP IDCS authentication API
+- OCI Python SDK 2.185.0 or later
+- FastMCP 4.0.0 or later in the 4.x series for the optional HTTP IDCS authentication API
 
 An adopting server normally declares a bounded dependency on this package:
 
 ```toml
 dependencies = [
-  "oracle-mcp-common>=0.1.0,<0.2.0",
+  "oracle-mcp-common>=0.3.0,<0.4.0",
 ]
 ```
+
+Common 0.3.0 requires FastMCP 4.x. Each consumer resolves its published Common
+release within its own manifest bounds and lock. Adopting 0.3.0 requires an
+explicit Common/FastMCP dependency update and validation; see the
+[delivery record](../../docs/plans/fastmcp-v4-common/implementation.md).
+Publish Common 0.3.0 before releasing consumers that require it.
 
 ## Authentication module
 
@@ -74,6 +80,7 @@ Set `OCI_MCP_AUTH_TYPE`, or pass `AuthOptions(auth_type=...)` to
 | `identity_domain_upst` | Identity Domains JWT-to-UPST token exchange | Uses file-backed JWT and client-secret inputs. See [Identity Domains token exchange](#identity-domains-token-exchange). |
 | `instance_principal` | OCI instance principal | Intended for OCI compute instances. |
 | `resource_principal` | OCI resource principal | Intended for supported OCI managed-resource environments. |
+| `resource_principal_v212` | Database-service resource-principal exchange | Builds the v2.1.2 RPT security context and uses the OCI SDK's refreshing RPST exchange signer. See [Database-service RPv2.1.2 exchange](#database-service-rpv212-exchange). |
 | `instance_principal_delegation` | Instance principal and delegation token | Requires a delegation-token file. |
 | `resource_principal_delegation` | Resource principal and delegation token | Requires a delegation-token file. |
 | `oke_workload_identity` | OKE workload identity | Uses the OCI SDK's default service-account token unless an override is supplied. |
@@ -81,6 +88,25 @@ Set `OCI_MCP_AUTH_TYPE`, or pass `AuthOptions(auth_type=...)` to
 `auto` intentionally does not probe instance, resource, delegation, or OKE
 principal environments. Select those types explicitly so a deployment's OCI
 identity remains predictable.
+
+### Database-service RPv2.1.2 exchange
+
+`resource_principal_v212` supports the Resource Principal Session token bootstrap flow.
+It requires a region and these file-safe configuration values:
+
+| Setting | `AuthOptions` field | Environment variable |
+| --- | --- | --- |
+| Tenancy OCID | `resource_principal_tenancy_id` | `OCI_MCP_RP_TENANCY_ID` |
+| Resource OCID | `resource_principal_resource_id` | `OCI_MCP_RP_RESOURCE_ID` |
+| Resource private-key file | `resource_principal_private_key_path` | `OCI_MCP_RP_PRIVATE_KEY_PATH` |
+| Resource context HMAC key (sensitive) | `resource_principal_rci` | `OCI_MCP_RP_RCI` |
+| Context base time | `resource_principal_t0` | `OCI_MCP_RP_T0` |
+
+RCI is sensitive HMAC key material: do not log it or place it in source control.
+The RPT and RPST endpoints are resolved by the OCI SDK as realm-aware `database`
+and `auth` endpoints (for example, the displayed domain is `.oraclecloud.com` in
+OC1); override them only with
+`OCI_MCP_RP_RPT_ENDPOINT` and `OCI_MCP_RP_RPST_ENDPOINT` when required.
 
 ### Configuration precedence
 
@@ -285,3 +311,65 @@ Run the repository Python lint check after source changes:
 ```bash
 moon run root:lint
 ```
+
+To build Common and clean-install its wheel in disposable environments for exact
+FastMCP 4.0.0 and 4.1.6, each with OCI SDK 2.185.0 and the current resolvable
+OCI SDK, run from the repository root:
+
+```bash
+moon run common:compatibility-test
+```
+
+This explicit task runs `scripts/check-common-fastmcp.sh` without Moon caching,
+because the current resolvable OCI SDK can change without a source change. It
+stays separate from the standard locked `common:test` task and ordinary CI.
+It runs the complete suite with branch coverage and the 90% threshold in each
+environment, checks installed dependencies and wheel metadata, and prints the
+resolved FastMCP, MCP SDK and OCI SDK versions. It uses the manifest's dev
+dependency group without workspace source overrides. Environments, copied tests
+and build/coverage outputs are removed on exit; manifests and locks are unchanged.
+The shipped range stays `>=4.0.0,<5.0.0`. These endpoint checks do not guarantee
+compatibility with every future 4.x release or validate live OCI authentication.
+
+### Testing Common with a consumer
+
+Ordinary consumer development and CI install the published Common release
+selected by each consumer's manifest and lock. Local Common integration is
+explicit and does not change those files or the consumer's normal environment.
+From the repository root, run:
+
+```bash
+python3 scripts/check-common-consumer.py oci-cloud-mcp-server
+```
+
+The checker supports the six declared Common consumers. It builds Common and
+the consumer as wheels, installs them together through uv's resolver, checks
+installed dependencies and package locations, and runs the original consumer
+suite against the installed artifacts with branch coverage and its native
+coverage threshold. Builds, environment and coverage are temporary. Recovery
+log/state paths are redirected into that temporary directory. The helper is
+not a filesystem sandbox: API and Cloud retain their existing audit logging to
+`/tmp/audit.log`. Their runtime logging behavior is unchanged.
+The helper's own tests run in CI through `moon run root:test`.
+
+Both wheels must satisfy the selected consumer's declared dependency bounds. A
+consumer that still requires Common `>=0.2.0,<0.3.0` rejects this checkout's
+Common 0.3.0; a migrated consumer can accept it. To test changes on a compatible
+Common release line, point to a separate checkout:
+
+```bash
+python3 scripts/check-common-consumer.py oci-cloud-mcp-server \
+  --common-source ../compatible-checkout/src/common
+```
+
+For a quick editable experiment, run from a consumer directory:
+
+```bash
+uv run --locked --with-editable ../common pytest
+```
+
+uv layers the editable package over the normal project environment. Overlays
+can conflict with declared project dependencies, so this command is useful for
+exploration and does not prove release compatibility. Use the wheel checker for
+that validation. A permanent editable path source would retain the coupling
+that this explicit workflow removes.

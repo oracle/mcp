@@ -22,8 +22,10 @@ import argparse
 import hashlib
 import logging
 import re
+import sqlite3
 import tempfile
 import zipfile
+from contextlib import closing
 from pathlib import Path, PurePath
 
 import markdownify as md
@@ -37,7 +39,6 @@ from typing import Annotated
 HOME_DIR = Path.home().joinpath(PurePath(".oracle/oracle-db-doc-mcp-server"))
 
 # Index
-INDEX = None
 INDEX_FILE = HOME_DIR.joinpath(PurePath("index.db"))
 INDEX_VERSION = "1.0.0"
 INDEX_VERSION_FILE = HOME_DIR.joinpath(PurePath("index.version"))
@@ -49,6 +50,15 @@ RESOURCES_DIR = HOME_DIR.joinpath(PurePath("resources"))
 PREPROCESS = "BASIC"
 
 logger = logging.getLogger(__name__)
+
+
+def load_server() -> FastMCP:
+    """Load the server for both the script and FastMCP's JSON launcher."""
+    if not INDEX_FILE.exists():
+        raise FileNotFoundError(
+            "Index does not exist. Please create the index first via the 'idx' subcommand."
+        )
+    return mcp
 
 
 mcp = FastMCP(
@@ -128,13 +138,15 @@ def search_index(query_str: str, limit: int = 4) -> list[str]:
     Returns a list of content.
     """
     results = []
-    hits = INDEX.search(text=query_str)
-    finds = 0
-    for hit in hits:
-        results.append(hit.text)
-        finds += 1
-        if finds >= limit:
-            break
+    # Open the reader on the FastMCP worker thread. A read-only connection
+    # cannot create an empty database if the index is being rebuilt.
+    with closing(sqlite3.connect(f"{INDEX_FILE.as_uri()}?mode=ro", uri=True)) as connection:
+        connection.row_factory = sqlite3.Row
+        index = PocketSearch(db_name=INDEX_FILE, connection=connection)
+        for hit in index.search(text=query_str):
+            results.append(hit.text)
+            if len(results) >= limit:
+                break
     return results
 
 
@@ -556,23 +568,17 @@ def main():
         maintain_content(args.path)
 
     if args.command == "mcp":
-
-        # If no index is present (not index was built), refuse to start the server.
-        if not INDEX_FILE.exists():
-            logger.error(
-                "Index does not exist. Please create the index first via the 'idx' subcommand."
-            )
+        try:
+            server = load_server()
+        except FileNotFoundError as exc:
+            logger.error("%s", exc)
             return
-
-        global INDEX
-        logger.debug("Opening index file.")
-        INDEX = PocketSearch(db_name=INDEX_FILE)
 
         logger.info("Serving MCP server for Oracle Database documentation.")
         if args.mode == "stdio":
-            mcp.run(transport="stdio", show_banner=False)
+            server.run(transport="stdio", show_banner=False)
         elif args.mode == "http":
-            mcp.run(transport="http", host=args.host, port=args.port, show_banner=False)
+            server.run(transport="http", host=args.host, port=args.port, show_banner=False)
 
 
 if __name__ == "__main__":

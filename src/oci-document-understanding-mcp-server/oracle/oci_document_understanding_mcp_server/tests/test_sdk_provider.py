@@ -5,6 +5,7 @@ https://oss.oracle.com/licenses/upl.
 """
 
 import sys
+from importlib.metadata import version as distribution_version
 from types import SimpleNamespace
 
 import oci as real_oci
@@ -153,7 +154,8 @@ def test_sdk_provider_uses_shared_auth_and_sets_user_agent_for_all_auth_contexts
 
     provider = OciSdkDocumentUnderstandingProvider(_config())
 
-    assert FakeClient.created[-1][0]["additional_user_agent"] == "oci-document-understanding-mcp/0.1.0"
+    expected_version = distribution_version("oracle.oci-document-understanding-mcp-server")
+    assert FakeClient.created[-1][0]["additional_user_agent"] == f"oci-document-understanding-mcp/{expected_version}"
     assert FakeClient.created[-1][0]["region"] == expected_region
     assert FakeClient.created[-1][1] is signer
     assert provider.client.client_kwargs["retry_strategy"] is not None

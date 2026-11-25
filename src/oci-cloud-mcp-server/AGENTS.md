@@ -9,11 +9,11 @@ This Python server discovers and invokes OCI SDK operations dynamically; it owns
 - [server.py](oracle/oci_cloud_mcp_server/server.py): SDK class/method validation, signatures, coercion helpers, operation execution and auth/transport wiring.
 - [Package metadata](oracle/oci_cloud_mcp_server/__init__.py): project/version used for user-agent derivation.
 - [Tests](oracle/oci_cloud_mcp_server/tests): concern-specific discovery, coercion, invocation, shaping, serialization and bootstrap definitions.
-- [Manifest](pyproject.toml): Common workspace dependency, package entry point and coverage configuration; [README](README.md): native usage.
+- [Manifest](pyproject.toml): published Common dependency, package entry point and coverage configuration; [README](README.md): native usage.
 
 ## Setup / build / run
 
-From the repository root, install pinned tools with `proto install`, then use `moon run oci-cloud-mcp-server:build` when checking packaging. Moon manages the locked environment; direct `uv sync --directory src/oci-cloud-mcp-server --locked --all-extras --dev` is also a native setup route. Preserve the Common workspace relationship. Use README for transport/auth setup; no live SDK invocation is needed for documentation validation. See the [validation map](../../docs/agent-development.md#validation-map).
+From the repository root, install pinned tools with `proto install`, then use `moon run oci-cloud-mcp-server:build` when checking packaging. Moon manages the locked environment; direct `uv sync --directory src/oci-cloud-mcp-server --locked --all-extras --dev` is also a native setup route. The default environment resolves published Common within the manifest bounds. Local source integration is opt-in; follow the [root development instructions](../../README.md). Use README for transport/auth setup; no live SDK invocation is needed for documentation validation. See the [validation map](../../docs/agent-development.md#validation-map).
 
 ## Tests and validation
 
@@ -48,6 +48,6 @@ Discovery, accepted parameters, coercion, response shaping, authentication and t
 | **Know:** Changing discovery or accepted arguments | [server.py](oracle/oci_cloud_mcp_server/server.py), native SDK signatures | Root quality guidance and existing class/method validation | [Discovery tests](oracle/oci_cloud_mcp_server/tests/test_discovery_and_shaping.py), [coercion tests](oracle/oci_cloud_mcp_server/tests/test_model_coercion.py) |
 | **Know:** Changing auth or client boundaries | [Server auth/client helpers](oracle/oci_cloud_mcp_server/server.py), [Common contract](../common/README.md) | [Common guide](../common/AGENTS.md), caller-specific HTTP context | [Bootstrap tests](oracle/oci_cloud_mcp_server/tests/test_bootstrap_and_introspection.py), owning auth tests |
 | **Know:** Changing operation results or traversal | Invocation/serialization helpers in [server.py](oracle/oci_cloud_mcp_server/server.py) | Dynamic operation signatures and shared quality/compatibility guidance | [Invocation tests](oracle/oci_cloud_mcp_server/tests/test_pagination_and_invocation.py), [serialization tests](oracle/oci_cloud_mcp_server/tests/test_models_and_serialization.py) |
-| **Do:** Preparing or validating a change | [Validation map](../../docs/agent-development.md#validation-map), [manifest](pyproject.toml) | Package environment, Common workspace and actual change scope | Current run reports; [evidence routes](../../docs/agent-development.md#evidence-and-context-routes) |
+| **Do:** Preparing or validating a change | [Validation map](../../docs/agent-development.md#validation-map), [manifest](pyproject.toml) | Package environment, published Common dependency and actual change scope | Current run reports; [evidence routes](../../docs/agent-development.md#evidence-and-context-routes) |
 
 Keep shared source reuse and local differences visible. The adoption's Now/Proof record is the [summary](../../docs/plans/adopt-monorepo-agent-context/adoption-summary.md); it does not certify runtime behavior or every dynamic SDK operation.

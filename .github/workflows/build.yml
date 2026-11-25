@@ -24,6 +24,13 @@ jobs:
       - name: Setup Moon
         uses: ./.github/actions/setup-moon
 
+      - name: Test Codex E2E runner offline
+        working-directory: tests
+        run: >-
+          "$(moon bin uv)" run --locked --python "$(moon bin python)"
+          pytest unit/test_codex_runner.py --cov=codex_runner --cov-branch
+          --cov-report=term-missing --cov-fail-under=90
+
       - name: Run Moon CI
         run: |
           moon ci --include-relations :lint :lock-check :install-check :test :check :build
@@ -41,3 +48,8 @@ jobs:
             src/*/htmlcov/**/*
             .coverage
           include-hidden-files: true
+
+      # MySQL has a native test command and is excluded from Moon's project graph.
+      - name: Test MySQL with enforced coverage
+        working-directory: src/mysql-mcp-server
+        run: '"$(moon bin uv)" run --locked --python "$(moon bin python)" pytest'

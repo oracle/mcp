@@ -9,8 +9,10 @@ Identify the actual import, direct manifest and resolved lock before choosing an
 | Selected scope at source baseline `6e6c3e5` | Import and resolved version | Owning sources |
 | --- | --- | --- |
 | Cloud | `from fastmcp import FastMCP`; standalone 3.4.5, underlying `mcp` 1.29.0 | [Server](../src/oci-cloud-mcp-server/oracle/oci_cloud_mcp_server/server.py), [manifest](../src/oci-cloud-mcp-server/pyproject.toml), [lock](../src/oci-cloud-mcp-server/uv.lock) |
-| Common | Standalone FastMCP auth integrations; manifest `>=3.4.5,<4.0.0`, lock 3.4.8 | [Auth](../src/common/oracle_mcp_common/auth.py), [manifest](../src/common/pyproject.toml), [lock](../src/common/uv.lock) |
+| Common | Standalone FastMCP auth integrations; current manifest `>=4.0.0,<5.0.0`, lock 4.1.6 | [Auth](../src/common/oracle_mcp_common/auth.py), [manifest](../src/common/pyproject.toml), [lock](../src/common/uv.lock) |
 | Data Studio | `from mcp.server.fastmcp import FastMCP`; SDK `mcp` 1.28.1. Its manifest also declares standalone 3.4.5 | [Server](../src/oracle-data-studio-mcp-server/oracle/data_studio_mcp_server/server.py), [manifest](../src/oracle-data-studio-mcp-server/pyproject.toml), [lock](../src/oracle-data-studio-mcp-server/uv.lock) |
+
+The Common row reflects the [FastMCP 4 change](plans/fastmcp-v4-common/implementation.md); other rows retain the stated baseline.
 
 Recheck these sources for later changes; neither dependency presence nor a common class name establishes runtime use. Do not change pins to make an example work.
 

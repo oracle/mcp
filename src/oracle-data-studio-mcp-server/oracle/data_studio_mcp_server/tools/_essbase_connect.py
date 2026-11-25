@@ -17,7 +17,7 @@ Usage in tool modules::
 '''
 
 import logging
-from mcp.server.fastmcp import Context
+from fastmcp import Context
 
 logger = logging.getLogger('oracle-data-studio-mcp')
 
@@ -28,5 +28,5 @@ _NO_CONN_MSG = ('Essbase not connected. '
 
 def get_essbase(ctx: Context):
     '''Return the Essbase client from the lifespan context, or None.'''
-    lc = ctx.request_context.lifespan_context
+    lc = ctx.lifespan_context
     return lc.get('essbase')

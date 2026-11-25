@@ -45,7 +45,7 @@ public class WellKnownServlet extends HttpServlet {
     }
 
     response.setContentType("application/json");
-    response.addHeader("Access-Control-Allow-Origin", WebUtils.getAllowedHosts());
+    response.addHeader("Access-Control-Allow-Origin", WebUtils.getAllowedOrigin());
     response.setStatus(HttpServletResponse.SC_OK);
 
     final String serverURL = WebUtils.buildURLFromRequest(request);

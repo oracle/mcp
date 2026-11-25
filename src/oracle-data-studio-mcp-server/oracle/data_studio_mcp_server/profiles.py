@@ -89,10 +89,6 @@ Upleveled tool naming conventions:
     dt_manage_variables       — modify: variable CRUD
 '''
 
-import logging
-
-logger = logging.getLogger('oracle-data-studio-mcp')
-
 # ------------------------------------------------------------------ #
 #  Profile definitions                                                #
 # ------------------------------------------------------------------ #
@@ -194,54 +190,18 @@ def _get_verb_suffix(tool_name: str) -> str:
 #  Public API                                                         #
 # ------------------------------------------------------------------ #
 
-def apply_profile(mcp_server, profile_name: str) -> None:
-    '''Remove tools that don't match the selected profile.
-
-    Must be called AFTER all register_tools() calls and BEFORE mcp.run().
-
-    Args:
-        mcp_server: The FastMCP server instance.
-        profile_name: One of 'viewer', 'analyst', 'admin'.
-    '''
-    if profile_name == 'admin':
-        total = len(mcp_server._tool_manager._tools)
-        logger.info('Profile %r: all %d tools available', profile_name, total)
-        return
-
-    profile = PROFILES.get(profile_name)
-    if profile is None:
+def allows_tool(profile_name: str, tool_name: str) -> bool:
+    '''Return whether the configured profile exposes this tool.'''
+    if profile_name not in PROFILES:
         raise ValueError(
             f'Unknown profile: {profile_name!r}. '
             f'Valid profiles: {", ".join(VALID_PROFILES)}')
 
-    allowed_verbs = profile['allowed_verbs']
-    explicit_allow = profile.get('explicit_allow', frozenset())
-    explicit_deny = profile.get('explicit_deny', frozenset())
-
-    tools = mcp_server._tool_manager._tools
-    to_remove = []
-
-    for tool_name in list(tools.keys()):
-        suffix = _get_verb_suffix(tool_name)
-
-        # Explicit deny always wins
-        if tool_name in explicit_deny:
-            to_remove.append(tool_name)
-        # Explicit allow always keeps
-        elif tool_name in explicit_allow:
-            continue
-        # Verb prefix match — check if suffix starts with any allowed verb
-        elif any(suffix.startswith(verb) for verb in allowed_verbs):
-            continue
-        # Exact match for single-word verbs (e.g. 'explore', 'query')
-        elif suffix in allowed_verbs:
-            continue
-        # No match → remove
-        else:
-            to_remove.append(tool_name)
-
-    for name in to_remove:
-        del tools[name]
-
-    logger.info('Profile %r: %d tools available (%d removed)',
-                profile_name, len(tools), len(to_remove))
+    profile = PROFILES[profile_name]
+    if profile is None:
+        return True
+    if tool_name in profile['explicit_deny']:
+        return False
+    if tool_name in profile['explicit_allow']:
+        return True
+    return _get_verb_suffix(tool_name).startswith(tuple(profile['allowed_verbs']))

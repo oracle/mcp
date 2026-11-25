@@ -13,7 +13,8 @@ Instead, users can create their own index and maintain it as often as required. 
 
 ## Prerequisites
 
-- Python 3.x
+- Python 3.13 or later
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - Downloaded [Oracle Database Documentation zip file](https://docs.oracle.com/en/database/oracle/oracle-database/26/zip/oracle-database_26.zip) to build the initial index
 
 ## Installation
@@ -23,11 +24,8 @@ git clone https://github.com/oracle/mcp.git
 
 cd mcp/src/oracle-db-doc-mcp-server
 
-python3 -m venv .venv
-
+uv sync --locked --no-dev
 source .venv/bin/activate
-
-python3 -m pip install -r requirements.txt
 ```
 
 ## Usage
@@ -102,6 +100,22 @@ By default, the MCP server runs on `stdio`. Hence, the simplest way to run it, i
 python3 oracle-db-doc-mcp-server.py mcp
 ```
 
+After indexing, you can also run the server with its FastMCP configuration. Run the following command from this package directory.
+
+```console
+uv run --locked --no-dev fastmcp run fastmcp.json --skip-env
+```
+
+### Tests
+
+From this package directory, run:
+
+```console
+uv run --locked pytest
+```
+
+The tests build temporary indexes from small HTML fixtures and exercise stdio and loopback HTTP. The suite requires at least 90% branch-aware coverage of the server script.
+
 ### VSCode integration
 
 #### Running the MCP server via Docker/Podman
@@ -138,7 +152,7 @@ To run the MCP server directly from your machine:
     "oracle-db-doc": {
       "type": "stdio",
       "command": "<installation>/.venv/bin/python3",
-      "args": [ "oracle-db-doc-mcp-server.py", "mcp" ]
+      "args": [ "<installation>/oracle-db-doc-mcp-server.py", "mcp" ]
     }
   }
 }

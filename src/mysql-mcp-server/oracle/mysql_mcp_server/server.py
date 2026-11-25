@@ -6,6 +6,7 @@ Licensed under the Universal Permissive License v1.0 as shown at http://oss.orac
 import contextlib
 import json
 import re
+from inspect import getdoc
 from typing import Optional, Union
 
 import oci
@@ -191,16 +192,15 @@ def _get_db_connection(connection_id: str) -> MySQLConnectionAbstract:
 
     try:
         conn = connector.connect(**connection_info)
-    except Exception as e:
+    except Exception:
         raise DatabaseConnectionError(
-            f"Connection failed with error: {e}. "
+            "Connection failed. Check the connection settings and credentials. "
             "Request assistance from a database administrator, or use list_all_connections() to find a different database connection."
-        ) from e
+        ) from None
 
     return conn
 
 
-@mcp.tool()
 def list_all_connections() -> str:
     """
     [MCP Tool] List configured connection keys, validate connectivity, and report mode.
@@ -242,6 +242,10 @@ def list_all_connections() -> str:
                 }
             )
     return json.dumps({"valid keys": valid_keys, "invalid keys": invalid_keys})
+
+
+# Keep the documented response details in the published description.
+mcp.tool(list_all_connections, description=getdoc(list_all_connections))
 
 
 @mcp.tool()
@@ -934,7 +938,6 @@ def verify_compartment_access(compartments):
     return access_report
 
 
-@mcp.tool()
 def list_all_compartments() -> str:
     """
     [MCP Tool] List all compartments in the tenancy.
@@ -975,6 +978,9 @@ def list_all_compartments() -> str:
     access_report = verify_compartment_access(compartments)
 
     return str(access_report)
+
+
+mcp.tool(list_all_compartments, description=getdoc(list_all_compartments))
 
 
 def _get_compartment_by_name(

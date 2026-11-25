@@ -47,9 +47,24 @@ the following environment variables:
 
 Set `OCI_MCP_AUTH_TYPE` to use a non-profile authentication mode:
 `identity_domain_upst`, `instance_principal`, `resource_principal`,
-`instance_principal_delegation`, `resource_principal_delegation`, or
-`oke_workload_identity`. Those modes use the standard `oracle-mcp-common`
-configuration and OCI SDK prerequisites.
+`resource_principal_v212`, `instance_principal_delegation`,
+`resource_principal_delegation`, or `oke_workload_identity`. Those modes use
+the standard `oracle-mcp-common` configuration and OCI SDK prerequisites.
+
+For Database-service RPv2.1.2 resource-principal authentication, set
+`OCI_MCP_AUTH_TYPE=resource_principal_v212`, `OCI_REGION`, and the following
+additional values:
+
+- `OCI_MCP_RP_TENANCY_ID`: resource-principal tenancy OCID
+- `OCI_MCP_RP_RESOURCE_ID`: Database resource OCID
+- `OCI_MCP_RP_PRIVATE_KEY_PATH`: private-key file path
+- `OCI_MCP_RP_RCI`: sensitive RPT context HMAC key
+- `OCI_MCP_RP_T0`: RPv2.1.2 context base time
+
+The RPT and RPST endpoints default to the region's OCI realm. Override them
+only when required with `OCI_MCP_RP_RPT_ENDPOINT` and
+`OCI_MCP_RP_RPST_ENDPOINT`. See the shared authentication documentation for
+the required value formats and security guidance.
 
 HTTP mode uses the OCI IAM/IDCS configuration shown above rather than
 `OCI_MCP_AUTH_TYPE`. `oracle-mcp-common` validates `IDCS_DOMAIN`,

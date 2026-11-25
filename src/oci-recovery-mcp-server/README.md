@@ -19,6 +19,19 @@ The server exposes 25 MCP tools. It does not create, update, or delete OCI resou
 - [`uv`](https://docs.astral.sh/uv/)
 - OCI credentials appropriate to the selected authentication mode
 
+## Set up with your coding agent
+
+You don't need to install anything by hand. Ask the coding agent you already use
+(Claude Code, Codex, Cursor, Cline or similar) to do it:
+
+> Set up the OCI Recovery MCP server for me by following
+> https://github.com/oracle/mcp/blob/main/src/oci-recovery-mcp-server/AGENTS.md#set-up-the-server-for-a-user
+
+The agent checks for `uv` and the OCI CLI and helps you pick or create an OCI profile.
+It then adds the published package to its own MCP configuration, run through `uvx`.
+Some steps open a browser to sign in to OCI or ask you for a region. You answer those
+yourself.
+
 ## Install and run locally
 
 From this project directory (`src/oci-recovery-mcp-server`), `uv` resolves and installs

@@ -13,6 +13,8 @@ from fastmcp import Client
 from oracle.oci_cloud_mcp_server import __project__
 from oracle.oci_cloud_mcp_server.server import mcp
 
+from oracle.oci_cloud_mcp_server.tests.sdk_fixtures import mock_sdk_services
+
 __version__ = importlib.metadata.version(__project__)
 user_agent_name = __project__.split("oracle.", 1)[1].split("-server", 1)[0]
 USER_AGENT = f"{user_agent_name}/{__version__}"
@@ -35,7 +37,7 @@ class TestCloudSdkTools:
 
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
-        with patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import:
+        with mock_sdk_services() as mock_import:
             mock_import.return_value = fake_module
 
             async with Client(mcp) as client:
@@ -71,7 +73,7 @@ class TestCloudSdkTools:
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
         with (
-            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
+            mock_sdk_services() as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
         ):
             mock_import.return_value = fake_module
@@ -114,7 +116,7 @@ class TestCloudSdkTools:
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
         with (
-            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
+            mock_sdk_services() as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
         ):
             mock_import.return_value = fake_module
@@ -157,7 +159,7 @@ class TestCloudSdkTools:
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
         with (
-            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
+            mock_sdk_services() as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
         ):
             mock_import.return_value = fake_module
@@ -200,7 +202,7 @@ class TestCloudSdkTools:
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
         with (
-            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
+            mock_sdk_services() as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
         ):
             mock_import.return_value = fake_module
@@ -243,7 +245,7 @@ class TestCloudSdkTools:
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
         with (
-            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
+            mock_sdk_services() as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
         ):
             mock_import.return_value = fake_module
@@ -290,7 +292,7 @@ class TestCloudSdkTools:
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
         with (
-            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
+            mock_sdk_services() as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
             patch(
                 "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"
@@ -341,7 +343,7 @@ class TestCloudSdkTools:
         fake_module = SimpleNamespace(FakeClient=FakeClient)
 
         with (
-            patch("oracle.oci_cloud_mcp_server.server.import_module") as mock_import,
+            mock_sdk_services() as mock_import,
             patch("oracle.oci_cloud_mcp_server.server._get_config_and_signer") as mock_cfg,
             patch(
                 "oracle.oci_cloud_mcp_server.server.oci.pagination.list_call_get_all_results"

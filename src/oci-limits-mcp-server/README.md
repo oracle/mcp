@@ -36,6 +36,12 @@ Add a stanza like this to your MCP client config (often called `mcp.json`; examp
 | list_limit_value | Returns limit values and a resume token | compartment_id, service_name, name, scope_type, availability_domain=None, sort_by='name', sort_order='ASC', limit=None, page=None, subscription_id=None |
 | get_resource_availability | Returns usage/availability for a specific limit | service_name, limit_name, compartment_id, availability_domain=None, subscription_id=None, external_location=None |
 
+## Migrating to 2.0.0
+
+For `list_services`, `list_limit_definitions`, and `list_limit_value`, read the
+returned object's `items` array instead of treating the result as a list. Read
+`next_page` from that object and pass it as `page` to resume.
+
 ## Pagination
 
 `list_services`, `list_limit_definitions`, and `list_limit_value` return an object

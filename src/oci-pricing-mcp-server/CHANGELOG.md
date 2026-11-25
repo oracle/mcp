@@ -15,6 +15,7 @@
 ### Fixed
 
 - Correct the missing package layout and console entry point so wheel and source distributions include the server implementation and can be installed outside the checkout.
+- Reject well-formed but unknown currency codes (for example `ZZZ`) with `invalid-currency-format` in `pricing_get_sku` and `pricing_search_name`. Babel's `get_currency_name()` returns unknown codes unchanged, so every three-letter code passed validation and was sent to the Price List API.
 
 ### Security
 
